@@ -560,8 +560,12 @@ async def _confirm_privately(
         log.warning("could not send a confirmation privately", exc_info=True)
         if interaction.channel is None:
             return
+        # An interaction only ever arises in a channel a member can write in — a forum's
+        # posts are threads, and a category hosts nothing — so the one it came from takes a
+        # message (#228).
+        channel = cast("discord.abc.Messageable", interaction.channel)
         try:
-            await interaction.channel.send(fallback)
+            await channel.send(fallback)
         except Exception:  # noqa: BLE001
             log.exception("could not tell the channel what the confirmation said")
 

@@ -12,6 +12,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
@@ -100,7 +101,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
     if cfg.signup_button_message_id:
         guild = await league_guild(bot)
         if guild:
-            channel = guild.get_channel(cfg.signup_channel_id)
+            channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
             if channel:
                 try:
                     msg = await channel.fetch_message(cfg.signup_button_message_id)
@@ -114,7 +115,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
     closed_msg_id: int | None = None
     guild = await league_guild(bot)
     if guild:
-        channel = guild.get_channel(cfg.signup_channel_id)
+        channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
         if channel:
             try:
                 closed_msg = await channel.send("🔒 Signups are now closed.")

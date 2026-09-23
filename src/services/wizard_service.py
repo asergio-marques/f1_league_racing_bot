@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 from apscheduler.triggers.date import DateTrigger
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
@@ -375,7 +376,7 @@ class WizardService:
         await svc.rekey_wizard(from_account, to_account)
         await self._cancel_channel_delete_job(from_account)
 
-        channel = guild.get_channel(held.signup_channel_id)
+        channel = as_text_channel(guild.get_channel(held.signup_channel_id))
         if channel is None:
             return problems
         try:

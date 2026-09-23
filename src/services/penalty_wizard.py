@@ -18,6 +18,7 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from models.round import RoundStatus
+from services.channel_registry_service import as_text_channel
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
 from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
@@ -307,7 +308,7 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing prompt message to reflect the current staged list."""
     if state.prompt_message_id is None:
         return
-    ch = state.bot.get_channel(state.submission_channel_id)
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is None:
         return
     try:
@@ -358,7 +359,7 @@ async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing appeals prompt message to reflect current staged_appeals."""
     if state.appeals_prompt_message_id is None:
         return
-    ch = state.bot.get_channel(state.submission_channel_id)
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is None:
         return
     try:
@@ -876,7 +877,7 @@ async def _show_approval_step(
             "Approve to finalize the round with results as submitted."
         )
 
-    ch = state.bot.get_channel(state.submission_channel_id)
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is not None:
         view = ApprovalView(state=state)
         msg = await ch.send(content, view=view)

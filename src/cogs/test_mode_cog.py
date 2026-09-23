@@ -28,6 +28,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from services.channel_registry_service import as_text_channel
 from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
@@ -1314,7 +1315,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
 
         # Rebuild embed once after all updates
         if applied:
-            channel = self._bot.get_channel(self._embed_channel_id)
+            channel = as_text_channel(self._bot.get_channel(self._embed_channel_id))
             if channel is not None:
                 try:
                     msg = await channel.fetch_message(self._embed_message_id)

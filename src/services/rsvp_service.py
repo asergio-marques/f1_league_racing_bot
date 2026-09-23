@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import discord
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.round import RoundFormat
 from utils.league_bot import LeagueBot
@@ -474,7 +475,7 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
         return
 
     channel_id_str: str = att_div_cfg.rsvp_channel_id
-    channel = bot.get_channel(int(channel_id_str))
+    channel = as_text_channel(bot.get_channel(int(channel_id_str)))
     if channel is None:
         log.error(
             "run_rsvp_notice: RSVP channel %s not found for division %d",
@@ -497,7 +498,7 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
             continue
         if _old.round_id == round_id:
             continue  # shouldn't exist yet, but skip defensively
-        _old_ch = bot.get_channel(int(_old.channel_id))
+        _old_ch = as_text_channel(bot.get_channel(int(_old.channel_id)))
         if _old_ch is not None:
             for _mid in (_old.message_id, _old.last_notice_msg_id, _old.distribution_msg_id):
                 if _mid is None:
@@ -673,7 +674,7 @@ async def withdraw_rsvp_call(
         )
         if message_id is not None
     ]
-    channel = bot.get_channel(int(stored.channel_id))
+    channel = as_text_channel(bot.get_channel(int(stored.channel_id)))
     if channel is None:
         if undeleted is not None:
             undeleted.extend(str(m) for m in posted)
@@ -787,7 +788,7 @@ async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
         log.warning("run_rsvp_last_notice: no RSVP channel for division %d — skipping", division_id)
         return
 
-    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    channel = as_text_channel(bot.get_channel(int(att_div_cfg.rsvp_channel_id)))
     if channel is None:
         log.error("run_rsvp_last_notice: RSVP channel not found for division %d", division_id)
         return
@@ -886,7 +887,7 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
     # Disable the RSVP embed buttons
     embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
     if embed_row is not None:
-        channel = bot.get_channel(int(embed_row.channel_id))
+        channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
         if channel is not None:
             try:
                 msg = await channel.fetch_message(int(embed_row.message_id))
@@ -1146,7 +1147,7 @@ async def _post_no_reserve_notice(round_id: int, division_id: int, bot: LeagueBo
         )
         return
 
-    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    channel = as_text_channel(bot.get_channel(int(att_div_cfg.rsvp_channel_id)))
     if channel is None:
         log.warning(
             "_post_no_reserve_notice: RSVP channel %s not in bot cache "
@@ -1212,7 +1213,7 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot: 
         )
         return
 
-    channel = bot.get_channel(int(att_div_cfg.rsvp_channel_id))
+    channel = as_text_channel(bot.get_channel(int(att_div_cfg.rsvp_channel_id)))
     if channel is None:
         log.warning(
             "_post_distribution_announcement: RSVP channel %s not in bot cache "

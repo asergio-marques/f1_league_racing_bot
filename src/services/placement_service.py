@@ -11,6 +11,7 @@ import discord
 
 from db.database import get_connection
 from models.driver_profile import DriverProfile, DriverState
+from services.channel_registry_service import as_text_channel
 from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
 from models.signup_module import AvailabilitySlot
 from models.team import TeamRoleConfig
@@ -2007,10 +2008,10 @@ class PlacementService:
         div_name: str = div_row["div_name"] or str(division_id)
 
         # Resolve the channel
-        channel = guild.get_channel(lineup_channel_id)
+        channel = as_text_channel(guild.get_channel(lineup_channel_id))
         if channel is None:
             try:
-                channel = await guild.fetch_channel(lineup_channel_id)
+                channel = as_text_channel(await guild.fetch_channel(lineup_channel_id))
             except (discord.NotFound, discord.HTTPException):
                 log.error(
                     "_refresh_lineup_post: lineup channel %s not found for division %s",

@@ -29,6 +29,7 @@ from types import SimpleNamespace
 
 import discord
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.image_module import PostingOrigin
 from utils.league_bot import LeagueBot
@@ -293,10 +294,10 @@ async def try_post(
     if row is None or row["lineup_channel_id"] is None:
         return LineupPostOutcome()
 
-    channel = guild.get_channel(row["lineup_channel_id"])
+    channel = as_text_channel(guild.get_channel(row["lineup_channel_id"]))
     if channel is None:
         try:
-            channel = await guild.fetch_channel(row["lineup_channel_id"])
+            channel = as_text_channel(await guild.fetch_channel(row["lineup_channel_id"]))
         except (discord.NotFound, discord.HTTPException):
             return LineupPostOutcome()
     if not isinstance(channel, discord.TextChannel):

@@ -9,6 +9,7 @@ from typing import NamedTuple
 import discord
 
 from db.database import get_connection
+from services.channel_registry_service import as_text_channel
 from services.driver_service import current_account_map_for_division
 from models.classification_occasion import ClassificationOccasion
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -1628,7 +1629,7 @@ async def repost_round_results(
         return faults
 
     if results_ch_id:
-        rc = guild.get_channel(results_ch_id)
+        rc = as_text_channel(guild.get_channel(results_ch_id))
         if rc is None:
             log.warning(
                 "repost_round_results: results channel %s not found in guild", results_ch_id
@@ -1638,7 +1639,7 @@ async def repost_round_results(
             await post_round_results(db_path, round_id, division_id, rc, guild, label, bot=bot)
 
     if standings_ch_id:
-        sc = guild.get_channel(standings_ch_id)
+        sc = as_text_channel(guild.get_channel(standings_ch_id))
         if sc is None:
             log.warning(
                 "repost_round_results: standings channel %s not found in guild", standings_ch_id
@@ -1736,7 +1737,7 @@ async def repost_results_for_division(
     if not results_ch_id:
         return "no_channel"
 
-    rc = guild.get_channel(results_ch_id)
+    rc = as_text_channel(guild.get_channel(results_ch_id))
     if rc is None:
         log.warning(
             "repost_results_for_division: results channel %s not found in guild",
@@ -1946,7 +1947,7 @@ async def repost_standings_for_division(
     if not standings_ch_id:
         return "no_channel"
 
-    sc = guild.get_channel(standings_ch_id)
+    sc = as_text_channel(guild.get_channel(standings_ch_id))
     if sc is None:
         log.warning(
             "repost_standings_for_division: standings channel %s not found in guild",
@@ -2117,7 +2118,7 @@ async def delete_and_repost_final_results(
         if results_fault is not None:
             faults.append(results_fault)
         else:
-            rc = guild.get_channel(results_ch_id)
+            rc = as_text_channel(guild.get_channel(results_ch_id))
             # Fetch session rows with their existing message IDs
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
@@ -2176,7 +2177,7 @@ async def delete_and_repost_final_results(
         if standings_fault is not None:
             faults.append(standings_fault)
         else:
-            sc = guild.get_channel(standings_ch_id)
+            sc = as_text_channel(guild.get_channel(standings_ch_id))
             # Both championships' interim messages go, whichever flow posted them.
             await _clear_standings_messages(db_path, division_id, round_id, sc)
 
@@ -2292,7 +2293,7 @@ async def repost_subsequent_standings(
             skipped_rounds.append(rnd_number)
             continue
 
-        sc = guild.get_channel(standings_ch_id)
+        sc = as_text_channel(guild.get_channel(standings_ch_id))
 
         # Delete old standings message(s) for both championships and forget their ids
         await _clear_standings_messages(db_path, division_id, rnd_id, sc)

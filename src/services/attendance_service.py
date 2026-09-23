@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 import discord
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.attendance import (
     AttendanceConfig,
@@ -915,7 +916,7 @@ async def post_attendance_sheet(
     channel_id = int(row["attendance_channel_id"])
     prior_msg_id = row["attendance_message_id"]
 
-    channel = guild.get_channel(channel_id)
+    channel = as_text_channel(guild.get_channel(channel_id))
     if channel is None:
         log.warning("post_attendance_sheet: channel %s not found for division %s", channel_id, division_id)
         return

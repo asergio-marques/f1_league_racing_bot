@@ -14,6 +14,7 @@ from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from services.channel_registry_service import as_text_channel
 from services.team_service import resolve_team_reference
 from utils import results_formatter
 from utils.batch_notice import batch_notice
@@ -418,7 +419,7 @@ async def enter_penalty_state(
             )
 
             if results_ch_id:
-                rc = guild.get_channel(results_ch_id)
+                rc = as_text_channel(guild.get_channel(results_ch_id))
                 if rc:
                     _results_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"
                     await results_post_service.post_round_results(
@@ -427,7 +428,7 @@ async def enter_penalty_state(
                     )
 
             if standings_ch_id:
-                sc = guild.get_channel(standings_ch_id)
+                sc = as_text_channel(guild.get_channel(standings_ch_id))
                 if sc:
                     from services.standings_service import (
                         compute_driver_standings,
@@ -1912,7 +1913,7 @@ async def take_down_superseded_announcements(bot: LeagueBot, db_path: str, round
 
     faults: list[str] = []
     for entry in _json.loads(row["superseded_announcements"]):
-        channel = bot.get_channel(int(entry["channel_id"])) if entry.get("channel_id") else None
+        channel = as_text_channel(bot.get_channel(int(entry["channel_id"])) if entry.get("channel_id") else None)
         if channel is None:
             faults.append(
                 f"the superseded verdict for <@{entry['driver_user_id']}> could not be taken "
@@ -4361,7 +4362,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         )
         return
 
-    results_channel = guild.get_channel(results_channel_id)
+    results_channel = as_text_channel(guild.get_channel(results_channel_id))
     if results_channel is None:
         log.error(
             "run_result_submission_job: results channel %s not found (round %s)",

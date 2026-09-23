@@ -15,8 +15,12 @@ manager hunting a conflict that does not exist.
 """
 from __future__ import annotations
 
+import ast
 import os
+import re
 import sys
+from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -26,6 +30,7 @@ from db.database import get_connection, run_migrations  # noqa: E402
 from services.channel_registry_service import (  # noqa: E402
     SETTING_LABELS,
     ChannelUse,
+    as_text_channel,
     find_channel_use,
     refusal,
 )
@@ -278,3 +283,48 @@ async def test_a_division_refuses_the_hub_channel(db_path):
 
     assert use == ChannelUse("hub")
     assert use.describe() == "hub channel"
+
+
+# ---------------------------------------------------------------------------
+# A configured channel is a text channel (#228)
+# ---------------------------------------------------------------------------
+
+SRC = Path(__file__).resolve().parents[2] / "src"
+
+
+def test_as_text_channel_hands_back_the_channel_it_was_given():
+    """A narrowing for the type check alone: the same object, and None stays None."""
+    channel = MagicMock()
+    assert as_text_channel(channel) is channel
+    assert as_text_channel(None) is None
+
+
+def test_every_command_that_sets_a_channel_takes_a_text_channel():
+    """What makes `as_text_channel` true: a channel is only ever set as a text channel.
+
+    A command taking any other kind of channel would store an id that `as_text_channel` then
+    calls a text channel, and the check would believe it.
+    """
+    offenders = sorted(
+        f"{path.relative_to(SRC).as_posix()}:{arg.lineno} {arg.arg}: {ast.unparse(arg.annotation)}"
+        for path in (SRC / "cogs").glob("*.py")
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        for arg in node.args.args + node.args.kwonlyargs
+        if arg.annotation is not None
+        and "Channel" in ast.unparse(arg.annotation)
+        and ast.unparse(arg.annotation).replace(" | None", "") != "discord.TextChannel"
+    )
+    assert offenders == []
+
+
+def test_the_bot_makes_no_channel_but_a_text_channel():
+    """The other half: a channel the bot creates, and later finds by its id, is a text channel."""
+    makes_other = re.compile(r"\.create_(voice|stage|forum|category)(_channel)?\(")
+    offenders = sorted(
+        f"{path.relative_to(SRC).as_posix()}:{number}"
+        for path in SRC.rglob("*.py")
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if makes_other.search(line)
+    )
+    assert offenders == []

@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from services.channel_registry_service import as_text_channel
 from utils.league_bot import LeagueBot
 from utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from utils.log_filters import install_late_autocomplete_filter
@@ -805,7 +806,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
                     round_id,
                 )
                 continue
-            channel = guild.get_channel(channel_id)
+            channel = as_text_channel(guild.get_channel(channel_id))
             if channel is None:
                 log.warning(
                     "Recovery: channel %s not found, cannot restore appeals review for round %s",
@@ -842,7 +843,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
                     round_id,
                 )
                 continue
-            channel = guild.get_channel(channel_id)
+            channel = as_text_channel(guild.get_channel(channel_id))
             if channel is None:
                 log.warning(
                     "Recovery: channel %s not found, cannot restore penalty review for round %s",
@@ -928,7 +929,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
             )
             continue
 
-        channel = guild.get_channel(channel_id)
+        channel = as_text_channel(guild.get_channel(channel_id))
         if channel is not None:
             try:
                 await channel.delete(reason="Orphaned submission channel cleanup on restart")
@@ -994,10 +995,10 @@ async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
         # are indistinguishable to `get_channel`, and the row is cleared either way — so a
         # miss would drop the only record of a message still standing, which is precisely
         # what this sweep exists to prevent.
-        channel = bot.get_channel(int(row["channel_id"]))
+        channel = as_text_channel(bot.get_channel(int(row["channel_id"])))
         if channel is None:
             try:
-                channel = await bot.fetch_channel(int(row["channel_id"]))
+                channel = as_text_channel(await bot.fetch_channel(int(row["channel_id"])))
             except (discord.NotFound, discord.Forbidden):
                 channel = None
             except discord.HTTPException as exc:

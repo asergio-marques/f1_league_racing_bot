@@ -16,6 +16,7 @@ from services.attendance_service import (
     sync_attendance,
     validate_timing_invariant,
 )
+from services.channel_registry_service import as_text_channel
 from services.season_lifecycle_service import uncommitted_seat_excluded
 from utils.channel_guard import league_manager_only
 from utils.league_bot import LeagueBot, bot_of
@@ -956,7 +957,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     from services.rsvp_service import _rebuild_embed_for_round, RsvpView
     embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
     if embed_row is not None:
-        channel = bot.get_channel(int(embed_row.channel_id))
+        channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
         if channel is not None:
             try:
                 msg = await channel.fetch_message(int(embed_row.message_id))

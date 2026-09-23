@@ -15,6 +15,7 @@ import discord
 
 from db.database import get_connection
 from services.channel_registry_service import missing_channel_fault
+from services.channel_registry_service import as_text_channel
 from services.driver_service import current_account_map_for_division
 from models.points_config import SessionType
 from services import image_verdict_post
@@ -1379,7 +1380,7 @@ async def republish_verdicts_from_round(
 
     for round_id in rebuilt:
         for channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
-            channel = bot.get_channel(int(channel_id)) if channel_id else None
+            channel = as_text_channel(bot.get_channel(int(channel_id)) if channel_id else None)
             if channel is None:
                 faults.append(
                     f"the superseded verdict for {_driver_label(driver_user_id)} could not be "
@@ -1390,7 +1391,7 @@ async def republish_verdicts_from_round(
 
     taken_down: list[int] = []
     for channel_id, message_id in replaced:
-        channel = bot.get_channel(int(channel_id)) if channel_id else None
+        channel = as_text_channel(bot.get_channel(int(channel_id)) if channel_id else None)
         if channel is None:
             continue
         await _delete_posting(channel, message_id, [message_id], label="verdict banner")
