@@ -376,8 +376,8 @@ Penalties are not applied by a command. Once every session of a round has been s
     - For "Sprint Qualifying" and "Feature Qualifying", only "DSQ" is accepted.
     - A negative sanction shall be rejected where its magnitude exceeds the time penalties the driver already carries in that session, counting anything staged in the same review, or where it would produce a negative total race time.
     - A driver not present in the chosen session's results shall be rejected.
-- **No Penalties / Confirm** — proceeds with nothing applied. Where entries are staged, it shall first ask for confirmation that they are to be discarded.
-- **Approve** — proceeds with what is staged. It shall be unavailable while nothing is staged.
+- **No Penalties / Confirm** — proceeds with no penalty applied. Where penalties are staged, it shall first ask for confirmation that they are to be discarded. The staged attendance pardons shall be kept.
+- **Approve** — proceeds with what is staged. It shall be unavailable while no penalty is staged, whatever attendance pardons are.
 - **Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes down the prompt and any approval message, and restarts collection in the same channel from the first session.
     - The resubmission shall supersede the round's submitted results rather than delete them. The submitted results shall stand, published and counted, until every session has been submitted again, and shall then be replaced all at once. Decided 2026-09-17 (issue #210).
     - Team agreement across the sessions of the round shall be checked against the sessions of the resubmission, not the results being replaced.
@@ -394,6 +394,7 @@ Penalties are not applied by a command. Once every session of a round has been s
 - Committing stage one shall take down its prompt and its approval message.
 - A second commit pressed while the first is still being applied shall be refused.
 - The approval message shall be withdrawn when anything staged changes or **Make Changes** is pressed, and a second one shall replace the first. Its buttons shall act only on the approval message last posted.
+- The approval message shall list the attendance pardons staged, which its **Approve** grants, and shall not say that nothing is staged while any is. Their justifications stay in the log channel (#403).
 
 **Stage two — appeals.** Committing stage one shall post a second prompt to the same channel, carrying **Add Correction**, **No Changes / Confirm**, **Approve** and one **Remove** per staged correction. A correction takes and validates the same values as a penalty, and is the surface for overturning one.
 
