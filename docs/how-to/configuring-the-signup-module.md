@@ -84,8 +84,6 @@ The module does nothing at all until it has a channel, and the league's two role
 
 > **The signup channel cannot be your bot command channel.** The bot refuses outright. They are doing opposite jobs — one is for drivers who may not type, the other is for admins who must.
 
-> **Do not use `/signup config channel`.** The old command is broken and fails with an error whatever you pass it. `/signup channel` is the one that works.
-
 **These three block a season.** While the signup module is on, `/season config-review` withholds its button until the channel and both roles are set, and names the ones that are missing. If you are not going to use signups this season, turn the module off rather than leaving it half-configured.
 
 ---
@@ -370,7 +368,6 @@ Worth running through before you confirm the season's configuration, which fixes
 | `/season placements-review` offers no button, naming drivers | Those signups are unsettled. Place or reject each driver, or finish reviewing their signup |
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |
 | The preferred-team question offers nothing but "No Preference" | No teams have been added yet |
-| `/signup config channel` errors out | Known: that command is broken. Use `/signup channel` |
 | `/signup close` refused, naming an auto-close time | You set a `close_time`. Run `/signup close-time cancel`, then `/signup close` again — or `/signup close-time modify` if you only want to move the deadline |
 | Drivers you expected to be dropped by a close are still there | Known: closing only drops drivers still filling the form in. Anyone waiting on you keeps their place — approve them |
 | `/signup time-slot add`, `remove` or another signup setting refused, naming a season | That season's configuration is confirmed, so its signup settings are fixed until it ends |

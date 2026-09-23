@@ -738,15 +738,6 @@ class SignupCog(commands.Cog):
         parent=signup,
     )
 
-    @config_group.command(name="channel", description="Set the signup channel.")
-    @app_commands.describe(channel="Channel for signup interactions")
-    @league_manager_only
-    async def config_channel(
-        self, interaction: discord.Interaction, channel: discord.TextChannel
-    ) -> None:
-        # Deprecated: use /signup channel instead. Kept for backwards compat.
-        await self.signup_channel(interaction, channel)
-
     @config_group.command(name="view", description="View current signup module configuration.")
     @league_manager_only
     async def config_view(self, interaction: discord.Interaction) -> None:

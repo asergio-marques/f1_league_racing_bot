@@ -163,3 +163,35 @@ async def test_the_command_runs_to_the_end_without_an_unbound_name(db_path):
     # refusal was sent through the response.
     interaction.response.send_message.assert_not_awaited()
     interaction.followup.send.assert_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The withdrawn alias (#124)
+# ---------------------------------------------------------------------------
+
+
+def test_the_signup_config_group_holds_only_view():
+    """`/signup config channel` called the `/signup channel` command object, which is not
+    callable, so it raised on every use and never set a channel (#124). It is withdrawn;
+    `/signup channel` is the way to set it, and `view` is all the group holds."""
+    assert [command.name for command in SignupCog.config_group.commands] == ["view"]
+
+
+def test_nothing_current_offers_the_withdrawn_config_channel():
+    """A guide or reply naming it would send a league to a command Discord no longer offers.
+    `specs/` is a historical record and is not read."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    paths = [
+        *sorted((root / "src").rglob("*.py")),
+        root / "README.md",
+        *sorted((root / "docs" / "how-to").glob("*.md")),
+        *sorted((root / "docs" / "wip-specs").glob("*.md")),
+    ]
+    offenders = sorted(
+        str(path.relative_to(root))
+        for path in paths
+        if "/signup config channel" in path.read_text(encoding="utf-8")
+    )
+    assert offenders == []

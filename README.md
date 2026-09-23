@@ -1334,8 +1334,6 @@ Applies the channel's permission overwrites: `@everyone` cannot view, the league
 
 The two roles the module uses are the league's, set by [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). The channel and both roles must be set before `/signup open` will run, and — while the signup module is enabled — before a season's configuration can be confirmed. Both roles must also still be on the server, and the driver role must be one the bot can grant.
 
-> **`/signup config channel` is non-functional.** It is retained as a deprecated alias but raises `TypeError` on invocation and sets nothing. Use `/signup channel`. See [#124](https://github.com/asergio-marques/f1_league_racing_bot/issues/124).
-
 #### `/signup config view` — View current signup configuration
 *Access: League manager*
 
