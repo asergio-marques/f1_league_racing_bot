@@ -13,7 +13,6 @@ workflow: the risk is deletion, not restructuring.
 from __future__ import annotations
 
 import configparser
-import importlib.util
 import re
 from pathlib import Path
 
@@ -67,10 +66,11 @@ def _codes(value: str) -> set[str]:
 
 
 def test_the_check_reads_src_as_the_bot_imports_it():
-    """`src/`, named from `src/` itself — `cogs.season_cog`, never `src.cogs.season_cog`."""
+    """`src/`, named from `src/` itself — `cogs.season_cog`, never `src.cogs.season_cog` — and
+    the libraries that ship no types through the stubs in `stubs/`."""
     main = _config()["mypy"]
     assert main.get("files") == "src"
-    assert main.get("mypy_path") == "src"
+    assert main.get("mypy_path") == "src:stubs"
     assert main.getboolean("explicit_package_bases") is True
 
 
@@ -112,24 +112,9 @@ def test_every_exempted_module_exists():
     assert missing == []
 
 
-def test_a_library_section_only_excuses_the_library_its_missing_types():
-    """An untyped library is read as `Any`, and nothing more is passed over for it."""
-    parser = _config()
-    sections = _library_sections(parser)
-    assert sections, "found no library sections — the classification has stopped seeing them"
-    for section in sections:
-        assert _named(section).endswith(".*"), section
-        assert dict(parser[section]) == {"ignore_missing_imports": "True"}, section
-
-
-def test_every_excused_library_is_installed():
-    """A dependency dropped from `requirements.txt` takes its section with it."""
-    missing = sorted(
-        section
-        for section in _library_sections(_config())
-        if importlib.util.find_spec(_named(section).removesuffix(".*")) is None
-    )
-    assert missing == []
+def test_no_library_is_skipped():
+    """A library with no types of its own is described in `stubs/`, never read as `Any`."""
+    assert _library_sections(_config()) == []
 
 
 def test_ci_runs_the_type_check():
