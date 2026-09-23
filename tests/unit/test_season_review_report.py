@@ -435,6 +435,17 @@ async def test_a_team_name_that_cannot_be_a_lineup_field_is_named(db_path):
     assert "Red/Blue" in public
 
 
+async def test_a_team_name_that_cannot_be_a_lineup_field_withholds_approval(db_path):
+    """The review calls it blocking, and the confirmation refuses on it (#396). The team
+    list is fixed by then, so the one remedy named is to abandon the season."""
+    cog = _cog(db_path, name_problems=["'Red/Blue' contains a character no field id may"])
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "cannot be used as artwork filenames" in _private(messages)
+    assert "`/season abort`" in _private(messages)
+
+
 async def test_a_reserve_team_with_no_role_is_warned_about(db_path):
     """Drivers on it fail result validation, which is discovered at the first submission
     unless the review says so first."""
@@ -816,3 +827,15 @@ async def test_a_long_list_of_image_faults_is_sent_whole(db_path):
     private = [text for text, ephemeral in messages if ephemeral]
     assert all(len(text) <= 2000 for text in private)
     assert all(fault in _private(messages) for fault in faults)
+
+
+async def test_a_lineup_the_template_cannot_draw_withholds_approval(db_path):
+    """The review calls it blocking, and the confirmation refuses on it (#396)."""
+    problem = "division **Pro** fields 12 teams but the lineup template declares 10 blocks"
+    cog = _cog(db_path, images=True, lineup_problems=[problem])
+
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert problem in _public(messages)
+    assert f"Lineup template: {problem}" in _private(messages)

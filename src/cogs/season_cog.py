@@ -1930,6 +1930,10 @@ class SeasonCog(commands.Cog):
                     )
                     image_lines += [f"  • {problem}" for problem in lineup_problems]
                     image_lines.append("")
+                    # And they do (#396): the confirmation refuses on the same helper.
+                    approval_blockers += [
+                        f"Lineup template: {problem}" for problem in lineup_problems
+                    ]
 
             # ── Team names (038, FR-013) ──────────────────────────────
             # Outside the `images_on` branch deliberately: a team name must address a
@@ -2311,6 +2315,20 @@ class SeasonCog(commands.Cog):
                     "again.",
                     ephemeral=True,
                 )
+            if name_problems:
+                # Named in full at the head of the review. No command renames a team once
+                # the configuration is confirmed, which fixes the team list (see
+                # `TeamCog._team_list_lock`), so abandoning the season is the one remedy there
+                # is — and the configuration review refuses these names, so a season reaching
+                # here is rare.
+                await poster.send(
+                    "\u26d4 **Some team names cannot be used as artwork filenames.** Each is "
+                    "named at the head of the review. The season is **not** offered for "
+                    "approval while that stands. The team list is fixed once the "
+                    "configuration is confirmed, so the season must be aborted with "
+                    "`/season abort` and configured again.",
+                    ephemeral=True,
+                )
             if unsettled:
                 await poster.send(
                     "\u26d4 **Every signup must be settled before placements are confirmed.** "
@@ -2333,6 +2351,7 @@ class SeasonCog(commands.Cog):
                 and not calendar_faults_found
                 and not points_faults
                 and not phantom_configs
+                and not name_problems
                 and not unsettled
                 and not channel_faults
                 and not no_divisions
