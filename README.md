@@ -1065,7 +1065,7 @@ The three deadline commands share the same preconditions, checked in this order:
 
 **When they take effect.** The values in force for a season are those stored when it is approved. Changing a deadline never moves a forecast for a season already running.
 
-**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-review).
+**They also decide how late a season can be approved.** A season holding a round whose Phase 1, 2 or 3 deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day Phase 1. See [Approving](#approving--the-button-in-season-placements-review).
 
 #### `/weather config phase-1-deadline` — Days before the round to publish Phase 1
 *Access: League manager · Weather module required · Setup only*
@@ -2005,7 +2005,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 >
 > **Only a driver with a confirmed placement can answer.** Anybody else pressing a button is told they are not a member of the division and nothing is recorded — a driver still waiting on `/season placements-review`, a driver of another division, or someone with no driver profile at all, such as a league manager who does not race. Who can see a check-in channel in the first place is yours to set with Discord's own channel permissions; the bot does not manage them, so restrict the channel to the division's role if you would rather nobody else could press anything.
 
-> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-review).
+> **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-placements-review).
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: League manager · No active season*
