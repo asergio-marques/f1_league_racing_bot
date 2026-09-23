@@ -282,7 +282,7 @@ It asks for three things: the driver's Discord user ID, which of the three charg
 
 Each pardon lifts one charge, so a driver who never answered *and* did not show can be pardoned once or twice depending on how generous you feel. The bot checks the pardon matches what actually happened and refuses one that does not — you cannot pardon a no-show for someone who declined.
 
-Pardons are staged with the round's penalties and listed alongside them for review before you commit. **Once the post-race penalties are approved, that round can no longer be pardoned** — the charge stands until the round's results are amended.
+Pardons are staged with the round's penalties and listed alongside them for review before you commit. A pardon staged by mistake comes off with its own **Remove Pardon** button, and everything else you staged stays as it is. **Once the post-race penalties are approved, that round can no longer be pardoned** — the pardons you granted and the charges you did not both stand until the round's results are amended.
 
 ---
 

@@ -822,6 +822,7 @@ def _review_state(bot, *, staged=()):
         division_name="Pro",
         submission_channel_id=SUB_CHANNEL,
         staged=list(staged),
+        staged_pardons=[],
         prompt_message_id=None,
     )
 

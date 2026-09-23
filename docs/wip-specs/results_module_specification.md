@@ -378,15 +378,15 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A driver not present in the chosen session's results shall be rejected.
 - **No Penalties / Confirm** — proceeds with nothing applied. Where entries are staged, it shall first ask for confirmation that they are to be discarded.
 - **Approve** — proceeds with what is staged. It shall be unavailable while nothing is staged.
-- **Resubmit Initial Results** — discards the staged penalties, takes down the prompt, and restarts collection in the same channel from the first session.
+- **Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes down the prompt, and restarts collection in the same channel from the first session.
     - The resubmission shall supersede the round's submitted results rather than delete them. The submitted results shall stand, published and counted, until every session has been submitted again, and shall then be replaced all at once. Decided 2026-09-17 (issue #210).
     - Team agreement across the sessions of the round shall be checked against the sessions of the resubmission, not the results being replaced.
-    - The resubmission shall carry a button labelled "Cancel", usable by league managers. Pressing it shall end the resubmission, keep the submitted results, and post the stage-one prompt again. The staged penalties it discarded shall not be restored. Decided 2026-09-17.
+    - The resubmission shall carry a button labelled "Cancel", usable by league managers. Pressing it shall end the resubmission, keep the submitted results, and post the stage-one prompt again. The staged penalties and pardons it discarded shall not be restored. Decided 2026-09-17.
     - A resubmission that fails before its results are saved shall end as a cancelled one does, and say so in the channel.
     - A restart during a resubmission shall keep the submitted results and restore stage one, saying in the channel that the sessions entered so far were lost.
     - The resubmission shall be refused where the submission channel no longer exists, and nothing shall be discarded.
 - **Attendance Pardon** — stages an attendance pardon, per the attendance module specification.
-- One **Remove** button per staged entry.
+- One **Remove** button per staged penalty, and one per staged attendance pardon.
 
 Approving stage one shall present the staged list again with a choice of returning to staging, with the list intact, or committing. Committing shall apply every penalty, recompute positions, times and points for the sessions affected, republish the round's results and standings under the post-race penalty state, recompute the standings of every later round, and post one verdict per decision to the division's verdicts channel.
 
