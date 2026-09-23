@@ -253,13 +253,126 @@ async def test_a_lineup_gate_refuses_and_commits_nothing(db_path):
 
 
 async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
-    """Gate 4 went with the approval's render pass. Its return would be a second full
-    template evaluation for an answer the review and the fingerprint already give."""
+    """Gate 4 went with the approval's render pass, and its method with it. The templates
+    are judged again since #396, but through `_image_configuration_faults` — the helper the
+    review withholds its button on — and not through a second evaluation of the approval's
+    own, which is what let the two disagree."""
     cog = _cog(db_path)
 
     assert not hasattr(cog, "_image_template_problems"), (
-        "the withdrawn template gate is back; the review already withholds its button"
+        "the withdrawn template gate is back; the templates are judged through "
+        "`_image_configuration_faults`"
     )
+
+
+# ── Gate 4b: the image module's configuration (#396) ────────────────────────
+#
+# The review draws the lineup and the calendar and nothing else, so its render was never
+# evidence that a results or weather template would draw, nor that the rasteriser was there
+# at all with both of those off. Each such season was named as blocked by the review and
+# then approved here. These drive the gate with the real `_image_configuration_faults` and
+# the rasteriser said rather than read from the host.
+
+
+def _images_on(cog, monkeypatch, *, converter=True, toggles=None, reports=None):
+    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    cog.bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
+    cog.bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
+    monkeypatch.setattr(
+        "services.image_render_service.converter_available", lambda: converter
+    )
+    return cog
+
+
+def _broken(template_key: str):
+    from models.image_module import ValidityReport
+
+    return ValidityReport(
+        template_key=template_key,
+        resolved_path=None,
+        valid=False,
+        depth_checked=0,
+        reason="file not found",
+    )
+
+
+async def test_a_sound_image_configuration_still_approves(db_path, monkeypatch):
+    cog = _images_on(_cog(db_path), monkeypatch)
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path, monkeypatch):
+    cog = _images_on(_cog(db_path), monkeypatch, converter=False)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "image module is not correctly configured" in _replies(interaction)
+    assert "is not installed on this host" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(
+    db_path, monkeypatch
+):
+    from models.image_constants import TEMPLATE_LABELS
+
+    cog = _images_on(
+        _cog(db_path),
+        monkeypatch,
+        toggles={"results": True},
+        reports={"results_race_template": _broken("results_race_template")},
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_a_broken_template_of_a_switched_off_output_still_approves(
+    db_path, monkeypatch
+):
+    """An output that is off posts as text and draws no template."""
+    cog = _images_on(
+        _cog(db_path),
+        monkeypatch,
+        reports={"results_race_template": _broken("results_race_template")},
+    )
+
+    await _run(cog, _interaction())
+
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
+
+
+async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path, monkeypatch):
+    cog = _images_on(_cog(db_path), monkeypatch)
+    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
+        return_value={"calendar_template": ["`accent` is not set for **Pro**"]}
+    )
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "Tier colour: `calendar_template`" in _replies(interaction)
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+
+
+async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
+    """A league not drawing has no template, rasteriser or colour to be wrong about."""
+    cog = _cog(
+        db_path,
+        _image_configuration_faults=AsyncMock(return_value=["Inkscape is not installed."]),
+    )
+
+    await _run(cog, _interaction())
+
+    cog._image_configuration_faults.assert_not_awaited()
+    cog.bot.season_service.transition_to_active.assert_awaited_once()
 
 
 # ── Gate 2d: rounds already run, or inside a window (#121, #122, #181) ───────

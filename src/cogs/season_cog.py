@@ -6675,10 +6675,10 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Everything above is a database read. Everything below reaches the image
-        # module, and Gate 4c rasterises in earnest — so the cheap checks come first and
-        # a league missing an RSVP channel is told so without paying for a render it was
-        # never going to keep (ordering settled 2026-09-07).
+        # Everything above is a database read. What follows reads the image module's
+        # templates, artwork and settings besides — still no rasterisation, the approval
+        # drawing nothing (see below), but dearer than a query, so the cheap checks come
+        # first and a league missing a channel is told so before any file is opened.
 
         # ── Gate 3a: team names can address a lineup template (038, FR-013) ───
         #
@@ -6695,15 +6695,6 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        # Gate 4 — every unusable template — is withdrawn (2026-09-07), with the render
-        # pass it belonged to. `/season placements-review` draws every graphic and withholds its own
-        # button where one will not draw; the fingerprint then proves the season is the one
-        # that review described. A template broken here is therefore impossible: it was
-        # broken at the review, and there was no button, or it has changed since, and the
-        # fingerprint refuses. Re-evaluating sixteen templates at the button would answer a
-        # question already answered — and its method was deleted while this call was left
-        # behind, so the approval raised `AttributeError` rather than approving anything.
-
         # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
         #
         # Season review holds the data that will actually be drawn, so a divergence here
@@ -6719,45 +6710,37 @@ class SeasonCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
             return
 
-        # ── Gate 4a2: the per-tier colours (051) ──────────────────────────────
+        # ── Gate 4b: the image module's configuration (#396) ──────────────────
         #
-        # Same reasoning as the lineup gate above it: a league that turned per-tier colours
-        # on and marked a template with a slot has said that slot matters, and approving a
-        # season with one unset would draw that tier in whatever the template happened to
-        # be authored in — silently, and differently from its siblings. Read through the
-        # same `colour_shortfall` `/season placements-review` and `/images config view` report, so the
-        # three cannot disagree about what is missing.
-        colour_problems = await self._colour_shortfall_problems()
-        if colour_problems:
-            bullet_list = "\n• ".join(colour_problems)
-            await interaction.followup.send(
-                f"❌ Season cannot be approved — per-tier colours are on, but a template "
-                f"wants a colour no tier has set:\n• {bullet_list}",
-                ephemeral=True,
-            )
-            return
-
-        # ── Gate 4b: the driver portrait settings ─────────────────────────────
+        # Every check the configuration review makes of the image module, made again: the
+        # rasteriser, every template a switched-on output draws, the per-tier colours and
+        # the driver portrait settings. Read through `_image_configuration_faults`, the
+        # helper `/season placements-review` withholds its button on, so the report a
+        # manager was given and the refusal they then meet cannot disagree.
         #
-        # Nothing about a graphic is wrong here, so this is its own gate rather than a
-        # finding of the render below: with portraits enabled and neither update trigger on,
-        # no portrait
-        # would ever be fetched, and the season would run drawing the placeholder for every
-        # driver while the configuration said otherwise. Read through the same helper
-        # `/season placements-review` reads, so the two cannot disagree.
-        portrait_fault = await self._portrait_configuration_blocker()
-        if portrait_fault is not None:
-            await interaction.followup.send(
-                f"\u274c Season cannot be approved \u2014 {portrait_fault}",
-                ephemeral=True,
-            )
-            return
+        # **The review's drawing is not evidence enough on its own.** It draws the lineup
+        # and the calendar and nothing else, so a broken results or weather template, or a
+        # rasteriser missing with both of those off, meets no render before the season
+        # first tries to post it. The gate on templates was withdrawn on 2026-09-07 on the
+        # contrary belief, and approved exactly those seasons until #396 restored it.
+        if await self.bot.module_service.is_images_enabled():
+            image_faults = await self._image_configuration_faults()
+            if image_faults:
+                bullet_list = "\n• ".join(image_faults)
+                for chunk in _chunk_message(
+                    f"❌ Season cannot be approved — the image module is not correctly "
+                    f"configured:\n• {bullet_list}"
+                ):
+                    await interaction.followup.send(chunk, ephemeral=True)
+                return
 
-        # The graphics are **not** drawn again here (withdrawn 2026-09-07). `/season
-        # review` draws every one of them, and the button that reaches this code refuses
-        # unless the season still fingerprints as the one that review described — so the
-        # review's render is evidence for this approval, and repeating it would be one
-        # full rasterisation per division per aspect for an answer already in hand.
+        # The graphics are **not** drawn here (withdrawn 2026-09-07). `/season
+        # placements-review` draws the lineup and the calendar of every division, and the
+        # button that reaches this code refuses unless the season still fingerprints as the
+        # one that review described, its template and artwork files among what that
+        # fingerprint covers. The review's render is therefore evidence for this approval,
+        # and repeating it would be one full rasterisation per division per aspect for an
+        # answer already in hand.
 
         # ── The last thing before anything is committed: a backup, under test mode ──
         #

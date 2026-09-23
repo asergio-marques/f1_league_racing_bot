@@ -277,11 +277,17 @@ async def test_a_reader_fault_never_refuses_a_season():
 
 
 def test_approval_is_gated_on_it():
-    """The gate must actually be wired into `_do_approve`, not merely available."""
+    """The gate must actually be wired into `_do_approve`, not merely available.
+
+    Through `_image_configuration_faults` since #396, which the review withholds its button
+    on too, so the two read the shortfall from one place.
+    """
     import inspect
 
     from cogs.season_cog import SeasonCog
 
-    source = inspect.getsource(SeasonCog)
-    assert "_colour_shortfall_problems()" in source
-    assert "Season cannot be approved" in source
+    faults = inspect.getsource(SeasonCog._image_configuration_faults)
+    approve = inspect.getsource(SeasonCog._do_approve)
+    assert "_colour_shortfall_problems()" in faults
+    assert "await self._image_configuration_faults()" in approve
+    assert "Season cannot be approved" in approve

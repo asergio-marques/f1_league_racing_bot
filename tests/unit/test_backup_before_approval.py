@@ -262,7 +262,7 @@ def test_the_question_falls_after_every_gate_and_before_every_write():
     source = inspect.getsource(SeasonCog._do_approve)
     asked = source.index("_offer_backup_before_approving")
 
-    for gate in ("_portrait_configuration_blocker", "_lineup_problems", "_team_name_problems"):
+    for gate in ("_image_configuration_faults", "_lineup_problems", "_team_name_problems"):
         assert source.index(gate) < asked, f"{gate} runs after the backup question"
     # Anchored on the `await`, not the bare name: a gate above may legitimately discuss a
     # write in a comment — Gate 2a explains why it does not read the snapshot's table —

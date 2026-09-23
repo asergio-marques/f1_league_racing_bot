@@ -646,7 +646,7 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     # the two cannot disagree about whether a season may be approved (#396). The review
     # reads the portrait settings through it.
     assert "_image_configuration_faults" in review
-    assert "_portrait_configuration_blocker" in approve
+    assert "_image_configuration_faults" in approve
 
 
 # ── The driver portrait settings in the review, and at approval ───────────
@@ -745,10 +745,12 @@ async def test_the_blocker_never_blocks_a_season_it_could_not_read():
 
 
 def test_the_approval_gate_returns_rather_than_merely_reporting():
+    """The portrait settings refuse through the image configuration gate (#396), whose
+    refusal must stop the approval rather than report and carry on. Driven, not read, in
+    `test_do_approve_gates.py`."""
     source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
 
-    assert "Gate 4c" in source
-    branch = source[source.index("if portrait_fault is not None:"):]
+    branch = source[source.index("if image_faults:"):]
     branch = branch[: branch.index("snapshot_configs_to_season")]
     assert "return" in branch
     assert "Season cannot be approved" in branch
