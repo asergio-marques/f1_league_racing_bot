@@ -33,7 +33,9 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
+from models.weather_config import WeatherPipelineConfig  # noqa: E402
 from services.weather_config_service import (  # noqa: E402
+    describe_deadlines,
     get_weather_pipeline_config,
     set_phase_1_days,
     set_phase_2_days,
@@ -121,6 +123,20 @@ async def test_defaults_are_not_shared_between_calls(tmp_path):
     second = await get_weather_pipeline_config(db_path)
 
     assert first is not second
+
+
+def test_deadlines_are_described_in_days_days_and_hours():
+    """Each deadline is named in its own unit, and in the order the phases fire.
+
+    Distinct values, so a line reading the wrong field cannot pass on a coincidence.
+    """
+    config = WeatherPipelineConfig(phase_1_days=7, phase_2_days=3, phase_3_hours=6)
+
+    assert describe_deadlines(config) == [
+        "  • Phase 1 deadline: 7 day(s) before race",
+        "  • Phase 2 deadline: 3 day(s) before race",
+        "  • Phase 3 deadline: 6h before race",
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -103,7 +103,7 @@ Every reply also tells you where the other two stand, which saves setting one an
 
 > **A round's circuit is fixed once its first forecast is out.** That forecast was drawn for that circuit and cannot be unsaid, so `/round amend` refuses a bare track change from then on — and refuses a format change once the second forecast is out, that one having been drawn for the round's sessions. Moving the round in the same change puts the forecasts back in question and lets both through, which is the way to correct a circuit late.
 
-To see what is currently set, run `/season placements-review` — the weather block lists all three. There is no separate command for reading them back.
+To see what is currently set, run `/weather config view`. It answers privately with all three, at any time: with no season, while one is being set up, or mid-season, when what it shows is what the season is running on. Both season reviews list them too, in the same words.
 
 ---
 
@@ -209,7 +209,7 @@ Worth running through before the season is approved.
 - [ ] Every division has a forecast channel, including any you created by copying another
 - [ ] Every division has the role you want pinged
 - [ ] The log channel is one you can read, since every calculation goes there
-- [ ] The three timings are what you want, and `/season placements-review` shows them
+- [ ] The three timings are what you want, and `/weather config view` shows them
 - [ ] The first round is far enough away to honour all three — the review withholds the Approve button if not
 - [ ] Every non-mystery round has a track
 - [ ] Rounds you meant to be mystery rounds are set as mystery, and the rest are not
@@ -225,7 +225,7 @@ Worth running through before the season is approved.
 | No forecast at all for a division | No forecast channel set for it, or the module is off |
 | No forecast for one round only | It is a mystery round — that is intended. Otherwise the round has no track, and nothing anywhere will tell you so: check the round with `/season placements-review` |
 | A season that will not approve | A division is missing its forecast channel, or a round is already inside one of the three deadlines. The division's own calendar in the review names the latest such round, and the button is withheld |
-| A driver asks when the next forecast is due | The posts do not say, by design — they promise only that an accurate one follows later. Your own deadlines are in `/season placements-review` |
+| A driver asks when the next forecast is due | The posts do not say, by design — they promise only that an accurate one follows later. `/weather config view` gives you your own deadlines |
 | `/weather config` refused | Either the season's placements are confirmed, or the value would put the phases out of order. The reply says which |
 | Two invalidation notices for one change | Amending more than one thing at once posts one per change |
 | Text where you expected a picture | The forecast worked and the drawing did not. The log channel names the reason — most often a drawing file or the converter |

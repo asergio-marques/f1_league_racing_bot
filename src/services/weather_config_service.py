@@ -31,6 +31,19 @@ async def get_weather_pipeline_config(db_path: str) -> WeatherPipelineConfig:
     )
 
 
+def describe_deadlines(config: WeatherPipelineConfig) -> list[str]:
+    """The three deadlines, one line apiece, as every surface that reads them back words them.
+
+    `/weather config view` and both season reviews print these lines, so the league reads its
+    deadlines in the same words wherever it looks (issue #118).
+    """
+    return [
+        f"  • Phase 1 deadline: {config.phase_1_days} day(s) before race",
+        f"  • Phase 2 deadline: {config.phase_2_days} day(s) before race",
+        f"  • Phase 3 deadline: {config.phase_3_hours}h before race",
+    ]
+
+
 def validate_ordering(
     p1_days: int,
     p2_days: int,

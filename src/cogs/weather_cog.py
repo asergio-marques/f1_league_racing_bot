@@ -1,7 +1,8 @@
 """WeatherCog — /weather command group.
 
 Provides /weather config phase-1-deadline, phase-2-deadline, phase-3-deadline
-for configuring the league's weather pipeline horizons.
+for configuring the league's weather pipeline horizons, and /weather config view
+for reading them back.
 """
 from __future__ import annotations
 
@@ -171,6 +172,40 @@ class WeatherCog(commands.Cog):
         await interaction.followup.send(
             f"✅ Phase 3 deadline set to **{hours} hour(s)** before round. "
             f"(Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
+            ephemeral=True,
+        )
+
+    # ------------------------------------------------------------------
+    # /weather config view
+    # ------------------------------------------------------------------
+
+    @config_group.command(
+        name="view",
+        description="Show the three weather deadlines currently set.",
+    )
+    @league_manager_only
+    async def config_view(self, interaction: discord.Interaction) -> None:
+        """Read the three deadlines back (issue #118).
+
+        **Not gated on the season**, unlike the setters beside it. The deadlines belong to the
+        server rather than to a season, and before this command they could be read only in the
+        configuration and placements reviews, each tied to one stage of one season. While a
+        season's placements are confirmed the setters are refused, so the values shown then
+        are the ones the season runs on.
+        """
+        if not await self._weather_gate(interaction):
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        from services.weather_config_service import (
+            describe_deadlines,
+            get_weather_pipeline_config,
+        )
+        config = await get_weather_pipeline_config(self.bot.db_path)
+
+        await interaction.followup.send(
+            "\n".join(["**Weather deadlines**", *describe_deadlines(config)]),
             ephemeral=True,
         )
 
