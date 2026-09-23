@@ -230,3 +230,11 @@ def test_a_roster_line_naming_a_driver_with_markup_is_refused():
     assert drivers == []
     assert any(e.startswith("Line 2:") and "driver name" in e for e in errors)
 
+
+def test_a_roster_line_naming_a_driver_with_a_member_mention_is_refused():
+    """A mock driver's name is held to every rule `roster add` holds it to (#388)."""
+    drivers, errors = parse_roster_csv(_csv(_row(name="<@123456789012345678>")))
+
+    assert drivers == []
+    assert any(e.startswith("Line 2:") and "member" in e for e in errors)
+
