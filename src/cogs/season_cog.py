@@ -845,6 +845,24 @@ class SeasonCog(commands.Cog):
             self.bot.db_path, season_id
         )
 
+    async def _no_points_config_attached(self, season_id: int) -> bool:
+        """Whether *season_id* has no points configuration attached at all.
+
+        **One helper because three surfaces ask the same question** (#409): the configuration
+        review refuses on it, `_do_approve` refuses on it, and `/season placements-review`
+        withholds its button on it. The placements review once had no copy of the question,
+        and offered Approve to a season the press then refused — reachable because
+        `/results config detach` stays open in Placements.
+
+        A link to a configuration that does not exist still counts as attached here; that
+        one is `_missing_points_config_problems`' fault. Test mode is the caller's business:
+        under it the approval attaches two configurations of its own before it asks, so the
+        placements review exempts a test season and the configuration review does not.
+        """
+        return not await season_points_service.get_attached_config_names(
+            self.bot.db_path, season_id
+        )
+
     async def _team_name_problems(self, season_id: int | None) -> list[str]:
         """Every team whose name cannot become an asset filename (047 FR-032).
 
@@ -2844,13 +2862,7 @@ class SeasonCog(commands.Cog):
 
         # ── Results: points configurations ────────────────────────────────────
         if await self.bot.module_service.is_results_enabled():
-            async with get_connection(self.bot.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
-                    (season_id,),
-                )
-                row = await cursor.fetchone()
-            if (row[0] if row else 0) == 0:
+            if await self._no_points_config_attached(season_id):
                 faults.append(
                     "No points configuration is attached to this season — "
                     "`/results config append`."
@@ -6545,13 +6557,7 @@ class SeasonCog(commands.Cog):
             # Auto-seed point configs if test mode is active and none are attached yet
             server_config = await self.bot.config_service.get_server_config()
             if server_config is not None and server_config.test_mode_active:
-                async with get_connection(self.bot.db_path) as _db:
-                    _cur = await _db.execute(
-                        "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
-                        (cfg.season_id,),
-                    )
-                    _cnt = await _cur.fetchone()
-                if (_cnt[0] if _cnt else 0) == 0:
+                if await self._no_points_config_attached(cfg.season_id):
                     from services.test_roster_service import ensure_test_configs
                     await ensure_test_configs(
                         season_id=cfg.season_id,
@@ -6559,13 +6565,7 @@ class SeasonCog(commands.Cog):
                     )
 
             errors: list[str] = []
-            async with get_connection(self.bot.db_path) as _db:
-                cursor = await _db.execute(
-                    "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
-                    (cfg.season_id,),
-                )
-                count_row = await cursor.fetchone()
-            if (count_row[0] if count_row else 0) == 0:
+            if await self._no_points_config_attached(cfg.season_id):
                 errors.append("no points configuration is attached to this season")
 
             # Counting the links is not the same as having the configurations they name.
