@@ -522,23 +522,50 @@ async def finalize_penalty_review(
 
     An amendment's report stage shares the screens but not this body, and is handed to
     :func:`_approve_amendment_reports` before anything here runs (#345).
+
+    **A review that has moved on approves nothing** (#402). Its prompt and its approval message
+    outlived the stage they were posted for, so an Approve could land on a round whose results
+    a resubmission was replacing, whose reports were already approved, or whose review had been
+    replaced by another — and ran the whole approval on it: reposts, attendance, a second
+    appeals prompt. The check is the one every other control of the review asks.
+
+    **Once at a time.** The approval draws every graphic the round posts before it moves the
+    round on, and a second press in that time found the round exactly as the first had.
+    ``approving`` is claimed after the last await of the checks, so two presses cannot both pass
+    them, and released however the approval ends, so one that fails can be pressed again.
     """
-    import json as _json
-    from services import results_post_service as _rps
-    from services import penalty_service as _ps
-    from services import verdict_announcement_service as _vas
+    from services.penalty_wizard import _BEING_APPROVED, _review_moved_on
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_reports(interaction, state)
         return
 
-    held = await held_by_amendment(
-        state.db_path, state.round_id, state.division_id,
-        then="Approve the reports again then.",
-    )
-    if held:
-        await interaction.response.send_message(held, ephemeral=True)
+    refusal = await _review_moved_on(state)
+    if refusal is None:
+        refusal = await held_by_amendment(
+            state.db_path, state.round_id, state.division_id,
+            then="Approve the reports again then.",
+        )
+    if refusal is None and state.approving:
+        refusal = _BEING_APPROVED
+    if refusal is not None:
+        await interaction.response.send_message(refusal, ephemeral=True)
         return
+
+    state.approving = True
+    try:
+        await _apply_approved_reports(interaction, state)
+    finally:
+        state.approving = False
+
+
+async def _apply_approved_reports(interaction: discord.Interaction, state) -> None:
+    """What approving a first pass's reports does, once :func:`finalize_penalty_review` has
+    checked the review is current and claimed it."""
+    import json as _json
+    from services import results_post_service as _rps
+    from services import penalty_service as _ps
+    from services import verdict_announcement_service as _vas
 
     await interaction.response.defer(ephemeral=True)
 

@@ -102,13 +102,20 @@ async def _insert_session_with_drivers(db_path: str, round_id: int, division_id:
 
 
 async def _insert_submission_channel(db_path: str, round_id: int, channel_id: int = 555) -> None:
-    """Mark a round as in_penalty_review in round_submission_channels."""
+    """Mark a round as in_penalty_review in round_submission_channels.
+
+    The round goes to AWAITING_REPORT_VERDICTS with it, as `enter_penalty_state` moves it in the
+    same transaction: a penalty review is approved only while its round awaits one (#402).
+    """
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO round_submission_channels "
             "(round_id, channel_id, created_at, in_penalty_review, closed) "
             "VALUES (?, ?, '2026-01-01T18:00:00', 1, 0)",
             (round_id, channel_id),
+        )
+        await db.execute(
+            "UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", (round_id,)
         )
         await db.commit()
 
@@ -178,6 +185,7 @@ def _make_interaction(guild: MagicMock, user_id: int = 999) -> MagicMock:
     interaction.user.id = user_id
     interaction.response = MagicMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction

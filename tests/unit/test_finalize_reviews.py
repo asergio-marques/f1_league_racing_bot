@@ -15,6 +15,12 @@ module closes every round still awaiting review, but a client already holding th
 still press the button. Both status writes are guarded by the terminal states, so a stale press
 cannot drag a FINAL or CANCELLED round back into an awaiting one (#167).
 
+**A review that has moved on approves nothing, and one approval runs at a time** (#402). The
+report approval is refused while a resubmission is collecting, once the reports are approved,
+and from a review whose prompt has been replaced — each of which the review's buttons once
+reached — and a second press while the first is still drawing the round's graphics is refused
+rather than running it all again.
+
 **The attendance pipeline runs only where attendance is enabled, and each step is independent.**
 Attendance is recorded from the results, staged pardons are persisted, points distributed, the
 sheet posted and sanctions enforced — and a failure in one must not stop the rest, because the
@@ -29,6 +35,7 @@ recorded as appeal records and announced; an announcement that fails does not un
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -71,9 +78,14 @@ async def _make_db(
     staged_json: str | None = None,
     attendance_row: bool = False,
     results: list[tuple[int, int, str]] | None = None,
+    resubmitting: int = 0,
+    prompt_message_id: int | None = None,
 ):
     """*results* is (profile_id, driver_user_id, outcome), given a profile and a race row
-    apiece, for the tests that watch the former-driver flag (#216)."""
+    apiece, for the tests that watch the former-driver flag (#216).
+
+    *prompt_message_id* is the review prompt the channel records, which a review is current
+    only while it matches (#402). A state's defaults to None, which matches the default here."""
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
     async with get_connection(db_path) as db:
@@ -100,8 +112,9 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
-            "staged_penalties) VALUES (?, 700, '2026-02-01T00:00:00+00:00', ?)",
-            (ROUND_ID, staged_json),
+            "staged_penalties, resubmitting, prompt_message_id) "
+            "VALUES (?, 700, '2026-02-01T00:00:00+00:00', ?, ?, ?)",
+            (ROUND_ID, staged_json, resubmitting, prompt_message_id),
         )
         if attendance_row:
             await db.execute(
@@ -184,6 +197,7 @@ def _interaction(*, guild=True):
     interaction.user.id = STEWARD
     interaction.response = MagicMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
     interaction.followup.send = AsyncMock()
     if guild:
         channel = MagicMock()
@@ -394,6 +408,124 @@ async def test_a_settled_round_is_not_reopened_by_a_stale_press(tmp_path, status
     await _run(finalize_penalty_review, _state(db_path))
 
     assert await _round_status(db_path) == status
+
+
+def _refused_untouched(stubs, state, interaction, says: str) -> None:
+    """An approval refused before it started: said why, and nothing applied, posted or logged."""
+    assert says in interaction.response.send_message.await_args.args[0]
+    interaction.response.defer.assert_not_awaited()
+    stubs["apply"].assert_not_awaited()
+    stubs["repost"].assert_not_awaited()
+    stubs["record"].assert_not_awaited()
+    stubs["appeals_view"].assert_not_called()
+    state.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_the_reports_are_not_approved_while_the_results_are_being_resubmitted(tmp_path):
+    """**#402, as reported.** Resubmit took the review prompt down and left the approval message,
+    whose Approve finalised the round on the results the manager had just said were wrong:
+    reposted them, awarded attendance from them, and moved the round on to appeals while the
+    resubmission went on collecting."""
+    db_path = await _make_db(tmp_path, name="finalize_resubmitting", resubmitting=1)
+    state = _state(db_path)
+    interaction = _interaction()
+
+    stubs = await _run(finalize_penalty_review, state, interaction)
+
+    _refused_untouched(stubs, state, interaction, "being resubmitted")
+    assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
+
+
+async def test_the_reports_are_not_approved_a_second_time(tmp_path):
+    """**#402's second half.** The review prompt stayed up through the appeals stage, and its
+    Approve ran the report approval again: the results reposted, the attendance pipeline run a
+    second time, a second appeals prompt posted, and a log entry counting penalties the first
+    approval had already applied — or had skipped."""
+    db_path = await _make_db(
+        tmp_path, name="finalize_again", round_status="AWAITING_APPEAL_VERDICTS",
+        staged_json="[]", attendance_row=True,
+    )
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+    interaction = _interaction()
+
+    stubs = await _run(finalize_penalty_review, state, interaction)
+
+    _refused_untouched(stubs, state, interaction, "already been approved")
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+
+
+async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing(tmp_path):
+    """Cancelling a resubmission posts a fresh review and left the old approval message standing
+    beside it, still bound to the review from before. The round is back where it was, so only the
+    prompt the channel records says which review is the round's."""
+    db_path = await _make_db(tmp_path, name="finalize_replaced", prompt_message_id=880002)
+    state = _state(db_path)
+    state.prompt_message_id = 880001
+    interaction = _interaction()
+
+    stubs = await _run(finalize_penalty_review, state, interaction)
+
+    _refused_untouched(stubs, state, interaction, "replaced by a newer one")
+    assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
+
+
+async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
+    """**The approval draws every graphic before it moves the round on**, and until then a second
+    Approve found the round exactly as the first had — so a double click ran the approval twice.
+    The second press here lands while the first is still reposting."""
+    db_path = await _make_db(tmp_path, name="finalize_at_once")
+    state = _state(db_path)
+    reposting, release = asyncio.Event(), asyncio.Event()
+
+    async def _slow_repost(*_a, **_k):
+        reposting.set()
+        await release.wait()
+        return []
+
+    patches = _patches()
+    patches["repost"] = patch(
+        "services.results_post_service.delete_and_repost_final_results",
+        new=AsyncMock(side_effect=_slow_repost),
+    )
+    stubs = {key: p.start() for key, p in patches.items()}
+    second = _interaction()
+    try:
+        first = asyncio.create_task(finalize_penalty_review(_interaction(), state))
+        await reposting.wait()
+        pressed_again = asyncio.create_task(finalize_penalty_review(second, state))
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(first, pressed_again)
+    finally:
+        for p in patches.values():
+            p.stop()
+
+    assert "being approved" in second.response.send_message.await_args.args[0]
+    stubs["repost"].assert_awaited_once()
+    stubs["appeals_view"].assert_called_once()
+    assert state.approving is False
+
+
+async def test_the_claim_is_released_when_the_approval_fails(tmp_path):
+    """Otherwise an approval that failed part-way would refuse every later press as one still
+    running, and the round could not be approved again until the bot restarted."""
+    db_path = await _make_db(tmp_path, name="finalize_fails")
+    state = _state(db_path, staged=[_penalty()])
+    patches = _patches()
+    patches["apply"] = patch(
+        "services.penalty_service.apply_penalties",
+        new=AsyncMock(side_effect=RuntimeError("disk full")),
+    )
+    for p in patches.values():
+        p.start()
+    try:
+        with pytest.raises(RuntimeError):
+            await finalize_penalty_review(_interaction(), state)
+    finally:
+        for p in patches.values():
+            p.stop()
+
+    assert state.approving is False
 
 
 async def test_the_results_are_reposted_as_post_race_penalty_results(tmp_path):
