@@ -378,9 +378,7 @@ class AmendmentService:
         )
         if _forecast_withdrawn:
             from utils.message_builder import invalidation_message
-
-            class _Div:
-                forecast_channel_id = row["forecast_channel_id"]
+            from utils.output_router import ForecastChannel
 
             amended_track = next(
                 (str(db_value) for f, _, db_value in applied if f == "track_name"),
@@ -392,7 +390,9 @@ class AmendmentService:
             # second route.
             if _weather_on:
                 await bot.output_router.post_forecast(
-                    _Div(), invalidation_message(amended_track), enqueue_on_failure=True
+                    ForecastChannel(row["forecast_channel_id"]),
+                    invalidation_message(amended_track),
+                    enqueue_on_failure=True,
                 )
 
         # The audit line is not weather output and does not wait on a forecast having been

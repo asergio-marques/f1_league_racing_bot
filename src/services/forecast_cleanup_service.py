@@ -287,11 +287,10 @@ async def post_phase_message(
 
     if attachment is None:
         # The textual path, unchanged: the router chunks it and owns its own retry.
-        class _Div:
-            forecast_channel_id = channel_id
+        from utils.output_router import ForecastChannel
 
         msg = await bot.output_router.post_forecast(
-            _Div(), text, enqueue_on_failure=True
+            ForecastChannel(channel_id), text, enqueue_on_failure=True
         )
     else:
         # One `finally` around the whole graphic branch. Two of its three exits abandon the

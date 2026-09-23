@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
@@ -41,7 +41,7 @@ async def create_config(db_path: str, config_name: str) -> PointsConfigStore:
                 (config_name,),
             )
             await db.commit()
-            row_id = cursor.lastrowid
+            row_id = inserted_id(cursor)
         except aiosqlite.IntegrityError:
             raise ConfigAlreadyExistsError(config_name)
     return PointsConfigStore(id=row_id, config_name=config_name)

@@ -551,20 +551,20 @@ async def load_staged_from_records(
             """,
             (round_id,),
         )
-        for row in await cursor.fetchall():
+        for pardon_row in await cursor.fetchall():
             try:
-                driver_user_id = int(row["discord_user_id"])
+                driver_user_id = int(pardon_row["discord_user_id"])
             except (TypeError, ValueError):
                 driver_user_id = 0
             pardons.append(
                 StagedPardon(
                     driver_user_id=driver_user_id,
-                    driver_profile_id=row["driver_profile_id"],
-                    attendance_id=row["attendance_id"],
-                    pardon_type=row["pardon_type"],
-                    justification=row["justification"] or "",
-                    grantor_id=int(row["granted_by"]) if row["granted_by"] else 0,
-                    granted_at=row["granted_at"],
+                    driver_profile_id=pardon_row["driver_profile_id"],
+                    attendance_id=pardon_row["attendance_id"],
+                    pardon_type=pardon_row["pardon_type"],
+                    justification=pardon_row["justification"] or "",
+                    grantor_id=int(pardon_row["granted_by"]) if pardon_row["granted_by"] else 0,
+                    granted_at=pardon_row["granted_at"],
                 )
             )
 

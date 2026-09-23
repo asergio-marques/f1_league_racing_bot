@@ -1383,7 +1383,7 @@ async def repost_channel_faults(
     return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
 
 
-def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot):
+def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
     """The bot member the permission arithmetic needs, or the fault standing in its way.
 
     Shared by the season-wide and division-wide gates so that the two cannot drift: both
@@ -1457,7 +1457,9 @@ def _cascade_channel_fault(
     return None
 
 
-async def _channel_faults_for_rows(division_rows, guild, bot_member, bot: LeagueBot) -> list[str]:
+async def _channel_faults_for_rows(
+    division_rows, guild, bot_member, bot: LeagueBot | None
+) -> list[str]:
     """The faults across *division_rows*, each row carrying a division's two channel ids."""
     # Asked of the image module rather than read out of its configuration here: a posting
     # service hands the image module an occasion and acts on what comes back, and does not
@@ -1790,7 +1792,7 @@ async def repost_results_for_division(
 
 
 async def _repost_results_rounds(
-    db_path: str, round_rows, rc, guild, bot: LeagueBot,
+    db_path: str, round_rows, rc, guild, bot: LeagueBot | None,
     superseded: list[tuple[int, int, list[int] | None]],
     touched: list[int],
 ) -> None:
@@ -2119,6 +2121,8 @@ async def delete_and_repost_final_results(
             faults.append(results_fault)
         else:
             rc = as_text_channel(guild.get_channel(results_ch_id))
+            # The check has just found it in the cache, with nothing awaited since.
+            assert rc is not None
             # Fetch session rows with their existing message IDs
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
@@ -2178,6 +2182,8 @@ async def delete_and_repost_final_results(
             faults.append(standings_fault)
         else:
             sc = as_text_channel(guild.get_channel(standings_ch_id))
+            # The check has just found it in the cache, with nothing awaited since.
+            assert sc is not None
             # Both championships' interim messages go, whichever flow posted them.
             await _clear_standings_messages(db_path, division_id, round_id, sc)
 

@@ -949,7 +949,7 @@ class ResultsCog(commands.Cog):
         entries_by_session: dict[str, list[tuple[str, int]]] = {}
         fl_by_session: dict[str, tuple[int, int | None]] = {}
 
-        if scope.value == _SCOPE_SEASON:
+        if scope.value == _SCOPE_SEASON and season is not None:
             view_data = await season_points_service.get_season_points_view(
                 self.bot.db_path, season.id, name, session_type_filter
             )

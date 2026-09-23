@@ -12,8 +12,8 @@ class DriverStandingsSnapshot:
     driver_user_id: int
     standing_position: int
     total_points: int
-    finish_counts: dict[str, int]
-    first_finish_rounds: dict[str, int]
+    finish_counts: dict[int, int]
+    first_finish_rounds: dict[int, int]
     standings_message_id: int | None = None
     #: The message carrying the **constructor** standings, where the image flow posted two.
     #: The textual flow posts one message for both championships and leaves this null; the
@@ -35,5 +35,5 @@ class TeamStandingsSnapshot:
     team_instance_id: int
     standing_position: int
     total_points: int
-    finish_counts: dict[str, int]
-    first_finish_rounds: dict[str, int]
+    finish_counts: dict[int, int]
+    first_finish_rounds: dict[int, int]

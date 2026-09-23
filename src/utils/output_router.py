@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Protocol
 
 import discord
@@ -37,6 +38,13 @@ class ForecastTarget(Protocol):
 
     @property
     def forecast_channel_id(self) -> int | None: ...
+
+
+@dataclass(frozen=True)
+class ForecastChannel:
+    """A `ForecastTarget` for a caller holding only the channel id, not a whole division."""
+
+    forecast_channel_id: int | None
 
 
 class OutputRouter:

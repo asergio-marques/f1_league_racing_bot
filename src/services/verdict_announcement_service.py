@@ -86,8 +86,11 @@ def _round_label(state) -> str:
     division, so the one fault line that cannot read the round from the database can still
     say which round it was.
     """
+    raw = getattr(state, "round_number", None)
+    if raw is None:
+        return "The round"
     try:
-        number = int(getattr(state, "round_number", None))
+        number = int(raw)
     except (TypeError, ValueError):
         return "The round"
     division = getattr(state, "division_name", None)
@@ -628,7 +631,7 @@ async def _send_verdict(
         if render is not None and render.problem:
             await image_verdict_post.report(bot, subject, render.problem)
 
-    if render is not None and render.draws:
+    if render is not None and render.png is not None:  # `render.draws`, followed by the check
         import discord as _discord
 
         # Named, rather than left to Discord to read the path's basename: the render
@@ -1276,7 +1279,7 @@ async def republish_verdicts_from_round(
 
     # Kept by round, because a round's old announcements come down only where that round's
     # replacements actually went up (#345).
-    superseded: dict[int, list[tuple[object, int, list[int] | None, int]]] = {}
+    superseded: dict[int, list[tuple[int | None, int, list[int] | None, int]]] = {}
     from services.verdict_records import VERDICT_TABLES, select_verdicts
 
     async with get_connection(db_path) as db:
@@ -1379,8 +1382,10 @@ async def republish_verdicts_from_round(
     from services.results_post_service import _delete_posting
 
     for round_id in rebuilt:
-        for channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
-            channel = as_text_channel(bot.get_channel(int(channel_id)) if channel_id else None)
+        for verdict_channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
+            channel = as_text_channel(
+                bot.get_channel(int(verdict_channel_id)) if verdict_channel_id else None
+            )
             if channel is None:
                 faults.append(
                     f"the superseded verdict for {_driver_label(driver_user_id)} could not be "

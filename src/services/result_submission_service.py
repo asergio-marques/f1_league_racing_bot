@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, TypeVar
 
 import discord
 
@@ -114,7 +114,7 @@ async def create_submission_channel(
             category = getattr(cmd_channel, "category", None)
 
     # Deny @everyone; grant the bot itself and both of the league's tiers
-    overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+    overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
     }
     bot_member = guild.me
@@ -590,7 +590,7 @@ async def finalize_penalty_review(
         await _recompute_session_points(db_path, round_id)
 
     else:
-        applied_records: list = []
+        applied_records = []
 
     # Post-penalty snapshot
     post_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
@@ -2235,7 +2235,7 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot
     return True
 
 
-async def _standings_names(db_path: str, division_id: int, bot: LeagueBot, guild=None):
+async def _standings_names(db_path: str, division_id: int, bot: LeagueBot | None, guild=None):
     """The names the division's standings are drawn under, or None — never raising.
 
     A standings snapshot stores the order the league is shown, and a full tie is settled by name
@@ -3431,6 +3431,32 @@ def extract_current_fl_override(
     return fl_override, lines
 
 
+_Row = TypeVar("_Row", ParsedQualifyingRow, ParsedRaceRow)
+
+
+def _split_validation(
+    result: list[ParsedQualifyingRow | ParsedRaceRow] | list[str],
+) -> tuple[list[str], list[ParsedQualifyingRow | ParsedRaceRow]]:
+    """`validate_submission_block`'s errors and its rows, of which one is always empty."""
+    errors = [item for item in result if isinstance(item, str)]
+    rows = [item for item in result if not isinstance(item, str)]
+    return errors, rows
+
+
+def _rows_of_kind(
+    rows: list[ParsedQualifyingRow | ParsedRaceRow], kind: type[_Row]
+) -> list[_Row]:
+    """*rows*, every one of which the validator parsed as *kind* for this session.
+
+    A session is qualifying or a race, and the validator parses each of its rows as that one
+    kind; a row of the other kind here is raised by name rather than silently dropped (#228).
+    """
+    typed = [row for row in rows if isinstance(row, kind)]
+    if len(typed) != len(rows):
+        raise RuntimeError(f"a session of {kind.__name__}s held a row of another kind")
+    return typed
+
+
 def validate_submission_block(
     lines: list[str],
     session_type: SessionType,
@@ -3477,18 +3503,24 @@ def validate_submission_block(
         return ["No result lines found — please submit at least one driver line."]
 
     errors: list[str] = []
-    parsed_rows: list[ParsedQualifyingRow | ParsedRaceRow] = []
+    # Collected by kind, so that what only one kind has is read off rows of that kind.
+    qualifying_rows: list[ParsedQualifyingRow] = []
+    race_rows: list[ParsedRaceRow] = []
 
     for i, line in enumerate(non_empty, start=1):
         if is_qualifying:
-            result = _validate_qualifying_row_wizard(line)
+            qualifying = _validate_qualifying_row_wizard(line)
+            if isinstance(qualifying, str):
+                errors.append(f"Row {i}: {qualifying}")
+            else:
+                qualifying_rows.append(qualifying)
         else:
-            result = _validate_race_row_wizard(line, is_first=(i == 1))
-
-        if isinstance(result, str):
-            errors.append(f"Row {i}: {result}")
-        else:
-            parsed_rows.append(result)
+            race = _validate_race_row_wizard(line, is_first=(i == 1))
+            if isinstance(race, str):
+                errors.append(f"Row {i}: {race}")
+            else:
+                race_rows.append(race)
+    parsed_rows: list[ParsedQualifyingRow | ParsedRaceRow] = [*qualifying_rows, *race_rows]
 
     if errors:
         return errors
@@ -3620,7 +3652,7 @@ def validate_submission_block(
             return 0      # lead-lap finisher (absolute or delta time)
 
         _CATEGORY_LABEL = {0: "lead-lap time", 1: "lap gap (+x Laps)", 2: "DNF", 3: "DNS", 4: "DSQ"}
-        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        rows_by_pos = sorted(race_rows, key=lambda r: r.position)
         max_cat = 0
         for row in rows_by_pos:
             cat = _race_time_category(row)
@@ -3670,13 +3702,13 @@ def validate_submission_block(
             return 0
 
         _QUAL_CATEGORY_LABEL = {0: "classified", 1: "DNF", 2: "DNS", 3: "DSQ"}
-        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        qualifying_by_pos = sorted(qualifying_rows, key=lambda r: r.position)
         max_qual_cat = 0
-        for row in rows_by_pos:
-            cat = _qual_outcome_category(row)
+        for qualifying_row in qualifying_by_pos:
+            cat = _qual_outcome_category(qualifying_row)
             if cat < max_qual_cat:
                 errors.append(
-                    f"Row {row.position}: driver <@{row.driver_user_id}> has outcome "
+                    f"Row {qualifying_row.position}: driver <@{qualifying_row.driver_user_id}> has outcome "
                     f"{_QUAL_CATEGORY_LABEL[cat]} but appears after a "
                     f"{_QUAL_CATEGORY_LABEL[max_qual_cat]} entry. "
                     "Qualifying order must be: classified first, then DNF, then DNS, then DSQ."
@@ -3689,7 +3721,7 @@ def validate_submission_block(
 
     # G1: derive Best Lap for qualifying DNF entries that have a valid gap
     if is_qualifying:
-        p1_row = next((r for r in parsed_rows if r.position == 1), None)
+        p1_row = next((r for r in qualifying_rows if r.position == 1), None)
         if (
             p1_row is not None
             and p1_row.best_lap.upper() not in _OUTCOME_LITERALS
@@ -3697,7 +3729,7 @@ def validate_submission_block(
         ):
             try:
                 p1_ms = _parse_time_to_ms(p1_row.best_lap)
-                for row in parsed_rows:
+                for row in qualifying_rows:
                     if row.best_lap.upper() == "DNF" and (
                         parse_gap(row.gap) is not None or parse_time(row.gap) is not None
                     ):
@@ -4531,9 +4563,9 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                 team_of_shorthand=team_of_shorthand,
             )
 
-            if isinstance(result[0] if result else None, str):
-                # Validation failed — these are error strings
-                error_list = "\n".join(f"• {e}" for e in result)
+            validation_errors, parsed_rows = _split_validation(result)
+            if validation_errors:
+                error_list = "\n".join(f"• {e}" for e in validation_errors)
                 await bot.output_router.post_log(
                     f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_REJECTED | \n"
                     f"  season: {season_number}, division: {division_name!r}\n"
@@ -4544,9 +4576,6 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                     f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit."
                 )
                 continue
-
-            # Valid — parsed_rows
-            parsed_rows = result
 
             # Validate FL override references a driver in the submitted results
             if fl_override is not None:
@@ -4608,12 +4637,12 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
             if session_type.is_qualifying:
                 driver_rows_data = [
                     _row_dict_from_qualifying(r)
-                    for r in parsed_rows
+                    for r in _rows_of_kind(parsed_rows, ParsedQualifyingRow)
                 ]
             else:
                 driver_rows_data = [
                     _row_dict_from_race(r)
-                    for r in parsed_rows
+                    for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
                 ]
 
             await save_session_result(
@@ -5141,12 +5170,12 @@ async def _resubmit_collection_task(
                 team_of_shorthand=team_of_shorthand,
             )
 
-            if isinstance(result[0] if result else None, str):
-                error_list = "\n".join(f"• {e}" for e in result)
+            validation_errors, parsed_rows = _split_validation(result)
+            if validation_errors:
+                error_list = "\n".join(f"• {e}" for e in validation_errors)
                 await sub_channel.send(f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit.")
                 continue
 
-            parsed_rows = result
             if fl_override is not None:
                 submitted_ids = {r.driver_user_id for r in parsed_rows}
                 if fl_override not in submitted_ids:
@@ -5177,9 +5206,14 @@ async def _resubmit_collection_task(
                 continue
 
             if session_type.is_qualifying:
-                driver_rows_data = [_row_dict_from_qualifying(r) for r in parsed_rows]
+                driver_rows_data = [
+                    _row_dict_from_qualifying(r)
+                    for r in _rows_of_kind(parsed_rows, ParsedQualifyingRow)
+                ]
             else:
-                driver_rows_data = [_row_dict_from_race(r) for r in parsed_rows]
+                driver_rows_data = [
+                    _row_dict_from_race(r) for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
+                ]
 
             collected.append(
                 CollectedSession(
