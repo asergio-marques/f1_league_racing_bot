@@ -581,6 +581,12 @@ class TestStandingsPreview:
         assert spec.row_count == 5
         assert spec.text["row_5_driver_name"] == "Reserve 1"
 
+        # The reserve is also the driver the preceding round does not hold: their movement
+        # group leaves whole, where every regular's is drawn.
+        assert "row_5_position_change_group" in spec.remove
+        assert "row_5_position_change_marker" not in spec.image_data
+        assert "row_4_position_change_marker" in spec.image_data
+
     async def test_a_driver_is_absent_and_a_reserve_stands_in_for_one_round(
         self, bot, league, db_path
     ):

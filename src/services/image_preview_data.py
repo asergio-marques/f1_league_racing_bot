@@ -300,7 +300,9 @@ def fabricate_standings_totals(count: int, *, leader: int) -> list[int]:
     return totals
 
 
-def fabricate_standings_previous_positions(keys: list[int]) -> dict[int, int]:
+def fabricate_standings_previous_positions(
+    keys: list[int], *, newcomers: frozenset[int] = frozenset()
+) -> dict[int, int]:
     """A fictitious reference round's positions, keyed as the current classification is.
 
     ``build_standings_preview`` stands against no real reference round, so nothing about a
@@ -316,10 +318,16 @@ def fabricate_standings_previous_positions(keys: list[int]) -> dict[int, int]:
     the **third**-placed entry ahead of the **second** — one gained, one lost, and the rest
     unchanged — wherever the field is large enough to hold the swap. A field of fewer than
     three holds every entry unchanged; there is nothing to swap.
+
+    *newcomers* are left out of the previous round altogether, so ``derive_movement`` finds
+    no record for them — the spec's "a driver whom the standings of the preceding round do
+    not hold", whose movement columns a template must be able to empty.
     """
     previous = {key: position for position, key in enumerate(keys, start=1)}
     if len(keys) >= 3:
         previous[keys[1]], previous[keys[2]] = previous[keys[2]], previous[keys[1]]
+    for key in newcomers:
+        previous.pop(key, None)
     return previous
 
 

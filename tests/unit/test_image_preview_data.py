@@ -323,6 +323,20 @@ class TestStandingsPreviousPositions:
                 for movement in movements.values()
             )
 
+    def test_a_newcomer_has_no_previous_position_to_have_moved_from(self):
+        """The spec's "a driver whom the standings of the preceding round do not hold"."""
+        from services.image_preview_data import fabricate_standings_previous_positions
+        from services.standings_service import derive_movement
+
+        keys = [10, 20, 30, 40, 50]
+        previous = fabricate_standings_previous_positions(keys, newcomers=frozenset({50}))
+        current = [(key, position, 0) for position, key in enumerate(keys, start=1)]
+
+        movements = derive_movement(current, previous)
+
+        assert movements[50] is None
+        assert all(movements[key] is not None for key in (10, 20, 30, 40))
+
     def test_the_same_field_produces_the_same_previous_positions_twice(self):
         from services.image_preview_data import fabricate_standings_previous_positions
 

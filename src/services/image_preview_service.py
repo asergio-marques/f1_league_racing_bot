@@ -1100,7 +1100,9 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     driver_movements = standings_service.derive_movement(
         [(x.driver_user_id, x.standing_position, x.total_points) for x in driver_snapshots],
         fabricate_standings_previous_positions(
-            [x.driver_user_id for x in driver_snapshots]
+            [x.driver_user_id for x in driver_snapshots],
+            # The reserve joined the classification this round, as a reserve does.
+            newcomers=frozenset({reserve_driver.key}) if reserve_driver else frozenset(),
         ),
     )
     team_movements = standings_service.derive_movement(
