@@ -982,7 +982,7 @@ class WizardService:
         if wizard_is_active:
             state_label = wizard.wizard_state.value
         else:
-            state_label = driver.current_state.value  # type: ignore[union-attr]
+            state_label = driver.current_state.value
 
         # Cancel all jobs and tasks
         ckey = discord_user_id

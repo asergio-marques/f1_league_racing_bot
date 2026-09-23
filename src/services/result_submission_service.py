@@ -4607,12 +4607,12 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
             # Convert parsed rows to dicts for DB insertion
             if session_type.is_qualifying:
                 driver_rows_data = [
-                    _row_dict_from_qualifying(r)   # type: ignore[arg-type]
+                    _row_dict_from_qualifying(r)
                     for r in parsed_rows
                 ]
             else:
                 driver_rows_data = [
-                    _row_dict_from_race(r)  # type: ignore[arg-type]
+                    _row_dict_from_race(r)
                     for r in parsed_rows
                 ]
 
@@ -5177,9 +5177,9 @@ async def _resubmit_collection_task(
                 continue
 
             if session_type.is_qualifying:
-                driver_rows_data = [_row_dict_from_qualifying(r) for r in parsed_rows]  # type: ignore[arg-type]
+                driver_rows_data = [_row_dict_from_qualifying(r) for r in parsed_rows]
             else:
-                driver_rows_data = [_row_dict_from_race(r) for r in parsed_rows]  # type: ignore[arg-type]
+                driver_rows_data = [_row_dict_from_race(r) for r in parsed_rows]
 
             collected.append(
                 CollectedSession(

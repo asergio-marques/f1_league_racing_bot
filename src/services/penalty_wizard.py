@@ -945,9 +945,9 @@ class PenaltyReviewView(LeagueView):
             if not isinstance(item, discord.ui.Button):
                 continue
             if item.custom_id == _CID_ADD:
-                item.disabled = _no_state or len(state.session_types_present) == 0  # type: ignore[union-attr]
+                item.disabled = _no_state or len(state.session_types_present) == 0
             elif item.custom_id == _CID_APPROVE:
-                item.disabled = _no_state or len(state.staged) == 0  # type: ignore[union-attr]
+                item.disabled = _no_state or len(state.staged) == 0
 
         if state is not None and state.is_amendment:
             # **No resubmission in an amendment** (#345). It replaces every session of the round
@@ -1260,9 +1260,9 @@ class AppealsReviewView(LeagueView):
             if not isinstance(item, discord.ui.Button):
                 continue
             if item.custom_id == _CID_AR_ADD:
-                item.disabled = _no_state or len(state.session_types_present) == 0  # type: ignore[union-attr]
+                item.disabled = _no_state or len(state.session_types_present) == 0
             elif item.custom_id == _CID_AR_APPROVE:
-                item.disabled = _no_state or len(state.staged_appeals) == 0  # type: ignore[union-attr]
+                item.disabled = _no_state or len(state.staged_appeals) == 0
 
         # Dynamic Remove buttons — one per staged correction
         if state is not None:

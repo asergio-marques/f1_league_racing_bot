@@ -1174,7 +1174,7 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
 async def _recover_pending_setups(bot: LeagueBot) -> None:
     """Restore in-memory pending season configs from DB SETUP seasons."""
     from cogs.season_cog import SeasonCog
-    season_cog: SeasonCog | None = bot.get_cog("SeasonCog")  # type: ignore[assignment]
+    season_cog: SeasonCog | None = bot.get_cog("SeasonCog")
     if season_cog is not None:
         await season_cog.recover_pending_setups()
 

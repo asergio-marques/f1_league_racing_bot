@@ -794,7 +794,7 @@ class BotCog(commands.Cog):
                 except discord.HTTPException:
                     log.warning("factory reset: the progress message could not be edited")
 
-        bot_user_id = self.bot.user.id  # type: ignore[union-attr]
+        bot_user_id = self.bot.user.id
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)
         )

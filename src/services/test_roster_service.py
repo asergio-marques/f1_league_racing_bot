@@ -243,7 +243,7 @@ async def add_test_driver(
                 "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
                 (uid_str, driver_name, canonical_nationality),
             )
-            profile_id: int = profile_cursor.lastrowid  # type: ignore[assignment]
+            profile_id: int = profile_cursor.lastrowid
         except Exception as exc:
             return f"Failed to create driver profile: {exc}"
         await _reattach_history(db, uid_str, profile_id)
