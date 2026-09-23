@@ -168,3 +168,30 @@ jobs:
         print(f"{tests} tests ran: {failures} failed, {errors} errored, {skipped} skipped")
         sys.exit(1 if failures or errors else 0)
         '
+
+  # The type check (#228). `mypy` reads `mypy.ini`, which says what is checked and which of the
+  # bot's modules are still excused which codes — read the head of that file before touching
+  # either. One job, on Linux alone: the annotations are the same on every host, so a second
+  # runner would only check them twice. It gates on its own and does not wait on the tests.
+  python-type-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.13
+
+    # The whole of `requirements.txt`, not mypy alone: the bot is typed against the libraries
+    # it runs on, and a library missing here would be read as `Any` rather than checked.
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Check the types
+      run: mypy

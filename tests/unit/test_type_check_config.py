@@ -6,16 +6,22 @@ drop `warn_unused_ignores` and the silences grow back unnoticed; exempt a module
 switch `attr-defined` off for one, and the check stops seeing exactly what it was adopted to
 see — a read of an attribute the object does not have. So the file is pinned here, the way
 `test_coverage_scope.py` pins `.coveragerc`, and for the same reason.
+
+The workflow and `requirements.txt` are read as text, as `test_coverage_scope.py` reads the
+workflow: the risk is deletion, not restructuring.
 """
 from __future__ import annotations
 
 import configparser
 import importlib.util
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MYPY_INI = REPO_ROOT / "mypy.ini"
 SRC = REPO_ROOT / "src"
+WORKFLOW = REPO_ROOT / ".github/workflows/unit-test.yml"
+REQUIREMENTS = REPO_ROOT / "requirements.txt"
 
 #: The codes that caught what #228 was raised for, exempt in no module at all.
 NEVER_EXEMPT = {"attr-defined", "name-defined"}
@@ -124,3 +130,16 @@ def test_every_excused_library_is_installed():
         if importlib.util.find_spec(_named(section).removesuffix(".*")) is None
     )
     assert missing == []
+
+
+def test_ci_runs_the_type_check():
+    """Its own job, gating the build on `mypy` run bare, so that `mypy.ini` is what it reads."""
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert re.search(r"^  python-type-check:$", workflow, re.M)
+    assert re.search(r"^      run: mypy$", workflow, re.M)
+
+
+def test_the_checker_is_pinned_with_the_bot():
+    """CI installs `requirements.txt` and nothing else, so the check is only there if mypy is."""
+    requirements = REQUIREMENTS.read_text(encoding="utf-8")
+    assert re.search(r"^mypy==\S+$", requirements, re.M)

@@ -203,6 +203,20 @@ running it — before #208 nothing scoped the run, so the gate counted the suite
 A file matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into
 `core`, and is gated like any other bucket — so add new services to `RULES` when it says so.
 
+**CI runs a type check too, and gates on it** (decided 2026-09-23, #228). Its
+`python-type-check` job runs `mypy` from the repository root, which reads `mypy.ini`; run it by
+hand the same way, as `.venv/bin/mypy`, before reporting a change to `src/` complete. It
+checks `src/` and not the tests. Two rules keep it worth running. **The bot is `LeagueBot`**
+(`src/utils/league_bot.py`): every attribute `bot.py` attaches is declared there first, a `bot`
+parameter is annotated as it, and an interaction's bot is reached through `bot_of(interaction)`.
+Never silence a read of a service with `# type: ignore[attr-defined]` — a silenced read is
+`Any`, nothing the service returns is checked through it, and that is how #226 reached `main`;
+`tests/unit/test_league_bot.py` refuses one. **`mypy.ini`'s exemptions only shrink.** Each
+module still carrying errors from before the check was adopted has only the codes it still trips
+switched off, and every new module is checked in full. Clear a module's errors and delete its
+section; never add a section, or a code to one, to get a change through. `attr-defined` and
+`name-defined` are exempt nowhere, and `tests/unit/test_type_check_config.py` holds all of it.
+
 **A test must not depend on what the host happens to carry.** The suite runs on three
 materially different environments — a Windows development machine, CI's runners, and the
 Raspberry Pi 4 the bot runs on — and they differ in library versions, installed fonts and

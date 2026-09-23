@@ -141,6 +141,20 @@ python3 -m coverage json -q -o coverage.json
 python3 tools/coverage_by_module.py coverage.json --fail-under 75
 ```
 
+CI also runs a type check over `src/`, and gates on it. Run it from the repository root the same
+way:
+
+```
+mypy
+```
+
+**The bot is typed as `LeagueBot`** (`src/utils/league_bot.py`). Declare an attribute there before
+`bot.py` attaches it, annotate a `bot` parameter as it, and reach an interaction's bot through
+`bot_of(interaction)`. Never silence a read of a service with `# type: ignore[attr-defined]`: a
+silenced read is `Any`, and nothing the service returns is checked through it. `mypy.ini` excuses
+some modules some error codes, left from before the check was adopted — that list only shrinks,
+and its head says how.
+
 ## Pull requests
 
 Every pull request tracks at least one issue and carries that issue's labels. A release's notes
