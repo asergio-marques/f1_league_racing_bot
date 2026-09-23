@@ -4,11 +4,13 @@ Before this module each input checked itself by hand, if at all, and the same ki
 accepted in one place and refused or shown differently in the next. A rule belongs here once, and
 an input names the rules it is held to rather than restating them.
 
-**Free text** is held to up to three rules, each chosen per input:
+**Free text** is held to up to four rules, each chosen per input:
 
 * ``Rule.GROUP_MENTIONS`` — a role mention, ``@everyone`` or ``@here``, which notifies everybody
   it covers wherever the text is posted (#204). A mention of a user is not among them: naming
   another driver is the ordinary thing to write.
+* ``Rule.USER_MENTIONS`` — a mention of a member, refused in a name alone (#381, #388). A name
+  is printed on every post that names its thing, where a text is posted once.
 * ``Rule.EMOJI`` — which a graphic cannot draw faithfully. A server's own comes out as its raw
   markup, and a standard one as whatever the host's fonts make of it, which on the Pi is nothing.
 * ``Rule.MARKUP`` — which Discord formats in a text posting and a graphic draws raw, so the two
@@ -43,8 +45,9 @@ class Rule(Enum):
     GROUP_MENTIONS = "group mentions"
     EMOJI = "emoji"
     MARKUP = "markup"
-    #: A mention of a member. Refused in a team's names only (decided 2026-09-22, #381): the
-    #: other names a league types, and every free text, may name a driver. Never stripped.
+    #: A mention of a member. Refused in every name a league types (decided 2026-09-22 for a
+    #: team's, #381, and 2026-09-23 for the rest, #388), and in no free text, which may name a
+    #: driver. Never stripped.
     USER_MENTIONS = "user mentions"
 
 
@@ -283,16 +286,20 @@ class InputValidator:
         return Checked(_tidy(text))
 
 
-#: The three rules every name a league types is held to. Named rather than taken as every
-#: ``Rule``, so that one added for a single input does not reach every other.
+#: The three rules every name a league types and every text it publishes is held to. Named
+#: rather than taken as every ``Rule``, so that one added for a single input does not reach
+#: every other.
 _ALL = frozenset({Rule.GROUP_MENTIONS, Rule.EMOJI, Rule.MARKUP})
 
 #: A steward's description and justification of a penalty, and the justification of a pardon.
+#: Either may name the driver an incident involved.
 STEWARD_TEXT = InputValidator(_ALL, Mode.REJECT)
 
-#: A name a league types: a division, a team, a test driver, a points configuration. Each is
-#: posted as text and drawn on graphics.
-NAME = InputValidator(_ALL, Mode.REJECT)
+#: A name a league types: a division, a team's shorthand and full name, a test driver, a points
+#: configuration. Each is posted as text and drawn on graphics, and is held to the three rules
+#: and to no mention of a member either: a name is printed on every post that names its thing,
+#: so a member mentioned in one would be notified each time (#381, #388).
+NAME = InputValidator(_ALL | {Rule.USER_MENTIONS}, Mode.REJECT)
 
 #: A team's shorthand and its full name (#381): a name, and no mention of a member either. The
 #: shorthand is typed wherever a team is entered and the full name is shown on every post, so a

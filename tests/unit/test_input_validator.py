@@ -35,8 +35,8 @@ from utils.input_validator import (  # noqa: E402
     parse_user_mention,
 )
 
-#: The three rules every free text and name is held to. A user mention is a fourth, a team's
-#: names' alone (#381), and is tested against ``TEAM_NAME`` below.
+#: The three rules every free text and name is held to. A user mention is a fourth, every
+#: name's and no free text's (#381, #388), and is tested against ``NAME`` below.
 _GENERAL = frozenset({Rule.GROUP_MENTIONS, Rule.EMOJI, Rule.MARKUP})
 REJECT_ALL = InputValidator(_GENERAL, Mode.REJECT)
 STRIP_ALL = InputValidator(_GENERAL, Mode.STRIP)
@@ -92,13 +92,24 @@ def test_a_team_name_refuses_a_user_mention(typed):
     assert "shorthand" in refusal
 
 
-def test_only_a_team_name_refuses_a_user_mention():
-    """Decided 2026-09-22: the rule is a team's alone. Every other name, and every free text,
-    may still name a driver."""
+@pytest.mark.parametrize("typed", ["Division <@4002>", "<@!4002> Racing"])
+def test_a_name_refuses_a_user_mention(typed):
+    """A division, a test driver and a points configuration are named in posts as a team is,
+    so a member mentioned in one would be notified every time (#388)."""
+    refusal = NAME.check("division name", typed).refusal
+
+    assert refusal is not None
+    assert "member" in refusal
+    assert "division name" in refusal
+
+
+def test_free_text_may_still_name_a_driver():
+    """The rule is a name's alone (#381, #388). A steward's text and a signup answer may name
+    a driver, and a display name is drawn, which notifies nobody."""
     typed = "<@4002> Racing"
 
-    assert NAME.check("name", typed).refusal is None
     assert STEWARD_TEXT.check("description", typed).refusal is None
+    assert SIGNUP_ANSWER.check("notes", typed).refusal is None
     assert DRAWN_NAME.check("name", typed).text == typed
 
 
