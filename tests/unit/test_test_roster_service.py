@@ -246,3 +246,12 @@ class TestTheNameIsChecked:
 
         assert isinstance(result, str)
 
+
+    async def test_a_test_driver_named_with_a_member_mention_is_refused(self, db_path):
+        """The name is printed wherever the driver is, so the member would be notified each
+        time (#388)."""
+        result = await _add(db_path, name="<@123456789012345678> Alpha")
+
+        assert isinstance(result, str)
+        assert "driver name" in result
+        assert "member" in result

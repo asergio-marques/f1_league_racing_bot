@@ -449,7 +449,7 @@ Divisions are built once the season is in **placements** — after its configura
 
 Tiers must additionally be **sequential from 1 with no gaps** across the whole season. That is checked at approval, not here, so a half-built season may hold a gap while you are still adding divisions.
 
-**Naming.** A division's name heads every posting and every graphic of the division, so it cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting such as `**bold**`. The command refuses such a name and says what it found. The same holds wherever a division is named: `/division duplicate`, `/division rename` and `/division amend`.
+**Naming.** A division's name heads every posting and every graphic of the division, so it cannot hold a role mention, `@everyone` or `@here`, a mention of a member, an emoji, or Discord formatting such as `**bold**`. The command refuses such a name and says what it found. The same holds wherever a division is named: `/division duplicate`, `/division rename` and `/division amend`.
 
 Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
 
@@ -913,7 +913,7 @@ Creates a synthetic driver profile occupying a real seat, so a division can be f
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `driver_name` | String | ✅ | Display name for the fake driver. Held to the rules a division's name is: no role mention, `@everyone`, `@here`, emoji or formatting |
+| `driver_name` | String | ✅ | Display name for the fake driver. Held to the rules a division's name is: no role mention, `@everyone`, `@here`, mention of a member, emoji or formatting |
 | `team_name` | String | ✅ | The shorthand of the team to seat them in — suggested as you type |
 | `division` | String | ✅ | Division name |
 | `nationality` | String | ❌ | A nationality (`British`), a country name (`United Kingdom`), or `other` — the same forms the signup wizard accepts |
@@ -1486,7 +1486,7 @@ An edit warns rather than refuses because building a table in passes through sta
 |-----------|------|----------|-------------|
 | `name` | String | ✅ | Unique config name (e.g. `100%`) |
 
-All positions default to 0 points after creation. The name cannot hold a role mention, `@everyone` or `@here`, an emoji, or Discord formatting.
+All positions default to 0 points after creation. The name cannot hold a role mention, `@everyone` or `@here`, a mention of a member, an emoji, or Discord formatting.
 
 ##### `/results config remove` — Delete a named points configuration
 *Access: League admin*

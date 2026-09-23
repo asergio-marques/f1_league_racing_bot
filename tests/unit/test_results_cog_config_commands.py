@@ -269,6 +269,18 @@ async def test_a_points_configuration_name_with_everyone_is_refused(db_path):
     assert not await points_config_service.config_exists(db_path, "@everyone 100%")
 
 
+async def test_a_points_configuration_name_with_a_member_mention_is_refused(db_path):
+    """A configuration's name is shown in every review that lists it (#388)."""
+    cog = _cog(db_path)
+    interaction = _interaction()
+
+    await ResultsCog.config_add.callback(cog, interaction, "<@123456789012345678> 100%")
+
+    assert "configuration name" in _replies(interaction)
+    assert "member" in _replies(interaction)
+    assert not await points_config_service.config_exists(db_path, "<@123456789012345678> 100%")
+
+
 async def test_a_plain_points_configuration_name_is_still_created(db_path):
     cog = _cog(db_path)
     interaction = _interaction()

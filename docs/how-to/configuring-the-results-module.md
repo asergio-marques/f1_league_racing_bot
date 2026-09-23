@@ -93,7 +93,7 @@ All three are set **per division**, so a league with three divisions sets nine c
 /results config add name: 100%
 ```
 
-Keep the name plain: it cannot hold an emoji, Discord formatting, a role mention, `@everyone` or `@here`.
+Keep the name plain: it cannot hold an emoji, Discord formatting, a role mention, a mention of a member, `@everyone` or `@here`.
 
 A configuration starts with **every position in every session worth nothing**. Filling it in is the whole of this step, and the commands that do it are listed in full under [Points Config Management](../../README.md#points-config-management):
 

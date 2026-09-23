@@ -324,7 +324,7 @@ The season is now **in placements**. This is when the calendar is built, because
 
 All three are required. Tiers must be unique, and by the time you confirm placements they must run 1, 2, 3… with no gaps — so if you delete your tier 2 division, something has to become tier 2.
 
-**Keep the name plain.** A division's name heads everything the bot posts for it, text and pictures alike, so it cannot hold an emoji, Discord formatting such as `**bold**`, a role mention, `@everyone` or `@here`. The same goes for every command that names or renames one.
+**Keep the name plain.** A division's name heads everything the bot posts for it, text and pictures alike, so it cannot hold an emoji, Discord formatting such as `**bold**`, a role mention, a mention of a member, `@everyone` or `@here`. The same goes for every command that names or renames one.
 
 If two divisions race the same calendar at different times, build the first one fully and then:
 
