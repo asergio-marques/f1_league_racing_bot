@@ -58,29 +58,23 @@ def _make_bot(
     setup_season=None,
     add_default_team_side_effect=None,
     remove_default_team_side_effect=None,
-    rename_default_team_side_effect=None,
-    season_team_add_return=2,
-    season_team_remove_return=2,
-    season_team_rename_return=2,
     season_team_names: set | None = None,
     teams_with_roles: list | None = None,
     live_season=None,
 ) -> MagicMock:
+    from services.team_service import TeamReference, TeamService
+
     bot = MagicMock()
+    # Held to the service's real methods, so a stub cannot outlive the method it stands for.
+    bot.team_service = MagicMock(spec_set=TeamService)
     bot.team_service.add_default_team = AsyncMock(side_effect=add_default_team_side_effect)
     # A team is named by its shorthand (#381); the resolver is covered by its own tests.
-    from services.team_service import TeamReference
-
     bot.team_service.resolve_server_team = AsyncMock(
         side_effect=lambda text: TeamReference(
             team={"name": text, "full_name": text, "is_reserve": False, "role_id": None}
         )
     )
     bot.team_service.remove_default_team = AsyncMock(side_effect=remove_default_team_side_effect)
-    bot.team_service.rename_default_team = AsyncMock(side_effect=rename_default_team_side_effect)
-    bot.team_service.season_team_add = AsyncMock(return_value=season_team_add_return)
-    bot.team_service.season_team_remove = AsyncMock(return_value=season_team_remove_return)
-    bot.team_service.season_team_rename = AsyncMock(return_value=season_team_rename_return)
     bot.team_service.get_setup_season_team_names = AsyncMock(return_value=season_team_names or set())
     bot.team_service.get_teams_with_roles = AsyncMock(return_value=teams_with_roles or [])
     bot.placement_service.set_team_role_config = AsyncMock()
@@ -97,6 +91,16 @@ def _make_bot(
 def _unwrap(cmd):
     """Return the innermost callback, past whatever tier guard the command wears."""
     return undecorate(cmd)
+
+
+def _team_service_calls(bot) -> set[str]:
+    """The names of the team service's methods a command called.
+
+    The `/team` commands act on the server's team list alone. A division's teams are seeded from
+    that list and never edited by a `/team` command (#220, #352). Pinning the whole set of calls
+    holds that whatever a season-scoped method might be called.
+    """
+    return {name for name, _args, _kwargs in bot.team_service.method_calls}
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +120,7 @@ class TestTeamAdd:
 
         bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
         bot.placement_service.set_team_role_config.assert_awaited_once()
-        bot.team_service.season_team_add.assert_not_awaited()
+        assert _team_service_calls(bot) == {"add_default_team"}
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
         assert "Alpine" in content
@@ -136,7 +140,7 @@ class TestTeamAdd:
         await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
 
         bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
-        bot.team_service.season_team_add.assert_not_awaited()
+        assert _team_service_calls(bot) == {"add_default_team"}
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
@@ -174,7 +178,7 @@ class TestTeamAdd:
         content = args[0] if args else kwargs["content"]
         assert "⛔" in content
         bot.placement_service.set_team_role_config.assert_not_awaited()
-        bot.team_service.season_team_add.assert_not_awaited()
+        assert _team_service_calls(bot) == {"add_default_team"}
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +196,7 @@ class TestTeamRemove:
 
         bot.team_service.remove_default_team.assert_awaited_once()
         bot.placement_service.delete_team_role_config.assert_awaited_once()
-        bot.team_service.season_team_remove.assert_not_awaited()
+        assert _team_service_calls(bot) == {"resolve_server_team", "remove_default_team"}
         args, kwargs = interaction.response.send_message.call_args
         content = args[0] if args else kwargs["content"]
         assert "✅" in content
