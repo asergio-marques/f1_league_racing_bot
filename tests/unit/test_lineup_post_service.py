@@ -17,7 +17,7 @@ import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -317,3 +317,91 @@ def test_seated_members_is_empty_without_a_guild():
 
     teams = [SimpleNamespace(seats=[SimpleNamespace(discord_user_id="5")])]
     assert seated_members(None, teams) == {}
+
+
+def _stub_lineup_render(monkeypatch, tmp_path):
+    """Stub everything `render_png` reaches except the portrait gate, which is spied on.
+
+    Returns the bot to render with, the spy standing in for `refresh_before_render`, and
+    the one member the drawing seats.
+    """
+    import services.driver_portrait_service as portraits
+    import services.image_lineup_post as post
+    import services.image_render_service as render_service
+    import utils.image_naming as naming
+
+    member = MagicMock(id=5)
+    drawing = SimpleNamespace(division_name="Pro")
+    monkeypatch.setattr(post, "lineup_enabled", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        post, "build_drawing", AsyncMock(return_value=({}, drawing, [member]))
+    )
+    monkeypatch.setattr(
+        render_service,
+        "resolve_configured_directories",
+        lambda *args, **kwargs: ({"driver": tmp_path}, []),
+    )
+    monkeypatch.setattr(
+        render_service, "spec_builder_with_faults", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(naming, "stem_for_drawing", lambda *args, **kwargs: "lineup")
+    spy = AsyncMock(return_value=0)
+    monkeypatch.setattr(portraits, "refresh_before_render", spy)
+
+    bot = MagicMock()
+    bot.image_config_service.get_config = AsyncMock(return_value=SimpleNamespace())
+    bot.image_render_service.render_for_posting = AsyncMock(
+        return_value=SimpleNamespace(
+            posts_image=True, png_paths=[tmp_path / "lineup.png"], notices=[], rejects=False
+        )
+    )
+    return bot, spy, member
+
+
+async def test_the_placements_review_render_obtains_missing_portraits(
+    monkeypatch, tmp_path
+):
+    """The review draws the lineup a season is judged on, so a driver seated since the last
+    daily update is fetched before it is drawn (#407)."""
+    from services.image_lineup_post import render_for_command
+
+    bot, spy, member = _stub_lineup_render(monkeypatch, tmp_path)
+
+    outcome = await render_for_command(
+        bot, MagicMock(), 5, obtain_missing_portraits=True
+    )
+
+    assert outcome.action == POSTED
+    spy.assert_awaited_once()
+    assert spy.await_args.args[1] == [member]
+    assert spy.await_args.kwargs["obtain_missing"] is True
+    assert spy.await_args.kwargs["directory"] == tmp_path
+
+
+async def test_a_lineup_command_render_obtains_nothing_beyond_its_trigger(
+    monkeypatch, tmp_path
+):
+    """`/team lineup` is command output, not the review: the league's trigger governs."""
+    from services.image_lineup_post import render_for_command
+
+    bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
+
+    await render_for_command(bot, MagicMock(), 5)
+
+    assert spy.await_args.kwargs["obtain_missing"] is False
+
+
+async def test_a_posting_obtains_nothing_beyond_its_trigger(monkeypatch, tmp_path):
+    from services.image_lineup_post import render_png
+
+    bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
+
+    await render_png(bot, MagicMock(), 5, PostingOrigin.SCHEDULED)
+
+    assert spy.await_args.kwargs["obtain_missing"] is False
+
+
+def test_team_lineup_does_not_ask_for_missing_portraits():
+    """Only the placements review may override the league's choice of trigger."""
+    source = (SRC / "cogs" / "team_cog.py").read_text(encoding="utf-8")
+    assert "obtain_missing_portraits" not in source

@@ -211,11 +211,19 @@ async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_unco
 
 
 async def render_png(
-    bot: LeagueBot, guild, division_id: int, origin: PostingOrigin, *, include_uncommitted: bool = False
+    bot: LeagueBot,
+    guild,
+    division_id: int,
+    origin: PostingOrigin,
+    *,
+    include_uncommitted: bool = False,
+    obtain_missing_portraits: bool = False,
 ):
     """Render one division's lineup. Returns the render service's PostingDecision.
 
     *include_uncommitted* is `build_drawing`'s, and is for command output alone.
+    *obtain_missing_portraits* is `refresh_before_render`'s *obtain_missing*, and is for
+    the placements review alone.
     """
     from services.image_lineup_service import build_fill_spec
     from services.image_render_service import (
@@ -245,7 +253,11 @@ async def render_png(
     from services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot, members, config=config, directory=directories.get("driver")
+        bot,
+        members,
+        config=config,
+        directory=directories.get("driver"),
+        obtain_missing=obtain_missing_portraits,
     )
 
     from utils.image_naming import stem_for_drawing
@@ -384,7 +396,12 @@ async def try_post(
 
 
 async def render_for_command(
-    bot: LeagueBot, guild, division_id: int, *, include_uncommitted: bool = False
+    bot: LeagueBot,
+    guild,
+    division_id: int,
+    *,
+    include_uncommitted: bool = False,
+    obtain_missing_portraits: bool = False,
 ) -> LineupPostOutcome:
     """Produce a division's lineup PNG as **command output**, posting it nowhere.
 
@@ -398,6 +415,12 @@ async def render_for_command(
     :func:`try_post` rather than being a flag on it — and why *include_uncommitted*, which
     draws a lineup as it will stand once mid-season placements are confirmed, is offered
     here and not there.
+
+    *obtain_missing_portraits* is set by `/season placements-review` alone. It obtains the
+    portrait of each seated driver who has none, whichever update trigger the league chose,
+    so the review is not judged on a placeholder the league will not see (image
+    specification, "The drawing of placements under review"). `/team lineup` does not set
+    it, and nor does a posting.
     """
     if guild is None or not await lineup_enabled(bot):
         return LineupPostOutcome()
@@ -409,6 +432,7 @@ async def render_for_command(
             division_id,
             PostingOrigin.COMMANDED,
             include_uncommitted=include_uncommitted,
+            obtain_missing_portraits=obtain_missing_portraits,
         )
     except Exception as exc:  # noqa: BLE001
         log.error("lineup: command render failed for division %s: %s", division_id, exc)
