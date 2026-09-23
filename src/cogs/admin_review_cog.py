@@ -160,7 +160,7 @@ class AdminReviewView(LeagueView):
 class CorrectionParameterView(LeagueView):
     """One button per collectable wizard parameter; admin selects which to re-collect (T035).
 
-    Restricted to tier-2 role or Manage Guild permission.
+    Restricted to the league manager tier or above, through `_may_review_signup`.
     Calls WizardService.select_correction_parameter() with the chosen parameter label.
     FR-042.
     """

@@ -1936,7 +1936,7 @@ Requires amendment mode to be active.
 Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), writing to the modification store instead of the server config.
 
 ##### `/results amend review` — Review and approve modification store changes
-*Access: League manager*
+*Access: League admin*
 
 No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, repost every round's results and standings in the division's own channels, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
 
