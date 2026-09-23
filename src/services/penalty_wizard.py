@@ -415,6 +415,28 @@ async def _take_down_approval(state: PenaltyReviewState) -> None:
     await _delete_review_message(state, message_id)
 
 
+async def _take_down_report_stage(state: PenaltyReviewState) -> None:
+    """Take a review's report-stage controls down once its reports are approved (#402).
+
+    Left up, they were what a manager pressed to approve the reports a second time, or to be
+    told a penalty was removed that had been applied. The controls refuse regardless; this takes
+    them out of reach.
+
+    A first pass's prompt goes with its approval message: its pardons are granted with the
+    reports, so nothing on it is left to do. An amendment's prompt stays, because its pardons are
+    changed there until its appeals are approved (#345), and only the approval message goes.
+
+    **Never raises.** It runs after the round has moved on and before the next stage is opened,
+    and a failure to tidy the channel must not cost the manager the appeals prompt.
+    """
+    try:
+        await _take_down_approval(state)
+        if not state.is_amendment:
+            await _delete_review_message(state, state.prompt_message_id)
+    except Exception:  # noqa: BLE001 — the controls refuse whether or not they came down
+        log.exception("could not take down the report stage of round %s", state.round_id)
+
+
 async def _refresh_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing prompt message to reflect the current staged list.
 

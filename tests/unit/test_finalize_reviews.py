@@ -528,6 +528,67 @@ async def test_the_claim_is_released_when_the_approval_fails(tmp_path):
     assert state.approving is False
 
 
+def _review_channel(state, *, fails: bool = False):
+    """The submission channel as the review reaches it, holding its prompt and approval."""
+    channel = MagicMock()
+    message = MagicMock()
+    message.delete = AsyncMock()
+    channel.fetch_message = AsyncMock(
+        side_effect=RuntimeError("gateway gone") if fails else None, return_value=message
+    )
+    state.bot.get_channel = MagicMock(return_value=channel)
+    channel._message = message
+    return channel
+
+
+async def test_approving_the_reports_takes_the_prompt_and_the_approval_down(tmp_path):
+    """**They stayed up through the appeals stage**, where every button on them still worked. They
+    refuse now whether or not they come down; down, they are not there to be pressed."""
+    db_path = await _make_db(tmp_path, name="finalize_takes_down", prompt_message_id=880001)
+    state = _state(db_path)
+    state.prompt_message_id = 880001
+    state.approval_message_id = 880002
+    channel = _review_channel(state)
+
+    stubs = await _run(finalize_penalty_review, state)
+
+    assert sorted(c.args[0] for c in channel.fetch_message.await_args_list) == [880001, 880002]
+    assert channel._message.delete.await_count == 2
+    assert state.approval_message_id is None
+    stubs["appeals_view"].assert_called_once()
+
+
+async def test_a_take_down_that_fails_still_opens_the_appeals(tmp_path):
+    """It is tidying: the round has already moved on, and a channel the bot cannot reach must not
+    cost the manager the appeals prompt that comes next."""
+    db_path = await _make_db(tmp_path, name="finalize_take_down_fails", prompt_message_id=880001)
+    state = _state(db_path)
+    state.prompt_message_id = 880001
+    _review_channel(state, fails=True)
+
+    stubs = await _run(finalize_penalty_review, state)
+
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+    stubs["appeals_view"].assert_called_once()
+
+
+async def test_an_amendments_report_stage_takes_its_approval_down(tmp_path):
+    """**Only the approval.** An amendment's pardons are changed on its prompt until its appeals
+    are approved (#345), so the prompt stays up."""
+    db_path = await _make_db(tmp_path, name="amend_takes_down")
+    state = _state(db_path, staged=[_penalty()])
+    await _open_amendment(state)
+    state.prompt_message_id = 990001
+    state.approval_message_id = 990002
+    channel = _review_channel(state)
+
+    await _run(finalize_penalty_review, state)
+
+    assert [c.args[0] for c in channel.fetch_message.await_args_list] == [990002]
+    assert state.approval_message_id is None
+    assert state.reports_approved is True
+
+
 async def test_the_results_are_reposted_as_post_race_penalty_results(tmp_path):
     db_path = await _make_db(tmp_path, name="finalize_repost")
 

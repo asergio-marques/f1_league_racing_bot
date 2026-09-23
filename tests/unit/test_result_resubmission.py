@@ -21,8 +21,8 @@ round's results on the spot, and the collection that should have replaced them n
 results now stand, published and counted, until every session has been entered again;
 `test_pressing_resubmit_keeps_the_round_s_results` holds that. The round stays in penalty review
 and the channel is flagged `resubmitting`, which lets the pastes past the review channel's
-message guard. The review prompt is taken down, so nobody can approve the results being
-replaced or start a second resubmission over the first.
+message guard. The review prompt is taken down, and any approval message with it (#402), so
+nobody can approve the results being replaced or start a second resubmission over the first.
 
 The collection loop itself is started as a background task and is stubbed here. It is driven
 with a fake `wait_for` in `test_resubmission_collection.py`.
@@ -117,7 +117,10 @@ async def _make_db(tmp_path, *, results: int = 2) -> str:
     return db_path
 
 
-def _state(db_path: str, *, staged=(), pardons=(), channel=None, prompt_message_id=None):
+def _state(
+    db_path: str, *, staged=(), pardons=(), channel=None, prompt_message_id=None,
+    approval_message_id=None,
+):
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
@@ -133,6 +136,7 @@ def _state(db_path: str, *, staged=(), pardons=(), channel=None, prompt_message_
         staged=list(staged),
         staged_pardons=list(pardons),
         prompt_message_id=prompt_message_id,
+        approval_message_id=approval_message_id,
     )
 
 
@@ -257,6 +261,20 @@ async def test_the_penalty_prompt_is_taken_down_when_resubmission_starts(tmp_pat
 
     channel.fetch_message.assert_awaited_once_with(4242)
     channel._prompt.delete.assert_awaited_once()
+
+
+async def test_the_approval_message_is_taken_down_when_resubmission_starts(tmp_path):
+    """**#402, as reported.** The prompt went and the approval message stayed, and its Approve
+    finalised the round on the results the manager had just said were wrong."""
+    db_path = await _make_db(tmp_path)
+    channel = _channel()
+    state = _state(db_path, channel=channel, prompt_message_id=4242, approval_message_id=4243)
+
+    await _run(state, _interaction())
+
+    assert [c.args for c in channel.fetch_message.await_args_list] == [(4242,), (4243,)]
+    assert channel._prompt.delete.await_count == 2
+    assert state.approval_message_id is None
 
 
 async def test_a_prompt_already_gone_does_not_stop_the_resubmission(tmp_path):

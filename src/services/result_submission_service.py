@@ -675,6 +675,10 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
             )
             await db.commit()
 
+        # The report stage's controls come down as the round leaves it (#402).
+        from services.penalty_wizard import _take_down_report_stage
+        await _take_down_report_stage(state)
+
         # Audit log PENALTY_REVIEW_APPROVED
         penalty_log = [
             {
@@ -2608,6 +2612,10 @@ async def _approve_amendment_reports(interaction, state) -> None:
     # than handed back to the sweep to sit out its half hour. The deadline handed back is the
     # one taken, not a fresh one — see `AMENDMENT_STAGE_TIMEOUT_SECONDS`.
     await _rearm_amendment(db_path, round_id, deadline)
+
+    # Its approval message goes; the prompt stays for the pardons (#402).
+    from services.penalty_wizard import _take_down_report_stage
+    await _take_down_report_stage(state)
 
     try:
         await bot.output_router.post_log(
@@ -4902,14 +4910,16 @@ async def enter_resubmit_flow(
     every session has been entered again, and `replace_round_results` swaps them out then
     (issue #210). What changes now is the channel. `resubmitting` is set, which lets the
     manager's pastes through the review channel's message guard and tells a restart what was
-    lost, and the penalty review prompt is taken down, so that nobody can approve the results
-    being replaced or press Resubmit a second time and start a second collector.
+    lost, and the penalty review prompt and any approval message are taken down, so that nobody
+    can approve the results being replaced or press Resubmit a second time and start a second
+    collector. Both would refuse if pressed regardless, as the review has moved on (#402).
 
     A submission channel that cannot be found refuses the resubmission before anything is
     discarded: with nowhere to collect in, the review is all the round has.
     """
     import asyncio
     import json as _json
+    from services.penalty_wizard import _delete_review_message, _take_down_approval
 
     bot = state.bot
     db_path: str = bot.db_path
@@ -4976,12 +4986,11 @@ async def enter_resubmit_flow(
         )
         await db.commit()
 
-    if state.prompt_message_id is not None:
-        try:
-            prompt = await sub_channel.fetch_message(state.prompt_message_id)
-            await prompt.delete()
-        except (discord.NotFound, discord.HTTPException):
-            pass  # Already gone; the collection does not depend on it
+    # The prompt and any approval message go together: the approval message outlived the prompt
+    # once, and its Approve finalised the round on the results being replaced (#402). The
+    # collection depends on neither.
+    await _delete_review_message(state, state.prompt_message_id)
+    await _take_down_approval(state)
 
     cancel_view = ResubmissionCancelView(state)
     announcement = await sub_channel.send(
