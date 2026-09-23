@@ -1384,7 +1384,7 @@ async def _apply_staged_appeals(
 
     # INSERT appeal_records — order mirrors applied_pr (same ordering as staged_appeals).
     records: list[dict] = []
-    now_str = _dt.datetime.utcnow().isoformat()
+    now_str = _dt.datetime.now(_dt.timezone.utc).isoformat()
     async with get_connection(db_path) as db:
         for sp, pr in zip(staged_appeals, applied_pr):
             race_result_id = pr.get("race_result_id")

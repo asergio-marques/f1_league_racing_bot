@@ -347,7 +347,7 @@ async def apply_penalties(
                     next_pos += 1
 
         # INSERT one penalty_records row per staged penalty.
-        now_str = datetime.datetime.utcnow().isoformat()
+        now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
         for sp in staged:
             new_result_id = driver_to_new_result_id.get((sp.session_type.value, sp.driver_user_id))
             if new_result_id is None:

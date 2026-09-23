@@ -186,12 +186,20 @@ def test_the_live_sheet_path_draws_the_seat_held_at_generation():
 
 
 @pytest.mark.asyncio
-async def test_the_seat_lookup_survives_an_unreadable_database():
-    """A nameless team is drawn empty; it is never a reason to fail a sheet."""
-    result = await attendance_service._seat_team_names("no-such.db", 7, [1, 2])
+async def test_the_seat_lookup_survives_an_unreadable_database(tmp_path):
+    """A nameless team is drawn empty; it is never a reason to fail a sheet.
+
+    The database sits in a directory that does not exist, so SQLite cannot create it and the
+    connection genuinely fails (#163). A bare filename was created on connect — in whatever
+    directory pytest ran from — so the lookup met an empty database rather than none at all.
+    """
+    absent = tmp_path / "absent" / "no-such.db"
+    result = await attendance_service._seat_team_names(str(absent), 7, [1, 2])
     assert result == {}
+    assert not absent.exists()
 
 
 @pytest.mark.asyncio
-async def test_the_seat_lookup_is_empty_for_no_drivers():
-    assert await attendance_service._seat_team_names("no-such.db", 7, []) == {}
+async def test_the_seat_lookup_is_empty_for_no_drivers(tmp_path):
+    absent = tmp_path / "absent" / "no-such.db"
+    assert await attendance_service._seat_team_names(str(absent), 7, []) == {}

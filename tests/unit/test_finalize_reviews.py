@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1830,6 +1831,22 @@ async def test_a_kept_report_keeps_its_author_and_its_time(tmp_path):
     assert (row["applied_by"], row["applied_at"]) == ("4242", "2026-02-01T20:00:00")
 
 
+async def test_a_fresh_report_is_stamped_in_utc(tmp_path):
+    """A verdict with no time of its own is stamped now, timezone-aware, as every other
+    timestamp the bot writes is — not with the naive, deprecated ``utcnow()`` (#160)."""
+    db_path = await _make_db(tmp_path, name="fresh_report_utc")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, staged=[_penalty()])
+    await _open_amendment(state)
+
+    await _run_real_apply(finalize_penalty_review, state)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT applied_at FROM penalty_records")
+        row = await cursor.fetchone()
+    assert datetime.fromisoformat(row["applied_at"]).utcoffset() == timedelta(0)
+
+
 async def test_a_report_added_during_the_amendment_names_who_approved_it(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_new_report")
     await _seed_driver_row(db_path)
@@ -2040,6 +2057,21 @@ async def test_a_kept_appeal_keeps_its_author_and_its_time(tmp_path):
         penalty = tuple(await cursor.fetchone())
     assert appeal == ("4343", "2026-02-03T20:00:00")
     assert penalty == ("4343", "2026-02-03T20:00:00")
+
+
+async def test_a_fresh_appeal_is_stamped_in_utc(tmp_path):
+    """An upheld appeal with no time of its own is stamped now, timezone-aware (#160)."""
+    db_path = await _make_db(tmp_path, name="fresh_appeal_utc")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, appeals=[_penalty()])
+    await _open_amendment(state)
+
+    await _run_real_apply(finalize_appeals_review, state)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT submitted_at FROM appeal_records")
+        row = await cursor.fetchone()
+    assert datetime.fromisoformat(row["submitted_at"]).utcoffset() == timedelta(0)
 
 
 async def test_an_amendment_whose_appeal_stage_cannot_open_is_undone(tmp_path):
