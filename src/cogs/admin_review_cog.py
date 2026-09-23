@@ -17,7 +17,7 @@ from discord.ext import commands
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
 from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import CallbackButton, LeagueView, guild_of, is_foreign_guild
+from utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class AdminReviewView(LeagueView):
         _user_id = self._discord_user_id
         if _user_id is None:
             wizard = await _bot.wizard_service.get_wizard_by_channel(
-                interaction.channel_id
+                channel_id_of(interaction)
             )
             _user_id = wizard.discord_user_id if wizard else None
         return _bot, _user_id
@@ -122,7 +122,7 @@ class AdminReviewView(LeagueView):
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
-        _PENDING_REASONS[(interaction.channel_id, interaction.user.id)] = {
+        _PENDING_REASONS[(channel_id_of(interaction), interaction.user.id)] = {
             "action": "request_changes",
             "discord_user_id": _user_id,
             "actor": interaction.user,
@@ -143,7 +143,7 @@ class AdminReviewView(LeagueView):
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
-        _PENDING_REASONS[(interaction.channel_id, interaction.user.id)] = {
+        _PENDING_REASONS[(channel_id_of(interaction), interaction.user.id)] = {
             "action": "reject",
             "discord_user_id": _user_id,
             "actor": interaction.user,
@@ -183,7 +183,7 @@ class CorrectionParameterView(LeagueView):
         self._bot = bot
 
         for label, param_key in self._PARAMETERS:
-            def make_callback(p: str) -> ...:
+            def make_callback(p: str) -> Handler:
                 async def callback(inter: discord.Interaction) -> None:
                     if not await _may_review_signup(inter):
                         await inter.response.send_message(
@@ -194,7 +194,7 @@ class CorrectionParameterView(LeagueView):
                     _user_id = self._discord_user_id
                     if _user_id is None:
                         wizard = await _bot.wizard_service.get_wizard_by_channel(
-                            inter.channel_id
+                            channel_id_of(inter)
                         )
                         _user_id = wizard.discord_user_id if wizard else None
                     if _user_id is None:

@@ -127,6 +127,11 @@ class WizardService:
         """Bind the bot instance for Discord API and service access."""
         self._bot = bot
 
+    @property
+    def _league_bot(self) -> "LeagueBot":
+        assert self._bot is not None, "WizardService.set_bot() not called"
+        return self._bot
+
     async def _get_track_name_map(self) -> dict[str, str]:
         """Return {str(id): name} for all tracks from the database."""
         from services import track_service
@@ -659,7 +664,7 @@ class WizardService:
             return
 
         # Grant the driver role
-        server_cfg = await self._bot.config_service.get_server_config()
+        server_cfg = await self._league_bot.config_service.get_server_config()
         driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         member = guild.get_member(int(discord_user_id))
         if member is not None and driver_role_id:
@@ -673,7 +678,7 @@ class WizardService:
         # Compute and persist total_lap_ms before transitioning state
         signup_record = await self._signup_svc.get_record(discord_user_id)
         if signup_record is not None and signup_record.lap_times:
-            await self._bot.placement_service.store_total_lap_ms(
+            await self._league_bot.placement_service.store_total_lap_ms(
                 discord_user_id, signup_record.lap_times
             )
 
@@ -971,19 +976,14 @@ class WizardService:
             DriverState.AWAITING_CORRECTION_PARAMETER,
         }
 
+        # The state label is captured before cleanup, from whichever of the two is active.
         wizard = await self._signup_svc.get_wizard(discord_user_id)
-        wizard_is_active = wizard is not None and wizard.wizard_state != WizardState.UNENGAGED
-
-        driver = None
-        if not wizard_is_active:
+        if wizard is not None and wizard.wizard_state != WizardState.UNENGAGED:
+            state_label = wizard.wizard_state.value
+        else:
             driver = await self._driver_service.get_profile(discord_user_id)
             if driver is None or driver.current_state not in _ACTIVE_STATES_UNENGAGED_WIZARD:
                 return
-
-        # Capture state label before cleanup
-        if wizard_is_active:
-            state_label = wizard.wizard_state.value
-        else:
             state_label = driver.current_state.value
 
         # Cancel all jobs and tasks

@@ -40,7 +40,7 @@ from utils.input_validator import parse_datetime
 from utils.league_bot import LeagueBot, bot_of
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only, league_role_faults
-from utils.league_server import CallbackButton, LeagueView, is_foreign_guild
+from utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
 from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ async def _resolve_view_context(
     if stored_user_id is not None:
         return bot, stored_user_id
     wizard = await bot.wizard_service.get_wizard_by_channel(
-        interaction.channel_id
+        channel_id_of(interaction)
     )
     return bot, (wizard.discord_user_id if wizard else None)
 
