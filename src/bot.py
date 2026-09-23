@@ -149,6 +149,10 @@ async def main() -> None:
         bot.scheduler_service,
         bot.output_router,
     )
+    # Bound as soon as it exists rather than in `on_ready`. The persistent views are routed
+    # from the moment the gateway opens, and a signup press arriving while `on_ready` was
+    # still recovering found the wizard with no bot and failed (#228).
+    bot.wizard_service.set_bot(bot)
     bot.attendance_service = AttendanceService(DB_PATH)
 
     from services.image_config_service import ImageConfigService
@@ -332,9 +336,6 @@ async def main() -> None:
                 await bot.output_router.post_log(f"Hub panel not recovered: {hub_fault}")
         except Exception:
             log.warning("Hub recovery failed", exc_info=True)
-
-        # Wire wizard service bot reference (needed for guild/service access)
-        bot.wizard_service.set_bot(bot)
 
         # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions
         # that were active before the last restart.

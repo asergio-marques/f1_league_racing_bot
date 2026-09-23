@@ -96,9 +96,10 @@ class WizardService:
     """Manages the full lifecycle of a driver's signup wizard session.
 
     Dependency wiring:
-    - ``set_bot(bot)`` must be called in ``on_ready`` (after services are bound
-      to bot) to give this service access to Discord guild objects, driver_service,
-      and signup_module_service.
+    - ``set_bot(bot)`` gives this service access to Discord guild objects, driver_service
+      and signup_module_service. ``bot.py`` calls it as soon as the service is built, before
+      the gateway opens: a press on a signup button can arrive while ``on_ready`` is still
+      recovering, and must find the bot already bound (#228).
     """
 
     def __init__(
