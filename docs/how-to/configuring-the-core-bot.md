@@ -469,7 +469,7 @@ The bot posts the whole season to the channel, **as several messages rather than
 
 Then a block per division giving its role, its channels, its full calendar and its lineup.
 
-With the image module on and the calendar or lineup output switched on, that division's calendar and lineup arrive as the drawn pictures rather than as text, so what you approve is what your league will actually receive. See [Configuring the image module](configuring-the-image-module.md) for the switches. A picture that cannot be drawn takes the **Approve** button away until you fix it. Two settings do the same without any picture being wrong: a driver-photo setting that could never fetch anything, and — if you have turned per-tier colours on — a colour slot one of your drawings uses that a division has no colour for. The review says which of the three it is.
+With the image module on and the calendar or lineup output switched on, that division's calendar and lineup arrive as the drawn pictures rather than as text, so what you approve is what your league will actually receive. See [Configuring the image module](configuring-the-image-module.md) for the switches. A picture that cannot be drawn takes the **Approve** button away until you fix it. So does anything else the image module's own checks find, though the review draws only those two pictures: the program that draws them missing, a drawing for another output you have switched on that will not load, a lineup drawing too small for one of your divisions, a driver-photo setting that could never fetch anything, and — if you have turned per-tier colours on — a colour slot one of your drawings uses that a division has no colour for. The review names each.
 
 A module you have not switched on has no settings to show, so its message is simply not posted — six is the most you will see, not the number you should expect.
 
@@ -512,7 +512,7 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 | Division tiers are not 1, 2, 3… with no gaps | `/division amend` the tiers |
 | A division has no rounds at all | Add one, or delete the division |
 | Two rounds in a division share a date and time | Reschedule one |
-| A team's shorthand cannot be used | Change it with `/team modify` — the message names every offender at once |
+| A team's shorthand cannot be used | The team list is fixed once the configuration is confirmed, so only `/season abort` and configuring the season again clears it. `/season config-review` refuses such a shorthand, so a season rarely gets this far with one |
 | A division is missing a channel it posts to — its calendar or lineup channel, or one an enabled module needs — or one has been deleted from the server | Step 9 — the message names the division, the channel and the command |
 | A signup is unsettled | Step 10 |
 

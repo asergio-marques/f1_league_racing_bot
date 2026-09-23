@@ -741,7 +741,7 @@ Worth running through just before you approve.
 | A picture refused over a linked image | Something in your drawing file points at a picture file that is not on the machine. You are told which element and which file — put the file there, correct the path, or delete the element |
 | A preview refusing outright | It names why: unknown division, no such round, no team beyond Reserve, or a forecast asked of a mystery round |
 | Nothing posted at all, and nothing in the log | Usually the channel for that output is not set, or the module behind it is off. Check step 2 |
-| Approval refusing over a picture | It draws every calendar and lineup the season would post before it commits anything, and stops on one that will not draw. It names the division and which picture — fix that and try again |
+| Approval refusing over the image module | Pressing **Approve** checks again what the review checked — the program that draws the pictures, the drawings of every output you have switched on, the tier colours and the portrait settings — and refuses, naming each fault, if one broke after the review was posted. Fix it and run `/season placements-review` again |
 
 Smaller problems — a swapped typeface, a field set very small to fit, a placeholder used — are reported with the picture and written to the log channel. They never appear in a channel your drivers read.
 
