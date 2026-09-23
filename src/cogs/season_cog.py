@@ -845,6 +845,24 @@ class SeasonCog(commands.Cog):
             self.bot.db_path, season_id
         )
 
+    async def _no_points_config_attached(self, season_id: int) -> bool:
+        """Whether *season_id* has no points configuration attached at all.
+
+        **One helper because three surfaces ask the same question** (#409): the configuration
+        review refuses on it, `_do_approve` refuses on it, and `/season placements-review`
+        withholds its button on it. The placements review once had no copy of the question,
+        and offered Approve to a season the press then refused — reachable because
+        `/results config detach` stays open in Placements.
+
+        A link to a configuration that does not exist still counts as attached here; that
+        one is `_missing_points_config_problems`' fault. Test mode is no exception (decided
+        2026-09-23): it attaches Standard and Half Points when it is enabled and at no other
+        moment, and a season that has had them detached is refused as any other.
+        """
+        return not await season_points_service.get_attached_config_names(
+            self.bot.db_path, season_id
+        )
+
     async def _team_name_problems(self, season_id: int | None) -> list[str]:
         """Every team whose name cannot become an asset filename (047 FR-032).
 
@@ -1881,6 +1899,7 @@ class SeasonCog(commands.Cog):
         # is on, and a season with results off has no points tables to be wrong about.
         points_faults: list[str] = []
         phantom_configs: list[str] = []
+        no_points_attached = False
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
@@ -1968,9 +1987,7 @@ class SeasonCog(commands.Cog):
                 signup_lines += await self._signup_review_lines()
             if attendance_on:
                 attendance_lines += await self._attendance_review_lines()
-            points_lines += await self._points_names_review_lines(
-                cfg.season_id, results_on
-            )
+            points_lines += await self._points_names_review_lines(cfg.season_id)
 
             # ── Points ordering ───────────────────────────────────────
             # Reported here rather than left to the approval. The refusal at
@@ -1979,6 +1996,18 @@ class SeasonCog(commands.Cog):
             # must look at this too — read through the same helper the gate reads, so
             # the report and the refusal cannot drift.
             if results_on:
+                # Nothing attached is refused by the approval as surely as a phantom is, and
+                # `/results config detach` stays open in Placements (#409). Test mode is no
+                # exception (decided 2026-09-23): it attaches its two only when enabled.
+                no_points_attached = await self._no_points_config_attached(cfg.season_id)
+                if no_points_attached:
+                    points_lines.append("")
+                    points_lines.append(
+                        "❌ **No points configuration attached** — this blocks approval."
+                    )
+                    points_lines.append(
+                        "  Attach one with `/results config append`, then review again."
+                    )
                 # Named before the ordering faults, because a configuration that is not
                 # there is the reason the names above may not mean what they appear to.
                 # The list of attached names is printed from the links alone, so a mistyped
@@ -2301,6 +2330,14 @@ class SeasonCog(commands.Cog):
                     "Put it right, then run `/season placements-review` again."
                 ):
                     await poster.send(chunk, ephemeral=True)
+            if no_points_attached:
+                await poster.send(
+                    "⛔ **No points configuration is attached to this season.**\n"
+                    "Without one there is nothing to score its results by. The season is "
+                    "**not** offered for approval while that stands — attach one with "
+                    "`/results config append`, then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
             if phantom_configs:
                 body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
                 await poster.send(
@@ -2361,6 +2398,7 @@ class SeasonCog(commands.Cog):
                 and not calendar_faults_found
                 and not points_faults
                 and not phantom_configs
+                and not no_points_attached
                 and not name_problems
                 and not unsettled
                 and not channel_faults
@@ -2844,13 +2882,7 @@ class SeasonCog(commands.Cog):
 
         # ── Results: points configurations ────────────────────────────────────
         if await self.bot.module_service.is_results_enabled():
-            async with get_connection(self.bot.db_path) as db:
-                cursor = await db.execute(
-                    "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
-                    (season_id,),
-                )
-                row = await cursor.fetchone()
-            if (row[0] if row else 0) == 0:
+            if await self._no_points_config_attached(season_id):
                 faults.append(
                     "No points configuration is attached to this season — "
                     "`/results config append`."
@@ -2975,21 +3007,17 @@ class SeasonCog(commands.Cog):
             "",
         ]
 
-    async def _points_names_review_lines(
-        self, season_id: int, results_on: bool
-    ) -> list[str]:
+    async def _points_names_review_lines(self, season_id: int) -> list[str]:
         """The names of the points configurations attached to the season, as both reviews
-        report them. The faults of those configurations are reported beside them by each."""
+        report them. The faults of those configurations are reported beside them by each.
+
+        Nothing is promised under test mode (decided 2026-09-23): it attaches Standard and
+        Half Points when it is enabled and at no other moment, so a test season with none is
+        a fault here as any other season's is.
+        """
         config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)
         if config_names:
             return ["**Points Configs:** " + ", ".join(config_names)]
-        if results_on:
-            server_config_tm = await self.bot.config_service.get_server_config()
-            if server_config_tm is not None and server_config_tm.test_mode_active:
-                return [
-                    "**Points Configs:** *(none attached)* "
-                    "\u26a0\ufe0f Test mode active \u2014 Standard & Half Points will be auto-seeded on approval."
-                ]
         return ["**Points Configs:** *(none attached)*"]
 
     async def _image_configuration_faults(self) -> list[str]:
@@ -3114,7 +3142,7 @@ class SeasonCog(commands.Cog):
             sections.append(await self._attendance_review_lines())
         if results_on:
             sections.append(
-                await self._points_names_review_lines(cfg.season_id, results_on)
+                await self._points_names_review_lines(cfg.season_id)
             )
         if await module.is_weather_enabled():
             sections.append(await self._weather_review_lines())
@@ -6542,30 +6570,11 @@ class SeasonCog(commands.Cog):
 
         # ── Gate 2: points-config prerequisites (FR-013) ───────────────────────
         if await self.bot.module_service.is_results_enabled():
-            # Auto-seed point configs if test mode is active and none are attached yet
-            server_config = await self.bot.config_service.get_server_config()
-            if server_config is not None and server_config.test_mode_active:
-                async with get_connection(self.bot.db_path) as _db:
-                    _cur = await _db.execute(
-                        "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
-                        (cfg.season_id,),
-                    )
-                    _cnt = await _cur.fetchone()
-                if (_cnt[0] if _cnt else 0) == 0:
-                    from services.test_roster_service import ensure_test_configs
-                    await ensure_test_configs(
-                        season_id=cfg.season_id,
-                        db_path=self.bot.db_path,
-                    )
-
+            # Test mode is no exception (decided 2026-09-23): it attaches Standard and Half
+            # Points when it is enabled, and a test season that has had them detached is
+            # refused here as any other rather than having them attached again behind it.
             errors: list[str] = []
-            async with get_connection(self.bot.db_path) as _db:
-                cursor = await _db.execute(
-                    "SELECT COUNT(*) FROM season_points_links WHERE season_id = ?",
-                    (cfg.season_id,),
-                )
-                count_row = await cursor.fetchone()
-            if (count_row[0] if count_row else 0) == 0:
+            if await self._no_points_config_attached(cfg.season_id):
                 errors.append("no points configuration is attached to this season")
 
             # Counting the links is not the same as having the configurations they name.

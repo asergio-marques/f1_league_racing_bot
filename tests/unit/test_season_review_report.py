@@ -17,18 +17,18 @@ configured channel read the same to someone skimming.
 
 **Approve is offered only once the whole report has been posted, and only if nothing stands
 in the way.** A calendar holding a round already run, a points table out of order, a points
-configuration that does not exist, a graphic that would not draw — each withholds the button
-and says why, at the bottom of the review where a manager scrolling down looks for it. The
-reasons are posted privately: they are for the reviewer, and the public review is what the
-approval later clears from the channel.
+configuration that does not exist or none attached at all (#409), a graphic that would not
+draw — each withholds the button and says why, at the bottom of the review where a manager
+scrolling down looks for it. The reasons are posted privately: they are for the reviewer, and
+the public review is what the approval later clears from the channel.
 
 **Unsettled signups are named, publicly.** Every signup has to be placed or turned down before
 placements are confirmed (issue #220), and whoever reads the review is shown who is still waiting
 — not merely how many.
 
-**Test mode's automatic points configurations are announced, not hidden.** A test season with
-nothing attached is approved with two seeded configurations, and a maintainer reading the review
-should know that before they press the button, not discover it in the standings.
+**Test mode promises no points configuration.** It attaches Standard and Half Points when it
+is enabled and at no other moment (decided 2026-09-23), so a test season with nothing attached
+is refused as any other season is, and the review says nothing about their coming back.
 """
 from __future__ import annotations
 
@@ -134,6 +134,7 @@ def _cog(
     test_mode=False,
     calendar_state=REVIEW_IMAGE_TEXT,
     phantoms=None,
+    nothing_attached=False,
     points_faults=None,
     name_problems=None,
     pending=None,
@@ -211,6 +212,7 @@ def _cog(
 
     cog._team_name_problems = AsyncMock(return_value=name_problems or [])
     cog._missing_points_config_problems = AsyncMock(return_value=phantoms or [])
+    cog._no_points_config_attached = AsyncMock(return_value=nothing_attached)
     cog._points_ordering_problems = AsyncMock(return_value=points_faults or [])
     cog._prerender_review_images = AsyncMock(return_value={})
     cog._discard_prepared_review_images = MagicMock()
@@ -417,13 +419,15 @@ async def test_a_season_with_no_points_attached_says_so(db_path):
     assert "Points Configs:** *(none attached)*" in _public(messages)
 
 
-async def test_test_modes_automatic_points_are_announced(db_path):
-    """A test season with nothing attached is approved with two seeded configurations, and
-    a maintainer should know that before they press the button."""
-    cog = _cog(db_path, results=True, test_mode=True)
+async def test_test_mode_promises_no_points_on_approval(db_path):
+    """Test mode attaches Standard and Half Points when it is enabled and at no other moment
+    (decided 2026-09-23). The review once promised them "on approval", which the approval of
+    a test season with nothing attached no longer does."""
+    cog = _cog(db_path, results=True, test_mode=True, nothing_attached=True)
     messages = await _review(cog, _interaction())
 
-    assert "auto-seeded on approval" in _public(messages)
+    assert "Points Configs:** *(none attached)*" in _public(messages)
+    assert "auto-seeded" not in _public(messages) + _private(messages)
 
 
 async def test_a_team_name_that_cannot_be_a_lineup_field_is_named(db_path):
@@ -692,6 +696,38 @@ async def test_a_phantom_points_configuration_withholds_approval(db_path):
     cog._post_approval_prompt.assert_not_awaited()
     assert "points configuration that does not exist" in _private(messages)
     assert "Standrad" in _public(messages)
+
+
+async def test_a_season_with_no_points_attached_withholds_approval(db_path):
+    """The regression for #409. The approval refuses a season with nothing attached, and
+    `/results config detach` stays open in Placements, so the review has to say so too."""
+    cog = _cog(db_path, results=True, nothing_attached=True)
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "No points configuration attached** — this blocks approval" in _public(messages)
+    assert "No points configuration is attached to this season" in _private(messages)
+    assert "`/results config append`" in _private(messages)
+
+
+async def test_a_test_season_with_no_points_attached_withholds_approval_too(db_path):
+    """Test mode attaches Standard and Half Points when it is enabled and at no other moment
+    (decided 2026-09-23), so a test season that has had them detached is refused as any
+    other."""
+    cog = _cog(db_path, results=True, test_mode=True, nothing_attached=True)
+    messages = await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "No points configuration attached** — this blocks approval" in _public(messages)
+
+
+async def test_a_season_with_results_on_and_nothing_wrong_is_offered_for_approval(db_path):
+    """The other half: a points check that refuses everything is no better than none."""
+    cog = _cog(db_path, results=True)
+
+    await _review(cog, _interaction())
+
+    cog._post_approval_prompt.assert_awaited_once()
 
 
 async def test_an_out_of_order_points_table_withholds_approval(db_path):

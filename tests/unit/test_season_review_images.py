@@ -296,6 +296,7 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
         "calendar_faults_found",
         "points_faults",
         "phantom_configs",
+        "no_points_attached",
         "name_problems",
         "unsettled",
         "channel_faults",
