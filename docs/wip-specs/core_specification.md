@@ -641,7 +641,7 @@ section states the rules it holds to.
     - An identifier below the range reserved for test drivers shall be refused.
     - Two drivers sharing an identifier, and two sharing a name, shall each be refused.
     - The nationality of a driver may be omitted, and is otherwise validated as the command adding one driver validates it.
-    - A division named by the roster which already holds drivers shall be refused, and only that division; the remaining divisions of the roster may still be imported.
+    - A division named by the roster which already holds drivers shall be refused, and with it the whole import: a roster naming a seated division beside an empty one shall seat neither.
     - The whole import shall be refused where any driver of it fails any validation, and every fault shall be named at once. Nothing shall be seated in that case.
 
 ### Saving a state and returning to it

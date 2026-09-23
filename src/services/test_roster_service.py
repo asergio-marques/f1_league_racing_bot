@@ -3,6 +3,7 @@
 Provides helpers consumed by TestModeCog:
   - add_test_driver:        create a synthetic driver and seat them in a division team
   - list_test_drivers:      retrieve all fake drivers in a division (for cheat sheet)
+  - remove_test_driver:     remove one fake driver by their synthetic user ID
   - clear_test_drivers:     remove all fake drivers from a named division
   - clear_all_test_drivers: remove all fake drivers from every division (toggle-off)
   - ensure_test_configs:    idempotently create "Standard" and "Half Points" season configs
@@ -578,11 +579,16 @@ async def remove_test_driver(
     discord_user_id: int,
     db_path: str,
 ) -> str | dict:
-    """Remove a single fake driver by their synthetic Discord user ID.
+    """Remove a single fake driver by their synthetic Discord user ID, keeping their history.
+
+    Deleted by ``delete_driver_profiles``, the route `roster clear` and switching test mode
+    off take, so a table that comes to hold a driver is let go of here as well (issue #268).
 
     Returns a dict with keys ``display_name`` and ``team_name`` on success,
     or an error string if the profile doesn't exist or is not a test driver.
     """
+    from services.season_lifecycle_service import delete_driver_profiles
+
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
@@ -606,21 +612,7 @@ async def remove_test_driver(
         display_name: str = row["test_display_name"] or f"Driver {profile_id}"
         team_name: str = row["team_name"] or "(unknown team)"
 
-        # Vacate the seat
-        await db.execute(
-            "UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = ?",
-            (profile_id,),
-        )
-        # Remove season assignment
-        await db.execute(
-            "DELETE FROM driver_season_assignments WHERE driver_profile_id = ?",
-            (profile_id,),
-        )
-        # Delete the profile
-        await db.execute(
-            "DELETE FROM driver_profiles WHERE id = ?",
-            (profile_id,),
-        )
+        await delete_driver_profiles(db, [profile_id], keep_history=True)
         await db.commit()
 
     return {"display_name": display_name, "team_name": team_name}

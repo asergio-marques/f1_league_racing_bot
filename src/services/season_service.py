@@ -948,8 +948,11 @@ class SeasonService:
             if division_ids:
                 ph = ",".join("?" * len(division_ids))
 
-                # Collect fake (test-mode) driver profile IDs so we can delete
-                # them after their FK references are cleared.
+                # The season's fake (test-mode) drivers go with it, by the deletion test mode
+                # itself takes: it lets go of every row holding them, in this season or any
+                # other, and keeps their history (issue #268).
+                from services.season_lifecycle_service import delete_driver_profiles
+
                 cursor = await db.execute(
                     f"""
                     SELECT DISTINCT dp.id
@@ -961,6 +964,7 @@ class SeasonService:
                     division_ids,
                 )
                 test_profile_ids = [r[0] for r in await cursor.fetchall()]
+                await delete_driver_profiles(db, test_profile_ids, keep_history=True)
 
                 await db.execute(f"DELETE FROM driver_season_assignments WHERE division_id IN ({ph})", division_ids)
                 await db.execute(f"DELETE FROM division_results_config WHERE division_id IN ({ph})", division_ids)
@@ -975,11 +979,6 @@ class SeasonService:
                     await db.execute(f"DELETE FROM team_seats WHERE team_instance_id IN ({tiph})", team_instance_ids)
                 await db.execute(f"DELETE FROM team_instances WHERE division_id IN ({ph})", division_ids)
                 await db.execute(f"DELETE FROM rounds WHERE division_id IN ({ph})", division_ids)
-
-                # Remove orphaned fake driver profiles (test-mode roster)
-                if test_profile_ids:
-                    tph = ",".join("?" * len(test_profile_ids))
-                    await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({tph})", test_profile_ids)
 
             await db.execute("DELETE FROM season_review_prompts WHERE season_id = ?", (season_id,))
             await db.execute("DELETE FROM divisions WHERE season_id = ?", (season_id,))
