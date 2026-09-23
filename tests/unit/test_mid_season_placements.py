@@ -477,7 +477,11 @@ async def test_the_lineups_are_drawn_first_with_their_new_drivers(monkeypatch):
     )
 
     render.assert_awaited_once_with(
-        cog.bot, interaction.guild, DIVISION_ID, include_uncommitted=True
+        cog.bot,
+        interaction.guild,
+        DIVISION_ID,
+        include_uncommitted=True,
+        obtain_missing_portraits=True,
     )
 
 

@@ -343,7 +343,7 @@ async def refresh_before_render(
     *,
     config=None,
     directory=_UNSET,
-    ignore_trigger: bool = False,
+    obtain_missing: bool = False,
     now: datetime | None = None,
 ) -> int:
     """Refresh the portraits a graphic is about to draw, where the league asked for that.
@@ -361,52 +361,75 @@ async def refresh_before_render(
     none. Omitting the argument entirely means the caller has not looked, and it is resolved
     here.
 
-    *ignore_trigger* pulls even where the league asked for daily updates rather than
-    pre-render ones. Only the confirmation of placements sets it, and only for the render it makes to
-    decide whether the season may be committed. ``use_pfp`` still governs: a league not
-    taking portraits from Discord at all is never fetched for.
+    *obtain_missing* obtains a portrait for each member who has **none**, whichever update
+    trigger the league chose. Only the placements review sets it, through the lineup it draws
+    (image specification, "The drawing of placements under review"). A member who already has
+    a portrait is left to the trigger: where the league updates before every render this
+    brings them all up to date as any render does, and where it updates daily it touches
+    only the missing. ``use_pfp`` still governs: a league not taking portraits from Discord
+    at all is never fetched for.
 
     Returns the number of portraits written, and never raises.
     """
-    if config is None:
-        config = await bot.image_config_service.get_config()
-    # `getattr` rather than attribute access: this function promises never to raise, and a
-    # configuration object predating migration 047 carries neither field. Absent reads as
-    # off, which is the same answer the defaults give.
-    if config is None or not getattr(config, "use_pfp", False):
-        return 0
-    # `pfp_prerender` is the league's choice about *ordinary* postings. The confirmation of placements
-    # sets `ignore_trigger` and pulls whichever trigger is on: it is the one moment a
-    # manager is watching, the season is being committed on the strength of a trial
-    # render, and drawing yesterday's portraits there would misrepresent what the season
-    # is about to post (decided 2026-09-07).
-    if not ignore_trigger and not getattr(config, "pfp_prerender", False):
-        return 0
-    if not members:
-        return 0
+    try:
+        if config is None:
+            config = await bot.image_config_service.get_config()
+        # `getattr` rather than attribute access: a configuration object predating migration
+        # 047 carries neither field. Absent reads as off, which is the same answer the
+        # defaults give.
+        if config is None or not getattr(config, "use_pfp", False):
+            return 0
+        # `pfp_prerender` is the league's choice about *ordinary* postings. The placements
+        # review sets `obtain_missing` and obtains the missing whichever trigger is on: it is
+        # the one moment a season is judged on a drawing, and a driver seated since the last
+        # daily run would otherwise be judged as a placeholder the league will not see
+        # (decided 2026-09-23).
+        every = bool(getattr(config, "pfp_prerender", False))
+        if not every and not obtain_missing:
+            return 0
+        if not members:
+            return 0
 
-    if directory is _UNSET:
-        from services.image_render_service import resolve_configured_directories
+        if directory is _UNSET:
+            from services.image_render_service import resolve_configured_directories
 
-        directories, _faults = resolve_configured_directories(
-            config,
-            (("driver", "driver_image_directory"),),
-            image_type="driver_portraits",
+            directories, _faults = resolve_configured_directories(
+                config,
+                (("driver", "driver_image_directory"),),
+                image_type="driver_portraits",
+            )
+            directory = directories.get("driver")
+        if directory is None:
+            # The configured directory was rejected. The render reports that fault itself,
+            # in the terms a manager can act on; obtaining portraits into it is not this
+            # module's problem to solve twice.
+            return 0
+        if not every:
+            # Only the review reaches here: a portrait already present is the daily
+            # trigger's to keep current, and re-fetching it would spend the review's budget
+            # on drivers who already draw correctly.
+            members = [
+                member
+                for member in members
+                if not portrait_path(directory, str(member.id)).exists()
+            ]
+            if not members:
+                return 0
+
+        return await refresh_portraits(
+            bot.db_path,
+            members,
+            directory,
+            aspect=portrait_aspect(config),
+            now=now,
         )
-        directory = directories.get("driver")
-    if directory is None:
-        # The configured directory was rejected. The render reports that fault itself, in
-        # the terms a manager can act on; obtaining portraits into it is not this module's
-        # problem to solve twice.
+    except Exception:  # noqa: BLE001 -- a portrait never fails a render
+        # Beneath this lie reads of the database and the directory, either of which can
+        # raise. The lineup render would turn that into a drawing refused, and at the
+        # placements review a refused drawing withholds the approve button — which the
+        # obtaining of a portrait must never do (image specification, decided 2026-09-23).
+        log.warning("driver portraits: the pre-render refresh failed", exc_info=True)
         return 0
-
-    return await refresh_portraits(
-        bot.db_path,
-        members,
-        directory,
-        aspect=portrait_aspect(config),
-        now=now,
-    )
 
 
 async def refresh_portraits(
