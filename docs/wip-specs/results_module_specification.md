@@ -401,6 +401,7 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - The points configuration recorded for each amended session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one for it.
 - **An amendment shall cover as many of a round's sessions as the user chooses.** Decided 2026-09-21. A round's reports and appeals are reviewed together, so the amended sessions shall share one amendment: each shall be entered in turn, in running order, and nothing written until the last is in; their reports and appeals shall be reviewed together; and the division rebuilt once.
     - A paste that is refused shall end the whole amendment, the pastes already accepted included, and nothing shall be written. The sessions are not asked for again one by one: the user prepares every classification before starting. Decided 2026-09-21.
+    - Each classification, and each choice of points configuration the user is asked for, shall be awaited for a set period. Where it passes, the amendment shall end as a refused paste does, and the user who ran the command shall be told that it expired and may be run again (#135).
 
 - **An amendment shall replay the round's lifecycle in three stages.** Decided 2026-09-20 (#345). A round is amended the way it was raced, so that a corrected round is indistinguishable from one submitted correctly the first time.
     - **Stage one — the classification.** The corrected results shall be re-inserted. Nothing shall be posted.

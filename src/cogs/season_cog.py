@@ -6016,6 +6016,16 @@ class SeasonCog(commands.Cog):
         import asyncio as _asyncio
         _AMEND_TIMEOUT_S = 300  # 5 minutes, for each paste and each choice of configuration
 
+        def _expired(what_never_came: str) -> str:
+            # **Said to the admin, not only logged** (#135). The channel they were working in
+            # goes, and the log channel is not where they are looking. It does not claim the
+            # channel is gone: one Discord refuses to delete stands until the next run clears it.
+            return (
+                f"⏱️ Amendment expired — {what_never_came} within {_AMEND_TIMEOUT_S // 60} "
+                "minutes, so it has been closed and nothing was written. Run "
+                "`/round results amend` again to start over."
+            )
+
         collected: list[AmendedSession] = []
         for st in chosen:
             if len(chosen) > 1:
@@ -6042,7 +6052,9 @@ class SeasonCog(commands.Cog):
                 t.cancel()
 
             if not done:
-                await _end("AMEND_TIMEOUT", session_type=st)
+                await _end(
+                    "AMEND_TIMEOUT", session_type=st, reply=_expired("no results were pasted")
+                )
                 return
             if cancel_task in done:
                 # The button was pressed: it sets the flag before the event, so both hold.
@@ -6141,7 +6153,10 @@ class SeasonCog(commands.Cog):
                 for _t in _pending:
                     _t.cancel()
                 if not _done:
-                    await _end("AMEND_TIMEOUT", session_type=st)
+                    await _end(
+                        "AMEND_TIMEOUT", session_type=st,
+                        reply=_expired("no points configuration was chosen"),
+                    )
                     return
                 if cancelled_flag[0]:
                     await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
