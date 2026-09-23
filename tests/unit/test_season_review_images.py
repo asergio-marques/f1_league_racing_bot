@@ -26,6 +26,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
+from cogs.season_cog import _ReviewPoster  # noqa: E402
+
 SRC = Path(__file__).resolve().parents[2] / "src"
 
 
@@ -91,7 +93,7 @@ async def test_the_lineup_aspect_being_off_leaves_the_text_to_the_caller(monkeyp
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
     interaction = _interaction()
 
-    state = await _cog()._post_review_lineup_image(interaction, _division())
+    state = await _cog()._post_review_lineup_image(_ReviewPoster(interaction), _division())
 
     assert state == REVIEW_IMAGE_TEXT
     interaction.followup.send.assert_not_awaited()
@@ -110,7 +112,7 @@ async def test_a_drawn_lineup_is_posted_and_the_caller_posts_no_text(monkeypatch
     )
     interaction = _interaction()
 
-    state = await _cog()._post_review_lineup_image(interaction, _division())
+    state = await _cog()._post_review_lineup_image(_ReviewPoster(interaction), _division())
 
     assert state == REVIEW_IMAGE_DREW
     interaction.followup.send.assert_awaited_once()
@@ -136,7 +138,7 @@ async def test_a_lineup_that_would_not_draw_reports_the_fault(monkeypatch):
     )
     interaction = _interaction()
 
-    state = await _cog()._post_review_lineup_image(interaction, _division())
+    state = await _cog()._post_review_lineup_image(_ReviewPoster(interaction), _division())
 
     assert state == REVIEW_IMAGE_FAULT
     interaction.followup.send.assert_awaited_once()
@@ -157,7 +159,7 @@ async def test_the_calendar_aspect_being_off_leaves_the_text_to_the_caller(monke
     )
     interaction = _interaction()
 
-    state = await _cog()._post_review_calendar_image(interaction, _division(), [], 3)
+    state = await _cog()._post_review_calendar_image(_ReviewPoster(interaction), _division(), [], 3)
 
     assert state == REVIEW_IMAGE_TEXT
     interaction.followup.send.assert_not_awaited()
@@ -181,7 +183,7 @@ async def test_a_drawn_calendar_is_posted_and_the_caller_posts_no_text(
     )
     interaction = _interaction()
 
-    state = await _cog()._post_review_calendar_image(interaction, _division(), [], 3)
+    state = await _cog()._post_review_calendar_image(_ReviewPoster(interaction), _division(), [], 3)
 
     assert state == REVIEW_IMAGE_DREW
     interaction.followup.send.assert_awaited_once()
@@ -208,7 +210,7 @@ async def test_a_calendar_that_would_not_draw_reports_the_fault(monkeypatch):
     )
     interaction = _interaction()
 
-    state = await _cog()._post_review_calendar_image(interaction, _division(), [], 3)
+    state = await _cog()._post_review_calendar_image(_ReviewPoster(interaction), _division(), [], 3)
 
     assert state == REVIEW_IMAGE_FAULT
     args, kwargs = interaction.followup.send.call_args
@@ -322,7 +324,7 @@ def test_the_calendar_date_faults_survive_the_graphic():
     assert "cal_lines.extend(fault_lines)" in textual, (
         "the text form must carry the faults"
     )
-    assert "interaction.followup.send" in drew, (
+    assert "poster.send(" in drew, (
         "the drawn form must post them as their own message"
     )
 
@@ -512,7 +514,7 @@ async def test_a_prepared_graphic_is_posted_without_being_drawn_again(
     interaction = _interaction()
 
     state = await _cog()._post_review_lineup_image(
-        interaction, _division(), prepared=_outcome(_png(tmp_path))
+        _ReviewPoster(interaction), _division(), prepared=_outcome(_png(tmp_path))
     )
 
     assert state == REVIEW_IMAGE_DREW
@@ -533,7 +535,7 @@ async def test_a_prepared_calendar_is_posted_without_being_drawn_again(
     interaction = _interaction()
 
     state = await _cog()._post_review_calendar_image(
-        interaction, _division(), [], 3, prepared=_outcome(_png(tmp_path))
+        _ReviewPoster(interaction), _division(), [], 3, prepared=_outcome(_png(tmp_path))
     )
 
     assert state == REVIEW_IMAGE_DREW
@@ -997,75 +999,81 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest():
 # ── Collecting the report, so approving can clear it ──────────────────────
 
 
-async def test_the_recorder_collects_every_public_message():
-    """One interception point rather than ten. The review sends from ten places, several
-    inside helpers, and a collector threaded through all of them would be forgotten by the
-    eleventh caller."""
-    from cogs.season_cog import SeasonCog
-
+async def test_the_poster_keeps_every_public_message():
+    """Every public message a review sends is kept, so that approving it can take them down."""
     interaction = MagicMock()
     sent = [MagicMock(), MagicMock()]
     interaction.followup.send = AsyncMock(side_effect=sent)
-    posted: list = []
+    poster = _ReviewPoster(interaction)
 
-    SeasonCog._recording_followup(interaction, posted)
-    await interaction.followup.send("first")
-    await interaction.followup.send("second")
+    await poster.send("first", ephemeral=False)
+    await poster.send("second", ephemeral=False)
 
-    assert posted == sent
+    assert poster.posted == sent
 
 
-async def test_the_recorder_asks_for_the_message_back():
-    """`followup.send` returns None unless `wait=True`, so without it nothing is collected
-    and the report could never be cleared."""
-    from cogs.season_cog import SeasonCog
-
+async def test_the_poster_asks_for_the_message_back():
+    """`followup.send` returns None unless `wait=True`, so without it nothing is kept and the
+    report could never be cleared."""
     interaction = MagicMock()
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
 
-    SeasonCog._recording_followup(interaction, [])
-    await interaction.followup.send("body")
+    await _ReviewPoster(interaction).send("body", ephemeral=False)
 
     assert original.await_args.kwargs["wait"] is True
 
 
-async def test_the_recorder_leaves_ephemeral_messages_alone():
+async def test_the_poster_leaves_ephemeral_messages_alone():
     """An ephemeral followup is the reviewer's alone and cannot be deleted by id; the
     fault reports among them are how a manager knows what to fix."""
-    from cogs.season_cog import SeasonCog
-
     interaction = MagicMock()
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
-    posted: list = []
+    poster = _ReviewPoster(interaction)
 
-    SeasonCog._recording_followup(interaction, posted)
-    await interaction.followup.send("a fault", ephemeral=True)
+    assert await poster.send("a fault", ephemeral=True) is None
 
-    assert posted == []
+    assert poster.posted == []
     assert "wait" not in original.await_args.kwargs
 
 
-async def test_the_recorder_returns_the_original_for_restoring():
-    from cogs.season_cog import SeasonCog
-
+async def test_the_poster_passes_a_file_and_a_view_on():
     interaction = MagicMock()
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
+    attachment, view = MagicMock(), MagicMock()
 
-    returned = SeasonCog._recording_followup(interaction, [])
+    await _ReviewPoster(interaction).send("body", ephemeral=False, file=attachment, view=view)
 
-    assert returned is original
-    assert interaction.followup.send is not original
+    assert original.await_args.kwargs["file"] is attachment
+    assert original.await_args.kwargs["view"] is view
 
 
-def test_the_review_restores_the_followup_it_wrapped():
-    """The interaction outlives the command, and a wrapper left in place would collect
-    into a list nothing will ever read."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
-
-    assert "interaction.followup.send = original_followup" in source
+def test_nothing_in_a_review_sends_around_the_poster():
+    """A message sent past the poster is not kept, and approving the review would leave it
+    standing. Each review, and each helper it posts through, sends through the poster alone."""
+    tree = ast.parse((SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8"))
+    reviews = {
+        "season_review",
+        "_review_mid_season_placements",
+        "season_config_review",
+        "_post_review_lineup_image",
+        "_post_review_calendar_image",
+        "_post_approval_prompt",
+        "_send_channel_faults",
+    }
+    found = {
+        node.name: sorted(
+            call.lineno
+            for call in ast.walk(node)
+            if isinstance(call, ast.Call) and ast.unparse(call.func).endswith("followup.send")
+        )
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in reviews
+    }
+    assert set(found) == reviews, "a review or helper was renamed — name it here"
+    assert {name: lines for name, lines in found.items() if lines} == {}
 
 
 def test_the_prompt_is_public_and_says_who_may_answer():
@@ -1073,7 +1081,9 @@ def test_the_prompt_is_public_and_says_who_may_answer():
     source = _function_source(SRC / "cogs" / "season_cog.py", "_post_approval_prompt")
 
     assert "ephemeral=False" in source
-    assert "wait=True" in source, "the message must be returned so it can be deleted"
+    # A public send through the poster waits for the message and hands it back, so the
+    # prompt can be bound and later deleted; `test_the_poster_asks_for_the_message_back`.
+    assert "message = await poster.send(" in source
     assert "administrator" in source
     assert "await view.bind(message)" in source
 

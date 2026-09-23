@@ -30,7 +30,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, Awaitable, Callable, Literal, cast, overload
 
 import discord
 from discord import app_commands
@@ -628,6 +628,71 @@ class _AmendSessionsView(LeagueView):
         await interaction.response.defer()
 
 
+class _ReviewPoster:
+    """Sends a season review's messages, keeping each public one so that approving it can take
+    them down.
+
+    A review is a dozen messages sent from the command and from the helpers it calls, several
+    of which know nothing of each other. Each is handed this rather than the interaction and
+    sends through it, so every public message is collected in one place and the type check sees
+    every send (#228). It replaced patching ``interaction.followup.send`` for the length of the
+    review, which collected in one place too but could not be checked;
+    `tests/unit/test_season_review_images.py` holds that nothing in a review sends around it.
+
+    Only the public messages are kept. An ephemeral followup is visible to the reviewer alone
+    and cannot be deleted by id, and the fault reports among them are the reason a manager
+    knows what to fix.
+    """
+
+    def __init__(self, interaction: discord.Interaction) -> None:
+        self.interaction = interaction
+        #: The review's public messages, in the order they were sent.
+        self.posted: list[discord.WebhookMessage] = []
+
+    @overload
+    async def send(
+        self,
+        content: str,
+        *,
+        ephemeral: Literal[False],
+        file: discord.File | None = None,
+        view: discord.ui.View | None = None,
+    ) -> discord.WebhookMessage: ...
+
+    @overload
+    async def send(
+        self,
+        content: str,
+        *,
+        ephemeral: Literal[True],
+        file: discord.File | None = None,
+        view: discord.ui.View | None = None,
+    ) -> None: ...
+
+    async def send(
+        self,
+        content: str,
+        *,
+        ephemeral: bool,
+        file: discord.File | None = None,
+        view: discord.ui.View | None = None,
+    ) -> discord.WebhookMessage | None:
+        """Send *content*; a public message is waited on and kept, a private one is not."""
+        extra: dict[str, Any] = {}
+        if file is not None:
+            extra["file"] = file
+        if view is not None:
+            extra["view"] = view
+        if ephemeral:
+            await self.interaction.followup.send(content, ephemeral=True, **extra)
+            return None
+        message = await self.interaction.followup.send(
+            content, ephemeral=False, wait=True, **extra
+        )
+        self.posted.append(message)
+        return message
+
+
 class SeasonCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -973,7 +1038,7 @@ class SeasonCog(commands.Cog):
         prepared.clear()
 
     async def _post_review_lineup_image(
-        self, interaction, division, *, prepared=None, include_uncommitted: bool = False
+        self, poster: _ReviewPoster, division, *, prepared=None, include_uncommitted: bool = False
     ) -> str:
         """Post the lineup graphic for `/season placements-review`, **in place of** the text lineup.
 
@@ -1005,7 +1070,7 @@ class SeasonCog(commands.Cog):
             if outcome is None:
                 outcome = await render_for_command(
                     self.bot,
-                    interaction.guild,
+                    poster.interaction.guild,
                     division.id,
                     include_uncommitted=include_uncommitted,
                 )
@@ -1013,14 +1078,14 @@ class SeasonCog(commands.Cog):
                 # A commanded render that would not draw. The manager is told what is at
                 # fault; the textual lineup still stands in so the review is complete.
                 if outcome.message:
-                    await interaction.followup.send(outcome.message, ephemeral=True)
+                    await poster.send(outcome.message, ephemeral=True)
                 return REVIEW_IMAGE_FAULT
 
             attachment = _discord.File(
                 str(outcome.png_path), filename=outcome.png_path.name
             )
             try:
-                await interaction.followup.send(
+                await poster.send(
                     "\U0001f3ce\ufe0f **Lineup**", file=attachment, ephemeral=False
                 )
             finally:
@@ -1031,35 +1096,8 @@ class SeasonCog(commands.Cog):
             log.error("season review: lineup image failed: %s", exc)
             return REVIEW_IMAGE_FAULT
 
-    @staticmethod
-    def _recording_followup(interaction, posted: list):
-        """Wrap *interaction*'s followup so every message it sends is collected.
-
-        The review is a dozen messages sent from ten places, several of them inside
-        helpers that know nothing of each other. Threading a collector through all of them
-        would put the bookkeeping in ten places and leave the eleventh caller to forget it;
-        wrapping the one object they all send through puts it in one.
-
-        Only the public messages are collected. An ephemeral followup is visible to the
-        reviewer alone and cannot be deleted by id, and the fault reports among them are
-        the reason a manager knows what to fix.
-        """
-        original = interaction.followup.send
-
-        async def send(*args, **kwargs):
-            if kwargs.get("ephemeral"):
-                return await original(*args, **kwargs)
-            kwargs["wait"] = True
-            message = await original(*args, **kwargs)
-            if message is not None:
-                posted.append(message)
-            return message
-
-        interaction.followup.send = send
-        return original
-
     async def _post_approval_prompt(
-        self, interaction, view: "_ApproveView", season_id: int, posted_messages: list
+        self, poster: _ReviewPoster, view: "_ApproveView", season_id: int
     ) -> None:
         """Ask, publicly, whether the configuration just reported is accepted.
 
@@ -1073,20 +1111,19 @@ class SeasonCog(commands.Cog):
         complete now.
         """
         await view.record_fingerprint(season_id)
-        message = await interaction.followup.send(
+        message = await poster.send(
             f"\U0001f4cb **Do you accept this season configuration?**\n"
-            f"Reviewed by <@{interaction.user.id}>. Approval is open to them or to a server "
+            f"Reviewed by <@{poster.interaction.user.id}>. Approval is open to them or to a server "
             f"administrator for the next {APPROVAL_WINDOW_SECONDS // 60} minutes, after "
             f"which this review expires and must be run again.",
             view=view,
             ephemeral=False,
-            wait=True,
         )
-        view.carries(posted_messages)
+        view.carries(poster.posted)
         await view.bind(message)
 
     async def _post_review_calendar_image(
-        self, interaction, division, rounds, season_number, *, prepared=None
+        self, poster: _ReviewPoster, division, rounds, season_number, *, prepared=None
     ) -> str:
         """Post the calendar graphic for `/season placements-review`, **in place of** the text.
 
@@ -1123,14 +1160,14 @@ class SeasonCog(commands.Cog):
                 )
             if outcome.png_path is None:
                 if outcome.message:
-                    await interaction.followup.send(outcome.message, ephemeral=True)
+                    await poster.send(outcome.message, ephemeral=True)
                 return REVIEW_IMAGE_FAULT
 
             attachment = _discord.File(
                 str(outcome.png_path), filename=outcome.png_path.name
             )
             try:
-                await interaction.followup.send(
+                await poster.send(
                     "\U0001f4c5 **Calendar**", file=attachment, ephemeral=False
                 )
             finally:
@@ -1790,8 +1827,7 @@ class SeasonCog(commands.Cog):
         # can clear the report it was approved from. A review is a dozen messages and
         # several pictures, and once the season is committed it describes a state that no
         # longer needs answering — see `_ApproveView.approve`.
-        posted_messages: list = []
-        original_followup = self._recording_followup(interaction, posted_messages)
+        poster = _ReviewPoster(interaction)
 
         season_num = f" (Season #{cfg.season_number} — F1 {cfg.game_edition})" if cfg.season_number > 0 else (f" (F1 {cfg.game_edition})" if cfg.game_edition > 0 else "")
         # The review is sent as one message per subsection rather than as one block.
@@ -1991,7 +2027,7 @@ class SeasonCog(commands.Cog):
                 if not body:
                     continue
                 for chunk in _chunk_message(body):
-                    await interaction.followup.send(chunk, ephemeral=False)
+                    await poster.send(chunk, ephemeral=False)
 
             # ── Per-division blocks (4 messages each) ────────────────
             db_divisions = await self.bot.season_service.get_divisions_with_results_config(cfg.season_id)
@@ -2031,7 +2067,7 @@ class SeasonCog(commands.Cog):
 
                     # ── Message 0: division banner ─────────────────────────
                     sep = "\u2500" * 35
-                    await interaction.followup.send(
+                    await poster.send(
                         f"{sep}\n# {div.name.upper()}{tier_tag}\n{sep}", ephemeral=False
                     )
 
@@ -2066,7 +2102,7 @@ class SeasonCog(commands.Cog):
                         cfg_lines.append(f"  RSVP channel: {rsvp_chan}")
                         cfg_lines.append(f"  Attendance channel: {att_chan}")
                     cfg_lines.append(f"  Weather channel: {weather_chan}")
-                    await interaction.followup.send("\n".join(cfg_lines), ephemeral=False)
+                    await poster.send("\n".join(cfg_lines), ephemeral=False)
 
                     # ── Message 2: calendar — the graphic, or the text ────
                     #
@@ -2075,7 +2111,7 @@ class SeasonCog(commands.Cog):
                     # never see would be showing them the wrong thing.
                     rounds_db = rounds_by_division.get(div.id, [])
                     cal_state = await self._post_review_calendar_image(
-                        interaction,
+                        poster,
                         div,
                         rounds_db,
                         cfg.season_number or None,
@@ -2112,9 +2148,9 @@ class SeasonCog(commands.Cog):
                                 f"@ {r.track_name or 'Mystery'} \u2014 {discord_ts(r.scheduled_at)}"
                             )
                         cal_lines.extend(fault_lines)
-                        await interaction.followup.send("\n".join(cal_lines), ephemeral=False)
+                        await poster.send("\n".join(cal_lines), ephemeral=False)
                     elif fault_lines:
-                        await interaction.followup.send(
+                        await poster.send(
                             "\n".join(fault_lines), ephemeral=False
                         )
 
@@ -2136,7 +2172,7 @@ class SeasonCog(commands.Cog):
                     )
 
                     lineup_state = await self._post_review_lineup_image(
-                        interaction, div, prepared=prepared.pop((div.id, "lineup"), None)
+                        poster, div, prepared=prepared.pop((div.id, "lineup"), None)
                     )
                     if lineup_state == REVIEW_IMAGE_FAULT:
                         approval_blockers.append(
@@ -2147,7 +2183,7 @@ class SeasonCog(commands.Cog):
 
                     if lineup_state == REVIEW_IMAGE_DREW:
                         if role_warning is not None:
-                            await interaction.followup.send(
+                            await poster.send(
                                 role_warning.strip(), ephemeral=False
                             )
                     else:
@@ -2191,7 +2227,7 @@ class SeasonCog(commands.Cog):
                                     lineup_lines.append(f"  **{t_name}**: {', '.join(mentions)}")
                         else:
                             lineup_lines.append("  *(no drivers assigned)*")
-                        await interaction.followup.send(
+                        await poster.send(
                             "\n".join(lineup_lines), ephemeral=False
                         )
 
@@ -2212,7 +2248,7 @@ class SeasonCog(commands.Cog):
                     "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
                     + "\n".join(f"\u2022 {line}" for line in unsettled)
                 ):
-                    await interaction.followup.send(chunk, ephemeral=False)
+                    await poster.send(chunk, ephemeral=False)
             # The season-wide report of rounds already inside a configured window is
             # withdrawn (#181, decided 2026-09-14). It named every round against every
             # window it had missed, capped at eight rounds — sixty lines where two would do,
@@ -2224,7 +2260,7 @@ class SeasonCog(commands.Cog):
                 # Said once more at the end, briefly, because the per-division notes are
                 # scattered through a review running to a dozen messages and the reason the
                 # button is missing has to be findable from the bottom of it.
-                await interaction.followup.send(
+                await poster.send(
                     "⛔ **This season's calendar holds dates that have already gone by.**"
                     "\nEach division's calendar above names the round. The season is "
                     "**not** offered for approval while that stands — put the dates right "
@@ -2236,7 +2272,7 @@ class SeasonCog(commands.Cog):
                 # saying it five times buries anything else in the list.
                 reasons = list(dict.fromkeys(approval_blockers))
                 body = "\n".join(f"• {reason}" for reason in reasons)
-                await interaction.followup.send(
+                await poster.send(
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands. "
@@ -2245,7 +2281,7 @@ class SeasonCog(commands.Cog):
                 )
             if phantom_configs:
                 body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
-                await interaction.followup.send(
+                await poster.send(
                     "\u26d4 **This season is attached to a points configuration that "
                     "does not exist.**\n"
                     f"{body}\n"
@@ -2258,7 +2294,7 @@ class SeasonCog(commands.Cog):
                 )
             if points_faults:
                 body = "\n".join(f"\u2022 {fault}" for fault in points_faults)
-                await interaction.followup.send(
+                await poster.send(
                     "\u26d4 **This season's points tables are out of order.**\n"
                     f"{body}\n"
                     "A lower position cannot be worth as much as the one above it. The "
@@ -2268,7 +2304,7 @@ class SeasonCog(commands.Cog):
                     ephemeral=True,
                 )
             if unsettled:
-                await interaction.followup.send(
+                await poster.send(
                     "\u26d4 **Every signup must be settled before placements are confirmed.** "
                     f"{len(unsettled)} signup(s) are not, each named in the review above. "
                     "Place each driver with `/driver assign`, turn them down with "
@@ -2277,10 +2313,10 @@ class SeasonCog(commands.Cog):
                     ephemeral=True,
                 )
             if channel_faults:
-                await self._send_channel_faults(interaction, channel_faults)
+                await self._send_channel_faults(poster, channel_faults)
             no_divisions = not await self._season_has_divisions(cfg.season_id)
             if no_divisions:
-                await interaction.followup.send(
+                await poster.send(
                     NO_DIVISIONS_REFUSAL + " Then run `/season placements-review` again.",
                     ephemeral=True,
                 )
@@ -2297,11 +2333,11 @@ class SeasonCog(commands.Cog):
                 # describe the season as the report just described it, and the report is
                 # only complete now.
                 await self._post_approval_prompt(
-                    interaction, view, cfg.season_id, posted_messages
+                    poster, view, cfg.season_id
                 )
         else:
             # Pending (not yet persisted) path — header then one block per division
-            await interaction.followup.send("\n".join(header_lines), ephemeral=False)
+            await poster.send("\n".join(header_lines), ephemeral=False)
             for pending_div in cfg.divisions:
                 if not pending_div.name:
                     continue
@@ -2316,12 +2352,10 @@ class SeasonCog(commands.Cog):
                         f"  Round {pending_round['round_number']}: {pending_round['format'].value} "
                         f"@ {pending_round['track_name'] or 'Mystery'} \u2014 {discord_ts(pending_round['scheduled_at'])}"
                     )
-                await interaction.followup.send("\n".join(div_lines), ephemeral=False)
+                await poster.send("\n".join(div_lines), ephemeral=False)
             await self._post_approval_prompt(
-                interaction, view, cfg.season_id, posted_messages
+                poster, view, cfg.season_id
             )
-
-        interaction.followup.send = original_followup
 
     async def _season_has_divisions(self, season_id: int) -> bool:
         """Whether *season_id* holds a division that is not cancelled.
@@ -2439,7 +2473,7 @@ class SeasonCog(commands.Cog):
         return unsettled, await self._division_channel_faults(season_id, guild)
 
     @staticmethod
-    async def _send_channel_faults(interaction, channel_faults: list[str]) -> None:
+    async def _send_channel_faults(poster: _ReviewPoster, channel_faults: list[str]) -> None:
         """Tell the reviewer, privately, which division channels withhold the button.
 
         One message for both reviews, each fault naming the command that puts it right.
@@ -2450,7 +2484,7 @@ class SeasonCog(commands.Cog):
             f"{body}\n"
             "Set each with the command named, then run `/season placements-review` again."
         ):
-            await interaction.followup.send(chunk, ephemeral=True)
+            await poster.send(chunk, ephemeral=True)
 
     # ------------------------------------------------------------------
     # /season placements-review mid-season — Ongoing, placements (issue #220)
@@ -2472,8 +2506,7 @@ class SeasonCog(commands.Cog):
         proving nothing it is drawn from has changed since.
         """
         await interaction.response.defer(ephemeral=False)
-        posted_messages: list = []
-        original_followup = self._recording_followup(interaction, posted_messages)
+        poster = _ReviewPoster(interaction)
         prepared: dict = {}
         try:
             placements = await self.bot.placement_service.uncommitted_placements(season.id)
@@ -2493,7 +2526,7 @@ class SeasonCog(commands.Cog):
                 lines.append("*No new placement to confirm.*")
             lines.append("")
             for chunk in _chunk_message("\n".join(lines)):
-                await interaction.followup.send(chunk, ephemeral=False)
+                await poster.send(chunk, ephemeral=False)
 
             divisions = [
                 division
@@ -2510,7 +2543,7 @@ class SeasonCog(commands.Cog):
             for division in divisions:
                 if division.id in posted:
                     state = await self._post_review_lineup_image(
-                        interaction,
+                        poster,
                         division,
                         prepared=prepared.pop(division.id, None),
                         include_uncommitted=True,
@@ -2528,7 +2561,7 @@ class SeasonCog(commands.Cog):
                     ]
                     block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
                 for chunk in _chunk_message("\n".join(block)):
-                    await interaction.followup.send(chunk, ephemeral=False)
+                    await poster.send(chunk, ephemeral=False)
 
             unsettled, channel_faults = await self._placement_confirmation_faults(
                 season.id, interaction.guild
@@ -2540,15 +2573,15 @@ class SeasonCog(commands.Cog):
                     "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
                     + "\n".join(f"• {line}" for line in unsettled)
                 ):
-                    await interaction.followup.send(chunk, ephemeral=False)
-                await interaction.followup.send(
+                    await poster.send(chunk, ephemeral=False)
+                await poster.send(
                     "⛔ **Every signup must be settled before placements are confirmed.** "
                     f"{len(unsettled)} signup(s) are not, each named in the review above. "
                     "Settle them, then run `/season placements-review` again.",
                     ephemeral=True,
                 )
             if channel_faults:
-                await self._send_channel_faults(interaction, channel_faults)
+                await self._send_channel_faults(poster, channel_faults)
             if configuration_faults:
                 body = "\n".join(f"• {fault}" for fault in configuration_faults)
                 for chunk in _chunk_message(
@@ -2557,9 +2590,9 @@ class SeasonCog(commands.Cog):
                     "The placements are **not** offered for confirmation while that stands. "
                     "Put it right, then run `/season placements-review` again."
                 ):
-                    await interaction.followup.send(chunk, ephemeral=True)
+                    await poster.send(chunk, ephemeral=True)
             if lineup_faulted:
-                await interaction.followup.send(
+                await poster.send(
                     "⛔ **A lineup confirming would post could not be drawn** with its new "
                     "drivers in it. The fault is reported above, and the lineup was shown as "
                     "text instead. Correct the template or the assets it names, then run "
@@ -2571,20 +2604,18 @@ class SeasonCog(commands.Cog):
 
             view = _ConfirmMidSeasonPlacementsView(self, interaction.user.id)
             await view.record_fingerprint(season.id)
-            message = await interaction.followup.send(
+            message = await poster.send(
                 "\U0001f4cb **Do you confirm these placements?**\n"
                 f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
                 f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Confirming "
                 "grants the new drivers their roles and posts each affected lineup.",
                 view=view,
                 ephemeral=False,
-                wait=True,
             )
-            view.carries(posted_messages)
+            view.carries(poster.posted)
             await view.bind(message)
         finally:
             self._discard_prepared_review_images(prepared)
-            interaction.followup.send = original_followup
 
     async def _prerender_mid_season_lineups(self, interaction, divisions, prepared: dict) -> None:
         """Draw, before posting any, the lineup of each division confirming will post (#374).
@@ -2987,90 +3018,85 @@ class SeasonCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=False)
-        posted_messages: list = []
-        original_followup = self._recording_followup(interaction, posted_messages)
-        try:
-            module = self.bot.module_service
-            on, off = "✅ Enabled", "❌ Disabled"
-            server_config = await self.bot.config_service.get_server_config()
-            test_mode = bool(server_config is not None and server_config.test_mode_active)
-            lines = [
-                f"**Configuration Review (Season #{cfg.season_number} — F1 {cfg.game_edition})**",
-                "",
-                f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
-                "",
-                "**Modules**",
-                f"  Signup: {on if await module.is_signup_enabled() else off}",
-                f"  Results: {on if await module.is_results_enabled() else off}",
-                f"  Attendance: {on if await module.is_attendance_enabled() else off}",
-                f"  Weather: {on if await module.is_weather_enabled() else off}",
-                f"  Images: {on if await module.is_images_enabled() else off}",
+        poster = _ReviewPoster(interaction)
+        module = self.bot.module_service
+        on, off = "✅ Enabled", "❌ Disabled"
+        server_config = await self.bot.config_service.get_server_config()
+        test_mode = bool(server_config is not None and server_config.test_mode_active)
+        lines = [
+            f"**Configuration Review (Season #{cfg.season_number} — F1 {cfg.game_edition})**",
+            "",
+            f"  Test mode: {'✅ On' if test_mode else '❌ Off'}",
+            "",
+            "**Modules**",
+            f"  Signup: {on if await module.is_signup_enabled() else off}",
+            f"  Results: {on if await module.is_results_enabled() else off}",
+            f"  Attendance: {on if await module.is_attendance_enabled() else off}",
+            f"  Weather: {on if await module.is_weather_enabled() else off}",
+            f"  Images: {on if await module.is_images_enabled() else off}",
+            "",
+        ]
+        lines += await self._league_roles_review_lines()
+        teams = await self.bot.team_service.get_teams_with_roles()
+        lines.append("**Teams**")
+        for team in teams:
+            role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
+            lines.append(f"  {team['name']} → {role}")
+        lines.append("")
+        if not any(team["is_reserve"] and team["role_id"] for team in teams):
+            lines += [
+                "⚠️ **Reserve team has no role assigned** — use `/team reserve-role`. "
+                "Drivers on the reserve team will fail result validation.",
                 "",
             ]
-            lines += await self._league_roles_review_lines()
-            teams = await self.bot.team_service.get_teams_with_roles()
-            lines.append("**Teams**")
-            for team in teams:
-                role = f"<@&{team['role_id']}>" if team["role_id"] else "no role"
-                lines.append(f"  {team['name']} → {role}")
-            lines.append("")
-            if not any(team["is_reserve"] and team["role_id"] for team in teams):
-                lines += [
-                    "⚠️ **Reserve team has no role assigned** — use `/team reserve-role`. "
-                    "Drivers on the reserve team will fail result validation.",
-                    "",
-                ]
 
-            # Every module's configuration, subsection by subsection, in the words and the
-            # order of the placements review — save the divisions, which do not exist yet.
-            results_on = await module.is_results_enabled()
-            sections: list[list[str]] = [lines]
-            if await module.is_signup_enabled():
-                sections.append(await self._signup_review_lines())
-            if await module.is_attendance_enabled():
-                sections.append(await self._attendance_review_lines())
-            if results_on:
-                sections.append(
-                    await self._points_names_review_lines(cfg.season_id, results_on)
-                )
-            if await module.is_weather_enabled():
-                sections.append(await self._weather_review_lines())
-            if await module.is_images_enabled():
-                sections.append(await self._build_image_review_section())
-            for section in sections:
-                body = "\n".join(section).strip()
-                if not body:
-                    continue
-                for chunk in _chunk_message(body):
-                    await interaction.followup.send(chunk, ephemeral=False)
-
-            faults = await self._configuration_faults(cfg.season_id, interaction.guild)
-            if faults:
-                body = "\n".join(f"• {fault}" for fault in faults)
-                for chunk in _chunk_message(
-                    "⛔ **The configuration cannot be confirmed yet.**\n"
-                    f"{body}\n"
-                    "Put these right, then run `/season config-review` again."
-                ):
-                    await interaction.followup.send(chunk, ephemeral=False)
-                return
-
-            view = _ConfirmConfigurationView(self, interaction.user.id)
-            await view.record_fingerprint(cfg.season_id)
-            message = await interaction.followup.send(
-                "📋 **Do you confirm this season's configuration?**\n"
-                f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
-                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Once "
-                "confirmed, the team list, the game edition, test mode and the signup module "
-                "are fixed for this season.",
-                view=view,
-                ephemeral=False,
-                wait=True,
+        # Every module's configuration, subsection by subsection, in the words and the
+        # order of the placements review — save the divisions, which do not exist yet.
+        results_on = await module.is_results_enabled()
+        sections: list[list[str]] = [lines]
+        if await module.is_signup_enabled():
+            sections.append(await self._signup_review_lines())
+        if await module.is_attendance_enabled():
+            sections.append(await self._attendance_review_lines())
+        if results_on:
+            sections.append(
+                await self._points_names_review_lines(cfg.season_id, results_on)
             )
-            view.carries(posted_messages)
-            await view.bind(message)
-        finally:
-            interaction.followup.send = original_followup
+        if await module.is_weather_enabled():
+            sections.append(await self._weather_review_lines())
+        if await module.is_images_enabled():
+            sections.append(await self._build_image_review_section())
+        for section in sections:
+            body = "\n".join(section).strip()
+            if not body:
+                continue
+            for chunk in _chunk_message(body):
+                await poster.send(chunk, ephemeral=False)
+
+        faults = await self._configuration_faults(cfg.season_id, interaction.guild)
+        if faults:
+            body = "\n".join(f"• {fault}" for fault in faults)
+            for chunk in _chunk_message(
+                "⛔ **The configuration cannot be confirmed yet.**\n"
+                f"{body}\n"
+                "Put these right, then run `/season config-review` again."
+            ):
+                await poster.send(chunk, ephemeral=False)
+            return
+
+        view = _ConfirmConfigurationView(self, interaction.user.id)
+        await view.record_fingerprint(cfg.season_id)
+        message = await poster.send(
+            "📋 **Do you confirm this season's configuration?**\n"
+            f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
+            f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Once "
+            "confirmed, the team list, the game edition, test mode and the signup module "
+            "are fixed for this season.",
+            view=view,
+            ephemeral=False,
+        )
+        view.carries(poster.posted)
+        await view.bind(message)
 
     async def _do_confirm_configuration(self, interaction: discord.Interaction) -> None:
         """Confirm the configuration: judge the faults afresh, then move the season on.
