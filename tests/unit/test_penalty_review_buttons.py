@@ -458,7 +458,7 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment):
 
     with patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
         "services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
-    ), patch("services.penalty_wizard._pardons_closed", new=AsyncMock(return_value=False)):
+    ), patch("services.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
         await button.callback(interaction)
 
     assert [p.attendance_id for p in state.staged_pardons] == [42]
@@ -476,16 +476,18 @@ async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
     button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
     interaction = _interaction()
     refresh = AsyncMock()
+    moved_on = AsyncMock(return_value="❌ already been approved")
 
     with patch("services.penalty_wizard._refresh_prompt", new=refresh), patch(
-        "services.penalty_wizard._pardons_closed", new=AsyncMock(return_value=True)
+        "services.penalty_wizard._review_moved_on", new=moved_on
     ):
         await button.callback(interaction)
 
     assert len(state.staged_pardons) == 1
-    assert "already been finalized" in _replied(interaction)
+    assert "already been approved" in _replied(interaction)
     assert "Removed" not in _replied(interaction)
     refresh.assert_not_awaited()
+    assert moved_on.await_args.kwargs == {"pardons": True}
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():

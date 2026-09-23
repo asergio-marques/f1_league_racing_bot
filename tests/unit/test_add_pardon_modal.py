@@ -105,6 +105,14 @@ async def _make_db(
             "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', ?)",
             (ROUND_ID, DIVISION_ID, round_status),
         )
+        # The submission channel every first pass is reviewed in. The review is current only
+        # while it is open and its prompt is the one recorded here (#402).
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+            "in_penalty_review, results_posted) "
+            "VALUES (?, 700, '2026-02-01T00:00:00+00:00', 1, 1)",
+            (ROUND_ID,),
+        )
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
             "VALUES (?, ?, 'ASSIGNED')",
@@ -464,7 +472,7 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
 
     interaction, _ = await _submit(state)
 
-    assert "already been finalized" in _replied(interaction)
+    assert "already been approved" in _replied(interaction)
     assert state.staged_pardons == []
 
 
@@ -479,16 +487,16 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
 async def test_pardons_close_when_the_reports_are_approved(
     tmp_path, round_status, amendment, closed
 ):
-    """The one check behind staging a pardon and removing one (#356). A first pass grants its
-    pardons as its reports are approved; an amendment's round is FINAL throughout, and grants its
-    pardons only as its appeals are approved, so the check must never close one."""
-    from services.penalty_wizard import _pardons_closed
+    """The one check behind staging a pardon and removing one (#356, #402). A first pass grants
+    its pardons as its reports are approved; an amendment's round is FINAL throughout, and grants
+    its pardons only as its appeals are approved, so the check must never close one."""
+    from services.penalty_wizard import _review_moved_on
 
     db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
     state = _state(db_path)
     state.is_amendment = amendment
 
-    assert await _pardons_closed(state) is closed
+    assert (await _review_moved_on(state, pardons=True) is not None) is closed
 
 
 # ---------------------------------------------------------------------------

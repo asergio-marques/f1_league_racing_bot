@@ -98,6 +98,10 @@ class PenaltyReviewState:
     #: to the penalty columns, so approving the stage a second time would add every report
     #: again; a first pass is guarded by ``staged_penalties``, which an amendment does not own.
     reports_approved: bool = False
+    #: Set while a first pass's reports are being approved (#402). The approval draws every
+    #: graphic the round posts before it moves the round on, which on the Pi is a long time, and
+    #: until the round moves on nothing in the database says the review is closing. This does.
+    approving: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -164,18 +168,94 @@ async def _shown(state: PenaltyReviewState, driver_user_id: int) -> int:
     return current_of.get(driver_user_id, driver_user_id)
 
 
-async def _pardons_closed(state: PenaltyReviewState) -> bool:
-    """Whether the round's reports are approved, after which its pardons stand (FR-011).
+#: What a review answers while its reports are being approved (#402).
+_BEING_APPROVED = (
+    "⏳ This round's reports are being approved. Its appeals review is posted below once they are."
+)
 
-    A first pass writes its staged pardons when its reports are approved, and leaves this review
-    on screen through the appeals stage; staging one there, or removing one, would change nothing
-    the round carries. An amendment's round is ``FINAL`` throughout, so this never closes one:
-    it writes its pardons when its appeals are approved.
+
+async def _review_moved_on(state: PenaltyReviewState, *, pardons: bool = False) -> str | None:
+    """Why this review can no longer be acted on, or None while it can (#402).
+
+    Every control of the review acts on *state*, which is held in memory and outlives the stage
+    it was built for. The prompt and the approval message stayed on screen, and worked, through a
+    resubmission, through the appeals stage and while an approval was still being applied — so a
+    manager could approve results already being replaced, approve the reports a second time, or
+    be told a penalty was removed when it had been applied. Every control asks this first.
+
+    A first pass is current while all four hold:
+
+    - its reports are not already being approved (``approving``, set by the finaliser);
+    - the round still awaits its report verdicts. Approved, it waits on appeals, and a round
+      that has ended has nothing left to review. This is what closes its pardons (FR-011): they
+      are written when the reports are approved;
+    - no resubmission is collecting, which replaces the results this review is of;
+    - its prompt is the one the channel records. Every review posts a prompt of its own and
+      records it, so a review whose prompt has been replaced — by a cancelled or completed
+      resubmission, or by restart recovery — is an old one, whatever its state still holds.
+
+    An amendment's round is FINAL throughout, so none of that applies to it. Its reports close
+    once approved; its **pardons** do not, because an amendment writes them when its appeals are
+    approved, and until then this review is where they are changed (#345). The controls that
+    stage or remove a pardon pass *pardons*.
+
+    **One race is left open.** A resubmission records itself only after logging what it
+    discards, so an approval pressed in that moment passes the check. The window is one log post
+    wide, and both buttons would have to be pressed inside it.
     """
+    if state.is_amendment:
+        if pardons or not state.reports_approved:
+            return None
+        return (
+            "❌ This amendment's reports are already approved, so they can no longer be changed "
+            "here. Its appeals are reviewed below."
+        )
+    if state.approving:
+        return _BEING_APPROVED
     async with get_connection(state.db_path) as db:
-        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (state.round_id,))
+        cursor = await db.execute(
+            """
+            SELECT r.status, rsc.resubmitting, rsc.prompt_message_id
+            FROM rounds r
+            JOIN round_submission_channels rsc ON rsc.round_id = r.id AND rsc.closed = 0
+            WHERE r.id = ?
+            """,
+            (state.round_id,),
+        )
         row = await cursor.fetchone()
-    return row is not None and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value
+    if row is not None and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value:
+        return (
+            "❌ This round's post-race penalties have already been approved, and its pardons "
+            "with them. Its appeals are reviewed below; a decision already applied is changed "
+            "with `/round results amend` once the round is final."
+        )
+    if row is None or row["status"] != RoundStatus.AWAITING_REPORT_VERDICTS.value:
+        return "❌ This round's penalty review is over, so nothing here can be changed."
+    if row["resubmitting"]:
+        return (
+            "❌ This round's results are being resubmitted. The penalty review is posted again "
+            "once every session is in, or when the resubmission is cancelled."
+        )
+    if row["prompt_message_id"] != state.prompt_message_id:
+        return (
+            "❌ This penalty review has been replaced by a newer one in this channel. "
+            "Use that one."
+        )
+    return None
+
+
+async def _require_current(
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+    *,
+    pardons: bool = False,
+) -> bool:
+    """If the review has moved on, say why and return False; see :func:`_review_moved_on`."""
+    refusal = await _review_moved_on(state, pardons=pardons)
+    if refusal is not None:
+        await interaction.response.send_message(refusal, ephemeral=True)
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +727,11 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
+        # --- The review may have moved on while the form was open (FR-011, #402) ---
+        refusal = await _review_moved_on(self.state, pardons=True)
+        if refusal is not None:
+            await interaction.followup.send(refusal, ephemeral=True)
+            return
 
         # --- Parse driver user ID ---
         raw_id = self.driver_id_input.value.strip()
@@ -677,15 +762,6 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 
         from db.database import get_connection
         from services.driver_service import current_account_of, resolve_driver_profile_id
-
-        # --- Check round is not already finalized (FR-011) ---
-        if await _pardons_closed(self.state):
-            await interaction.followup.send(
-                "❌ Post-race penalties have already been finalized for this round. "
-                "No further attendance pardons may be applied.",
-                ephemeral=True,
-            )
-            return
 
         async with get_connection(self.state.db_path) as db:
             # --- Resolve driver profile ID ---
@@ -1015,14 +1091,9 @@ class PenaltyReviewView(LeagueView):
                 return
             if not await _require_lm(interaction, self.state):
                 return
-            # This prompt stays up through a first pass's appeals, after its reports are
-            # approved and its pardons granted: removing one then would change nothing.
-            if await _pardons_closed(self.state):
-                await interaction.response.send_message(
-                    "❌ Post-race penalties have already been finalized for this round, so its "
-                    "pardons stand. A granted pardon is changed with `/round results amend`.",
-                    ephemeral=True,
-                )
+            # Once a first pass's reports are approved its pardons are granted, and removing
+            # one would change nothing the round carries (#356, #402).
+            if not await _require_current(interaction, self.state, pardons=True):
                 return
             if idx < len(self.state.staged_pardons):
                 removed = self.state.staged_pardons.pop(idx)
