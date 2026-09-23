@@ -15,12 +15,16 @@ records it. Each of the four is a test here, against the production schema.
 **An amendment is FINAL throughout**, so none of the four applies to it. Its reports close once
 approved; its pardons stay open until its appeals are, because that is when an amendment writes
 them (#345).
+
+**The approval message confirms the review as it stood when it was posted**, and its Approve
+commits the review as it stands when pressed. So it is withdrawn whenever the review changes, a
+second one replaces the first, and its buttons act only on the message the review records.
 """
 from __future__ import annotations
 
 import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -28,7 +32,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations  # noqa: E402
 from models.points_config import SessionType  # noqa: E402
-from services.penalty_wizard import PenaltyReviewState, _review_moved_on  # noqa: E402
+from services.penalty_service import StagedPenalty  # noqa: E402
+from services.penalty_wizard import (  # noqa: E402
+    ApprovalView,
+    PenaltyReviewState,
+    _refresh_prompt,
+    _review_moved_on,
+    _show_approval_step,
+)
 
 SERVER_ID = 14402
 SEASON_ID = 1
@@ -207,3 +218,100 @@ async def test_an_amendments_pardons_stay_open_through_its_appeals(tmp_path, rep
     state = _amendment(db_path, reports_approved=reports_approved)
 
     assert await _review_moved_on(state, pardons=True) is None
+
+
+# ---------------------------------------------------------------------------
+# The approval message
+# ---------------------------------------------------------------------------
+
+
+class _Channel:
+    """The submission channel, keeping what the review posts to it and deletes from it."""
+
+    def __init__(self) -> None:
+        self.posted: list[int] = []
+        self.deleted: list[int] = []
+
+    async def send(self, content, view=None):
+        message = MagicMock()
+        message.id = 990001 + len(self.posted)
+        self.posted.append(message.id)
+        return message
+
+    async def fetch_message(self, message_id):
+        message = MagicMock()
+        message.id = message_id
+        message.edit = AsyncMock()
+
+        async def _delete():
+            self.deleted.append(message_id)
+
+        message.delete = _delete
+        return message
+
+
+def _in_channel(state: PenaltyReviewState) -> _Channel:
+    channel = _Channel()
+    state.bot.get_channel = MagicMock(return_value=channel)
+    return channel
+
+
+async def test_a_second_approval_message_replaces_the_first(tmp_path):
+    """Pressing **No Penalties / Confirm** twice left two approval messages standing, each of
+    which approved the round."""
+    state = _state(await _make_db(tmp_path))
+    channel = _in_channel(state)
+
+    await _show_approval_step(MagicMock(), state)
+    first = state.approval_message_id
+    await _show_approval_step(MagicMock(), state)
+
+    assert channel.deleted == [first]
+    assert state.approval_message_id == channel.posted[-1] != first
+
+
+async def test_changing_the_staged_list_withdraws_the_approval_message(tmp_path):
+    """**It said there were no penalties, and applied one.** **Make Changes** went back to the
+    review and left the approval message up; a penalty staged then was applied by its Approve."""
+    state = _state(await _make_db(tmp_path))
+    channel = _in_channel(state)
+    await _show_approval_step(MagicMock(), state)
+    approval = state.approval_message_id
+
+    state.staged.append(
+        StagedPenalty(
+            driver_user_id=4001, session_type=SessionType.FEATURE_RACE,
+            penalty_type="TIME", penalty_seconds=5,
+        )
+    )
+    await _refresh_prompt(state)
+
+    assert channel.deleted == [approval]
+    assert state.approval_message_id is None
+
+
+@pytest.mark.parametrize("button", ["make_changes_btn", "approve_btn"])
+@pytest.mark.parametrize("recorded", [None, 990002], ids=["withdrawn", "replaced"])
+async def test_an_approval_message_no_longer_current_approves_nothing(tmp_path, button, recorded):
+    """A withdrawn message leaves the channel, but a client already showing it can still press
+    it — and one left behind by a resubmission, or by a second **No Penalties / Confirm**, was
+    never withdrawn at all. Only the message the review records acts."""
+    state = _state(await _make_db(tmp_path))
+    state.approval_message_id = recorded
+    view = ApprovalView(state)
+    interaction = MagicMock()
+    interaction.message.id = 990001
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+
+    with patch(
+        "services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+    ), patch(
+        "services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+    ) as finalise, patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+        await getattr(type(view), button)(view, interaction, MagicMock())
+
+    assert "withdrawn" in interaction.response.send_message.await_args.args[0]
+    finalise.assert_not_awaited()
+    refresh.assert_not_awaited()
+    interaction.response.defer.assert_not_awaited()

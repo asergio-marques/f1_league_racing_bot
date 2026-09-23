@@ -80,6 +80,9 @@ class PenaltyReviewState:
     staged_pardons: list[StagedPardon] = field(default_factory=list)
     prompt_message_id: int | None = None
     appeals_prompt_message_id: int | None = None
+    #: The approval message **No Penalties / Confirm** posted, while it stands (#402). Its buttons
+    #: act only while they sit on this message; see :func:`_take_down_approval`.
+    approval_message_id: int | None = None
     round_number: int = 0
     division_name: str = ""
     #: True where this review is an **amendment replaying a settled round**, not the round's
@@ -384,8 +387,41 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
 # Prompt refresh helper
 # ---------------------------------------------------------------------------
 
+async def _delete_review_message(state: PenaltyReviewState, message_id: int | None) -> None:
+    """Delete one of the review's own messages from its channel, where it is still there."""
+    if message_id is None:
+        return
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
+    if ch is None:
+        return
+    try:
+        message = await ch.fetch_message(message_id)
+        await message.delete()
+    except (discord.NotFound, discord.HTTPException):
+        pass  # Already gone; nothing depends on it
+
+
+async def _take_down_approval(state: PenaltyReviewState) -> None:
+    """Withdraw the review's approval message, where one is up (#402).
+
+    The message confirms the review as it stood when it was posted — "no penalties staged,
+    approve to finalise as submitted" — while its Approve commits the review as it stands when
+    pressed. Left up once the review changed, it approved what it did not show: a penalty staged
+    after **Make Changes** was applied by an Approve that said there were none. So anything that
+    changes the review withdraws it, as does anything that ends the stage it belongs to, and its
+    buttons refuse on any message but the one recorded here.
+    """
+    message_id, state.approval_message_id = state.approval_message_id, None
+    await _delete_review_message(state, message_id)
+
+
 async def _refresh_prompt(state: PenaltyReviewState) -> None:
-    """Edit the existing prompt message to reflect the current staged list."""
+    """Edit the existing prompt message to reflect the current staged list.
+
+    Every change to the review comes through here, and **Make Changes** does too, so this is
+    where an approval message confirming the review as it stood is withdrawn (#402).
+    """
+    await _take_down_approval(state)
     if state.prompt_message_id is None:
         return
     ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
@@ -952,7 +988,12 @@ async def _show_approval_step(
     interaction: discord.Interaction,
     state: PenaltyReviewState,
 ) -> None:
-    """Post an :class:`ApprovalView` message to the submission channel."""
+    """Post an :class:`ApprovalView` message to the submission channel.
+
+    One at a time (#402): pressing **No Penalties / Confirm** again replaces the message rather
+    than leaving two approvals standing, and the one posted is recorded so that its buttons can
+    tell it from any other.
+    """
     if state.staged:
         lines = ["**Review and approve the following penalties:**", ""]
         for i, sp in enumerate(state.staged, 1):
@@ -968,8 +1009,10 @@ async def _show_approval_step(
 
     ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is not None:
+        await _take_down_approval(state)
         view = ApprovalView(state=state)
         msg = await ch.send(content, view=view)
+        state.approval_message_id = msg.id
         state.bot.add_view(view, message_id=msg.id)
 
 
@@ -1257,6 +1300,27 @@ class PenaltyReviewView(LeagueView):
 # Approval view (T020, T025)
 # ---------------------------------------------------------------------------
 
+async def _require_approval_message(
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+) -> bool:
+    """Refuse, and return False, unless *interaction* is on the review's approval message (#402).
+
+    Withdrawing a message takes it off the channel, but a client already showing it can still
+    press it; and before this was recorded, an approval message outlived a resubmission, a
+    second one posted beside it, and the review it confirmed changing under it.
+    """
+    message = interaction.message
+    if message is not None and message.id == state.approval_message_id:
+        return True
+    await interaction.response.send_message(
+        "❌ This approval message was withdrawn when the review changed or moved on, so it can "
+        "no longer be used.",
+        ephemeral=True,
+    )
+    return False
+
+
 class ApprovalView(LeagueView):
     """Two-button approval step: Make Changes or final Approve."""
 
@@ -1279,6 +1343,8 @@ class ApprovalView(LeagueView):
             )
             return
         if not await _require_lm(interaction, self.state):
+            return
+        if not await _require_approval_message(interaction, self.state):
             return
         if not await _require_current(interaction, self.state):
             return
@@ -1303,6 +1369,8 @@ class ApprovalView(LeagueView):
             )
             return
         if not await _require_lm(interaction, self.state):
+            return
+        if not await _require_approval_message(interaction, self.state):
             return
         # Immutability guard: reject finalize on archived season
         from services.season_service import SeasonImmutableError

@@ -577,6 +577,8 @@ async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_cla
     state = _state(staged=[_penalty()])
     view = view_class(state)
     interaction = _interaction()
+    # Pressed on the review's own approval message, so it is the review's stage that refuses.
+    state.approval_message_id = interaction.message.id = 880401
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(

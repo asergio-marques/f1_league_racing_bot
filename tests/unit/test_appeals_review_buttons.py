@@ -57,6 +57,9 @@ SERVER_ID = 11608
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
+#: The approval message every interaction here is pressed on, and every state records as its
+#: own. Its buttons act on no other (#402).
+APPROVAL_MESSAGE_ID = 880401
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +132,7 @@ def _state(db_path: str, *, appeals=None) -> PenaltyReviewState:
         db_path=db_path,
         bot=bot,
         staged_appeals=list(appeals or []),
+        approval_message_id=APPROVAL_MESSAGE_ID,
         round_number=3,
         division_name="Pro",
     )
@@ -136,6 +140,7 @@ def _state(db_path: str, *, appeals=None) -> PenaltyReviewState:
 
 def _interaction():
     interaction = MagicMock()
+    interaction.message.id = APPROVAL_MESSAGE_ID
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
     interaction.user.id = 77
