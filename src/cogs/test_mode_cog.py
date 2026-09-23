@@ -1351,9 +1351,9 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
 
     **4000 characters is the whole of what Discord allows a text input**, which is roughly
     sixty drivers at the width the generator writes. A larger roster is imported in two
-    passes — the import appends to what a season already holds, and refuses only a
-    *division* that already holds drivers, so a second paste of the remaining divisions
-    lands cleanly.
+    passes — the import appends to what a season already holds, so a second paste naming
+    only the divisions still empty lands cleanly. A paste naming a division that already
+    holds drivers is refused whole, its empty divisions with it.
     """
 
     # The placeholder is capped at 100 characters by Discord, which is not room for an

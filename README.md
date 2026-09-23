@@ -933,9 +933,9 @@ No parameters. Opens a box; paste the `roster.csv` the roster generator writes, 
 
 **Its team column takes a team's shorthand**, as a results submission does; nothing else names a team there. **The IDs in the file are the IDs written**, unlike `roster add`, which allocates its own. The generator's other scripts — results, check-ins — name drivers by those IDs, so importing the CSV keeps a generated results file lined up with the grid.
 
-> **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first. Only the division named is refused, so the rest of a split roster still lands.
+> **A division that already holds drivers is refused.** The file describes a whole grid, so importing over a seated division would leave drivers somewhere the file does not describe. Clear it with `/test-mode roster clear` first, or take its rows out of the file. The divisions still empty are refused along with it, so nothing in the file lands.
 
-> **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, a team given more drivers than it has seats, or a division given more drivers than a configured image template draws — counted over every driver the file gives it, as `roster add` counts one — refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
+> **Nothing is seated unless everything can be.** A misspelt team, an unknown nationality, a division not in the season, a division that already holds drivers, a team given more drivers than it has seats, or a division given more drivers than a configured image template draws — counted over every driver the file gives it, as `roster add` counts one — refuses the whole import and names every fault at once. Fix the file and paste it again — nothing landed the first time.
 
 > Discord caps the box at 4000 characters, which is roughly seventy drivers. A larger grid goes in two passes, a division at a time.
 
