@@ -1052,9 +1052,9 @@ Enabling is guarded where disabling mostly is not: no module but signup can be e
 
 > **Setting the weather module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
-The weather module's own configuration is these three commands and nothing else. Where forecasts are posted is set per division by [`/division weather-channel`](#division-weather-channel--set-the-weather-forecast-channel-for-a-division); the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
+The weather module's own configuration is the three deadline commands below and nothing else, and `/weather config view` reads them back. Where forecasts are posted is set per division by [`/division weather-channel`](#division-weather-channel--set-the-weather-forecast-channel-for-a-division); the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
 
-All three commands share the same preconditions, checked in this order:
+The three deadline commands share the same preconditions, checked in this order:
 
 1. The weather module must be enabled — otherwise `❌ The weather module is not enabled.`
 2. **No season's placements may be confirmed** — otherwise `❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.` Deadlines are therefore set with no season, or before placements are confirmed.
@@ -1088,7 +1088,12 @@ All three commands share the same preconditions, checked in this order:
 |-----------|------|----------|-------------|
 | `hours` | Integer | ✅ | Number of hours before the round. Minimum 1. Default **2** |
 
-Every successful reply echoes the other two deadlines, and the change is written to the log channel. There is no `/weather config view`: **`/season placements-review`** is the only place the three values are read back.
+Every successful reply echoes the other two deadlines, and the change is written to the log channel.
+
+#### `/weather config view` — Show the three deadlines currently set
+*Access: League manager · Weather module required*
+
+No parameters. Replies to you alone with the Phase 1, Phase 2 and Phase 3 deadlines as they are stored, in the same words `/season config-review` and `/season placements-review` use. It works with no season, before a season is approved and while one is running. Once a season is approved the deadlines cannot change, so what it shows then is what that season runs on. Reading them changes nothing, so nothing is written to the log channel.
 
 > **The posted forecasts do not name a horizon.** Each is titled by what it is — "Initial chance of rain", "Initial session forecast", "Final session forecast" — and the first two say a further forecast follows later, the second adding that it will be an accurate one. None states when it was posted or when the next arrives, so the wording is right at whatever deadlines you set. The graphics have always described themselves this way and the text now matches them.
 
