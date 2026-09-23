@@ -28,7 +28,7 @@ import logging
 
 import discord
 
-from db.database import get_connection
+from db.database import get_connection, sole_row
 from utils.league_bot import LeagueBot
 from utils.league_server import league_guild
 
@@ -407,7 +407,7 @@ async def _delete_rows(db_path: str, round_ids: list[int]) -> tuple[int, int]:
             f"SELECT COUNT(*) FROM session_results WHERE round_id IN ({placeholders})",
             round_ids,
         )
-        sessions = (await cursor.fetchone())[0]
+        sessions = (await sole_row(cursor))[0]
         cursor = await db.execute(
             f"""
             SELECT (SELECT COUNT(*) FROM driver_standings_snapshots
@@ -417,7 +417,7 @@ async def _delete_rows(db_path: str, round_ids: list[int]) -> tuple[int, int]:
             """,
             round_ids + round_ids,
         )
-        standings = (await cursor.fetchone())[0]
+        standings = (await sole_row(cursor))[0]
 
         for table in ("penalty_records", "appeal_records"):
             await db.execute(

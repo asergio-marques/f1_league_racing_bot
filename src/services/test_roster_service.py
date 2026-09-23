@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import TypedDict
 
-from db.database import get_connection, inserted_id
+from db.database import get_connection, inserted_id, sole_row
 from models.points_config import SessionType
 from services.team_service import (
     division_team_references,
@@ -188,7 +188,7 @@ async def add_test_driver(
             "SELECT id, name, max_seats, is_reserve FROM team_instances WHERE id = ?",
             (reference.team["id"],),
         )
-        team_row = await cursor.fetchone()
+        team_row = await sole_row(cursor)
 
         team_instance_id: int = team_row["id"]
         is_reserve: bool = bool(team_row["is_reserve"])
@@ -219,7 +219,7 @@ async def add_test_driver(
                 "SELECT MAX(seat_number) FROM team_seats WHERE team_instance_id = ?",
                 (team_instance_id,),
             )
-            max_row = await max_cursor.fetchone()
+            max_row = await sole_row(max_cursor)
             next_seat_number = (max_row[0] or 0) + 1
             new_seat_cursor = await db.execute(
                 "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
@@ -460,12 +460,12 @@ async def add_test_drivers_in_bulk(
                     "SELECT id FROM team_instances WHERE division_id = ? AND LOWER(name) = ?",
                     key,
                 )
-                team_row = await cursor.fetchone()
+                team_row = await sole_row(cursor)
                 max_cursor = await db.execute(
                     "SELECT MAX(seat_number) FROM team_seats WHERE team_instance_id = ?",
                     (team_row["id"],),
                 )
-                max_row = await max_cursor.fetchone()
+                max_row = await sole_row(max_cursor)
                 new_seat = await db.execute(
                     "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
                     "VALUES (?, ?, NULL)",
@@ -766,7 +766,7 @@ async def _ensure_single_config(
             "SELECT id FROM points_config_store WHERE config_name = ?",
             (config_name,),
         )
-        config_id = (await cursor.fetchone())["id"]
+        config_id = (await sole_row(cursor))["id"]
 
         # Link to season
         await db.execute(

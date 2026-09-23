@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import discord
 
-from db.database import get_connection
+from db.database import get_connection, sole_row
 from models.driver_profile import DriverProfile, DriverState
 from services.channel_registry_service import as_text_channel
 from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
@@ -1379,7 +1379,7 @@ class PlacementService:
             cursor = await db.execute(
                 "SELECT name, mention_role_id FROM divisions WHERE id = ?", (division_id,)
             )
-            div_info = await cursor.fetchone()
+            div_info = await sole_row(cursor)
             div_name = div_info["name"]
             div_role_id = div_info["mention_role_id"]
 
@@ -1406,7 +1406,7 @@ class PlacementService:
                 "SELECT committed FROM driver_season_assignments WHERE id = ?",
                 (assignment_id,),
             )
-            is_committed = bool((await cursor.fetchone())["committed"])
+            is_committed = bool((await sole_row(cursor))["committed"])
             if was_unassigned:
                 await write_transition(
                     db, driver_profile_id, DriverState.UNASSIGNED, DriverState.ASSIGNED
@@ -1500,7 +1500,7 @@ class PlacementService:
                 "AND committed = 1",
                 (driver_profile_id, season_id, division_id),
             )
-            if (await cursor.fetchone())["n"] == 0:
+            if (await sole_row(cursor))["n"] == 0:
                 raise ValueError(
                     "That is the driver's only seat. Sack them with `/driver sack`, or move "
                     "them with `/driver move`."
@@ -1597,7 +1597,7 @@ class PlacementService:
             cursor = await db.execute(
                 "SELECT name, mention_role_id FROM divisions WHERE id = ?", (division_id,)
             )
-            div_info = await cursor.fetchone()
+            div_info = await sole_row(cursor)
             div_name = div_info["name"]
             div_role_id = div_info["mention_role_id"]
 
@@ -1607,7 +1607,7 @@ class PlacementService:
                 "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
                 (driver_profile_id, season_id, division_id),
             )
-            remaining_count = (await cursor.fetchone())[0]
+            remaining_count = (await sole_row(cursor))[0]
             has_remaining = remaining_count > 0
 
             # 6. Determine if team role should be revoked
@@ -1631,7 +1631,7 @@ class PlacementService:
                         """,
                         (driver_profile_id, season_id, division_id, team_cfg.role_id),
                     )
-                    other_same_role = (await cursor.fetchone())[0]
+                    other_same_role = (await sole_row(cursor))[0]
                     if other_same_role == 0:
                         team_role_id_to_revoke = team_cfg.role_id
 

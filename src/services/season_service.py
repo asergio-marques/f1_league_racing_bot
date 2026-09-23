@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 import aiosqlite
 
-from db.database import get_connection, inserted_id
+from db.database import get_connection, inserted_id, sole_row
 from models.division import Division
 from models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
@@ -1389,7 +1389,7 @@ class SeasonService:
             cursor = await db.execute(
                 "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
             )
-            row = await cursor.fetchone()
+            row = await sole_row(cursor)
             season_id: int = row[0]
 
             if tier != 0:
@@ -1438,7 +1438,7 @@ class SeasonService:
                 " FROM divisions WHERE id = ?",
                 (new_div_id,),
             )
-            row = await cursor.fetchone()
+            row = await sole_row(cursor)
         return _row_to_division(row)
 
     # ------------------------------------------------------------------
