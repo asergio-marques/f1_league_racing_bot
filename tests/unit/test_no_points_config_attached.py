@@ -103,7 +103,9 @@ async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_compl
 # ── Every surface reads it ────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("surface", ["_do_approve", "_configuration_faults"])
+@pytest.mark.parametrize(
+    "surface", ["season_review", "_do_approve", "_configuration_faults"]
+)
 def test_every_surface_asks_the_helper_rather_than_counting_for_itself(surface):
     source = _function_source(surface)
 

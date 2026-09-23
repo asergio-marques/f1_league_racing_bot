@@ -1899,6 +1899,7 @@ class SeasonCog(commands.Cog):
         # is on, and a season with results off has no points tables to be wrong about.
         points_faults: list[str] = []
         phantom_configs: list[str] = []
+        no_points_attached = False
 
         # Load from DB to get tier and team roster data
         if cfg.season_id != 0:
@@ -1997,6 +1998,23 @@ class SeasonCog(commands.Cog):
             # must look at this too — read through the same helper the gate reads, so
             # the report and the refusal cannot drift.
             if results_on:
+                # Nothing attached is refused by the approval as surely as a phantom is, and
+                # `/results config detach` stays open in Placements (#409). Save under test
+                # mode, whose approval attaches Standard and Half Points before it counts —
+                # the names line above announces that instead.
+                server_config = await self.bot.config_service.get_server_config()
+                test_mode = bool(server_config is not None and server_config.test_mode_active)
+                no_points_attached = not test_mode and await self._no_points_config_attached(
+                    cfg.season_id
+                )
+                if no_points_attached:
+                    points_lines.append("")
+                    points_lines.append(
+                        "❌ **No points configuration attached** — this blocks approval."
+                    )
+                    points_lines.append(
+                        "  Attach one with `/results config append`, then review again."
+                    )
                 # Named before the ordering faults, because a configuration that is not
                 # there is the reason the names above may not mean what they appear to.
                 # The list of attached names is printed from the links alone, so a mistyped
@@ -2319,6 +2337,14 @@ class SeasonCog(commands.Cog):
                     "Put it right, then run `/season placements-review` again."
                 ):
                     await poster.send(chunk, ephemeral=True)
+            if no_points_attached:
+                await poster.send(
+                    "⛔ **No points configuration is attached to this season.**\n"
+                    "Without one there is nothing to score its results by. The season is "
+                    "**not** offered for approval while that stands — attach one with "
+                    "`/results config append`, then run `/season placements-review` again.",
+                    ephemeral=True,
+                )
             if phantom_configs:
                 body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
                 await poster.send(
@@ -2379,6 +2405,7 @@ class SeasonCog(commands.Cog):
                 and not calendar_faults_found
                 and not points_faults
                 and not phantom_configs
+                and not no_points_attached
                 and not name_problems
                 and not unsettled
                 and not channel_faults
