@@ -40,7 +40,7 @@ from utils.input_validator import parse_datetime
 from utils.league_bot import LeagueBot, bot_of
 from utils.time_parsing import parse_time_of_day
 from utils.channel_guard import league_manager_only, league_role_faults
-from utils.league_server import LeagueView, is_foreign_guild
+from utils.league_server import CallbackButton, LeagueView, is_foreign_guild
 from utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -501,38 +501,38 @@ class PreferredTeamsButtonView(LeagueView):
         if team_names is not None:
             available = [n for n in team_names if n not in (excluded or [])]
             for i, name in enumerate(available):
-                btn: discord.ui.Button = discord.ui.Button(
+                btn = CallbackButton(
                     label=name,
                     style=discord.ButtonStyle.secondary,
                     custom_id=f"pteam_{i}",
+                    on_press=self._make_team_callback(i),
                 )
-                btn.callback = self._make_team_callback(i)
                 self.add_item(btn)
         else:
             # Registration-mode: create stub handlers for all possible team slots
             for i in range(_MAX_TEAM_BUTTONS):
-                btn = discord.ui.Button(
+                btn = CallbackButton(
                     label=str(i + 1),
                     style=discord.ButtonStyle.secondary,
                     custom_id=f"pteam_{i}",
+                    on_press=self._make_team_callback(i),
                 )
-                btn.callback = self._make_team_callback(i)
                 self.add_item(btn)
 
-        no_pref: discord.ui.Button = discord.ui.Button(
+        no_pref = CallbackButton(
             label="No Preference",
             style=discord.ButtonStyle.secondary,
             custom_id="pteam_nopref",
+            on_press=self._no_preference_callback,
         )
-        no_pref.callback = self._no_preference_callback
         self.add_item(no_pref)
 
-        cancel_btn: discord.ui.Button = discord.ui.Button(
+        cancel_btn = CallbackButton(
             label="Cancel Signup",
             style=discord.ButtonStyle.danger,
             custom_id="pteam_cancel",
+            on_press=self._cancel_callback,
         )
-        cancel_btn.callback = self._cancel_callback
         self.add_item(cancel_btn)
 
     def _make_team_callback(self, i: int):

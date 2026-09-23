@@ -43,7 +43,7 @@ from typing import Any, Awaitable, Callable
 import discord
 
 from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import LeagueView, league_guild
+from utils.league_server import CallbackButton, LeagueView, league_guild
 
 log = logging.getLogger(__name__)
 
@@ -133,12 +133,12 @@ class HubPanelView(LeagueView):
     def __init__(self, options: list[HubOption]) -> None:
         super().__init__(timeout=None)
         for option in options:
-            button: discord.ui.Button = discord.ui.Button(
+            button = CallbackButton(
                 label=option.label,
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"{CUSTOM_ID_PREFIX}{option.key}",
+                on_press=_callback_for(option.key),
             )
-            button.callback = _callback_for(option.key)
             self.add_item(button)
 
 

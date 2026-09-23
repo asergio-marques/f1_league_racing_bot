@@ -26,6 +26,8 @@ from utils.league_server import (  # noqa: E402
     UNCLAIMED_REFUSAL,
     LeagueCommandTree,
     LeagueModal,
+    CallbackButton,
+    CallbackSelect,
     LeagueView,
     guild_of,
     is_foreign_guild,
@@ -412,3 +414,52 @@ def test_guild_of_outside_a_command_still_says_what_went_wrong():
     interaction.command = None
     with pytest.raises(RuntimeError, match=r"^An interaction reached its body outside a server"):
         guild_of(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Runtime-built items take their handler (#228)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_callback_button_is_pressed_through_its_handler():
+    handler = AsyncMock()
+    button = CallbackButton(
+        label="Continue", style=discord.ButtonStyle.success, custom_id="go", row=1,
+        on_press=handler,
+    )
+    interaction = MagicMock()
+
+    await button.callback(interaction)
+
+    handler.assert_awaited_once_with(interaction)
+    assert (button.label, button.style, button.custom_id, button.row) == (
+        "Continue", discord.ButtonStyle.success, "go", 1,
+    )
+
+
+async def test_a_callback_select_is_answered_through_its_handler():
+    handler = AsyncMock()
+    options = [discord.SelectOption(label="Race", value="RACE")]
+    select = CallbackSelect(
+        options=options, placeholder="Sessions", max_values=1, row=0, on_choose=handler
+    )
+    interaction = MagicMock()
+
+    await select.callback(interaction)
+
+    handler.assert_awaited_once_with(interaction)
+    assert [option.value for option in select.options] == ["RACE"]
+    assert select.placeholder == "Sessions"
+
+
+def test_no_item_has_its_callback_assigned():
+    """A runtime-built button or menu takes its handler when it is made, which the type
+    check can follow; an assignment to `.callback` it cannot."""
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+    offenders = sorted(
+        f"{os.path.relpath(path, src)}:{number}"
+        for path in glob.glob(os.path.join(src, "**", "*.py"), recursive=True)
+        for number, line in enumerate(open(path, encoding="utf-8"), start=1)
+        if ".callback = " in line
+    )
+    assert offenders == []

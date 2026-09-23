@@ -24,7 +24,7 @@ from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
 from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from utils.league_bot import LeagueBot
-from utils.league_server import LeagueModal, LeagueView
+from utils.league_server import CallbackButton, LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -392,8 +392,11 @@ class _SessionSelectView(LeagueView):
         self.use_appeals_staging = use_appeals_staging
         for stype in state.session_types_present:
             label = stype.value.replace("_", " ").title()
-            btn = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
-            btn.callback = self._make_cb(stype)
+            btn = CallbackButton(
+                label=label,
+                style=discord.ButtonStyle.primary,
+                on_press=self._make_cb(stype),
+            )
             self.add_item(btn)
 
     def _make_cb(self, stype: SessionType):
@@ -912,10 +915,13 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
             len(buttons), len(slots),
         )
     for (label, custom_id, callback), row in zip(buttons, slots):
-        btn = discord.ui.Button(
-            label=label, style=discord.ButtonStyle.danger, custom_id=custom_id, row=row
+        btn = CallbackButton(
+            label=label,
+            style=discord.ButtonStyle.danger,
+            custom_id=custom_id,
+            row=row,
+            on_press=callback,
         )
-        btn.callback = callback
         view.add_item(btn)
 
 

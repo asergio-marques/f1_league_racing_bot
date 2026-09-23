@@ -33,7 +33,7 @@ from utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
-from utils.league_server import LeagueView, guild_of, league_guild
+from utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
 
 if TYPE_CHECKING:
     from services.penalty_wizard import PenaltyReviewState
@@ -3754,12 +3754,6 @@ class _ConfigSelectView(LeagueView):
         self.selected: str | None = None
         self._config = config
         for name in config_names:
-            button = discord.ui.Button(
-                label=name[:80],
-                style=discord.ButtonStyle.primary,
-                custom_id=f"config_sel_{name[:60]}",
-            )
-
             async def _cb(
                 interaction: discord.Interaction,
                 _name: str = name,
@@ -3774,7 +3768,12 @@ class _ConfigSelectView(LeagueView):
                 self.stop()
                 await interaction.response.defer()
 
-            button.callback = _cb
+            button = CallbackButton(
+                label=name[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"config_sel_{name[:60]}",
+                on_press=_cb,
+            )
             self.add_item(button)
 
     def _may_choose(self, interaction: discord.Interaction) -> bool:

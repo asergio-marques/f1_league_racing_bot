@@ -38,6 +38,7 @@ raises is reported to its member, the log channel and the host's log by
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 
 import discord
 from discord import app_commands
@@ -185,6 +186,64 @@ class LeagueModal(discord.ui.Modal):
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, /) -> None:
         await report_failure(interaction, error, what=describe_form(self))
+
+
+#: What a button or a menu built at runtime does when it is used.
+Handler = Callable[[discord.Interaction], Awaitable[None]]
+
+
+class CallbackButton(discord.ui.Button):
+    """A button built at runtime, pressed through the handler it is given.
+
+    discord.py's own way to give a button made in a loop its behaviour is to assign to its
+    ``callback`` — a method, which the type check cannot follow an assignment to, and so could
+    not check the handler against (#228). This takes the handler when the button is made and
+    calls it from the ``callback`` discord.py calls: the same button, pressed the same way.
+    """
+
+    def __init__(
+        self,
+        *,
+        on_press: Handler,
+        style: discord.ButtonStyle = discord.ButtonStyle.secondary,
+        label: str | None = None,
+        disabled: bool = False,
+        custom_id: str | None = None,
+        row: int | None = None,
+    ) -> None:
+        super().__init__(
+            style=style, label=label, disabled=disabled, custom_id=custom_id, row=row
+        )
+        self._on_press = on_press
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self._on_press(interaction)
+
+
+class CallbackSelect(discord.ui.Select):
+    """A menu built at runtime, answered through the handler it is given, as `CallbackButton`."""
+
+    def __init__(
+        self,
+        *,
+        on_choose: Handler,
+        options: list[discord.SelectOption],
+        placeholder: str | None = None,
+        min_values: int = 1,
+        max_values: int = 1,
+        row: int | None = None,
+    ) -> None:
+        super().__init__(
+            options=options,
+            placeholder=placeholder,
+            min_values=min_values,
+            max_values=max_values,
+            row=row,
+        )
+        self._on_choose = on_choose
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self._on_choose(interaction)
 
 
 def warn_if_serving_several(bot: LeagueBot) -> None:

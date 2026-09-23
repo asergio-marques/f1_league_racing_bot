@@ -56,7 +56,7 @@ from utils.channel_guard import (
 )
 from utils.league_bot import LeagueBot, bot_of
 from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
-from utils.league_server import LeagueModal, LeagueView, guild_of, is_foreign_guild
+from utils.league_server import CallbackButton, CallbackSelect, LeagueModal, LeagueView, guild_of, is_foreign_guild
 from utils.output_router import _chunk_message
 from utils.round_import import (
     ParsedDivisionRounds,
@@ -585,20 +585,28 @@ class _AmendSessionsView(LeagueView):
         #: The session-type values chosen, in the order the select reports them.
         self.selected: list[str] = []
         self.cancelled = False
-        self._select = discord.ui.Select(
+        self._select = CallbackSelect(
             placeholder="Sessions to amend",
             min_values=1,
             max_values=len(sessions),
             options=[discord.SelectOption(label=label, value=value) for value, label in sessions],
             row=0,
+            on_choose=self._chosen,
         )
-        self._select.callback = self._chosen
         self.add_item(self._select)
-        go = discord.ui.Button(label="Continue", style=discord.ButtonStyle.success, row=1)
-        go.callback = self._continue
+        go = CallbackButton(
+            label="Continue",
+            style=discord.ButtonStyle.success,
+            row=1,
+            on_press=self._continue,
+        )
         self.add_item(go)
-        cancel = discord.ui.Button(label="\u274c Cancel", style=discord.ButtonStyle.secondary, row=1)
-        cancel.callback = self._cancel
+        cancel = CallbackButton(
+            label="\u274c Cancel",
+            style=discord.ButtonStyle.secondary,
+            row=1,
+            on_press=self._cancel,
+        )
         self.add_item(cancel)
 
     async def _chosen(self, interaction: discord.Interaction) -> None:

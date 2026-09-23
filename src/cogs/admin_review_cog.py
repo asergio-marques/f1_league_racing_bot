@@ -17,7 +17,7 @@ from discord.ext import commands
 from models.driver_profile import DriverState
 from utils.channel_guard import is_league_manager
 from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import LeagueView, guild_of, is_foreign_guild
+from utils.league_server import CallbackButton, LeagueView, guild_of, is_foreign_guild
 
 log = logging.getLogger(__name__)
 
@@ -183,12 +183,6 @@ class CorrectionParameterView(LeagueView):
         self._bot = bot
 
         for label, param_key in self._PARAMETERS:
-            btn: discord.ui.Button = discord.ui.Button(
-                label=label,
-                style=discord.ButtonStyle.secondary,
-                custom_id=f"correct_{param_key}",
-            )
-
             def make_callback(p: str) -> ...:
                 async def callback(inter: discord.Interaction) -> None:
                     if not await _may_review_signup(inter):
@@ -217,7 +211,12 @@ class CorrectionParameterView(LeagueView):
                     )
                 return callback
 
-            btn.callback = make_callback(param_key)
+            btn = CallbackButton(
+                label=label,
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"correct_{param_key}",
+                on_press=make_callback(param_key),
+            )
             self.add_item(btn)
 
 
