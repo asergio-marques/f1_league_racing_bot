@@ -42,7 +42,11 @@
     - A deadline falling exactly at the moment of confirmation counts as having passed.
     - A cancelled round shall not be considered, holding no work to lose.
     - The league's remedy is to reschedule the round or to shorten the deadline, both being decisions only the league can make.
-- The three deadlines shall be displayed in the configuration review and the placements review. No dedicated command to read them back shall be provided.
+- The three deadlines shall be displayed in the configuration review and the placements review.
+- A "weather config view" command shall be available to league managers, which shall display the three deadlines currently stored.
+    - It shall be rejected while the weather module is disabled.
+    - It shall be available whatever the state of the season, and while no season exists. While a season's placements are confirmed, the deadlines it displays are those in force for that season.
+    - It changes nothing, and shall not be written to the log channel.
 
 ### Track parameters
 - Each circuit carries a mean rain probability (μ) and a dispersion (σ), both packaged with the bot and identical for every league.
