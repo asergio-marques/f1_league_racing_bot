@@ -154,9 +154,6 @@ async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
         await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
         await db.commit()
 
-    class _Div:
-        forecast_channel_id = row["forecast_channel_id"]
-
     from services.forecast_cleanup_service import post_phase_message
     from services.image_weather_post import attach_forecast
 

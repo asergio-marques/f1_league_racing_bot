@@ -137,9 +137,6 @@ async def run_phase2(round_id: int, bot: "LeagueBot") -> None:
         await db.commit()
 
     # --- Post output ---
-    class _Div:
-        forecast_channel_id = row["forecast_channel_id"]
-
     from services.forecast_cleanup_service import post_phase_message
     from services.image_weather_post import attach_forecast
 
