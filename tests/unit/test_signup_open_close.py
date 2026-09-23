@@ -682,6 +682,61 @@ async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signu
     )
 
 
+async def _give_signup_channel(db_path: str, discord_user_id: str, channel_id: int) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
+            "VALUES (?, ?)",
+            (discord_user_id, channel_id),
+        )
+        await db.commit()
+
+
+async def test_each_driver_is_listed_with_their_signup_channel(tmp_path):
+    """The spec names the drivers *and their signup channels*: a link a manager can follow to
+    nudge a driver to finish before the window shuts on them."""
+    db_path = await _seed(
+        tmp_path,
+        signups_open=True,
+        in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_ADMIN_APPROVAL"),
+    )
+    await _give_signup_channel(db_path, "7000", 880001)
+    await _give_signup_channel(db_path, "7001", 880002)
+    interaction = _interaction(members={})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+        await _close(_cog(db_path), interaction)
+
+    returned, kept = _replied(interaction).split("keep their place")
+    assert "7000 — <#880001>" in returned
+    assert "7001 — <#880002>" in kept
+
+
+async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path):
+    """No wizard record — or one whose channel was never made — must not print a link to
+    nowhere, nor drop the driver from the list."""
+    db_path = await _seed(
+        tmp_path,
+        signups_open=True,
+        in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_SIGNUP_COMPLETION"),
+    )
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_wizard_records (discord_user_id, signup_channel_id) "
+            "VALUES ('7001', NULL)"
+        )
+        await db.commit()
+    interaction = _interaction(members={})
+
+    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+        await _close(_cog(db_path), interaction)
+
+    replied = _replied(interaction)
+    assert "• 7000\n" in replied
+    assert "• 7001\n" in replied
+    assert "<#" not in replied
+
+
 def test_every_state_the_close_returns_is_one_the_confirmation_lists():
     """A state added to the close alone would drop drivers the confirmation never named, and
     one of them parked alone would let the close through with no confirmation at all."""

@@ -1658,11 +1658,17 @@ class SignupCog(commands.Cog):
         # PARAMETER is in the second group. Leaving it out meant a driver parked there alone
         # let `/signup close` shut on the spot with no confirmation at all (issue #129).
         # Warning the second group that it would be dropped as well was issue #128.
+        #
+        # Each driver is named with their signup channel, so a manager can follow the link
+        # and nudge someone to finish before closing. A driver with no wizard record, or one
+        # whose channel was never made, is named alone.
         async with get_connection(self.bot.db_path) as db:
             placeholders = ",".join("?" for _ in IN_PROGRESS_STATES)
             cursor = await db.execute(
-                f"SELECT discord_user_id, current_state FROM driver_profiles "
-                f"WHERE current_state IN ({placeholders}) ORDER BY id",
+                f"SELECT p.discord_user_id, p.current_state, w.signup_channel_id "
+                f"FROM driver_profiles p "
+                f"LEFT JOIN signup_wizard_records w ON w.discord_user_id = p.discord_user_id "
+                f"WHERE p.current_state IN ({placeholders}) ORDER BY p.id",
                 tuple(state.value for state in IN_PROGRESS_STATES),
             )
             rows = await cursor.fetchall()
@@ -1688,7 +1694,10 @@ class SignupCog(commands.Cog):
         kept: list[str] = []
         for row in rows:
             group = returned if DriverState(row["current_state"]) in RETURNED_BY_CLOSE else kept
-            group.append(_name_for_uid(row["discord_user_id"]))
+            line = _name_for_uid(row["discord_user_id"])
+            if row["signup_channel_id"] is not None:
+                line += f" — <#{row['signup_channel_id']}>"
+            group.append(line)
 
         view = ConfirmCloseView(self.bot)
         await interaction.response.send_message(
