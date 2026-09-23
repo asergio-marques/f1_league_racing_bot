@@ -543,6 +543,25 @@ async def test_a_timed_out_amendment_writes_nothing_and_tidies_up(tmp_path):
     assert await _amend_rows(db_path) == 0
 
 
+def _told_it_expired(interaction, waited_for: str) -> None:
+    last = interaction.followup.send.await_args
+    assert last.kwargs.get("ephemeral") is True
+    assert "Amendment expired" in last.args[0]
+    assert waited_for in last.args[0]
+    assert "/round results amend" in last.args[0]
+
+
+async def test_a_paste_nobody_sends_tells_the_manager_it_expired(tmp_path):
+    """The channel they were typing in simply disappeared, and the one line saying why went to
+    a log channel they were not looking at (#135)."""
+    db_path = await _make_db(tmp_path, name="amend_timeout_told")
+    interaction = _interaction(_amend_channel(), wait_forever=True)
+
+    await _amend(_make_cog(db_path), interaction, timeout=True)
+
+    _told_it_expired(interaction, "no results were pasted within 5 minutes")
+
+
 async def test_cancelling_writes_nothing_and_tidies_up(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_cancel")
     channel = _amend_channel()
@@ -922,6 +941,25 @@ async def test_a_configuration_nobody_chooses_times_out_like_a_paste_nobody_send
     stubs["amend"].assert_not_awaited()
     assert "AMEND_TIMEOUT" in _logged(cog)
     assert await _amend_rows(db_path) == 0
+
+
+async def test_a_configuration_nobody_chooses_tells_the_manager_it_expired(tmp_path):
+    """The same silence as a paste nobody sends, one step later (#135)."""
+    db_path = await _make_db(tmp_path, name="amend_config_timeout_told")
+    interaction = _interaction(_amend_channel(), message=_message())
+    real_wait = asyncio.wait
+    calls = {"n": 0}
+
+    async def _wait(tasks, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return await real_wait(tasks, **kwargs)  # the paste arrives
+        return set(), set(tasks)  # nobody picks a configuration
+
+    with patch("asyncio.wait", new=_wait):
+        await _amend(_make_cog(db_path), interaction, config_names=("A", "B"))
+
+    _told_it_expired(interaction, "no points configuration was chosen within 5 minutes")
 
 
 async def test_a_stale_channel_that_will_not_delete_keeps_its_row_and_says_so(tmp_path):
