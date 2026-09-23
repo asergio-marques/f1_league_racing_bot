@@ -79,6 +79,12 @@ def test_a_silence_that_silences_nothing_fails_the_check():
     assert _config()["mypy"].getboolean("warn_unused_ignores") is True
 
 
+def test_the_bodies_of_unannotated_functions_are_checked_too():
+    """mypy's default reads a function with no annotations as all `Any` and checks none of it.
+    The bot is checked whole, annotations or not."""
+    assert _config()["mypy"].getboolean("check_untyped_defs") is True
+
+
 def test_nothing_is_passed_over_for_the_whole_tree():
     main = _config()["mypy"]
     for option in ("disable_error_code", "ignore_errors", "ignore_missing_imports"):
