@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import aiosqlite
 import discord
 
 from db.database import get_connection
@@ -451,7 +452,7 @@ class AttendanceService:
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 
-def _dra_from_row(row: object) -> DriverRoundAttendance:
+def _dra_from_row(row: aiosqlite.Row) -> DriverRoundAttendance:
     return DriverRoundAttendance(
         id=row["id"],
         round_id=row["round_id"],
@@ -467,7 +468,7 @@ def _dra_from_row(row: object) -> DriverRoundAttendance:
     )
 
 
-def _rem_from_row(row: object) -> RsvpEmbedMessage:
+def _rem_from_row(row: aiosqlite.Row) -> RsvpEmbedMessage:
     return RsvpEmbedMessage(
         id=row["id"],
         round_id=row["round_id"],

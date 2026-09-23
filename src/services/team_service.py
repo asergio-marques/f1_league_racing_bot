@@ -8,6 +8,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import aiosqlite
+
 from db.database import get_connection
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
@@ -701,7 +703,7 @@ async def team_artwork_keys_for_instances(db_path: str, instance_ids) -> dict[in
 # Row helper
 # ---------------------------------------------------------------------------
 
-def _row_to_default_team(row: object) -> DefaultTeam:
+def _row_to_default_team(row: aiosqlite.Row) -> DefaultTeam:
     return DefaultTeam(
         id=row["id"],
         name=row["name"],
