@@ -172,21 +172,6 @@ class TeamService:
         }
 
     @staticmethod
-    async def _division_keys(db, division_id: int, *, exclude: str | None = None) -> dict[str, str]:
-        """Normalised key → team name, within one division of a season."""
-        rows = await (
-            await db.execute(
-                "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 0",
-                (division_id,),
-            )
-        ).fetchall()
-        return {
-            normalise(r["name"]): r["name"]
-            for r in rows
-            if r["name"] != exclude and normalise(r["name"])
-        }
-
-    @staticmethod
     async def _server_full_names(db, *, exclude_id: int | None = None) -> dict[str, str]:
         """Casefolded full name → full name, across the server's team list, Reserve included.
 
