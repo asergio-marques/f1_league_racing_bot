@@ -114,6 +114,29 @@ async def _seat_count(db_path: str, division_id: int, name: str) -> int:
         return (await cursor.fetchone())["n"]
 
 
+async def _insert_division_team(
+    db_path: str, division_id: int, name: str, *, max_seats: int = 2
+) -> None:
+    """Write one team, with its seats, straight into a division.
+
+    Seeding copies the server's list in name order, so a division built by seeding cannot tell
+    ordering by id from ordering by name. The tests of that ordering place their teams here.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (division_id, name, name, max_seats),
+        )
+        for seat_number in range(1, max_seats + 1):
+            await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                "VALUES (?, ?, NULL)",
+                (cursor.lastrowid, seat_number),
+            )
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # The Reserve team
 # ---------------------------------------------------------------------------
@@ -597,7 +620,7 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
     """Used to offer a driver their team preferences, where Reserve is not a choice."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
     await service.seed_division_teams(1)
 
     names = await service.get_setup_season_team_names(SEASON_ID)
@@ -609,7 +632,9 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
 async def test_a_name_in_two_divisions_is_reported_once(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
+    await service.add_default_team("Alpha", full_name="Alpha")
+    await service.seed_division_teams(1)
+    await service.seed_division_teams(2)
 
     assert await service.get_setup_season_team_names(SEASON_ID) == {"Alpha"}
 
@@ -625,11 +650,10 @@ async def test_a_division_s_teams_are_returned_in_insertion_order_not_by_name(tm
     by name, adding "Alpha" after "Zeta" would shift every later team onto a new block —
     the coupling ordinal addressing exists to remove."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
-    service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Zeta", full_name="Zeta")
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
+    await _insert_division_team(db_path, 1, "Zeta")
+    await _insert_division_team(db_path, 1, "Alpha")
 
-    teams = await service.get_division_teams(1)
+    teams = await TeamService(db_path).get_division_teams(1)
 
     assert [t["name"] for t in teams] == ["Zeta", "Alpha"]
 
@@ -637,8 +661,9 @@ async def test_a_division_s_teams_are_returned_in_insertion_order_not_by_name(tm
 async def test_a_division_s_reserve_team_comes_last(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
+    # Seeding an empty list gives the division its Reserve alone, so Alpha is inserted after it.
     await service.seed_division_teams(1)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha")
+    await _insert_division_team(db_path, 1, "Alpha")
 
     teams = await service.get_division_teams(1)
 
@@ -648,7 +673,8 @@ async def test_a_division_s_reserve_team_comes_last(tmp_path):
 async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha", max_seats=2)
+    await service.add_default_team("Alpha", full_name="Alpha", max_seats=2)
+    await service.seed_division_teams(1)
 
     teams = await service.get_division_teams(1)
 
@@ -660,7 +686,8 @@ async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
 async def test_a_filled_seat_carries_its_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
-    await service.season_team_add(SEASON_ID, "Alpha", full_name="Alpha", max_seats=2)
+    await service.add_default_team("Alpha", full_name="Alpha", max_seats=2)
+    await service.seed_division_teams(1)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "
