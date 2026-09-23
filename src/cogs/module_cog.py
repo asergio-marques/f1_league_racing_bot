@@ -12,9 +12,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.driver_profile import DriverState
 from utils.channel_guard import league_admin_only
+from utils.league_bot import LeagueBot
 from utils.league_server import LeagueView, league_guild
 from utils.output_router import _chunk_message
 
@@ -33,7 +35,7 @@ _MODULE_CHOICES = [
 # ---------------------------------------------------------------------------
 
 
-async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
+async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> None:
     """Force-close the signup window.
 
     1. Transition in-progress drivers to NOT_SIGNED_UP.
@@ -69,7 +71,7 @@ async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
 
     # T046: cancel wizard APScheduler jobs for each force-transitioned driver
-    svc = bot.scheduler_service  # type: ignore[attr-defined]
+    svc = bot.scheduler_service
     for row in rows:
         uid = row["discord_user_id"]
         from services.wizard_service import channel_delete_job_id, inactivity_job_id
@@ -85,7 +87,7 @@ async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
     # is cleaned up after a 24-hour hold.
     _guild = await league_guild(bot)
     if _guild is not None:
-        _wizard_svc = bot.wizard_service  # type: ignore[attr-defined]
+        _wizard_svc = bot.wizard_service
         for row in rows:
             try:
                 await _wizard_svc._trigger_channel_hold(
@@ -98,8 +100,8 @@ async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
     # 2. Delete button message
     if cfg.signup_button_message_id:
         guild = await league_guild(bot)
-        if guild:
-            channel = guild.get_channel(cfg.signup_channel_id)
+        if guild and cfg.signup_channel_id is not None:
+            channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
             if channel:
                 try:
                     msg = await channel.fetch_message(cfg.signup_button_message_id)
@@ -112,8 +114,8 @@ async def execute_forced_close(bot: commands.Bot, *, audit_action: str) -> None:
     # 3. Post closed message; capture ID so it can be deleted when re-opening
     closed_msg_id: int | None = None
     guild = await league_guild(bot)
-    if guild:
-        channel = guild.get_channel(cfg.signup_channel_id)
+    if guild and cfg.signup_channel_id is not None:
+        channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
         if channel:
             try:
                 closed_msg = await channel.send("🔒 Signups are now closed.")
@@ -255,7 +257,7 @@ class _ConfirmDisableResultsView(LeagueView):
 
 
 class ModuleCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     module = app_commands.Group(
@@ -987,7 +989,9 @@ class ModuleCog(commands.Cog):
             if guild:
                 channel = guild.get_channel(signup_cfg.signup_channel_id)
                 if channel and isinstance(channel, discord.TextChannel):
-                    targets_to_revert = [guild.default_role, guild.me]
+                    targets_to_revert: list[discord.Role | discord.Member] = [
+                        guild.default_role, guild.me
+                    ]
                     # The base role is the league's and outlives the module (issue #276):
                     # only its overwrite on this channel goes.
                     server_cfg = await self.bot.config_service.get_server_config()

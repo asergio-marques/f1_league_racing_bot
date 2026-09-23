@@ -28,6 +28,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from services.channel_registry_service import as_text_channel
 from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
@@ -40,6 +41,7 @@ from services import backup_service
 from utils.autocomplete import bounded_autocomplete, team_autocomplete
 from utils.channel_guard import league_admin_only
 from utils.input_validator import parse_user_id
+from utils.league_bot import LeagueBot
 from utils.message_builder import paginate_fenced
 from utils.league_server import LeagueModal, LeagueView
 
@@ -47,7 +49,7 @@ log = logging.getLogger(__name__)
 
 
 class TestModeCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     # ------------------------------------------------------------------
@@ -84,7 +86,7 @@ class TestModeCog(commands.Cog):
         # Configuration, and no season in Configuration has raced a fake driver.
         from services.season_lifecycle_service import live_season_stage
 
-        live = await live_season_stage(self.bot.db_path)  # type: ignore[attr-defined]
+        live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] is not SeasonStage.CONFIGURATION:
             await interaction.response.send_message(
                 "⛔ Test mode can only be switched while a season is in configuration. "
@@ -94,12 +96,12 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is not None and not config.test_mode_active:
             real_drivers = await count_live_real_drivers(
-                self.bot.db_path,  # type: ignore[attr-defined]
+                self.bot.db_path,
             )
             if real_drivers:
                 await interaction.response.send_message(
@@ -112,7 +114,7 @@ class TestModeCog(commands.Cog):
                 return
 
         new_state = await toggle_test_mode(
-            self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.db_path,
         )
         if new_state:
             # Auto-seed default point configs for the current season (SETUP or ACTIVE)
@@ -120,7 +122,7 @@ class TestModeCog(commands.Cog):
             from db.database import get_connection
             from services.test_roster_service import ensure_test_configs
 
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(self.bot.db_path) as db:
                 season_cursor = await db.execute(
                     "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE')",
                 )
@@ -131,7 +133,7 @@ class TestModeCog(commands.Cog):
             if season_row is not None:
                 new_configs = await ensure_test_configs(
                     season_id=season_row["id"],
-                    db_path=self.bot.db_path,  # type: ignore[attr-defined]
+                    db_path=self.bot.db_path,
                 )
                 if new_configs:
                     config_note = (
@@ -153,9 +155,9 @@ class TestModeCog(commands.Cog):
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
             from services.forecast_cleanup_service import flush_pending_deletions
-            await flush_pending_deletions(self.bot)  # type: ignore[attr-defined]
+            await flush_pending_deletions(self.bot)
             from services.test_roster_service import clear_all_test_drivers
-            removed = await clear_all_test_drivers(self.bot.db_path)  # type: ignore[attr-defined]
+            removed = await clear_all_test_drivers(self.bot.db_path)
             if removed:
                 log.info(
                     "Test mode disabled: cleared %d fake driver(s)",
@@ -166,7 +168,7 @@ class TestModeCog(commands.Cog):
             discarded = False
             try:
                 discarded = backup_service.discard(
-                    self.bot.db_path, _jobstore_path(self.bot)  # type: ignore[attr-defined]
+                    self.bot.db_path, _jobstore_path(self.bot)
                 )
             except Exception:  # noqa: BLE001 — a backup left behind is not worth the toggle
                 log.exception("test-mode toggle: could not discard the saved backup")
@@ -203,7 +205,7 @@ class TestModeCog(commands.Cog):
         server under test may be seen with flags and without them without the setting real
         signups run on being touched.
         """
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -214,7 +216,7 @@ class TestModeCog(commands.Cog):
             return
 
         new_state = await toggle_test_mode_nationality(
-            self.bot.db_path,  # type: ignore[attr-defined]
+            self.bot.db_path,
         )
         note = (
             "Mock drivers may be given one with `/test-mode roster add`."
@@ -241,7 +243,7 @@ class TestModeCog(commands.Cog):
     @league_admin_only
     async def advance(self, interaction: discord.Interaction) -> None:
         # Check test mode is active before doing any heavy work
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -255,8 +257,8 @@ class TestModeCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         entry = await get_next_pending_phase(
-            self.bot.db_path,  # type: ignore[attr-defined]
-            self.bot.scheduler_service,  # type: ignore[attr-defined]
+            self.bot.db_path,
+            self.bot.scheduler_service,
         )
 
         if entry is None:
@@ -305,8 +307,8 @@ class TestModeCog(commands.Cog):
             # Mark notice as sent so this round is excluded from future advance calls
             # Cancel the scheduler job so it doesn't double-fire later
             if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
-            async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+                self.bot.scheduler_service.cancel_job(entry["job_id"])
+            async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
                     (entry["round_id"],),
@@ -331,11 +333,11 @@ class TestModeCog(commands.Cog):
 
             # Guard: if a submission channel is already open, the admin must complete
             # that submission before advancing to the next round.
-            if await is_submission_open(self.bot.db_path, entry["round_id"]):  # type: ignore[attr-defined]
+            if await is_submission_open(self.bot.db_path, entry["round_id"]):
                 # Results are not final until the appeals review is approved. A round sitting
                 # awaiting appeal verdicts has had its report verdicts settled already,
                 # so name whichever review is actually standing rather than always the first.
-                status = await round_result_status(self.bot.db_path, entry["round_id"])  # type: ignore[attr-defined]
+                status = await round_result_status(self.bot.db_path, entry["round_id"])
                 if status != "FINAL":
                     review = (
                         "appeals review"
@@ -362,7 +364,7 @@ class TestModeCog(commands.Cog):
             # Always cancel any results_r job for this round — handles the case where
             # a real future-dated results_r job exists (e.g. weather-enabled season)
             # so it doesn't double-fire after advance has already triggered submission.
-            self.bot.scheduler_service.cancel_job(f"results_r{entry['round_id']}")  # type: ignore[attr-defined]
+            self.bot.scheduler_service.cancel_job(f"results_r{entry['round_id']}")
             await interaction.followup.send(
                 f"⏩ Opening result submission wizard for "
                 f"**{entry['division_name']}** — **Round {entry['round_number']}** "
@@ -376,7 +378,7 @@ class TestModeCog(commands.Cog):
         if phase_number == 5:
             from services.rsvp_service import run_rsvp_notice
             if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+                self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_notice(entry["round_id"], self.bot)
             except Exception:
@@ -409,7 +411,7 @@ class TestModeCog(commands.Cog):
         if phase_number == 6:
             from services.rsvp_service import run_rsvp_last_notice
             if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+                self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_last_notice(entry["round_id"], self.bot)
             except Exception:
@@ -440,7 +442,7 @@ class TestModeCog(commands.Cog):
         if phase_number == 7:
             from services.rsvp_service import run_rsvp_deadline
             if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+                self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_deadline(entry["round_id"], self.bot)
             except Exception:
@@ -474,7 +476,7 @@ class TestModeCog(commands.Cog):
 
         # Cancel the scheduler job before running so it doesn't double-fire later
         if entry["job_id"] is not None:
-            self.bot.scheduler_service.cancel_job(entry["job_id"])  # type: ignore[attr-defined]
+            self.bot.scheduler_service.cancel_job(entry["job_id"])
 
         try:
             await runner(entry["round_id"], self.bot)
@@ -493,8 +495,8 @@ class TestModeCog(commands.Cog):
 
         # After running this phase, check if the entire season is now complete
         next_entry = await get_next_pending_phase(
-            self.bot.db_path,  # type: ignore[attr-defined]
-            self.bot.scheduler_service,  # type: ignore[attr-defined]
+            self.bot.db_path,
+            self.bot.scheduler_service,
         )
 
         await interaction.followup.send(
@@ -520,7 +522,7 @@ class TestModeCog(commands.Cog):
     )
     @league_admin_only
     async def review(self, interaction: discord.Interaction) -> None:
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -531,8 +533,8 @@ class TestModeCog(commands.Cog):
             return
 
         summary = await build_review_summary(
-            self.bot.db_path,  # type: ignore[attr-defined]
-            self.bot.scheduler_service,  # type: ignore[attr-defined]
+            self.bot.db_path,
+            self.bot.scheduler_service,
         )
         # Discord message limit is 2000 characters; chunk if needed.
         chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]
@@ -560,7 +562,7 @@ class TestModeCog(commands.Cog):
         value: bool,
     ) -> None:
         """Set former_driver flag — only available when test mode is active."""
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -571,7 +573,7 @@ class TestModeCog(commands.Cog):
             return
 
         try:
-            old_val, new_val = await self.bot.driver_service.set_former_driver(  # type: ignore[attr-defined]
+            old_val, new_val = await self.bot.driver_service.set_former_driver(
                 str(user.id),
                 value,
                 interaction.user.id,
@@ -626,7 +628,7 @@ class TestModeCog(commands.Cog):
         """
         from services.season_lifecycle_service import live_season_stage
 
-        live = await live_season_stage(self.bot.db_path)  # type: ignore[attr-defined]
+        live = await live_season_stage(self.bot.db_path)
         if live is not None and live[1] is SeasonStage.PLACEMENTS:
             return False
         await interaction.response.send_message(
@@ -642,7 +644,7 @@ class TestModeCog(commands.Cog):
         be turned off between one command and the next, and a restore is not something to
         run on the strength of a stale reading.
         """
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is not None and config.test_mode_active:
@@ -667,7 +669,7 @@ class TestModeCog(commands.Cog):
         if await self._refuse_outside_test_mode(interaction):
             return
 
-        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        db_path = self.bot.db_path
         scheduler = getattr(self.bot, "scheduler_service", None)
 
         # Paused around the copy. APScheduler writes its jobstore on the event-loop
@@ -691,7 +693,7 @@ class TestModeCog(commands.Cog):
             )
             return
         finally:
-            if paused:
+            if paused and scheduler is not None:
                 scheduler._scheduler.resume()
 
         state = backup_service.state(db_path)
@@ -717,7 +719,7 @@ class TestModeCog(commands.Cog):
         if await self._refuse_outside_test_mode(interaction):
             return
 
-        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        db_path = self.bot.db_path
         if not backup_service.state(db_path).exists:
             await interaction.followup.send(
                 "⛔ There is no saved backup to lock. Take one with "
@@ -747,8 +749,8 @@ class TestModeCog(commands.Cog):
         if await self._refuse_outside_test_mode(interaction):
             return
 
-        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
-        if not state.exists:
+        state = backup_service.state(self.bot.db_path)
+        if not state.exists or state.taken_at is None:
             await interaction.followup.send(
                 "📭 There is no saved backup. Take one with `/test-mode backup save`.",
                 ephemeral=True,
@@ -776,8 +778,8 @@ class TestModeCog(commands.Cog):
         if await self._refuse_outside_test_mode(interaction):
             return
 
-        state = backup_service.state(self.bot.db_path)  # type: ignore[attr-defined]
-        if not state.exists:
+        state = backup_service.state(self.bot.db_path)
+        if not state.exists or state.taken_at is None:
             await interaction.followup.send(
                 "⛔ There is no saved backup to restore. Take one with "
                 "`/test-mode backup save`.",
@@ -840,7 +842,7 @@ class TestModeCog(commands.Cog):
         division: str,
         nationality: str | None = None,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -868,9 +870,9 @@ class TestModeCog(commands.Cog):
             driver_name=driver_name,
             team_name=team_name,
             division_name=division,
-            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+            db_path=self.bot.db_path,
             nationality=nationality,
-            placement_service=self.bot.placement_service,  # type: ignore[attr-defined]
+            placement_service=self.bot.placement_service,
         )
 
         if isinstance(result, str):
@@ -915,7 +917,7 @@ class TestModeCog(commands.Cog):
         inverts the rule the rest of this cog follows — see `roster_add` above, which
         defers as normal. Do not "correct" it.
         """
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -942,7 +944,7 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         user_id: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -965,7 +967,7 @@ class TestModeCog(commands.Cog):
 
         result = await remove_test_driver(
             discord_user_id=discord_uid,
-            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+            db_path=self.bot.db_path,
         )
 
         if isinstance(result, str):
@@ -1001,7 +1003,7 @@ class TestModeCog(commands.Cog):
         # and every page goes out through followup.
         await interaction.response.defer(ephemeral=True)
 
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -1015,7 +1017,7 @@ class TestModeCog(commands.Cog):
 
         result = await list_test_drivers(
             division_name=division,
-            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+            db_path=self.bot.db_path,
         )
 
         if isinstance(result, str):
@@ -1060,7 +1062,7 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         division: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -1076,7 +1078,7 @@ class TestModeCog(commands.Cog):
 
         result = await clear_test_drivers(
             division_name=division,
-            db_path=self.bot.db_path,  # type: ignore[attr-defined]
+            db_path=self.bot.db_path,
         )
 
         if isinstance(result, str):
@@ -1126,7 +1128,7 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         division: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(  # type: ignore[attr-defined]
+        config = await self.bot.config_service.get_server_config(
 
         )
         if config is None or not config.test_mode_active:
@@ -1139,7 +1141,7 @@ class TestModeCog(commands.Cog):
         # The attendance module gate (issue #114). A call posted while the module was on
         # leaves its `rsvp_embed_messages` row behind, so without this the command finds that
         # embed and writes check-in answers for a module the league has switched off.
-        if not await self.bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "❌ The Attendance module is not enabled, so there is no check-in to set.",
                 ephemeral=True,
@@ -1153,7 +1155,7 @@ class TestModeCog(commands.Cog):
         from models.season import ONGOING_STAGES
 
         ongoing = [stage.value for stage in ONGOING_STAGES]
-        async with _gc(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with _gc(self.bot.db_path) as db:
             cur = await db.execute(
                 f"""
                 SELECT d.id AS division_id
@@ -1173,7 +1175,7 @@ class TestModeCog(commands.Cog):
             return
         division_id: int = div_row["division_id"]
 
-        embed_rows = await self.bot.attendance_service.get_all_embed_messages()  # type: ignore[attr-defined]
+        embed_rows = await self.bot.attendance_service.get_all_embed_messages()
         target_embed = next((r for r in embed_rows if r.division_id == division_id), None)
         if target_embed is None:
             await interaction.response.send_message(
@@ -1239,7 +1241,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         round_id: int,
         embed_channel_id: int,
         embed_message_id: int,
-        bot: commands.Bot,
+        bot: LeagueBot,
     ) -> None:
         super().__init__()
         self._division_name = division_name
@@ -1249,7 +1251,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         self._embed_message_id = embed_message_id
         self._bot = bot
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
         from db.database import get_connection as _gc
@@ -1279,7 +1281,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 )
                 continue
 
-            async with _gc(self._bot.db_path) as db:  # type: ignore[attr-defined]
+            async with _gc(self._bot.db_path) as db:
                 cur = await db.execute(
                     "SELECT id FROM driver_profiles "
                     "WHERE CAST(discord_user_id AS INTEGER) = ?",
@@ -1292,7 +1294,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 continue
             driver_profile_id: int = profile_row["id"]
 
-            dra = await self._bot.attendance_service.get_attendance_row_for_driver(  # type: ignore[attr-defined]
+            dra = await self._bot.attendance_service.get_attendance_row_for_driver(
                 round_id=self._round_id,
                 division_id=self._division_id,
                 driver_profile_id=driver_profile_id,
@@ -1303,7 +1305,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 )
                 continue
 
-            await self._bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
+            await self._bot.attendance_service.upsert_rsvp_status(
                 round_id=self._round_id,
                 division_id=self._division_id,
                 driver_profile_id=driver_profile_id,
@@ -1313,7 +1315,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
 
         # Rebuild embed once after all updates
         if applied:
-            channel = self._bot.get_channel(self._embed_channel_id)
+            channel = as_text_channel(self._bot.get_channel(self._embed_channel_id))
             if channel is not None:
                 try:
                     msg = await channel.fetch_message(self._embed_message_id)
@@ -1335,7 +1337,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         await interaction.followup.send("\n".join(lines) or "No valid entries.", ephemeral=True)
 
         if applied:
-            await self._bot.output_router.post_log(  # type: ignore[attr-defined]
+            await self._bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /test-mode rsvp set-status | {len(applied)} update(s)\n"
                 f"  division: {self._division_name}\n"
@@ -1383,8 +1385,8 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
 
         seated, errors = await add_test_drivers_in_bulk(
             drivers,
-            self._cog.bot.db_path,  # type: ignore[attr-defined]
-            placement_service=self._cog.bot.placement_service,  # type: ignore[attr-defined]
+            self._cog.bot.db_path,
+            placement_service=self._cog.bot.placement_service,
         )
         if errors:
             await interaction.followup.send(
@@ -1446,7 +1448,7 @@ class _ConfirmRestoreView(LeagueView):
         await interaction.response.defer(ephemeral=True)
         bot = self._cog.bot
         try:
-            backup_service.stage_restore(bot.db_path, _jobstore_path(bot))  # type: ignore[attr-defined]
+            backup_service.stage_restore(bot.db_path, _jobstore_path(bot))
         except backup_service.BackupError as exc:
             await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
             self.stop()

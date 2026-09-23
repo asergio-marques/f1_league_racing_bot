@@ -382,3 +382,44 @@ async def test_reserves_are_shown_where_the_division_has_not_said_otherwise(tmp_
     _, _, post = await _run(db_path, from_round=1, posted={2: _both()})
 
     assert post.await_args.args[9] is True
+
+
+async def test_a_channel_deleted_partway_through_the_repost_is_refused_not_raised_on(tmp_path):
+    """The channel check is made once for the whole repost, and each round's posting is
+    awaited in between. A standings channel deleted while round 2 was being reposted is gone by
+    round 3, and round 3 used to be posted to nothing and raise, leaving the rest of the
+    season unreposted. It is refused as the check refuses a missing channel (#228)."""
+    db_path = await _make_db(tmp_path, name="repost_channel_deleted_midway")
+    channel = MagicMock()
+    channel.id = STANDINGS_CHANNEL
+    guild = MagicMock()
+    # Round 2: checked, then looked up. Round 3: the check is remembered, the lookup finds
+    # nothing.
+    guild.get_channel = MagicMock(side_effect=[channel, channel, None])
+    posted = {2: _both(), 3: _both()}
+
+    async def _message_id(_db, _div, round_id, championship):
+        return posted.get(round_id, {}).get(championship)
+
+    with patch(
+        "services.results_post_service.recompute_standings_from_round", new=AsyncMock()
+    ), patch(
+        "services.results_post_service._get_standings_message_id", new=_message_id
+    ), patch(
+        "services.results_post_service._clear_standings_messages", new=AsyncMock()
+    ), patch(
+        "services.results_post_service.driver_standings_for_display",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.standings_service.compute_team_standings",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "services.results_post_service.post_standings", new=AsyncMock()
+    ) as post:
+        faults = await repost_subsequent_standings(
+            db_path, DIVISION_ID, 1, guild, bot=MagicMock()
+        )
+
+    assert _reposted_rounds(post) == [2]
+    assert any("is not in the server" in fault for fault in faults)
+    assert any("round 3 were not reposted" in fault for fault in faults)

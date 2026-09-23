@@ -26,6 +26,7 @@ from pathlib import Path
 
 from db.database import get_connection
 from models.round import RoundStatus
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +103,7 @@ class CalendarPosting:
         return self.problem is not None and not self.posted_as_image
 
 
-async def image_calendar_wanted(bot) -> bool:
+async def image_calendar_wanted(bot: LeagueBot) -> bool:
     """Whether this server conveys its calendar as a graphic.
 
     Both gates must be open: the module enabled, and the `calendar` aspect toggled on.
@@ -119,7 +120,7 @@ async def image_calendar_wanted(bot) -> bool:
 
 
 async def render_calendar_image(
-    bot,
+    bot: LeagueBot,
     division,
     rounds,
     tracks,
@@ -218,7 +219,7 @@ class CalendarCommandOutcome:
 
 
 async def render_for_command(
-    bot,
+    bot: LeagueBot,
     division,
     rounds,
     tracks,
@@ -267,7 +268,7 @@ async def render_for_command(
 
 
 async def replace_calendar_message(
-    bot,
+    bot: LeagueBot,
     channel,
     division_id: int,
     *,
@@ -328,7 +329,7 @@ async def replace_calendar_message(
 
 
 async def post_division_calendar(
-    bot,
+    bot: LeagueBot,
     guild,
     division,
     rounds,

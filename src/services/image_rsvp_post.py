@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ RSVP_ASPECT = "rsvp"
 RSVP_TEMPLATE_KEY = "rsvp_template"
 
 
-async def rsvp_enabled(bot) -> bool:
+async def rsvp_enabled(bot: LeagueBot) -> bool:
     """True where the module is on, the ``rsvp`` aspect is on, and the template is valid."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -47,7 +48,7 @@ async def rsvp_enabled(bot) -> bool:
 
 
 async def try_attach(
-    bot,
+    bot: LeagueBot,
     *,
     division_name: str,
     round_number,
@@ -164,13 +165,13 @@ def discard_attachment(attachment) -> None:
     _discard(attachment)
 
 
-async def _report(bot, what: str, detail: str) -> None:
+async def _report(bot: LeagueBot, what: str, detail: str) -> None:
     from services.image_results_post import report
 
     await report(bot, what, detail)
 
 
-async def _report_notices(bot, what: str, notices) -> None:
+async def _report_notices(bot: LeagueBot, what: str, notices) -> None:
     from services.image_results_post import report_notices
 
     await report_notices(bot, what, notices)

@@ -160,14 +160,14 @@ def parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]:
                         f"[{session_type.label()}] <fastest-lap> — "
                         f"points value {fl_pts_text!r} must be a non-negative integer."
                     )
-                    fl_pts = None  # type: ignore[assignment]
+                    fl_pts = None
 
                 if fl_pts is not None and fl_pts < 0:
                     errors.append(
                         f"[{session_type.label()}] <fastest-lap> — "
                         f"points must be >= 0, got {fl_pts}."
                     )
-                    fl_pts = None  # type: ignore[assignment]
+                    fl_pts = None
 
                 limit_attr = fl_el.get("limit", "").strip()
                 fl_limit: int | None = None
@@ -201,8 +201,8 @@ def parse_xml_payload(xml_text: str) -> tuple[XmlImportPayload, list[str]]:
 
         if has_positions:
             positions[session_type] = pos_dict
-        if has_fl:
-            fastest_laps[session_type] = fl_entry  # type: ignore[assignment]
+        if fl_entry is not None:
+            fastest_laps[session_type] = fl_entry
 
     if errors:
         raise XmlImportError(errors)

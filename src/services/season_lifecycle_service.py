@@ -16,6 +16,7 @@ import logging
 
 from db.database import get_connection
 from models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
+from utils.league_bot import LeagueBot
 from utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
@@ -141,7 +142,7 @@ async def advance_on_window_close(db_path: str) -> SeasonStage | None:
     return target
 
 
-async def turn_down_pending_placements(bot, season_id: int, guild) -> list[int]:
+async def turn_down_pending_placements(bot: LeagueBot, season_id: int, guild) -> list[int]:
     """Turn down every placement of *season_id* still pending, as the reject command would.
 
     Pending are the unsettled signups — Unassigned, awaiting approval or mid-correction — and
@@ -210,7 +211,7 @@ async def turn_down_pending_placements(bot, season_id: int, guild) -> list[int]:
     return [d["id"] for d in drivers]
 
 
-async def wind_down_ongoing(bot) -> bool:
+async def wind_down_ongoing(bot: LeagueBot) -> bool:
     """Take a season whose every division is done out of the ongoing stages (issue #220).
 
     A season in Ongoing, signups open or Ongoing, placements has no round left to place a
@@ -363,7 +364,7 @@ async def _close_driver_signups(
     drivers: list[dict],
     driver_role_id: int | None,
     *,
-    bot,
+    bot: LeagueBot | None,
     guild,
     notice: str,
     reason: str,
@@ -445,7 +446,7 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
     await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({placeholders})", ids)
 
 
-async def run_driver_pass(db_path: str, *, bot=None, guild=None) -> dict:
+async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=None) -> dict:
     """The driver pass that ends a season: completion, cancellation and abort alike (#220).
 
     1. Every driver Unassigned, Assigned, mid-signup or in review returns to Not Signed Up. A

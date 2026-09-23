@@ -121,7 +121,7 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
     compounds_dealt = 0
     for position, driver in enumerate(drivers, start=1):
         seconds = 88.400 + (position - 1) * 0.400
-        best_lap = f"1:{int(seconds - 60):02d}.{int(round((seconds % 1) * 1000)):03d}"
+        best_lap: str | None = f"1:{int(seconds - 60):02d}.{int(round((seconds % 1) * 1000)):03d}"
 
         outcome = OutcomeModifier.CLASSIFIED
         # The last driver of a large enough field set no time, so that case is drawn too.
@@ -378,17 +378,15 @@ def _scatter_penalties(
     back off the cells afterwards, so the number above a row can never disagree with the row.
     """
     ordinals = list(ordinals)
-    points: dict[int, int | None] = {ordinal: 0 for ordinal in ordinals}
-    if not ordinals:
-        return points
-
+    counts: dict[int, int] = {ordinal: 0 for ordinal in ordinals}
     remaining = total
     for step in range(MAX_ROUND_PENALTY * len(ordinals)):
         if remaining <= 0:
             break
         column = step // MAX_ROUND_PENALTY if doubled else step
-        points[ordinals[(offset + column) % len(ordinals)]] += 1
+        counts[ordinals[(offset + column) % len(ordinals)]] += 1
         remaining -= 1
+    points: dict[int, int | None] = dict(counts)
     return points
 
 
@@ -471,7 +469,7 @@ def fabricate_phase3_sessions(round_format):
     format holds at least five slots in total, so the requirement is always reachable — the
     normal format reaches it exactly, with nothing to spare.
     """
-    result = []
+    result: list[dict[str, object]] = []
     slot_index = 0
     for session in sessions_for(round_format):
         slots = []

@@ -8,7 +8,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from db.database import get_connection
+import aiosqlite
+
+from db.database import get_connection, inserted_id
 from models.team import DefaultTeam, TeamInstance
 from utils.asset_resolver import normalise
 from utils.input_validator import NAME, parse_role_mention, parse_user_mention
@@ -259,7 +261,7 @@ class TeamService:
                 (name, full_name, max_seats),
             )
             await db.commit()
-            row_id = cursor.lastrowid
+            row_id = inserted_id(cursor)
         return DefaultTeam(
             id=row_id, name=name, full_name=full_name, max_seats=max_seats, is_reserve=False
         )
@@ -701,7 +703,7 @@ async def team_artwork_keys_for_instances(db_path: str, instance_ids) -> dict[in
 # Row helper
 # ---------------------------------------------------------------------------
 
-def _row_to_default_team(row: object) -> DefaultTeam:
+def _row_to_default_team(row: aiosqlite.Row) -> DefaultTeam:
     return DefaultTeam(
         id=row["id"],
         name=row["name"],

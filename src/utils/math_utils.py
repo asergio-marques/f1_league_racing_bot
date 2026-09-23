@@ -185,14 +185,14 @@ def get_phase3_weights(slot_type: str, prain: float) -> dict[str, float]:
             raise ValueError(f"Unknown slot type: {slot_type!r}")
 
 
-def draw_weighted(weights: dict[str, float], rng: "random.Random | None" = None) -> str:
+def draw_weighted(weights: dict[str, float], rng: "_random.Random | None" = None) -> str:
     """Draw one weather label using the provided (pre-clamped) weights.
 
     Falls back to equal-weight selection if all weights are zero.
     """
     import random as _random
 
-    rng = rng or _random
+    chooser = rng if rng is not None else _random
 
     labels = list(weights.keys())
     values = list(weights.values())
@@ -200,7 +200,7 @@ def draw_weighted(weights: dict[str, float], rng: "random.Random | None" = None)
 
     if total <= 0.0:
         log.warning("All Phase 3 weights are zero; falling back to equal distribution.")
-        return rng.choice(labels)
+        return chooser.choice(labels)
 
-    return rng.choices(labels, weights=values, k=1)[0]
+    return chooser.choices(labels, weights=values, k=1)[0]
 

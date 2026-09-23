@@ -9,18 +9,16 @@ import json
 import logging
 from datetime import datetime, timezone
 from itertools import groupby
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import discord
 
 from db.database import get_connection
 from models.round import RoundFormat
 from services.season_service import SeasonImmutableError
+from utils.league_bot import LeagueBot
 from utils.points_ordering import ordering_message, ordering_violations
 from utils.league_server import league_guild
-
-if TYPE_CHECKING:
-    from discord.ext.commands import Bot
 
 log = logging.getLogger(__name__)
 
@@ -32,9 +30,9 @@ class AmendmentService:
     async def amend_round(
         self,
         round_id: int,
-        actor: discord.Member,
+        actor: discord.User | discord.Member,
         changes: list[tuple[str, Any]],
-        bot: "Bot",
+        bot: "LeagueBot",
         now: datetime | None = None,
     ) -> None:
         """Atomically apply every amendment in *changes* to *round_id*, as one change.
@@ -380,9 +378,7 @@ class AmendmentService:
         )
         if _forecast_withdrawn:
             from utils.message_builder import invalidation_message
-
-            class _Div:
-                forecast_channel_id = row["forecast_channel_id"]
+            from utils.output_router import ForecastChannel
 
             amended_track = next(
                 (str(db_value) for f, _, db_value in applied if f == "track_name"),
@@ -394,7 +390,9 @@ class AmendmentService:
             # second route.
             if _weather_on:
                 await bot.output_router.post_forecast(
-                    _Div(), invalidation_message(amended_track), enqueue_on_failure=True
+                    ForecastChannel(row["forecast_channel_id"]),
+                    invalidation_message(amended_track),
+                    enqueue_on_failure=True,
                 )
 
         # The audit line is not weather output and does not wait on a forecast having been
@@ -769,7 +767,7 @@ async def _season_exists(db_path: str, season_id: int) -> bool:
         return await cursor.fetchone() is not None
 
 
-async def approval_faults(db_path: str, season_id: int, bot) -> list[str]:
+async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[str]:
     """Everything that would stop an approved amendment being published (#187).
 
     Returns the faults as lines a league can read, and an empty list where the whole
@@ -819,7 +817,7 @@ async def approve_amendment(
     db_path: str,
     season_id: int,
     approved_by: int,
-    bot,
+    bot: LeagueBot,
 ) -> list[str]:
     """Atomically overwrite season points from the modification store, then recompute all standings.
 
@@ -960,7 +958,7 @@ async def approve_amendment(
                     )
 
         # T018: Attendance recalculation (033-attendance-tracking).
-        if guild and set_up and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if guild and set_up and await bot.module_service.is_attendance_enabled():
             from services.attendance_service import recalculate_attendance_for_round
 
             # Find the most recently finalized round per division to recalculate.

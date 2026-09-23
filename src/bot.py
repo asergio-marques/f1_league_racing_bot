@@ -4,11 +4,14 @@ import asyncio
 import json
 import logging
 import os
+from typing import cast
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from services.channel_registry_service import as_text_channel
+from utils.league_bot import LeagueBot
 from utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
 from utils.log_filters import install_late_autocomplete_filter
 
@@ -51,17 +54,18 @@ install_late_autocomplete_filter()
 log = logging.getLogger(__name__)
 
 
-def create_bot() -> commands.Bot:
+def create_bot() -> LeagueBot:
     intents = discord.Intents.default()
     intents.guilds = True
     intents.members = True
     intents.message_content = True  # required for signup wizard on_message dispatch
 
     # The tree refuses every command from a server that is not the league's (issue #244).
-    bot = commands.Bot(
+    # Every attribute attached below is declared on `LeagueBot` first (issue #228).
+    bot = LeagueBot(
         command_prefix="!", intents=intents, help_command=None, tree_cls=LeagueCommandTree
     )
-    bot.db_path = DB_PATH  # type: ignore[attr-defined]
+    bot.db_path = DB_PATH
 
     # Tell the host whenever the bot finds itself in more than one server (issue #244).
     async def _warn_if_serving_several(*_: object) -> None:
@@ -102,8 +106,8 @@ async def main() -> None:
 
     version = read_version(PROJECT_ROOT)
     made = read_version_date(PROJECT_ROOT)
-    bot.running_version = version  # type: ignore[attr-defined]
-    bot.running_version_date = made  # type: ignore[attr-defined]
+    bot.running_version = version
+    bot.running_version_date = made
     log.info(
         "Running %s%s",
         version or "an unknown version",
@@ -118,20 +122,20 @@ async def main() -> None:
     from services.driver_service import DriverService
     from services.team_service import TeamService
 
-    bot.config_service = ConfigService(DB_PATH)      # type: ignore[attr-defined]
-    bot.season_service = SeasonService(DB_PATH)      # type: ignore[attr-defined]
-    bot.amendment_service = AmendmentService(DB_PATH)  # type: ignore[attr-defined]
-    bot.scheduler_service = SchedulerService(  # type: ignore[attr-defined]
+    bot.config_service = ConfigService(DB_PATH)
+    bot.season_service = SeasonService(DB_PATH)
+    bot.amendment_service = AmendmentService(DB_PATH)
+    bot.scheduler_service = SchedulerService(
         DB_PATH, SCHEDULER_DB_PATH or None
     )
-    bot.output_router = OutputRouter(bot, retry_db_path=DB_PATH)  # type: ignore[attr-defined]
-    bot.driver_service = DriverService(DB_PATH)      # type: ignore[attr-defined]
-    bot.team_service = TeamService(DB_PATH)          # type: ignore[attr-defined]
+    bot.output_router = OutputRouter(bot, retry_db_path=DB_PATH)
+    bot.driver_service = DriverService(DB_PATH)
+    bot.team_service = TeamService(DB_PATH)
 
     from services.placement_service import PlacementService
     # The bot is handed over so the lineup refresh can reach the image module (038). The
     # textual lineup does not use it.
-    bot.placement_service = PlacementService(DB_PATH, bot)  # type: ignore[attr-defined]
+    bot.placement_service = PlacementService(DB_PATH, bot)
 
     from services.module_service import ModuleService
     from services.signup_module_service import SignupModuleService
@@ -139,33 +143,39 @@ async def main() -> None:
     from services.attendance_service import AttendanceService
     from utils.output_router import OutputRouter as _OutputRouter  # already imported above
 
-    bot.module_service = ModuleService(DB_PATH)          # type: ignore[attr-defined]
-    bot.signup_module_service = SignupModuleService(DB_PATH)  # type: ignore[attr-defined]
-    bot.wizard_service = WizardService(  # type: ignore[attr-defined]
+    bot.module_service = ModuleService(DB_PATH)
+    bot.signup_module_service = SignupModuleService(DB_PATH)
+    bot.wizard_service = WizardService(
         DB_PATH,
-        bot.scheduler_service,  # type: ignore[attr-defined]
-        bot.output_router,  # type: ignore[attr-defined]
+        bot.scheduler_service,
+        bot.output_router,
     )
-    bot.attendance_service = AttendanceService(DB_PATH)  # type: ignore[attr-defined]
+    # Bound as soon as it exists rather than in `on_ready`. The persistent views are routed
+    # from the moment the gateway opens, and a signup press arriving while `on_ready` was
+    # still recovering found the wizard with no bot and failed (#228).
+    bot.wizard_service.set_bot(bot)
+    bot.attendance_service = AttendanceService(DB_PATH)
 
     from services.image_config_service import ImageConfigService
     from services.image_validity_service import ImageValidityService
 
-    bot.image_config_service = ImageConfigService(DB_PATH)  # type: ignore[attr-defined]
-    bot.image_validity_service = ImageValidityService(  # type: ignore[attr-defined]
-        bot.image_config_service,  # type: ignore[attr-defined]
-        bot.module_service,  # type: ignore[attr-defined]
+    bot.image_config_service = ImageConfigService(DB_PATH)
+    bot.image_validity_service = ImageValidityService(
+        bot.image_config_service,
+        bot.module_service,
     )
 
     from services.image_render_service import ImageRenderService
 
-    bot.image_render_service = ImageRenderService(  # type: ignore[attr-defined]
-        bot.image_config_service,  # type: ignore[attr-defined]
-        bot.image_validity_service,  # type: ignore[attr-defined]
+    bot.image_render_service = ImageRenderService(
+        bot.image_config_service,
+        bot.image_validity_service,
     )
 
     @bot.event
     async def on_ready() -> None:
+        # `on_ready` fires once the bot has logged in, which is when it has a user.
+        assert bot.user is not None
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
 
         # Run DB migrations on startup
@@ -326,17 +336,14 @@ async def main() -> None:
 
             hub_fault = await recover_hub(bot)
             if hub_fault is not None:
-                await bot.output_router.post_log(f"Hub panel not recovered: {hub_fault}")  # type: ignore[attr-defined]
+                await bot.output_router.post_log(f"Hub panel not recovered: {hub_fault}")
         except Exception:
             log.warning("Hub recovery failed", exc_info=True)
-
-        # Wire wizard service bot reference (needed for guild/service access)
-        bot.wizard_service.set_bot(bot)  # type: ignore[attr-defined]
 
         # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions
         # that were active before the last restart.
         try:
-            await bot.wizard_service.recover_wizards()  # type: ignore[attr-defined]
+            await bot.wizard_service.recover_wizards()
         except NotImplementedError:
             pass  # stub until T030 is implemented
 
@@ -446,7 +453,7 @@ async def main() -> None:
         await bot.start(TOKEN)
 
 
-async def _recover_missed_phases(bot: commands.Bot) -> None:
+async def _recover_missed_phases(bot: LeagueBot) -> None:
     """Re-fire any weather phases whose horizon has passed but were not executed.
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
@@ -477,7 +484,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
     now = datetime.now(timezone.utc)
     cfg: WeatherPipelineConfig | None = None
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             """
             SELECT r.id, r.scheduled_at,
@@ -505,11 +512,11 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             continue
 
         # Only recover phases for servers with weather module active
-        if not await bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
+        if not await bot.module_service.is_weather_enabled():
             continue
 
         if cfg is None:
-            cfg = await get_weather_pipeline_config(bot.db_path)  # type: ignore[attr-defined]
+            cfg = await get_weather_pipeline_config(bot.db_path)
 
         phase1_horizon = scheduled_at - timedelta(days=cfg.phase_1_days)
         phase2_horizon = scheduled_at - timedelta(days=cfg.phase_2_days)
@@ -526,7 +533,7 @@ async def _recover_missed_phases(bot: commands.Bot) -> None:
             await run_phase3(round_id, bot)
 
 
-async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
+async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     """Re-arm RsvpView buttons and run missed RSVP deadline jobs on bot restart.
 
     T010: Re-arm persistent RsvpView for every row in rsvp_embed_messages so
@@ -550,14 +557,14 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
 
     # Re-arm all embed views by message_id so persistent buttons survive restarts
     try:
-        embed_rows = await bot.attendance_service.get_all_embed_messages()  # type: ignore[attr-defined]
+        embed_rows = await bot.attendance_service.get_all_embed_messages()
     except Exception:
         log.exception("_recover_rsvp_views_and_deadlines: failed to fetch embed messages")
         return
 
     # Re-arm nothing while the attendance module is disabled.
     try:
-        async with _gc(bot.db_path) as db:  # type: ignore[attr-defined]
+        async with _gc(bot.db_path) as db:
             cur = await db.execute(
                 """
                 SELECT DISTINCT rem.round_id
@@ -590,7 +597,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
     # Check for missed deadline jobs
     now_utc = _dt.now(_tz.utc)
     try:
-        async with _gc(bot.db_path) as db:  # type: ignore[attr-defined]
+        async with _gc(bot.db_path) as db:
             cur = await db.execute(
                 """
                 SELECT DISTINCT rem.round_id, rem.division_id,
@@ -643,8 +650,8 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
                         """,
                         (round_id, division_id),
                     )
-                    row = await cur.fetchone()
-                already_ran = row is not None and row["cnt"] > 0
+                    count_row = await cur.fetchone()
+                already_ran = count_row is not None and count_row["cnt"] > 0
             except Exception:
                 already_ran = False
 
@@ -663,7 +670,7 @@ async def _recover_rsvp_views_and_deadlines(bot: commands.Bot) -> None:
 
 
 async def _abandon_interrupted_resubmission(
-    bot: commands.Bot,
+    bot: LeagueBot,
     round_id: int,
     channel: discord.abc.Messageable,
     announcement_id: int | None,
@@ -676,7 +683,7 @@ async def _abandon_interrupted_resubmission(
     """
     from db.database import get_connection
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         await db.execute(
             "UPDATE round_submission_channels SET resubmitting = 0 WHERE round_id = ?",
             (round_id,),
@@ -726,7 +733,7 @@ async def staged_penalties_warning(db_path: str, entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
+async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
     """Close any submission channels left open by a previous bot process.
 
     When the bot restarts, any in-progress wait_for submission loops are
@@ -754,7 +761,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
     """
     from db.database import get_connection
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
@@ -782,7 +789,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         division_id: int = row["division_id"]
         round_status: str = row["status"] or ""
 
-        guild = await league_guild(bot)  # type: ignore[attr-defined]
+        guild = await league_guild(bot)
 
         # **A FINAL round is never restored to a review** (#345). This branch rebuilds the
         # appeals prompt from a crash, and `_build_penalty_review_state` cannot know the review
@@ -803,7 +810,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                     round_id,
                 )
                 continue
-            channel = guild.get_channel(channel_id)
+            channel = as_text_channel(guild.get_channel(channel_id))
             if channel is None:
                 log.warning(
                     "Recovery: channel %s not found, cannot restore appeals review for round %s",
@@ -820,7 +827,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                 content = await _render_appeals_prompt_content(state)
                 msg = await channel.send(content, view=appeals_view)
                 state.appeals_prompt_message_id = msg.id
-                bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+                bot.add_view(appeals_view, message_id=msg.id)
                 log.info(
                     "Recovery: restored appeals review prompt for round %s in channel %s",
                     round_id, channel_id,
@@ -840,7 +847,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
                     round_id,
                 )
                 continue
-            channel = guild.get_channel(channel_id)
+            channel = as_text_channel(guild.get_channel(channel_id))
             if channel is None:
                 log.warning(
                     "Recovery: channel %s not found, cannot restore penalty review for round %s",
@@ -902,7 +909,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         #    by get_next_pending_phase (new result tables cascade).
         # 2. Delete the channel row and the Discord channel.
         # 3. Re-trigger the submission wizard immediately (production path).
-        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(bot.db_path) as db:
             await db.execute(
                 "DELETE FROM session_results WHERE round_id = ?",
                 (round_id,),
@@ -926,7 +933,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             )
             continue
 
-        channel = guild.get_channel(channel_id)
+        channel = as_text_channel(guild.get_channel(channel_id))
         if channel is not None:
             try:
                 await channel.delete(reason="Orphaned submission channel cleanup on restart")
@@ -945,11 +952,11 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
         # Notify the log channel so the LM knows to re-submit any sessions
         # that were in progress when the bot was terminated.
         try:
-            async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
+            async with get_connection(bot.db_path) as _rdb:
                 _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
                 _rrow = await _rcur.fetchone()
             _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
+            await bot.output_router.post_log(
                 f"System | Bot restarted mid-result-submission | Notice\n"
                 f"  round: {_round_label}\n"
                 "  Sessions submitted before restart have been cleared. "
@@ -961,7 +968,7 @@ async def _recover_orphaned_submission_channels(bot: commands.Bot) -> None:
             )
 
 
-async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
+async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
     """Clear any season-review approve button left standing by a previous run.
 
     The button expires five minutes after `/season placements-review` posts it, and the timer that
@@ -977,7 +984,7 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
     from db.database import get_connection
 
     try:
-        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
                 "SELECT channel_id, message_id, reviewer_id, posted_at "
                 "FROM season_review_prompts"
@@ -992,10 +999,10 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
         # are indistinguishable to `get_channel`, and the row is cleared either way — so a
         # miss would drop the only record of a message still standing, which is precisely
         # what this sweep exists to prevent.
-        channel = bot.get_channel(int(row["channel_id"]))
+        channel = as_text_channel(bot.get_channel(int(row["channel_id"])))
         if channel is None:
             try:
-                channel = await bot.fetch_channel(int(row["channel_id"]))
+                channel = as_text_channel(await bot.fetch_channel(int(row["channel_id"])))
             except (discord.NotFound, discord.Forbidden):
                 channel = None
             except discord.HTTPException as exc:
@@ -1021,7 +1028,7 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
                 log.warning("could not post the review expiry notice: %s", exc)
 
         try:
-            async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(bot.db_path) as db:
                 await db.execute(
                     "DELETE FROM season_review_prompts"
                 )
@@ -1032,11 +1039,11 @@ async def _recover_expired_review_prompts(bot: commands.Bot) -> None:
             log.info("cleared a season review prompt posted at %s", row["posted_at"])
 
 
-async def _recover_portrait_refresh_job(bot: commands.Bot) -> None:
+async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
     """Re-arm the daily driver-portrait refresh, where the league has it switched on."""
     from db.database import get_connection
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT pfp_daily_time FROM image_config "
             "WHERE use_pfp = 1 AND pfp_daily = 1"
@@ -1044,14 +1051,14 @@ async def _recover_portrait_refresh_job(bot: commands.Bot) -> None:
         row = await cursor.fetchone()
     if row is not None:
         try:
-            bot.scheduler_service.schedule_portrait_refresh(  # type: ignore[attr-defined]
+            bot.scheduler_service.schedule_portrait_refresh(
                 row["pfp_daily_time"]
             )
         except Exception:
             log.warning("Failed to re-arm the daily portrait refresh", exc_info=True)
 
 
-async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
+async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     """Delete any results-amend channels left open by a previous bot process.
 
     The /round results amend wait_for loop dies with the process on restart.
@@ -1061,7 +1068,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
     """
     from db.database import get_connection
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT id, round_id, channel_id, session_types, closed_at FROM round_amend_channels"
         )
@@ -1104,7 +1111,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             log.exception(
                 "Recovery: could not put round %s back after an abandoned amendment", round_id
             )
-            async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+            async with get_connection(bot.db_path) as db:
                 await db.execute(
                     "UPDATE round_amend_channels SET expires_at = ? WHERE id = ?",
                     (_dt.now(_tz.utc).isoformat(), row_id),
@@ -1113,14 +1120,14 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             continue
 
         # Remove the DB row first so a further crash doesn't re-process it.
-        async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(bot.db_path) as db:
             await db.execute(
                 "DELETE FROM round_amend_channels WHERE id = ?", (row_id,)
             )
             await db.commit()
 
         # Delete the Discord channel.
-        guild = await league_guild(bot)  # type: ignore[attr-defined]
+        guild = await league_guild(bot)
         if guild is not None:
             channel = guild.get_channel(channel_id)
             if channel is not None:
@@ -1138,7 +1145,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
         if already_closed:
             continue
         try:
-            async with get_connection(bot.db_path) as _rdb:  # type: ignore[attr-defined]
+            async with get_connection(bot.db_path) as _rdb:
                 _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
                 _rrow = await _rcur.fetchone()
             _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
@@ -1157,7 +1164,7 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
                     "its channels may be part-rebuilt: run /results rounds sync and "
                     "/results standings sync."
                 )
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
+            await bot.output_router.post_log(
                 f"System | Bot restarted mid-amendment | Notice\n"
                 f"  round: {_round_label}, sessions: {_sessions}\n"
                 + _what,
@@ -1169,10 +1176,10 @@ async def _recover_orphaned_amend_channels(bot: commands.Bot) -> None:
             )
 
 
-async def _recover_pending_setups(bot: commands.Bot) -> None:
+async def _recover_pending_setups(bot: LeagueBot) -> None:
     """Restore in-memory pending season configs from DB SETUP seasons."""
     from cogs.season_cog import SeasonCog
-    season_cog: SeasonCog | None = bot.get_cog("SeasonCog")  # type: ignore[assignment]
+    season_cog = cast("SeasonCog | None", bot.get_cog("SeasonCog"))
     if season_cog is not None:
         await season_cog.recover_pending_setups()
 

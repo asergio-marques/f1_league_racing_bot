@@ -42,7 +42,8 @@ from typing import Any, Awaitable, Callable
 
 import discord
 
-from utils.league_server import LeagueView, league_guild
+from utils.league_bot import LeagueBot, bot_of
+from utils.league_server import CallbackButton, LeagueView, league_guild
 
 log = logging.getLogger(__name__)
 
@@ -106,11 +107,11 @@ def registered_options() -> list[HubOption]:
     return sorted(_OPTIONS.values(), key=lambda option: (option.order, option.key))
 
 
-async def is_offered(bot: Any, option: HubOption) -> bool:
+async def is_offered(bot: LeagueBot, option: HubOption) -> bool:
     return option.offered is None or bool(await option.offered(bot))
 
 
-async def offered_options(bot: Any) -> list[HubOption]:
+async def offered_options(bot: LeagueBot) -> list[HubOption]:
     """The options the panel carries now, in panel order."""
     return [option for option in registered_options() if await is_offered(bot, option)]
 
@@ -132,12 +133,12 @@ class HubPanelView(LeagueView):
     def __init__(self, options: list[HubOption]) -> None:
         super().__init__(timeout=None)
         for option in options:
-            button: discord.ui.Button = discord.ui.Button(
+            button = CallbackButton(
                 label=option.label,
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"{CUSTOM_ID_PREFIX}{option.key}",
+                on_press=_callback_for(option.key),
             )
-            button.callback = _callback_for(option.key)
             self.add_item(button)
 
 
@@ -150,7 +151,7 @@ def _callback_for(key: str) -> Callable[[discord.Interaction], Awaitable[None]]:
 
 async def press(interaction: discord.Interaction, key: str) -> None:
     """Answer a press on the button keyed *key*, judging the option as it stands now."""
-    bot = interaction.client
+    bot = bot_of(interaction)
     option = _OPTIONS.get(key)
     if option is None or not await is_offered(bot, option):
         await interaction.response.send_message(NO_LONGER_OFFERED, ephemeral=True)
@@ -166,7 +167,7 @@ async def press(interaction: discord.Interaction, key: str) -> None:
 _REFRESH_LOCK = asyncio.Lock()
 
 
-async def _hub_channel(bot: Any) -> tuple[Any, discord.Guild | None, Any, str | None]:
+async def _hub_channel(bot: LeagueBot) -> tuple[Any, discord.Guild | None, Any, str | None]:
     """The server configuration, the league's guild, the hub channel and a fault, where any.
 
     The channel is None, with no fault, where no hub is set or the league's server is not to
@@ -186,7 +187,7 @@ async def _hub_channel(bot: Any) -> tuple[Any, discord.Guild | None, Any, str | 
     return cfg, guild, channel, None
 
 
-async def refresh_panel(bot: Any) -> str | None:
+async def refresh_panel(bot: LeagueBot) -> str | None:
     """Bring the panel in line with what is offered now. Returns a line for the log, or None.
 
     Edits the panel where it stands; posts it, and keeps its id, where there is none or it has
@@ -220,7 +221,7 @@ async def refresh_panel(bot: Any) -> str | None:
 # ── Who may see the hub ───────────────────────────────────────────────────
 
 
-async def apply_hub_permissions(bot: Any, guild: discord.Guild, channel: Any) -> str | None:
+async def apply_hub_permissions(bot: LeagueBot, guild: discord.Guild, channel: Any) -> str | None:
     """Make *channel* the hub's: read-only to all but the bot. Returns a fault, or None.
 
     Replaces the channel's own overwrites. See the module docstring for who may see it, and
@@ -259,10 +260,10 @@ async def apply_hub_permissions(bot: Any, guild: discord.Guild, channel: Any) ->
     return fault
 
 
-async def reapply_hub_permissions(bot: Any) -> str | None:
+async def reapply_hub_permissions(bot: LeagueBot) -> str | None:
     """Apply the hub's permissions again, after one of the roles they name has changed."""
     _cfg, guild, channel, fault = await _hub_channel(bot)
-    if channel is None:
+    if channel is None or guild is None:
         return fault
     return await apply_hub_permissions(bot, guild, channel)
 
@@ -270,7 +271,7 @@ async def reapply_hub_permissions(bot: Any) -> str | None:
 # ── Start-up ──────────────────────────────────────────────────────────────
 
 
-async def recover_hub(bot: Any) -> str | None:
+async def recover_hub(bot: LeagueBot) -> str | None:
     """Route every registered option's button after a restart, and refresh the panel.
 
     Every option is registered, not only those offered now: a press on one a module has

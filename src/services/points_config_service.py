@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from db.database import get_connection
+from db.database import get_connection, inserted_id
 from models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
@@ -13,6 +14,9 @@ from models.points_config import (
     SessionType,
 )
 from utils.points_ordering import ordering_violations
+
+if TYPE_CHECKING:
+    from utils.xml_import import XmlImportPayload
 
 log = logging.getLogger(__name__)
 
@@ -37,7 +41,7 @@ async def create_config(db_path: str, config_name: str) -> PointsConfigStore:
                 (config_name,),
             )
             await db.commit()
-            row_id = cursor.lastrowid
+            row_id = inserted_id(cursor)
         except aiosqlite.IntegrityError:
             raise ConfigAlreadyExistsError(config_name)
     return PointsConfigStore(id=row_id, config_name=config_name)
@@ -383,8 +387,6 @@ async def xml_import_config(
     aiosqlite context manager rolls back automatically on any exception before
     ``db.commit()``.
     """
-    from utils.xml_import import XmlImportPayload  # local import — avoids circular at module level  # noqa: F401
-
     async with get_connection(db_path) as db:
         config_id = await _get_config_id(db, config_name)
 

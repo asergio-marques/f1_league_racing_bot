@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
-from db.database import get_connection
+import aiosqlite
+
+from db.database import get_connection, inserted_id, sole_row
 from models.division import Division
 from models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
@@ -26,6 +28,7 @@ from models.season import (
 )
 from models.session import Session, SessionType, SESSIONS_BY_FORMAT
 from utils.input_validator import NAME
+from utils.league_bot import LeagueBot
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
 #: encode. Interpolated rather than bound because they are our own enum values and the
@@ -81,7 +84,7 @@ class SeasonService:
                 (start_date.isoformat(), SeasonStatus.SETUP.value),
             )
             await db.commit()
-            season_id = cursor.lastrowid
+            season_id = inserted_id(cursor)
 
         return Season(
             id=season_id,
@@ -370,7 +373,7 @@ class SeasonService:
                         initial_stage.value if initial_stage is not None else None,
                     ),
                 )
-                season_id = cursor.lastrowid  # type: ignore[assignment]
+                season_id = inserted_id(cursor)
             else:
                 cursor = await db.execute(
                     "SELECT status, season_number FROM seasons WHERE id = ?", (season_id,)
@@ -413,9 +416,9 @@ class SeasonService:
                             div_data.get("tier", 0),
                         ),
                     )
-                    div_id = cursor.lastrowid
-                    division_ids[div_data["name"]] = div_id  # type: ignore[assignment]
-                await _sync_division_rounds(db, div_id, div_data["rounds"])  # type: ignore[arg-type]
+                    div_id = inserted_id(cursor)
+                    division_ids[div_data["name"]] = div_id
+                await _sync_division_rounds(db, div_id, div_data["rounds"])
 
             await db.commit()
 
@@ -548,7 +551,7 @@ class SeasonService:
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
-    async def wind_down_ongoing(self, bot) -> bool:
+    async def wind_down_ongoing(self, bot: LeagueBot) -> bool:
         """Take a season whose every division is done out of the ongoing stages (issue #220).
 
         Its signup window closed, its pending placements turned down, and on to Pending
@@ -1019,7 +1022,7 @@ class SeasonService:
                 (season_id, name, mention_role_id, forecast_channel_id, tier),
             )
             await db.commit()
-            div_id = cursor.lastrowid
+            div_id = inserted_id(cursor)
 
         return Division(
             id=div_id,
@@ -1386,7 +1389,7 @@ class SeasonService:
             cursor = await db.execute(
                 "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
             )
-            row = await cursor.fetchone()
+            row = await sole_row(cursor)
             season_id: int = row[0]
 
             if tier != 0:
@@ -1407,7 +1410,7 @@ class SeasonService:
                 (season_id, name, role_id, forecast_channel_id, tier),
             )
             await db.commit()
-            new_div_id: int = cursor.lastrowid  # type: ignore[assignment]
+            new_div_id = inserted_id(cursor)
 
             delta = timedelta(days=day_offset, hours=hour_offset)
             for rnd in src_rounds:
@@ -1435,7 +1438,7 @@ class SeasonService:
                 " FROM divisions WHERE id = ?",
                 (new_div_id,),
             )
-            row = await cursor.fetchone()
+            row = await sole_row(cursor)
         return _row_to_division(row)
 
     # ------------------------------------------------------------------
@@ -1468,7 +1471,7 @@ class SeasonService:
                 ),
             )
             await db.commit()
-            round_id = cursor.lastrowid
+            round_id = inserted_id(cursor)
 
         return Round(
             id=round_id,
@@ -1620,7 +1623,7 @@ class SeasonService:
                     (round_id, st.value),
                 )
                 sessions.append(
-                    Session(id=cursor.lastrowid, round_id=round_id, session_type=st)
+                    Session(id=inserted_id(cursor), round_id=round_id, session_type=st)
                 )
             await db.commit()
 
@@ -1711,7 +1714,7 @@ async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> Non
 # Row mappers
 # ------------------------------------------------------------------
 
-def _row_to_season(row: object) -> Season:
+def _row_to_season(row: aiosqlite.Row) -> Season:
     return Season(
         id=row["id"],
         start_date=date.fromisoformat(row["start_date"]),
@@ -1726,7 +1729,7 @@ def _row_to_season(row: object) -> Season:
     )
 
 
-def _row_to_division(row: object) -> Division:
+def _row_to_division(row: aiosqlite.Row) -> Division:
     keys = row.keys()
     return Division(
         id=row["id"],
@@ -1747,7 +1750,7 @@ def _row_to_division(row: object) -> Division:
     )
 
 
-def _row_to_round(row: object) -> Round:
+def _row_to_round(row: aiosqlite.Row) -> Round:
     return Round(
         id=row["id"],
         division_id=row["division_id"],
@@ -1762,7 +1765,7 @@ def _row_to_round(row: object) -> Round:
     )
 
 
-def _row_to_session(row: object) -> Session:
+def _row_to_session(row: aiosqlite.Row) -> Session:
     import json
 
     slots_raw = row["phase3_slots"]

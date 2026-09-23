@@ -46,6 +46,9 @@ EXEMPT = {
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("cogs/season_cog.py", "selected"),
+    # A season review's poster: the messages one review command posted, handed to its button
+    # and gone when the command returns (#228). `_report` above is where they then live.
+    ("cogs/season_cog.py", "posted"),
     # One parsed SVG document's index of its own elements.
     ("utils/svg_document.py", "by_id"),
     ("utils/svg_document.py", "by_label"),

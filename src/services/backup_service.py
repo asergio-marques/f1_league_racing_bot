@@ -35,6 +35,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
         copy = sqlite3.connect(str(temporary))
         origin.backup(copy)
     except sqlite3.Error as exc:
-        failure = exc
+        failure: sqlite3.Error | None = exc
     else:
         failure = None
     finally:
@@ -345,7 +346,7 @@ def state(db_path: str | Path) -> BackupState:
         locked_by=locked_by(db_path),
     )
 
-def jobstore_path_of(bot) -> str:
+def jobstore_path_of(bot: LeagueBot) -> str:
     """Where the scheduler keeps its jobs, asked of the scheduler rather than guessed.
 
     Here rather than in a cog because two of them need it: the backup commands, and the

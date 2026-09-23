@@ -20,7 +20,8 @@ from services.season_points_service import (
 )
 from utils.channel_guard import league_admin_only, league_manager_only
 from utils.input_validator import NAME
-from utils.league_server import LeagueModal, LeagueView
+from utils.league_bot import LeagueBot, bot_of
+from utils.league_server import LeagueModal, LeagueView, guild_of
 from utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -175,7 +176,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
         self._session = session
         self._db_path = db_path
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         valid, errors = _parse_bulk_lines(self.entries.value)
         if not valid and not errors:
@@ -227,7 +228,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
         await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
 
         if applied:
-            await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+            await bot_of(interaction).output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results config bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
@@ -256,7 +257,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         self._session = session
         self._db_path = db_path
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         from services.amendment_service import (
             AmendmentNotActiveError,
             modification_ordering_warnings,
@@ -269,7 +270,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         # submitted long after it was shown, and the season can reach Pending completion in
         # between — a window that writes to the store is exactly the one worth closing twice.
         season = await season_for_command(
-            interaction, interaction.client.season_service, "results amend bulk-session"  # type: ignore[attr-defined]
+            interaction, bot_of(interaction).season_service, "results amend bulk-session"
         )
         if season is None:
             return
@@ -324,7 +325,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
 
         if applied:
-            await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+            await bot_of(interaction).output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) "
                 f"| /results amend bulk-session | {len(applied)} change(s)\n"
                 f"  config: {self._config_name}, session: {self._session.name}",
@@ -351,7 +352,7 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
         self._config_name = config_name
         self._db_path = db_path
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:  # type: ignore[override]
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         await _run_xml_import(
             interaction,
@@ -376,7 +377,7 @@ async def _run_xml_import(
     from utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
     async def _audit(msg: str) -> None:
-        await interaction.client.output_router.post_log(  # type: ignore[attr-defined]
+        await bot_of(interaction).output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /results config xml-import | config: {config_name}\n  {msg}",
         )
@@ -485,7 +486,7 @@ class _ConfirmRemoveConfigView(LeagueView):
 
 
 class ResultsCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     # ------------------------------------------------------------------
@@ -948,7 +949,7 @@ class ResultsCog(commands.Cog):
         entries_by_session: dict[str, list[tuple[str, int]]] = {}
         fl_by_session: dict[str, tuple[int, int | None]] = {}
 
-        if scope.value == _SCOPE_SEASON:
+        if scope.value == _SCOPE_SEASON and season is not None:
             view_data = await season_points_service.get_season_points_view(
                 self.bot.db_path, season.id, name, session_type_filter
             )
@@ -1493,7 +1494,7 @@ class ResultsCog(commands.Cog):
                 return
             try:
                 sanction_failures = await approve_amendment(
-                    self.bot.db_path, season.id, interaction.user.id, interaction.client
+                    self.bot.db_path, season.id, interaction.user.id, bot_of(interaction)
                 )
             except NonMonotonicAmendmentError as exc:
                 bullet_list = "\n\u2022 ".join(exc.errors)
@@ -1637,7 +1638,7 @@ class ResultsCog(commands.Cog):
 
         from services.results_post_service import repost_standings_for_division
         status = await repost_standings_for_division(
-            self.bot.db_path, div.id, interaction.guild, bot=self.bot
+            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
         )
 
         if status == "ok":
@@ -1692,7 +1693,7 @@ class ResultsCog(commands.Cog):
 
         from services.results_post_service import repost_results_for_division
         status = await repost_results_for_division(
-            self.bot.db_path, div.id, interaction.guild, bot=self.bot
+            self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
         )
 
         if status == "ok":

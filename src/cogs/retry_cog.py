@@ -15,7 +15,7 @@ from discord.ext import commands, tasks
 from services.retry_service import attempt_delivery, get_all_pending
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -23,18 +23,18 @@ log = logging.getLogger(__name__)
 class RetryCog(commands.Cog):
     """Processes pending_messages every 5 minutes and retries delivery."""
 
-    def __init__(self, bot: "Bot") -> None:
+    def __init__(self, bot: "LeagueBot") -> None:
         self._bot = bot
         self.retry_loop.start()
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         self.retry_loop.cancel()
 
     @tasks.loop(minutes=5)
     async def retry_loop(self) -> None:
         """Attempt delivery for every pending message in the retry queue."""
         try:
-            pending = await get_all_pending(self._bot.db_path)  # type: ignore[attr-defined]
+            pending = await get_all_pending(self._bot.db_path)
         except Exception as exc:
             log.error("retry_loop: failed to load pending messages: %s", exc)
             return

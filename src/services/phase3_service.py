@@ -21,14 +21,14 @@ from utils.math_utils import get_phase3_weights, draw_weighted
 from utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 _MIN_SLOTS = 2
 
 
-async def run_phase3(round_id: int, bot: "Bot") -> None:
+async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
     """Execute Phase 3 for *round_id*.
 
     Produces nothing at all while the weather module is disabled for the round's server: no
@@ -55,7 +55,7 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
         return
 
     # The module gate — see the docstring for why it sits here.
-    if not await bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
+    if not await bot.module_service.is_weather_enabled():
         log.info(
             "Phase 3: weather module disabled — round %s left untouched.",
             round_id,
@@ -153,9 +153,6 @@ async def run_phase3(round_id: int, bot: "Bot") -> None:
         )
         await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
         await db.commit()
-
-    class _Div:
-        forecast_channel_id = row["forecast_channel_id"]
 
     from services.forecast_cleanup_service import post_phase_message
     from services.image_weather_post import attach_forecast

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,12 +15,14 @@ import discord
 
 from db.database import get_connection
 from services.channel_registry_service import missing_channel_fault
+from services.channel_registry_service import as_text_channel
 from services.driver_service import current_account_map_for_division
 from models.points_config import SessionType
 from services import image_verdict_post
 from services.image_verdict_service import VerdictKind
 from utils import results_formatter
 from utils.input_validator import is_disqualification, parse_penalty_seconds
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -83,8 +86,11 @@ def _round_label(state) -> str:
     division, so the one fault line that cannot read the round from the database can still
     say which round it was.
     """
+    raw = getattr(state, "round_number", None)
+    if raw is None:
+        return "The round"
     try:
-        number = int(getattr(state, "round_number", None))
+        number = int(raw)
     except (TypeError, ValueError):
         return "The round"
     division = getattr(state, "division_name", None)
@@ -106,7 +112,7 @@ def _driver_label(driver_discord_id) -> str:
 
 
 async def _graphic_name(
-    bot,
+    bot: LeagueBot,
     guild,
     discord_user_id: int,
     *,
@@ -218,7 +224,7 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     }
 
 
-def _banner_once(bot, channel, ctx: dict):
+def _banner_once(bot: LeagueBot, channel, ctx: dict):
     """A callable that heads a run of verdicts with a banner, at most once.
 
     **Lazy, and that is the point.** A run can produce nothing: a record whose result
@@ -264,7 +270,25 @@ def _banner_once(bot, channel, ctx: dict):
     return post
 
 
-def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
+class _RecordingPoster:
+    """A banner poster that keeps the banner it put up, called with no arguments like any other.
+
+    `message` is the banner once it is up, and None until then; a sanction card beneath it reads
+    it, and may come from a later path of the same approval (#345). A class rather than an
+    attribute set on a closure, which is the same thing to a caller but invisible to the type
+    check (#228).
+    """
+
+    message: discord.Message | None = None
+
+    def __init__(self, post: Callable[[_RecordingPoster], Awaitable[None]]) -> None:
+        self._post = post
+
+    async def __call__(self) -> None:
+        await self._post(self)
+
+
+def _banner_once_recorded(bot: LeagueBot, channel, ctx, db_path: str, round_id: int):
     """`_banner_once`, recording the message it posts (#345).
 
     What a poster falls back to when no shared banner was handed to it. The banner is recorded
@@ -273,18 +297,16 @@ def _banner_once_recorded(bot, channel, ctx, db_path: str, round_id: int):
     """
     once = _banner_once(bot, channel, ctx)
 
-    async def post() -> None:
+    async def post(poster: _RecordingPoster) -> None:
         message = await once()
         if message is not None:
-            post.message = message
+            poster.message = message
         await _record_banner(db_path, round_id, getattr(channel, "id", None), message)
 
-    #: The banner this poster put up, once it has; read by a sanction card beneath it.
-    post.message = None
-    return post
+    return _RecordingPoster(post)
 
 
-def banner_for_round(bot, db_path: str, round_id: int):
+def banner_for_round(bot: LeagueBot, db_path: str, round_id: int):
     """A shared banner poster for every verdict one approval will post.
 
     The same callable as :func:`_banner_once`, resolving the round's context and channel on
@@ -297,7 +319,7 @@ def banner_for_round(bot, db_path: str, round_id: int):
     """
     posted = False
 
-    async def post() -> None:
+    async def post(poster: _RecordingPoster) -> None:
         nonlocal posted
         if posted:
             return
@@ -313,15 +335,12 @@ def banner_for_round(bot, db_path: str, round_id: int):
             if channel is None:
                 return
             message = await _banner_once(bot, channel, ctx)()
-            post.message = message
+            poster.message = message
             await _record_banner(db_path, round_id, channel_id_raw, message)
         except Exception:
             log.exception("verdict banner: could not head round %s", round_id)
 
-    #: The banner this poster put up, once it has; read by a sanction card beneath it, which
-    #: may come from a later path of the same approval.
-    post.message = None
-    return post
+    return _RecordingPoster(post)
 
 
 async def _record_banner(db_path: str, round_id: int, channel_id, message) -> None:
@@ -537,7 +556,7 @@ async def _record_announcement(
 
 
 async def _send_verdict(
-    bot,
+    bot: LeagueBot,
     target_channel,
     *,
     db_path: str,
@@ -612,7 +631,7 @@ async def _send_verdict(
         if render is not None and render.problem:
             await image_verdict_post.report(bot, subject, render.problem)
 
-    if render is not None and render.draws:
+    if render is not None and render.png is not None:  # `render.draws`, followed by the check
         import discord as _discord
 
         # Named, rather than left to Discord to read the path's basename: the render
@@ -641,7 +660,7 @@ async def _send_verdict(
 
 
 async def post_penalty_announcements(
-    bot,
+    bot: LeagueBot,
     state,  # PenaltyReviewState
     applied_penalties: list,
     *,
@@ -823,7 +842,7 @@ async def post_penalty_announcements(
 
 
 async def post_appeal_announcements(
-    bot,
+    bot: LeagueBot,
     state,  # PenaltyReviewState
     applied_corrections: list,
     *,
@@ -989,7 +1008,7 @@ async def post_appeal_announcements(
 
 
 async def post_autosanction_announcement(
-    bot,
+    bot: LeagueBot,
     db_path: str,
     round_id: int,
     driver_discord_id: int,
@@ -1200,7 +1219,7 @@ async def banners_from_round(
 
 
 async def republish_verdicts_from_round(
-    bot, db_path: str, division_id: int, from_round_id: int, state_factory,
+    bot: LeagueBot, db_path: str, division_id: int, from_round_id: int, state_factory,
     superseded_banners: list[tuple[int, str, int]] | None = None,
     rebuilt: list[int] | None = None,
 ) -> list[str]:
@@ -1260,7 +1279,7 @@ async def republish_verdicts_from_round(
 
     # Kept by round, because a round's old announcements come down only where that round's
     # replacements actually went up (#345).
-    superseded: dict[int, list[tuple[object, int, list[int] | None, int]]] = {}
+    superseded: dict[int, list[tuple[int | None, int, list[int] | None, int]]] = {}
     from services.verdict_records import VERDICT_TABLES, select_verdicts
 
     async with get_connection(db_path) as db:
@@ -1363,8 +1382,10 @@ async def republish_verdicts_from_round(
     from services.results_post_service import _delete_posting
 
     for round_id in rebuilt:
-        for channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
-            channel = bot.get_channel(int(channel_id)) if channel_id else None
+        for verdict_channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):
+            channel = as_text_channel(
+                bot.get_channel(int(verdict_channel_id)) if verdict_channel_id else None
+            )
             if channel is None:
                 faults.append(
                     f"the superseded verdict for {_driver_label(driver_user_id)} could not be "
@@ -1375,7 +1396,7 @@ async def republish_verdicts_from_round(
 
     taken_down: list[int] = []
     for channel_id, message_id in replaced:
-        channel = bot.get_channel(int(channel_id)) if channel_id else None
+        channel = as_text_channel(bot.get_channel(int(channel_id)) if channel_id else None)
         if channel is None:
             continue
         await _delete_posting(channel, message_id, [message_id], label="verdict banner")

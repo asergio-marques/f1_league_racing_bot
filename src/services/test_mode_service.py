@@ -14,6 +14,7 @@ import logging
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from db.database import get_connection
+from utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from services.scheduler_service import SchedulerService
@@ -63,7 +64,7 @@ async def toggle_test_mode(db_path: str) -> bool:
     return bool(row["test_mode_active"])
 
 
-async def switch_test_mode_off(bot, *, discard_backup: bool = False) -> int:
+async def switch_test_mode_off(bot: LeagueBot, *, discard_backup: bool = False) -> int:
     """Switch test mode off, deleting every driver it created.
 
     The one way test mode is left, by the toggle in Configuration or by the season it was chosen
@@ -212,7 +213,7 @@ async def get_next_pending_phase(
             ORDER BY r.scheduled_at ASC, d.id ASC
             """,
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
         if not rows:
             return None
 

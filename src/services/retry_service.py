@@ -22,7 +22,7 @@ from models.pending_message import PendingMessage
 from utils.message_builder import discord_ts
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ async def mark_failed(db_path: str, entry_id: int) -> None:
 # T007 + T016–T018 — attempt_delivery
 # ---------------------------------------------------------------------------
 
-async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
+async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     """Attempt to post entry.content to entry.channel_id.
 
     Returns True if all chunks were delivered successfully, False otherwise.
@@ -145,7 +145,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
     # Import here to avoid circular import: retry_service ← output_router
     from utils.output_router import _chunk_message
 
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     # --- Warn before attempt if threshold already crossed (T017) ---
     if entry.retry_count >= RETRY_WARN_THRESHOLD:
@@ -210,7 +210,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "Bot") -> bool:
 # T018 — internal helper: best-effort log-channel post
 # ---------------------------------------------------------------------------
 
-def _safe_post_log(bot: "Bot", message: str) -> None:
+def _safe_post_log(bot: "LeagueBot", message: str) -> None:
     """Schedule a fire-and-forget post_log call.
 
     Uses asyncio.ensure_future so the caller does not need to await it.
@@ -221,7 +221,7 @@ def _safe_post_log(bot: "Bot", message: str) -> None:
 
     async def _post() -> None:
         try:
-            await bot.output_router.post_log(message)  # type: ignore[attr-defined]
+            await bot.output_router.post_log(message)
         except Exception as exc:
             log.warning("_safe_post_log: failed to post log notification: %s", exc)
 

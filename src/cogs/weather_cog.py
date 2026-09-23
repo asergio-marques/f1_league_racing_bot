@@ -12,12 +12,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils.channel_guard import league_manager_only
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 
 class WeatherCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     # ------------------------------------------------------------------
@@ -35,7 +36,7 @@ class WeatherCog(commands.Cog):
 
     async def _weather_gate(self, interaction: discord.Interaction) -> bool:
         """Return True (and respond ephemerally) if weather module is not enabled."""
-        if not await self.bot.module_service.is_weather_enabled():  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_weather_enabled():
             await interaction.response.send_message(
                 "❌ The weather module is not enabled.", ephemeral=True
             )
@@ -44,7 +45,7 @@ class WeatherCog(commands.Cog):
 
     async def _active_season_gate(self, interaction: discord.Interaction) -> bool:
         """Return True (and respond ephemerally) if a season is currently ACTIVE."""
-        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()
         if season is not None:
             await interaction.response.send_message(
                 "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",
@@ -77,13 +78,13 @@ class WeatherCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from services.weather_config_service import set_phase_1_days
-        result = await set_phase_1_days(self.bot.db_path, days)  # type: ignore[attr-defined]
+        result = await set_phase_1_days(self.bot.db_path, days)
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE1_DEADLINE | Success\n"
             f"  new_value: {days}d  (Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
         )
@@ -117,13 +118,13 @@ class WeatherCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from services.weather_config_service import set_phase_2_days
-        result = await set_phase_2_days(self.bot.db_path, days)  # type: ignore[attr-defined]
+        result = await set_phase_2_days(self.bot.db_path, days)
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE2_DEADLINE | Success\n"
             f"  new_value: {days}d  (Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
         )
@@ -157,13 +158,13 @@ class WeatherCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from services.weather_config_service import set_phase_3_hours
-        result = await set_phase_3_hours(self.bot.db_path, hours)  # type: ignore[attr-defined]
+        result = await set_phase_3_hours(self.bot.db_path, hours)
 
         if isinstance(result, str):
             await interaction.followup.send(f"❌ {result}", ephemeral=True)
             return
 
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE3_DEADLINE | Success\n"
             f"  new_value: {hours}h  (Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
         )
@@ -174,5 +175,5 @@ class WeatherCog(commands.Cog):
         )
 
 
-async def setup(bot: commands.Bot) -> None:
+async def setup(bot: LeagueBot) -> None:
     await bot.add_cog(WeatherCog(bot))

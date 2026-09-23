@@ -38,12 +38,13 @@ raises is reported to its member, the log channel and the host's log by
 from __future__ import annotations
 
 import logging
-from typing import Any
+from collections.abc import Awaitable, Callable
 
 import discord
 from discord import app_commands
 
 from utils.interaction_errors import describe, describe_form, report_failure
+from utils.league_bot import LeagueBot, bot_of
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ UNCLAIMED_REFUSAL = (
 )
 
 
-async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
+async def is_foreign_guild(bot: LeagueBot, guild_id: int | None) -> bool:
     """Whether *guild_id* is a server other than the league's.
 
     False outside a server (a DM carries no guild, and the tier guards refuse it themselves)
@@ -68,7 +69,40 @@ async def is_foreign_guild(bot: Any, guild_id: int | None) -> bool:
     return league is not None and guild_id != league
 
 
-async def league_guild(bot: Any) -> discord.Guild | None:
+def guild_of(interaction: discord.Interaction) -> discord.Guild:
+    """The server *interaction* came from, which by the time a command body asks is the league's.
+
+    Every command body runs behind a tier guard, and a guard admits only a member, in the
+    league's command channel — so an interaction that reaches a body has a server. discord.py
+    types it as optional because an interaction in general need not. A None here means a body
+    ran with no guard in front of it, and that is raised by name rather than left to surface
+    as an ``AttributeError`` on ``None`` somewhere further in (#228).
+    """
+    guild = interaction.guild
+    if guild is None:
+        command = getattr(interaction.command, "qualified_name", None)
+        what = f"/{command}" if command else "An interaction"
+        raise RuntimeError(
+            f"{what} reached its body outside a server: it needs a guard that refuses a "
+            "direct message"
+        )
+    return guild
+
+
+def channel_id_of(interaction: discord.Interaction) -> int:
+    """The id of the channel *interaction* came from.
+
+    A command, a press or a submission always comes from a channel. discord.py types the id as
+    optional because an interaction in general need not carry one, so a None here is raised by
+    name rather than stored as a key or looked up (#228).
+    """
+    channel_id = interaction.channel_id
+    if channel_id is None:
+        raise RuntimeError("An interaction arrived from no channel")
+    return channel_id
+
+
+async def league_guild(bot: LeagueBot) -> discord.Guild | None:
     """The league's Discord server, or None where none is set up or it is not in the cache.
 
     The one route from a scheduled job or a restart to the guild: the id lives in
@@ -79,7 +113,7 @@ async def league_guild(bot: Any) -> discord.Guild | None:
 
 
 async def admits(
-    client: Any, interaction: discord.Interaction, *, while_unclaimed: bool = True
+    client: LeagueBot, interaction: discord.Interaction, *, while_unclaimed: bool = True
 ) -> bool:
     """Whether *interaction* may proceed: True unless it comes from a server not the league's.
 
@@ -117,7 +151,7 @@ async def admits(
     return False
 
 
-class LeagueCommandTree(app_commands.CommandTree):
+class LeagueCommandTree(app_commands.CommandTree[LeagueBot]):
     """The command tree, refusing every command from a server that is not the league's, and
     answering every command that fails."""
 
@@ -148,7 +182,7 @@ class LeagueView(discord.ui.View):
     """
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        return await admits(interaction.client, interaction, while_unclaimed=False)
+        return await admits(bot_of(interaction), interaction, while_unclaimed=False)
 
     async def on_error(
         self, interaction: discord.Interaction, error: Exception, item: discord.ui.Item, /
@@ -161,13 +195,80 @@ class LeagueModal(discord.ui.Modal):
     league's, as `LeagueView` refuses a press."""
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
-        return await admits(interaction.client, interaction, while_unclaimed=False)
+        return await admits(bot_of(interaction), interaction, while_unclaimed=False)
 
-    async def on_error(self, interaction: discord.Interaction, error: Exception, /) -> None:
+    async def on_error(
+        self,
+        interaction: discord.Interaction,
+        error: Exception,
+        item: discord.ui.Item | None = None,
+        /,
+    ) -> None:
+        # A modal's failure names no item, and discord.py passes none. `item` is declared
+        # because discord.py's own `Modal` narrows `BaseView.on_error`, and a subclass has to
+        # satisfy both (#228).
         await report_failure(interaction, error, what=describe_form(self))
 
 
-def warn_if_serving_several(bot: Any) -> None:
+#: What a button or a menu built at runtime does when it is used.
+Handler = Callable[[discord.Interaction], Awaitable[None]]
+
+
+class CallbackButton(discord.ui.Button):
+    """A button built at runtime, pressed through the handler it is given.
+
+    discord.py's own way to give a button made in a loop its behaviour is to assign to its
+    ``callback`` — a method, which the type check cannot follow an assignment to, and so could
+    not check the handler against (#228). This takes the handler when the button is made and
+    calls it from the ``callback`` discord.py calls: the same button, pressed the same way.
+    """
+
+    def __init__(
+        self,
+        *,
+        on_press: Handler,
+        style: discord.ButtonStyle = discord.ButtonStyle.secondary,
+        label: str | None = None,
+        disabled: bool = False,
+        custom_id: str | None = None,
+        row: int | None = None,
+    ) -> None:
+        super().__init__(
+            style=style, label=label, disabled=disabled, custom_id=custom_id, row=row
+        )
+        self._on_press = on_press
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self._on_press(interaction)
+
+
+class CallbackSelect(discord.ui.Select):
+    """A menu built at runtime, answered through the handler it is given, as `CallbackButton`."""
+
+    def __init__(
+        self,
+        *,
+        on_choose: Handler,
+        options: list[discord.SelectOption],
+        placeholder: str | None = None,
+        min_values: int = 1,
+        max_values: int = 1,
+        row: int | None = None,
+    ) -> None:
+        super().__init__(
+            options=options,
+            placeholder=placeholder,
+            min_values=min_values,
+            max_values=max_values,
+            row=row,
+        )
+        self._on_choose = on_choose
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await self._on_choose(interaction)
+
+
+def warn_if_serving_several(bot: LeagueBot) -> None:
     """Log a warning to the host when the bot sits in more than one server.
 
     A warning and nothing more: the refusal above already keeps the league's data to the

@@ -11,12 +11,13 @@ from discord.ext import commands
 from db.database import get_connection
 import services.track_service as track_service
 from utils.channel_guard import league_manager_only
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 
 class TrackCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     # ------------------------------------------------------------------
@@ -51,7 +52,7 @@ class TrackCog(commands.Cog):
         )
 
 
-async def setup(bot: commands.Bot) -> None:
+async def setup(bot: LeagueBot) -> None:
     await bot.add_cog(TrackCog(bot))
 
 

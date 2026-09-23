@@ -49,6 +49,8 @@ from utils.channel_guard import (
     role_grant_refusal,
     server_owner_only,
 )
+from utils.league_bot import LeagueBot
+from utils.league_server import guild_of
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +72,7 @@ _ANOTHER_SERVER = (
 
 
 class BotCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
         # The factory reset's Discord clean-up, which outlives the command. Held so that it
         # is not collected mid-run, asyncio keeping only a weak reference to a task.
@@ -121,6 +123,8 @@ class BotCog(commands.Cog):
         then give is a worse introduction than one more parameter.
         """
         server_id = interaction.guild_id
+        # `bot_setup_only` admits only a member of a server, so there is always one here.
+        assert server_id is not None
 
         league = await self.bot.config_service.get_league_server_id()
         if league is not None and league != server_id:
@@ -144,7 +148,15 @@ class BotCog(commands.Cog):
             "interaction_channel_id": interaction_channel.id,
             "log_channel_id": log_channel.id,
         }
-        created = await self.bot.config_service.save_server_config(ServerConfig(**claimed))
+        created = await self.bot.config_service.save_server_config(
+            ServerConfig(
+                server_id=server_id,
+                interaction_role_id=interaction_role.id,
+                league_admin_role_id=league_admin_role.id,
+                interaction_channel_id=interaction_channel.id,
+                log_channel_id=log_channel.id,
+            )
+        )
         if not created:
             # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
@@ -165,7 +177,7 @@ class BotCog(commands.Cog):
         )
 
         # Seed default F1 teams + Reserve for this server if none exist yet
-        await self.bot.team_service.seed_default_teams_if_empty()  # type: ignore[attr-defined]
+        await self.bot.team_service.seed_default_teams_if_empty()
 
         await interaction.response.send_message(
             f"✅ Bot configuration saved!\n"
@@ -372,7 +384,7 @@ class BotCog(commands.Cog):
         """
         from services.season_lifecycle_service import configuration_fixed
 
-        season_number = await configuration_fixed(self.bot.db_path)  # type: ignore[attr-defined]
+        season_number = await configuration_fixed(self.bot.db_path)
         config = await self.bot.config_service.get_server_config()
         old_role_id = getattr(config, column) if config is not None else None
         replacing_gone = (
@@ -421,7 +433,7 @@ class BotCog(commands.Cog):
             return
 
         if column == "base_role_id" and interaction.guild is not None:
-            await self.bot.signup_module_service.move_base_role_overwrite(  # type: ignore[attr-defined]
+            await self.bot.signup_module_service.move_base_role_overwrite(
                 interaction.guild, old_role_id, role
             )
             # The hub is seen by the base role, or by everyone where there is none (#279).
@@ -442,7 +454,7 @@ class BotCog(commands.Cog):
         )
         if replacing_gone:
             given, given_log = await self._give_replaced_role_to_every_driver(
-                interaction.guild, role, column
+                guild_of(interaction), role, column
             )
             reply += (
                 f"\nThe role it replaces is no longer on the server, so it could be replaced "
@@ -466,7 +478,7 @@ class BotCog(commands.Cog):
         """
         if role.is_default():
             return "Everybody holds it already.", "  given to: everybody, as @everyone"
-        outcome = await self.bot.placement_service.grant_to_every_driver(  # type: ignore[attr-defined]
+        outcome = await self.bot.placement_service.grant_to_every_driver(
             guild, role.id
         )
         told = f"It has been given to {outcome.granted} driver(s)."
@@ -559,7 +571,7 @@ class BotCog(commands.Cog):
         from services import hub_service
         from services.channel_registry_service import ChannelUse, find_channel_use, refusal
 
-        use = await find_channel_use(self.bot.db_path, channel.id)  # type: ignore[attr-defined]
+        use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
             await interaction.response.send_message(
                 refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
@@ -567,7 +579,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        guild = interaction.guild
+        guild = guild_of(interaction)
         perms = channel.permissions_for(guild.me)
         missing = [
             name
@@ -658,7 +670,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        async with get_connection(self.bot.db_path) as db:  # type: ignore[attr-defined]
+        async with get_connection(self.bot.db_path) as db:
             season = await pack_service.current_season(db)
         if season is not None:
             await interaction.response.send_message(
@@ -667,20 +679,20 @@ class BotCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Success\n"
             f"  The bot no longer serves this server. `/bot init` on another claims it."
         )
         try:
             result = await pack_service.pack(
-                self.bot.db_path,  # type: ignore[attr-defined]
-                self.bot.scheduler_service,  # type: ignore[attr-defined]
+                self.bot.db_path,
+                self.bot.scheduler_service,
                 self.bot,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
-            await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+            await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | "
                 f"Refused — season {refused.season_number} was set up meanwhile. "
                 f"Nothing was changed."
@@ -743,8 +755,8 @@ class BotCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        db_path = self.bot.db_path  # type: ignore[attr-defined]
-        scheduler = self.bot.scheduler_service  # type: ignore[attr-defined]
+        db_path = self.bot.db_path
+        scheduler = self.bot.scheduler_service
 
         paused = False
         try:
@@ -793,13 +805,15 @@ class BotCog(commands.Cog):
                 except discord.HTTPException:
                     log.warning("factory reset: the progress message could not be edited")
 
-        bot_user_id = self.bot.user.id  # type: ignore[union-attr]
+        # A command runs on a bot that has logged in, which is when it has a user.
+        assert self.bot.user is not None
+        bot_user_id = self.bot.user.id
         self._clean_up = asyncio.create_task(
             _clean_up(interaction.guild, bot_user_id, targets, report)
         )
 
 
-async def _audit(bot, user, change_type: str, old: dict, new: dict) -> None:
+async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -> None:
     """Write the audit entry for a change to the bot's configuration upon its server.
 
     The other half of the log line each command posts: a configuration change is recorded
@@ -822,7 +836,7 @@ async def _audit(bot, user, change_type: str, old: dict, new: dict) -> None:
         await db.commit()
 
 
-async def _reapply_hub_permissions(bot) -> None:
+async def _reapply_hub_permissions(bot: LeagueBot) -> None:
     """Set the hub's permissions again after a role they name has changed (issue #279).
 
     Logged where it fails, and never failing the role command that asked for it: the role is
@@ -874,7 +888,7 @@ async def _clean_up(guild, bot_user_id: int, targets, report) -> None:
         await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
 
 
-async def _open_progress(user: discord.abc.User) -> discord.Message | None:
+async def _open_progress(user: discord.User | discord.Member) -> discord.Message | None:
     """The direct message the clean-up edits as it goes, or None where DMs are closed."""
     try:
         return await user.send("🧹 Factory reset: starting the Discord clean-up.")

@@ -9,7 +9,7 @@ from typing import Mapping
 
 from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import OutcomeModifier
+from models.session_result import DriverSessionResult, OutcomeModifier
 from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 
 log = logging.getLogger(__name__)
@@ -704,7 +704,7 @@ async def persist_snapshots(
                     snap_profile_id,
                 ),
             )
-        for snap in team_snaps:
+        for team_snap in team_snaps:
             await db.execute(
                 """
                 INSERT INTO team_standings_snapshots
@@ -719,13 +719,13 @@ async def persist_snapshots(
                     first_finish_rounds = excluded.first_finish_rounds
                 """,
                 (
-                    snap.round_id,
-                    snap.division_id,
-                    snap.team_instance_id,
-                    snap.standing_position,
-                    snap.total_points,
-                    json.dumps(snap.finish_counts),
-                    json.dumps(snap.first_finish_rounds),
+                    team_snap.round_id,
+                    team_snap.division_id,
+                    team_snap.team_instance_id,
+                    team_snap.standing_position,
+                    team_snap.total_points,
+                    json.dumps(team_snap.finish_counts),
+                    json.dumps(team_snap.first_finish_rounds),
                 ),
             )
         await db.commit()

@@ -7,10 +7,11 @@ This module is kept as an empty stub to avoid import errors.
 from __future__ import annotations
 
 from discord.ext import commands
+from utils.league_bot import LeagueBot
 
 
 class AmendmentCog(commands.Cog):
     """Retired stub — all logic moved to SeasonCog.round group."""
 
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot

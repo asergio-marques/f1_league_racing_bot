@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping, NamedTuple
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, TypeVar
 
 import discord
 
@@ -14,6 +14,7 @@ from db.database import get_connection
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from services.channel_registry_service import as_text_channel
 from services.team_service import resolve_team_reference
 from utils import results_formatter
 from utils.batch_notice import batch_notice
@@ -26,12 +27,16 @@ from utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
+from utils.league_bot import LeagueBot, bot_of
 from utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
     tyre_compound_list,
 )
-from utils.league_server import LeagueView, league_guild
+from utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
+
+if TYPE_CHECKING:
+    from services.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +114,7 @@ async def create_submission_channel(
             category = getattr(cmd_channel, "category", None)
 
     # Deny @everyone; grant the bot itself and both of the league's tiers
-    overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+    overwrites: dict[discord.Role | discord.Member | discord.Object, discord.PermissionOverwrite] = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
     }
     bot_member = guild.me
@@ -259,11 +264,11 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
 
 
 async def _build_penalty_review_state(
-    bot,
+    bot: LeagueBot,
     round_id: int,
     division_id: int,
     submission_channel_id: int,
-) -> "PenaltyReviewState":  # type: ignore[name-defined]
+) -> "PenaltyReviewState":
     """Reconstruct a :class:`~services.penalty_wizard.PenaltyReviewState` from the DB.
 
     Used by the bot restart-recovery path to re-post the appeals review prompt
@@ -271,7 +276,7 @@ async def _build_penalty_review_state(
     """
     from services.penalty_wizard import PenaltyReviewState
 
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     async with get_connection(db_path) as db:
         ctx_cursor = await db.execute(
@@ -313,7 +318,7 @@ async def _build_penalty_review_state(
 
 
 async def enter_penalty_state(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     round_id: int,
     division_id: int,
@@ -340,7 +345,7 @@ async def enter_penalty_state(
     from services import standings_service, results_post_service  # lazy imports
     from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
 
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     # ------------------------------------------------------------------
     # Fetch round context
@@ -414,7 +419,7 @@ async def enter_penalty_state(
             )
 
             if results_ch_id:
-                rc = guild.get_channel(results_ch_id)
+                rc = as_text_channel(guild.get_channel(results_ch_id))
                 if rc:
                     _results_label = "Provisional Results (amended)" if is_resubmission else "Provisional Results"
                     await results_post_service.post_round_results(
@@ -423,7 +428,7 @@ async def enter_penalty_state(
                     )
 
             if standings_ch_id:
-                sc = guild.get_channel(standings_ch_id)
+                sc = as_text_channel(guild.get_channel(standings_ch_id))
                 if sc:
                     from services.standings_service import (
                         compute_driver_standings,
@@ -485,7 +490,7 @@ async def enter_penalty_state(
     content = await _render_prompt_content(state)
     msg = await sub_channel.send(content, view=view)
     state.prompt_message_id = msg.id
-    bot.add_view(view, message_id=msg.id)  # type: ignore[attr-defined]
+    bot.add_view(view, message_id=msg.id)
 
     # Persist the prompt message ID so recovery can delete it before reposting.
     async with get_connection(db_path) as db:
@@ -585,7 +590,7 @@ async def finalize_penalty_review(
         await _recompute_session_points(db_path, round_id)
 
     else:
-        applied_records: list = []
+        applied_records = []
 
     # Post-penalty snapshot
     post_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
@@ -615,10 +620,10 @@ async def finalize_penalty_review(
             repost_faults = _rps.merge_faults(
                 await _rps.delete_and_repost_final_results(
                     db_path, round_id, division_id, guild,
-                    label="Post-Race Penalty Results", bot=interaction.client,
+                    label="Post-Race Penalty Results", bot=bot_of(interaction),
                 ),
                 await _rps.repost_subsequent_standings(
-                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
                 ),
             )
 
@@ -682,7 +687,7 @@ async def finalize_penalty_review(
                     + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
                     + f"  old={old_val}\n  new={new_val}"
                 )
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     summary,
                 )
         except Exception:
@@ -735,7 +740,7 @@ async def finalize_penalty_review(
             )
             _srv_row = await _srv_cur.fetchone()
 
-        if _srv_row and await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if _srv_row and await bot.module_service.is_attendance_enabled():
             _att_season_id = int(_srv_row["season_id"])
 
             # The two steps that write to the database are reported, and the two that post
@@ -1002,7 +1007,7 @@ async def recompute_former_drivers_for_round(
         )
 
 
-async def _post_appeals_prompt(state, guild, bot, db_path: str) -> bool:
+async def _post_appeals_prompt(state, guild, bot: LeagueBot, db_path: str) -> bool:
     """Open the appeals stage in the channel the report stage ran in.
 
     Stage three follows stage two in the same place, for an amendment exactly as for a first
@@ -1029,12 +1034,12 @@ async def _post_appeals_prompt(state, guild, bot, db_path: str) -> bool:
     content = await _render_appeals_prompt_content(state)
     msg = await sub_channel.send(content, view=appeals_view)
     state.appeals_prompt_message_id = msg.id
-    bot.add_view(appeals_view, message_id=msg.id)  # type: ignore[attr-defined]
+    bot.add_view(appeals_view, message_id=msg.id)
     return True
 
 
 async def _report_incomplete_sanctions(
-    interaction, bot, db_path: str, division_id: int, round_id: int,
+    interaction, bot: LeagueBot, db_path: str, division_id: int, round_id: int,
     failures: list[str], *, logged: bool,
 ) -> None:
     """Tell the approving manager which attendance sanctions did not apply (#239).
@@ -1066,7 +1071,7 @@ async def _report_incomplete_sanctions(
 
 
 async def _report_faults(
-    interaction, bot, *, heading: str, intro: str, faults: list[str], hint: str,
+    interaction, bot: LeagueBot, *, heading: str, intro: str, faults: list[str], hint: str,
 ) -> None:
     """Tell the manager and the log channel what an approval could not do (#237).
 
@@ -1103,7 +1108,7 @@ async def _report_faults(
 
 
 async def _report_unpostable_results(
-    interaction, bot, db_path: str, division_id: int, faults: list[str],
+    interaction, bot: LeagueBot, db_path: str, division_id: int, faults: list[str],
 ) -> None:
     """What the results cascade could not post."""
     from services.results_post_service import results_sync_hint
@@ -1118,7 +1123,7 @@ async def _report_unpostable_results(
 
 
 async def _report_attendance_not_recorded(
-    interaction, bot, db_path: str, division_id: int, round_id: int, faults: list[str],
+    interaction, bot: LeagueBot, db_path: str, division_id: int, round_id: int, faults: list[str],
 ) -> None:
     """What the attendance pipeline failed to *write* (#237).
 
@@ -1155,7 +1160,7 @@ async def _report_attendance_not_recorded(
     )
 
 
-async def _report_unannounced_verdicts(interaction, bot, faults: list[str]) -> None:
+async def _report_unannounced_verdicts(interaction, bot: LeagueBot, faults: list[str]) -> None:
     """What the verdicts channel never received (#237).
 
     Its hint is not a command. A decided verdict cannot be announced again — no command
@@ -1220,7 +1225,7 @@ async def finalize_appeals_review(
     bot = state.bot
     round_id: int = state.round_id
     division_id: int = state.division_id
-    guild = interaction.guild
+    guild = guild_of(interaction)
     actor_id: int = interaction.user.id
 
     applied_correction_records = await _apply_staged_appeals(
@@ -1250,10 +1255,10 @@ async def finalize_appeals_review(
             repost_faults = _rps.merge_faults(
                 await _rps.delete_and_repost_final_results(
                     db_path, round_id, division_id, guild,
-                    label="Final Results", bot=interaction.client,
+                    label="Final Results", bot=bot_of(interaction),
                 ),
                 await _rps.repost_subsequent_standings(
-                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
                 ),
             )
 
@@ -1293,7 +1298,7 @@ async def finalize_appeals_review(
             # open or placements to confirm is wound down and moves to Pending completion at
             # once (#220).
             try:
-                await interaction.client.season_service.wind_down_ongoing(interaction.client)
+                await bot_of(interaction).season_service.wind_down_ongoing(bot_of(interaction))
             except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
                 log.exception("could not wind the season down")
 
@@ -1322,7 +1327,7 @@ async def finalize_appeals_review(
                     + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
                     + f"  old={old_val}\n  new={new_val}"
                 )
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     summary,
                 )
         except Exception:
@@ -1355,7 +1360,7 @@ async def finalize_appeals_review(
 
 
 async def _apply_staged_appeals(
-    db_path: str, round_id: int, division_id: int, staged_appeals: list, actor_id: int, bot
+    db_path: str, round_id: int, division_id: int, staged_appeals: list, actor_id: int, bot: LeagueBot
 ) -> list[dict]:
     """Apply a round's upheld appeal corrections and record each one as an appeal record.
 
@@ -1758,7 +1763,7 @@ async def _repoint_verdicts(
                 )
 
 
-def _amend_verdict_state(db_path: str, division_id: int, bot, *, division_name: str = ""):
+def _amend_verdict_state(db_path: str, division_id: int, bot: LeagueBot, *, division_name: str = ""):
     """Build the state each round's verdict announcement needs during a replay (#345).
 
     The announcement functions read the round, the division and the database off a
@@ -1785,7 +1790,7 @@ def _amend_verdict_state(db_path: str, division_id: int, bot, *, division_name: 
 
 
 async def _repost_attendance_after_amendment(
-    db_path: str, round_id: int, division_id: int, bot, guild
+    db_path: str, round_id: int, division_id: int, bot: LeagueBot, guild
 ) -> list[str]:
     """Recompute the division's attendance from the amended round and repost its sheet.
 
@@ -1889,7 +1894,7 @@ async def _remember_superseded_announcements(
         await db.commit()
 
 
-async def take_down_superseded_announcements(bot, db_path: str, round_id: int) -> list[str]:
+async def take_down_superseded_announcements(bot: LeagueBot, db_path: str, round_id: int) -> list[str]:
     """Remove the announcements noted before the report stage cleared their records (#345).
 
     Called by the final stage once the replacements are up, so produce-then-destroy holds across
@@ -1908,7 +1913,7 @@ async def take_down_superseded_announcements(bot, db_path: str, round_id: int) -
 
     faults: list[str] = []
     for entry in _json.loads(row["superseded_announcements"]):
-        channel = bot.get_channel(int(entry["channel_id"])) if entry.get("channel_id") else None
+        channel = as_text_channel(bot.get_channel(int(entry["channel_id"])) if entry.get("channel_id") else None)
         if channel is None:
             faults.append(
                 f"the superseded verdict for <@{entry['driver_user_id']}> could not be taken "
@@ -2098,7 +2103,7 @@ async def snapshot_before_amendment(
         await db.commit()
 
 
-async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> bool:
+async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot | None = None) -> bool:
     """Put a round back as it was before an amendment nobody approved.
 
     The round keeps the classification it raced rather than a half-amended one: for every
@@ -2230,7 +2235,7 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot=None) -> b
     return True
 
 
-async def _standings_names(db_path: str, division_id: int, bot, guild=None):
+async def _standings_names(db_path: str, division_id: int, bot: LeagueBot | None, guild=None):
     """The names the division's standings are drawn under, or None — never raising.
 
     A standings snapshot stores the order the league is shown, and a full tie is settled by name
@@ -2578,7 +2583,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
     await _rearm_amendment(db_path, round_id, deadline)
 
     try:
-        await bot.output_router.post_log(  # type: ignore[attr-defined]
+        await bot.output_router.post_log(
             f"<@{interaction.user.id}> | AMEND_STAGE_2 | Recorded\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}\n"
@@ -2632,7 +2637,7 @@ async def _approve_amendment_appeals(interaction, state) -> None:
         await _apply_staged_appeals(
             db_path, round_id, division_id, state.staged_appeals, actor_id, bot
         )
-        if await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if await bot.module_service.is_attendance_enabled():
             await _rewrite_round_pardons(db_path, round_id, state.staged_pardons)
         # **The amendment's own settling of the former-driver flag** (#216), and the one path
         # that can take a flag *down*: an amendment may strike a driver from the round, or
@@ -2672,13 +2677,13 @@ async def _approve_amendment_appeals(interaction, state) -> None:
             else:
                 async def _attendance_step() -> list[str]:
                     return await _repost_attendance_after_amendment(
-                        db_path, round_id, division_id, interaction.client, guild
+                        db_path, round_id, division_id, bot_of(interaction), guild
                     )
 
                 outcome = await _rps.replay_division_channels(
-                    db_path, division_id, round_id, guild, bot=interaction.client,
+                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
                     verdict_state_factory=_amend_verdict_state(
-                        db_path, division_id, interaction.client,
+                        db_path, division_id, bot_of(interaction),
                         division_name=state.division_name,
                     ),
                     attendance_step=_attendance_step,
@@ -2693,7 +2698,7 @@ async def _approve_amendment_appeals(interaction, state) -> None:
                     faults = _rps.merge_faults(
                         faults,
                         await take_down_superseded_announcements(
-                            interaction.client, db_path, round_id
+                            bot_of(interaction), db_path, round_id
                         ),
                     )
                 else:
@@ -2737,7 +2742,7 @@ async def _log_result_amended(
         )
         if faults:
             summary += "\n" + "\n".join(f"  {line}" for line in faults) + f"\n  {hint}"
-        await bot.output_router.post_log(summary)  # type: ignore[attr-defined]
+        await bot.output_router.post_log(summary)
     except Exception:  # noqa: BLE001 — the amendment stands whether or not it was logged
         log.exception("amendment: could not log RESULT_AMENDED for round %s", state.round_id)
 
@@ -2786,7 +2791,7 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
         outcome = "The round was put back as it was." if reverted else "Nothing was changed."
 
     try:
-        await state.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await state.bot.output_router.post_log(
             f"<@{interaction.user.id}> | AMEND_FAILED | Notice\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}, stage: {stage}\n"
@@ -2805,7 +2810,7 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
         log.exception("amendment: could not tell the manager of round %s", round_id)
 
 
-async def cancel_amendment(bot, round_id: int, *, cancelled_by) -> bool:
+async def cancel_amendment(bot: LeagueBot, round_id: int, *, cancelled_by) -> bool:
     """Undo an amendment its manager cancelled after the first stage, and close its channel.
 
     Returns False where it was too late — the appeal stage is already committing it — or the
@@ -2843,7 +2848,7 @@ async def run_amendment_review_stages(
     round_id: int,
     division_id: int,
     channel,
-    bot,
+    bot: LeagueBot,
     *,
     round_number: int,
     division_name: str,
@@ -2872,7 +2877,7 @@ async def run_amendment_review_stages(
     """
     from services.penalty_service import load_staged_from_records
     from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
-    from services.penalty_wizard import _render_prompt_content  # type: ignore[attr-defined]
+    from services.penalty_wizard import _render_prompt_content
 
     # **Scoped to the sessions being amended** (#345). `apply_penalties` walks whatever
     # session types the staged set names, and stage one re-inserted only the amended sessions'
@@ -2930,7 +2935,7 @@ async def amend_round_results(
     division_id: int,
     sessions: list[AmendedSession],
     amended_by: int,
-    bot,
+    bot: LeagueBot,
 ) -> None:
     """Supersede the chosen sessions' results with their corrected classifications.
 
@@ -3426,6 +3431,32 @@ def extract_current_fl_override(
     return fl_override, lines
 
 
+_Row = TypeVar("_Row", ParsedQualifyingRow, ParsedRaceRow)
+
+
+def split_validation(
+    result: list[ParsedQualifyingRow | ParsedRaceRow] | list[str],
+) -> tuple[list[str], list[ParsedQualifyingRow | ParsedRaceRow]]:
+    """`validate_submission_block`'s errors and its rows, of which one is always empty."""
+    errors = [item for item in result if isinstance(item, str)]
+    rows = [item for item in result if not isinstance(item, str)]
+    return errors, rows
+
+
+def _rows_of_kind(
+    rows: list[ParsedQualifyingRow | ParsedRaceRow], kind: type[_Row]
+) -> list[_Row]:
+    """*rows*, every one of which the validator parsed as *kind* for this session.
+
+    A session is qualifying or a race, and the validator parses each of its rows as that one
+    kind; a row of the other kind here is raised by name rather than silently dropped (#228).
+    """
+    typed = [row for row in rows if isinstance(row, kind)]
+    if len(typed) != len(rows):
+        raise RuntimeError(f"a session of {kind.__name__}s held a row of another kind")
+    return typed
+
+
 def validate_submission_block(
     lines: list[str],
     session_type: SessionType,
@@ -3472,18 +3503,24 @@ def validate_submission_block(
         return ["No result lines found — please submit at least one driver line."]
 
     errors: list[str] = []
-    parsed_rows: list[ParsedQualifyingRow | ParsedRaceRow] = []
+    # Collected by kind, so that what only one kind has is read off rows of that kind.
+    qualifying_rows: list[ParsedQualifyingRow] = []
+    race_rows: list[ParsedRaceRow] = []
 
     for i, line in enumerate(non_empty, start=1):
         if is_qualifying:
-            result = _validate_qualifying_row_wizard(line)
+            qualifying = _validate_qualifying_row_wizard(line)
+            if isinstance(qualifying, str):
+                errors.append(f"Row {i}: {qualifying}")
+            else:
+                qualifying_rows.append(qualifying)
         else:
-            result = _validate_race_row_wizard(line, is_first=(i == 1))
-
-        if isinstance(result, str):
-            errors.append(f"Row {i}: {result}")
-        else:
-            parsed_rows.append(result)
+            race = _validate_race_row_wizard(line, is_first=(i == 1))
+            if isinstance(race, str):
+                errors.append(f"Row {i}: {race}")
+            else:
+                race_rows.append(race)
+    parsed_rows: list[ParsedQualifyingRow | ParsedRaceRow] = [*qualifying_rows, *race_rows]
 
     if errors:
         return errors
@@ -3615,7 +3652,7 @@ def validate_submission_block(
             return 0      # lead-lap finisher (absolute or delta time)
 
         _CATEGORY_LABEL = {0: "lead-lap time", 1: "lap gap (+x Laps)", 2: "DNF", 3: "DNS", 4: "DSQ"}
-        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        rows_by_pos = sorted(race_rows, key=lambda r: r.position)
         max_cat = 0
         for row in rows_by_pos:
             cat = _race_time_category(row)
@@ -3665,13 +3702,13 @@ def validate_submission_block(
             return 0
 
         _QUAL_CATEGORY_LABEL = {0: "classified", 1: "DNF", 2: "DNS", 3: "DSQ"}
-        rows_by_pos = sorted(parsed_rows, key=lambda r: r.position)
+        qualifying_by_pos = sorted(qualifying_rows, key=lambda r: r.position)
         max_qual_cat = 0
-        for row in rows_by_pos:
-            cat = _qual_outcome_category(row)
+        for qualifying_row in qualifying_by_pos:
+            cat = _qual_outcome_category(qualifying_row)
             if cat < max_qual_cat:
                 errors.append(
-                    f"Row {row.position}: driver <@{row.driver_user_id}> has outcome "
+                    f"Row {qualifying_row.position}: driver <@{qualifying_row.driver_user_id}> has outcome "
                     f"{_QUAL_CATEGORY_LABEL[cat]} but appears after a "
                     f"{_QUAL_CATEGORY_LABEL[max_qual_cat]} entry. "
                     "Qualifying order must be: classified first, then DNF, then DNS, then DSQ."
@@ -3684,7 +3721,7 @@ def validate_submission_block(
 
     # G1: derive Best Lap for qualifying DNF entries that have a valid gap
     if is_qualifying:
-        p1_row = next((r for r in parsed_rows if r.position == 1), None)
+        p1_row = next((r for r in qualifying_rows if r.position == 1), None)
         if (
             p1_row is not None
             and p1_row.best_lap.upper() not in _OUTCOME_LITERALS
@@ -3692,7 +3729,7 @@ def validate_submission_block(
         ):
             try:
                 p1_ms = _parse_time_to_ms(p1_row.best_lap)
-                for row in parsed_rows:
+                for row in qualifying_rows:
                     if row.best_lap.upper() == "DNF" and (
                         parse_gap(row.gap) is not None or parse_time(row.gap) is not None
                     ):
@@ -3749,12 +3786,6 @@ class _ConfigSelectView(LeagueView):
         self.selected: str | None = None
         self._config = config
         for name in config_names:
-            button = discord.ui.Button(
-                label=name[:80],
-                style=discord.ButtonStyle.primary,
-                custom_id=f"config_sel_{name[:60]}",
-            )
-
             async def _cb(
                 interaction: discord.Interaction,
                 _name: str = name,
@@ -3769,7 +3800,12 @@ class _ConfigSelectView(LeagueView):
                 self.stop()
                 await interaction.response.defer()
 
-            button.callback = _cb
+            button = CallbackButton(
+                label=name[:80],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"config_sel_{name[:60]}",
+                on_press=_cb,
+            )
             self.add_item(button)
 
     def _may_choose(self, interaction: discord.Interaction) -> bool:
@@ -3835,7 +3871,7 @@ class DivisionValidationData(NamedTuple):
     team_of_shorthand: dict[str, int]
 
 
-async def _build_division_validation_data(division_id: int, bot) -> DivisionValidationData:
+async def _build_division_validation_data(division_id: int, bot: LeagueBot) -> DivisionValidationData:
     """Build validation structures for the given division.
 
     A team whose role is not mapped cannot be typed, and is left out. Its drivers are then
@@ -4244,14 +4280,14 @@ async def _insert_new_tables_in_tx(
 # Main wizard
 # ---------------------------------------------------------------------------
 
-async def run_result_submission_job(round_id: int, bot) -> None:
+async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     """APScheduler job entry point — runs the full submission wizard for a round.
 
     Triggered at each round's scheduled start time. Creates a transient submission
     channel, collects results session by session with validation, prompts for config
     selection, persists everything, and then closes the channel.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     # ------------------------------------------------------------------
     # 1. Load round context
@@ -4308,7 +4344,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # will ever enter a result, so the round has nothing to wait for and ends here — otherwise
     # it would sit outstanding for ever and its season could never be completed, which is issue
     # #154 over again for every league that does not run the results module.
-    results_enabled = await bot.module_service.is_results_enabled()  # type: ignore[attr-defined]
+    results_enabled = await bot.module_service.is_results_enabled()
     arrived_at = (
         RoundStatus.AWAITING_RESULTS.value if results_enabled else RoundStatus.FINAL.value
     )
@@ -4341,7 +4377,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # ------------------------------------------------------------------
     # 3. Get guild + results channel
     # ------------------------------------------------------------------
-    guild = await league_guild(bot)  # type: ignore[attr-defined]
+    guild = await league_guild(bot)
     if guild is None:
         log.error(
             "run_result_submission_job: the league's server is not in the cache for round %s",
@@ -4357,7 +4393,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         )
         return
 
-    results_channel = guild.get_channel(results_channel_id)
+    results_channel = as_text_channel(guild.get_channel(results_channel_id))
     if results_channel is None:
         log.error(
             "run_result_submission_job: results channel %s not found (round %s)",
@@ -4390,7 +4426,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
     # 5. Create submission channel
     # ------------------------------------------------------------------
     # Look up both of the league's roles and the bot-command channel for channel setup
-    server_cfg = await bot.config_service.get_server_config()  # type: ignore[attr-defined]
+    server_cfg = await bot.config_service.get_server_config()
     interaction_role: discord.Role | None = None
     league_admin_role: discord.Role | None = None
     bot_cmd_channel_id: int | None = None
@@ -4471,7 +4507,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
         )
 
         while True:
-            msg = await bot.wait_for(  # type: ignore[attr-defined]
+            msg = await bot.wait_for(
                 "message",
                 check=lambda m, ch=sub_channel: (
                     m.channel.id == ch.id and not m.author.bot
@@ -4527,10 +4563,10 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 team_of_shorthand=team_of_shorthand,
             )
 
-            if isinstance(result[0] if result else None, str):
-                # Validation failed — these are error strings
-                error_list = "\n".join(f"• {e}" for e in result)
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+            validation_errors, parsed_rows = split_validation(result)
+            if validation_errors:
+                error_list = "\n".join(f"• {e}" for e in validation_errors)
+                await bot.output_router.post_log(
                     f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_REJECTED | \n"
                     f"  season: {season_number}, division: {division_name!r}\n"
                     f"  round: {round_number}, session: {session_type.value}\n"
@@ -4540,9 +4576,6 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                     f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit."
                 )
                 continue
-
-            # Valid — parsed_rows
-            parsed_rows = result
 
             # Validate FL override references a driver in the submitted results
             if fl_override is not None:
@@ -4593,7 +4626,7 @@ async def run_result_submission_job(round_id: int, bot) -> None:
                 continue
 
             # Log accepted input (with raw content for auditability)
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
+            await bot.output_router.post_log(
                 f"{msg.author.display_name} (<@{msg.author.id}>) | RESULT_SUBMISSION_ACCEPTED | Success\n"
                 f"  season: {season_number}, division: {division_name!r}\n"
                 f"  round: {round_number}, session: {session_type.value}\n"
@@ -4603,13 +4636,13 @@ async def run_result_submission_job(round_id: int, bot) -> None:
             # Convert parsed rows to dicts for DB insertion
             if session_type.is_qualifying:
                 driver_rows_data = [
-                    _row_dict_from_qualifying(r)   # type: ignore[arg-type]
-                    for r in parsed_rows
+                    _row_dict_from_qualifying(r)
+                    for r in _rows_of_kind(parsed_rows, ParsedQualifyingRow)
                 ]
             else:
                 driver_rows_data = [
-                    _row_dict_from_race(r)  # type: ignore[arg-type]
-                    for r in parsed_rows
+                    _row_dict_from_race(r)
+                    for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
                 ]
 
             await save_session_result(
@@ -4759,7 +4792,7 @@ class ResubmissionCancelView(LeagueView):
         self.stop()
 
 
-async def _next_paste(bot, sub_channel, cancel_view: ResubmissionCancelView | None):
+async def _next_paste(bot: LeagueBot, sub_channel, cancel_view: ResubmissionCancelView | None):
     """The next message pasted into *sub_channel*, or None if Cancel was pressed first.
 
     Races the paste against the button, as the amend channel does. Where both land together
@@ -4801,7 +4834,7 @@ async def _take_down_cancel_button(cancel_view: ResubmissionCancelView | None) -
 
 
 async def _return_to_review(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     round_id: int,
     division_id: int,
@@ -4987,7 +5020,7 @@ def _collected_team_assignments(
 async def _resubmit_collection_task(
     round_id: int,
     division_id: int,
-    bot,
+    bot: LeagueBot,
     sub_channel: discord.TextChannel | None,
     cancel_view: ResubmissionCancelView | None = None,
 ) -> None:
@@ -5137,12 +5170,12 @@ async def _resubmit_collection_task(
                 team_of_shorthand=team_of_shorthand,
             )
 
-            if isinstance(result[0] if result else None, str):
-                error_list = "\n".join(f"• {e}" for e in result)
+            validation_errors, parsed_rows = split_validation(result)
+            if validation_errors:
+                error_list = "\n".join(f"• {e}" for e in validation_errors)
                 await sub_channel.send(f"❌ Validation failed:\n{error_list}\nPlease correct and resubmit.")
                 continue
 
-            parsed_rows = result
             if fl_override is not None:
                 submitted_ids = {r.driver_user_id for r in parsed_rows}
                 if fl_override not in submitted_ids:
@@ -5173,9 +5206,14 @@ async def _resubmit_collection_task(
                 continue
 
             if session_type.is_qualifying:
-                driver_rows_data = [_row_dict_from_qualifying(r) for r in parsed_rows]  # type: ignore[arg-type]
+                driver_rows_data = [
+                    _row_dict_from_qualifying(r)
+                    for r in _rows_of_kind(parsed_rows, ParsedQualifyingRow)
+                ]
             else:
-                driver_rows_data = [_row_dict_from_race(r) for r in parsed_rows]  # type: ignore[arg-type]
+                driver_rows_data = [
+                    _row_dict_from_race(r) for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
+                ]
 
             collected.append(
                 CollectedSession(
@@ -5218,7 +5256,7 @@ async def _resubmit_collection_task(
 
 
 
-async def sweep_expired_amendments(bot, *, now: datetime | None = None) -> int:
+async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = None) -> int:
     """Revert every amendment whose stages went unapproved past their deadline.
 
     Returns how many were reverted. The round keeps the classification it raced rather than a

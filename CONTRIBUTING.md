@@ -141,6 +141,23 @@ python3 -m coverage json -q -o coverage.json
 python3 tools/coverage_by_module.py coverage.json --fail-under 75
 ```
 
+CI also runs a type check over `src/`, and gates on it. Run it from the repository root the same
+way:
+
+```
+mypy
+```
+
+**Nothing is exempt from it.** There is no `# type: ignore` in `src/`, no module is excused an
+error code and no library is skipped, and tests refuse each. Where the check cannot see something
+the code knows, say it in the code — a narrowing with its reason, or one of the helpers that
+raises by name — rather than switching the check off.
+
+**The bot is typed as `LeagueBot`** (`src/utils/league_bot.py`). Declare an attribute there before
+`bot.py` attaches it, annotate a `bot` parameter as it, and reach an interaction's bot through
+`bot_of(interaction)`. A library that ships no types is described in `stubs/`; using more of one
+means extending its stub, which `stubtest` then holds to the installed version.
+
 ## Pull requests
 
 Every pull request tracks at least one issue and carries that issue's labels. A release's notes

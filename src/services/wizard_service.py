@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 from apscheduler.triggers.date import DateTrigger
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.driver_profile import DriverState
 from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
@@ -26,7 +27,7 @@ from utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
 from utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
     from services.scheduler_service import SchedulerService
     from utils.output_router import OutputRouter
@@ -95,9 +96,10 @@ class WizardService:
     """Manages the full lifecycle of a driver's signup wizard session.
 
     Dependency wiring:
-    - ``set_bot(bot)`` must be called in ``on_ready`` (after services are bound
-      to bot) to give this service access to Discord guild objects, driver_service,
-      and signup_module_service.
+    - ``set_bot(bot)`` gives this service access to Discord guild objects, driver_service
+      and signup_module_service. ``bot.py`` calls it as soon as the service is built, before
+      the gateway opens: a press on a signup button can arrive while ``on_ready`` is still
+      recovering, and must find the bot already bound (#228).
     """
 
     def __init__(
@@ -111,7 +113,7 @@ class WizardService:
         self._output_router = output_router
 
         # Late-bound after bot is ready; set via set_bot().
-        self._bot: "Bot | None" = None
+        self._bot: "LeagueBot | None" = None
 
         # In-memory asyncio task references for correction-parameter timeouts,
         # keyed by discord_user_id.
@@ -121,9 +123,14 @@ class WizardService:
         global _GLOBAL_WIZARD_SERVICE
         _GLOBAL_WIZARD_SERVICE = self
 
-    def set_bot(self, bot: "Bot") -> None:
+    def set_bot(self, bot: "LeagueBot") -> None:
         """Bind the bot instance for Discord API and service access."""
         self._bot = bot
+
+    @property
+    def _league_bot(self) -> "LeagueBot":
+        assert self._bot is not None, "WizardService.set_bot() not called"
+        return self._bot
 
     async def _get_track_name_map(self) -> dict[str, str]:
         """Return {str(id): name} for all tracks from the database."""
@@ -138,17 +145,17 @@ class WizardService:
     @property
     def _driver_service(self):
         assert self._bot is not None, "WizardService.set_bot() not called"
-        return self._bot.driver_service  # type: ignore[attr-defined]
+        return self._bot.driver_service
 
     @property
     def _signup_svc(self):
         assert self._bot is not None, "WizardService.set_bot() not called"
-        return self._bot.signup_module_service  # type: ignore[attr-defined]
+        return self._bot.signup_module_service
 
     @property
     def _module_svc(self):
         assert self._bot is not None, "WizardService.set_bot() not called"
-        return self._bot.module_service  # type: ignore[attr-defined]
+        return self._bot.module_service
 
     async def _get_guild(self) -> discord.Guild | None:
         """The league's server, the one a wizard's channel lives in."""
@@ -375,7 +382,7 @@ class WizardService:
         await svc.rekey_wizard(from_account, to_account)
         await self._cancel_channel_delete_job(from_account)
 
-        channel = guild.get_channel(held.signup_channel_id)
+        channel = as_text_channel(guild.get_channel(held.signup_channel_id))
         if channel is None:
             return problems
         try:
@@ -430,7 +437,7 @@ class WizardService:
 
         # Load configs
         signup_cfg = await self._signup_svc.get_config()
-        server_cfg = await self._bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await self._bot.config_service.get_server_config()
         if signup_cfg is None:
             return None
 
@@ -449,7 +456,7 @@ class WizardService:
         # Fetch the non-reserve teams' full names for step 6 buttons. A driver is offered, and
         # answers with, the name every post shows; the shorthand is the league's own shorthand
         # for typing and is not put to a driver (#381).
-        default_teams = await self._bot.team_service.get_default_teams()  # type: ignore[attr-defined]
+        default_teams = await self._bot.team_service.get_default_teams()
         snapshot.team_names = [t.full_name for t in default_teams if not t.is_reserve]
 
         # Determine first wizard state (skip nationality if not required)
@@ -586,7 +593,7 @@ class WizardService:
         if wizard.signup_channel_id:
             channel = guild.get_channel(wizard.signup_channel_id)
             if channel and isinstance(channel, discord.TextChannel):
-                from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                from cogs.admin_review_cog import AdminReviewView
                 track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_id: s.display_label
@@ -595,7 +602,7 @@ class WizardService:
                 panel_text = self._format_review_panel(record, slot_labels, track_name_map=track_map)
                 await channel.send(
                     panel_text,
-                    view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                    view=AdminReviewView(discord_user_id, self._bot),
                     allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
 
@@ -657,7 +664,7 @@ class WizardService:
             return
 
         # Grant the driver role
-        server_cfg = await self._bot.config_service.get_server_config()  # type: ignore[attr-defined]
+        server_cfg = await self._league_bot.config_service.get_server_config()
         driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         member = guild.get_member(int(discord_user_id))
         if member is not None and driver_role_id:
@@ -671,7 +678,7 @@ class WizardService:
         # Compute and persist total_lap_ms before transitioning state
         signup_record = await self._signup_svc.get_record(discord_user_id)
         if signup_record is not None and signup_record.lap_times:
-            await self._bot.placement_service.store_total_lap_ms(  # type: ignore[attr-defined]
+            await self._league_bot.placement_service.store_total_lap_ms(
                 discord_user_id, signup_record.lap_times
             )
 
@@ -776,11 +783,11 @@ class WizardService:
         if isinstance(channel, discord.TextChannel):
             driver_member = guild.get_member(int(discord_user_id))
             mention = driver_member.mention if driver_member else f"<@{discord_user_id}>"
-            from cogs.admin_review_cog import CorrectionParameterView  # type: ignore[import]
+            from cogs.admin_review_cog import CorrectionParameterView
             await channel.send(
                 f"{mention} **{actor.display_name}** has requested a correction.\n"
                 "Please select the parameter to correct (5-minute window):",
-                view=CorrectionParameterView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                view=CorrectionParameterView(discord_user_id, self._bot),
             )
 
         # Arm 5-minute correction selection timeout
@@ -969,20 +976,15 @@ class WizardService:
             DriverState.AWAITING_CORRECTION_PARAMETER,
         }
 
+        # The state label is captured before cleanup, from whichever of the two is active.
         wizard = await self._signup_svc.get_wizard(discord_user_id)
-        wizard_is_active = wizard is not None and wizard.wizard_state != WizardState.UNENGAGED
-
-        driver = None
-        if not wizard_is_active:
+        if wizard is not None and wizard.wizard_state != WizardState.UNENGAGED:
+            state_label = wizard.wizard_state.value
+        else:
             driver = await self._driver_service.get_profile(discord_user_id)
             if driver is None or driver.current_state not in _ACTIVE_STATES_UNENGAGED_WIZARD:
                 return
-
-        # Capture state label before cleanup
-        if wizard_is_active:
-            state_label = wizard.wizard_state.value  # type: ignore[union-attr]
-        else:
-            state_label = driver.current_state.value  # type: ignore[union-attr]
+            state_label = driver.current_state.value
 
         # Cancel all jobs and tasks
         ckey = discord_user_id
@@ -1493,7 +1495,7 @@ class WizardService:
         # Load non-reserve teams. A driver may type either name — the full name they were
         # offered, or the league's shorthand — and what is recorded is the full name, which is
         # what every review and export shows (#381).
-        teams = await self._bot.team_service.get_default_teams(  # type: ignore[attr-defined]
+        teams = await self._bot.team_service.get_default_teams(
 
         )
         non_reserve = [t for t in teams if not t.is_reserve]
@@ -1806,7 +1808,7 @@ class WizardService:
             if isinstance(channel, discord.TextChannel):
                 record = await self._signup_svc.get_record(discord_user_id)
                 if record is not None:
-                    from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                    from cogs.admin_review_cog import AdminReviewView
                     track_map = await self._get_track_name_map()
                     slot_labels = {
                         s.slot_id: s.display_label
@@ -1830,7 +1832,7 @@ class WizardService:
                     )
                     await channel.send(
                         self._format_review_panel(record, slot_labels, track_name_map=track_map),
-                        view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                        view=AdminReviewView(discord_user_id, self._bot),
                         allowed_mentions=_REVIEW_PANEL_MENTIONS,
                     )
 
@@ -1883,7 +1885,7 @@ class WizardService:
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
-                from cogs.admin_review_cog import AdminReviewView  # type: ignore[import]
+                from cogs.admin_review_cog import AdminReviewView
                 track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_id: s.display_label
@@ -1891,6 +1893,6 @@ class WizardService:
                 }
                 await channel.send(
                     self._format_review_panel(record, slot_labels, track_name_map=track_map),
-                    view=AdminReviewView(discord_user_id, self._bot),  # type: ignore[arg-type]
+                    view=AdminReviewView(discord_user_id, self._bot),
                     allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )

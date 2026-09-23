@@ -19,6 +19,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils.channel_guard import league_admin_only
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ MAX_DELETIONS = 10
 
 
 class CleanCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     @app_commands.command(

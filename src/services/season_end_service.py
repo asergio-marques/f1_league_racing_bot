@@ -28,19 +28,19 @@ from utils.league_server import league_guild
 
 if TYPE_CHECKING:
     import discord
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
     from models.season import Season
 
 log = logging.getLogger(__name__)
 
 
-async def execute_season_end(season_id: int, bot: "Bot") -> None:
+async def execute_season_end(season_id: int, bot: "LeagueBot") -> None:
     """Archive the season and announce completion in the log channel.
 
     All season data is permanently retained (status → COMPLETED).
     Idempotent: returns immediately if no active season is found for the server.
     """
-    season_svc = bot.season_service  # type: ignore[attr-defined]
+    season_svc = bot.season_service
 
     # Idempotency guard: verify the season still exists and is active
     season = await season_svc.get_confirmed_season()
@@ -51,9 +51,9 @@ async def execute_season_end(season_id: int, bot: "Bot") -> None:
         return
 
     # Cancel any pending season-end scheduler job (no-op if already fired)
-    bot.scheduler_service.cancel_season_end()  # type: ignore[attr-defined]
+    bot.scheduler_service.cancel_season_end()
 
-    guild = await league_guild(bot)  # type: ignore[attr-defined]
+    guild = await league_guild(bot)
 
     # The season's end, in the order the core specification sets (issue #220).
     # 1. The final classification, per division. The season's last word: each division's
@@ -79,7 +79,7 @@ async def execute_season_end(season_id: int, bot: "Bot") -> None:
                 "; ".join(problems),
             )
             try:
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     "\n".join(
                         ["System | Season complete | Final classification", *(
                             f"    - {line}" for line in problems
@@ -109,7 +109,7 @@ async def execute_season_end(season_id: int, bot: "Bot") -> None:
     completion_msg = (
         f"System | Season {season.season_number} complete | Success"
     )
-    await bot.output_router.post_log(completion_msg)  # type: ignore[attr-defined]
+    await bot.output_router.post_log(completion_msg)
 
     log.info(
         "Season %s archived (COMPLETED).",
@@ -118,7 +118,7 @@ async def execute_season_end(season_id: int, bot: "Bot") -> None:
 
 
 async def end_of_season_pass(
-    bot: "Bot", guild, *, discard_backup: bool = False
+    bot: "LeagueBot", guild, *, discard_backup: bool = False
 ) -> dict:
     """The driver pass, the signup window and test mode: what every end of a season does (#220).
 
@@ -142,7 +142,7 @@ async def end_of_season_pass(
     from services.test_mode_service import switch_test_mode_off
 
     try:
-        signup_cfg = await bot.signup_module_service.get_config()  # type: ignore[attr-defined]
+        signup_cfg = await bot.signup_module_service.get_config()
         if signup_cfg is not None and signup_cfg.signups_open:
             from cogs.module_cog import execute_forced_close
 
@@ -161,7 +161,7 @@ async def end_of_season_pass(
 
 
 async def _write_driver_history_entries(
-    season: "Season", bot: "Bot", *, force_cancelled: bool = False
+    season: "Season", bot: "LeagueBot", *, force_cancelled: bool = False
 ) -> None:
     """Write a DriverHistoryEntry for every division each driver took part in during the season.
 
@@ -190,7 +190,7 @@ async def _write_driver_history_entries(
     read the right statuses but put the rows beyond reach of a retry, since the command refuses
     once the season is no longer active, and a failure between the two would lose them for good.
     """
-    db_path: str = bot.db_path  # type: ignore[attr-defined]
+    db_path: str = bot.db_path
 
     async with get_connection(db_path) as db:
         # Every driver × division a committed placement was ever held in this season.
@@ -210,7 +210,7 @@ async def _write_driver_history_entries(
             """,
             (season.id,),
         )
-        assignments = await cursor.fetchall()
+        assignments = list(await cursor.fetchall())
 
         if not assignments:
             log.info(
@@ -308,7 +308,7 @@ async def _write_driver_history_entries(
 async def _revoke_season_roles(
     season_id: int,
     guild: "discord.Guild",
-    bot: "Bot",
+    bot: "LeagueBot",
 ) -> None:
     """Revoke division roles, team roles, and the league's driver role from
     every non-test driver assigned in *season_id*.
@@ -318,9 +318,9 @@ async def _revoke_season_roles(
     """
     import discord
 
-    placement_svc = bot.placement_service  # type: ignore[attr-defined]
+    placement_svc = bot.placement_service
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
             SELECT DISTINCT dp.id AS driver_profile_id,
@@ -332,7 +332,7 @@ async def _revoke_season_roles(
             """,
             (season_id,),
         )
-        assigned_rows = await cur.fetchall()
+        assigned_rows = list(await cur.fetchall())
 
         # Fetch the driver role once for the whole loop
         cfg_cur = await db.execute("SELECT driver_role_id FROM server_configs")

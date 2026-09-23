@@ -28,13 +28,14 @@ import logging
 
 import discord
 
-from db.database import get_connection
+from db.database import get_connection, sole_row
+from utils.league_bot import LeagueBot
 from utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
 
-async def purge_season_results(db_path: str, bot) -> dict:
+async def purge_season_results(db_path: str, bot: LeagueBot) -> dict:
     """Delete every result of the active season, from Discord and from the database.
 
     Discord first, while the message ids are still stored: once the rows are gone there is
@@ -48,6 +49,7 @@ async def purge_season_results(db_path: str, bot) -> dict:
     message the bot tried and failed to remove, so the league can delete it by hand — its record
     is gone once this returns, and nothing else could find it again (decided 2026-09-21, #189).
     """
+    left_standing: list[str] = []
     report = {
         "rounds": 0,
         "sessions": 0,
@@ -56,7 +58,7 @@ async def purge_season_results(db_path: str, bot) -> dict:
         "verdicts": 0,
         "submission_channels": 0,
         "amend_channels": 0,
-        "left_standing": [],
+        "left_standing": left_standing,
     }
 
     async with get_connection(db_path) as db:
@@ -90,9 +92,9 @@ async def purge_season_results(db_path: str, bot) -> dict:
 
     if guild is not None:
         report["messages"], left = await _delete_posted_results(db_path, rounds, guild)
-        report["left_standing"].extend(left)
+        left_standing.extend(left)
         report["verdicts"], left = await _delete_posted_verdicts(db_path, rounds, guild)
-        report["left_standing"].extend(left)
+        left_standing.extend(left)
         report["submission_channels"] = await _close_open_submissions(db_path, rounds, guild)
 
     # **Not under the guild** (#345). Deleting the channel needs one; forgetting the amendment
@@ -405,7 +407,7 @@ async def _delete_rows(db_path: str, round_ids: list[int]) -> tuple[int, int]:
             f"SELECT COUNT(*) FROM session_results WHERE round_id IN ({placeholders})",
             round_ids,
         )
-        sessions = (await cursor.fetchone())[0]
+        sessions = (await sole_row(cursor))[0]
         cursor = await db.execute(
             f"""
             SELECT (SELECT COUNT(*) FROM driver_standings_snapshots
@@ -415,7 +417,7 @@ async def _delete_rows(db_path: str, round_ids: list[int]) -> tuple[int, int]:
             """,
             round_ids + round_ids,
         )
-        standings = (await cursor.fetchone())[0]
+        standings = (await sole_row(cursor))[0]
 
         for table in ("penalty_records", "appeal_records"):
             await db.execute(

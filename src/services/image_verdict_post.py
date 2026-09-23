@@ -28,6 +28,7 @@ from pathlib import Path
 from db.database import get_connection
 from models.image_module import PostingOrigin
 from services.image_verdict_service import VerdictDrawing, VerdictKind
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class VerdictRender:
         return self.png is not None
 
 
-async def verdicts_enabled(bot) -> bool:
+async def verdicts_enabled(bot: LeagueBot) -> bool:
     """True where the module is on, the ``verdicts`` aspect is on, and the template is valid."""
     try:
         if not await bot.module_service.is_images_enabled():
@@ -152,7 +153,7 @@ async def _driver_nationality(
 
 
 async def team_name_for_entry(
-    bot, guild, *, division_id: int, team_id: int | None
+    bot: LeagueBot, guild, *, division_id: int, team_id: int | None
 ) -> str | None:
     """The team whose car the driver drove, resolved as the results graphic resolves it.
 
@@ -175,7 +176,7 @@ async def team_name_for_entry(
     return names.get(int(team_id))
 
 
-async def team_key_for_entry(bot, *, team_id: int | None) -> str | None:
+async def team_key_for_entry(bot: LeagueBot, *, team_id: int | None) -> str | None:
     """The shorthand of the team whose car the driver drove, which its badge is found by."""
     if team_id is None:
         return None
@@ -190,7 +191,7 @@ async def team_key_for_entry(bot, *, team_id: int | None) -> str | None:
 
 
 async def _mention_names(
-    bot, guild, *, driver_discord_id: int, driver_name: str, texts
+    bot: LeagueBot, guild, *, driver_discord_id: int, driver_name: str, texts
 ) -> dict[str, str]:
     """The name each mention in *texts* is drawn as, keyed by the id it addresses (#142).
 
@@ -240,7 +241,7 @@ async def _mention_names(
 
 
 async def build_drawing(
-    bot,
+    bot: LeagueBot,
     *,
     guild,
     db_path: str,
@@ -319,7 +320,7 @@ async def build_drawing(
 
 
 async def render_verdict(
-    bot,
+    bot: LeagueBot,
     drawing: VerdictDrawing,
     *,
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
@@ -413,14 +414,14 @@ def describe(
     return " · ".join(parts)
 
 
-async def report(bot, what: str, detail: str) -> None:
+async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a verdicts channel."""
     from services.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
-async def report_notices(bot, what: str, notices) -> None:
+async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4)."""
     from services.image_results_post import report_notices as _report_notices
 

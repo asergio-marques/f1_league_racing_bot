@@ -19,12 +19,12 @@ from utils.message_builder import mystery_notice_message
 from services.forecast_cleanup_service import store_forecast_message
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
 
-async def run_mystery_notice(round_id: int, bot: "Bot") -> None:
+async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
     """Post the mystery round notice for *round_id* to its forecast channel."""
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(

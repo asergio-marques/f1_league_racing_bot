@@ -16,8 +16,11 @@ from services.attendance_service import (
     sync_attendance,
     validate_timing_invariant,
 )
+from services.channel_registry_service import as_text_channel
 from services.season_lifecycle_service import uncommitted_seat_excluded
 from utils.channel_guard import league_manager_only
+from utils.league_bot import LeagueBot, bot_of
+from utils.league_server import guild_of
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +39,7 @@ def _as_utc(moment) -> datetime:
 
 
 class AttendanceCog(commands.Cog):
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
     attendance = app_commands.Group(
@@ -55,7 +58,7 @@ class AttendanceCog(commands.Cog):
 
     async def _guard_module_enabled(self, interaction: discord.Interaction) -> bool:
         """Return True (and send error) if module is NOT enabled."""
-        if not await self.bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+        if not await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "\u274c The Attendance module is not enabled. "
                 "Use `/module enable attendance` first.",
@@ -66,7 +69,7 @@ class AttendanceCog(commands.Cog):
 
     async def _guard_no_active_season(self, interaction: discord.Interaction) -> bool:
         """Return True (and send error) if there IS an active season."""
-        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()
         if season is not None:
             await interaction.response.send_message(
                 "\u274c Attendance configuration cannot be changed once a season's placements are confirmed.",
@@ -96,7 +99,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -110,7 +113,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_notice_days(days)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_notice_days(days)
         await interaction.followup.send(
             f"\u2705 RSVP notice set to **{days}** day(s) before the race.", ephemeral=True
         )
@@ -136,7 +139,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -150,7 +153,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_last_notice_hours(hours)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_last_notice_hours(hours)
         if hours == 0:
             msg = "\u2705 Last RSVP reminder **disabled** (set to 0)."
         else:
@@ -178,7 +181,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -192,7 +195,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_rsvp_deadline_hours(hours)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_rsvp_deadline_hours(hours)
         await interaction.followup.send(
             f"\u2705 RSVP deadline set to **{hours}** hour(s) before the race.", ephemeral=True
         )
@@ -217,7 +220,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_rsvp_penalty(points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_no_rsvp_penalty(points)
         await interaction.followup.send(
             f"\u2705 No-RSVP penalty set to **{points}** point(s).", ephemeral=True
         )
@@ -242,7 +245,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_absent_penalty(points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_absent_penalty(points)
         await interaction.followup.send(
             f"\u2705 Absent penalty set to **{points}** point(s).", ephemeral=True
         )
@@ -267,7 +270,7 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_no_show_penalty(points)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_no_show_penalty(points)
         await interaction.followup.send(
             f"\u2705 No-show penalty set to **{points}** point(s).", ephemeral=True
         )
@@ -293,7 +296,7 @@ class AttendanceCog(commands.Cog):
 
         value = None if points == 0 else points
         if value is not None:
-            cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+            cfg = await self.bot.attendance_service.get_config()
             if cfg and cfg.autoreserve_threshold:
                 await interaction.response.send_message(
                     "\u274c Cannot set auto-sack while auto-reserve is active. "
@@ -302,7 +305,7 @@ class AttendanceCog(commands.Cog):
                 )
                 return
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_autosack_threshold(value)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_autosack_threshold(value)
         if value is None:
             msg = "\u2705 Auto-sack **disabled**."
         else:
@@ -338,7 +341,7 @@ class AttendanceCog(commands.Cog):
 
         value = None if points == 0 else points
         if value is not None:
-            cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+            cfg = await self.bot.attendance_service.get_config()
             if cfg and cfg.autosack_threshold:
                 await interaction.response.send_message(
                     "\u274c Cannot set auto-reserve while auto-sack is active. "
@@ -347,7 +350,7 @@ class AttendanceCog(commands.Cog):
                 )
                 return
         await interaction.response.defer(ephemeral=True)
-        await self.bot.attendance_service.update_autoreserve_threshold(value)  # type: ignore[attr-defined]
+        await self.bot.attendance_service.update_autoreserve_threshold(value)
         if value is None:
             msg = "\u2705 Auto-reserve **disabled**."
         else:
@@ -365,7 +368,7 @@ class AttendanceCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()
         if cfg is None:
             await interaction.response.send_message(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -423,7 +426,7 @@ class AttendanceCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "\u26d4 `/attendance sync` is available only while the season is ongoing.",
@@ -431,7 +434,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
             await interaction.followup.send(
@@ -439,7 +442,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        db_path = self.bot.db_path
 
         # **Not while a round of the division is being amended** (#345, decided 2026-09-21). The
         # recalculation reads the results, which hold an open amendment's corrections before
@@ -492,7 +495,7 @@ class AttendanceCog(commands.Cog):
             return
 
         outcome = await sync_attendance(
-            self.bot, interaction.guild, db_path, div.id, round_row["id"], season.id
+            self.bot, guild_of(interaction), db_path, div.id, round_row["id"], season.id
         )
 
         lines = [f"\u2705 Attendance of **{div.name}** recalculated from round {round} on."]
@@ -507,7 +510,7 @@ class AttendanceCog(commands.Cog):
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
         result = "Success" if outcome.complete else "Incomplete"
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /attendance sync | {result}\n"
             f"  division: {div.name}\n"
@@ -568,7 +571,7 @@ class AttendanceCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        season = await self.bot.season_service.get_confirmed_season()  # type: ignore[attr-defined]
+        season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
             await interaction.followup.send(
                 "⛔ `/attendance post-check-in` is available only while the season is ongoing.",
@@ -576,7 +579,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        divisions = await self.bot.season_service.get_divisions(season.id)  # type: ignore[attr-defined]
+        divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
             await interaction.followup.send(
@@ -584,7 +587,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        db_path = self.bot.db_path  # type: ignore[attr-defined]
+        db_path = self.bot.db_path
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "SELECT id, status, scheduled_at FROM rounds "
@@ -615,7 +618,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        cfg = await self.bot.attendance_service.get_config()  # type: ignore[attr-defined]
+        cfg = await self.bot.attendance_service.get_config()
         if cfg is None:
             await interaction.followup.send(
                 "\u274c No attendance configuration found. Enable the module first.",
@@ -686,7 +689,7 @@ class AttendanceCog(commands.Cog):
                 ephemeral=True,
             )
 
-        await self.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) "
             f"| /attendance post-check-in | {'Success' if posted else 'Failed'}\n"
             f"  division: {div.name}\n"
@@ -711,7 +714,7 @@ _STATUS_LABELS = {
 }
 
 
-async def _call_stands(bot, round_id: int, division_id: int) -> bool:
+async def _call_stands(bot: LeagueBot, round_id: int, division_id: int) -> bool:
     """Whether a check-in call for *round_id* is still recorded as standing.
 
     The row goes when the call is taken down — by a cancellation, or by an amendment that
@@ -758,11 +761,11 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         )
         return
 
-    bot = interaction.client
+    bot = bot_of(interaction)
     discord_user_id = interaction.user.id
 
     # The module gate — see the docstring for why it sits here and not on the cog.
-    if not await bot.module_service.is_attendance_enabled():  # type: ignore[attr-defined]
+    if not await bot.module_service.is_attendance_enabled():
         await interaction.response.send_message(
             "❌ The Attendance module is switched off for this server, so check-in is "
             "no longer running. Your answer has not been recorded.",
@@ -774,7 +777,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     # answers for them, a past one as well as the current (issue #243).
     from services.driver_service import resolve_driver_profile_id
 
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         resolved_profile_id = await resolve_driver_profile_id(discord_user_id, db)
 
         if resolved_profile_id is None:
@@ -838,7 +841,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     # driver of this division — an unconfirmed placement, a seat in another division, or no
     # driver profile at all. A league manager who does not drive and presses a button out of
     # curiosity is in the same position, and telling them apart would serve nobody.
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             f"""
             SELECT ti.is_reserve
@@ -867,7 +870,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     if isinstance(scheduled_at_raw, str):
         scheduled_at = datetime.fromisoformat(scheduled_at_raw)
     else:
-        scheduled_at = scheduled_at_raw  # type: ignore[assignment]
+        scheduled_at = scheduled_at_raw
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
@@ -875,7 +878,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     now = datetime.now(timezone.utc)
 
     # Get current rsvp_status for locking check
-    async with get_connection(bot.db_path) as db:  # type: ignore[attr-defined]
+    async with get_connection(bot.db_path) as db:
         cur = await db.execute(
             """
             SELECT rsvp_status FROM driver_round_attendance
@@ -933,7 +936,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     # has no way of discovering otherwise until the round is scored against them. The embed
     # is not rebuilt either — it is a view of the answers, and redrawing it here would show
     # the division a state the database does not hold.
-    recorded = await bot.attendance_service.upsert_rsvp_status(  # type: ignore[attr-defined]
+    recorded = await bot.attendance_service.upsert_rsvp_status(
         round_id=round_id,
         division_id=division_id,
         driver_profile_id=driver_profile_id,
@@ -953,9 +956,9 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
 
     # Rebuild and edit embed in-place (FR-010 / FR-012)
     from services.rsvp_service import _rebuild_embed_for_round, RsvpView
-    embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)  # type: ignore[attr-defined]
+    embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
     if embed_row is not None:
-        channel = bot.get_channel(int(embed_row.channel_id))
+        channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
         if channel is not None:
             try:
                 msg = await channel.fetch_message(int(embed_row.message_id))

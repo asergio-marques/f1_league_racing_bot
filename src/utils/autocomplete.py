@@ -21,6 +21,7 @@ import functools
 import logging
 import time
 from typing import Any, Callable
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ def team_choices(teams, current: str | None, *, include_reserve: bool) -> list:
     return choices
 
 
-async def team_autocomplete(bot, current: str | None, *, include_reserve: bool) -> list:
+async def team_autocomplete(bot: LeagueBot, current: str | None, *, include_reserve: bool) -> list:
     """The server's teams *current* could name, for a command's team parameter.
 
     One list serves every command that takes a team, the division commands included: every

@@ -9,6 +9,7 @@ from typing import NamedTuple
 import discord
 
 from db.database import get_connection
+from services.channel_registry_service import as_text_channel
 from services.driver_service import current_account_map_for_division
 from models.classification_occasion import ClassificationOccasion
 from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -29,6 +30,7 @@ from services.channel_registry_service import (
 )
 from services.team_service import team_names_for_instances
 from utils import results_formatter
+from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -234,7 +236,7 @@ async def driver_standings_for_display(
     division_id: int,
     round_id: int,
     guild: discord.Guild | None,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> list[DriverStandingsSnapshot]:
     """The driver standings, ordered on the names they will be posted under.
 
@@ -274,7 +276,7 @@ async def standings_display_names(
     db_path: str,
     division_id: int,
     guild: discord.Guild | None,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> dict[int, str] | None:
     """The names every driver the division's standings can mention would be drawn under.
 
@@ -318,7 +320,7 @@ async def recompute_standings_from_round(
     division_id: int,
     from_round_id: int,
     guild: discord.Guild | None,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> None:
     """Cascade the standings from *from_round_id*, ordered as the postings are.
 
@@ -458,7 +460,7 @@ async def post_session_results(
     label: str,
     is_sprint: bool = True,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
     result_status: str | None = None,
 ) -> int:
     """Format and send a single session result. Returns the Discord message ID.
@@ -615,7 +617,7 @@ async def post_standings(
     show_reserves: bool,
     label: str,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
 ) -> None:
     """Format and post (or edit-in-place) the driver and team standings.
@@ -1188,7 +1190,7 @@ async def post_round_results(
     guild: discord.Guild,
     label: str,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> None:
     """Post results for all non-cancelled sessions of a round in session order."""
     from services.result_submission_service import SESSION_ORDER_SPRINT, SESSION_ORDER_NORMAL
@@ -1276,7 +1278,7 @@ _REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
 _ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
 
 
-def _bot_member(guild: "discord.Guild", bot):
+def _bot_member(guild: "discord.Guild", bot: LeagueBot | None):
     """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
 
     **``guild.me`` is deliberately not used here** (#187). It is a property reading
@@ -1335,7 +1337,7 @@ async def repost_channel_faults(
     db_path: str,
     season_id: int,
     guild: "discord.Guild | None",
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> list[str]:
     """What stands between this season and reposting every division's results (#187).
 
@@ -1381,7 +1383,7 @@ async def repost_channel_faults(
     return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
 
 
-def _repost_gate(guild: "discord.Guild | None", bot):
+def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
     """The bot member the permission arithmetic needs, or the fault standing in its way.
 
     Shared by the season-wide and division-wide gates so that the two cannot drift: both
@@ -1455,7 +1457,9 @@ def _cascade_channel_fault(
     return None
 
 
-async def _channel_faults_for_rows(division_rows, guild, bot_member, bot) -> list[str]:
+async def _channel_faults_for_rows(
+    division_rows, guild, bot_member, bot: LeagueBot | None
+) -> list[str]:
     """The faults across *division_rows*, each row carrying a division's two channel ids."""
     # Asked of the image module rather than read out of its configuration here: a posting
     # service hands the image module an occasion and acts on what comes back, and does not
@@ -1551,7 +1555,7 @@ async def repost_round_results(
     guild: discord.Guild,
     label: str | None = None,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> list[str]:
     """Load the division's channels and repost/edit round results and standings.
 
@@ -1627,7 +1631,7 @@ async def repost_round_results(
         return faults
 
     if results_ch_id:
-        rc = guild.get_channel(results_ch_id)
+        rc = as_text_channel(guild.get_channel(results_ch_id))
         if rc is None:
             log.warning(
                 "repost_round_results: results channel %s not found in guild", results_ch_id
@@ -1637,7 +1641,7 @@ async def repost_round_results(
             await post_round_results(db_path, round_id, division_id, rc, guild, label, bot=bot)
 
     if standings_ch_id:
-        sc = guild.get_channel(standings_ch_id)
+        sc = as_text_channel(guild.get_channel(standings_ch_id))
         if sc is None:
             log.warning(
                 "repost_round_results: standings channel %s not found in guild", standings_ch_id
@@ -1695,7 +1699,7 @@ async def repost_results_for_division(
     division_id: int,
     guild: discord.Guild,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> str:
     """Repost every round's session results, in round order, then take the old ones down.
 
@@ -1735,7 +1739,7 @@ async def repost_results_for_division(
     if not results_ch_id:
         return "no_channel"
 
-    rc = guild.get_channel(results_ch_id)
+    rc = as_text_channel(guild.get_channel(results_ch_id))
     if rc is None:
         log.warning(
             "repost_results_for_division: results channel %s not found in guild",
@@ -1788,7 +1792,7 @@ async def repost_results_for_division(
 
 
 async def _repost_results_rounds(
-    db_path: str, round_rows, rc, guild, bot,
+    db_path: str, round_rows, rc, guild, bot: LeagueBot | None,
     superseded: list[tuple[int, int, list[int] | None]],
     touched: list[int],
 ) -> None:
@@ -1903,7 +1907,7 @@ async def repost_standings_for_division(
     division_id: int,
     guild: discord.Guild,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> str:
     """Repost every round's standings, in round order, then take the old ones down.
 
@@ -1936,7 +1940,7 @@ async def repost_standings_for_division(
             """,
             (division_id,),
         )
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
 
     if not rows:
         return "no_rounds"
@@ -1945,7 +1949,7 @@ async def repost_standings_for_division(
     if not standings_ch_id:
         return "no_channel"
 
-    sc = guild.get_channel(standings_ch_id)
+    sc = as_text_channel(guild.get_channel(standings_ch_id))
     if sc is None:
         log.warning(
             "repost_standings_for_division: standings channel %s not found in guild",
@@ -2025,7 +2029,7 @@ async def delete_and_repost_final_results(
     guild: discord.Guild,
     label: str,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> list[str]:
     """Delete all interim results/standings Discord messages for *round_id* and
     repost the final (post-penalty) versions.
@@ -2116,7 +2120,9 @@ async def delete_and_repost_final_results(
         if results_fault is not None:
             faults.append(results_fault)
         else:
-            rc = guild.get_channel(results_ch_id)
+            rc = as_text_channel(guild.get_channel(results_ch_id))
+            # The check has just found it in the cache, with nothing awaited since.
+            assert rc is not None
             # Fetch session rows with their existing message IDs
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
@@ -2175,7 +2181,9 @@ async def delete_and_repost_final_results(
         if standings_fault is not None:
             faults.append(standings_fault)
         else:
-            sc = guild.get_channel(standings_ch_id)
+            sc = as_text_channel(guild.get_channel(standings_ch_id))
+            # The check has just found it in the cache, with nothing awaited since.
+            assert sc is not None
             # Both championships' interim messages go, whichever flow posted them.
             await _clear_standings_messages(db_path, division_id, round_id, sc)
 
@@ -2199,7 +2207,7 @@ async def repost_subsequent_standings(
     from_round_id: int,
     guild: discord.Guild,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
 ) -> list[str]:
     """Cascade-recompute standings and repost Discord standings messages for all
     rounds *after* *from_round_id* in the division that have an existing
@@ -2291,7 +2299,21 @@ async def repost_subsequent_standings(
             skipped_rounds.append(rnd_number)
             continue
 
-        sc = guild.get_channel(standings_ch_id)
+        sc = as_text_channel(guild.get_channel(standings_ch_id))
+        if sc is None:
+            # The check above is kept for the whole repost, and an earlier round's posting has
+            # been awaited since: the channel was deleted meanwhile. It is refused as the check
+            # would have refused it, rather than posted to and raised on (#228).
+            channel_fault = missing_channel_fault(
+                rnd["division_name"] or f"division {division_id}",
+                "standings",
+                int(standings_ch_id),
+            )
+            gated[standings_ch_id] = channel_fault
+            if channel_fault not in faults:
+                faults.append(channel_fault)
+            skipped_rounds.append(rnd_number)
+            continue
 
         # Delete old standings message(s) for both championships and forget their ids
         await _clear_standings_messages(db_path, division_id, rnd_id, sc)
@@ -2369,7 +2391,7 @@ async def replay_division_channels(
     from_round_id: int,
     guild: discord.Guild,
     *,
-    bot=None,
+    bot: LeagueBot | None = None,
     verdict_state_factory=None,
     attendance_step=None,
 ) -> ReplayOutcome:

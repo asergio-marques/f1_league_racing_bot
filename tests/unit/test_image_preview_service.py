@@ -736,3 +736,28 @@ class TestRefusalsStillFireOnAPendingSeason:
                 bot, "Division 1", round_number=1, require_mystery=True
             )
         assert excinfo.value.reason == REASON_NOT_MYSTERY_ROUND
+
+
+# ---------------------------------------------------------------------------
+# A round-drawn preview's round (#228)
+# ---------------------------------------------------------------------------
+
+
+def test_a_round_drawn_preview_has_its_round():
+    from services.image_preview_service import PreviewContext
+
+    rnd = SimpleNamespace(round_number=3)
+    context = PreviewContext(
+        season_number=1, division_id=1, division_name="Pro", division_tier=1, round=rnd
+    )
+    assert context.required_round() is rnd
+
+
+def test_a_round_drawn_preview_reached_without_its_round_is_raised_by_name():
+    """`resolve_context` refuses such a preview first; a builder reached around that refusal
+    says so rather than failing on `None` further in."""
+    from services.image_preview_service import PreviewContext
+
+    context = PreviewContext(season_number=1, division_id=1, division_name="Pro", division_tier=1)
+    with pytest.raises(RuntimeError, match="resolved without it"):
+        context.required_round()

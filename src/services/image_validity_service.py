@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from lxml import etree
+
 from models.image_catalogues import (
     CapacityError,
     catalogue_for,
@@ -57,6 +59,7 @@ from models.image_module import (
     Problem,
     ValidityReport,
 )
+from utils.league_bot import LeagueBot
 from utils.paths import PathContainmentError, resolve_within_project_root
 from utils.svg_document import (
     FieldIndex,
@@ -100,7 +103,7 @@ class TemplateContext:
     #: tree to look for mandatory fields. Without sharing, a season review reads sixteen
     #: files twice. It is deliberately not memoised across evaluations: a manager edits a
     #: template and re-runs the check expecting to see the change.
-    parsed: dict[Path, object] = field(default_factory=dict)
+    parsed: dict[Path, etree._Element] = field(default_factory=dict)
 
     @property
     def filename(self) -> str:
@@ -400,7 +403,9 @@ def _box_of(element) -> tuple[float, float, float, float] | None:
     for node in element.iter():
         x, y = length(node.get("x")), length(node.get("y"))
         width, height = length(node.get("width")), length(node.get("height"))
-        if None in (x, y, width, height) or width <= 0 or height <= 0:
+        if x is None or y is None or width is None or height is None:
+            continue
+        if width <= 0 or height <= 0:
             continue
         box = (x, y, width, height)
         if best is None or width * height > best[2] * best[3]:
@@ -494,12 +499,12 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
             f"round_{ordinal}_group",
             f"round_{ordinal}_vertical_crop_point",
         )
-        siblings = {
+        resolved = {
             name: index.resolve(name)
             for name in index.declared()
             if name.startswith(f"round_{ordinal}_") and name not in excluded
         }
-        siblings = {name: node for name, node in siblings.items() if node is not None}
+        siblings = {name: node for name, node in resolved.items() if node is not None}
 
         # 1. Drawn last, which is what puts it over the round rather than under it.
         overlay_at = order.get(f"round_{ordinal}_cancelled")
@@ -545,10 +550,9 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
         x, y, width, height = box
         outside = sorted(
             name for name, node in siblings.items()
-            if (_element_x(node) is not None and _element_y(node) is not None)
-            and not (
-                x <= _element_x(node) <= x + width and y <= _element_y(node) <= y + height
-            )
+            if (node_x := _element_x(node)) is not None
+            and (node_y := _element_y(node)) is not None
+            and not (x <= node_x <= x + width and y <= node_y <= y + height)
         )
         if outside:
             faults.append(
@@ -1289,7 +1293,7 @@ def build_aspect_statuses(
     return statuses
 
 
-async def aspect_attaches_files(bot, aspect: str) -> bool:
+async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     """Whether *aspect* could cause a file to be attached to a posting on this server.
 
     **This predicate deliberately does NOT check template validity, and must not be

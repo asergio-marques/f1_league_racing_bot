@@ -21,7 +21,7 @@ async def get_all_tracks(db: "aiosqlite.Connection") -> list:
     cursor = await db.execute(
         "SELECT id, name, gp_name, location, country, mu, sigma FROM tracks ORDER BY id"
     )
-    return await cursor.fetchall()
+    return list(await cursor.fetchall())
 
 
 async def get_track_by_name(db: "aiosqlite.Connection", name: str):

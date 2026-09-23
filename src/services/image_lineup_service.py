@@ -402,9 +402,9 @@ def build_fill_spec(
         drawn = list(team.seats)
         # Shed configured-but-empty seats, latest first, until the block can hold the rest.
         while len(drawn) > slots:
-            for index in range(len(drawn) - 1, -1, -1):
-                if not drawn[index].occupied:
-                    del drawn[index]
+            for seat_index in range(len(drawn) - 1, -1, -1):
+                if not drawn[seat_index].occupied:
+                    del drawn[seat_index]
                     break
             else:  # pragma: no cover — guarded by the overflow check above
                 break

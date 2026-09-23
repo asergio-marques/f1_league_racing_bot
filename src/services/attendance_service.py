@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import aiosqlite
 import discord
 
+from services.channel_registry_service import as_text_channel
 from db.database import get_connection
 from models.attendance import (
     AttendanceConfig,
@@ -19,6 +21,7 @@ from models.attendance import (
     RsvpEmbedMessage,
 )
 from models.classification_occasion import ClassificationOccasion
+from utils.league_bot import LeagueBot
 
 
 @asynccontextmanager
@@ -450,7 +453,7 @@ class AttendanceService:
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
 
 
-def _dra_from_row(row: object) -> DriverRoundAttendance:
+def _dra_from_row(row: aiosqlite.Row) -> DriverRoundAttendance:
     return DriverRoundAttendance(
         id=row["id"],
         round_id=row["round_id"],
@@ -466,7 +469,7 @@ def _dra_from_row(row: object) -> DriverRoundAttendance:
     )
 
 
-def _rem_from_row(row: object) -> RsvpEmbedMessage:
+def _rem_from_row(row: aiosqlite.Row) -> RsvpEmbedMessage:
     return RsvpEmbedMessage(
         id=row["id"],
         round_id=row["round_id"],
@@ -840,7 +843,7 @@ async def distribute_attendance_points(
                 (row["driver_profile_id"], division_id, this_round_number, round_id),
             )
             prior_row = await c3.fetchone()
-            prior_total: int = prior_row["prior_total"] if prior_row else 0
+            prior_total = prior_row["prior_total"] if prior_row else 0
             total_after = prior_total + net
 
             await db.execute(
@@ -857,7 +860,7 @@ async def distribute_attendance_points(
 
 
 async def post_attendance_sheet(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     round_id: int,
@@ -913,7 +916,7 @@ async def post_attendance_sheet(
     channel_id = int(row["attendance_channel_id"])
     prior_msg_id = row["attendance_message_id"]
 
-    channel = guild.get_channel(channel_id)
+    channel = as_text_channel(guild.get_channel(channel_id))
     if channel is None:
         log.warning("post_attendance_sheet: channel %s not found for division %s", channel_id, division_id)
         return
@@ -1172,7 +1175,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
 
 
 async def _sheet_attachment(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     *,
@@ -1286,7 +1289,7 @@ async def _sheet_attachment(
             await report_notices(bot, label, render.notices)
         if render.problem:
             await report(bot, label, render.problem)
-        if not render.draws:
+        if render.png is None:  # `render.draws`, in a form the type check can follow
             return None
 
         return discord.File(str(render.png), filename=Path(render.png).name)
@@ -1383,10 +1386,10 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                     )
                 ).fetchall()
                 for row in points_rows:
-                    ordinal = ordinal_of.get(int(row["round_id"]))
-                    if ordinal is None:
+                    points_ordinal = ordinal_of.get(int(row["round_id"]))
+                    if points_ordinal is None:
                         continue
-                    cells.setdefault(int(row["driver_profile_id"]), {})[ordinal] = (
+                    cells.setdefault(int(row["driver_profile_id"]), {})[points_ordinal] = (
                         row["points_awarded"]
                     )
     except Exception as exc:  # noqa: BLE001 — a grid that cannot be read is drawn empty
@@ -1488,7 +1491,7 @@ class SanctionOutcome:
 
 
 async def enforce_attendance_sanctions(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     round_id: int,
@@ -1552,9 +1555,12 @@ async def enforce_attendance_sanctions(
     from services import verdict_announcement_service as _vas
     if head is None:
         head = _vas.banner_for_round(bot, db_path, round_id)
-    placement: PlacementService = bot.placement_service  # type: ignore[attr-defined]
-    acting_id = bot.user.id
-    acting_name = str(bot.user)
+    placement: PlacementService = bot.placement_service
+    # Sanctions are enforced by a bot that has logged in, which is when it has a user.
+    acting = bot.user
+    assert acting is not None, "sanctions enforced before the bot logged in"
+    acting_id = acting.id
+    acting_name = str(acting)
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
     sanctioned_profile_ids: set[int] = set()
@@ -1577,7 +1583,7 @@ async def enforce_attendance_sanctions(
         if autosack_threshold and total >= autosack_threshold:
             if row["current_state"] == "NOT_SIGNED_UP":
                 # Already signed off — the one refusal that is expected, not a failure (I1).
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
                     f"already NOT_SIGNED_UP (total={total})",
                 )
@@ -1603,7 +1609,7 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 outcome.applied.append((driver, "autosack"))
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"ATTENDANCE_AUTOSACK | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
                 )
@@ -1683,7 +1689,7 @@ async def enforce_attendance_sanctions(
                 )
                 sanctioned_profile_ids.add(profile_id)
                 outcome.applied.append((driver, "autoreserve"))
-                await bot.output_router.post_log(  # type: ignore[attr-defined]
+                await bot.output_router.post_log(
                     f"ATTENDANCE_AUTORESERVE | {driver}"
                     f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
                     f" → moved to {reserve_team_name}",
@@ -1709,7 +1715,7 @@ async def enforce_attendance_sanctions(
     # Refresh lineup and re-post attendance sheet with sanctioned annotations.
     if sanctioned_profile_ids:
         try:
-            await placement._refresh_lineup_post(guild, division_id)  # type: ignore[attr-defined]
+            await placement._refresh_lineup_post(guild, division_id)
         except Exception as exc:  # noqa: BLE001 — reported with the outcome
             log.exception("enforce_attendance_sanctions: lineup refresh failed")
             outcome.posting_faults.append(f"the lineup could not be posted again: {exc}")
@@ -1755,7 +1761,7 @@ async def enforce_attendance_sanctions(
     if not outcome.complete:
         lines = "\n".join(f"  {line}" for line in outcome.failure_lines())
         try:
-            await bot.output_router.post_log(  # type: ignore[attr-defined]
+            await bot.output_router.post_log(
                 f"ATTENDANCE_SANCTIONS | Incomplete\n{lines}\n"
                 f"  {await sync_hint(db_path, division_id, round_id)}",
             )
@@ -1787,7 +1793,7 @@ def _failure_reason(exc: Exception, *, applied: bool) -> str:
 
 
 async def recalculate_attendance_for_round(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     round_id: int,
@@ -1922,7 +1928,7 @@ async def cascade_attendance_from_round(
 
 
 async def sync_attendance(
-    bot,
+    bot: LeagueBot,
     guild: discord.Guild,
     db_path: str,
     division_id: int,
@@ -1952,7 +1958,7 @@ async def sync_attendance(
 
 
 async def recalculation_faults(
-    db_path: str, season_id: int, guild, bot=None
+    db_path: str, season_id: int, guild, bot: LeagueBot | None = None
 ) -> list[str]:
     """What stands between this season and recalculating its attendance (#187).
 

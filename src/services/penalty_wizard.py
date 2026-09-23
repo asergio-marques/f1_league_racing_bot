@@ -18,11 +18,13 @@ import discord
 from db.database import get_connection
 from models.points_config import SessionType
 from models.round import RoundStatus
+from services.channel_registry_service import as_text_channel
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
 from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
 from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
-from utils.league_server import LeagueModal, LeagueView
+from utils.league_bot import LeagueBot
+from utils.league_server import CallbackButton, LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +74,7 @@ class PenaltyReviewState:
     submission_channel_id: int
     session_types_present: list[SessionType]
     db_path: str
-    bot: Any
+    bot: LeagueBot
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
     staged_pardons: list[StagedPardon] = field(default_factory=list)
@@ -105,7 +107,7 @@ class PenaltyReviewState:
 async def _is_league_manager(
     interaction: discord.Interaction,
     db_path: str,
-    bot: Any,
+    bot: LeagueBot,
 ) -> bool:
     """Return True if the interacting member holds the league manager tier.
 
@@ -289,9 +291,9 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
     if state.staged_pardons:
         lines.append("")
         lines.append(f"**Staged Attendance Pardons ({len(state.staged_pardons)}):**")
-        for i, sp in enumerate(state.staged_pardons, 1):
+        for i, pardon in enumerate(state.staged_pardons, 1):
             lines.append(
-                f"  • {_mention(sp.driver_user_id)} — **{sp.pardon_type}** "
+                f"  • {_mention(pardon.driver_user_id)} — **{pardon.pardon_type}** "
                 f"*(justification logged)*  ← Remove Pardon #{i} below"
             )
 
@@ -306,7 +308,7 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing prompt message to reflect the current staged list."""
     if state.prompt_message_id is None:
         return
-    ch = state.bot.get_channel(state.submission_channel_id)
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is None:
         return
     try:
@@ -357,7 +359,7 @@ async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
     """Edit the existing appeals prompt message to reflect current staged_appeals."""
     if state.appeals_prompt_message_id is None:
         return
-    ch = state.bot.get_channel(state.submission_channel_id)
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is None:
         return
     try:
@@ -390,8 +392,11 @@ class _SessionSelectView(LeagueView):
         self.use_appeals_staging = use_appeals_staging
         for stype in state.session_types_present:
             label = stype.value.replace("_", " ").title()
-            btn = discord.ui.Button(label=label, style=discord.ButtonStyle.primary)
-            btn.callback = self._make_cb(stype)
+            btn = CallbackButton(
+                label=label,
+                style=discord.ButtonStyle.primary,
+                on_press=self._make_cb(stype),
+            )
             self.add_item(btn)
 
     def _make_cb(self, stype: SessionType):
@@ -805,7 +810,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         self.state.staged_pardons.append(pardon)
 
         # --- Log justification to calc-log channel only (FR-010) ---
-        await self.state.bot.output_router.post_log(  # type: ignore[attr-defined]
+        await self.state.bot.output_router.post_log(
             f"ATTENDANCE_PARDON_STAGED | <@{interaction.user.id}> granted {pardon_type} pardon\n"
             f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
             f"({self.state.division_name})\n"
@@ -875,7 +880,7 @@ async def _show_approval_step(
             "Approve to finalize the round with results as submitted."
         )
 
-    ch = state.bot.get_channel(state.submission_channel_id)
+    ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is not None:
         view = ApprovalView(state=state)
         msg = await ch.send(content, view=view)
@@ -910,10 +915,13 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
             len(buttons), len(slots),
         )
     for (label, custom_id, callback), row in zip(buttons, slots):
-        btn = discord.ui.Button(
-            label=label, style=discord.ButtonStyle.danger, custom_id=custom_id, row=row
+        btn = CallbackButton(
+            label=label,
+            style=discord.ButtonStyle.danger,
+            custom_id=custom_id,
+            row=row,
+            on_press=callback,
         )
-        btn.callback = callback
         view.add_item(btn)
 
 
@@ -939,14 +947,13 @@ class PenaltyReviewView(LeagueView):
         self.state = state
 
         # Configure static button states
-        _no_state = state is None
         for item in self.children:
             if not isinstance(item, discord.ui.Button):
                 continue
             if item.custom_id == _CID_ADD:
-                item.disabled = _no_state or len(state.session_types_present) == 0  # type: ignore[union-attr]
+                item.disabled = state is None or len(state.session_types_present) == 0
             elif item.custom_id == _CID_APPROVE:
-                item.disabled = _no_state or len(state.staged) == 0  # type: ignore[union-attr]
+                item.disabled = state is None or len(state.staged) == 0
 
         if state is not None and state.is_amendment:
             # **No resubmission in an amendment** (#345). It replaces every session of the round
@@ -1254,14 +1261,13 @@ class AppealsReviewView(LeagueView):
         super().__init__(timeout=None)
         self.state = state
 
-        _no_state = state is None
         for item in self.children:
             if not isinstance(item, discord.ui.Button):
                 continue
             if item.custom_id == _CID_AR_ADD:
-                item.disabled = _no_state or len(state.session_types_present) == 0  # type: ignore[union-attr]
+                item.disabled = state is None or len(state.session_types_present) == 0
             elif item.custom_id == _CID_AR_APPROVE:
-                item.disabled = _no_state or len(state.staged_appeals) == 0  # type: ignore[union-attr]
+                item.disabled = state is None or len(state.staged_appeals) == 0
 
         # Dynamic Remove buttons — one per staged correction
         if state is not None:

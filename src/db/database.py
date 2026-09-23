@@ -55,6 +55,33 @@ async def get_connection(
         yield db
 
 
+async def sole_row(cursor: aiosqlite.Cursor) -> aiosqlite.Row:
+    """The one row a query certain to return one has returned.
+
+    For an aggregate — ``COUNT``, ``MAX`` — which always returns a row, and for a lookup by a
+    key the caller has just taken from the database, or just written. aiosqlite types every
+    ``fetchone`` as optional; a None here means that certainty was wrong, and it is raised by
+    name rather than indexed (#228).
+    """
+    row = await cursor.fetchone()
+    if row is None:
+        raise RuntimeError("a query certain to return a row returned none")
+    return row
+
+
+def inserted_id(cursor: aiosqlite.Cursor) -> int:
+    """The id of the row *cursor*'s INSERT has just written.
+
+    SQLite sets it after every INSERT into a rowid table; aiosqlite types it as optional because
+    a cursor in general need not have run one. None here means the statement wrote no row, and
+    that is raised by name rather than stored as an id (#228).
+    """
+    row_id = cursor.lastrowid
+    if row_id is None:
+        raise RuntimeError("the statement wrote no row, so there is no id to read")
+    return row_id
+
+
 async def _enable_wal(db: aiosqlite.Connection) -> None:
     """Put the database into WAL, and say so once.
 

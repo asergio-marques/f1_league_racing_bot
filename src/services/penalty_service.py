@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import discord
 
@@ -16,6 +16,10 @@ from utils.input_validator import (
     parse_penalty_seconds,
     parse_time,
 )
+from utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    from services.penalty_wizard import StagedPardon
 
 log = logging.getLogger(__name__)
 
@@ -172,7 +176,7 @@ async def apply_penalties(
     division_id: int,
     staged: list[StagedPenalty],
     applied_by: int,
-    bot: discord.Client,
+    bot: LeagueBot,
     *,
     _skip_post: bool = False,
     _phase: Literal["PENALTY", "APPEAL"] = "PENALTY",
@@ -547,20 +551,20 @@ async def load_staged_from_records(
             """,
             (round_id,),
         )
-        for row in await cursor.fetchall():
+        for pardon_row in await cursor.fetchall():
             try:
-                driver_user_id = int(row["discord_user_id"])
+                driver_user_id = int(pardon_row["discord_user_id"])
             except (TypeError, ValueError):
                 driver_user_id = 0
             pardons.append(
                 StagedPardon(
                     driver_user_id=driver_user_id,
-                    driver_profile_id=row["driver_profile_id"],
-                    attendance_id=row["attendance_id"],
-                    pardon_type=row["pardon_type"],
-                    justification=row["justification"] or "",
-                    grantor_id=int(row["granted_by"]) if row["granted_by"] else 0,
-                    granted_at=row["granted_at"],
+                    driver_profile_id=pardon_row["driver_profile_id"],
+                    attendance_id=pardon_row["attendance_id"],
+                    pardon_type=pardon_row["pardon_type"],
+                    justification=pardon_row["justification"] or "",
+                    grantor_id=int(pardon_row["granted_by"]) if pardon_row["granted_by"] else 0,
+                    granted_at=pardon_row["granted_at"],
                 )
             )
 

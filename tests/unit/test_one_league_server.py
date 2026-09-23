@@ -26,7 +26,11 @@ from utils.league_server import (  # noqa: E402
     UNCLAIMED_REFUSAL,
     LeagueCommandTree,
     LeagueModal,
+    CallbackButton,
+    CallbackSelect,
     LeagueView,
+    channel_id_of,
+    guild_of,
     is_foreign_guild,
     league_guild,
     warn_if_serving_several,
@@ -384,3 +388,92 @@ async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
 
     asked.assert_not_awaited()
     message.delete.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# guild_of (#228)
+# ---------------------------------------------------------------------------
+
+
+def test_guild_of_is_the_server_the_interaction_came_from():
+    interaction = MagicMock()
+    assert guild_of(interaction) is interaction.guild
+
+
+def test_guild_of_names_a_body_that_ran_outside_a_server():
+    """A guard is missing, and the command that lacks one is named."""
+    interaction = MagicMock()
+    interaction.guild = None
+    interaction.command.qualified_name = "season review"
+    with pytest.raises(RuntimeError, match=r"/season review reached its body outside a server"):
+        guild_of(interaction)
+
+
+def test_guild_of_outside_a_command_still_says_what_went_wrong():
+    interaction = MagicMock()
+    interaction.guild = None
+    interaction.command = None
+    with pytest.raises(RuntimeError, match=r"^An interaction reached its body outside a server"):
+        guild_of(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Runtime-built items take their handler (#228)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_callback_button_is_pressed_through_its_handler():
+    handler = AsyncMock()
+    button = CallbackButton(
+        label="Continue", style=discord.ButtonStyle.success, custom_id="go", row=1,
+        on_press=handler,
+    )
+    interaction = MagicMock()
+
+    await button.callback(interaction)
+
+    handler.assert_awaited_once_with(interaction)
+    assert (button.label, button.style, button.custom_id, button.row) == (
+        "Continue", discord.ButtonStyle.success, "go", 1,
+    )
+
+
+async def test_a_callback_select_is_answered_through_its_handler():
+    handler = AsyncMock()
+    options = [discord.SelectOption(label="Race", value="RACE")]
+    select = CallbackSelect(
+        options=options, placeholder="Sessions", max_values=1, row=0, on_choose=handler
+    )
+    interaction = MagicMock()
+
+    await select.callback(interaction)
+
+    handler.assert_awaited_once_with(interaction)
+    assert [option.value for option in select.options] == ["RACE"]
+    assert select.placeholder == "Sessions"
+
+
+def test_no_item_has_its_callback_assigned():
+    """A runtime-built button or menu takes its handler when it is made, which the type
+    check can follow; an assignment to `.callback` it cannot."""
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+    offenders = sorted(
+        f"{os.path.relpath(path, src)}:{number}"
+        for path in glob.glob(os.path.join(src, "**", "*.py"), recursive=True)
+        for number, line in enumerate(open(path, encoding="utf-8"), start=1)
+        if ".callback = " in line
+    )
+    assert offenders == []
+
+
+def test_channel_id_of_is_the_channel_the_interaction_came_from():
+    interaction = MagicMock()
+    interaction.channel_id = 4455
+    assert channel_id_of(interaction) == 4455
+
+
+def test_channel_id_of_refuses_an_interaction_from_no_channel():
+    interaction = MagicMock()
+    interaction.channel_id = None
+    with pytest.raises(RuntimeError, match="from no channel"):
+        channel_id_of(interaction)

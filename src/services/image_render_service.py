@@ -30,6 +30,7 @@ from models.image_module import (
     RenderNotice,
     RenderOutcome,
 )
+from utils.league_bot import LeagueBot
 
 #: What a caller should do with the result of ``render_for_posting``.
 POST_IMAGE = "POST_IMAGE"
@@ -211,9 +212,9 @@ def find_converter(*, use_cache: bool = True) -> str | None:
 def _probe() -> str | None:
     override = os.environ.get(INKSCAPE_ENV_VAR)
     if override:
-        candidate = Path(override)
-        if candidate.is_file():
-            return str(candidate)
+        override_path = Path(override)
+        if override_path.is_file():
+            return str(override_path)
         log.warning(
             "%s is set to %r but no file is there; falling back to the usual locations.",
             INKSCAPE_ENV_VAR,
@@ -803,7 +804,7 @@ class ImageRenderService:
 
     @staticmethod
     async def report_notices(
-        bot, notices: list[RenderNotice], *, subject: str | None = None
+        bot: LeagueBot, notices: list[RenderNotice], *, subject: str | None = None
     ):
         """Surface notices to the calculation log channel (Principle V, FR-031).
 
@@ -833,7 +834,7 @@ class ImageRenderService:
         spec_builder,
         *,
         posting_origin: PostingOrigin,
-        bot=None,
+        bot: LeagueBot | None = None,
         output_dir: Path | None = None,
         filename_stem: str | None = None,
         division_name: str | None = None,

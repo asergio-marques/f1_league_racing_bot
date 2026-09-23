@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 from models.classification_occasion import ClassificationOccasion
 from models.image_catalogues import (
@@ -37,6 +37,9 @@ from utils import results_formatter
 from utils.svg_document import FieldIndex, stylesheet
 from utils.svg_fill import FillSpec
 from utils.country_data import country_for_nationality
+
+if TYPE_CHECKING:
+    from services.standings_service import Movement
 
 DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"
@@ -225,7 +228,7 @@ class StandingsEntry:
     #: The change against the reference round, or None where it cannot be determined — the
     #: first round of a division, or an entry the reference round does not hold. Absent
     #: entirely rather than partly filled, and not a failure (FR-017).
-    movement: object | None = None
+    movement: Movement | None = None
     #: Round ordinal → its cells. Empty on a template declaring no round.
     cells: dict[int, RoundCells] = field(default_factory=dict)
     #: What the team's artwork is found by: its shorthand (#381). The drawn name where None.
@@ -308,7 +311,7 @@ def resolve_drawing(
     snapshots: Sequence,
     display_names: Mapping[int, str],
     team_names: Mapping[int, str],
-    movements: Mapping[int, object | None],
+    movements: Mapping[int, Movement | None],
     gaps: Mapping[int, int] | None = None,
     nationalities: Mapping[int, str | None] | None = None,
     reserve_user_ids: set[int] | None = None,
@@ -844,7 +847,7 @@ def build_fill_spec(
             if not drawing.nationality_collected:
                 empty_quietly.append(flag_id)
             elif entry.nationality:
-                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality))
+                image_data[flag_id] = ("flag", country_for_nationality(entry.nationality) or "")
             else:
                 empty.append(flag_id)
 

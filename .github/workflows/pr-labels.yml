@@ -9,11 +9,16 @@ name: Check PR labels
 # token a fork's PR is given is enough, and nothing from a PR ever runs with write access.
 # It runs again whenever the labels, the description (where `Part of #N` lives) or the
 # commits change, and labels often arrive one by one just after a PR is opened — several
-# events in quick succession. `cancel-in-progress: false` below queues rather than cancels: a
-# run already going is left to finish and report, and among runs still waiting only the
-# newest is kept. `tools/check_pr_labels.py` always reads the PR's current state from the API
-# regardless of which event asked, so a queued rerun is never stale — only a cancelled one is
-# lost, which is what left #378's required check waiting on a PR opened with several labels.
+# events in quick succession, each starting a run.
+#
+# **Every run is left to finish: there is deliberately no `concurrency` group.** A cancelled
+# run leaves a check suite with no check in it, and GitHub's PR page reads each workflow's
+# newest suite — so whenever the newest happened to be one that was cancelled, the required
+# check sat at "Waiting for status to be reported" although other runs had passed. Cancelling
+# the running one did it on #378; queuing, which cancels the ones still waiting and keeps
+# whichever joined the queue last rather than whichever was created last, did it again on #406.
+# A run takes seconds, and `tools/check_pr_labels.py` reads the PR's current state from the API
+# whichever event asked, so letting them all finish costs little and every suite holds a result.
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, labeled, unlabeled]
@@ -22,10 +27,6 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
-
-concurrency:
-  group: pr-labels-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
 
 jobs:
   pr-label-check:

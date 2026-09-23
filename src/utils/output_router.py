@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional, Protocol
 
 import discord
 
@@ -22,16 +23,34 @@ from utils.input_validator import ROLE_MENTION, USER_MENTION
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
-    from discord.ext.commands import Bot
-    from models.division import Division
+    from utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
+
+
+class ForecastTarget(Protocol):
+    """What `OutputRouter.post_forecast` reads of a division: where its forecasts go.
+
+    A `models.division.Division` is one. So is the stand-in a caller holding only the channel
+    id builds, which is why this names the one attribute rather than asking for a whole
+    division (#228).
+    """
+
+    @property
+    def forecast_channel_id(self) -> int | None: ...
+
+
+@dataclass(frozen=True)
+class ForecastChannel:
+    """A `ForecastTarget` for a caller holding only the channel id, not a whole division."""
+
+    forecast_channel_id: int | None
 
 
 class OutputRouter:
     """Routes all bot output to the correct channels with error isolation."""
 
-    def __init__(self, bot: "Bot", retry_db_path: "Optional[str]" = None) -> None:
+    def __init__(self, bot: "LeagueBot", retry_db_path: "Optional[str]" = None) -> None:
         self._bot = bot
         self._retry_db_path: Optional[str] = retry_db_path
 
@@ -40,7 +59,7 @@ class OutputRouter:
     # ------------------------------------------------------------------
 
     async def post_forecast(
-        self, division: "Division", content: str, *, enqueue_on_failure: bool = False
+        self, division: ForecastTarget, content: str, *, enqueue_on_failure: bool = False
     ) -> "Optional[discord.Message]":
         """Post *content* to the division's forecast channel.
 
@@ -49,6 +68,11 @@ class OutputRouter:
         is configured.
         """
         channel_id = division.forecast_channel_id
+        if channel_id is None:
+            # Nothing to post to. It came to the same before — `_send` asked Discord for a
+            # channel with no id and logged the failure — less the request.
+            log.error("post_forecast: the division has no forecast channel")
+            return None
         return await self._send(
             channel_id, content, enqueue_on_failure=enqueue_on_failure,
             fallback_label="forecast",
