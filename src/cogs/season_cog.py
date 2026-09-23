@@ -1999,14 +1999,9 @@ class SeasonCog(commands.Cog):
             # the report and the refusal cannot drift.
             if results_on:
                 # Nothing attached is refused by the approval as surely as a phantom is, and
-                # `/results config detach` stays open in Placements (#409). Save under test
-                # mode, whose approval attaches Standard and Half Points before it counts —
-                # the names line above announces that instead.
-                server_config = await self.bot.config_service.get_server_config()
-                test_mode = bool(server_config is not None and server_config.test_mode_active)
-                no_points_attached = not test_mode and await self._no_points_config_attached(
-                    cfg.season_id
-                )
+                # `/results config detach` stays open in Placements (#409). Test mode is no
+                # exception (decided 2026-09-23): it attaches its two only when enabled.
+                no_points_attached = await self._no_points_config_attached(cfg.season_id)
                 if no_points_attached:
                     points_lines.append("")
                     points_lines.append(

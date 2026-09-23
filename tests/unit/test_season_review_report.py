@@ -708,14 +708,15 @@ async def test_a_season_with_no_points_attached_withholds_approval(db_path):
     assert "`/results config append`" in _private(messages)
 
 
-async def test_a_test_season_with_no_points_attached_is_still_offered_for_approval(db_path):
-    """Under test mode the approval attaches Standard and Half Points before it counts, so
-    nothing attached is no fault — the review announces the seeding instead."""
+async def test_a_test_season_with_no_points_attached_withholds_approval_too(db_path):
+    """Test mode attaches Standard and Half Points when it is enabled and at no other moment
+    (decided 2026-09-23), so a test season that has had them detached is refused as any
+    other."""
     cog = _cog(db_path, results=True, test_mode=True, nothing_attached=True)
     messages = await _review(cog, _interaction())
 
-    cog._post_approval_prompt.assert_awaited_once()
-    assert "this blocks approval" not in _public(messages)
+    cog._post_approval_prompt.assert_not_awaited()
+    assert "No points configuration attached** — this blocks approval" in _public(messages)
 
 
 async def test_a_season_with_results_on_and_nothing_wrong_is_offered_for_approval(db_path):
