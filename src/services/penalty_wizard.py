@@ -17,6 +17,7 @@ import discord
 
 from db.database import get_connection
 from models.points_config import SessionType
+from models.round import RoundStatus
 from services.driver_service import accounts_of_in_division, current_account_map_for_division
 from services.penalty_service import StagedPenalty, validate_penalty_input
 from utils.channel_guard import is_league_manager
@@ -159,6 +160,20 @@ async def _shown(state: PenaltyReviewState, driver_user_id: int) -> int:
     async with get_connection(state.db_path) as db:
         current_of = await current_account_map_for_division(db, state.division_id)
     return current_of.get(driver_user_id, driver_user_id)
+
+
+async def _pardons_closed(state: PenaltyReviewState) -> bool:
+    """Whether the round's reports are approved, after which its pardons stand (FR-011).
+
+    A first pass writes its staged pardons when its reports are approved, and leaves this review
+    on screen through the appeals stage; staging one there, or removing one, would change nothing
+    the round carries. An amendment's round is ``FINAL`` throughout, so this never closes one:
+    it writes its pardons when its appeals are approved.
+    """
+    async with get_connection(state.db_path) as db:
+        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (state.round_id,))
+        row = await cursor.fetchone()
+    return row is not None and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value
 
 
 # ---------------------------------------------------------------------------
@@ -660,21 +675,16 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         from db.database import get_connection
         from services.driver_service import current_account_of, resolve_driver_profile_id
 
-        async with get_connection(self.state.db_path) as db:
-            # --- Check round is not already finalized (FR-011) ---
-            cursor = await db.execute(
-                "SELECT status FROM rounds WHERE id = ?",
-                (self.state.round_id,),
+        # --- Check round is not already finalized (FR-011) ---
+        if await _pardons_closed(self.state):
+            await interaction.followup.send(
+                "❌ Post-race penalties have already been finalized for this round. "
+                "No further attendance pardons may be applied.",
+                ephemeral=True,
             )
-            round_row = await cursor.fetchone()
-            if round_row and round_row["status"] == "AWAITING_APPEAL_VERDICTS":
-                await interaction.followup.send(
-                    "❌ Post-race penalties have already been finalized for this round. "
-                    "No further attendance pardons may be applied.",
-                    ephemeral=True,
-                )
-                return
+            return
 
+        async with get_connection(self.state.db_path) as db:
             # --- Resolve driver profile ID ---
             profile_id = await resolve_driver_profile_id(driver_user_id, db)
             if profile_id is None:
