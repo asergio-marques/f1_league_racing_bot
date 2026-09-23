@@ -688,7 +688,7 @@ Several kinds send more than one picture: the results send one per session of th
 
 **A cancelled division still previews.** It is offered in the division list and draws like any other, deliberately — a preview posts nothing where a driver can see it, so a division you have withdrawn is a perfectly good one to check a drawing against, and often the most convenient.
 
-`/season placements-review` shows the same summary and names anything that would stop the season. **Pressing Approve refuses** while something is broken — review is where you spot it, approval is where it stops you.
+`/season placements-review` shows the same summary and names anything that would stop the season. **The review withholds its Approve button** while something is broken, and tells you privately what to fix — the program that draws the pictures missing, a drawing for an output you have switched on that will not load, a tier colour a drawing wants, or your portrait settings. A button already standing when something breaks refuses on the same faults when pressed, so fix it and run the review again.
 
 It also lists your eight **asset directories** with the path each is set to, and marks any it cannot read. This is the one place in the review those paths appear, and it is worth a glance: a folder that has been moved or renamed draws placeholders everywhere, which looks exactly like artwork you never supplied. `/images config view` says what is wrong with a folder it cannot read; the review only tells you which one.
 
