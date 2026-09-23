@@ -583,6 +583,10 @@ The report arrives as **one message per subsection**, in this order: the season 
 The image subsection also lists the eight **asset directories** and the path each is set to, marking any the bot cannot read. A folder that has been moved or renamed produces pictures full of placeholders, which looks the same as artwork you never supplied — seeing the path is what tells the two apart. `/images config view` names the fault in full.
 
 > **A picture that cannot be drawn withholds the Approve button.** You are told what is wrong, that section falls back to its text so the review is still complete, and the review ends with a note that the image module is not correctly configured instead of the button. There is no command that approves around it — the button is the only route — so fix the template or the artwork it names and run `/season placements-review` again.
+>
+> **So does every other fault in the image module's configuration** — the rasteriser missing, a template an enabled output draws that will not load, a tier colour a template wants and a division lacks, or the portrait settings — and a lineup template with too few blocks or seats for a division. The review draws only the calendar and the lineup, so these are checked rather than drawn, the same way `/season config-review` checks them, and each is named in the same note. A template belonging only to an output you have switched off holds nothing back. Pressing a button that was offered before one of these arose refuses on the same faults, with nothing committed.
+>
+> **A team name that cannot be used as an artwork filename withholds it too.** `/season config-review` refuses such names, so a season rarely gets this far with one; the team list is fixed once the configuration is confirmed, so the only way out is `/season abort` and configuring the season again.
 
 #### Approving — the button in `/season placements-review`
 *Access: the reviewer, or a league admin*
