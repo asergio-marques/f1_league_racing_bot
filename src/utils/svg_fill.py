@@ -778,7 +778,7 @@ def _unreachable_links(root: etree._Element) -> list[str]:
         else:
             # Anchor it, and leave the anchored form on the element.
             _set_href(element, href)
-            path = _path_from_file_uri(element.get("href"))
+            path = _path_from_file_uri(_as_href(href))
 
         if path.is_file():
             continue
@@ -934,10 +934,13 @@ def _packaged_shape_notice(
     packaged = PACKAGED_ASSET_ASPECTS.get(asset_class)
     if packaged is None:
         return None
+    width_attr, height_attr = target.get("width"), target.get("height")
+    if width_attr is None or height_attr is None:
+        return None
     try:
-        width = float(target.get("width"))
-        height = float(target.get("height"))
-    except (TypeError, ValueError):
+        width = float(width_attr)
+        height = float(height_attr)
+    except ValueError:
         return None
     if width <= 0 or height <= 0:
         return None

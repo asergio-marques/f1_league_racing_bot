@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from lxml import etree
+
 from models.image_catalogues import (
     CapacityError,
     catalogue_for,
@@ -101,7 +103,7 @@ class TemplateContext:
     #: tree to look for mandatory fields. Without sharing, a season review reads sixteen
     #: files twice. It is deliberately not memoised across evaluations: a manager edits a
     #: template and re-runs the check expecting to see the change.
-    parsed: dict[Path, object] = field(default_factory=dict)
+    parsed: dict[Path, etree._Element] = field(default_factory=dict)
 
     @property
     def filename(self) -> str:
@@ -495,12 +497,12 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
             f"round_{ordinal}_group",
             f"round_{ordinal}_vertical_crop_point",
         )
-        siblings = {
+        resolved = {
             name: index.resolve(name)
             for name in index.declared()
             if name.startswith(f"round_{ordinal}_") and name not in excluded
         }
-        siblings = {name: node for name, node in siblings.items() if node is not None}
+        siblings = {name: node for name, node in resolved.items() if node is not None}
 
         # 1. Drawn last, which is what puts it over the round rather than under it.
         overlay_at = order.get(f"round_{ordinal}_cancelled")
