@@ -115,6 +115,10 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
     field of six rather than only those whose position happens to land on them. Same
     reasoning as PHASE3_SLOTS above: a preview exists to let every icon be judged in one
     picture, and a compound the fabrication never deals is a compound never seen.
+
+    A large enough field also carries a DNS and, one place inside it, a DSQ — the third
+    outcome literal a session can record — so a manager can judge all three chips
+    (#144).
     """
     rows = []
     count = len(drivers)
@@ -127,6 +131,10 @@ def fabricate_qualifying_rows(drivers, team_keys, points_map):
         # The last driver of a large enough field set no time, so that case is drawn too.
         if count >= 4 and position == count:
             outcome = OutcomeModifier.DNS
+            best_lap = None
+        # One place inside that, a disqualification, so the third literal is drawn as well.
+        elif count >= 5 and position == count - 1:
+            outcome = OutcomeModifier.DSQ
             best_lap = None
 
         # P2 records no tyre at all, so the absent-datum case is drawn beside the five.
@@ -166,6 +174,10 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
     only ever be seen over the same chip, and a manager judging their template would never
     see it over a winner or over a midfield points finish. A single classification has no
     such need and keeps the second place it always had.
+
+    A large enough field also carries a DSQ, beside the DNF and the lapped classified
+    finish already drawn, so the outcome literal a league's results module can record is
+    exercised in full (#144).
     """
     rows = []
     count = len(drivers)
@@ -179,6 +191,11 @@ def fabricate_race_rows(drivers, team_keys, points_map, *, fastest_lap_position=
             base_time_ms = None
         elif count >= 4 and position == count - 1:
             laps_behind = 1
+            base_time_ms = None
+        # Two places inside that, a disqualification — the third outcome literal a race can
+        # carry, beside the DNF and the lapped finish already drawn.
+        elif count >= 6 and position == count - 2:
+            outcome = OutcomeModifier.DSQ
             base_time_ms = None
 
         rows.append(

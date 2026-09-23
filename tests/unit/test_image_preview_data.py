@@ -164,6 +164,43 @@ class TestStandingsScatter:
         holder = [row for row in rows if row.fastest_lap_bonus]
         assert [row.finishing_position for row in holder] == [2]
 
+    def test_a_qualifying_field_large_enough_carries_a_disqualification(self):
+        """#144 — DNF and DNS were fabricated already; DSQ was the one literal never drawn."""
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_qualifying_rows
+
+        rows = fabricate_qualifying_rows(self._drivers(20), {"Team": 900}, {})
+        assert any(row.outcome is OutcomeModifier.DSQ for row in rows)
+        # It sits beside the DNS, not on top of it.
+        dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
+        dns = [row for row in rows if row.outcome is OutcomeModifier.DNS]
+        assert {row.finishing_position for row in dsq}.isdisjoint(
+            {row.finishing_position for row in dns}
+        )
+
+    def test_a_race_field_large_enough_carries_a_disqualification(self):
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_race_rows
+
+        rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
+        dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
+        dnf = [row for row in rows if row.outcome is OutcomeModifier.DNF]
+        assert dsq
+        assert {row.finishing_position for row in dsq}.isdisjoint(
+            {row.finishing_position for row in dnf}
+        )
+
+    def test_a_small_field_is_not_forced_to_carry_a_disqualification(self):
+        """The spec's own qualifier: none of the cases are fabricated into existence."""
+        from models.session_result import OutcomeModifier
+        from services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
+
+        for count in (2, 3, 4):
+            qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
+            race = fabricate_race_rows(self._drivers(count), {"Team": 900}, {})
+            assert all(row.outcome is not OutcomeModifier.DSQ for row in qualifying)
+            assert all(row.outcome is not OutcomeModifier.DSQ for row in race)
+
 
 # ---------------------------------------------------------------------------
 # The standings preview's fabricated totals (#144)
