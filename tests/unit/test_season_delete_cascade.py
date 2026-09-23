@@ -392,6 +392,28 @@ async def test_another_seasons_test_drivers_are_left_alone(tmp_path):
     assert await _count(db_path, "driver_profiles", "id", other_test_profile) == 1
 
 
+async def test_a_test_drivers_history_is_kept_by_identifier(tmp_path):
+    """As switching test mode off keeps it: a driver created again under the same identifier
+    holds it as their own (#220)."""
+    db_path, profiles = await _make_db(tmp_path, name="drivers_history")
+    _, test_profile = profiles["deleted"]
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_history_entries (discord_user_id, driver_profile_id, "
+            "season_number, division_name) VALUES ('2007', ?, 5, 'Division 5')",
+            (test_profile,),
+        )
+        await db.commit()
+
+    await SeasonService(db_path).delete_season(SEASON_ID)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, driver_profile_id FROM driver_history_entries"
+        )
+        assert [tuple(r) for r in await cursor.fetchall()] == [("2007", None)]
+
+
 # ---------------------------------------------------------------------------
 # The empty cases
 # ---------------------------------------------------------------------------
