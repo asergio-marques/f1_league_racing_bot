@@ -30,10 +30,15 @@ class PhaseEntry(TypedDict):
     round_id: int
     round_number: int
     division_id: int
-    phase_number: int  # 0=mystery notice, 1|2|3=weather phases, 4=result submission
+    #: 0 = mystery notice (database path only — from the job store a mystery notice comes
+    #: back as 1), 1|2|3 = weather phases, 4 = result submission, 5|6|7 = the check-in
+    #: call, its last notice and its deadline.
+    phase_number: int
     track_name: str
     division_name: str
-    job_id: str | None  # APScheduler job ID; None for mystery-round result fallback
+    #: The APScheduler job the entry came from; None wherever it was found from database
+    #: state instead — result submission always, and any phase the job store has lost.
+    job_id: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -183,10 +188,13 @@ async def get_next_pending_phase(
       2. round_id ASC       — tie-break for same-fire-time jobs
       3. phase_number ASC   — e.g. phase 1 before phase 2 on same round
 
-    Special case — Mystery rounds whose notice has already been sent (phase1_done=1)
-    but have no ACTIVE session results yet: these never get a ``results_r{id}``
-    APScheduler job (``schedule_round`` skips it for MYSTERY format), so they are
-    handled via a DB-state fallback after all scheduler-backed jobs are exhausted.
+    Result submission never comes from the scheduler. ``get_pending_advance_jobs``
+    excludes results jobs, for every round format, so that a past-dated job which
+    already auto-fired can neither block the wizard nor open it twice. A round is found
+    due for submission from database state instead — no ACTIVE session results, and
+    standing at NOT_RUN or AWAITING_RESULTS — whatever its format, mystery included: in
+    the check of earlier rounds made before each scheduler job, and in the fallback once
+    the job store is exhausted.
 
     If there is no ACTIVE season for this server, returns None.
     """

@@ -19,19 +19,17 @@ first, because their work reaches a service; the core pair reply directly. That 
 between `response.send_message` and `followup.send`, which is why it is pinned here as well as
 in the guard's own file.
 
-**Where they differ by accident, and are pinned as they stand rather than as they ought to be.**
-`lineup` and `calendar` write `old_value = ''` into the audit entry, so the previous channel is
-lost and a reassignment cannot be traced back; the attendance pair record it. They also write
-`new_value`'s channel id as an integer where the attendance pair write a string, so a reader
-querying the audit for a channel id has to know which command wrote the row. These tests assert
-the behaviour that exists — a test claiming the tidier behaviour would simply fail — and the
-inconsistency is recorded as issue #212 rather than silently corrected here, since this change
-is a coverage change and #208 says so.
+**Where they once differed by accident** (issue #212, which #208 pinned rather than fixed).
+`lineup` and `calendar` wrote `old_value = ''` into the audit entry, so a reassignment could not
+be traced back, and the attendance pair wrote their channel ids as strings where every other
+command writes integers. All five now record the channel they replaced, as an integer —
+`test_the_core_pair_record_the_channel_they_replaced` and
+`test_every_channel_command_here_audits_its_ids_as_integers`.
 
-**"Set" and "updated" are different words for a reason** on the attendance pair: a manager who
-meant to assign a fresh channel and is told it was *updated* has just moved an existing one, and
-that is worth noticing before the next round posts somewhere unexpected. The core pair always
-say "set", which is the same accident as the empty `old_value` — they never read the old id.
+**"Set" and "updated" are different words for a reason:** a manager who meant to assign a fresh
+channel and is told it was *updated* has just moved an existing one, and that is worth noticing
+before the next round posts somewhere unexpected. The core pair always said "set", having never
+read the old id; all five now choose the word from it.
 """
 from __future__ import annotations
 
@@ -68,8 +66,6 @@ COMMANDS = {
 ALL = sorted(COMMANDS)
 GATED = sorted(k for k, v in COMMANDS.items() if v[2])
 UNGATED = sorted(k for k, v in COMMANDS.items() if not v[2])
-#: The gated commands that keep a previous channel id in the audit and say "updated".
-REMEMBERING = sorted(k for k, v in COMMANDS.items() if v[2])
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +185,20 @@ async def _audit_rows(db_path: str) -> list[dict]:
             "FROM audit_entries",
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+
+#: The division column each core command writes.
+CORE_COLUMNS = {"lineup": "lineup_channel_id", "calendar": "calendar_channel_id"}
+
+
+async def _seed_core_channel(db_path: str, which: str, channel_id: int) -> None:
+    """Give the division a channel already, as a move finds it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE divisions SET {CORE_COLUMNS[which]} = ? WHERE id = ?",
+            (channel_id, DIVISION_ID),
+        )
+        await db.commit()
 
 
 async def _channel_column(db_path: str, column: str):
@@ -474,19 +484,23 @@ async def test_the_core_pair_write_their_own_column(tmp_path, which, column):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("which", REMEMBERING)
+@pytest.mark.parametrize("which", ALL)
 async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, which):
     """A manager who meant to assign a fresh channel and is told it was *updated* has just
-    moved an existing one — worth noticing before the next round posts somewhere else."""
-    db_path = await _make_db(tmp_path)
+    moved an existing one — worth noticing before the next round posts somewhere else. The
+    core pair always said "set" until issue #212."""
+    first_db = await _make_db(tmp_path, name=f"first_{which}")
+    moved_db = await _make_db(tmp_path, name=f"moved_{which}")
+    if which in CORE_COLUMNS:
+        await _seed_core_channel(moved_db, which, 111)
     first = _interaction()
     moved = _interaction()
 
-    await _run(_make_cog(db_path, old_config=None), which, first)
+    await _run(_make_cog(first_db, old_config=None), which, first)
     await _run(
         _make_cog(
-            db_path,
-            old_config=SimpleNamespace(rsvp_channel_id=111, attendance_channel_id=111),
+            moved_db,
+            old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
             old_penalty_channel=111,
         ),
         which,
@@ -497,7 +511,7 @@ async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, wh
     assert "updated to" in _replied(moved)
 
 
-@pytest.mark.parametrize("which", REMEMBERING)
+@pytest.mark.parametrize("which", GATED)
 async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, which):
     """Which is what makes the audit answer "where were the notices going before?"."""
     db_path = await _make_db(tmp_path, name=f"replaced_{which}")
@@ -514,33 +528,45 @@ async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, whi
 
 
 @pytest.mark.parametrize("which", UNGATED)
-async def test_the_core_pair_record_no_previous_channel(tmp_path, which):
-    """Pinned as it stands, not as it ought to be: `old_value` is written as an empty
-    string, so a lineup or calendar channel that moves cannot be traced back. Recorded as
-    issue #212 rather than fixed here — #208 is a coverage change, and a test asserting the
-    tidier behaviour would simply fail."""
+async def test_the_core_pair_record_the_channel_they_replaced(tmp_path, which):
+    """They once wrote an empty `old_value`, so a lineup or calendar channel that moved could
+    not be traced back — against the rule that every change is recorded from what to what
+    (issue #212)."""
     db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    await _seed_core_channel(db_path, which, 111)
+
+    await _run(_make_cog(db_path), which, _interaction())
+
+    old = json.loads((await _audit_rows(db_path))[0]["old_value"])
+    assert old["channel_id"] == 111
+
+
+@pytest.mark.parametrize("which", UNGATED)
+async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, which):
+    db_path = await _make_db(tmp_path)
+
+    await _run(_make_cog(db_path), which, _interaction())
+
+    assert json.loads((await _audit_rows(db_path))[0]["old_value"]) == {"channel_id": None}
+
+
+@pytest.mark.parametrize("which", ALL)
+async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, which):
+    """The attendance pair once wrote both ids as strings, since their table stores them as
+    text, where every other channel command writes integers — so a reader querying the audit
+    for a channel id had to know which command wrote the row (issue #212). The old id is
+    given here as each source really holds it: text for the attendance pair."""
+    db_path = await _make_db(tmp_path, name=f"types_{which}")
+    if which in CORE_COLUMNS:
+        await _seed_core_channel(db_path, which, 111)
+    cog = _make_cog(
+        db_path,
+        old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
+        old_penalty_channel=111,
+    )
 
     await _run(cog, which, _interaction())
 
-    assert (await _audit_rows(db_path))[0]["old_value"] == ""
-
-
-async def test_the_two_pairs_write_the_channel_id_as_different_types(tmp_path):
-    """Also pinned as it stands. The attendance pair write a string and the core pair an
-    integer, so anything querying the audit for a channel id has to know which command wrote
-    the row. Same defect, same reason for leaving it."""
-    attendance_db = await _make_db(tmp_path, "types_attendance")
-    core_db = await _make_db(tmp_path, "types_core")
-
-    await _run(_make_cog(attendance_db), "rsvp", _interaction())
-    await _run(_make_cog(core_db), "lineup", _interaction())
-
-    from_attendance = json.loads(
-        (await _audit_rows(attendance_db))[0]["new_value"]
-    )["channel_id"]
-    from_core = json.loads((await _audit_rows(core_db))[0]["new_value"])["channel_id"]
-
-    assert isinstance(from_attendance, str)
-    assert isinstance(from_core, int)
+    row = (await _audit_rows(db_path))[0]
+    assert json.loads(row["old_value"])["channel_id"] == 111
+    assert json.loads(row["new_value"])["channel_id"] == CHANNEL_ID

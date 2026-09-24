@@ -404,27 +404,6 @@ class TeamService:
             await db.commit()
 
     # ------------------------------------------------------------------
-    # /bot init seeding (US4)
-    # ------------------------------------------------------------------
-
-    async def seed_default_teams_if_empty(self) -> None:
-        """Insert the Reserve team if no teams exist yet for this server."""
-        async with get_connection(self._db_path) as db:
-            existing = await (
-                await db.execute(
-                    "SELECT 1 FROM default_teams LIMIT 1",
-                )
-            ).fetchone()
-            if existing:
-                return
-            await db.execute(
-                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
-                "VALUES (?, ?, -1, 1)",
-                (_RESERVE_NAME, _RESERVE_NAME),
-            )
-            await db.commit()
-
-    # ------------------------------------------------------------------
     # Read helpers for /team list (016-team-cmd-qol)
     # ------------------------------------------------------------------
 
@@ -434,8 +413,14 @@ class TeamService:
         Each entry: {name, full_name, max_seats, is_reserve, role_id} where role_id is
         int | None, and ``name`` is the team's shorthand.
         Ordered: non-reserve alphabetically first, Reserve last.
+
+        Restores a missing Reserve team first, as ``get_default_teams`` does: this is the
+        read behind `/team list`, `/team reserve-role` and team autocomplete, and the Reserve team
+        must be present on every read of the list (issue #146).
         """
         async with get_connection(self._db_path) as db:
+            if await self._ensure_reserve(db):
+                await db.commit()
             cursor = await db.execute(
                 """
                 SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id

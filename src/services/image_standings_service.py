@@ -28,6 +28,7 @@ from models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
+    DeclaredNames,
     catalogue_for,
     column_crop_fields,
     row_crop_fields,
@@ -747,7 +748,9 @@ def build_fill_spec(
     through ``row_count`` so the render service issues the capacity problem in one place.
     """
     catalogue = catalogue_for(drawing.template_key)
-    declared = FieldIndex(root).declared()
+    # Indexed once: the constructors grid counts every cell's cars from it, which a plain set
+    # would answer by scanning every name once per cell (#164).
+    declared = DeclaredNames(FieldIndex(root).declared())
 
     try:
         capacity = catalogue.capacity(root) or 0

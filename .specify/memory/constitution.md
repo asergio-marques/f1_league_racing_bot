@@ -1,6 +1,39 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-24 — v14.6.0 → v14.6.1: PATCH — the Track entry describes the registry as it stands (issue #249)]
+  Version change    : 14.6.0 → 14.6.1
+  Bump rationale    : PATCH, on the precedent of v14.4.1 and v14.0.1: statements of fact are
+                      corrected to match the bot, and no principle is added, removed or
+                      redefined. The overrides the entry described were retired long before;
+                      nothing a league can do changes.
+
+  Modified sections :
+    - Data & State Management, New Entities (v2.9.0), **Track** —
+      - the per-server weather overrides (`track_rpc_params`, `/track config`) are withdrawn
+        from the entry, as they were from the bot: the registry is immutable and nothing of
+        it is kept per server, and Phase 1 draws from the circuit's own `(mu, sigma)`;
+      - the field list is that of the `tracks` table the bot reads — `id`, `name`, `gp_name`,
+        `location`, `country`, `mu`, `sigma` — in place of `track_id`, `canonical_name`,
+        `circuit_name`, `mu_default` and `sigma_default`, none of which exists;
+      - the circuit count is dropped, having gone stale once already (27, where 28 are seeded).
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none. This settles the staleness the v13.0.0 report noted as not its own.
+
+  Rationale trail   : Branch fix/146-low-sweep. Found while working on #244 and filed as #249;
+                      verified against `001_baseline.sql` and `phase1_service`, which reads
+                      `mu, sigma` from `tracks` by circuit name.
+
+  Templates / docs  : none. `README.md` already says the circuit list is fixed and that
+                      `/track list` is the only `/track` command.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-23 — v14.5.0 → v14.6.0: MINOR — a league role gone from the server may be replaced while fixed (issue #374)]
   Version change    : 14.5.0 → 14.6.0
   Bump rationale    : MINOR, on the precedent of v14.5.0: the rule fixing the league's two roles
@@ -8366,29 +8399,28 @@ round while the Attendance module is enabled):
 
 ### New Entities (v2.9.0)
 
-**Track** (bot-packaged static registry — 27 circuits as of this version):
+**Track** (bot-packaged static registry, the `tracks` table):
 
 The Track registry is the authoritative lookup table for all circuit data used across
-rounds, weather generation, and future statistics. Each entry is bot-packaged and
-immutable at the registry level; individual weather parameters may be overridden
-per server via the `track_rpc_params` DB table (`/track config`).
+rounds, weather generation, and future statistics. It is bot-packaged and immutable: no
+command adds, removes or changes a circuit or its weather parameters, and nothing of it is
+kept per server. *(Amended v14.6.1: the per-server overrides this entry once described, and
+the table and command that held them, were retired before it was corrected.)*
 
 Fields per track entry:
 
-- `track_id` (TEXT — zero-padded two-digit string, e.g. `"01"`, `"27"`; stable PK within
-  the registry; referenced by rounds and by autocomplete commands).
-- `canonical_name` (TEXT — the short display name used in all bot output, e.g.
-  `"United Kingdom"`, `"Las Vegas"`).
+- `id` (INTEGER — stable primary key within the registry).
+- `name` (TEXT, unique — the circuit's name, e.g. `"Silverstone Circuit"`,
+  `"Las Vegas Strip Circuit"`; the name a round records and the one autocomplete offers).
+- `gp_name` (TEXT — the grand prix held there, e.g. `"British Grand Prix"`).
+- `location` (TEXT — where the circuit stands, e.g. `"Silverstone, United Kingdom"`).
 - `country` (TEXT — the country or territory in which the circuit is located, e.g.
-  `"United Kingdom"`, `"United States of America"` — the spellings migration 029 seeds, and
-  the datum a round's flag resolves by since v5.0.0).
-- `circuit_name` (TEXT — the formal circuit/venue name, e.g. `"Silverstone Circuit"`,
-  `"Las Vegas Strip Circuit"`).
-- `mu_default` (REAL — bot-packaged mean rain probability; fractional 0–1).
-- `sigma_default` (REAL — bot-packaged Beta dispersion; fractional 0–1).
+  `"United Kingdom"`, `"United States of America"` — the spellings the registry is seeded
+  with, and the datum a round's flag resolves by since v5.0.0).
+- `mu` (REAL — bot-packaged mean rain probability; fractional 0–1).
+- `sigma` (REAL — bot-packaged Beta dispersion; fractional 0–1).
 
-The effective `(mu, sigma)` pair resolved at Phase 1 is: the server override stored in
-`track_rpc_params` if present; otherwise `(mu_default, sigma_default)`.
+Phase 1 draws from the circuit's own `(mu, sigma)`. There is no override.
 
 **Track-based and tier-based statistics** (future module preparation):
 
@@ -8459,4 +8491,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.6.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-23
+**Version**: 14.6.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-24

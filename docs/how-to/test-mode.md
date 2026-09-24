@@ -75,11 +75,11 @@ Phase numbers in the queue entry mean:
 | 6 | RSVP last notice |
 | 7 | RSVP deadline |
 
-Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice. The `get_pending_advance_jobs` docstring claiming `0=mystery notice` is wrong in the same way as the two comments noted below.
+Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice.
 
 **Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results, standing at *not run* or *awaiting results*, is due for submission — and it is therefore reached for every round format, mystery included.
 
-That database detection is load-bearing rather than a fallback: approval skips scheduling result-submission jobs altogether while the test-mode flag is set, so under test mode there is no results job for the job store to hold in the first place.
+That database detection is load-bearing rather than a fallback. With the weather module off, approval skips scheduling result-submission jobs altogether while the test-mode flag is set, so there is no results job for the job store to hold in the first place. With weather on, `schedule_round` arms one for every round alongside its forecasts, test mode or not — so when `advance` opens a round's wizard by hand it cancels that round's results job first, and the job cannot fire a second time once its moment comes.
 
 **Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because their round was already past-dated when they were scheduled, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a season most of whose jobs were never created.
 
@@ -90,10 +90,6 @@ That database detection is load-bearing rather than a fallback: approval skips s
 > **Nor is `/round amend` a route to one any longer** (decided 2026-09-14). A round is never moved to a moment that has already passed, whatever the modules enabled — its result submission would be armed in the past, thrown away by the misfire grace, and the round could never take results at all. Moving a round *forward* is untouched.
 >
 > The database fallback above is still load-bearing all the same. A past-dated round arrives by a restored save whose rounds have since gone by, and the misfire-grace evictions it covers have nothing to do with approval at all.
-
-> `get_next_pending_phase` carries a comment claiming `schedule_round` skips the results job for `MYSTERY` rounds. It does not — it schedules one for every format. The behaviour above does not depend on the claim; only the comment is wrong. (`get_pending_advance_jobs`'s comment says something different and correct: results jobs are excluded so a past-dated auto-fired job cannot block or double-trigger the wizard.)
-
-> `advance` also tries to cancel a round's results job by the ID `results_r{round_id}`, which is not the ID the scheduler created — the real one carries the season, division and round *number*. That cancellation is therefore a no-op, and the double-fire it claims to prevent is not prevented by it.
 
 When there is nothing left, `advance` says so and points at `/season complete`.
 

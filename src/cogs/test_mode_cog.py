@@ -361,10 +361,14 @@ class TestModeCog(commands.Cog):
                 )
                 return
 
-            # Always cancel any results_r job for this round — handles the case where
-            # a real future-dated results_r job exists (e.g. weather-enabled season)
-            # so it doesn't double-fire after advance has already triggered submission.
-            self.bot.scheduler_service.cancel_job(f"results_r{entry['round_id']}")
+            # Cancel the round's own results job before opening its wizard by hand. A
+            # weather-enabled season arms one for every round, test mode or not, and left
+            # queued it would fire again once its time came. The entry carries no job ID —
+            # results jobs never come from the job store — so it is found by round and
+            # prefix rather than by an ID rebuilt here (issue #139).
+            self.bot.scheduler_service.cancel_round(
+                entry["round_id"], only=frozenset({"results"})
+            )
             await interaction.followup.send(
                 f"⏩ Opening result submission wizard for "
                 f"**{entry['division_name']}** — **Round {entry['round_number']}** "

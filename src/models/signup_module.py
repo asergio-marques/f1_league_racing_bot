@@ -46,13 +46,6 @@ class SignupModuleConfig:
 
 
 @dataclass
-class SignupDivisionConfig:
-    id: int
-    division_id: int
-    lineup_channel_id: int | None
-
-
-@dataclass
 class SignupModuleSettings:
     nationality_required: bool
     time_type: TimeType

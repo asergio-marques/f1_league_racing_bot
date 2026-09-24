@@ -11,7 +11,6 @@ from db.database import get_connection, inserted_id
 from models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
-    SignupDivisionConfig,
     SignupModuleConfig,
     SignupModuleSettings,
     SignupRecord,
@@ -775,38 +774,6 @@ class SignupModuleService:
             current_lap_track_index=row["current_lap_track_index"],
             last_activity_at=row["last_activity_at"],
         )
-
-    # ── SignupDivisionConfig CRUD ─────────────────────────────────────
-
-    async def get_division_config(
-        self, division_id: int
-    ) -> SignupDivisionConfig | None:
-        """Return the division config record or None if not set."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, division_id, lineup_channel_id "
-                "FROM signup_division_config WHERE division_id = ?",
-                (division_id,),
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return None
-        return SignupDivisionConfig(
-            id=row["id"],
-            division_id=row["division_id"],
-            lineup_channel_id=row["lineup_channel_id"],
-        )
-
-    async def upsert_division_config(
-        self, division_id: int
-    ) -> None:
-        """Ensure a signup_division_config row exists for this division."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT OR IGNORE INTO signup_division_config (division_id) VALUES (?)",
-                (division_id,),
-            )
-            await db.commit()
 
     # ── Config snapshot ───────────────────────────────────────────────
 

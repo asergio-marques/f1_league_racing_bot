@@ -188,6 +188,18 @@ def test_cleanup_and_season_end_jobs_are_excluded():
     assert [p["phase_number"] for p in pending] == [1]
 
 
+def test_a_results_job_is_never_returned():
+    """Result submission is found from database state instead, so that a past-dated job
+    which already auto-fired can neither block the wizard nor open it twice. The docstring
+    once listed it as phase 4 (issue #149)."""
+    suffix = _round_job_suffix(_round(42, 5), 3, 2)
+    jobs = [_job(f"results{suffix}", 42), _job(f"weather_p1{suffix}", 42)]
+
+    pending = _service(jobs).get_pending_advance_jobs({42})
+
+    assert [p["job_id"] for p in pending] == [f"weather_p1{suffix}"]
+
+
 def test_a_job_with_no_round_is_ignored():
     """The portrait refresh and the signup close timer are server-scoped and carry no
     round."""

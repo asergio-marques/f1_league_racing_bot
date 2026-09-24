@@ -286,7 +286,7 @@ Exempt from the interaction-channel rule, since no channel is configured until i
 
 **It claims the server.** Once one server is set up, `/bot init` on any other is refused like every command there — see [One bot, one server](#one-bot-one-server). Where two servers race to run it first, the loser is told *"⛔ This bot already serves the league on another server. One bot serves one league."*
 
-It also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
+The team list always holds the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team ships with the bot — build the rest of the list with `/team add`.
 
 ---
 
@@ -844,6 +844,8 @@ Required for every division while the results & standings module is enabled, alo
 | `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced |
 
 > These eight channels are one per kind of image output. The image module draws nothing where its source module posts nothing, so an output with no channel set produces no picture — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
+
+> **Each of the eight says whether it set the channel or moved it.** The reply reads *set to* where the division had no channel for that purpose and *updated to* where it replaced one — worth noticing before the next post lands somewhere you did not expect. The previous channel is recorded in the audit either way.
 
 #### `/division calendar-sync` — Repost a division's calendar
 *Access: League manager*
@@ -2006,6 +2008,10 @@ All commands below require the attendance module to be enabled (`/module enable 
 > **A driver who joins a division while a call is standing can still answer it.** A call lists the division as it stood when it was posted, but it is redrawn from the current roster every time anybody presses a button — so a driver you assign, move or confirm into the division before the deadline appears on it and their answer counts, exactly as everyone else's does. They have no attendance record for that round until they answer, and the ordinary locks still apply: a full-time driver placed after the deadline has gone by is told it has passed, and a reserve who has not accepted can still step in until the round is due to start.
 >
 > **Only a driver with a confirmed placement can answer.** Anybody else pressing a button is told they are not a member of the division and nothing is recorded — a driver still waiting on `/season placements-review`, a driver of another division, or someone with no driver profile at all, such as a league manager who does not race. Who can see a check-in channel in the first place is yours to set with Discord's own channel permissions; the bot does not manage them, so restrict the channel to the division's role if you would rather nobody else could press anything.
+
+> **Posting a round's call deletes the division's earlier ones.** The previous round's call, its reminder and its reserve-distribution message are deleted from the check-in channel when the next round's call goes out, so the channel shows only the current round's. The answers are kept in the attendance record, and the attendance sheet carries what they cost.
+>
+> **Keep a division's rounds further apart than the notice.** Today that deletion happens whether or not the earlier round's check-in has closed. Two rounds of one division closer together than the notice — a Saturday and Sunday double-header on the 5-day default — means Sunday's call deletes Saturday's while it is still open: nobody can answer Saturday any more, and its deadline cannot take the buttons off. Space such rounds out, or shorten the notice so the second call goes out after the first round's check-in has closed. This is a known fault; an earlier call is meant to stay until a day after its check-in closes.
 
 > **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-placements-review).
 

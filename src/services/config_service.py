@@ -39,7 +39,6 @@ class ConfigService:
                 "SELECT server_id, interaction_role_id, interaction_channel_id, "
                 "       log_channel_id, league_admin_role_id, test_mode_active, "
                 "       test_mode_nationality_required, "
-                "       weather_module_enabled, signup_module_enabled, "
                 "       base_role_id, driver_role_id, hub_channel_id, hub_message_id "
                 "FROM server_configs WHERE server_id IS NOT NULL",
             )
@@ -55,8 +54,6 @@ class ConfigService:
             league_admin_role_id=row["league_admin_role_id"],
             test_mode_active=bool(row["test_mode_active"]),
             test_mode_nationality_required=bool(row["test_mode_nationality_required"]),
-            weather_module_enabled=bool(row["weather_module_enabled"]),
-            signup_module_enabled=bool(row["signup_module_enabled"]),
             base_role_id=row["base_role_id"],
             driver_role_id=row["driver_role_id"],
             hub_channel_id=row["hub_channel_id"],
@@ -121,9 +118,8 @@ class ConfigService:
                 INSERT INTO server_configs
                     (server_id, interaction_role_id, interaction_channel_id,
                      log_channel_id, league_admin_role_id, test_mode_active,
-                     test_mode_nationality_required,
-                     weather_module_enabled, signup_module_enabled)
-                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+                     test_mode_nationality_required)
+                SELECT ?, ?, ?, ?, ?, ?, ?
                 WHERE NOT EXISTS (SELECT 1 FROM server_configs)
                 """,
                 (
@@ -134,8 +130,6 @@ class ConfigService:
                     cfg.league_admin_role_id,
                     int(cfg.test_mode_active),
                     int(cfg.test_mode_nationality_required),
-                    int(cfg.weather_module_enabled),
-                    int(cfg.signup_module_enabled),
                 ),
             )
             await db.commit()

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -40,6 +41,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 # as a test class, and warns that it cannot because the cog has an `__init__`.
 from cogs.test_mode_cog import TestModeCog as _Cog  # noqa: E402
 from db.database import get_connection, run_migrations  # noqa: E402
+from models.round import Round, RoundFormat  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12308
@@ -321,14 +323,52 @@ async def test_result_submission_opens_a_wizard(tmp_path):
     assert "Opening result submission wizard" in _replied(interaction)
 
 
-async def test_the_results_job_is_cancelled_before_the_wizard_opens(tmp_path):
+async def _noop(round_id: int) -> None:
+    return None
+
+
+async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens(tmp_path):
     """A weather-enabled season carries a real future-dated results job; left armed it
-    would open a second submission channel after advance had already opened one."""
+    would open a second submission channel after advance had already opened one.
+
+    Against a real scheduler, with the job armed by the production path: advance once
+    cancelled `results_r{round_id}`, an ID no job has ever had, and a double on
+    `cancel_job` held that as correct (issue #139). Only this round's results job goes —
+    another round's, and this round's forecasts, stay queued.
+    """
+    from services.scheduler_service import SchedulerService
+
     cog = _make_cog(await _make_db(tmp_path))
+    service = SchedulerService(str(tmp_path / "jobs.db"))
+    try:
+        service.start()
+        later = datetime.now(timezone.utc) + timedelta(days=3)
+        rounds = [
+            Round(
+                id=round_id, division_id=DIVISION_ID, round_number=number,
+                format=RoundFormat.NORMAL, track_name="Silverstone Circuit",
+                scheduled_at=later,
+            )
+            for round_id, number in ((ROUND_ID, 3), (ROUND_ID + 1, 4))
+        ]
+        service.schedule_result_submission_jobs(rounds, division_meta={DIVISION_ID: (1, 1)})
+        weather_job = f"weather_p3_s1_d1_r3_id{ROUND_ID}"
+        service._scheduler.add_job(
+            _noop, "date", run_date=later, id=weather_job, kwargs={"round_id": ROUND_ID}
+        )
+        cog.bot.scheduler_service = service
 
-    await _advance(cog, _interaction(), _entry(4))
+        await _advance(cog, _interaction(), _entry(4, job_id=None))
 
-    cog.bot.scheduler_service.cancel_job.assert_called_once_with(f"results_r{ROUND_ID}")
+        assert sorted(job.id for job in service._scheduler.get_jobs()) == sorted(
+            [f"results_s1_d1_r4_id{ROUND_ID + 1}", weather_job]
+        )
+    finally:
+        try:
+            service._scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        service._scheduler._jobstores["default"].engine.dispose()
 
 
 async def test_an_open_submission_blocks_the_next_advance(tmp_path):

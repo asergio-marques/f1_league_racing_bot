@@ -36,6 +36,53 @@ class CapacityError(Exception):
     """
 
 
+#: A run of digits standing as a member's ordinal: straight after an underscore, and followed
+#: by what the counting pattern ``^{stem}_{prefix}_(\d+)(?:_.*)?$`` allows after it — nothing,
+#: or an underscore and the rest of the name. The same shape, read from the other side.
+_ORDINAL_RUN = re.compile(r"(?<=_)(\d+)(?=(?:_.*)?$)")
+
+
+class DeclaredNames(frozenset[str]):
+    """The names a template declares, with every member ordinal filed under what precedes it.
+
+    Issue #164. Counting the members of a nested collection means finding every
+    ``{stem}_{prefix}_<n>`` among the declared names. Done by scanning, that is one pass over
+    every name for every containing member — rows times names, and rows times rounds times
+    names on the constructors grid — which is quadratic in a template leagues are invited to
+    enlarge. Built once, this answers each count with a lookup: ``row_3_round_7_driver_2_name``
+    files 3 under ``row_``, 7 under ``row_3_round_`` and 2 under ``row_3_round_7_driver_``.
+
+    A memo of the scan was the remedy first proposed, and does not work: each member asks
+    about a different stem, so it never hits within an enumeration, and across enumerations
+    it would hash thousands of names per lookup and go stale when a template is edited.
+
+    The per-member loops build one and hand it down. Nothing on the way down may rewrap it in
+    a plain ``set`` — that silently restores the scan, once per member, and
+    ``test_a_template_s_names_are_indexed_once_per_enumeration`` exists to catch it. A caller
+    counting once may pass a plain set: building the index costs several scans, so
+    :meth:`NestedSpec.declared_capacity` scans those instead.
+    """
+
+    def __init__(self, names: Iterable[str] = ()) -> None:
+        heads: dict[str, set[int]] = {}
+        for name in self:
+            for match in _ORDINAL_RUN.finditer(name):
+                heads.setdefault(name[: match.start()], set()).add(int(match.group(1)))
+        self._heads = heads
+
+    @classmethod
+    def of(cls, names: Iterable[str]) -> DeclaredNames:
+        """*names* as they are where already indexed, and indexed otherwise."""
+        return names if isinstance(names, DeclaredNames) else cls(names)
+
+    def ordinals_after(self, head: str) -> set[int]:
+        """Every ordinal declared straight after *head* — ``row_3_round_`` → ``{1, …, 24}``.
+
+        A copy, so no caller can change what a later count reads.
+        """
+        return set(self._heads.get(head, ()))
+
+
 @dataclass(frozen=True)
 class RowSpec:
     """A repeating collection drawn against a number of slots (XIV.12).
@@ -198,7 +245,7 @@ class RowSpec:
         # other nest keeps the behaviour it had: a fault there is left to id enumeration and
         # to the checks that already report it, and widening that is not this feature's to do.
         if self.nested is not None and self.nested.minimum is not None:
-            declared = set(FieldIndex(root).declared())
+            declared = DeclaredNames(FieldIndex(root).declared())
             for index in range(1, highest + 1):
                 # Raises on the nest's own floor and on a gap in its numbering. The call is
                 # made for that effect: the answer is discarded, and only the raise matters.
@@ -225,7 +272,8 @@ class RowSpec:
 
         from utils.svg_document import FieldIndex
 
-        declared = set(FieldIndex(root).declared())
+        # Indexed once for every member below, rather than scanned once per member (#164).
+        declared = DeclaredNames(FieldIndex(root).declared())
         capacity = self.capacity_for(root) or 0
         ids: set[str] = set()
         for index in range(1, capacity + 1):
@@ -271,7 +319,7 @@ class RowSpec:
 
         from utils.svg_document import FieldIndex
 
-        declared = set(FieldIndex(root).declared())
+        declared = DeclaredNames(FieldIndex(root).declared())
         for index in range(1, capacity + 1):
             stem = self.row_id(index)
             try:
@@ -367,8 +415,11 @@ class NestedSpec:
         A gap in the numbering yields the empty set rather than raising: the gap is a fault
         the structural check reports in its own words, and enumerating ids is not the place
         to discover it.
+
+        *declared* is indexed here where it is not already, and handed down as it is — see
+        :class:`DeclaredNames` for why it must never be rewrapped on the way.
         """
-        declared = set(declared)
+        declared = DeclaredNames.of(declared)
         if count is None:
             try:
                 count = self.declared_capacity(stem, declared)
@@ -436,14 +487,20 @@ class NestedSpec:
         declaring none of the nest at all is left to the caller, which is what lets a session
         the template does not declare stay silent rather than reporting a missing floor.
         """
-        pattern = re.compile(
-            rf"^{re.escape(stem)}_{re.escape(self.prefix)}_(\d+)(?:_.*)?$"
-        )
-        ordinals = {
-            int(match.group(1))
-            for match in (pattern.match(name) for name in declared)
-            if match is not None
-        }
+        head = f"{stem}_{self.prefix}_"
+        if isinstance(declared, DeclaredNames):
+            ordinals = declared.ordinals_after(head)
+        else:
+            # Counted once, so scanned rather than indexed; the prefix test spares the
+            # pattern every name that cannot match it (#164).
+            pattern = re.compile(rf"^{re.escape(head)}(\d+)(?:_.*)?$")
+            ordinals = {
+                int(match.group(1))
+                for match in (
+                    pattern.match(name) for name in declared if name.startswith(head)
+                )
+                if match is not None
+            }
         if not ordinals:
             return 0
 

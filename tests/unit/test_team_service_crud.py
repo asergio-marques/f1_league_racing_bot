@@ -210,26 +210,6 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
         await service.remove_default_team("Standbys")
 
 
-async def test_seeding_an_empty_server_creates_only_the_reserve(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    await TeamService(db_path).seed_default_teams_if_empty()
-
-    assert await _names(db_path) == [RESERVE]
-
-
-async def test_seeding_leaves_an_existing_team_list_alone(tmp_path):
-    """`/bot init` may be run again on a configured server."""
-    db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
-    before = await _names(db_path)
-
-    await service.seed_default_teams_if_empty()
-
-    assert await _names(db_path) == before
-
-
 # ---------------------------------------------------------------------------
 # The server's default teams
 # ---------------------------------------------------------------------------
@@ -404,6 +384,23 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
     entries = await service.get_teams_with_roles()
 
     assert next(e for e in entries if e["name"] == "Alpha")["role_id"] == 12345
+
+
+async def test_listing_teams_with_roles_restores_a_lost_reserve(tmp_path):
+    """`/team list`, `/team reserve-role` and team autocomplete read the list through here, so the
+    Reserve team must be restored on this read as on every other (issue #146). `/bot init`
+    no longer seeds it, and a server whose Reserve row was lost would otherwise list none."""
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+    await service.add_default_team("Alpha", full_name="Alpha")
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM default_teams WHERE is_reserve = 1")
+        await db.commit()
+
+    entries = await service.get_teams_with_roles()
+
+    assert [e["name"] for e in entries] == ["Alpha", RESERVE]
+    assert entries[-1]["is_reserve"] is True
 
 
 # ---------------------------------------------------------------------------

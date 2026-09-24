@@ -41,7 +41,6 @@ it only to place it; the rules governing it belong to its own specification.
 - The initialisation command and the four single-setting commands are a league admin's, and shall run from any channel, holding either role being no part of it. They are what repairs the four settings, and a deleted channel or a withdrawn role would otherwise be unrepairable.
     - These five commands alone shall additionally accept the server's administrator permission in place of the league admin role. They are the only way back for a server that has no league admin role — one that was configured before the role existed, or one whose role has been deleted — and without them such a server could never gain one.
 - A server holding no league admin role shall refuse every league admin command, and the refusal shall name the command that sets the role. It shall not fall back to the administrator permission: a league that has not chosen the role has not decided who may undo it.
-- Initialisation shall create the Reserve team where the server holds no team. No other team shall be created.
 
 ### Who may do what
 - A driver shall need no role and no channel. A driver reaches the bot through the buttons it posts and through their own channels.
@@ -81,6 +80,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A command setting a channel to the value that setting already holds shall be refused in its own terms, nothing being changed by the refusal.
     - The check shall be made before anything is written, so that a refusal leaves the configuration exactly as it stood.
     - A channel recorded against a completed or cancelled season shall not be held to this rule.
+- Setting one of a division's channels shall say whether it was set for the first time or moved from another channel, so that a manager who meant a fresh assignment notices having moved an existing one. Decided 2026-09-24 (#212).
 
 ### The hub
 - The hub is the one channel every member of the league may use. A league need not set one.
