@@ -74,12 +74,16 @@ Phase numbers in the queue entry mean:
 | 5 | RSVP notice |
 | 6 | RSVP last notice |
 | 7 | RSVP deadline |
+| 8 | Forecast cleanup — the Phase 3 message deleted a day after the round |
+| 9 | Check-in cleanup — the call, last notice and distribution taken down a day after the round |
 
 Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice.
 
 **Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results, standing at *not run* or *awaiting results*, is due for submission — and it is therefore reached for every round format, mystery included.
 
 That database detection is load-bearing rather than a fallback. With the weather module off, approval skips scheduling result-submission jobs altogether while the test-mode flag is set, so there is no results job for the job store to hold in the first place. With weather on, `schedule_round` arms one for every round alongside its forecasts, test mode or not — so when `advance` opens a round's wizard by hand it cancels that round's results job first, and the job cannot fire a second time once its moment comes.
+
+**The two cleanups are judged by what is left to take down** (decided 2026-09-24, #425). Each is pending while its round's Phase 3 message, or its check-in call, still stands, whatever the round's status — a finished round still has them to run. They never jump ahead: the check of earlier rounds before a job offers none, a cleanup job waits on its own round's result submission as well, and where the job store is empty they come after everything else. A check-in cleanup takes the round's `rsvp_embed_messages` row with it, which is what a round whose call is still to come looks like too, so it also sets `rounds.checkin_cleared`, and step 5 is not offered for a round carrying it. An amendment that reopens the round's check-in clears the mark again.
 
 **Database state also covers everything the job store has lost.** Before returning a scheduler job, `advance` checks every chronologically earlier round for work the scheduler cannot see: phases evicted by misfire grace, RSVP jobs never created because their round was already past-dated when they were scheduled, and result submission. Where the job store holds nothing at all, that same check drives the whole queue. This is why `advance` still works on a season most of whose jobs were never created.
 
@@ -97,7 +101,7 @@ When there is nothing left, `advance` says so and points at `/season complete`.
 /test-mode review
 ```
 
-Prints every round of the active season with a status per phase, per division. Use it to see where you are without advancing. Three symbols are defined — ✅ done, ⏳ pending with a job queued, ⚠️ pending with no job — and result submission renders instead as "✅ finalized" or "⏸️ pending review".
+Prints every round of the active season with a status per phase, per division. Use it to see where you are without advancing. Three symbols are defined — ✅ done, ⏳ pending with a job queued, ⚠️ pending with no job — and result submission renders instead as "✅ finalized" or "⏸️ pending review". A weather round's `Cleanup` is done once Phase 3 has run and nothing of it is left standing; the check-in's `Cleared` is done once its messages have come down, and a cleared round shows every check-in step done, its record having gone with them.
 
 > **⏳ never actually appears.** The summary probes job IDs of the form `phase1_r{round_id}`, `results_r{round_id}` and `rsvp_notice_r{round_id}`, while the scheduler creates `weather_p1_s{S}_d{D}_r{RoundNumber}` and its siblings — mismatched in both the prefix and the round identifier. No probe ever matches, so every pending phase renders ⚠️ whether or not its job is queued. Read ⚠️ as "pending", not as "the job is missing".
 
@@ -172,7 +176,7 @@ Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` 
 /test-mode rsvp set-status division:Pro
 ```
 
-Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in call standing — the command resolves that call and refuses without one. Where a division holds two, as a double-header does until a later call clears the earlier, it takes the earlier until that round's deadline has been advanced and the later after it; where every deadline has run, the latest. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
+Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in call standing — the command resolves that call and refuses without one. Where a division holds two, as a double-header does until the earlier round's messages come down a day after it, it takes the earlier until that round's deadline has been advanced and the later after it; where every deadline has run, the latest. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
 
 Driving a check-in through the buttons requires as many Discord accounts as there are drivers, which is precisely what makes attendance untestable by hand. This is the way round it.
 

@@ -893,12 +893,12 @@ A real posting is suppressed the same way: the switch is read before the driver'
 
 No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced.
 
-Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, and result submission.
+Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, result submission, the check-in call, its reminder and its deadline, and the two tidy-ups a day after each round: its last forecast being deleted, and its check-in messages being taken down.
 
 #### `/test-mode review` — View phase completion status
 *Access: League admin · Requires test mode active*
 
-No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division.
+No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division, the tidy-ups a day after each round included.
 
 #### `/test-mode set-former-driver` — Override the former_driver flag
 *Access: League admin · Requires test mode active*
@@ -971,7 +971,7 @@ Opens a modal for setting the RSVP status of every test driver in the division's
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `division` | String | ✅ | Division name; the division must be in the ongoing season and have an open RSVP |
+| `division` | String | ✅ | Division name; the division must be in the ongoing season and have an open RSVP. Where two calls stand, as in a double-header, it takes the one still open |
 
 > Turning test mode **off** — by the toggle in configuration, or by the season ending — deletes every fake driver on the server, across all divisions, keeping their history. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers.
 
@@ -2009,7 +2009,7 @@ All commands below require the attendance module to be enabled (`/module enable 
 >
 > **Only a driver with a confirmed placement can answer.** Anybody else pressing a button is told they are not a member of the division and nothing is recorded — a driver still waiting on `/season placements-review`, a driver of another division, or someone with no driver profile at all, such as a league manager who does not race. Who can see a check-in channel in the first place is yours to set with Discord's own channel permissions; the bot does not manage them, so restrict the channel to the division's role if you would rather nobody else could press anything.
 
-> **Posting a round's call deletes the division's earlier ones once they are a day closed.** When a round's call goes out, each earlier round whose check-in closed at least a day before has its call, its reminder and its reserve-distribution message deleted from the check-in channel. A round still open, or closed more recently, keeps its messages until a later call goes out. So two rounds of one division close together — a Saturday and Sunday double-header on the 5-day default — have both calls standing in the channel for a while, each answerable until its own deadline. The answers are kept in the attendance record whatever becomes of the messages, and the attendance sheet carries what they cost.
+> **A round's check-in messages come down a day after the round.** 24 hours after a round's scheduled start, its call, its reminder and its reserve-distribution message are deleted from the check-in channel — the same moment as its last forecast. Posting another round's call deletes nothing, so two rounds of one division close together — a Saturday and Sunday double-header on the 5-day default — have both calls standing in the channel for a while, each answerable until its own deadline. If the bot is switched off when that day runs out, it takes them down as soon as it starts again. The answers are kept in the attendance record whatever becomes of the messages, and the attendance sheet carries what they cost.
 
 > **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-placements-review).
 
@@ -2834,7 +2834,7 @@ Three phases fire automatically per round (non-Mystery formats only). There is n
 
 The horizons shown are the packaged defaults, **not** fixed values — each is configurable, subject to the ordering rule in [Weather Module Commands](#weather-module-commands). A season runs on the values stored when it was approved.
 
-Each phase's message **supersedes** the previous one: the earlier forecast is deleted only once the new one has posted, so a failed publish never leaves a division with no forecast at all. The Phase 3 message is deleted 24 hours after the round starts.
+Each phase's message **supersedes** the previous one: the earlier forecast is deleted only once the new one has posted, so a failed publish never leaves a division with no forecast at all. The Phase 3 message is deleted 24 hours after the round starts — or, if the bot was switched off at that moment, as soon as it starts again.
 
 All forecast messages go to each division forecast channel, on a message mentioning that division's role. Computation logs go to the server log channel.
 
