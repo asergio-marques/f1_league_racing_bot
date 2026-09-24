@@ -374,7 +374,7 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A sanction of no seconds shall be rejected, the refusal pointing to no further action. Decided 2026-09-24 (#138).
     - A driver may instead be given **no further action**: a finding that the incident was investigated and no penalty follows. It shall alter no classification, and its verdict shall name the driver and the incident and say that no penalty follows, never reading as a sanction. Decided 2026-09-24 (#138).
         - No further action shall be given by entering "NFA", in any case, in place of the sanction. Decided 2026-09-24.
-        - Its verdict shall carry "None — no further action" where a sanction's verdict carries the sanction, in the textual announcement and on the graphic alike. Decided 2026-09-24.
+        - Its verdict shall carry "No further action" where a sanction's verdict carries the sanction, in the textual announcement and on the graphic alike. Decided 2026-09-24.
     - "DSQ" invalidates the entry, which is ranked last in that session.
     - A number of seconds is added to the driver's total race time.
     - For "Sprint Qualifying" and "Feature Qualifying", only "DSQ" and no further action are accepted.

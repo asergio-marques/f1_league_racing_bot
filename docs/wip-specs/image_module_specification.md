@@ -1388,7 +1388,7 @@ These hold for every image type of the module and are stated here rather than re
     - a verdict of the penalty phase carrying a time penalty added to the time of a driver;
     - a verdict of the penalty phase carrying a time penalty removed from the time of a driver;
     - a verdict of the penalty phase carrying a disqualification;
-    - a verdict of the penalty phase carrying no further action, its wording being the longest a verdict carries. Decided 2026-09-24 (#138);
+    - a verdict of the penalty phase carrying no further action. Decided 2026-09-24 (#138);
     - a verdict of the appeal phase, so that the rendering of the stage of an appeal may be evaluated;
     - a verdict of an autosack and a verdict of an autoreserve, so that the rendering of a verdict naming no session and no team may be evaluated.
 - The sanction fabricated shall be drawn from those the module can record and issue, which are a time penalty added to the time of a driver, a time penalty removed from it, a disqualification, and no further action. Five seconds added, ten seconds added and three seconds removed shall each be drawn among the cases above. A sanction the module cannot issue shall never be drawn.
