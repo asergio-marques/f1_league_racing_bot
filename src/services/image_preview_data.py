@@ -80,9 +80,9 @@ PHASE2_TYPES = ("sunny", "mixed", "rain")
 PHASE3_SLOTS = ("Clear", "Light Cloud", "Overcast", "Wet", "Very Wet")
 
 #: The outcomes the module can record and issue, and no others (FR-034): the four sanctions,
-#: and no further action, which the results module issues since #138 and whose wording is the
-#: longest a verdict carries. A qualifying ban and a race ban are deliberately absent: the bot
-#: cannot record them, and a preview must never draw what the bot cannot issue.
+#: and no further action, which the results module issues since #138. A qualifying ban and a
+#: race ban are deliberately absent: the bot cannot record them, and a preview must never draw
+#: what the bot cannot issue.
 VERDICT_SANCTIONS = (
     ("TIME", 5),
     ("TIME", 10),

@@ -155,7 +155,7 @@ def test_the_cases_cover_all_three_kinds_both_signs_and_no_further_action():
     assert drawings["penalty_added_sprint"].penalty == "5 seconds added"
     assert drawings["penalty_removed"].penalty == "3 seconds removed"
     assert drawings["penalty_dsq"].penalty == "Disqualified"
-    assert drawings["penalty_nfa"].penalty == "None \u2014 no further action"
+    assert drawings["penalty_nfa"].penalty == "No further action"
     assert drawings["appeal"].stage == "Appeal"
 
 

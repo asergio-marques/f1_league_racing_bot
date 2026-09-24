@@ -940,13 +940,13 @@ class TestVerdictPreview:
 
     async def test_only_sanctions_the_module_can_issue_are_drawn(self, bot, league):
         """FR-034 — never a qualifying ban or a race ban. No further action is drawn since the
-        results module can issue it (#138), and its wording is the longest a verdict carries."""
+        results module can issue it (#138)."""
         context = await _context(bot, round_number=1, require_teams=True)
 
         requests = await build_verdict_preview(bot, context)
         labels = " ".join(label for label, _k, _s in requests).lower()
 
-        assert "none \u2014 no further action" in labels
+        assert "no further action" in labels
         assert "qualifying ban" not in labels
         assert "race ban" not in labels
         assert "disqualified" in labels

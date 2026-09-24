@@ -154,11 +154,9 @@ async def _graphic_name(
         discord_user_id=discord_user_id, display_name=fallback_display_name
     )
 
-#: What a verdict of no further action reads (decided 2026-09-24, #138). It says outright that no
-#: penalty follows, so it reads rightly under the announcement's "Penalty" label, the packaged
-#: graphic's "SANCTION" heading, and whatever heading a league's own template gives the field —
-#: none of which can change for one verdict.
-NO_FURTHER_ACTION = "None \u2014 no further action"
+#: What a verdict of no further action reads, in the announcement and on the graphic alike
+#: (decided 2026-09-24, #138).
+NO_FURTHER_ACTION = "No further action"
 
 
 def translate_penalty(penalty_str: str) -> str:
@@ -173,7 +171,7 @@ def translate_penalty(penalty_str: str) -> str:
     | ``5s``      | ``5 seconds added``              |
     | ``-3s``     | ``3 seconds removed``            |
     | ``DSQ``     | ``Disqualified``                 |
-    | ``NFA``     | ``None — no further action``     |
+    | ``NFA``     | ``No further action``            |
     """
     if is_disqualification(penalty_str):
         return "Disqualified"

@@ -60,9 +60,9 @@ class TestTranslatePenalty:
         assert translate_penalty(typed) == NO_FURTHER_ACTION
 
 
-#: What a cleared driver's verdict reads (decided 2026-09-24, #138): it says outright that no
-#: penalty follows, so it reads rightly under a "Penalty" label and a "SANCTION" heading alike.
-NO_FURTHER_ACTION = "None \u2014 no further action"
+#: What a cleared driver's verdict reads, in the announcement and on the graphic alike
+#: (decided 2026-09-24, #138).
+NO_FURTHER_ACTION = "No further action"
 
 
 def test_no_further_action_is_described_as_no_penalty_and_never_as_a_disqualification():
