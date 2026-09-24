@@ -50,7 +50,7 @@ There is no on/off parameter — it flips, and the new state is persisted to `se
 
 Runs the single next pending event and reports what it did. Run it repeatedly to walk a season forward.
 
-**The queue is led by the APScheduler job store rather than by the database.** That is the design decision worth knowing, because it means the queue holds only what a live season would genuinely fire: with the weather module disabled at approval time, no weather phase jobs exist, and `advance` will never produce one. Enablement is honoured on the database side too — the fallback described below checks each module's flag before offering its phase. If an event you expected does not appear, the question is whether that module was on when the season was approved, not whether `advance` skipped it.
+**The queue is led by the APScheduler job store rather than by the database.** That is the design decision worth knowing, because it means the queue holds only what a live season would genuinely fire: with the weather module disabled at approval time, no weather phase jobs exist, and `advance` will never produce one. Enablement is honoured on the database side too — the fallback described below checks each module's flag before offering its phase, a mystery round's notice under the weather module's. Nor does it offer a last notice where `/attendance config rsvp-last-notice` is 0, since a live season sends none. If an event you expected does not appear, the question is whether that module was on when the season was approved, not whether `advance` skipped it.
 
 > **The job store is its own file: `scheduler.db`, beside `bot.db` unless `SCHEDULER_DB_PATH` says otherwise.** It used to live inside `bot.db`; it was moved out because APScheduler writes to it synchronously, on the event loop, and sharing a file with the league data stalled everything else the bot was doing.
 >
@@ -68,7 +68,7 @@ Phase numbers in the queue entry mean:
 
 | `phase_number` | Event |
 |---|---|
-| 0 | Mystery-round notice — **database path only** |
+| 0 | Mystery-round notice |
 | 1, 2, 3 | Weather phases |
 | 4 | Result submission |
 | 5 | RSVP notice |
@@ -77,7 +77,7 @@ Phase numbers in the queue entry mean:
 | 8 | Forecast cleanup — the Phase 3 message deleted a day after the round |
 | 9 | Check-in cleanup — the call, last notice and distribution taken down a day after the round |
 
-Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice.
+A mystery round's notice is armed as a `weather_p1` job, with `weather_p2` and `weather_p3` beside it that do nothing when they fire. The job store knows nothing of a round's format, so `get_next_pending_phase` reads it: a mystery round's `weather_p1` job comes back as phase 0 unless the notice has already been posted, and its `weather_p2` and `weather_p3` are passed over. Phases 1–3 go to `run_phase1`–`run_phase3`, which do not read the format. When `advance` posts a notice it takes the round's `weather_p1` job down by round and prefix, whether the entry came from the job store or from database state, so the notice cannot be posted twice.
 
 **Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results, standing at *not run* or *awaiting results*, is due for submission — and it is therefore reached for every round format, mystery included.
 
@@ -101,9 +101,9 @@ When there is nothing left, `advance` says so and points at `/season complete`.
 /test-mode review
 ```
 
-Prints every round of the active season with a status per phase, per division. Use it to see where you are without advancing. Three symbols are defined — ✅ done, ⏳ pending with a job queued, ⚠️ pending with no job — and result submission renders instead as "✅ finalized" or "⏸️ pending review". A weather round's `Cleanup` is done once Phase 3 has run and nothing of it is left standing; the check-in's `Cleared` is done once its messages have come down, and a cleared round shows every check-in step done, its record having gone with them.
+Prints every round of the active season with a status per phase, per division. Use it to see where you are without advancing. Three symbols are defined — ✅ done, ⏳ pending with a job queued, ⚠️ pending with no job — and result submission renders instead as "✅ finalized" or "⏸️ pending review". A weather round's `Cleanup` is done once Phase 3 has run and nothing of it is left standing; the check-in's `Cleared` is done once its messages have come down, and a cleared round shows every check-in step done, its record having gone with them. A step a league has switched off is left out rather than marked: `P1`–`P3`, `Cleanup` and a mystery round's `Notice` while the weather module is off, as `Results` and the check-in cells are while theirs are. `Last` is left out too where `/attendance config rsvp-last-notice` is 0.
 
-> **⏳ never actually appears.** The summary probes job IDs of the form `phase1_r{round_id}`, `results_r{round_id}` and `rsvp_notice_r{round_id}`, while the scheduler creates `weather_p1_s{S}_d{D}_r{RoundNumber}` and its siblings — mismatched in both the prefix and the round identifier. No probe ever matches, so every pending phase renders ⚠️ whether or not its job is queued. Read ⚠️ as "pending", not as "the job is missing".
+> **A job is found by its round and its event type** (#426): the `round_id` it carries, and its ID less the `_s{S}_d{D}_r{N}_id{round_id}` suffix — the way `advance` cancels a round's results job, never by an ID rebuilt to match. A mystery round's notice is armed as `weather_p1`, so its `Notice` reads that job.
 
 ---
 

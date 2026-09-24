@@ -3,7 +3,8 @@
 It stands in the place of the phase 1 message and shares its horizon, which the league
 configures; see ``phase1_service`` for why no horizon is named as fixed.
 
-Called by the APScheduler ``mystery_r{round_id}`` job for Mystery rounds.
+Called when a Mystery round's ``weather_p1_s{S}_d{D}_r{N}_id{round_id}`` job fires —
+``_weather_phase_job`` reads the round's format as it does — and by `/test-mode advance`.
 No random draws are performed; no phase_results row is written; no log-channel
 message is produced (FR-008).  The notice is posted to the division's forecast
 channel only, with no role tag (FR-003).
@@ -25,7 +26,10 @@ log = logging.getLogger(__name__)
 
 
 async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
-    """Post the mystery round notice for *round_id* to its forecast channel."""
+    """Post the mystery round notice for *round_id* to its forecast channel.
+
+    Posts nothing, and leaves the round's Phase 1 undone, while the weather module is off.
+    """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
             "SELECT r.id, r.format, d.id AS division_id, d.forecast_channel_id "
@@ -47,6 +51,16 @@ async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
         log.info(
             "Mystery notice: round %s format is now %s (not MYSTERY) — skipping.",
             round_id, row["format"],
+        )
+        return
+
+    # The module gate. The notice is a weather posting, and a disabled module produces nothing
+    # whatever the path arrives at it — so the check lives here in the runner, as it does in
+    # `run_phase1` to `run_phase3` (#113), and not only at the callers (#426). Nothing is posted
+    # and the round's Phase 1 is left undone.
+    if not await bot.module_service.is_weather_enabled():
+        log.info(
+            "Mystery notice: weather module disabled — round %s left untouched.", round_id
         )
         return
 

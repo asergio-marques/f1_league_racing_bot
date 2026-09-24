@@ -210,7 +210,7 @@ You are not going to wait five days to find out whether any of this works, and y
 /test-mode rsvp set-status  division: Division One
 ```
 
-`advance` fires the next thing due — the call, then the reminder, then the deadline — straight away, and posts each to the real channels so you see exactly what your drivers will see. `set-status` then opens a box where you can set every test driver's answer in one pass, which is the only practical way to drive a check-in to a known state; it needs a call already posted, so run it after the first `advance`. Keep advancing to fire the reminder and close check-in, and watch the reserves get distributed.
+`advance` fires the next thing due — the call, then the reminder unless you have set it to `0`, then the deadline — straight away, and posts each to the real channels so you see exactly what your drivers will see. `set-status` then opens a box where you can set every test driver's answer in one pass, which is the only practical way to drive a check-in to a known state; it needs a call already posted, so run it after the first `advance`. Keep advancing to fire the reminder and close check-in, and watch the reserves get distributed.
 
 See [Test mode](test-mode.md) for the whole picture, including the synthetic drivers you will need first.
 

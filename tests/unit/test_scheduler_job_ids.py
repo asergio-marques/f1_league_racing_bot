@@ -102,6 +102,46 @@ def test_a_stale_round_number_is_only_cosmetic():
 # Reading the identifier back
 # ---------------------------------------------------------------------------
 
+#: Every event type a round's jobs are armed under, by `schedule_round` and
+#: `schedule_attendance_round`.
+_ROUND_EVENT_TYPES = (
+    "weather_p1",
+    "weather_p2",
+    "weather_p3",
+    "cleanup",
+    "results",
+    "rsvp_notice",
+    "rsvp_last_notice",
+    "rsvp_deadline",
+    "rsvp_cleanup",
+)
+
+
+@pytest.mark.parametrize(
+    "job_id,event_type",
+    [
+        ("weather_p1_s3_d2_r5_id42", "weather_p1"),
+        ("rsvp_last_notice_s2_d3_r11_id97", "rsvp_last_notice"),
+        ("weather_p1_s1_d1_r4", "weather_p1"),
+        ("portrait_refresh", None),
+        ("something_odd", None),
+    ],
+    ids=["current", "check-in", "written-before-the-round-id", "no-round", "unparseable"],
+)
+def test_the_event_type_is_the_id_less_its_round_suffix(job_id, event_type):
+    """One reader for the whole scheme (#426). Every caller asking what a job is for reads it
+    here — the review once built IDs of its own instead, in a shape no job has ever had, and
+    found none of them."""
+    assert ss._job_event_type(job_id) == event_type
+
+
+@pytest.mark.parametrize("event_type", _ROUND_EVENT_TYPES)
+def test_the_reader_undoes_the_writer(event_type):
+    """Whatever `_round_job_suffix` appends, the reader takes off again, for all nine."""
+    job_id = f"{event_type}{_round_job_suffix(_round(42, 5), 3, 2)}"
+
+    assert ss._job_event_type(job_id) == event_type
+
 
 def _job(job_id: str, round_id: int | None, *, minutes: int = 5, paused: bool = False):
     job = MagicMock()
@@ -230,28 +270,46 @@ def test_a_job_whose_id_does_not_parse_is_ignored():
     assert _service(jobs).get_pending_advance_jobs({42}) == []
 
 
-def test_every_job_for_a_round_is_listed_without_filtering():
-    """`get_job_ids_for_rounds` is the review summary's view and deliberately keeps the
-    ones advance excludes — it answers "is a job queued", not "what will advance fire"."""
+def test_every_queued_job_is_listed_by_its_round_and_event_type():
+    """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
+    ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
-    jobs = [
-        _job(f"weather_p1{suffix}", 42),
-        _job(f"cleanup{suffix}", 42),
-        _job(f"results{suffix}", 42),
-    ]
+    jobs = [_job(f"{event_type}{suffix}", 42) for event_type in _ROUND_EVENT_TYPES]
 
-    ids = _service(jobs).get_job_ids_for_rounds({42})
+    queued = _service(jobs).get_queued_events_for_rounds({42})
 
-    assert len(ids) == 3
+    assert queued == {(42, event_type) for event_type in _ROUND_EVENT_TYPES}
 
 
-def test_a_paused_job_is_not_listed_as_queued():
-    """The summary distinguishes "queued" from "absent", and a paused job is neither
-    going to fire nor worth reporting as pending."""
+def test_a_paused_job_is_not_queued():
+    """A paused job will not fire, and is no more worth reporting as queued than a missing one."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
     jobs = [_job(f"weather_p1{suffix}", 42, paused=True)]
 
-    assert _service(jobs).get_job_ids_for_rounds({42}) == set()
+    assert _service(jobs).get_queued_events_for_rounds({42}) == set()
+
+
+def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
+    """The season, tier and number in an ID are decoration, and two rounds may share them after a
+    renumbering. The round a job belongs to is its `round_id` kwarg, which an ID written before
+    the round id was added to it carries as well."""
+    jobs = [
+        _job("weather_p1_s1_d1_r5_id42", 42),
+        _job("weather_p1_s1_d1_r5_id43", 43),
+        _job("results_s1_d1_r5", 42),
+        _job("weather_p2_s1_d1_r6_id44", 44),
+    ]
+
+    queued = _service(jobs).get_queued_events_for_rounds({42, 43})
+
+    assert queued == {(42, "weather_p1"), (43, "weather_p1"), (42, "results")}
+
+
+def test_a_job_whose_id_does_not_parse_is_not_listed():
+    """Its type cannot be read, so it cannot stand for any step of the round."""
+    jobs = [_job("something_odd", 42), _job("portrait_refresh", None)]
+
+    assert _service(jobs).get_queued_events_for_rounds({42}) == set()
 
 
 # ---------------------------------------------------------------------------

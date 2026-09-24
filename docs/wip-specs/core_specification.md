@@ -611,6 +611,7 @@ section states the rules it holds to.
 - Test mode shall provide a command firing the next scheduled event at once, in the order the events would have fired, without altering the moment any of them was scheduled for.
     - The deletion of a round's forecasts and check-in messages 24 hours after it shall be such an event, each fired in its turn. Decided 2026-09-24 (#425).
 - Test mode shall provide a command reporting, for every round, which of its scheduled work has run and which remains.
+    - A step of a module that is switched off, or one the league has switched off in its configuration, shall not be reported. Decided 2026-09-24 (#426).
 - Test mode shall provide synthetic drivers, so that a division may be filled and raced without real Discord accounts.
 - While test mode is enabled, a switch of its own shall stand in for the signup module's nationality setting, so that both may be seen without altering what a league's real signups ask.
 - While test mode is enabled, a league admin shall be able to set a driver's former-driver flag by hand, to true or to false. This shall be possible in no other circumstance.

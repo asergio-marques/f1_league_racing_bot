@@ -356,6 +356,7 @@ class TestRunMysteryNotice:
             mock_msg.id = 111
             mock_bot = MagicMock()
             mock_bot.db_path = db_path
+            mock_bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
             mock_bot.output_router.post_forecast = AsyncMock(return_value=mock_msg)
             mock_bot.output_router.post_log = AsyncMock()
 
@@ -380,6 +381,7 @@ class TestRunMysteryNotice:
             mock_msg.id = 222
             mock_bot = MagicMock()
             mock_bot.db_path = db_path
+            mock_bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
             mock_bot.output_router.post_forecast = AsyncMock(return_value=mock_msg)
             mock_bot.output_router.post_log = AsyncMock()
 
@@ -438,3 +440,27 @@ class TestRunMysteryNotice:
             assert mock_bot.output_router.post_forecast.call_count == 0
         finally:
             os.unlink(db_path)
+
+    async def test_no_notice_is_posted_while_the_weather_module_is_off(self, tmp_path):
+        """The notice is a weather posting, and a disabled module produces nothing whatever the
+        path arrives at it — so the runner refuses, as `run_phase1` to `run_phase3` do (#113),
+        and leaves the round's Phase 1 undone (#426)."""
+        from db.database import get_connection, run_migrations
+        from services.mystery_notice_service import run_mystery_notice
+
+        db_path = str(tmp_path / "notice_weather_off.db")
+        await run_migrations(db_path)
+        await _seed_mystery_round(db_path, round_id=4)
+
+        mock_bot = MagicMock()
+        mock_bot.db_path = db_path
+        mock_bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+        mock_bot.output_router.post_forecast = AsyncMock(return_value=MagicMock(id=444))
+        mock_bot.output_router.post_log = AsyncMock()
+
+        await run_mystery_notice(4, mock_bot)
+
+        assert mock_bot.output_router.post_forecast.call_count == 0
+        async with get_connection(db_path) as db:
+            cursor = await db.execute("SELECT phase1_done FROM rounds WHERE id = 4")
+            assert (await cursor.fetchone())["phase1_done"] == 0
