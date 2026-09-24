@@ -23,6 +23,9 @@ from services.image_config_service import ImageConfigService  # noqa: E402
 def _interaction():
     interaction = MagicMock()
     interaction.guild_id = 1
+    # Both bodies defer before they read a template (#165), and a bare MagicMock
+    # cannot be awaited.
+    interaction.response.defer = AsyncMock()
     return interaction
 
 

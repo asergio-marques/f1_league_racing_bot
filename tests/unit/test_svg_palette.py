@@ -17,7 +17,13 @@ from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utils.svg_document import SVG_NS, parse_svg_bytes, stylesheet  # noqa: E402
+from utils.svg_document import (  # noqa: E402
+    SVG_NS,
+    FieldIndex,
+    computed_style,
+    parse_svg_bytes,
+    stylesheet,
+)
 from utils.svg_palette import (  # noqa: E402
     InvalidSlot,
     apply_palette,
@@ -115,6 +121,23 @@ def test_the_injected_block_comes_after_the_templates_own():
     assert len(styles) == 2
     assert "#3DD6F5" in styles[0].text
     assert "#A78BFA" in styles[1].text
+
+
+def test_the_injected_palette_wins_whatever_order_the_classes_are_written():
+    """The bot reads the tier's colour, as Inkscape draws it, with the slot's class first.
+
+    With the classes the other way round the two always agreed; written this way the bot
+    read the template's `.accent` while the drawing showed the tier, and every reader of
+    `computed_style` — the fit engine, Layer 3, the fastest-lap contrast — worked from the
+    wrong colour.
+    """
+    root = _svg(
+        '<rect id="plate" class="colour-fill-accent accent"/>',
+        defs="<style>.accent { fill:#3DD6F5 }</style>",
+    )
+    apply_palette(root, {"accent": "#A78BFA"})
+    element = FieldIndex(root).resolve("plate")
+    assert computed_style(element, stylesheet(root))["fill"] == "#A78BFA"
 
 
 def test_defs_is_created_when_the_template_has_none():

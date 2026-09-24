@@ -991,10 +991,20 @@ def _image_cog(config_service, module_service):
     class _Bot:
         pass
 
+    from unittest.mock import AsyncMock
+
+    from services.image_render_service import ImageRenderService
+
     bot = _Bot()
     bot.image_config_service = config_service
     bot.module_service = module_service
     bot.image_validity_service = ImageValidityService(config_service, module_service)
+    # The real render service, not a stand-in: the per-tier contrast paints each division
+    # through its palette step, and a stub would test a copy of that step.
+    bot.image_render_service = ImageRenderService(
+        config_service, bot.image_validity_service
+    )
+    bot.output_router = SimpleNamespace(post_log=AsyncMock())
 
     cog = ImageCog.__new__(ImageCog)
     cog.bot = bot
@@ -1043,11 +1053,11 @@ async def test_contrast_is_measured_against_the_declared_background(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#000000")
+    reading = await cog._measure_fastest_lap_contrast("#000000")
 
-    assert problem is None
-    assert background == "#FFFFFF"
-    assert ratio == pytest.approx(21.0, abs=0.01)
+    assert reading.problem is None
+    assert reading.background == "#FFFFFF"
+    assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
@@ -1067,11 +1077,11 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
 
-    assert problem is None
-    assert background == "#000000"
-    assert ratio == pytest.approx(21.0, abs=0.01)
+    assert reading.problem is None
+    assert reading.background == "#000000"
+    assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
 async def test_contrast_unmeasurable_when_template_is_invalid(
@@ -1083,10 +1093,10 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     await config_service.set_field("results_race_template", "gone.svg")
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "invalid" in problem.lower()
+    assert reading.ratio is None and reading.background is None
+    assert "invalid" in reading.problem.lower()
 
 
 async def test_contrast_unmeasurable_when_background_element_is_absent(
@@ -1101,10 +1111,10 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "fastest_lap_background" in problem
+    assert reading.ratio is None and reading.background is None
+    assert "fastest_lap_background" in reading.problem
     # It must be reported as unmeasurable, not as a template validity failure.
     from services.image_validity_service import evaluate_all_templates
 
@@ -1125,10 +1135,511 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "not" in problem.lower() and "plain colour" in problem.lower()
+    assert reading.ratio is None and reading.background is None
+    assert "not" in reading.problem.lower() and "plain colour" in reading.problem.lower()
+
+
+async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
+    module_service, config_service, template_dir, monkeypatch
+):
+    """A plate declaring no fill was reported as having a fill of `None`.
+
+    `None` is Python's, not the league's, and the likeliest way to reach it is a slotted
+    plate authored without a default — which the image how-to warns draws black in an
+    editor. Whether to measure such a plate as black is a decision, not this fix:
+    `computed_style` reads only simple selectors, so "none the bot can read" is not quite
+    "none", and FR-027 forbids guessing.
+    """
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await _enable(module_service, config_service)
+    await config_service.set_field("template_directory", "templates")
+
+    (template_dir / "templates" / "results_race_template.svg").write_bytes(
+        _race_template('<rect id="fastest_lap_background"/>')
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
+
+    assert reading.ratio is None and reading.background is None
+    assert "None" not in reading.problem
+    assert "no fill" in reading.problem
+
+
+# ── #165 — the contrast is measured in every tier's colours ───────────────
+
+
+class _Interaction:
+    """Answers the way a deferred Discord interaction does, and keeps what it was told."""
+
+    def __init__(self) -> None:
+        self.deferred = False
+        self.said: list[str] = []
+        self.response = SimpleNamespace(
+            defer=self._defer, is_done=lambda: self.deferred, send_message=self._say
+        )
+        self.followup = SimpleNamespace(send=self._say)
+        self.user = SimpleNamespace(display_name="Manager", id=1)
+
+    async def _defer(self, **_kwargs) -> None:
+        self.deferred = True
+
+    async def _say(self, content, **_kwargs) -> None:
+        self.said.append(content)
+
+
+def _lines(reading) -> list[str]:
+    from cogs.image_cog import fastest_lap_contrast_lines
+
+    return fastest_lap_contrast_lines(reading)
+
+
+async def _seed_season(db_path, divisions, *, status="ACTIVE"):
+    """A live season holding *divisions*, their tiers in the order given."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) VALUES (?, ?, 1)",
+            ("2026-01-01", status),
+        )
+        season_id = cursor.lastrowid
+        for tier, name in enumerate(divisions, start=1):
+            await db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id, tier) "
+                "VALUES (?, ?, ?, ?)",
+                (season_id, name, tier, tier),
+            )
+        await db.commit()
+
+
+#: A plate slotted `plate`, drawn in *authored* until a tier gives it a colour.
+def _slotted_plate(authored: str) -> bytes:
+    return _race_template(
+        f"<style>.colour-fill-plate {{ fill:{authored} }}</style>"
+        '<rect id="fastest_lap_background" class="colour-fill-plate"/>'
+    )
+
+
+async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, palettes):
+    """Configure per-tier colours on, *markup* as the race template, and *palettes*."""
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await config_service.set_field("template_directory", "templates")
+    (template_dir / "templates" / "results_race_template.svg").write_bytes(markup)
+    await config_service.set_flag("per_tier_colour_enabled", True)
+    for division, colours in palettes.items():
+        await config_service.set_tier_colours(division, colours)
+
+
+async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """The defect of #165, as a league met it.
+
+    The plate is authored black, and against black white passes easily — so the reply
+    used to say 21:1 and warn of nothing, while Division 2 draws the plate in a grey
+    against which the same white is below the threshold.
+    """
+    from cogs.image_cog import ImageCog
+    from tests.support.undecorate import undecorate
+
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {"Division 1": {"plate": "#000000"}, "Division 2": {"plate": "#777777"}},
+    )
+
+    interaction = _Interaction()
+    await undecorate(ImageCog.config_fastest_lap_colour)(
+        _image_cog(config_service, module_service), interaction, "#FFFFFF"
+    )
+
+    reply = interaction.said[-1]
+    assert "lowest for **Division 2** (`#777777`): **4.48:1**" in reply
+    assert "⚠️" in reply
+    assert "Division 1" not in reply
+
+
+async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {"Division 1": {"plate": "#000000"}, "Division 2": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.problem is None
+    assert reading.background == "#777777"
+    assert reading.ratio == pytest.approx(4.478, abs=0.001)
+    assert reading.divisions == ("Division 2",)
+
+
+async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Colours may be stored while the feature is off; they are not drawn, so not measured."""
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {"Division 1": {"plate": "#000000"}, "Division 2": {"plate": "#777777"}},
+    )
+    await config_service.set_flag("per_tier_colour_enabled", False)
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.background == "#000000"
+    assert reading.ratio == pytest.approx(21.0, abs=0.01)
+    assert reading.divisions == ()
+
+
+async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Division 2 sets no plate colour, so it draws the plate as authored.
+
+    Painting every tier into one tree would leave Division 1's colour behind for Division
+    2 to be measured against, and the grey it is really drawn in would go unreported.
+    """
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#333333"),
+        {"Division 1": {"plate": "#FFFFFF"}, "Division 2": {"accent": "#A78BFA"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#000000")
+
+    assert reading.divisions == ("Division 2",)
+    assert reading.background == "#333333"
+    assert reading.ratio == pytest.approx(1.662, abs=0.001)
+
+
+async def test_contrast_reads_a_slot_declared_on_the_plates_group(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """A slot on a group reaches a plate that declares no fill of its own."""
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template(
+            "<style>.colour-fill-plate { fill:#000000 }</style>"
+            '<g class="colour-fill-plate"><rect id="fastest_lap_background"/></g>'
+        ),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.background == "#777777"
+    assert reading.divisions == ("Division 1",)
+    # One division is named, never called "every division".
+    assert reading.every_division is False
+
+
+async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classes_are_written(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """The slot's class written first, the template's own `.plate` rule declared too.
+
+    Inkscape draws the tier's grey: the injected rule comes later, and a later rule of equal
+    specificity wins whatever order the element lists its classes in. Style resolution read
+    the classes in the order written instead, so the check measured the template's black
+    here while the drawing showed the grey.
+    """
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template(
+            "<style>.plate { fill:#000000 }</style>"
+            '<rect id="fastest_lap_background" class="colour-fill-plate plate"/>'
+        ),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.background == "#777777"
+    assert reading.divisions == ("Division 1",)
+
+
+async def test_the_contrast_check_paints_each_tier_through_the_render_path(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Each tier is painted by the render's own palette step, once, in tier order.
+
+    Pinned because a second way of resolving a tier's colours is the obvious shortcut —
+    read the palette and look the slot up — and it would let the figure a league is told
+    drift from the colour it is drawn in, which is what #165 was.
+    """
+    from services.image_render_service import ImageRenderService
+
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2", "Division 3"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {"Division 1": {"plate": "#111111"}},
+    )
+
+    painted: list[str] = []
+    original = ImageRenderService.apply_tier_palette
+
+    async def _spy(self, root, division_name):
+        painted.append(division_name)
+        await original(self, root, division_name)
+
+    monkeypatch.setattr(ImageRenderService, "apply_tier_palette", _spy)
+
+    cog = _image_cog(config_service, module_service)
+    await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert painted == ["Division 1", "Division 2", "Division 3"]
+
+
+@pytest.mark.parametrize(
+    "seasons",
+    [[], [("SETUP", [])]],
+    ids=["no season", "a season with no division"],
+)
+async def test_no_season_under_way_measures_as_authored_and_says_so(
+    db_path, module_service, config_service, template_dir, monkeypatch, seasons
+):
+    """Decided 2026-09-24 (#165): no tier to measure is said, not left to be inferred."""
+    await _enable(module_service, config_service)
+    for status, divisions in seasons:
+        await _seed_season(db_path, divisions, status=status)
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.background == "#000000"
+    assert reading.divisions == ()
+    assert reading.no_season is True
+    assert _lines(reading) == [
+        "Contrast against the template's plate (`#000000`): **21.00:1**",
+        "ℹ️ There is no division of a season under way to measure, so no tier was "
+        "measured: this is the drawing as authored.",
+    ]
+
+
+async def test_per_tier_colours_off_say_nothing_of_a_season(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """With the feature off, drawing as authored is simply what happens — nothing to explain."""
+    await _enable(module_service, config_service)
+    await _per_tier(
+        config_service, template_dir, monkeypatch, _slotted_plate("#000000"), {}
+    )
+    await config_service.set_flag("per_tier_colour_enabled", False)
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.no_season is False
+    assert len(_lines(reading)) == 1
+
+
+async def test_contrast_names_every_tier_sharing_the_lowest(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Decided 2026-09-24 (#165): a tie names every tier in it, in tier order."""
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2", "Division 3"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {
+            "Division 1": {"plate": "#777777"},
+            "Division 2": {"plate": "#000000"},
+            "Division 3": {"plate": "#777777"},
+        },
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.divisions == ("Division 1", "Division 3")
+    assert reading.every_division is False
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **Division 1** and "
+        "**Division 3** (`#777777`): **4.48:1**"
+    )
+
+
+async def test_contrast_says_it_is_the_same_for_every_division(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """A plate no slot reaches is drawn alike for every tier; naming one would mislead."""
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template('<rect id="fastest_lap_background" fill="#000000"/>'),
+        {"Division 1": {"accent": "#A78BFA"}, "Division 2": {"accent": "#3DD6F5"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.every_division is True
+    assert _lines(reading) == [
+        "Contrast against the template's plate (`#000000`) is the same for every "
+        "division: **21.00:1**"
+    ]
+
+
+def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
+    from cogs.image_cog import FastestLapContrast
+
+    reading = FastestLapContrast(
+        ratio=4.478, background="#777777", divisions=("A", "B", "C")
+    )
+
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **A**, **B** and **C** "
+        "(`#777777`): **4.48:1**"
+    )
+
+
+def test_tiers_tied_on_different_colours_are_named_without_one():
+    """Two plates can differ and still read at the same figure; neither colour is *the* one."""
+    from cogs.image_cog import FastestLapContrast
+
+    reading = FastestLapContrast(ratio=21.0, background=None, divisions=("A", "B"))
+
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **A** and **B**: **21.00:1**"
+    )
+
+
+async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Decided 2026-09-24 (#165): the lowest of the rest, and the others named with why.
+
+    Divisions 2 and 3 set no plate colour, so they draw the gradient the plate was
+    authored in, which has no single colour to measure against.
+    """
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2", "Division 3"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template(
+            '<rect id="fastest_lap_background" class="colour-fill-plate" fill="url(#grad)"/>'
+        ),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    why = "the `fastest_lap_background` element's fill (`url(#grad)`) is not a plain colour."
+    assert reading.divisions == ("Division 1",)
+    assert reading.unmeasured == (("Division 2", why), ("Division 3", why))
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **Division 1** "
+        "(`#777777`): **4.48:1**"
+    )
+    assert _lines(reading)[-1] == (
+        f"ℹ️ Not measured for **Division 2** and **Division 3**: {why}"
+    )
+
+
+def test_unmeasured_tiers_with_different_reasons_share_one_line():
+    from cogs.image_cog import FastestLapContrast
+
+    reading = FastestLapContrast(
+        ratio=21.0,
+        background="#000000",
+        divisions=("A",),
+        unmeasured=(("B", "one reason."), ("C", "another."), ("D", "one reason.")),
+    )
+
+    assert _lines(reading)[-1] == (
+        "ℹ️ Not measured for **B** and **D**: one reason.; **C**: another."
+    )
+
+
+async def test_every_tier_unmeasurable_is_reported_once(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template('<rect id="fastest_lap_background" fill="url(#grad)"/>'),
+        {"Division 1": {"accent": "#A78BFA"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.ratio is None
+    assert "plain colour" in reading.problem
+    assert _lines(reading) == [f"ℹ️ Contrast could not be measured: {reading.problem}"]
+
+
+def test_the_reply_warns_below_the_legibility_threshold():
+    from cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+
+    lines = fastest_lap_contrast_lines(FastestLapContrast(ratio=3.0, background="#777777"))
+
+    assert lines[0] == "Contrast against the template's plate (`#777777`): **3.00:1**"
+    assert lines[1].startswith("⚠️ That is below 4.5:1")
+
+
+def test_the_reply_says_why_nothing_was_measured():
+    from cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+
+    lines = fastest_lap_contrast_lines(FastestLapContrast(problem="no plate."))
+
+    assert lines == ["ℹ️ Contrast could not be measured: no plate."]
 
 
 # ── T040 — asset directories relocate independently (SC-002) ──────────────

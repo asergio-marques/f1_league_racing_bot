@@ -557,6 +557,8 @@ It tells you straight away if any slot is still unset, and for which tier.
 
 **Check it before you trust it.** `/images test` draws a preview for a division you name, in that tier's colours. Use it on two different tiers and compare.
 
+**Then set the fastest-lap colour again, if the plate behind it takes a tier's colour.** The contrast you were told in step 3 was measured against your drawing as it stands. Run `/images config fastest-lap-colour` again with the same colour: it now measures the plate in every tier's colours and names the tier it is hardest to read on — or tells you it is the same for every tier.
+
 ### Working out a tier's palette
 
 Ten colours per tier is a lot to choose by hand, and choosing them badly is easy. `tools/tier_palette.py` takes one accent and works out the rest, applying the two rules above:

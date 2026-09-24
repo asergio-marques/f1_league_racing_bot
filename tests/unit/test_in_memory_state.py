@@ -52,6 +52,11 @@ EXEMPT = {
     # One parsed SVG document's index of its own elements.
     ("utils/svg_document.py", "by_id"),
     ("utils/svg_document.py", "by_label"),
+    # One parsed stylesheet's record of the order its rules were declared in, and what each
+    # class combination resolved to under it (#165). Both die with the stylesheet, which
+    # lives no longer than the render or check that parsed its template.
+    ("utils/svg_document.py", "positions"),
+    ("utils/svg_document.py", "_by_class"),
     # The hub's options, registered by modules at import (#279): the bot's code, not the
     # league's data. A pack keeps the modules, so it keeps what they offer.
     ("services/hub_service.py", "_OPTIONS"),
