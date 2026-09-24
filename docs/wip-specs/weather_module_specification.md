@@ -155,6 +155,7 @@
 - Upon starting, the bot shall perform any phase of any round of a season whose placements have been confirmed, and which is not yet completed or cancelled, whose horizon has passed and which has not yet been performed.
 - It shall do so only for a round still to be run. No phase shall be performed on starting for a cancelled round, for a round of a cancelled division, or for a round whose scheduled race time has passed.
 - The horizons it shall judge those phases by are the league's own configured ones, not the packaged ones, so that a restart, the confirmation of placements and an amendment cannot disagree about a round.
+- Upon starting, the bot shall also delete any Phase 3 message whose deletion fell due while it was stopped, 24 hours after its round's scheduled start, while the module is enabled. No message shall be deleted so for a cancelled round or a round of a cancelled division. Decided 2026-09-24 (#425).
 
 ## Image generation
 - Where the image module is enabled and its weather output switched on, each forecast shall be posted as a graphic in place of its text, on a message carrying the division role mention and nothing besides.
@@ -163,4 +164,5 @@
 
 ## Test mode
 - The test mode "advance" command shall fire the next pending weather phase or mystery round notice immediately, cancelling the scheduled job for it so that it cannot fire twice, and posting its output to the configured forecast and log channels.
+- It shall likewise fire the deletion of a round's Phase 3 message in its turn. Decided 2026-09-24 (#425).
 - Disabling test mode shall delete the forecast messages posted while it was active.

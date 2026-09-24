@@ -596,7 +596,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
 
 ## When the bot stops
 - The bot is a program somebody shall keep running. While it is stopped nothing happens.
-- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; seasons left part-built; and the hub's panel, posted again where it was deleted.
+- When it starts again it shall recover: the weather phases that came due, where the weather module is enabled; the check-in calls and deadlines that came due; the forecasts and check-in messages due to be deleted 24 hours after their round, each where its module is enabled (decided 2026-09-24, #425); a signup window's closing timer, closing the window at once where its moment has passed and moving its season on as a close does; interrupted result submissions, which shall be cleared and reopened with the league manager told to submit again; penalty and appeal reviews, which shall be posted again rather than discarded; abandoned amendment channels, which shall be deleted; configuration and placements reviews left standing, which shall be expired; seasons left part-built; and the hub's panel, posted again where it was deleted.
 - The end of a season shall not be recovered. A league admin shall complete it.
 - Anything else that came due while the bot was stopped is missed.
 - A message the bot failed to post shall be retried until it is delivered, shall survive a restart, and its eventual delivery shall be recorded in the log channel. A message still undelivered after about an hour shall be reported there.
@@ -609,6 +609,7 @@ section states the rules it holds to.
 ### What test mode is
 - Test mode shall be a state of the server, persisted and surviving a restart, switched by a toggle asking what configuring a league asks. It is chosen for a season, and holds for that season until it ends.
 - Test mode shall provide a command firing the next scheduled event at once, in the order the events would have fired, without altering the moment any of them was scheduled for.
+    - The deletion of a round's forecasts and check-in messages 24 hours after it shall be such an event, each fired in its turn. Decided 2026-09-24 (#425).
 - Test mode shall provide a command reporting, for every round, which of its scheduled work has run and which remains.
 - Test mode shall provide synthetic drivers, so that a division may be filled and raced without real Discord accounts.
 - While test mode is enabled, a switch of its own shall stand in for the signup module's nationality setting, so that both may be seen without altering what a league's real signups ask.

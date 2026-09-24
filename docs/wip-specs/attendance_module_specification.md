@@ -69,7 +69,7 @@
         - "Accept" with the green checkmark emoji
         - "Tentative" with default background and the white question mark emoji
         - "Decline" with the red cross mark emoji
-- When a division's check-in call for a round is posted, the check-in call, the last notice and the reserve distribution announcement of every earlier round of that division whose check-in closed at least 24 hours before shall be deleted from its check-in channel. Those of a round whose check-in is still open, or closed less recently, shall stay until a later call is posted. The answers recorded for a round shall be kept whatever becomes of its messages. Decided 2026-09-24 (#274).
+- 24 hours after a round's scheduled start, its check-in call, its last notice and its reserve distribution announcement shall be deleted from the check-in channel. Posting a round's call shall delete no other round's messages, so that the calls of two rounds close together stand side by side. The answers recorded for a round shall be kept whatever becomes of its messages. Decided 2026-09-24 (#425).
 - When a driver picks any of the three options above, the RSVP status indicator in the embed shall change:
     - Green checkmark emoji within the brackets if accepted (will race)
     - White question mark emoji within the brackets if tentative (uncertain)
@@ -199,7 +199,9 @@
 ## Test mode
 - A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.
     - The command shall require the division to belong to a season in one of the three ongoing states and to have a check-in call currently posted; it shall be refused otherwise.
+    - Where the division has more than one call posted, the command shall act upon the earliest whose deadline has not yet run, or upon the latest where every deadline has. Decided 2026-09-24 (#425).
     - The statuses shall be given in bulk through a modal, one entry per line in the form "<user ID>, <status>", the status being one of "accept", "tentative" or "decline".
     - A driver omitted from the entries shall keep the status they hold. No entry shall return a driver to not having checked in.
     - An entry naming a driver without a profile, or without an attendance record for the round, or carrying a status that cannot be read, shall be reported and passed over; the remaining entries shall still be applied.
     - The check-in call shall be redrawn once after the entries are applied, and the change shall be written to the log channel.
+- The test mode "advance" command shall fire the deletion of a round's check-in messages in its turn, as it fires the call, the last notice and the deadline. Decided 2026-09-24 (#425).
