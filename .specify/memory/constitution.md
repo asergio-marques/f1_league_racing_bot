@@ -1,6 +1,42 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-24 — v14.6.1 → v14.6.2: PATCH — SignupDivisionConfig is retired with its table (issue #427)]
+  Version change    : 14.6.1 → 14.6.2
+  Bump rationale    : PATCH, on the precedent of v14.6.1: statements of fact are corrected to
+                      match the bot, and no principle is added, removed or redefined. The
+                      table was empty and nothing read it; nothing a league can do changes.
+
+  Modified sections :
+    - Data & State Management, New Entities (v2.6.0), **SignupDivisionConfig** — the entity
+      is retired and its table dropped. "Created lazily on first per-division signup
+      configuration; if absent, no lineup notices are posted for that division" goes: the
+      lineup channel left it in v2.8.0, and nothing has created a row since #248 removed the
+      only writer.
+    - Data & State Management, New Entities (v2.8.0), *Amendment to SignupDivisionConfig* —
+      "retained as an existence record for signup module per-division registrations" and the
+      remaining-columns line give way to a note of the retirement.
+
+  Unchanged, deliberately : the Division amendment (v2.8.0) and Principle XI's v2.8.0 note
+                      both say the lineup channel moved from `signup_division_config`, which
+                      stays true as history.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch fix/427-drop-unused-baseline-tables. The same change drops
+                      `track_records` and `lap_records` from `001_baseline.sql`, per the
+                      decision recorded in #159; the constitution never described them, so
+                      nothing of them lands here.
+
+  Templates / docs  : none. No wip-spec, guide or README names the table.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-24 — v14.6.0 → v14.6.1: PATCH — the Track entry describes the registry as it stands (issue #249)]
   Version change    : 14.6.0 → 14.6.1
   Bump rationale    : PATCH, on the precedent of v14.4.1 and v14.0.1: statements of fact are
@@ -8448,16 +8484,16 @@ column are the authoritative structural prerequisites for these queries in the p
 
 *Amendment to SignupDivisionConfig (v2.6.0 entity, updated v2.8.0)*:
 - `lineup_channel_id` removed — migrated to `divisions.lineup_channel_id` (migration 027).
-- Remaining columns: `id`, `division_id`, `UNIQUE(division_id)`.
-- The table is retained as an existence record for signup module per-division registrations.
+- *Retired v14.6.2 (#427)*: with the lineup channel gone, nothing recorded into the table,
+  and its table is dropped from the schema. See the entity below.
 
 ### New Entities (v2.6.0)
 
-**SignupDivisionConfig** (per division — owned by the signup module):
-- `division_id` (INTEGER, FK → Division)
-- `lineup_channel_id` (TEXT, nullable) — *removed v2.8.0; migrated to divisions table* (Principle XI).
-- Uniquely keyed on (division_id). Created lazily on first per-division signup
-  configuration; if absent, no lineup notices are posted for that division.
+**SignupDivisionConfig** — *retired v14.6.2 (#427); the entity no longer exists.* It held the
+signup module's per-division settings, and its one setting, the lineup channel, moved to
+`divisions` in v2.8.0 (Principle XI). Its only writer was removed with #248, having no caller,
+and the empty `signup_division_config` table was dropped from the schema. Nothing the signup
+module does per division depends on a record of this kind.
 
 *Amendment to SignupConfiguration (v2.2.0 entity, updated v2.6.0)*:
 - `close_at` (TEXT, nullable) added — see SignupConfiguration definition above.
@@ -8491,4 +8527,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.6.1 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-24
+**Version**: 14.6.2 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-24
