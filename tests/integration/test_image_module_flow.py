@@ -1131,6 +1131,33 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     assert "not" in problem.lower() and "plain colour" in problem.lower()
 
 
+async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
+    module_service, config_service, template_dir, monkeypatch
+):
+    """A plate declaring no fill was reported as having a fill of `None`.
+
+    `None` is Python's, not the league's, and the likeliest way to reach it is a slotted
+    plate authored without a default — which the image how-to warns draws black in an
+    editor. Whether to measure such a plate as black is a decision, not this fix:
+    `computed_style` reads only simple selectors, so "none the bot can read" is not quite
+    "none", and FR-027 forbids guessing.
+    """
+    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    await _enable(module_service, config_service)
+    await config_service.set_field("template_directory", "templates")
+
+    (template_dir / "templates" / "results_race_template.svg").write_bytes(
+        _race_template('<rect id="fastest_lap_background"/>')
+    )
+
+    cog = _image_cog(config_service, module_service)
+    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+
+    assert ratio is None and background is None
+    assert "None" not in problem
+    assert "no fill" in problem
+
+
 # ── T040 — asset directories relocate independently (SC-002) ──────────────
 
 

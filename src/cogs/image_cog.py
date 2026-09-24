@@ -1369,6 +1369,16 @@ class ImageCog(commands.Cog):
             )
 
         declared = computed_style(element, stylesheet(root)).get("fill")
+        if declared is None:
+            # Said in the league's words. Interpolating the raw value put Python's `None`
+            # in the reply. Not measured as black, which is what SVG draws: the bot reads
+            # only simple selectors, so a fill it cannot see may still be declared, and an
+            # unmeasurable contrast is reported rather than guessed (FR-027).
+            return (
+                None,
+                None,
+                f"the `{FASTEST_LAP_BACKGROUND_ID}` element has no fill the bot can read.",
+            )
         background = coerce_css_colour(declared)
         if background is None:
             return (
