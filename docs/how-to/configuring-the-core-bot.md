@@ -156,7 +156,7 @@ These are ordinary commands: the interaction role runs them, in the command chan
 
 It is visible to your base role — or to every member, if you have not set one — and to both league roles, and nobody but the bot can post there. Change any of those roles later and the hub follows. Give it a channel of its own: setting the hub replaces that channel's permissions. The panel starts with **About**, which tells whoever presses it which bot this is, which version it runs and when that version was made; modules add their options to it as they are built.
 
-**One team already exists.** `/bot init` creates the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else is created — your team list starts empty apart from it.
+**One team already exists.** Your team list always holds the **Reserve** team, which has unlimited seats and belongs to every division. You cannot remove or rename it. Nothing else ships with the bot — your team list starts empty apart from it.
 
 ---
 

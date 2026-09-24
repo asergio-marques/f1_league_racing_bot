@@ -286,7 +286,7 @@ Exempt from the interaction-channel rule, since no channel is configured until i
 
 **It claims the server.** Once one server is set up, `/bot init` on any other is refused like every command there — see [One bot, one server](#one-bot-one-server). Where two servers race to run it first, the loser is told *"⛔ This bot already serves the league on another server. One bot serves one league."*
 
-It also seeds the team list with the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team is created — build the rest of the list with `/team add`.
+The team list always holds the **Reserve** team, which has unlimited seats and cannot be removed or renamed. No other team ships with the bot — build the rest of the list with `/team add`.
 
 ---
 
