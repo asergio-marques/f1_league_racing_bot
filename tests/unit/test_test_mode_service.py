@@ -1143,3 +1143,19 @@ async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_sche
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 5)
+
+
+async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> None:
+    """A step the league has switched off is left out rather than marked, as a module's steps are
+    while it is off (decided 2026-09-24, #426) — here, and where the check-in has come down."""
+    db_path = str(tmp_path / "review_last_notice_off.db")
+    await _last_notice_switched_off(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 2")
+        await db.commit()
+
+    summary = await build_review_summary(db_path)
+
+    assert "Last:" not in summary, summary
+    assert _round_row(summary, 1).endswith("RSVP: ✅  Deadline: ✅  Cleared: ⏳")
+    assert _round_row(summary, 2).endswith("RSVP: ✅  Deadline: ✅  Cleared: ✅")

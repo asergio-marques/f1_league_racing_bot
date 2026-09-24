@@ -600,9 +600,14 @@ async def build_review_summary(
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
 
-        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
+        att_cursor = await db.execute(
+            "SELECT module_enabled, rsvp_last_notice_hours FROM attendance_config"
+        )
         att_row = await att_cursor.fetchone()
-        attendance_module_enabled = bool(att_row[0]) if att_row else False
+        attendance_module_enabled = bool(att_row["module_enabled"]) if att_row else False
+        # A last notice set to 0 is never sent, and is left out like a step of a module that is
+        # off — the setting cannot change while a season runs, so no job was ever armed (#426).
+        last_notice_enabled = bool(att_row["rsvp_last_notice_hours"]) if att_row else False
 
         # The weather module's steps are shown only while it is on, as the others' are:
         # nothing of it is armed while it is off, and advance runs none of it (#426).
@@ -738,29 +743,28 @@ async def build_review_summary(
                 parts.append(f"Results: {res}")
 
             # ── RSVP / attendance phases ──────────────────────────────────
-            if attendance_module_enabled and row["checkin_cleared"]:
-                # Taken down a day after the round, and its record with it (#425): every step
-                # before the cleanup had run by then.
-                parts.append("RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅")
-            elif attendance_module_enabled:
-                rsvp = rsvp_rows.get((rid, row["division_id"]))
-                notice_s = (
-                    "✅" if rsvp is not None
-                    else _phase_status(False, (rid, "rsvp_notice"), queued)
-                )
-                last_notice_s = (
-                    "✅" if (rsvp and rsvp["last_notice_msg_id"])
-                    else _phase_status(False, (rid, "rsvp_last_notice"), queued)
-                )
-                deadline_s = (
-                    "✅" if (rsvp and rsvp["distribution_msg_id"])
-                    else _phase_status(False, (rid, "rsvp_deadline"), queued)
-                )
-                cleared_s = _phase_status(False, (rid, "rsvp_cleanup"), queued)
-                parts.append(
-                    f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}  "
-                    f"Cleared: {cleared_s}"
-                )
+            if attendance_module_enabled:
+                check_in: list[tuple[str, str]]
+                if row["checkin_cleared"]:
+                    # Taken down a day after the round, and its record with it (#425): every
+                    # step before the cleanup had run by then.
+                    check_in = [
+                        ("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "✅")
+                    ]
+                else:
+                    rsvp = rsvp_rows.get((rid, row["division_id"]))
+                    check_in = [
+                        ("RSVP", "✅" if rsvp is not None
+                         else _phase_status(False, (rid, "rsvp_notice"), queued)),
+                        ("Last", "✅" if (rsvp and rsvp["last_notice_msg_id"])
+                         else _phase_status(False, (rid, "rsvp_last_notice"), queued)),
+                        ("Deadline", "✅" if (rsvp and rsvp["distribution_msg_id"])
+                         else _phase_status(False, (rid, "rsvp_deadline"), queued)),
+                        ("Cleared", _phase_status(False, (rid, "rsvp_cleanup"), queued)),
+                    ]
+                if not last_notice_enabled:
+                    check_in = [(name, mark) for name, mark in check_in if name != "Last"]
+                parts.append("  ".join(f"{name}: {mark}" for name, mark in check_in))
 
             line = f"  Round {rnum} · {track:<15} · {date_str}  " + "  |  ".join(parts)
             lines.append(line)
