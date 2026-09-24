@@ -554,7 +554,8 @@ async def build_review_summary(
     Covers weather phases (P1-P3) and the forecast cleanup, result submission, and RSVP
     phases (notice / last-notice / deadline) and the check-in cleanup, based on DB state —
     so it reflects actual progress regardless of whether scheduler jobs have fired or been
-    evicted.
+    evicted. A module's steps are shown only while it is on — nothing of one that is off is
+    armed, and advance runs none of it (#426).
 
     When *scheduler_service* is supplied, each pending phase is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
@@ -584,6 +585,12 @@ async def build_review_summary(
         att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
         att_row = await att_cursor.fetchone()
         attendance_module_enabled = bool(att_row[0]) if att_row else False
+
+        # The weather module's steps are shown only while it is on, as the others' are:
+        # nothing of it is armed while it is off, and advance runs none of it (#426).
+        wm_cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
+        wm_row = await wm_cursor.fetchone()
+        weather_module_enabled = bool(wm_row[0]) if wm_row else False
 
         # All non-cancelled rounds for the active season
         cursor = await db.execute(
@@ -685,12 +692,12 @@ async def build_review_summary(
             parts: list[str] = []
 
             # ── Weather / mystery notice phases ───────────────────────────
-            if is_mystery:
+            if weather_module_enabled and is_mystery:
                 # A mystery round's notice is armed as `weather_p1`: `_weather_phase_job` reads
                 # the round's format as it fires.
                 notice = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
                 parts.append(f"Notice: {notice}")
-            else:
+            elif weather_module_enabled:
                 p1 = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
                 p2 = _phase_status(bool(row["phase2_done"]), (rid, "weather_p2"), queued)
                 p3 = _phase_status(bool(row["phase3_done"]), (rid, "weather_p3"), queued)

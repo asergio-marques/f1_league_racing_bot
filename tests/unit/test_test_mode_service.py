@@ -458,7 +458,7 @@ async def test_review_shows_phase_status() -> None:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
-        await _seed(db_path, [
+        await _seed_with_weather(db_path, [
             {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0, "track_name": "Monaco"},
         ])
         summary = await build_review_summary(db_path)
@@ -476,7 +476,7 @@ async def test_review_mystery_round_shows_notice_not_phases() -> None:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
-        await _seed(db_path, [
+        await _seed_with_weather(db_path, [
             {
                 "format": "MYSTERY",
                 "track_name": "Silverstone",
@@ -868,7 +868,9 @@ async def test_the_review_shows_the_forecast_cleanup(
 ) -> None:
     db_path = str(tmp_path / "review_forecast_cleanup.db")
     await run_migrations(db_path)
-    await _seed(db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": phase3_done}])
+    await _seed_with_weather(
+        db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": phase3_done}]
+    )
     await _stand(db_path, 1, forecast=forecast_standing)
 
     assert shown in await build_review_summary(db_path)
@@ -1019,3 +1021,18 @@ async def test_a_job_taken_from_the_store_reads_as_missing(
 
     assert f"{cell}: ⚠️" in row
     assert row.count("⚠️") == 1, row
+
+
+async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -> None:
+    """Nothing of the weather module is armed while it is off, and advance runs none of it, so
+    the review shows none of it — as it shows no result submission or check-in while theirs are
+    off (decided 2026-09-24, #426). A mystery round's notice is a weather posting too."""
+    db_path = str(tmp_path / "review_weather_off.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"track_name": "Monaco"}, {"format": "MYSTERY", "track_name": None}])
+
+    summary = await build_review_summary(db_path)
+
+    assert _round_row(summary, 1) and _round_row(summary, 2)
+    for cell in ("P1:", "P2:", "P3:", "Cleanup:", "Notice:"):
+        assert cell not in summary, summary
