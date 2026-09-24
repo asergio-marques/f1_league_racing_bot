@@ -775,19 +775,6 @@ class SignupModuleService:
             last_activity_at=row["last_activity_at"],
         )
 
-    # ── SignupDivisionConfig CRUD ─────────────────────────────────────
-
-    async def upsert_division_config(
-        self, division_id: int
-    ) -> None:
-        """Ensure a signup_division_config row exists for this division."""
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT OR IGNORE INTO signup_division_config (division_id) VALUES (?)",
-                (division_id,),
-            )
-            await db.commit()
-
     # ── Config snapshot ───────────────────────────────────────────────
 
     async def capture_config_snapshot(self) -> ConfigSnapshot:
