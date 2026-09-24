@@ -196,8 +196,11 @@ class DriverCog(commands.Cog):
             reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {p}" for p in problems)
         await interaction.followup.send(reply, ephemeral=True)
         # After the reply, so that reading the image configuration and touching the league's
-        # directory can never eat into Discord's three seconds.
-        await self._remove_old_portrait(replaced)
+        # directory can never eat into Discord's three seconds. The replaced account is drawn
+        # by nothing now, so the portrait obtained for it goes (issue #222).
+        from services.driver_portrait_service import discard_portraits
+
+        await discard_portraits(self.bot, [replaced])
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
             f"  replaced: <@{replaced}>\n"
@@ -209,45 +212,6 @@ class DriverCog(commands.Cog):
             "Driver account changed: %s → %s by %s",
             replaced, new_user_id, actor_name,
         )
-
-    async def _remove_old_portrait(self, discord_user_id: str) -> None:
-        """Delete the portrait the bot obtained for the account a driver has just replaced.
-
-        A portrait is a cache of one Discord account's own profile picture. Everything is
-        drawn under the driver's current account (issue #243), so the replaced account's file
-        would sit in the league's driver directory drawn by nothing — so it goes (issue #222).
-        Switching back to that account later obtains its picture afresh, as for any driver.
-
-        Where the league names no image configuration, or a directory that cannot be
-        resolved, the file and its ownership row are **both** left alone. See
-        `driver_portrait_service.remove_portrait` for why the row must never go on its own.
-
-        Never raises. The reassign is committed by the time this runs, and a portrait is not
-        worth reporting a successful command as a failure.
-        """
-        try:
-            from services.driver_portrait_service import remove_portrait
-            from services.image_render_service import resolve_configured_directories
-
-            config = await self.bot.image_config_service.get_config()
-            if config is None:
-                return
-            directories, _faults = resolve_configured_directories(
-                config,
-                (("driver", "driver_image_directory"),),
-                image_type="driver_portraits",
-            )
-            directory = directories.get("driver")
-            if directory is None:
-                return
-            await remove_portrait(
-                self.bot.db_path, discord_user_id, directory
-            )
-        except Exception:  # noqa: BLE001 — a portrait never fails a command
-            log.warning(
-                "/driver reassign: could not remove the portrait of %s",
-                discord_user_id, exc_info=True,
-            )
 
     # ------------------------------------------------------------------
     # /driver assign

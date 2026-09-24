@@ -38,6 +38,7 @@ import asyncio
 import base64
 import logging
 import os
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -231,14 +232,15 @@ async def _disown(db_path: str, user_id: str) -> None:
 async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     """Remove the portrait this bot obtained for *user_id*, the file and its row together.
 
-    Returns whether anything was removed. Two paths want this: a driver who takes their
-    profile picture down, whose seat reverts to the placeholder, and a driver given another
-    current account, whose replaced account is drawn by nothing (issues #222 and #243).
+    Returns whether anything was removed. A driver who takes their profile picture down wants
+    this, their seat reverting to the placeholder; so does every account no driver is drawn
+    under any longer, which :func:`discard_portraits` passes on — one a driver has replaced
+    (issues #222 and #243), and each of a driver deleted (issue #235).
 
     **Only where the file is ours to remove.** `driver_portraits` is the ownership register:
-    a portrait with no row was placed by the league itself, and migration 047 is explicit
-    that the bot never overwrites such a file and never fetches over it. An unowned portrait
-    is therefore left exactly where it is, being the league's own artwork and deliberate.
+    a portrait with no row was placed by the league itself, and the bot never overwrites such
+    a file and never fetches over it (see the module docstring). An unowned portrait is
+    therefore left exactly where it is, being the league's own artwork and deliberate.
 
     **The row never goes without the file.** Deleting the row alone would *disown* a portrait
     the bot wrote, after which the bot would refuse to overwrite its own leftover for good —
@@ -255,6 +257,61 @@ async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     portrait_path(Path(directory), user_id).unlink(missing_ok=True)
     await _disown(db_path, user_id)
     return True
+
+
+async def discard_portraits(bot: LeagueBot, user_ids: Iterable[str]) -> int:
+    """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any longer.
+
+    Returns how many were removed. Two paths want this. `/driver reassign` discards the
+    portrait of the account a driver has just replaced, everything being drawn under their
+    current account (issues #222 and #243). The driver pass that ends a season discards those
+    of every driver it deletes, past accounts and current alike (issue #235). Either account
+    has its picture obtained afresh should it be drawn again, as any driver's is.
+
+    Each goes through :func:`remove_portrait`, which leaves a portrait the league placed itself
+    where it is.
+
+    **Where the league names no image configuration, or a driver directory that cannot be
+    resolved, nothing is removed** — neither the files nor their rows; see
+    :func:`remove_portrait` for why the row must never go on its own. What that leaves behind
+    stays, nothing sweeping for it afterwards: the directory failing to resolve at the moment
+    a driver is deleted is the whole of the residue, and not worth a sweep (issue #235).
+
+    Never raises, and one portrait that cannot be removed does not keep the rest. Both callers
+    have committed by the time this runs, and a portrait is not worth reporting a completed
+    command, or a season's end, as a failure.
+    """
+    user_ids = [str(user_id) for user_id in user_ids]
+    if not user_ids:
+        return 0
+    try:
+        config = await bot.image_config_service.get_config()
+        if config is None:
+            return 0
+        from services.image_render_service import resolve_configured_directories
+
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("driver", "driver_image_directory"),),
+            image_type="driver_portraits",
+        )
+        directory = directories.get("driver")
+        if directory is None:
+            return 0
+    except Exception:  # noqa: BLE001 -- a portrait never fails the command that discards it
+        log.warning("driver portraits: could not resolve where to discard them", exc_info=True)
+        return 0
+
+    removed = 0
+    for user_id in user_ids:
+        try:
+            if await remove_portrait(bot.db_path, user_id, directory):
+                removed += 1
+        except Exception:  # noqa: BLE001 -- as above, and the rest are still worth removing
+            log.warning(
+                "driver portraits: could not discard the one of %s", user_id, exc_info=True
+            )
+    return removed
 
 
 async def assigned_driver_ids(db_path: str) -> list[str]:

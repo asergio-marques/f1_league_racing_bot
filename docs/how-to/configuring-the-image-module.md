@@ -252,6 +252,8 @@ photo is fetched at any point.
   the next refresh, with nothing for you to do.
 - **A driver who removes their Discord picture** loses the fetched photo too, and goes back to
   the placeholder at the next lineup.
+- **A driver deleted when the season ends** — one who never raced — takes their fetched photos
+  with them. A photo you put there yourself stays.
 
 `/season placements-review` shows all three settings, so you can confirm what is on before a season
 starts.

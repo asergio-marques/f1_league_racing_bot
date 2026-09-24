@@ -695,8 +695,8 @@ division is done it ends the season, in this order: each division's final classi
 a history entry is written for every division each driver took part in, whether or not they still sit in it — a driver moved, released or sacked mid-season keeps an entry for every division they held a confirmed seat in; the division and team
 roles and the driver role are revoked; an open signup window is closed; every driver who was Unassigned, placed,
 signing up or in review returns to **Not Signed Up**, so they can sign up for the next season; every
-driver who never raced is then deleted, with their placements and history, though their signups stay
-with the season; test mode is switched off, deleting the drivers it created and keeping their
+driver who never raced is then deleted, with their placements, their history and any portrait the bot
+fetched for them, though their signups stay with the season; test mode is switched off, deleting the drivers it created and keeping their
 history; and the season is archived as `COMPLETED`. Former drivers are kept.
 
 A **round** moves through six states, and the middle ones are named for what the round is waiting
@@ -2614,7 +2614,8 @@ you need do nothing. Portraits you drew yourself are untouched by any of this.
 > portraits for some drivers and let the bot fetch the rest, and hand-drawn ones stay put.
 
 A driver who removes their Discord picture has the fetched portrait removed too, and their
-seat reverts to the placeholder. `/season placements-review` states all three settings, and refuses to
+seat reverts to the placeholder. So does a driver deleted when the season ends: the portraits
+fetched for their accounts go with them, and one you drew yourself stays. `/season placements-review` states all three settings, and refuses to
 offer the approve button while the configuration is one that could never fetch anything.
 
 #### `/images config` — Presentation

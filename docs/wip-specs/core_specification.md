@@ -536,6 +536,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
     - An amendment of a final round's results that leaves a driver no longer having raced that round shall clear the flag, unless another final round marks them.
 - A driver whose flag is false and who reaches Not Signed Up, by any route — a sack, a rejection of their signup, a withdrawal, a signup cancelled or timed out, or the reject command — shall be **pending deletion**.
     - A driver pending deletion shall not be deleted at once. They shall be deleted by the driver pass of the season's completion, cancellation or abort.
+    - A driver so deleted shall have discarded with them every portrait obtained for an account of theirs, current or past. A portrait the league placed itself shall be left.
     - Until then the profile shall stand at Not Signed Up and may sign up again. Whether to accept them is the league's to decide.
 - A driver whose flag is true and who reaches Not Signed Up shall be retained, with nothing of their profile or their signups cleared, so that the results they raced for remain attributed.
 - A committed driver may be sacked, only while the season is in one of the three ongoing states. A driver who is not committed shall not be sacked: an uncommitted placement is removed by the command removing a driver from a division, and an Unassigned driver is turned down by the reject command. Sacking shall free every seat they hold, revoke every division and team role and the driver role, and return them to Not Signed Up.
