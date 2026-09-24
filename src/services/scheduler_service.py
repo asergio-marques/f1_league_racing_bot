@@ -763,7 +763,7 @@ class SchedulerService:
         return removed
 
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:
-        """Return un-fired phase/results/mystery jobs for the given round IDs.
+        """Return the un-fired weather and check-in jobs for the given round IDs.
 
         Used by the test-mode advance command to determine what the scheduler has
         actually queued — so advance only fires events that a live season would
@@ -772,11 +772,13 @@ class SchedulerService:
         Returns a list of dicts sorted by ``(next_run_time, round_id, phase_number)``:
           - ``job_id``       — APScheduler job ID string
           - ``round_id``     — round this job belongs to
-          - ``phase_number`` — 0=mystery notice, 1/2/3=weather, 4=result submission
+          - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
+            last notice and its deadline. A mystery round's notice is armed as
+            ``weather_p1`` and so comes back as 1: 0 never occurs here.
           - ``next_run_time``— datetime when the job is scheduled to fire
 
-        Cleanup and season-end jobs are excluded.
-        Jobs that are paused (``next_run_time is None``) are excluded.
+        Result submission, cleanup and season-end jobs are excluded, so 4 never occurs
+        either. Jobs that are paused (``next_run_time is None``) are excluded.
         """
         # result submission (results) is intentionally excluded here.
         # For test-mode advance, result submission is detected via DB state
