@@ -19,19 +19,17 @@ first, because their work reaches a service; the core pair reply directly. That 
 between `response.send_message` and `followup.send`, which is why it is pinned here as well as
 in the guard's own file.
 
-**Where they differ by accident, and are pinned as they stand rather than as they ought to be.**
-`lineup` and `calendar` write `old_value = ''` into the audit entry, so the previous channel is
-lost and a reassignment cannot be traced back; the attendance pair record it. They also write
-`new_value`'s channel id as an integer where the attendance pair write a string, so a reader
-querying the audit for a channel id has to know which command wrote the row. These tests assert
-the behaviour that exists — a test claiming the tidier behaviour would simply fail — and the
-inconsistency is recorded as issue #212 rather than silently corrected here, since this change
-is a coverage change and #208 says so.
+**Where they once differed by accident** (issue #212, which #208 pinned rather than fixed).
+`lineup` and `calendar` wrote `old_value = ''` into the audit entry, so a reassignment could not
+be traced back, and the attendance pair wrote their channel ids as strings where every other
+command writes integers. All five now record the channel they replaced, as an integer —
+`test_the_core_pair_record_the_channel_they_replaced` and
+`test_every_channel_command_here_audits_its_ids_as_integers`.
 
-**"Set" and "updated" are different words for a reason** on the attendance pair: a manager who
-meant to assign a fresh channel and is told it was *updated* has just moved an existing one, and
-that is worth noticing before the next round posts somewhere unexpected. The core pair always
-say "set", which is the same accident as the empty `old_value` — they never read the old id.
+**"Set" and "updated" are different words for a reason:** a manager who meant to assign a fresh
+channel and is told it was *updated* has just moved an existing one, and that is worth noticing
+before the next round posts somewhere unexpected. The core pair always said "set", having never
+read the old id; all five now choose the word from it.
 """
 from __future__ import annotations
 
@@ -68,8 +66,6 @@ COMMANDS = {
 ALL = sorted(COMMANDS)
 GATED = sorted(k for k, v in COMMANDS.items() if v[2])
 UNGATED = sorted(k for k, v in COMMANDS.items() if not v[2])
-#: The gated commands that keep a previous channel id in the audit and say "updated".
-REMEMBERING = sorted(k for k, v in COMMANDS.items() if v[2])
 
 
 # ---------------------------------------------------------------------------
@@ -488,19 +484,23 @@ async def test_the_core_pair_write_their_own_column(tmp_path, which, column):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("which", REMEMBERING)
+@pytest.mark.parametrize("which", ALL)
 async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, which):
     """A manager who meant to assign a fresh channel and is told it was *updated* has just
-    moved an existing one — worth noticing before the next round posts somewhere else."""
-    db_path = await _make_db(tmp_path)
+    moved an existing one — worth noticing before the next round posts somewhere else. The
+    core pair always said "set" until issue #212."""
+    first_db = await _make_db(tmp_path, name=f"first_{which}")
+    moved_db = await _make_db(tmp_path, name=f"moved_{which}")
+    if which in CORE_COLUMNS:
+        await _seed_core_channel(moved_db, which, 111)
     first = _interaction()
     moved = _interaction()
 
-    await _run(_make_cog(db_path, old_config=None), which, first)
+    await _run(_make_cog(first_db, old_config=None), which, first)
     await _run(
         _make_cog(
-            db_path,
-            old_config=SimpleNamespace(rsvp_channel_id=111, attendance_channel_id=111),
+            moved_db,
+            old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
             old_penalty_channel=111,
         ),
         which,
@@ -511,7 +511,7 @@ async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, wh
     assert "updated to" in _replied(moved)
 
 
-@pytest.mark.parametrize("which", REMEMBERING)
+@pytest.mark.parametrize("which", GATED)
 async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, which):
     """Which is what makes the audit answer "where were the notices going before?"."""
     db_path = await _make_db(tmp_path, name=f"replaced_{which}")

@@ -4287,8 +4287,10 @@ class SeasonCog(commands.Cog):
             )
             await db.commit()
 
+        # "Updated" says a channel was moved rather than assigned afresh (issue #212).
+        verb = "set" if old_id is None else "updated"
         await interaction.response.send_message(
-            f"\u2705 {type_label} channel for **{name}** set to {channel.mention}.",
+            f"\u2705 {type_label} channel for **{name}** {verb} to {channel.mention}.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -4668,8 +4670,9 @@ class SeasonCog(commands.Cog):
                 ),
             )
             await db.commit()
+        verb = "set" if old_id is None else "updated"
         await interaction.response.send_message(
-            f"\u2705 Lineup channel for **{name}** set to {channel.mention}.",
+            f"\u2705 Lineup channel for **{name}** {verb} to {channel.mention}.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -4739,8 +4742,9 @@ class SeasonCog(commands.Cog):
                 ),
             )
             await db.commit()
+        verb = "set" if old_id is None else "updated"
         await interaction.response.send_message(
-            f"\u2705 Calendar channel for **{name}** set to {channel.mention}.",
+            f"\u2705 Calendar channel for **{name}** {verb} to {channel.mention}.",
             ephemeral=True,
         )
         await self.bot.output_router.post_log(

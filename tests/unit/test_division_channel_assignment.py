@@ -294,6 +294,29 @@ async def test_a_free_channel_is_accepted(tmp_path, monkeypatch):
     assert "set to" in _replied(interaction)
 
 
+@pytest.mark.parametrize(
+    "channel_type, setter",
+    [
+        ("weather", "set_division_forecast_channel"),
+        ("results", "set_division_results_channel"),
+        ("standings", "set_division_standings_channel"),
+    ],
+)
+async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, channel_type, setter):
+    """A manager who meant a fresh assignment and is told it was *updated* has moved an
+    existing one — worth noticing before the next post lands somewhere else. These three
+    always said "set to" (issue #212)."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    getattr(cog.bot.season_service, setter).return_value = 111
+    interaction = _interaction()
+
+    await cog._set_division_channel(interaction, "Division 1", _channel(), channel_type)
+
+    assert "updated to" in _replied(interaction)
+
+
 # ---------------------------------------------------------------------------
 # Replying in whichever state the interaction is in
 # ---------------------------------------------------------------------------
