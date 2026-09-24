@@ -4489,7 +4489,8 @@ class SeasonCog(commands.Cog):
             return
 
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
-        old_id = old_cfg.rsvp_channel_id if old_cfg else None
+        # Stored as text; audited as the integer every other channel command writes (#212).
+        old_id = int(old_cfg.rsvp_channel_id) if old_cfg and old_cfg.rsvp_channel_id else None
 
         await self.bot.attendance_service.set_rsvp_channel(div.id, channel.id)
 
@@ -4504,7 +4505,7 @@ class SeasonCog(commands.Cog):
                     str(interaction.user),
                     div.id,
                     _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": str(channel.id)}),
+                    _json.dumps({"channel_id": channel.id}),
                     now,
                 ),
             )
@@ -4573,7 +4574,8 @@ class SeasonCog(commands.Cog):
             return
 
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
-        old_id = old_cfg.attendance_channel_id if old_cfg else None
+        # Stored as text; audited as the integer every other channel command writes (#212).
+        old_id = int(old_cfg.attendance_channel_id) if old_cfg and old_cfg.attendance_channel_id else None
 
         await self.bot.attendance_service.set_attendance_channel(div.id, channel.id)
 
@@ -4588,7 +4590,7 @@ class SeasonCog(commands.Cog):
                     str(interaction.user),
                     div.id,
                     _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": str(channel.id)}),
+                    _json.dumps({"channel_id": channel.id}),
                     now,
                 ),
             )

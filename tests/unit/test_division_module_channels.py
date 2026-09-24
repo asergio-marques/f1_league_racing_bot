@@ -550,20 +550,23 @@ async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, whi
     assert json.loads((await _audit_rows(db_path))[0]["old_value"]) == {"channel_id": None}
 
 
-async def test_the_two_pairs_write_the_channel_id_as_different_types(tmp_path):
-    """Also pinned as it stands. The attendance pair write a string and the core pair an
-    integer, so anything querying the audit for a channel id has to know which command wrote
-    the row. Same defect, same reason for leaving it."""
-    attendance_db = await _make_db(tmp_path, "types_attendance")
-    core_db = await _make_db(tmp_path, "types_core")
+@pytest.mark.parametrize("which", ALL)
+async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, which):
+    """The attendance pair once wrote both ids as strings, since their table stores them as
+    text, where every other channel command writes integers — so a reader querying the audit
+    for a channel id had to know which command wrote the row (issue #212). The old id is
+    given here as each source really holds it: text for the attendance pair."""
+    db_path = await _make_db(tmp_path, name=f"types_{which}")
+    if which in CORE_COLUMNS:
+        await _seed_core_channel(db_path, which, 111)
+    cog = _make_cog(
+        db_path,
+        old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
+        old_penalty_channel=111,
+    )
 
-    await _run(_make_cog(attendance_db), "rsvp", _interaction())
-    await _run(_make_cog(core_db), "lineup", _interaction())
+    await _run(cog, which, _interaction())
 
-    from_attendance = json.loads(
-        (await _audit_rows(attendance_db))[0]["new_value"]
-    )["channel_id"]
-    from_core = json.loads((await _audit_rows(core_db))[0]["new_value"])["channel_id"]
-
-    assert isinstance(from_attendance, str)
-    assert isinstance(from_core, int)
+    row = (await _audit_rows(db_path))[0]
+    assert json.loads(row["old_value"])["channel_id"] == 111
+    assert json.loads(row["new_value"])["channel_id"] == CHANNEL_ID
