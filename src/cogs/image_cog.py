@@ -1078,6 +1078,12 @@ class ImageCog(commands.Cog):
         The same split `_set_directory` uses and for the same reason: the command itself is
         wrapped by its tier guard and cannot be invoked in a test.
         """
+        # Switching on reports the colour shortfall, which `colour_shortfall` reads off
+        # `template_reports` → `evaluate_all_templates`: the sixteen-template sweep that
+        # outran Discord's three seconds on the Pi for `config_toggle`. Deferred on both
+        # settings rather than the one, so the body has a single way of answering.
+        await interaction.response.defer(ephemeral=True)
+
         if not await self._guard_module_enabled(interaction):
             return
 

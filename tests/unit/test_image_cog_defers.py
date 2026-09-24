@@ -10,7 +10,9 @@ and only the log carrying the traceback.
 
 `/images config fastest-lap-colour` joined them (#165): it measures its contrast against
 the race results template, and reaches it through the same sixteen-template sweep — 1.7 to
-2.1 seconds of it on the Pi, measured 2026-09-24, before the command's own queries.
+2.1 seconds of it on the Pi, measured 2026-09-24, before the command's own queries. So did
+`/images config per-tier-colour-toggle`, whose switching on reports the colour shortfall
+off the same sweep.
 
 Deferring buys fifteen minutes. What these pin is that it happens *before* the reading,
 and that every reply thereafter goes through `_reply`, which follows up when the
@@ -36,6 +38,7 @@ READS_TEMPLATES = [
     "config_toggle",
     "_set_template_filename",
     "config_fastest_lap_colour",
+    "_set_per_tier_colours",
 ]
 
 
@@ -279,6 +282,21 @@ REPLY_PATHS = {
         "stored colour is unchanged",
     ),
     "fastest-lap-colour, stored": (True, _fastest_lap, "Fastest-lap colour set"),
+    "per-tier-colour-toggle, module off": (
+        False,
+        lambda cog, i: ImageCog._set_per_tier_colours(cog, i, True),
+        "not enabled",
+    ),
+    "per-tier-colour-toggle, on": (
+        True,
+        lambda cog, i: ImageCog._set_per_tier_colours(cog, i, True),
+        "now **on**",
+    ),
+    "per-tier-colour-toggle, off": (
+        True,
+        lambda cog, i: ImageCog._set_per_tier_colours(cog, i, False),
+        "now **off**",
+    ),
 }
 
 
