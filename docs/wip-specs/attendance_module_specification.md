@@ -206,3 +206,4 @@
     - An entry naming a driver without a profile, or without an attendance record for the round, or carrying a status that cannot be read, shall be reported and passed over; the remaining entries shall still be applied.
     - The check-in call shall be redrawn once after the entries are applied, and the change shall be written to the log channel.
 - The test mode "advance" command shall fire the deletion of a round's check-in messages in its turn, as it fires the call, the last notice and the deadline. Decided 2026-09-24 (#425).
+- While test mode is enabled, the bot shall post no check-in call late when it starts; the test mode "advance" command shall post it in its turn. Decided 2026-09-24 (#429).

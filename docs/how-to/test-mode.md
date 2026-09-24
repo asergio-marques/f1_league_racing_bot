@@ -95,6 +95,8 @@ That database detection is load-bearing rather than a fallback. With the weather
 >
 > The database fallback above is still load-bearing all the same. A past-dated round arrives by a restored save whose rounds have since gone by, and the misfire-grace evictions it covers have nothing to do with approval at all.
 
+> **A restart posts no check-in call late in test mode** (decided 2026-09-24, #429). Outside test mode a call that fell due while the bot was down goes out when it starts again, deadline permitting. Under test mode `advance` posts it in its turn: a restored save's past-dated rounds would otherwise each be given up, logged and marked done at the first start, and `advance` could no longer walk their check-ins.
+
 When there is nothing left, `advance` says so and points at `/season complete`.
 
 ```
