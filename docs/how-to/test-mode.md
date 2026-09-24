@@ -172,7 +172,7 @@ Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` 
 /test-mode rsvp set-status division:Pro
 ```
 
-Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in currently open — the command resolves the open RSVP embed and refuses without one. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
+Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in call standing — the command resolves that call and refuses without one. Where a division holds two, as a double-header does until a later call clears the earlier, it takes the earlier until that round's deadline has been advanced and the later after it; where every deadline has run, the latest. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
 
 Driving a check-in through the buttons requires as many Discord accounts as there are drivers, which is precisely what makes attendance untestable by hand. This is the way round it.
 

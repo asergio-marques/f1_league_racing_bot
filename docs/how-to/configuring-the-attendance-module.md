@@ -16,7 +16,7 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 
 ## A note on four words
 
-**Check-in call** — the message the bot posts before a round asking a division whether its drivers are racing. It pings the division role, lists every driver team by team, and carries three buttons. There is one per round per division. When the bot posts one it deletes the division's earlier calls, together with their reminders and reserve-distribution messages, so the channel shows only the current round's. The answers go nowhere with them: they stay in the attendance record, and the attendance sheet carries what they cost.
+**Check-in call** — the message the bot posts before a round asking a division whether its drivers are racing. It pings the division role, lists every driver team by team, and carries three buttons. There is one per round per division. When the bot posts one it deletes the division's earlier calls whose check-in closed at least a day before, together with their reminders and reserve-distribution messages. A call still open, or closed more recently, stays until a later one goes out, so two rounds close together — a Saturday and Sunday double-header — can have both calls standing at once, each answerable until its own deadline. The answers go nowhere with the messages: they stay in the attendance record, and the attendance sheet carries what they cost.
 
 **Attendance points** — what a driver collects for failing to answer the call or failing to appear. They have nothing to do with championship points and never touch the standings; they are a separate tally that only the attendance module reads. Fewer is better.
 
@@ -113,8 +113,6 @@ They have to stay in that order — the call first, the reminder after it, the d
 **Two of the three can be switched off by setting them to `0`.** A last reminder of `0` means no chasing message at all. A deadline of `0` means check-in stays open right up to the moment the race is scheduled to start. The notice itself cannot be switched off; there is no check-in without a call.
 
 > **With the reminder off, the ordering is no longer enforced.** The bot only compares the reminder against the deadline when the reminder is non-zero, so a reminder of `0` leaves the deadline unchecked against the notice — a notice of 5 days and a deadline of 200 hours is accepted, and closes check-in before it opens. Keep the deadline the smaller number yourself.
-
-> **Keep a division's rounds further apart than the notice.** Posting a round's call deletes the division's earlier calls, and today it does so whether or not their check-in has closed. So two rounds of one division closer together than the notice — a Saturday and Sunday double-header on the 5-day default — means Sunday's call goes out while Saturday's is still open, and deletes it: nobody can answer Saturday any more, and its deadline cannot take the buttons off. Space such rounds out, or shorten the notice so the second call goes out only after the first round's check-in has closed. This is a known fault: an earlier call is meant to stay until a day after its check-in closes.
 
 **Do this before the season is approved.** The bot reads all three at approval and schedules every round of the season against them there and then. Afterwards the commands are refused, and there is no way to shift a running season's check-ins.
 
