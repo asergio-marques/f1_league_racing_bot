@@ -4640,6 +4640,14 @@ class SeasonCog(commands.Cog):
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
+            # Read the channel being replaced first, so the audit says what it moved from
+            # (issue #212).
+            old_row = await (
+                await db.execute(
+                    "SELECT lineup_channel_id FROM divisions WHERE id = ?", (div.id,)
+                )
+            ).fetchone()
+            old_id = old_row["lineup_channel_id"] if old_row else None
             await db.execute(
                 "UPDATE divisions SET lineup_channel_id = ? WHERE id = ?",
                 (channel.id, div.id),
@@ -4647,11 +4655,12 @@ class SeasonCog(commands.Cog):
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'SIGNUP_LINEUP_CHANNEL_SET', '', ?, ?)",
+                "VALUES (?, ?, ?, 'SIGNUP_LINEUP_CHANNEL_SET', ?, ?, ?)",
                 (
                     interaction.user.id,
                     str(interaction.user),
                     div.id,
+                    _json.dumps({"channel_id": old_id}),
                     _json.dumps({"channel_id": channel.id}),
                     now,
                 ),
@@ -4702,6 +4711,14 @@ class SeasonCog(commands.Cog):
 
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
+            # Read the channel being replaced first, so the audit says what it moved from
+            # (issue #212).
+            old_row = await (
+                await db.execute(
+                    "SELECT calendar_channel_id FROM divisions WHERE id = ?", (div.id,)
+                )
+            ).fetchone()
+            old_id = old_row["calendar_channel_id"] if old_row else None
             await db.execute(
                 "UPDATE divisions SET calendar_channel_id = ? WHERE id = ?",
                 (channel.id, div.id),
@@ -4709,11 +4726,12 @@ class SeasonCog(commands.Cog):
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'DIVISION_CALENDAR_CHANNEL_SET', '', ?, ?)",
+                "VALUES (?, ?, ?, 'DIVISION_CALENDAR_CHANNEL_SET', ?, ?, ?)",
                 (
                     interaction.user.id,
                     str(interaction.user),
                     div.id,
+                    _json.dumps({"channel_id": old_id}),
                     _json.dumps({"channel_id": channel.id}),
                     now,
                 ),

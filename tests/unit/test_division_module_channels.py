@@ -191,6 +191,20 @@ async def _audit_rows(db_path: str) -> list[dict]:
         return [dict(r) for r in await cursor.fetchall()]
 
 
+#: The division column each core command writes.
+CORE_COLUMNS = {"lineup": "lineup_channel_id", "calendar": "calendar_channel_id"}
+
+
+async def _seed_core_channel(db_path: str, which: str, channel_id: int) -> None:
+    """Give the division a channel already, as a move finds it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            f"UPDATE divisions SET {CORE_COLUMNS[which]} = ? WHERE id = ?",
+            (channel_id, DIVISION_ID),
+        )
+        await db.commit()
+
+
 async def _channel_column(db_path: str, column: str):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -514,17 +528,26 @@ async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, whi
 
 
 @pytest.mark.parametrize("which", UNGATED)
-async def test_the_core_pair_record_no_previous_channel(tmp_path, which):
-    """Pinned as it stands, not as it ought to be: `old_value` is written as an empty
-    string, so a lineup or calendar channel that moves cannot be traced back. Recorded as
-    issue #212 rather than fixed here — #208 is a coverage change, and a test asserting the
-    tidier behaviour would simply fail."""
+async def test_the_core_pair_record_the_channel_they_replaced(tmp_path, which):
+    """They once wrote an empty `old_value`, so a lineup or calendar channel that moved could
+    not be traced back — against the rule that every change is recorded from what to what
+    (issue #212)."""
     db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    await _seed_core_channel(db_path, which, 111)
 
-    await _run(cog, which, _interaction())
+    await _run(_make_cog(db_path), which, _interaction())
 
-    assert (await _audit_rows(db_path))[0]["old_value"] == ""
+    old = json.loads((await _audit_rows(db_path))[0]["old_value"])
+    assert old["channel_id"] == 111
+
+
+@pytest.mark.parametrize("which", UNGATED)
+async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, which):
+    db_path = await _make_db(tmp_path)
+
+    await _run(_make_cog(db_path), which, _interaction())
+
+    assert json.loads((await _audit_rows(db_path))[0]["old_value"]) == {"channel_id": None}
 
 
 async def test_the_two_pairs_write_the_channel_id_as_different_types(tmp_path):
