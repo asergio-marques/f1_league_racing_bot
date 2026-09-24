@@ -9,7 +9,9 @@ two behaviours, so no test has to re-implement either:
   rather than failing on a missing program.
 
 The schema is also built once here rather than once per test — see
-`_install_template_migrations` below for why that is worth the indirection.
+`_install_template_migrations` below for why that is worth the indirection — and every
+aiosqlite connection the suite opens skips the flush to disk, for the reasons
+`_install_unsynced_connections` gives.
 
 Scratch is not kept. `pytest.ini` sets `tmp_path_retention_count = 0`, so pytest clears
 every earlier run's `tmp_path` tree at session start and its own at session end; three
@@ -33,6 +35,7 @@ Pinned by `tests/unit/test_suite_needs_no_dotenv.py`.
 from __future__ import annotations
 
 import atexit
+import functools
 import os
 import shutil
 import tempfile
@@ -108,6 +111,64 @@ def _install_template_migrations() -> None:
 
 
 _install_template_migrations()
+
+
+def _install_unsynced_connections() -> None:
+    """Open every aiosqlite connection in the suite at `synchronous = OFF` (#256).
+
+    The bot runs its database at FULL, deliberately (see `_enable_wal` in `db.database`).
+    Under WAL that flushes the log on every commit, and the log and the database again when
+    the last connection closes and checkpoints — five flushes for a connection that writes.
+    Across the suite that came to some seven flushes a test (counted 2026-09-24). Linux
+    absorbs them; on Windows each is a `FlushFileBuffers`, and a test that raised a database
+    cost about 80 ms more there than on Linux, which was nearly all of the Windows job's
+    extra time. Measured on the Pi's SD card, where a flush is dear as it is on Windows, a
+    stand-in test took 98 ms with the flushes and 38 ms without.
+
+    **OFF is safe here, and only here.** It changes what survives a power cut, which no test
+    can observe, on databases thrown away when the test ends. The bot's own FULL is still
+    pinned, by `test_connections_keep_full_durability`, which reaches aiosqlite's own
+    `connect` to see past this.
+
+    **The journal mode is not touched.** WAL decides which reads wait on which writes, and
+    tests do observe that; `test_the_schema_template_is_copied_in_wal_mode` pins it. Two other
+    remedies were weighed and declined: a template left out of WAL, for that reason, and a
+    connection held open to spare the `-wal` and `-shm` files being made and deleted, which
+    measured slower and would hold open on Windows a file some tests delete.
+
+    **Through `aiosqlite.connect`, not `get_connection`.** It hands its keyword arguments
+    straight to `sqlite3.connect`, so a `factory` makes the setting as the connection opens,
+    on its own thread and with no round trip of its own, and it reaches the fixtures that
+    seed through aiosqlite directly as well as everything that goes through
+    `get_connection`. A caller's own `factory` wins. Plain `sqlite3.connect` is left alone,
+    and so is the scheduler's job store, which goes through SQLAlchemy and keeps a FULL pin
+    of its own. Nothing in `src/` changes: a seam there would put test machinery in the bot.
+
+    Patched at import time, like `run_migrations` above. `get_connection` and the tests call
+    `aiosqlite.connect` through the module when they connect, so the order of imports does
+    not matter — only a `from aiosqlite import connect` would escape it, and nothing does.
+    Pinned by the tests under "The suite's own databases" in `test_database.py`.
+    """
+    import sqlite3
+
+    import aiosqlite
+
+    real = aiosqlite.connect
+
+    class UnsyncedConnection(sqlite3.Connection):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.execute("PRAGMA synchronous = OFF")
+
+    @functools.wraps(real)
+    def connect(database, **kwargs):
+        kwargs.setdefault("factory", UnsyncedConnection)
+        return real(database, **kwargs)
+
+    aiosqlite.connect = connect
+
+
+_install_unsynced_connections()
 
 
 def pytest_sessionstart(session):
