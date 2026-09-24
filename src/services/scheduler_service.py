@@ -885,22 +885,6 @@ class SchedulerService:
         result.sort(key=lambda x: (x["next_run_time"], x["round_id"], x["phase_number"]))
         return result
 
-    def get_job_ids_for_rounds(self, round_ids: set[int]) -> set[str]:
-        """Return all currently-scheduled (non-paused) job IDs that belong to
-        the given round IDs.  Unlike ``get_pending_advance_jobs``, no prefix
-        filtering is applied — ``results``, ``cleanup``, etc. are all
-        included.  Used by the review summary to distinguish "job queued" from
-        "job absent" for each pending phase.
-        """
-        result: set[str] = set()
-        for job in self._scheduler.get_jobs():
-            if job.next_run_time is None:
-                continue
-            round_id = job.kwargs.get("round_id")
-            if round_id in round_ids:
-                result.add(job.id)
-        return result
-
     def get_queued_events_for_rounds(self, round_ids: set[int]) -> set[tuple[int, str]]:
         """Return ``(round_id, event_type)`` for every queued job of the given rounds.
 

@@ -270,30 +270,6 @@ def test_a_job_whose_id_does_not_parse_is_ignored():
     assert _service(jobs).get_pending_advance_jobs({42}) == []
 
 
-def test_every_job_for_a_round_is_listed_without_filtering():
-    """`get_job_ids_for_rounds` is the review summary's view and deliberately keeps the
-    ones advance excludes — it answers "is a job queued", not "what will advance fire"."""
-    suffix = _round_job_suffix(_round(42, 5), 3, 2)
-    jobs = [
-        _job(f"weather_p1{suffix}", 42),
-        _job(f"cleanup{suffix}", 42),
-        _job(f"results{suffix}", 42),
-    ]
-
-    ids = _service(jobs).get_job_ids_for_rounds({42})
-
-    assert len(ids) == 3
-
-
-def test_a_paused_job_is_not_listed_as_queued():
-    """The summary distinguishes "queued" from "absent", and a paused job is neither
-    going to fire nor worth reporting as pending."""
-    suffix = _round_job_suffix(_round(42, 5), 3, 2)
-    jobs = [_job(f"weather_p1{suffix}", 42, paused=True)]
-
-    assert _service(jobs).get_job_ids_for_rounds({42}) == set()
-
-
 def test_every_queued_job_is_listed_by_its_round_and_event_type():
     """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
     ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""

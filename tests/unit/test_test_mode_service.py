@@ -510,7 +510,9 @@ class _StubScheduler:
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:  # noqa: ARG002
         return [j for j in self._jobs if j["round_id"] in round_ids]
 
-    def get_job_ids_for_rounds(self, round_ids: set[int]) -> set[str]:  # noqa: ARG002
+    def get_queued_events_for_rounds(
+        self, round_ids: set[int]  # noqa: ARG002
+    ) -> set[tuple[int, str]]:
         return set()
 
 
