@@ -126,9 +126,27 @@ async def _add_standing_call(
     scheduled_at: datetime,
     *,
     division_id: int = DIVISION_ID,
+    distributed: bool = True,
 ) -> None:
-    """A round whose call, last notice and distribution message are all standing."""
+    """A round whose call, last notice and distribution message are all standing.
+
+    With *distributed* false its deadline has not run, so it has no distribution message yet.
+    """
     await _add_round(db_path, round_id, scheduled_at, division_id=division_id)
+    await _add_call(
+        db_path, round_id, scheduled_at, division_id=division_id, distributed=distributed
+    )
+
+
+async def _add_call(
+    db_path: str,
+    round_id: int,
+    scheduled_at: datetime,
+    *,
+    division_id: int = DIVISION_ID,
+    distributed: bool = True,
+) -> None:
+    """Record a call as standing for a round that already exists."""
     call, last_notice, distribution = _msg_ids(round_id)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -142,7 +160,7 @@ async def _add_standing_call(
                 str(RSVP_CHANNEL_ID),
                 (scheduled_at - timedelta(days=NOTICE_DAYS)).isoformat(),
                 last_notice,
-                distribution,
+                distribution if distributed else None,
             ),
         )
         await db.commit()
@@ -345,3 +363,55 @@ async def test_a_call_posted_late_judges_as_at_the_moment_it_is_posted(tmp_path)
     channel = await _post_call(db_path, now=posted_at)
 
     assert sorted(channel.deleted) == sorted(_msg_ids(EARLIER_ROUND))
+
+
+# ---------------------------------------------------------------------------
+# Which of a division's calls is current
+# ---------------------------------------------------------------------------
+#
+# A division held one call at most while every new call took down all the others, so anything
+# looking for "the division's call" could take whichever row it found. `/test-mode rsvp
+# set-status` did exactly that. A double-header now leaves two standing, and the command must
+# still reach the one whose check-in is open.
+
+
+async def _current_round(db_path: str, division_id: int = DIVISION_ID) -> int | None:
+    call = await AttendanceService(db_path).get_current_embed_message(division_id)
+    return call.round_id if call is not None else None
+
+
+async def test_the_current_call_of_a_double_header_is_the_earlier_one(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _add_call(db_path, POSTED_ROUND, NOW + timedelta(days=NOTICE_DAYS), distributed=False)
+    await _add_standing_call(
+        db_path, EARLIER_ROUND, NOW + timedelta(days=NOTICE_DAYS - 1), distributed=False
+    )
+
+    assert await _current_round(db_path) == EARLIER_ROUND
+
+
+async def test_the_current_call_moves_on_once_the_earlier_deadline_has_run(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _add_call(db_path, POSTED_ROUND, NOW + timedelta(days=NOTICE_DAYS), distributed=False)
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW + timedelta(days=NOTICE_DAYS - 1))
+
+    assert await _current_round(db_path) == POSTED_ROUND
+
+
+async def test_the_current_call_is_the_latest_once_every_deadline_has_run(tmp_path):
+    """What the division's one row gave before #425, whether its deadline had run or not."""
+    db_path = await _make_db(tmp_path)
+    await _add_call(db_path, POSTED_ROUND, NOW + timedelta(days=NOTICE_DAYS))
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW + timedelta(days=NOTICE_DAYS - 1))
+
+    assert await _current_round(db_path) == POSTED_ROUND
+
+
+async def test_another_division_s_call_is_never_current(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(
+        db_path, 20, NOW + timedelta(days=1), division_id=OTHER_DIVISION_ID, distributed=False
+    )
+
+    assert await _current_round(db_path) is None
+    assert await _current_round(db_path, OTHER_DIVISION_ID) == 20

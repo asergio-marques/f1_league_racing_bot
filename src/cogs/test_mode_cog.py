@@ -1179,8 +1179,7 @@ class TestModeCog(commands.Cog):
             return
         division_id: int = div_row["division_id"]
 
-        embed_rows = await self.bot.attendance_service.get_all_embed_messages()
-        target_embed = next((r for r in embed_rows if r.division_id == division_id), None)
+        target_embed = await self.bot.attendance_service.get_current_embed_message(division_id)
         if target_embed is None:
             await interaction.response.send_message(
                 f"❌ No active RSVP embed found for division **{division}**. "
