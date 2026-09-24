@@ -407,7 +407,7 @@ async def _close_driver_signups(
                     log.warning("closing signups: could not revoke the driver role of %s", uid)
 
 
-async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> None:
+async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:
     """Delete *profile_ids* and everything that holds them, within the caller's transaction.
 
     Every reference to a profile without a cascade has to go, or let go, first: seats are
@@ -416,14 +416,26 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
     Discord account and are never touched.
 
     *keep_history* keeps the driver's history entries, which name them by identifier and let
-    go of the profile themselves (migration 057) — how test mode keeps its drivers' history.
-    Otherwise the entries are deleted with the driver, as the driver pass deletes a real driver
-    who never raced: the archive keeps no placement and no history of them.
+    go of the profile themselves (`driver_history_entries.driver_profile_id` is `ON DELETE SET
+    NULL`) — how test mode keeps its drivers' history. Otherwise the entries are deleted with
+    the driver, as the driver pass deletes a real driver who never raced: the archive keeps no
+    placement and no history of them.
+
+    Returns every Discord account the deleted profiles held, current and past, sorted. They are
+    read first, the cascade taking `driver_accounts` with the profiles. Their portraits are
+    keyed by account and go nowhere with the profile, so a caller able to reach the league's
+    image configuration discards them once its transaction commits (issue #235).
     """
     if not profile_ids:
-        return
+        return []
     placeholders = ",".join("?" for _ in profile_ids)
     ids = list(profile_ids)
+    cursor = await db.execute(
+        f"SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id IN ({placeholders}) "
+        "ORDER BY discord_user_id",
+        ids,
+    )
+    accounts = [str(r[0]) for r in await cursor.fetchall()]
     await db.execute(
         f"UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id IN ({placeholders})",
         ids,
@@ -444,6 +456,7 @@ async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bo
             ids,
         )
     await db.execute(f"DELETE FROM driver_profiles WHERE id IN ({placeholders})", ids)
+    return accounts
 
 
 async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=None) -> dict:

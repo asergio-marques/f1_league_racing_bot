@@ -146,6 +146,27 @@ async def test_deleting_a_profile_frees_every_account_it_held(tmp_path):
     await _profile(db_path, A)  # free again
 
 
+async def test_deleting_profiles_returns_every_account_they_held(tmp_path):
+    """Read before the cascade takes them: a portrait is keyed by account, and the driver
+    pass discards the portraits of every account a deleted driver held (issue #235)."""
+    db_path = await _make_db(tmp_path)
+    first = await _profile(db_path, A)
+    await _make_current(db_path, first, B)
+    second = await _profile(db_path, C)
+    kept = await _profile(db_path, "4444")
+    async with get_connection(db_path) as db:
+        deleted = await delete_driver_profiles(db, [first, second], keep_history=False)
+        await db.commit()
+    assert deleted == [A, B, C]
+    assert await _listed(db_path) == [(kept, "4444")]
+
+
+async def test_deleting_no_profile_returns_no_account(tmp_path):
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        assert await delete_driver_profiles(db, [], keep_history=False) == []
+
+
 # ---------------------------------------------------------------------------
 # The helpers
 # ---------------------------------------------------------------------------
