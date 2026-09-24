@@ -898,7 +898,7 @@ Events are taken in scheduled-fire-time order, tie-broken by round then phase, a
 #### `/test-mode review` — View phase completion status
 *Access: League admin · Requires test mode active*
 
-No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division, the tidy-ups a day after each round included.
+No parameters. Displays a summary of all rounds for the active season, per round and division, the tidy-ups a day after each round included: ✅ for a step that has run, ⏳ for one still to come whose job is queued and will fire on its own, and ⚠️ for one still to come with no job queued — run it with `/test-mode advance`. Result submission reads instead as finalized, or as pending review once results are in. A module that is switched off shows no steps: the forecasts and a mystery round's notice while the weather module is off, as result submission and the check-in while theirs are.
 
 #### `/test-mode set-former-driver` — Override the former_driver flag
 *Access: League admin · Requires test mode active*
