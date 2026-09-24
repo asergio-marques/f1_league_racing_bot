@@ -321,6 +321,7 @@ async def _report_call_failure(
     season_number: int,
     round_number: int,
     reason: str,
+    note: str | None = None,
 ) -> None:
     """Tell the league's staff that a check-in call did not post.
 
@@ -344,7 +345,18 @@ async def _report_call_failure(
     again", which no command could do; `/attendance post-check-in` is that command, and naming
     it here with the division and round already filled in is what makes the advice followable.
     `tests/unit/test_rsvp_call_failure_report.py` pins the name, so the two cannot drift apart.
+
+    *note* replaces that advice where it cannot be followed (#429). A call given up at a
+    restart, its deadline passed, is past what the command will post, and its report must not
+    send a manager to a command that refuses it.
     """
+    if note is None:
+        note = (
+            f"no attendance rows were opened for this round. Once the cause is "
+            f"cleared, post the call again with `/attendance post-check-in division: "
+            f"{division_name} round: {round_number}`, or the round will count nothing "
+            f"against anyone."
+        )
     try:
         await bot.output_router.post_log(
             f"ATTENDANCE | check-in call | NOT POSTED\n"
@@ -352,10 +364,7 @@ async def _report_call_failure(
             f"  division: {division_name} (id={division_id})\n"
             f"  round: {round_number}\n"
             f"  reason: {reason}\n"
-            f"  note: no attendance rows were opened for this round. Once the cause is "
-            f"cleared, post the call again with `/attendance post-check-in division: "
-            f"{division_name} round: {round_number}`, or the round will count nothing "
-            f"against anyone.",
+            f"  note: {note}",
         )
     except Exception:  # noqa: BLE001 — reporting must never mask the original failure
         log.exception("run_rsvp_notice: failed to report a failed check-in call")
