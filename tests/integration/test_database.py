@@ -9,6 +9,7 @@ import sqlite3
 import sys
 import tempfile
 
+import aiosqlite
 import pytest
 import pytest_asyncio
 
@@ -309,7 +310,7 @@ async def test_a_shorter_busy_timeout_can_be_asked_for() -> None:
 
 
 @pytest.mark.asyncio
-async def test_connections_keep_full_durability() -> None:
+async def test_connections_keep_full_durability(monkeypatch) -> None:
     """`synchronous` stays at FULL (2), and that is a decision rather than an oversight.
 
     WAL would make `synchronous=NORMAL` safe against corruption, and it is dramatically
@@ -319,7 +320,13 @@ async def test_connections_keep_full_durability() -> None:
     worth more than the milliseconds.
 
     This test exists so that trade is re-decided deliberately rather than tuned away.
+
+    **It opens the connection the way the bot does, not the way the suite does.**
+    `tests/conftest.py` turns the flush off on every aiosqlite connection the suite opens
+    (#256), so `get_connection` is run here against aiosqlite's own `connect` — which is
+    what production calls — to see what the bot itself asks for.
     """
+    monkeypatch.setattr(aiosqlite, "connect", aiosqlite.core.connect)
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
 
@@ -336,3 +343,62 @@ async def test_connections_keep_full_durability() -> None:
         assert level == 2, "expected FULL (2) — durability is preferred to commit latency"
     finally:
         _remove_database(db_path)
+
+
+# ── The suite's own databases (#256) ──────────────────────────────────
+#
+# The bot keeps FULL, above. The suite does not: `tests/conftest.py` opens every aiosqlite
+# connection at `synchronous = OFF`, because the flushes FULL pays are what made a database
+# test cost several times as much on Windows as on Linux. See the docstring there.
+
+@pytest.mark.asyncio
+async def test_the_suite_s_connections_skip_the_flush_to_disk(tmp_path) -> None:
+    """A test's database is opened at OFF (0), and is still in WAL.
+
+    OFF changes only what survives a power cut, which no test can observe. WAL changes which
+    reads wait on which writes, which tests do, so the suite keeps the bot's journal mode.
+    """
+    db_path = str(tmp_path / "suite.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("PRAGMA synchronous")
+        (level,) = await cursor.fetchone()
+        cursor = await db.execute("PRAGMA journal_mode")
+        (mode,) = await cursor.fetchone()
+
+    assert level == 0, "expected OFF (0) on the suite's own connections"
+    assert mode.lower() == "wal", "the suite must still test the bot's journal mode"
+
+
+@pytest.mark.asyncio
+async def test_a_seed_through_aiosqlite_skips_the_flush_too(tmp_path) -> None:
+    """A fixture that seeds through `aiosqlite.connect` directly, not `get_connection`, is
+    covered as well: some twenty test files do, each with a connection that writes."""
+    db_path = str(tmp_path / "seed.db")
+    await run_migrations(db_path)
+
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute("PRAGMA synchronous")
+        (level,) = await cursor.fetchone()
+
+    assert level == 0
+
+
+@pytest.mark.asyncio
+async def test_a_caller_s_own_factory_is_left_alone(tmp_path) -> None:
+    """A connection asked for with a factory of its own gets that factory, and with it
+    SQLite's own default of FULL — the suite's setting steps aside rather than overriding."""
+    opened = []
+
+    class OwnConnection(sqlite3.Connection):
+        def __init__(self, *args, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+    async with aiosqlite.connect(str(tmp_path / "own.db"), factory=OwnConnection) as db:
+        cursor = await db.execute("PRAGMA synchronous")
+        (level,) = await cursor.fetchone()
+
+    assert len(opened) == 1
+    assert level == 2
