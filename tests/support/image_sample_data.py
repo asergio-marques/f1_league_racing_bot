@@ -754,15 +754,16 @@ def build_weather_drawing(root, template_key: str):
 
 # ── Verdicts (043) ────────────────────────────────────────────────────────
 #
-# Six images from one template: the three kinds of verdict, and both signs of a time
-# penalty. The free text is fabricated at five lengths, because the wrapping of a steward's
+# Seven images from one template: the three kinds of verdict, both signs of a time penalty,
+# and no further action (#138). The free text is fabricated at five lengths, because the wrapping of a steward's
 # prose is the whole of this type's difficulty and the only way to judge it is by eye.
 
-#: The six cases `/images test verdicts` draws, in the order they are returned.
+#: The seven cases `/images test verdicts` draws, in the order they are returned.
 SAMPLE_VERDICT_CASES = (
     "penalty_added_sprint",
     "penalty_removed",
     "penalty_dsq",
+    "penalty_nfa",
     "appeal",
     "autosack",
     "autoreserve",
@@ -844,6 +845,18 @@ def build_verdict_drawing(root, *, case: str = "penalty_added_sprint"):
             penalty=sanction_text("DSQ", None),
             description=_VERDICT_TEXT_SHORT,
             justification=_VERDICT_TEXT_HUGE,
+            **common,
+        )
+
+    if case == "penalty_nfa":
+        return VerdictDrawing(
+            kind=VerdictKind.PENALTY,
+            session_name="Race",
+            team_name="Test Team B",
+            driver_nationality=SAMPLE_LINEUP_NATIONALITIES[1],
+            penalty=sanction_text("NFA", None),
+            description=_VERDICT_TEXT_SHORT,
+            justification=_VERDICT_TEXT_FULL,
             **common,
         )
 
