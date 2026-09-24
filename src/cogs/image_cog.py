@@ -12,6 +12,7 @@ is disabled (FR-005).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import discord
 from discord import app_commands
@@ -76,6 +77,84 @@ def toggle_enabled_lines(aspect: str, label: str, blocking: list[str]) -> list[s
         lines.append("⚠️ It would not produce an image as configured:")
         lines += [f"  ↳ {reason}" for reason in blocking]
 
+    return lines
+
+
+@dataclass(frozen=True)
+class FastestLapContrast:
+    """What `/images config fastest-lap-colour` reports, and what it was measured on.
+
+    Either `ratio` and `background` are set, or `problem` says why nothing could be
+    measured: an unmeasurable contrast is reported as such, never guessed (FR-027).
+    """
+
+    ratio: float | None = None
+    background: str | None = None
+    problem: str | None = None
+
+
+def _no_plate_problem() -> str:
+    from models.image_constants import FASTEST_LAP_BACKGROUND_ID
+
+    return (
+        f"the race results template declares no `{FASTEST_LAP_BACKGROUND_ID}` "
+        f"element to measure against."
+    )
+
+
+def _plate_fill(root) -> tuple[str | None, str | None]:
+    """(background, problem): the plain colour the fastest-lap plate is drawn in, or why not.
+
+    The plate is located by a single documented ``@id`` in the race results template
+    (FR-026a), and its fill read through `computed_style`, so a colour set by a stylesheet
+    rule, an inline style or a presentation attribute is read as the drawing would take it.
+    """
+    from models.image_constants import FASTEST_LAP_BACKGROUND_ID
+    from utils.colour import coerce_css_colour
+    from utils.svg_document import FieldIndex, computed_style, stylesheet
+
+    element = FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID)
+    if element is None:
+        return None, _no_plate_problem()
+
+    declared = computed_style(element, stylesheet(root)).get("fill")
+    if declared is None:
+        # Said in the league's words. Interpolating the raw value put Python's `None`
+        # in the reply. Not measured as black, which is what SVG draws: the bot reads
+        # only simple selectors, so a fill it cannot see may still be declared, and an
+        # unmeasurable contrast is reported rather than guessed (FR-027).
+        return None, (
+            f"the `{FASTEST_LAP_BACKGROUND_ID}` element has no fill the bot can read."
+        )
+    background = coerce_css_colour(declared)
+    if background is None:
+        return None, (
+            f"the `{FASTEST_LAP_BACKGROUND_ID}` element's fill (`{declared}`) is not "
+            f"a plain colour."
+        )
+    return background, None
+
+
+def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
+    """The lines reporting *reading*, beneath the confirmation that the colour was stored.
+
+    Kept apart from the command so what a manager reads can be asserted without a gateway.
+    """
+    from utils.colour import CONTRAST_AA_NORMAL, meets_aa_normal
+
+    if reading.ratio is None:
+        return [f"ℹ️ Contrast could not be measured: {reading.problem}"]
+
+    lines = [
+        f"Contrast against the template's plate (`{reading.background}`): "
+        f"**{reading.ratio:.2f}:1**"
+    ]
+    if not meets_aa_normal(reading.ratio):
+        lines.append(
+            f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "
+            f"of this size stays legible. The colour is stored all the same — "
+            f"it is your league's to choose."
+        )
     return lines
 
 
@@ -1017,7 +1096,7 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        from utils.colour import CONTRAST_AA_NORMAL, InvalidColour, meets_aa_normal, normalise_hex
+        from utils.colour import InvalidColour, normalise_hex
 
         # 1. Reject a malformed value, leaving the stored colour untouched (FR-025).
         try:
@@ -1036,23 +1115,9 @@ class ImageCog(commands.Cog):
         lines = [f"✅ Fastest-lap colour set to `{canonical}`."]
 
         # 3. Measure and report the contrast against the template's own background.
-        ratio, background, problem = await self._measure_fastest_lap_contrast(
-            canonical
+        lines += fastest_lap_contrast_lines(
+            await self._measure_fastest_lap_contrast(canonical)
         )
-
-        if ratio is None:
-            lines.append(f"ℹ️ Contrast could not be measured: {problem}")
-        else:
-            lines.append(
-                f"Contrast against the template's plate (`{background}`): "
-                f"**{ratio:.2f}:1**"
-            )
-            if not meets_aa_normal(ratio):
-                lines.append(
-                    f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "
-                    f"of this size stays legible. The colour is stored all the same — "
-                    f"it is your league's to choose."
-                )
 
         await self._reply(interaction, "\n".join(lines))
         await self._log(interaction, f"Fastest-lap colour = {canonical}")
@@ -1327,68 +1392,40 @@ class ImageCog(commands.Cog):
             for slot in report.colour_slots
         }
 
-    async def _measure_fastest_lap_contrast(
-        self, colour: str
-    ) -> tuple[float | None, str | None, str | None]:
-        """Return (ratio, background, problem).
+    async def _measure_fastest_lap_contrast(self, colour: str) -> FastestLapContrast:
+        """Measure *colour* against the plate the race results template draws behind it.
 
-        The background is located by a single documented ``@id`` in the race results
-        template (FR-026a). Layer 1 validity cannot establish that the element exists, so
-        its absence is an unmeasurable contrast, not a template validity failure.
+        The plate's absence is an unmeasurable contrast, not a template validity failure:
+        Layer 1 cannot establish that the element exists (FR-026a).
         """
-        from models.image_constants import FASTEST_LAP_BACKGROUND_ID
-        from utils.colour import coerce_css_colour, contrast_ratio
-        from utils.svg_document import (
-            FieldIndex,
-            SvgError,
-            computed_style,
-            load_svg,
-            stylesheet,
-        )
+        from utils.colour import contrast_ratio
+        from utils.svg_document import SvgError, load_svg
 
         reports = await self._validity_service.template_reports()
         report = reports.get("results_race_template")
 
         if report is None:
-            return None, None, "the race results template could not be read."
+            return FastestLapContrast(
+                problem="the race results template could not be read."
+            )
         if not report.valid:
-            return None, None, f"the race results template is invalid — {report.reason}"
+            return FastestLapContrast(
+                problem=f"the race results template is invalid — {report.reason}"
+            )
 
         try:
             root = load_svg(report.resolved_path)
         except SvgError as exc:
-            return None, None, f"the race results template could not be parsed — {exc}"
-
-        element = FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID)
-        if element is None:
-            return (
-                None,
-                None,
-                f"the race results template declares no `{FASTEST_LAP_BACKGROUND_ID}` "
-                f"element to measure against.",
+            return FastestLapContrast(
+                problem=f"the race results template could not be parsed — {exc}"
             )
 
-        declared = computed_style(element, stylesheet(root)).get("fill")
-        if declared is None:
-            # Said in the league's words. Interpolating the raw value put Python's `None`
-            # in the reply. Not measured as black, which is what SVG draws: the bot reads
-            # only simple selectors, so a fill it cannot see may still be declared, and an
-            # unmeasurable contrast is reported rather than guessed (FR-027).
-            return (
-                None,
-                None,
-                f"the `{FASTEST_LAP_BACKGROUND_ID}` element has no fill the bot can read.",
-            )
-        background = coerce_css_colour(declared)
+        background, problem = _plate_fill(root)
         if background is None:
-            return (
-                None,
-                None,
-                f"the `{FASTEST_LAP_BACKGROUND_ID}` element's fill (`{declared}`) is not "
-                f"a plain colour.",
-            )
-
-        return contrast_ratio(colour, background), background, None
+            return FastestLapContrast(problem=problem)
+        return FastestLapContrast(
+            ratio=contrast_ratio(colour, background), background=background
+        )
 
     @config.command(
         name="time-zone",

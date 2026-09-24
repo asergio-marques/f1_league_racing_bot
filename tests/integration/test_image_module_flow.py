@@ -1043,11 +1043,11 @@ async def test_contrast_is_measured_against_the_declared_background(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#000000")
+    reading = await cog._measure_fastest_lap_contrast("#000000")
 
-    assert problem is None
-    assert background == "#FFFFFF"
-    assert ratio == pytest.approx(21.0, abs=0.01)
+    assert reading.problem is None
+    assert reading.background == "#FFFFFF"
+    assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
@@ -1067,11 +1067,11 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#FFFFFF")
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
 
-    assert problem is None
-    assert background == "#000000"
-    assert ratio == pytest.approx(21.0, abs=0.01)
+    assert reading.problem is None
+    assert reading.background == "#000000"
+    assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
 async def test_contrast_unmeasurable_when_template_is_invalid(
@@ -1083,10 +1083,10 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     await config_service.set_field("results_race_template", "gone.svg")
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "invalid" in problem.lower()
+    assert reading.ratio is None and reading.background is None
+    assert "invalid" in reading.problem.lower()
 
 
 async def test_contrast_unmeasurable_when_background_element_is_absent(
@@ -1101,10 +1101,10 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "fastest_lap_background" in problem
+    assert reading.ratio is None and reading.background is None
+    assert "fastest_lap_background" in reading.problem
     # It must be reported as unmeasurable, not as a template validity failure.
     from services.image_validity_service import evaluate_all_templates
 
@@ -1125,10 +1125,10 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "not" in problem.lower() and "plain colour" in problem.lower()
+    assert reading.ratio is None and reading.background is None
+    assert "not" in reading.problem.lower() and "plain colour" in reading.problem.lower()
 
 
 async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
@@ -1151,11 +1151,28 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     )
 
     cog = _image_cog(config_service, module_service)
-    ratio, background, problem = await cog._measure_fastest_lap_contrast("#A020F0")
+    reading = await cog._measure_fastest_lap_contrast("#A020F0")
 
-    assert ratio is None and background is None
-    assert "None" not in problem
-    assert "no fill" in problem
+    assert reading.ratio is None and reading.background is None
+    assert "None" not in reading.problem
+    assert "no fill" in reading.problem
+
+
+def test_the_reply_warns_below_the_legibility_threshold():
+    from cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+
+    lines = fastest_lap_contrast_lines(FastestLapContrast(ratio=3.0, background="#777777"))
+
+    assert lines[0] == "Contrast against the template's plate (`#777777`): **3.00:1**"
+    assert lines[1].startswith("⚠️ That is below 4.5:1")
+
+
+def test_the_reply_says_why_nothing_was_measured():
+    from cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+
+    lines = fastest_lap_contrast_lines(FastestLapContrast(problem="no plate."))
+
+    assert lines == ["ℹ️ Contrast could not be measured: no plate."]
 
 
 # ── T040 — asset directories relocate independently (SC-002) ──────────────
