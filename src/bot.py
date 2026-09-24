@@ -552,10 +552,19 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     T010: Re-arm persistent RsvpView for every row in rsvp_embed_messages so
     button interactions survive bot restarts (FR-007).
 
-    T019: For any round whose rsvp_deadline fire time has already passed but no
-    distribution has run, run run_rsvp_deadline immediately (FR-027). A call whose deadline
-    recorded its message on it has run (#429): a deadline with no reserve to place writes
-    nothing onto a driver, but it posts its notice like any other.
+    T019: For any call whose rsvp_deadline fire time has already passed and which carries no
+    distribution message, run run_rsvp_deadline immediately (FR-027).
+
+    **The call's own record decides, never the drivers' placements** (#429). A deadline posts
+    its distribution announcement, or its no-reserve notice, and records it on the call; that
+    is how `/test-mode advance` and `AttendanceService.get_current_embed_message` tell a
+    deadline that has run as well, and the three must agree. The placements cannot: a deadline
+    with no reserve to place writes none, so it was run again at every start and its notice
+    posted again, and a call posted again after an amendment carries over the placements of the
+    call it replaced, so its own deadline was never caught up. A deadline whose message never
+    posted is run again at the next start, until the round's cleanup takes the call down — the
+    distribution is recomputed and the announcement retried.
+    `test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say` pins it.
 
     T023: For any round whose rsvp_last_notice fire time has already passed,
     silently skip — do NOT fire retroactively (FR-029 edge case).
@@ -650,38 +659,20 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
         deadline_at = scheduled_at - _td(hours=deadline_hours)
 
         if deadline_at <= now_utc:
-            # Deadline has passed — check if distribution already ran
+            # Deadline has passed and the call records no message from it, so it has not run.
             round_id = rrow["round_id"]
             division_id = rrow["division_id"]
+            log.info(
+                "_recover_rsvp_views_and_deadlines: running missed deadline for round %d / division %d",
+                round_id, division_id,
+            )
             try:
-                async with _gc(bot.db_path) as db:
-                    cur = await db.execute(
-                        """
-                        SELECT COUNT(*) AS cnt
-                          FROM driver_round_attendance
-                         WHERE round_id = ?
-                           AND division_id = ?
-                           AND (assigned_team_id IS NOT NULL OR is_standby = 1)
-                        """,
-                        (round_id, division_id),
-                    )
-                    count_row = await cur.fetchone()
-                already_ran = count_row is not None and count_row["cnt"] > 0
+                await run_rsvp_deadline(round_id, bot)
             except Exception:
-                already_ran = False
-
-            if not already_ran:
-                log.info(
-                    "_recover_rsvp_views_and_deadlines: running missed deadline for round %d / division %d",
-                    round_id, division_id,
+                log.exception(
+                    "_recover_rsvp_views_and_deadlines: deadline run failed for round %d",
+                    round_id,
                 )
-                try:
-                    await run_rsvp_deadline(round_id, bot)
-                except Exception:
-                    log.exception(
-                        "_recover_rsvp_views_and_deadlines: deadline run failed for round %d",
-                        round_id,
-                    )
 
 
 async def _abandon_interrupted_resubmission(

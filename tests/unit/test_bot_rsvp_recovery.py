@@ -285,6 +285,20 @@ async def test_a_deadline_that_placed_no_reserves_is_not_run_again(tmp_path):
     assert await _recover(bot) == []
 
 
+async def test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say(
+    tmp_path,
+):
+    """The call's own record decides, never the drivers' placements (#429). Two things leave
+    placements on a call whose deadline has not run: a call posted again after an amendment
+    carries over the placements of the call it replaced, and a deadline whose announcement
+    failed to post has placed reserves the division was never told about. The first must still
+    have its deadline caught up; the second is run again, and its announcement retried."""
+    db_path = await _make_db(tmp_path, hours_until_round=-1, placed=True)
+    bot = _bot(db_path)
+
+    assert await _recover(bot) == [ROUND_ID]
+
+
 def _live_channel() -> MagicMock:
     """A check-in channel whose call can be fetched and edited, and which records its posts."""
     channel = MagicMock()
