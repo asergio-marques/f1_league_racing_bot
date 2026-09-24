@@ -434,8 +434,14 @@ class TeamService:
         Each entry: {name, full_name, max_seats, is_reserve, role_id} where role_id is
         int | None, and ``name`` is the team's shorthand.
         Ordered: non-reserve alphabetically first, Reserve last.
+
+        Restores a missing Reserve team first, as ``get_default_teams`` does: this is the
+        read behind `/team list`, `/team role` and team autocomplete, and the Reserve team
+        must be present on every read of the list (issue #146).
         """
         async with get_connection(self._db_path) as db:
+            if await self._ensure_reserve(db):
+                await db.commit()
             cursor = await db.execute(
                 """
                 SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id

@@ -76,11 +76,12 @@ async def _add_team_instance(db_path: str, season_id: int, team_name: str, is_re
 # ---------------------------------------------------------------------------
 
 class TestGetTeamsWithRoles:
-    async def test_empty_returns_empty_list(self, db_path):
+    async def test_an_empty_list_reads_as_the_reserve_team_alone(self, db_path):
+        """The Reserve team always exists, so a read restores it (issue #146)."""
         from services.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
-        assert result == []
+        assert [r["name"] for r in result] == ["Reserve"]
 
     async def test_teams_without_roles_have_none_role_id(self, db_path):
         await _add_default_team(db_path, "Alpine")
@@ -99,8 +100,7 @@ class TestGetTeamsWithRoles:
         from services.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
-        assert len(result) == 1
-        assert result[0]["name"] == "Mercedes"
+        assert [r["name"] for r in result] == ["Mercedes", "Reserve"]
         assert result[0]["role_id"] == 999
 
     async def test_mixed_teams_some_with_roles(self, db_path):

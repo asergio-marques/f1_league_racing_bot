@@ -406,6 +406,23 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
     assert next(e for e in entries if e["name"] == "Alpha")["role_id"] == 12345
 
 
+async def test_listing_teams_with_roles_restores_a_lost_reserve(tmp_path):
+    """`/team list`, `/team role` and team autocomplete read the list through here, so the
+    Reserve team must be restored on this read as on every other (issue #146). `/bot init`
+    no longer seeds it, and a server whose Reserve row was lost would otherwise list none."""
+    db_path = await _make_db(tmp_path)
+    service = TeamService(db_path)
+    await service.add_default_team("Alpha", full_name="Alpha")
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM default_teams WHERE is_reserve = 1")
+        await db.commit()
+
+    entries = await service.get_teams_with_roles()
+
+    assert [e["name"] for e in entries] == ["Alpha", RESERVE]
+    assert entries[-1]["is_reserve"] is True
+
+
 # ---------------------------------------------------------------------------
 # Division seeding
 # ---------------------------------------------------------------------------
