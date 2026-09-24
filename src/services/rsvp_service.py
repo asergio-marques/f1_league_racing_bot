@@ -499,10 +499,11 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
     # One call for a round, whoever posts it (#429). The scheduler's job — run late inside its
-    # misfire grace when the bot starts — `/attendance post-check-in` and `/test-mode advance`
-    # can reach a round at once, and the row saying a call stands is written only after the
-    # post. Under the round's lock, a call found standing is left as it is: a second one beside
-    # it would be answered by drivers and tracked by nothing.
+    # misfire grace when the bot starts — the same start's late post of a call missed while the
+    # bot was down, `/attendance post-check-in` and `/test-mode advance` can reach a round at
+    # once, and the row saying a call stands is written only after the post. Under the round's
+    # lock, a call found standing is left as it is: a second one beside it would be answered by
+    # drivers and tracked by nothing.
     async with _check_in_lock(round_id):
         if await bot.attendance_service.get_embed_message(round_id, division_id) is not None:
             log.info(

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from typing import cast
 
 import discord
@@ -335,6 +336,10 @@ async def main() -> None:
         # Recover any missed phases from before bot restart
         await _recover_missed_phases(bot)
 
+        # Post late the check-in calls that fell due while the bot was down, their deadline
+        # still ahead (#429). Before the deadlines below, as a call comes before its deadline.
+        await _recover_missed_check_in_calls(bot)
+
         # Re-arm persistent RSVP embed views for all stored embed messages (T010)
         # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
         await _recover_rsvp_views_and_deadlines(bot)
@@ -544,6 +549,105 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
         if not p3 and now >= phase3_horizon:
             log.info("Recovery: firing Phase 3 for round %s", round_id)
             await run_phase3(round_id, bot)
+
+
+async def _recover_missed_check_in_calls(
+    bot: LeagueBot, *, now: datetime | None = None
+) -> None:
+    """Post late the check-in calls that fell due while the bot was down (#429).
+
+    A call's job is one of those the scheduler discards when the bot comes back more than its
+    misfire grace after it, and nothing else posted it: the round asked nobody whether they
+    were racing, opened no attendance rows, and counted nothing against anyone. Decided
+    2026-09-24: a call that came due is posted late, provided the round's check-in deadline is
+    still ahead, and the drivers answer in the time left. The deadline boundary is the one
+    `/attendance post-check-in` holds to — with a deadline of zero, the round's own moment.
+
+    A round is owed a late call where its season is in one of the three ongoing stages, neither
+    it nor its division is cancelled, the attendance module is enabled, no call for it stands
+    and its check-in is not over (``checkin_cleared``), and the moment its call was due has
+    passed. **Nothing is posted while test mode is on** (decided 2026-09-24): `/test-mode
+    advance` posts a test season's calls in their turn.
+
+    The call is posted by `run_rsvp_notice`, which checks for a standing call under the round's
+    check-in lock — so the scheduler's own job, run late inside its misfire grace at this same
+    start, and this cannot both post one. A call posted late is written to the log channel; one
+    that fails to post is reported by `run_rsvp_notice` itself. Its last notice and its deadline
+    need no arming: the confirmation of placements armed them with the call, the job store
+    outlives a restart, and both are still ahead of a call posted in time to be answered.
+
+    Runs before `_recover_rsvp_views_and_deadlines` in `on_ready`, the call coming before its
+    deadline. *now* is the wall clock unless a test pins it.
+    """
+    from datetime import timedelta, timezone
+
+    from db.database import get_connection
+    from models.season import ONGOING_STAGES
+    from services.rsvp_service import run_rsvp_notice
+
+    moment = now or datetime.now(timezone.utc)
+    ongoing = [stage.value for stage in ONGOING_STAGES]
+    try:
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute(
+                f"""
+                SELECT r.id AS round_id, r.round_number, r.scheduled_at,
+                       d.id AS division_id, d.name AS division_name,
+                       s.season_number,
+                       ac.rsvp_notice_days, ac.rsvp_deadline_hours
+                  FROM rounds r
+                  JOIN divisions d ON d.id = r.division_id
+                  JOIN seasons s ON s.id = d.season_id
+                  CROSS JOIN attendance_config ac
+                 WHERE ac.module_enabled = 1
+                   AND s.stage IN ({",".join("?" for _ in ongoing)})
+                   AND r.status != 'CANCELLED'
+                   AND d.status != 'CANCELLED'
+                   AND r.checkin_cleared = 0
+                   AND NOT EXISTS (
+                       SELECT 1 FROM rsvp_embed_messages rem WHERE rem.round_id = r.id
+                   )
+                   AND NOT EXISTS (SELECT 1 FROM server_configs WHERE test_mode_active = 1)
+                 ORDER BY r.scheduled_at, r.id
+                """,
+                ongoing,
+            )
+            rows = await cursor.fetchall()
+    except Exception:
+        log.exception("_recover_missed_check_in_calls: failed to read the rounds owed a call")
+        return
+
+    for row in rows:
+        try:
+            scheduled_at = datetime.fromisoformat(str(row["scheduled_at"]))
+        except ValueError:
+            continue
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        due_at = scheduled_at - timedelta(days=row["rsvp_notice_days"] or 0)
+        deadline_at = scheduled_at - timedelta(hours=row["rsvp_deadline_hours"] or 0)
+        if moment < due_at or moment >= deadline_at:
+            continue
+
+        round_id: int = row["round_id"]
+        division_id: int = row["division_id"]
+        log.info("_recover_missed_check_in_calls: posting round %d's call late", round_id)
+        try:
+            await run_rsvp_notice(round_id, bot)
+            if await bot.attendance_service.get_embed_message(round_id, division_id) is None:
+                continue  # Not posted; run_rsvp_notice has said why in the log channel.
+            await bot.output_router.post_log(
+                f"ATTENDANCE | check-in call | POSTED LATE\n"
+                f"  season: {row['season_number']}\n"
+                f"  division: {row['division_name']} (id={division_id})\n"
+                f"  round: {row['round_number']}\n"
+                f"  reason: the call fell due while the bot was not running\n"
+                f"  deadline: <t:{int(deadline_at.timestamp())}:F>",
+            )
+        except Exception:
+            log.exception(
+                "_recover_missed_check_in_calls: late call failed for round %d", round_id
+            )
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
