@@ -93,8 +93,10 @@ class FastestLapContrast:
     plate was measured as the template was authored, which is what per-tier colours being
     off means. `every_division` says every division ties, which is said rather than listed.
     `background` is None where tied tiers reach the same figure on different colours.
-    `no_season` says per-tier colours were on and there was no division to measure in, so
-    the authored plate stood in for every tier (decided 2026-09-24, #165).
+    `unmeasured` holds each (division, reason) whose plate had no colour to measure, the
+    figure being the lowest of the rest. `no_season` says per-tier colours were on and
+    there was no division to measure in, so the authored plate stood in for every tier.
+    All three decided 2026-09-24 (#165).
     """
 
     ratio: float | None = None
@@ -102,6 +104,7 @@ class FastestLapContrast:
     problem: str | None = None
     divisions: tuple[str, ...] = ()
     every_division: bool = False
+    unmeasured: tuple[tuple[str, str], ...] = ()
     no_season: bool = False
 
 
@@ -185,6 +188,18 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
             f"of this size stays legible. The colour is stored all the same — "
             f"it is your league's to choose."
         )
+    if reading.unmeasured:
+        # One line whatever the count. Every unmeasured tier falls back to the plate as
+        # authored, so in practice they share a reason; grouping keeps it one clause each
+        # where they somehow do not.
+        by_reason: dict[str, list[str]] = {}
+        for division, reason in reading.unmeasured:
+            by_reason.setdefault(reason, []).append(division)
+        clauses = [
+            f"{_listed(tuple(divisions))}: {reason}"
+            for reason, divisions in by_reason.items()
+        ]
+        lines.append(f"ℹ️ Not measured for {'; '.join(clauses)}")
     if reading.no_season:
         lines.append(
             "ℹ️ There is no division of a season under way to measure, so no tier was "
@@ -1498,18 +1513,20 @@ class ImageCog(commands.Cog):
             return FastestLapContrast(problem=_no_plate_problem())
 
         measured: list[tuple[float, str, str]] = []
-        problems: list[str] = []
+        unmeasured: list[tuple[str, str]] = []
         for division in divisions:
             tree = copy.deepcopy(root)
             await self._render_service.apply_tier_palette(tree, division)
             background, problem = _plate_fill(tree)
             if background is None:
-                problems.append(problem or "")
+                unmeasured.append((division, problem or ""))
             else:
                 measured.append((contrast_ratio(colour, background), division, background))
 
         if not measured:
-            return FastestLapContrast(problem=problems[0])
+            # No tier has a colour to measure, which is the unmeasurable contrast of old:
+            # said once rather than once per division.
+            return FastestLapContrast(problem=unmeasured[0][1])
 
         # A tie is judged at the figure the manager reads, two places, so tiers the reply
         # shows alike are named alike. `measured` is in tier order, and so the names are.
@@ -1521,6 +1538,7 @@ class ImageCog(commands.Cog):
             background=backgrounds.pop() if len(backgrounds) == 1 else None,
             divisions=tuple(division for _ratio, division, _background in tied),
             every_division=len(divisions) > 1 and len(tied) == len(divisions),
+            unmeasured=tuple(unmeasured),
         )
 
     @config.command(

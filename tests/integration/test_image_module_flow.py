@@ -1524,6 +1524,56 @@ def test_tiers_tied_on_different_colours_are_named_without_one():
     )
 
 
+async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Decided 2026-09-24 (#165): the lowest of the rest, and the others named with why.
+
+    Divisions 2 and 3 set no plate colour, so they draw the gradient the plate was
+    authored in, which has no single colour to measure against.
+    """
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2", "Division 3"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template(
+            '<rect id="fastest_lap_background" class="colour-fill-plate" fill="url(#grad)"/>'
+        ),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    why = "the `fastest_lap_background` element's fill (`url(#grad)`) is not a plain colour."
+    assert reading.divisions == ("Division 1",)
+    assert reading.unmeasured == (("Division 2", why), ("Division 3", why))
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **Division 1** "
+        "(`#777777`): **4.48:1**"
+    )
+    assert _lines(reading)[-1] == (
+        f"ℹ️ Not measured for **Division 2** and **Division 3**: {why}"
+    )
+
+
+def test_unmeasured_tiers_with_different_reasons_share_one_line():
+    from cogs.image_cog import FastestLapContrast
+
+    reading = FastestLapContrast(
+        ratio=21.0,
+        background="#000000",
+        divisions=("A",),
+        unmeasured=(("B", "one reason."), ("C", "another."), ("D", "one reason.")),
+    )
+
+    assert _lines(reading)[-1] == (
+        "ℹ️ Not measured for **B** and **D**: one reason.; **C**: another."
+    )
+
+
 async def test_every_tier_unmeasurable_is_reported_once(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
