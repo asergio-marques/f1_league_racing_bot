@@ -409,10 +409,9 @@ class AttendanceService:
         None. A deadline records its distribution message on the call, which is how
         `/test-mode advance` tells the same thing, and the two must agree.
 
-        A division can hold more than one call. A new call takes down only the earlier ones
-        whose check-in has been closed a day (#425), so two rounds close together — a
-        double-header — stand side by side, and "the division's call" is no longer the only
-        row it holds.
+        A division can hold more than one call. Each stands until 24 hours after its own round
+        (#425), so two rounds close together — a double-header — stand side by side, and "the
+        division's call" is no longer the only row it holds.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(

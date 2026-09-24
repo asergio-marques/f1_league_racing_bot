@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import discord
 
@@ -384,82 +384,22 @@ async def _checkin_attachment(
 # ── run_rsvp_notice ───────────────────────────────────────────────────────────
 
 
-#: How long a round's call outlives its check-in before a later call may take it down (#274).
-_CLOSED_CALL_KEPT_FOR = timedelta(hours=24)
-
-
-async def _closed_calls(
-    bot: LeagueBot,
-    *,
-    division_id: int,
-    keep_round_id: int,
-    as_at: datetime,
-    deadline_hours: int,
-) -> list[int]:
-    """The rounds of *division_id* whose call a new call takes down, judged as at *as_at*.
-
-    Only those whose check-in closed at least `_CLOSED_CALL_KEPT_FOR` before it. A round still
-    open, or closed more recently, keeps its call, its last notice and its distribution message
-    until a later call is posted. Taking them all down, as this once did, meant the second call
-    of a double-header deleted the first while it was still open: nobody could answer it, its
-    deadline could not take the buttons off, and its distribution message was posted with no
-    row to record it in (#425).
-
-    Which moment *as_at* is, and why it is not simply the wall clock, is `run_rsvp_notice`'s
-    to say.
-
-    A round closes at `derive_checkin_deadline`, which is the round's own start where the
-    deadline is switched off. The deadline is read from the configuration rather than from the
-    job that fired, which is safe because the timing commands are refused while a season runs,
-    so the two cannot differ.
-
-    *keep_round_id* is left out whatever its state: it is the round being posted for.
-    """
-    from services.attendance_service import derive_checkin_deadline
-
-    async with get_connection(bot.db_path) as db:
-        cur = await db.execute(
-            """
-            SELECT rem.round_id, r.scheduled_at
-              FROM rsvp_embed_messages rem
-              JOIN rounds r ON r.id = rem.round_id
-             WHERE rem.division_id = ?
-               AND rem.round_id != ?
-             ORDER BY r.scheduled_at, rem.round_id
-            """,
-            (division_id, keep_round_id),
-        )
-        rows = await cur.fetchall()
-
-    closed: list[int] = []
-    for row in rows:
-        scheduled_at = row["scheduled_at"]
-        if isinstance(scheduled_at, str):
-            scheduled_at = datetime.fromisoformat(scheduled_at)
-        closes_at = derive_checkin_deadline(scheduled_at, deadline_hours)
-        if closes_at + _CLOSED_CALL_KEPT_FOR <= as_at:
-            closed.append(row["round_id"])
-    return closed
-
-
-async def run_rsvp_notice(
-    round_id: int, bot: LeagueBot, *, now: datetime | None = None
-) -> None:
+async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     """Post the RSVP embed for *round_id* to all configured RSVP channels.
 
     Called by the APScheduler job (and by /test-mode advance for phase 5).
 
     Steps per division:
     1. Skip if no RSVP channel configured (FR-008) — log audit entry.
-    2. Take down the division's earlier calls whose check-in closed a day ago — see
-       `_closed_calls`.
-    3. Query roster for division.
-    4. Build embed.
-    5. Post to RSVP channel.
-    6. Bulk-insert driver_round_attendance rows (all drivers NO_RSVP).
-    7. Store message_id + channel_id in rsvp_embed_messages.
+    2. Query roster for division.
+    3. Build embed.
+    4. Post to RSVP channel.
+    5. Bulk-insert driver_round_attendance rows (all drivers NO_RSVP).
+    6. Store message_id + channel_id in rsvp_embed_messages.
 
-    *now* is the moment the call is posted at, and is the wall clock unless a test pins it.
+    It takes down no other round's call. Each round's call comes down 24 hours after its own
+    round, by `run_rsvp_cleanup` (#425): posting one call once took down all the division's
+    others, the first of a double-header's included while it was still open.
 
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
@@ -545,27 +485,6 @@ async def run_rsvp_notice(
             reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
         )
         return
-
-    # Take down the division's earlier calls whose check-in has been closed a day (#425).
-    #
-    # Judged as at the later of the moment this call is posted and the moment it fell due. In
-    # every real path the two agree or the posting is later: the job fires at the due moment,
-    # `/attendance post-check-in` refuses before it, and an amendment reposts only once the new
-    # due moment has passed. Only `/test-mode advance` fires a call early, and it does not move
-    # the clock — judged by the wall clock, a test season would never take down a call at all,
-    # every deadline it holds lying ahead of the real one. Judged as at the due moment, it takes
-    # them down as the season it stands in for would.
-    att_cfg = await bot.attendance_service.get_or_create_config()
-    posted_at = now if now is not None else datetime.now(timezone.utc)
-    due_at = scheduled_at - timedelta(days=att_cfg.rsvp_notice_days)
-    for closed_round_id in await _closed_calls(
-        bot,
-        division_id=division_id,
-        keep_round_id=round_id,
-        as_at=max(posted_at, due_at),
-        deadline_hours=att_cfg.rsvp_deadline_hours,
-    ):
-        await withdraw_rsvp_call(closed_round_id, division_id, bot)
 
     # Query roster
     roster = await query_division_roster(bot.db_path, division_id)
@@ -705,11 +624,10 @@ async def withdraw_rsvp_call(
     deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
     row goes either way, since nothing would take the messages down again from it.
 
-    `run_rsvp_notice` takes down a division's earlier calls through this function once their
-    check-in has been closed a day (`_closed_calls`), and never the round it is posting for, so
-    a round whose call is posted twice would end up with both standing. This is the other half:
-    it removes the call, its last notice and its distribution announcement for one round, so a
-    fresh call can take their place.
+    `run_rsvp_notice` takes down no call at all, the round's own included, so a round whose call
+    is posted twice would end up with both standing. This is the other half: it removes the
+    call, its last notice and its distribution announcement for one round, so a fresh call can
+    take their place. It is also how `run_rsvp_cleanup` takes them down after the round.
 
     The recorded answers are **not** touched. They are what a repost carries over — a driver who
     said they were racing has not unsaid it because the round moved, and asking the division to
