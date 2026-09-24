@@ -294,6 +294,48 @@ def test_a_paused_job_is_not_listed_as_queued():
     assert _service(jobs).get_job_ids_for_rounds({42}) == set()
 
 
+def test_every_queued_job_is_listed_by_its_round_and_event_type():
+    """`get_queued_events_for_rounds` is the review summary's view and deliberately keeps the
+    ones advance excludes — it answers "is a job queued", not "what will advance fire" (#426)."""
+    suffix = _round_job_suffix(_round(42, 5), 3, 2)
+    jobs = [_job(f"{event_type}{suffix}", 42) for event_type in _ROUND_EVENT_TYPES]
+
+    queued = _service(jobs).get_queued_events_for_rounds({42})
+
+    assert queued == {(42, event_type) for event_type in _ROUND_EVENT_TYPES}
+
+
+def test_a_paused_job_is_not_queued():
+    """A paused job will not fire, and is no more worth reporting as queued than a missing one."""
+    suffix = _round_job_suffix(_round(42, 5), 3, 2)
+    jobs = [_job(f"weather_p1{suffix}", 42, paused=True)]
+
+    assert _service(jobs).get_queued_events_for_rounds({42}) == set()
+
+
+def test_a_queued_job_is_found_by_its_round_not_the_numbers_in_its_id():
+    """The season, tier and number in an ID are decoration, and two rounds may share them after a
+    renumbering. The round a job belongs to is its `round_id` kwarg, which an ID written before
+    the round id was added to it carries as well."""
+    jobs = [
+        _job("weather_p1_s1_d1_r5_id42", 42),
+        _job("weather_p1_s1_d1_r5_id43", 43),
+        _job("results_s1_d1_r5", 42),
+        _job("weather_p2_s1_d1_r6_id44", 44),
+    ]
+
+    queued = _service(jobs).get_queued_events_for_rounds({42, 43})
+
+    assert queued == {(42, "weather_p1"), (43, "weather_p1"), (42, "results")}
+
+
+def test_a_job_whose_id_does_not_parse_is_not_listed():
+    """Its type cannot be read, so it cannot stand for any step of the round."""
+    jobs = [_job("something_odd", 42), _job("portrait_refresh", None)]
+
+    assert _service(jobs).get_queued_events_for_rounds({42}) == set()
+
+
 # ---------------------------------------------------------------------------
 # The module-level callables
 # ---------------------------------------------------------------------------

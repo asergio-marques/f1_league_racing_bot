@@ -901,6 +901,36 @@ class SchedulerService:
                 result.add(job.id)
         return result
 
+    def get_queued_events_for_rounds(self, round_ids: set[int]) -> set[tuple[int, str]]:
+        """Return ``(round_id, event_type)`` for every queued job of the given rounds.
+
+        The review summary's view of the job store: it tells "job queued" from "job absent"
+        for each pending step. Unlike ``get_pending_advance_jobs`` nothing is filtered out by
+        type — ``results`` and both cleanups are included — so it answers "is a job queued",
+        not "what will advance fire".
+
+        A job is found by its round and its event type, the way ``cancel_round`` finds one
+        (issue #139): the ``round_id`` kwarg, which is the round's own key whatever numbers
+        its ID carries, and the type `_job_event_type` reads off the ID. A caller asks
+        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up — the
+        review once did, in a shape no job has ever had, and so found none (#426). A mystery
+        round's notice is armed as ``weather_p1`` and is found under that type.
+
+        A paused job (``next_run_time is None``) will not fire and is left out, as is one whose
+        ID carries no round suffix.
+        """
+        result: set[tuple[int, str]] = set()
+        for job in self._scheduler.get_jobs():
+            if job.next_run_time is None:
+                continue
+            round_id = job.kwargs.get("round_id")
+            if round_id not in round_ids:
+                continue
+            event_type = _job_event_type(job.id)
+            if event_type is not None:
+                result.add((round_id, event_type))
+        return result
+
     # ------------------------------------------------------------------
     # Season-end scheduling
     # ------------------------------------------------------------------
