@@ -76,8 +76,11 @@ class DeclaredNames(frozenset[str]):
         return names if isinstance(names, DeclaredNames) else cls(names)
 
     def ordinals_after(self, head: str) -> set[int]:
-        """Every ordinal declared straight after *head* — ``row_3_round_`` → ``{1, …, 24}``."""
-        return self._heads.get(head, set())
+        """Every ordinal declared straight after *head* — ``row_3_round_`` → ``{1, …, 24}``.
+
+        A copy, so no caller can change what a later count reads.
+        """
+        return set(self._heads.get(head, ()))
 
 
 @dataclass(frozen=True)

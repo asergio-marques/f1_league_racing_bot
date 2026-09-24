@@ -357,6 +357,17 @@ def test_counting_from_the_index_matches_counting_by_pattern(stem, minimum):
     assert count(DeclaredNames(_AWKWARD_NAMES)) == count(set(_AWKWARD_NAMES))
 
 
+def test_the_index_answers_with_a_copy():
+    """One index serves every count of an enumeration, so a caller changing the answer it was
+    given must not change the next caller's."""
+    from models.image_catalogues import DeclaredNames
+
+    index = DeclaredNames(_AWKWARD_NAMES)
+    index.ordinals_after("row_1_round_1_driver_").clear()
+
+    assert index.ordinals_after("row_1_round_1_driver_") == {1, 2, 3}
+
+
 def test_a_template_s_names_are_indexed_once_per_enumeration(monkeypatch):
     """Issue #164. Each row once scanned every name the template declares to count its own
     members, so the work grew with rows times names — quadratic in a file leagues are asked
