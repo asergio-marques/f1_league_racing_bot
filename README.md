@@ -2009,6 +2009,10 @@ All commands below require the attendance module to be enabled (`/module enable 
 >
 > **Only a driver with a confirmed placement can answer.** Anybody else pressing a button is told they are not a member of the division and nothing is recorded — a driver still waiting on `/season placements-review`, a driver of another division, or someone with no driver profile at all, such as a league manager who does not race. Who can see a check-in channel in the first place is yours to set with Discord's own channel permissions; the bot does not manage them, so restrict the channel to the division's role if you would rather nobody else could press anything.
 
+> **Posting a round's call deletes the division's earlier ones.** The previous round's call, its reminder and its reserve-distribution message are deleted from the check-in channel when the next round's call goes out, so the channel shows only the current round's. The answers are kept in the attendance record, and the attendance sheet carries what they cost.
+>
+> **Keep a division's rounds further apart than the notice.** Today that deletion happens whether or not the earlier round's check-in has closed. Two rounds of one division closer together than the notice — a Saturday and Sunday double-header on the 5-day default — means Sunday's call deletes Saturday's while it is still open: nobody can answer Saturday any more, and its deadline cannot take the buttons off. Space such rounds out, or shorten the notice so the second call goes out after the first round's check-in has closed. This is a known fault; an earlier call is meant to stay until a day after its check-in closes.
+
 > **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-placements-review).
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
