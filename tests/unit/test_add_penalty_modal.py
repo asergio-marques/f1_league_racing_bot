@@ -505,6 +505,21 @@ async def test_no_further_action_is_staged_as_a_correction(tmp_path):
     assert "Staged Correction" in _replied(interaction)
 
 
+@pytest.mark.parametrize("appeals", [False, True])
+async def test_a_penalty_of_no_seconds_is_refused_pointing_to_no_further_action(
+    tmp_path, appeals
+):
+    """Refused in both passes, a correction taking the same values as a penalty."""
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, penalty="0s", appeals=appeals)
+
+    assert state.staged == [] and state.staged_appeals == []
+    replied = _replied(interaction)
+    assert replied.startswith("\u274c")
+    assert "NFA" in replied
+
+
 async def test_a_staged_no_further_action_does_not_distort_the_arithmetic(tmp_path):
     """It carries no seconds, as a DSQ does, so it neither raises nor uses up headroom."""
     state = _state(

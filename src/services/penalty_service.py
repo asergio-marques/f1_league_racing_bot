@@ -99,6 +99,14 @@ def validate_penalty_input(
             "or `NFA` for no further action."
         )
 
+    # A penalty of no seconds is no sanction (#138). It was the only way to publish a cleared
+    # driver before no further action existed, and it published them as sanctioned.
+    if seconds == 0:
+        return (
+            "A penalty of no seconds is no sanction. To clear the driver, enter `NFA` "
+            "for no further action."
+        )
+
     if seconds < 0 and current_time_penalty_s is not None:
         if abs(seconds) > current_time_penalty_s:
             return (

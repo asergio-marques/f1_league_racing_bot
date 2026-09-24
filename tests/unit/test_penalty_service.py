@@ -141,14 +141,22 @@ def test_an_unreadable_value_names_no_further_action_among_the_forms():
     assert "NFA" in result
 
 
-def test_validate_zero_accepted():
+@pytest.mark.parametrize("typed", ["0", "0s", "+0s", "-0", "00"])
+def test_validate_zero_rejected_pointing_to_nfa(typed):
+    """A penalty of no seconds is no sanction (#138). It was accepted, applied and published
+    as one — "0 seconds added" — which was the only way to say a driver had been cleared, and
+    said it as a punishment. The refusal names the outcome the manager almost certainly meant.
+    """
     result = validate_penalty_input(
         driver_user_id=100,
         session_type=SessionType.FEATURE_RACE,
-        penalty_value="0",
+        penalty_value=typed,
+        current_time_ms=1_200_000,
+        current_time_penalty_s=5,
     )
-    assert isinstance(result, StagedPenalty)
-    assert result.penalty_seconds == 0
+    assert isinstance(result, str)
+    assert "NFA" in result
+    assert "no further action" in result
 
 
 # ---------------------------------------------------------------------------
