@@ -618,6 +618,199 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# No further action alters no classification (#138)
+# ---------------------------------------------------------------------------
+
+
+class _QuietBot:
+    class output_router:
+        @staticmethod
+        async def post_log(*_a, **_kw):
+            pass
+
+
+async def _seed_one_session(tmp_path, session_type: str) -> tuple[str, int, int, int]:
+    """A round with one session of two drivers, stored in an order a re-sort would reverse.
+
+    Driver 1 stands P1 on the slower time or lap and driver 2 P2 on the faster one. Nothing
+    a league pastes produces that, but it is the one state in which re-sorting a session is
+    visible — so it is what shows that no further action does not re-sort at all.
+    """
+    from db.database import get_connection, run_migrations
+
+    db_path = str(tmp_path / "nfa.db")
+    await run_migrations(db_path)
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, interaction_channel_id, log_channel_id) VALUES (1,10,20,30)"
+        )
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) VALUES ('2026-01-01','ACTIVE',1)"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, forecast_channel_id) VALUES (?,?,777,888)",
+            (season_id, "Main"),
+        )
+        division_id = cursor.lastrowid
+        await seed_team_instances(db, division_id, 100, 200)
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            (division_id,),
+        )
+        round_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) VALUES (?,?,?,'ACTIVE')",
+            (round_id, division_id, session_type),
+        )
+        sr_id = cursor.lastrowid
+        if session_type.endswith("QUALIFYING"):
+            for driver, team, position, lap in ((1, 100, 1, "1:31.000"), (2, 200, 2, "1:30.000")):
+                await db.execute(
+                    "INSERT INTO qualifying_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, best_lap) "
+                    "VALUES (?,?,?,?,'CLASSIFIED',?)",
+                    (sr_id, driver, team, position, lap),
+                )
+        else:
+            for driver, team, position, base_ms in ((1, 100, 1, 1_210_000), (2, 200, 2, 1_200_000)):
+                await db.execute(
+                    "INSERT INTO race_session_results (session_result_id, driver_user_id, team_instance_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, appeal_time_penalties_ms) "
+                    "VALUES (?,?,?,?,'CLASSIFIED',?,1000,0,0)",
+                    (sr_id, driver, team, position, base_ms),
+                )
+        await db.commit()
+    return db_path, round_id, division_id, sr_id
+
+
+def _nfa(session_type: SessionType) -> StagedPenalty:
+    return StagedPenalty(
+        driver_user_id=1,
+        session_type=session_type,
+        penalty_type="NFA",
+        penalty_seconds=None,
+        description="Contact at turn one",
+        justification="Racing incident",
+    )
+
+
+@pytest.mark.parametrize("phase", ["PENALTY", "APPEAL"])
+async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_path, phase):
+    from db.database import get_connection
+    from services.penalty_service import apply_penalties
+
+    db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
+    columns = (
+        "driver_user_id, finishing_position, outcome, base_time_ms, ingame_time_penalties_ms, "
+        "postrace_time_penalties_ms, appeal_time_penalties_ms"
+    )
+
+    async def _rows():
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                f"SELECT {columns} FROM race_session_results WHERE session_result_id = ? "
+                "ORDER BY driver_user_id",
+                (sr_id,),
+            )
+            return [dict(r) for r in await cursor.fetchall()]
+
+    before = await _rows()
+    await apply_penalties(
+        db_path, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, _QuietBot(),
+        _skip_post=True, _phase=phase,
+    )
+
+    assert await _rows() == before
+
+
+async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(tmp_path):
+    from db.database import get_connection
+    from services.penalty_service import apply_penalties
+
+    db_path, round_id, division_id, sr_id = await _seed_one_session(
+        tmp_path, "FEATURE_QUALIFYING"
+    )
+
+    async def _rows():
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT driver_user_id, finishing_position, outcome FROM qualifying_session_results "
+                "WHERE session_result_id = ? ORDER BY driver_user_id",
+                (sr_id,),
+            )
+            return [dict(r) for r in await cursor.fetchall()]
+
+    before = await _rows()
+    await apply_penalties(
+        db_path, round_id, division_id, [_nfa(SessionType.FEATURE_QUALIFYING)], 999,
+        _QuietBot(), _skip_post=True,
+    )
+
+    assert await _rows() == before
+
+
+async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
+    """It alters nothing, but it is still a decision, and the round's verdicts are read from
+    the record — its announcement and an amendment's replay both need it there."""
+    from db.database import get_connection
+    from services.penalty_service import apply_penalties
+
+    db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
+
+    inserted = await apply_penalties(
+        db_path, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, _QuietBot(),
+        _skip_post=True,
+    )
+
+    assert [(r["driver_user_id"], r["penalty_type"], r["time_seconds"]) for r in inserted] == [
+        (1, "NFA", None)
+    ]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT penalty_type, time_seconds, description, justification FROM penalty_records"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+    assert rows == [
+        {
+            "penalty_type": "NFA",
+            "time_seconds": None,
+            "description": "Contact at turn one",
+            "justification": "Racing incident",
+        }
+    ]
+
+
+async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tmp_path):
+    """The guard is on sessions only no further action touches. A real sanction in the same
+    session re-sorts it as it always has."""
+    from db.database import get_connection
+    from services.penalty_service import apply_penalties
+
+    db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
+    staged = [
+        _nfa(SessionType.FEATURE_RACE),
+        StagedPenalty(
+            driver_user_id=2,
+            session_type=SessionType.FEATURE_RACE,
+            penalty_type="TIME",
+            penalty_seconds=1,
+        ),
+    ]
+
+    await apply_penalties(db_path, round_id, division_id, staged, 999, _QuietBot(), _skip_post=True)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id FROM race_session_results WHERE session_result_id = ? "
+            "ORDER BY finishing_position",
+            (sr_id,),
+        )
+        order = [r["driver_user_id"] for r in await cursor.fetchall()]
+    # Driver 2, 1,202,000 ms with the second, is still ahead of driver 1's 1,211,000.
+    assert order == [2, 1]
+
+
+# ---------------------------------------------------------------------------
 # apply_penalties reposts when it is not told to skip (#130)
 # ---------------------------------------------------------------------------
 

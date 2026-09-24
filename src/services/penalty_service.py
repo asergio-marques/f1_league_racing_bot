@@ -249,6 +249,11 @@ async def apply_penalties(
                 continue
             session_result_id: int = sr_row["id"]
 
+            # No further action alters no classification (#138), so a session nothing else
+            # touches is not re-sorted: its rows are read for the verdict's record and left as
+            # they stand, rather than trusting a re-sort to put them back where they were.
+            reorders = any(sp.penalty_type != "NFA" for sp in session_penalties)
+
             # --- Update new result tables ---
             if not session_type.is_qualifying:
                 for sp in session_penalties:
@@ -286,6 +291,8 @@ async def apply_penalties(
                 rsr_rows = list(await rr_cursor.fetchall())
                 for rr in rsr_rows:
                     driver_to_new_result_id[(session_type.value, int(rr["driver_user_id"]))] = rr["id"]
+                if not reorders:
+                    continue
                 sortable_rsr = []
                 fixed_rsr = []
                 for rr in rsr_rows:
@@ -337,6 +344,8 @@ async def apply_penalties(
                 qsr_rows = list(await qr_cursor.fetchall())
                 for qr in qsr_rows:
                     driver_to_new_result_id[(session_type.value, int(qr["driver_user_id"]))] = qr["id"]
+                if not reorders:
+                    continue
                 sortable_qsr = []
                 fixed_qsr = []
                 for qr in qsr_rows:
