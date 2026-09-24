@@ -145,6 +145,8 @@ async def _advance(cog, interaction, entry, **patches):
         "services.rsvp_service.run_rsvp_notice": AsyncMock(return_value=None),
         "services.rsvp_service.run_rsvp_last_notice": AsyncMock(return_value=None),
         "services.rsvp_service.run_rsvp_deadline": AsyncMock(return_value=None),
+        "services.rsvp_service.run_rsvp_cleanup": AsyncMock(return_value=None),
+        "services.forecast_cleanup_service.run_post_race_cleanup": AsyncMock(return_value=None),
         "services.result_submission_service.is_submission_open": AsyncMock(
             return_value=False
         ),
@@ -580,6 +582,73 @@ async def test_the_deadline_reply_says_reserves_were_distributed(tmp_path):
     await _advance(cog, interaction, _entry(7))
 
     assert "Reserve distribution complete" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# The cleanups a day after the round (#425)
+# ---------------------------------------------------------------------------
+
+CLEANUPS = [
+    (8, "run_post_race_cleanup", "forecast cleanup", "cleanup"),
+    (9, "run_rsvp_cleanup", "check-in cleanup", "rsvp_cleanup"),
+]
+
+
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+async def test_each_cleanup_reaches_its_own_runner(tmp_path, phase, runner, label, prefix):
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    mocks = await _advance(cog, interaction, _entry(phase))
+
+    mocks[runner].assert_awaited_once_with(ROUND_ID, cog.bot)
+    other = {"run_post_race_cleanup", "run_rsvp_cleanup"} - {runner}
+    mocks[other.pop()].assert_not_awaited()
+    assert label in _replied(interaction)
+
+
+@pytest.mark.parametrize("job_id", ["cleanup_job", None], ids=["from-the-job-store", "from-state"])
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+async def test_a_fired_cleanup_cancels_its_job_by_kind(
+    tmp_path, phase, runner, label, prefix, job_id
+):
+    """By kind rather than by the entry's job, which is None where the step was found from
+    database state; a job left queued would fire again at its own moment."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(phase, job_id=job_id))
+
+    cog.bot.scheduler_service.cancel_round.assert_called_once_with(
+        ROUND_ID, only=frozenset({prefix})
+    )
+
+
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+    target = {
+        "run_post_race_cleanup": "services.forecast_cleanup_service.run_post_race_cleanup",
+        "run_rsvp_cleanup": "services.rsvp_service.run_rsvp_cleanup",
+    }[runner]
+
+    await _advance(
+        cog, interaction, _entry(phase), **{target: AsyncMock(side_effect=RuntimeError("x"))}
+    )
+
+    replied = _replied(interaction)
+    assert "internal error" in replied
+    assert label in replied
+    cog.bot.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
+async def test_a_fired_cleanup_is_logged_by_name(tmp_path, phase, runner, label, prefix):
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(phase))
+
+    assert f"phase: {prefix}" in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
 # ---------------------------------------------------------------------------

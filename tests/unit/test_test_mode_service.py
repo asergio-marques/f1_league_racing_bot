@@ -674,3 +674,174 @@ async def test_earlier_misfired_round_beats_later_scheduler_job() -> None:
         assert result["phase_number"] == 1
     finally:
         os.unlink(db_path)
+
+
+# ---------------------------------------------------------------------------
+# The two cleanups a day after the round (#425)
+# ---------------------------------------------------------------------------
+# A round's Phase 3 forecast and its check-in come down a day after it, and advance fires each
+# as a step of its own (decided 2026-09-24): 8 for the forecast, 9 for the check-in.
+
+
+async def _seed_all_done(db_path: str, rounds: list[dict], *, results: bool = False) -> None:
+    """Seed with weather and attendance on, every round's forecasts published."""
+    await _seed_with_attendance(
+        db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": 1, **r} for r in rounds]
+    )
+    if results:
+        async with get_connection(db_path) as db:
+            await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+            await db.commit()
+
+
+async def _stand(
+    db_path: str,
+    round_id: int,
+    *,
+    forecast: bool = False,
+    call: bool = False,
+    distributed: bool = True,
+    status: str | None = None,
+) -> None:
+    """Record what is standing for *round_id*, and the state it is in."""
+    async with get_connection(db_path) as db:
+        if forecast:
+            await db.execute(
+                "INSERT INTO forecast_messages "
+                "(round_id, division_id, phase_number, message_id, posted_at) "
+                "VALUES (?, 1, 3, ?, '2026-01-01T00:00:00')",
+                (round_id, 800 + round_id),
+            )
+        if call:
+            await db.execute(
+                "INSERT INTO rsvp_embed_messages "
+                "(round_id, division_id, message_id, channel_id, posted_at, "
+                " last_notice_msg_id, distribution_msg_id) "
+                "VALUES (?, 1, ?, 'ch1', '2026-01-01T00:00:00', 'last', ?)",
+                (round_id, f"call{round_id}", "dist" if distributed else None),
+            )
+        if status is not None:
+            await db.execute("UPDATE rounds SET status = ? WHERE id = ?", (status, round_id))
+        await db.commit()
+
+
+def _job(round_id: int, phase: int, *, days: float) -> dict:
+    return {
+        "job_id": f"job_{phase}_r{round_id}",
+        "round_id": round_id,
+        "phase_number": phase,
+        "next_run_time": datetime.now(timezone.utc) + timedelta(days=days),
+    }
+
+
+async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_path) -> None:
+    """With nothing else pending, what is left standing is what remains to take down — the
+    forecast first, as the two fall together and it is the lower step."""
+    db_path = str(tmp_path / "cleanups_last.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}])
+    await _stand(db_path, 1, forecast=True, call=True, status="FINAL")
+    stub = _StubScheduler()
+
+    first = await get_next_pending_phase(db_path, stub)
+    assert first is not None and first["phase_number"] == 8
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM forecast_messages")
+        await db.commit()
+
+    second = await get_next_pending_phase(db_path, stub)
+    assert second is not None and second["phase_number"] == 9
+
+
+async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
+    """Its call is gone and so is the row recording it — which is also what a round whose call
+    is still to come looks like. The mark is what tells them apart, and without it advance
+    would post the call of a round a day past (#425)."""
+    db_path = str(tmp_path / "cleared.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}])
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+
+    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+
+
+async def test_a_cleanup_job_waits_for_its_own_round_s_results(tmp_path) -> None:
+    """Result submission never comes from the job store, and falls a day before the cleanup."""
+    db_path = str(tmp_path / "results_first.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
+    await _stand(db_path, 1, call=True)
+
+    result = await get_next_pending_phase(db_path, _StubScheduler([_job(1, 9, days=1)]))
+
+    assert result is not None and result["phase_number"] == 4
+
+
+async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
+    """A finished round offers no other step, which once meant any job of its was thrown away
+    as stale. Its cleanups are still to run."""
+    db_path = str(tmp_path / "final_cleanup.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
+    await _stand(db_path, 1, call=True, status="FINAL")
+
+    result = await get_next_pending_phase(db_path, _StubScheduler([_job(1, 9, days=1)]))
+
+    assert result is not None
+    assert (result["phase_number"], result["job_id"]) == (9, "job_9_r1")
+
+
+async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -> None:
+    """A mystery round, or a Phase 3 that never posted, leaves nothing to take down."""
+    db_path = str(tmp_path / "nothing_to_clean.db")
+    await run_migrations(db_path)
+    await _seed_all_done(db_path, [{"track_name": "Monaco"}])
+    await _stand(db_path, 1, status="FINAL")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+
+    assert await get_next_pending_phase(db_path, _StubScheduler([_job(1, 8, days=1)])) is None
+
+
+async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp_path) -> None:
+    """A double-header: Sunday's deadline falls before Saturday's cleanup. The check of the
+    rounds before a job must not offer Saturday's cleanup ahead of it."""
+    saturday = (datetime.now(timezone.utc) + timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%S")
+    sunday = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    db_path = str(tmp_path / "double_header.db")
+    await run_migrations(db_path)
+    await _seed_all_done(
+        db_path,
+        [
+            {"track_name": "Imola", "scheduled_at": saturday},
+            {"track_name": "Monza", "scheduled_at": sunday},
+        ],
+    )
+    await _stand(db_path, 1, call=True, status="FINAL")
+    await _stand(db_path, 2, call=True, distributed=False)
+    stub = _StubScheduler([_job(2, 7, days=6.9), _job(1, 9, days=7)])
+
+    result = await get_next_pending_phase(db_path, stub)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 7)
+
+
+async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
+    """Round-by-round the fallback would reach a round's cleanup before the next round's first
+    phase, though the cleanup falls days later; so every other step goes first."""
+    db_path = str(tmp_path / "fallback_order.db")
+    await run_migrations(db_path)
+    await _seed_all_done(
+        db_path, [{"track_name": "Imola"}, {"track_name": "Monza", "phase1_done": 0}]
+    )
+    await _stand(db_path, 1, call=True, status="FINAL")
+    await _stand(db_path, 2, call=True)
+
+    result = await get_next_pending_phase(db_path, _StubScheduler())
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 1)

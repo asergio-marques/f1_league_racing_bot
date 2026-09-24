@@ -823,12 +823,13 @@ class SchedulerService:
           - ``job_id``       — APScheduler job ID string
           - ``round_id``     — round this job belongs to
           - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
-            last notice and its deadline. A mystery round's notice is armed as
-            ``weather_p1`` and so comes back as 1: 0 never occurs here.
+            last notice and its deadline, 8/9 = the forecast and the check-in cleanups a day
+            after the round (#425). A mystery round's notice is armed as ``weather_p1`` and so
+            comes back as 1: 0 never occurs here.
           - ``next_run_time``— datetime when the job is scheduled to fire
 
-        Result submission, cleanup and season-end jobs are excluded, so 4 never occurs
-        either. Jobs that are paused (``next_run_time is None``) are excluded.
+        Result submission and season-end jobs are excluded, so 4 never occurs either. Jobs
+        that are paused (``next_run_time is None``) are excluded.
         """
         # result submission (results) is intentionally excluded here.
         # For test-mode advance, result submission is detected via DB state
@@ -841,6 +842,8 @@ class SchedulerService:
             "rsvp_notice":      5,
             "rsvp_last_notice": 6,
             "rsvp_deadline":    7,
+            "cleanup":          8,
+            "rsvp_cleanup":     9,
         }
         result: list[dict] = []
         for job in self._scheduler.get_jobs():
@@ -856,7 +859,7 @@ class SchedulerService:
             event_type = job.id[: m.start()]
             phase = _PHASE_PREFIX_MAP.get(event_type)
             if phase is None:
-                continue  # cleanup, season_end, etc.
+                continue  # results, season_end, etc.
             result.append(
                 {
                     "job_id": job.id,

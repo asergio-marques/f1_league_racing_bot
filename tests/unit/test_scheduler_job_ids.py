@@ -131,11 +131,13 @@ def test_each_event_type_maps_to_its_phase_number():
         _job(f"rsvp_notice{suffix}", 42, minutes=4),
         _job(f"rsvp_last_notice{suffix}", 42, minutes=5),
         _job(f"rsvp_deadline{suffix}", 42, minutes=6),
+        _job(f"cleanup{suffix}", 42, minutes=7),
+        _job(f"rsvp_cleanup{suffix}", 42, minutes=8),
     ]
 
     pending = _service(jobs).get_pending_advance_jobs({42})
 
-    assert [p["phase_number"] for p in pending] == [1, 2, 3, 5, 6, 7]
+    assert [p["phase_number"] for p in pending] == [1, 2, 3, 5, 6, 7, 8, 9]
 
 
 def test_jobs_are_returned_in_the_order_they_will_fire():
@@ -174,11 +176,10 @@ def test_another_round_s_jobs_are_not_returned():
     assert [p["round_id"] for p in pending] == [42]
 
 
-def test_cleanup_and_season_end_jobs_are_excluded():
-    """They are not events a season fires, so advance must not replay them."""
+def test_season_end_jobs_are_excluded():
+    """Not an event of any round, so advance must not replay it."""
     suffix = _round_job_suffix(_round(42, 5), 3, 2)
     jobs = [
-        _job(f"cleanup{suffix}", 42),
         _job(f"season_end{suffix}", 42),
         _job(f"weather_p1{suffix}", 42),
     ]
@@ -186,6 +187,19 @@ def test_cleanup_and_season_end_jobs_are_excluded():
     pending = _service(jobs).get_pending_advance_jobs({42})
 
     assert [p["phase_number"] for p in pending] == [1]
+
+
+def test_both_cleanups_are_replayed_as_events_of_their_own():
+    """A round's forecast and check-in come down a day after it, and advance fires both in
+    their turn (decided 2026-09-24, #425), the forecast's first where they fall together."""
+    suffix = _round_job_suffix(_round(42, 5), 3, 2)
+    jobs = [_job(f"rsvp_cleanup{suffix}", 42), _job(f"cleanup{suffix}", 42)]
+    for job in jobs:
+        job.next_run_time = jobs[0].next_run_time
+
+    pending = _service(jobs).get_pending_advance_jobs({42})
+
+    assert [p["phase_number"] for p in pending] == [8, 9]
 
 
 def test_a_results_job_is_never_returned():
