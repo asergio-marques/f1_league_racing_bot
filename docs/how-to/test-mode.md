@@ -103,7 +103,7 @@ When there is nothing left, `advance` says so and points at `/season complete`.
 
 Prints every round of the active season with a status per phase, per division. Use it to see where you are without advancing. Three symbols are defined — ✅ done, ⏳ pending with a job queued, ⚠️ pending with no job — and result submission renders instead as "✅ finalized" or "⏸️ pending review". A weather round's `Cleanup` is done once Phase 3 has run and nothing of it is left standing; the check-in's `Cleared` is done once its messages have come down, and a cleared round shows every check-in step done, its record having gone with them.
 
-> **⏳ never actually appears.** The summary probes job IDs of the form `phase1_r{round_id}`, `results_r{round_id}` and `rsvp_notice_r{round_id}`, while the scheduler creates `weather_p1_s{S}_d{D}_r{RoundNumber}` and its siblings — mismatched in both the prefix and the round identifier. No probe ever matches, so every pending phase renders ⚠️ whether or not its job is queued. Read ⚠️ as "pending", not as "the job is missing".
+> **A job is found by its round and its event type** (#426): the `round_id` it carries, and its ID less the `_s{S}_d{D}_r{N}_id{round_id}` suffix — the way `advance` cancels a round's results job, never by an ID rebuilt to match. A mystery round's notice is armed as `weather_p1`, so its `Notice` reads that job.
 
 ---
 
