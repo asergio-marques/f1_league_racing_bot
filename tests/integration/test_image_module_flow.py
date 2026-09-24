@@ -1361,6 +1361,36 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     assert reading.every_division is False
 
 
+async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classes_are_written(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """The slot's class written first, the template's own `.plate` rule declared too.
+
+    Inkscape draws the tier's grey: the injected rule comes later, and a later rule of equal
+    specificity wins whatever order the element lists its classes in. Style resolution read
+    the classes in the order written instead, so the check measured the template's black
+    here while the drawing showed the grey.
+    """
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template(
+            "<style>.plate { fill:#000000 }</style>"
+            '<rect id="fastest_lap_background" class="colour-fill-plate plate"/>'
+        ),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.background == "#777777"
+    assert reading.divisions == ("Division 1",)
+
+
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
