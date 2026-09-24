@@ -384,6 +384,29 @@ def test_a_rule_in_a_later_style_element_wins():
     assert computed_style(element, stylesheet(root))["fill"] == "#222222"
 
 
+def test_class_resolution_is_not_shared_between_stylesheets():
+    """Each stylesheet answers from its own rules, whatever another has already resolved.
+
+    A render reads the template, paints a tier's palette in, and reads it again: a
+    stylesheet built after the palette must not answer from what one built before it had
+    resolved for the same classes.
+    """
+    from lxml import etree
+
+    from utils.svg_document import SVG_NS
+
+    root = _doc('<style>.a { fill: #111111 }</style><rect id="plate" class="a b"/>')
+    element = FieldIndex(root).resolve("plate")
+    before = stylesheet(root)
+    assert computed_style(element, before)["fill"] == "#111111"
+
+    etree.SubElement(root, f"{{{SVG_NS}}}style").text = ".b { fill: #222222 }"
+    after = stylesheet(root)
+
+    assert computed_style(element, after)["fill"] == "#222222"
+    assert computed_style(element, before)["fill"] == "#111111"
+
+
 def test_the_stylesheet_is_still_a_mapping_by_selector():
     """`_highlight_paints` and the palette tool read it by selector, as they always have."""
     root = _doc("<style>.a, .b { fill: #111111 } #c { stroke: #222222 }</style>")

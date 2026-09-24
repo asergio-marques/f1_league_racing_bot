@@ -325,12 +325,14 @@ class Stylesheet(dict[str, dict[str, str]]):
     property), the index of the rule that last declared it, counted across every
     ``<style>`` element in document order.
 
-    Built by :func:`stylesheet` and read, never changed, thereafter.
+    Built by :func:`stylesheet` and read, never changed, thereafter — which is what lets
+    it remember what each ``class`` attribute resolved to (see :meth:`class_declarations`).
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.positions: dict[tuple[str, str], int] = {}
+        self._by_class: dict[str, dict[str, str]] = {}
 
     def class_declarations(self, class_attribute: str | None) -> dict[str, str]:
         """What the class rules an element's ``class`` attribute matches declare, merged.
@@ -341,18 +343,29 @@ class Stylesheet(dict[str, dict[str, str]]):
         template's own `.plate` rule was drawn in the tier's colour and read as the
         template's, by the fit engine, Layer 3 and the fastest-lap contrast alike.
         `test_svg_palette_rasterised.py` pins the drawing side.
+
+        **Remembered per attribute, and must be.** Merging in declared order sorts every
+        matched declaration, and `computed_style` asks for each element and again for each
+        of its ancestors: uncached, that took resolving every element of the busiest league
+        template on the Pi from 0.40 s to 0.59 s, on the event loop every render runs on. A
+        template repeats a handful of class combinations across thousands of elements, so
+        remembering them brings it back to 0.42 s (measured side by side, 2026-09-24).
+        The dict returned is the one remembered: read it, never change it.
         """
-        matched = [
-            f".{name}" for name in (class_attribute or "").split() if f".{name}" in self
-        ]
-        return {
-            name: value
-            for _position, name, value in sorted(
-                (self.positions[(selector, name)], name, value)
-                for selector in matched
-                for name, value in self[selector].items()
-            )
-        }
+        key = class_attribute or ""
+        merged = self._by_class.get(key)
+        if merged is None:
+            matched = [f".{name}" for name in key.split() if f".{name}" in self]
+            merged = {
+                name: value
+                for _position, name, value in sorted(
+                    (self.positions[(selector, name)], name, value)
+                    for selector in matched
+                    for name, value in self[selector].items()
+                )
+            }
+            self._by_class[key] = merged
+        return merged
 
 
 def stylesheet(root: etree._Element) -> Stylesheet:
