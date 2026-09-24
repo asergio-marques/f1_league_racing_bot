@@ -8,10 +8,14 @@ import tempfile
 from datetime import datetime, timezone, timedelta
 
 import pytest
+from apscheduler.jobstores.memory import MemoryJobStore
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations
+from services.scheduler_service import SchedulerService
+from services.season_service import SeasonService
 from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
@@ -893,3 +897,125 @@ async def test_the_review_shows_a_cleared_check_in_as_done_throughout(tmp_path) 
     summary = await build_review_summary(db_path)
 
     assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅" in summary
+
+
+# ---------------------------------------------------------------------------
+# The review finds the scheduler's own jobs (#426)
+# ---------------------------------------------------------------------------
+# The review once looked for jobs under IDs of its own making — `phase1_r{id}`, `results_r{id}` —
+# a shape no job has ever had, so every pending step read ⚠️ whether its job was queued or not.
+# These tests arm their jobs with the production writers, never with hand-written IDs, so the
+# review and the scheduler cannot drift apart unseen again.
+
+
+@pytest.fixture
+async def paused_scheduler():
+    """A `SchedulerService` over a real APScheduler, started paused so nothing it holds can fire.
+
+    In memory rather than on SQLite: the store is not the subject, and a job store left holding a
+    file fails only on Windows. Started, because a stopped scheduler keeps its jobs pending with
+    no fire time at all.
+    """
+    service = SchedulerService.__new__(SchedulerService)
+    service._scheduler = AsyncIOScheduler(jobstores={"default": MemoryJobStore()}, timezone="UTC")
+    service._scheduler.start(paused=True)
+    yield service
+    service._scheduler.shutdown(wait=False)
+
+
+async def _arm(
+    db_path: str,
+    service: SchedulerService,
+    round_ids: list[int],
+    *,
+    weather: bool = True,
+    attendance: bool = True,
+    last_notice_hours: int = 24,
+) -> None:
+    """Arm *round_ids* as approval arms them, with the production `schedule_*` writers."""
+    season_service = SeasonService(db_path)
+    for round_id in round_ids:
+        rnd = await season_service.get_round(round_id)
+        assert rnd is not None
+        if weather:
+            service.schedule_round(rnd, season_number=1, division_tier=rnd.division_id)
+        if attendance:
+            service.schedule_attendance_round(
+                rnd,
+                season_number=1,
+                division_tier=rnd.division_id,
+                notice_days=5,
+                last_notice_hours=last_notice_hours,
+                deadline_hours=2,
+            )
+
+
+async def _season_armed_as_approval_arms_it(tmp_path, service: SchedulerService) -> str:
+    """Weather, the check-in and results on; a normal and a mystery round in Division A and a
+    normal round in Division B, all a week ahead; every one of their jobs queued."""
+    db_path = str(tmp_path / "review_jobs.db")
+    await run_migrations(db_path)
+    await _seed_with_attendance(
+        db_path,
+        [
+            {"track_name": "Monaco"},
+            {"format": "MYSTERY", "track_name": None},
+            {"track_name": "Spa", "division_id": 2},
+        ],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.commit()
+    await _arm(db_path, service, [1, 2, 3])
+    return db_path
+
+
+def _round_row(summary: str, round_number: int) -> str:
+    rows = [line for line in summary.splitlines() if line.startswith(f"  Round {round_number} ")]
+    assert len(rows) == 1, summary
+    return rows[0]
+
+
+async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_scheduler) -> None:
+    """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
+    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
+
+    summary = await build_review_summary(db_path, paused_scheduler)
+
+    check_in = "Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳"
+    assert _round_row(summary, 1).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
+    assert _round_row(summary, 2).endswith(f"Notice: ⏳  |  {check_in}")
+    assert _round_row(summary, 3).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
+
+
+@pytest.mark.parametrize(
+    "round_id,event_type,cell",
+    [
+        (1, "weather_p1", "P1"),
+        (1, "weather_p2", "P2"),
+        (1, "weather_p3", "P3"),
+        (1, "cleanup", "Cleanup"),
+        (1, "results", "Results"),
+        (1, "rsvp_notice", "RSVP"),
+        (1, "rsvp_last_notice", "Last"),
+        (1, "rsvp_deadline", "Deadline"),
+        (1, "rsvp_cleanup", "Cleared"),
+        (2, "weather_p1", "Notice"),
+    ],
+    ids=[
+        "p1", "p2", "p3", "forecast-cleanup", "results", "call", "last-notice", "deadline",
+        "check-in-cleanup", "mystery-notice",
+    ],
+)
+async def test_a_job_taken_from_the_store_reads_as_missing(
+    tmp_path, paused_scheduler, round_id, event_type, cell
+) -> None:
+    """Each cell reads its own job and no other. A mystery round's notice is armed as
+    `weather_p1`, so taking that job away is what leaves its `Notice` without one."""
+    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
+    paused_scheduler.cancel_round(round_id, only=frozenset({event_type}))
+
+    row = _round_row(await build_review_summary(db_path, paused_scheduler), round_id)
+
+    assert f"{cell}: ⚠️" in row
+    assert row.count("⚠️") == 1, row
