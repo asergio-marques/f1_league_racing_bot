@@ -1357,6 +1357,8 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
 
     assert reading.background == "#777777"
     assert reading.divisions == ("Division 1",)
+    # One division is named, never called "every division".
+    assert reading.every_division is False
 
 
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
@@ -1443,6 +1445,83 @@ async def test_per_tier_colours_off_say_nothing_of_a_season(
 
     assert reading.no_season is False
     assert len(_lines(reading)) == 1
+
+
+async def test_contrast_names_every_tier_sharing_the_lowest(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """Decided 2026-09-24 (#165): a tie names every tier in it, in tier order."""
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2", "Division 3"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {
+            "Division 1": {"plate": "#777777"},
+            "Division 2": {"plate": "#000000"},
+            "Division 3": {"plate": "#777777"},
+        },
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.divisions == ("Division 1", "Division 3")
+    assert reading.every_division is False
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **Division 1** and "
+        "**Division 3** (`#777777`): **4.48:1**"
+    )
+
+
+async def test_contrast_says_it_is_the_same_for_every_division(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """A plate no slot reaches is drawn alike for every tier; naming one would mislead."""
+    await _enable(module_service, config_service)
+    await _seed_season(db_path, ["Division 1", "Division 2"])
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _race_template('<rect id="fastest_lap_background" fill="#000000"/>'),
+        {"Division 1": {"accent": "#A78BFA"}, "Division 2": {"accent": "#3DD6F5"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.every_division is True
+    assert _lines(reading) == [
+        "Contrast against the template's plate (`#000000`) is the same for every "
+        "division: **21.00:1**"
+    ]
+
+
+def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
+    from cogs.image_cog import FastestLapContrast
+
+    reading = FastestLapContrast(
+        ratio=4.478, background="#777777", divisions=("A", "B", "C")
+    )
+
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **A**, **B** and **C** "
+        "(`#777777`): **4.48:1**"
+    )
+
+
+def test_tiers_tied_on_different_colours_are_named_without_one():
+    """Two plates can differ and still read at the same figure; neither colour is *the* one."""
+    from cogs.image_cog import FastestLapContrast
+
+    reading = FastestLapContrast(ratio=21.0, background=None, divisions=("A", "B"))
+
+    assert _lines(reading)[0] == (
+        "Contrast against the template's plate is lowest for **A** and **B**: **21.00:1**"
+    )
 
 
 async def test_every_tier_unmeasurable_is_reported_once(

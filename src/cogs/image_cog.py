@@ -88,8 +88,11 @@ class FastestLapContrast:
     Either `ratio` and `background` are set, or `problem` says why nothing could be
     measured: an unmeasurable contrast is reported as such, never guessed (FR-027).
 
-    `divisions` names the tier the figure belongs to. It is empty where the plate was
-    measured as the template was authored, which is what per-tier colours being off means.
+    `divisions` names every tier the figure belongs to, in tier order — more than one
+    where tiers tie at the figure shown (decided 2026-09-24, #165). It is empty where the
+    plate was measured as the template was authored, which is what per-tier colours being
+    off means. `every_division` says every division ties, which is said rather than listed.
+    `background` is None where tied tiers reach the same figure on different colours.
     `no_season` says per-tier colours were on and there was no division to measure in, so
     the authored plate stood in for every tier (decided 2026-09-24, #165).
     """
@@ -98,7 +101,16 @@ class FastestLapContrast:
     background: str | None = None
     problem: str | None = None
     divisions: tuple[str, ...] = ()
+    every_division: bool = False
     no_season: bool = False
+
+
+def _listed(names: tuple[str, ...]) -> str:
+    """`**A**`, `**A** and **B**`, `**A**, **B** and **C**`."""
+    bold = [f"**{name}**" for name in names]
+    if len(bold) < 3:
+        return " and ".join(bold)
+    return f"{', '.join(bold[:-1])} and {bold[-1]}"
 
 
 def _no_plate_problem() -> str:
@@ -153,17 +165,20 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
     if reading.ratio is None:
         return [f"ℹ️ Contrast could not be measured: {reading.problem}"]
 
-    if reading.divisions:
-        named = " and ".join(f"**{name}**" for name in reading.divisions)
+    colour = f" (`{reading.background}`)" if reading.background else ""
+    figure = f"**{reading.ratio:.2f}:1**"
+    if reading.every_division:
         lines = [
-            f"Contrast against the template's plate is lowest for {named} "
-            f"(`{reading.background}`): **{reading.ratio:.2f}:1**"
+            f"Contrast against the template's plate{colour} is the same for every "
+            f"division: {figure}"
+        ]
+    elif reading.divisions:
+        lines = [
+            f"Contrast against the template's plate is lowest for "
+            f"{_listed(reading.divisions)}{colour}: {figure}"
         ]
     else:
-        lines = [
-            f"Contrast against the template's plate (`{reading.background}`): "
-            f"**{reading.ratio:.2f}:1**"
-        ]
+        lines = [f"Contrast against the template's plate{colour}: {figure}"]
     if not meets_aa_normal(reading.ratio):
         lines.append(
             f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "
@@ -1496,10 +1511,16 @@ class ImageCog(commands.Cog):
         if not measured:
             return FastestLapContrast(problem=problems[0])
 
-        # `min` keeps the first of equals, and `divisions` is in tier order.
-        ratio, division, background = min(measured, key=lambda entry: entry[0])
+        # A tie is judged at the figure the manager reads, two places, so tiers the reply
+        # shows alike are named alike. `measured` is in tier order, and so the names are.
+        lowest = min(ratio for ratio, _division, _background in measured)
+        tied = [entry for entry in measured if round(entry[0], 2) == round(lowest, 2)]
+        backgrounds = {background for _ratio, _division, background in tied}
         return FastestLapContrast(
-            ratio=ratio, background=background, divisions=(division,)
+            ratio=lowest,
+            background=backgrounds.pop() if len(backgrounds) == 1 else None,
+            divisions=tuple(division for _ratio, division, _background in tied),
+            every_division=len(divisions) > 1 and len(tied) == len(divisions),
         )
 
     @config.command(
