@@ -396,9 +396,10 @@ async def _closed_calls(
     as_at: datetime,
     deadline_hours: int,
 ) -> list[int]:
-    """The rounds of *division_id* whose call a new call posted at *as_at* takes down.
+    """The rounds of *division_id* whose call a new call takes down, judged as at *as_at*.
 
-    Only those whose check-in closed at least `CLOSED_CALL_KEPT_FOR` before it. A round still
+    Only those whose check-in closed at least `CLOSED_CALL_KEPT_FOR` before it. Which moment
+    *as_at* is, and why it is not simply the wall clock, is `run_rsvp_notice`'s to say. A round still
     open, or closed more recently, keeps its call, its last notice and its distribution message
     until a later call is posted. Taking them all down, as this once did, meant the second call
     of a double-header deleted the first while it was still open: nobody could answer it, its
@@ -543,13 +544,23 @@ async def run_rsvp_notice(
         )
         return
 
-    # Take down the division's earlier calls whose check-in has been closed a day (#425)
+    # Take down the division's earlier calls whose check-in has been closed a day (#425).
+    #
+    # Judged as at the later of the moment this call is posted and the moment it fell due. In
+    # every real path the two agree or the posting is later: the job fires at the due moment,
+    # `/attendance post-check-in` refuses before it, and an amendment reposts only once the new
+    # due moment has passed. Only `/test-mode advance` fires a call early, and it does not move
+    # the clock — judged by the wall clock, a test season would never take down a call at all,
+    # every deadline it holds lying ahead of the real one. Judged as at the due moment, it takes
+    # them down as the season it stands in for would.
     att_cfg = await bot.attendance_service.get_or_create_config()
+    posted_at = now if now is not None else datetime.now(timezone.utc)
+    due_at = scheduled_at - timedelta(days=att_cfg.rsvp_notice_days)
     for closed_round_id in await _closed_calls(
         bot,
         division_id=division_id,
         keep_round_id=round_id,
-        as_at=now if now is not None else datetime.now(timezone.utc),
+        as_at=max(posted_at, due_at),
         deadline_hours=att_cfg.rsvp_deadline_hours,
     ):
         await withdraw_rsvp_call(closed_round_id, division_id, bot)

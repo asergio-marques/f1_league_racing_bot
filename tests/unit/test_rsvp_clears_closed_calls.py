@@ -307,3 +307,41 @@ async def test_a_deadline_of_zero_closes_at_the_round_itself(tmp_path, deadline_
     await _post_call(db_path)
 
     assert (EARLIER_ROUND not in await _standing_rounds(db_path)) is cleared
+
+
+# ---------------------------------------------------------------------------
+# The moment a call is judged as at
+# ---------------------------------------------------------------------------
+
+
+async def test_a_call_fired_early_judges_as_at_the_moment_it_was_due(tmp_path):
+    """`/test-mode advance` fires a call days before it falls due and does not move the clock.
+
+    The earlier round here closed a day before this call's due moment, which is still in the
+    real future, and it goes exactly as it would in the season test mode stands in for. Judged
+    by the wall clock instead, a test season would never take down a call at all, since every
+    deadline it holds lies ahead of the real one.
+    """
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(db_path, EARLIER_ROUND, _closing(hours_ago=24))
+
+    channel = await _post_call(db_path, now=NOW - timedelta(days=3))
+
+    assert sorted(channel.deleted) == sorted(_msg_ids(EARLIER_ROUND))
+    assert await _standing_rounds(db_path) == {POSTED_ROUND}
+
+
+async def test_a_call_posted_late_judges_as_at_the_moment_it_is_posted(tmp_path):
+    """The counterpart: `/attendance post-check-in` puts a call up after it fell due. The earlier
+    round had not even closed at the due moment, but had been closed 30 hours when the call went
+    out, and goes. The due moment is a floor for a call fired early, never a ceiling."""
+    db_path = await _make_db(tmp_path)
+    posted_at = NOW + timedelta(days=2)
+    closed_at = posted_at - timedelta(hours=30)
+    await _add_standing_call(
+        db_path, EARLIER_ROUND, closed_at + timedelta(hours=DEADLINE_HOURS)
+    )
+
+    channel = await _post_call(db_path, now=posted_at)
+
+    assert sorted(channel.deleted) == sorted(_msg_ids(EARLIER_ROUND))
