@@ -673,14 +673,6 @@ CREATE TABLE "signup_module_config" (
     close_at                    TEXT
 );
 
--- signup_division_config
-CREATE TABLE "signup_division_config" (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    division_id  INTEGER NOT NULL UNIQUE
-                     REFERENCES divisions(id)
-                     ON DELETE CASCADE
-);
-
 -- signup_wizard_records
 CREATE TABLE "signup_wizard_records" (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,
