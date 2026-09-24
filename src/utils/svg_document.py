@@ -313,11 +313,54 @@ def merge_style(element: etree._Element, updates: dict[str, str | None]) -> None
         del element.attrib["style"]
 
 
-def stylesheet(root: etree._Element) -> dict[str, dict[str, str]]:
+class Stylesheet(dict[str, dict[str, str]]):
+    """A template's ``<style>`` rules keyed by selector, and the order they were declared in.
+
+    Still the mapping every reader takes it for — `_highlight_paints` reads the standings
+    ink out of it by selector, and `tools/tier_palette.py` a template's slot colours — so it
+    extends one rather than replacing it. What a mapping keyed by selector cannot hold is
+    the order its rules came in, and the cascade needs that: two class rules of equal
+    specificity are settled by which was declared later, property by property, and never by
+    the order an element writes its classes. `positions` keeps, for each (selector,
+    property), the index of the rule that last declared it, counted across every
+    ``<style>`` element in document order.
+
+    Built by :func:`stylesheet` and read, never changed, thereafter.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.positions: dict[tuple[str, str], int] = {}
+
+    def class_declarations(self, class_attribute: str | None) -> dict[str, str]:
+        """What the class rules an element's ``class`` attribute matches declare, merged.
+
+        Each property takes the value of the rule that declared it last. Reading them in
+        the order the element lists its classes instead agreed with the drawing only where
+        the two orders happened to coincide: `class="colour-fill-plate plate"` beside a
+        template's own `.plate` rule was drawn in the tier's colour and read as the
+        template's, by the fit engine, Layer 3 and the fastest-lap contrast alike.
+        `test_svg_palette_rasterised.py` pins the drawing side.
+        """
+        matched = [
+            f".{name}" for name in (class_attribute or "").split() if f".{name}" in self
+        ]
+        return {
+            name: value
+            for _position, name, value in sorted(
+                (self.positions[(selector, name)], name, value)
+                for selector in matched
+                for name, value in self[selector].items()
+            )
+        }
+
+
+def stylesheet(root: etree._Element) -> Stylesheet:
     """Collect the template's own ``<style>`` rules, keyed by selector.
 
     Only the simple selectors a template realistically uses are indexed: ``#id``,
     ``.class`` and bare element names. A selector list is split and each part indexed.
+    The order the rules are declared in is kept alongside — see :class:`Stylesheet`.
 
     **Comments are stripped first, and must be.** A selector group is split on commas, so a
     `/* ... */` comment containing one — which any prose sentence eventually does — splits into
@@ -326,7 +369,8 @@ def stylesheet(root: etree._Element) -> dict[str, dict[str, str]]:
     `.dname` in a comment above it, and every one of those bounds was silently inert until this
     was fixed.
     """
-    rules: dict[str, dict[str, str]] = {}
+    rules = Stylesheet()
+    position = 0
     for style_element in root.iter(f"{{{SVG_NS}}}style"):
         css = _COMMENT_RE.sub(" ", style_element.text or "")
         for selector_group, block in _RULE_RE.findall(css):
@@ -337,16 +381,21 @@ def stylesheet(root: etree._Element) -> dict[str, dict[str, str]]:
                 key = selector.strip()
                 if key:
                     rules.setdefault(key, {}).update(parsed)
+                    for name in parsed:
+                        rules.positions[(key, name)] = position
+            position += 1
     return rules
 
 
 def computed_style(
-    element: etree._Element, rules: dict[str, dict[str, str]] | None = None
+    element: etree._Element, rules: Stylesheet | None = None
 ) -> dict[str, str]:
     """Resolve an element's effective declarations, weakest source first.
 
     Order: presentation attributes, then matching stylesheet rules, then inline
     ``style``. Inline wins, which is why XIV.2 requires a recolour be written there.
+    Among the rules, an element name's lose to a class's and a class's to an id's; among
+    class rules, the one declared later wins (see :class:`Stylesheet`).
 
     A property the element declares nowhere itself is then inherited from its nearest
     ancestor that does declare one, for the properties that inherit in SVG and no others
@@ -374,7 +423,7 @@ def computed_style(
 
 
 def _declared_on(
-    element: etree._Element, rules: dict[str, dict[str, str]] | None
+    element: etree._Element, rules: Stylesheet | None
 ) -> dict[str, str]:
     """The declarations *element* carries in its own right, weakest source first."""
     resolved: dict[str, str] = {}
@@ -387,9 +436,7 @@ def _declared_on(
         tag = etree.QName(element).localname
         if tag in rules:
             resolved.update(rules[tag])
-        for class_name in (element.get("class") or "").split():
-            if f".{class_name}" in rules:
-                resolved.update(rules[f".{class_name}"])
+        resolved.update(rules.class_declarations(element.get("class")))
         element_id = element.get("id")
         if element_id and f"#{element_id}" in rules:
             resolved.update(rules[f"#{element_id}"])

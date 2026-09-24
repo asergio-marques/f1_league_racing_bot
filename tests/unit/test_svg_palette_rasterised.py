@@ -169,18 +169,11 @@ def _resolved_fill(root) -> str:
     return computed_style(FieldIndex(root).resolve("plate"), stylesheet(root))["fill"].upper()
 
 
-#: Until the resolver follows rule order, it reads the class written last. Strict, so the
-#: marker has to come off in the same change that makes these pass.
-_READS_CLASS_ORDER = pytest.mark.xfail(
-    strict=True, reason="computed_style resolves class rules in class-attribute order"
-)
-
-
 @pytest.mark.parametrize(
     "classes",
     [
         "accent colour-fill-accent",
-        pytest.param("colour-fill-accent accent", marks=_READS_CLASS_ORDER),
+        "colour-fill-accent accent",
     ],
     ids=["classes in rule order", "classes reversed"],
 )
@@ -198,7 +191,7 @@ def test_the_injected_rule_wins_whichever_order_the_classes_are_written(tmp_path
 
 @pytest.mark.parametrize(
     "classes",
-    [pytest.param("a b", marks=_READS_CLASS_ORDER), "b a"],
+    ["a b", "b a"],
     ids=["later rule's class last", "later rule's class first"],
 )
 def test_the_resolver_reads_the_colour_a_class_cascade_draws(tmp_path, classes):
