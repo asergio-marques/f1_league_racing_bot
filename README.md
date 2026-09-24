@@ -845,6 +845,8 @@ Required for every division while the results & standings module is enabled, alo
 
 > These eight channels are one per kind of image output. The image module draws nothing where its source module posts nothing, so an output with no channel set produces no picture — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
+> **Each of the eight says whether it set the channel or moved it.** The reply reads *set to* where the division had no channel for that purpose and *updated to* where it replaced one — worth noticing before the next post lands somewhere you did not expect. The previous channel is recorded in the audit either way.
+
 #### `/division calendar-sync` — Repost a division's calendar
 *Access: League manager*
 
