@@ -319,6 +319,67 @@ def test_a_gap_in_the_cars_of_a_round_is_fatal():
     assert "gap" in str(exc.value)
 
 
+#: Names chosen to break a careless index: a one-digit ordinal beside a two-digit one, a
+#: stem that is a prefix of another, text straight after the digits, and a nest under a
+#: member of another stem.
+_AWKWARD_NAMES = frozenset({
+    "row_1_round_1_driver_1_name", "row_1_round_1_driver_2_name",
+    "row_1_round_10_driver_1_name", "row_1_round_1_driver_10x_name",
+    "row_1_round_1_driver_3", "row_1_round_1_driverX_4_name",
+    "row_11_round_1_driver_1_name", "row_11_round_1_driver_2_name",
+    "row_2_round_1_driver_1_name", "row_2_round_1_driver_3_name",
+    "row_3_round_1_driver_1_name",
+})
+
+
+@pytest.mark.parametrize(
+    "stem",
+    ["row_1_round_1", "row_1_round_10", "row_11_round_1", "row_2_round_1",
+     "row_3_round_1", "row_1_round_2", "row_1"],
+)
+@pytest.mark.parametrize("minimum", [None, 2])
+def test_counting_from_the_index_matches_counting_by_pattern(stem, minimum):
+    """Issue #164. The index files each ordinal under the text before it, once for the whole
+    template; counting a member then reads one entry. It must answer exactly as the pattern
+    it replaced for a per-row count — the same number, or the same refusal."""
+    from dataclasses import replace
+
+    from models.image_catalogues import DeclaredNames
+
+    nest = replace(STANDINGS_CONSTRUCTORS_CATALOGUE.rows.nested.nested, minimum=minimum)
+
+    def count(declared):
+        try:
+            return nest.declared_capacity(stem, declared)
+        except CapacityError as exc:
+            return ("refused", str(exc))
+
+    assert count(DeclaredNames(_AWKWARD_NAMES)) == count(set(_AWKWARD_NAMES))
+
+
+def test_a_template_s_names_are_indexed_once_per_enumeration(monkeypatch):
+    """Issue #164. Each row once scanned every name the template declares to count its own
+    members, so the work grew with rows times names — quadratic in a file leagues are asked
+    to enlarge. The names are indexed once and the index handed down; a `set(declared)`
+    anywhere on the way down would silently bring the scan back, one per row."""
+    from models import image_catalogues
+
+    built = []
+    real_init = image_catalogues.DeclaredNames.__init__
+
+    def counting_init(self, *args, **kwargs):
+        built.append(1)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(image_catalogues.DeclaredNames, "__init__", counting_init)
+    root, _ = _shipped(DRIVERS)
+    assert STANDINGS_DRIVERS_CATALOGUE.capacity(root) >= 20
+
+    STANDINGS_DRIVERS_CATALOGUE.all_mandatory_ids(root)
+
+    assert len(built) == 1
+
+
 # ── 6. Sibling detection ──────────────────────────────────────────────────
 
 
