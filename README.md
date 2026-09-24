@@ -891,7 +891,7 @@ A real posting is suppressed the same way: the switch is read before the driver'
 #### `/test-mode advance` — Execute the next pending event
 *Access: League admin · Requires test mode active*
 
-No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced. Nor is a last notice set to 0 with `/attendance config rsvp-last-notice`.
+No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase and no mystery-round notice is ever advanced. Nor is a last notice set to 0 with `/attendance config rsvp-last-notice`.
 
 Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, result submission, the check-in call, its reminder and its deadline, and the two tidy-ups a day after each round: its last forecast being deleted, and its check-in messages being taken down.
 
