@@ -245,14 +245,30 @@ async def test_a_posted_mystery_notice_is_marked_done(tmp_path):
         assert (await cursor.fetchone())["phase1_done"] == 1
 
 
+@pytest.mark.parametrize("job_id", ["weather_p1_s1_d1_r3_id5", None], ids=["queued", "found-in-db"])
+async def test_a_posted_mystery_notice_takes_its_notice_job_down(tmp_path, job_id):
+    """By the round and the `weather_p1` it is armed under, whatever the entry carries. A notice
+    found from database state carries no job, yet its job may still be queued — and left there it
+    would post the notice a second time at its own moment, `run_mystery_notice` not asking
+    whether one is up (#426)."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(0, job_id=job_id))
+
+    cog.bot.scheduler_service.cancel_round.assert_called_once_with(
+        ROUND_ID, only=frozenset({"weather_p1"})
+    )
+    cog.bot.scheduler_service.cancel_job.assert_not_called()
+
+
 async def test_a_fired_phase_cancels_its_own_job(tmp_path):
-    """Otherwise the real job stays queued and fires again later, posting the same notice
+    """Otherwise the real job stays queued and fires again later, posting the same forecast
     a second time."""
     cog = _make_cog(await _make_db(tmp_path))
 
-    await _advance(cog, _interaction(), _entry(0, job_id="mystery_r5"))
+    await _advance(cog, _interaction(), _entry(1, job_id="weather_p1_s1_d1_r3_id5"))
 
-    cog.bot.scheduler_service.cancel_job.assert_called_once_with("mystery_r5")
+    cog.bot.scheduler_service.cancel_job.assert_called_once_with("weather_p1_s1_d1_r3_id5")
 
 
 async def test_a_phase_with_no_job_cancels_nothing(tmp_path):
@@ -260,7 +276,7 @@ async def test_a_phase_with_no_job_cancels_nothing(tmp_path):
     raise inside the scheduler."""
     cog = _make_cog(await _make_db(tmp_path))
 
-    await _advance(cog, _interaction(), _entry(0, job_id=None))
+    await _advance(cog, _interaction(), _entry(1, job_id=None))
 
     cog.bot.scheduler_service.cancel_job.assert_not_called()
 

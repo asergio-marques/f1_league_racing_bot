@@ -83,6 +83,22 @@ def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> s
     """
     return f"_s{season_number}_d{division_tier}_r{rnd.round_number}_id{rnd.id}"
 
+
+def _job_event_type(job_id: str) -> str | None:
+    """The event type of a round's job — its ID less the `_round_job_suffix` tail — or None.
+
+    The one reader of the scheme `_round_job_suffix` writes. None stands for an ID carrying no
+    round suffix, whose owner cannot be read: a server-scoped job such as the portrait refresh, or
+    one from a version of the bot that named its jobs otherwise.
+
+    Every caller asking what a job is for asks here, and pairs the answer with the job's
+    ``round_id`` kwarg — never rebuilding an ID to look one up. The review summary once built
+    IDs of its own, in a shape no job has ever had, and so found none of them (#426).
+    """
+    m = _JOB_SUFFIX_RE.search(job_id)
+    return None if m is None else job_id[: m.start()]
+
+
 # Module-level service reference so APScheduler can pickle the job callable.
 # Set in SchedulerService.start(); always non-None when jobs fire.
 _GLOBAL_SERVICE: "SchedulerService | None" = None
@@ -489,10 +505,12 @@ class SchedulerService:
         * MYSTERY + weather_p2/3 → no-op
         * Non-mystery           → normal phase callbacks
 
-        Job IDs follow the human-readable convention
-        ``<event_type>_s{season_number}_d{division_tier}_r{round_number}``
-        so they appear meaningful in APScheduler admin views.  The database
-        ``round_id`` is always stored as a kwarg for programmatic lookups.
+        Job IDs follow the convention
+        ``<event_type>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
+        written by `_round_job_suffix` and read back by `_job_event_type`. The season,
+        tier and number make them readable in APScheduler admin views; the round id is
+        what makes them unique. The database ``round_id`` is always stored as a kwarg
+        for programmatic lookups.
 
         Jobs use ``replace_existing=True`` so re-scheduling an amended round
         is safe.
@@ -565,8 +583,8 @@ class SchedulerService:
     ) -> None:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
-        Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}`` convention as
-        ``schedule_round``.  Jobs are only created when their fire time is in
+        Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}_id{round_id}`` convention
+        as ``schedule_round``.  Jobs are only created when their fire time is in
         the future.  ``replace_existing=True`` makes re-scheduling amended
         rounds safe.
 
@@ -661,13 +679,12 @@ class SchedulerService:
 
         Iterates the live jobstore and removes every job whose ``round_id``
         kwarg matches.  This is format-agnostic and works with both the
-        current ``<event>_s{S}_d{D}_r{R}`` ID scheme and any other jobs that
-        carry ``round_id`` in their kwargs.
+        current ``<event>_s{S}_d{D}_r{R}_id{round_id}`` ID scheme and any other jobs
+        that carry ``round_id`` in their kwargs.
 
         Args:
-            only: When given, restricts the removal to jobs whose event-type
-                prefix — the job ID with its ``_s{S}_d{D}_r{R}`` suffix stripped
-                — is in the set.  Callers cancelling a *round* want the default,
+            only: When given, restricts the removal to jobs whose event type — as
+                `_job_event_type` reads it off the job ID — is in the set.  Callers cancelling a *round* want the default,
                 which takes all nine of its jobs; a caller switching **one
                 module** off wants that module's prefixes and nothing else, or
                 it takes the other modules' work down with it (issue #117).
@@ -678,8 +695,8 @@ class SchedulerService:
             if job.kwargs.get("round_id") != round_id:
                 continue
             if only is not None:
-                m = _JOB_SUFFIX_RE.search(job.id)
-                if m is None or job.id[: m.start()] not in only:
+                event_type = _job_event_type(job.id)
+                if event_type is None or event_type not in only:
                     continue
             try:
                 self._scheduler.remove_job(job.id)
@@ -825,7 +842,8 @@ class SchedulerService:
           - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
             last notice and its deadline, 8/9 = the forecast and the check-in cleanups a day
             after the round (#425). A mystery round's notice is armed as ``weather_p1`` and so
-            comes back as 1: 0 never occurs here.
+            comes back as 1, which ``get_next_pending_phase`` then reads as the notice — this
+            method knows nothing of formats. 0 never occurs here.
           - ``next_run_time``— datetime when the job is scheduled to fire
 
         Result submission and season-end jobs are excluded, so 4 never occurs either. Jobs
@@ -852,11 +870,10 @@ class SchedulerService:
             round_id = job.kwargs.get("round_id")
             if round_id is None or round_id not in round_ids:
                 continue
-            # Extract event-type prefix by stripping the _s{S}_d{D}_r{R} suffix
-            m = _JOB_SUFFIX_RE.search(job.id)
-            if m is None:
+            # The event type, read off the ID by the scheme's one reader
+            event_type = _job_event_type(job.id)
+            if event_type is None:
                 continue
-            event_type = job.id[: m.start()]
             phase = _PHASE_PREFIX_MAP.get(event_type)
             if phase is None:
                 continue  # results, season_end, etc.
@@ -871,20 +888,34 @@ class SchedulerService:
         result.sort(key=lambda x: (x["next_run_time"], x["round_id"], x["phase_number"]))
         return result
 
-    def get_job_ids_for_rounds(self, round_ids: set[int]) -> set[str]:
-        """Return all currently-scheduled (non-paused) job IDs that belong to
-        the given round IDs.  Unlike ``get_pending_advance_jobs``, no prefix
-        filtering is applied — ``results``, ``cleanup``, etc. are all
-        included.  Used by the review summary to distinguish "job queued" from
-        "job absent" for each pending phase.
+    def get_queued_events_for_rounds(self, round_ids: set[int]) -> set[tuple[int, str]]:
+        """Return ``(round_id, event_type)`` for every queued job of the given rounds.
+
+        The review summary's view of the job store: it tells "job queued" from "job absent"
+        for each pending step. Unlike ``get_pending_advance_jobs`` nothing is filtered out by
+        type — ``results`` and both cleanups are included — so it answers "is a job queued",
+        not "what will advance fire".
+
+        A job is found by its round and its event type, the way ``cancel_round`` finds one
+        (issue #139): the ``round_id`` kwarg, which is the round's own key whatever numbers
+        its ID carries, and the type `_job_event_type` reads off the ID. A caller asks
+        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up — the
+        review once did, in a shape no job has ever had, and so found none (#426). A mystery
+        round's notice is armed as ``weather_p1`` and is found under that type.
+
+        A paused job (``next_run_time is None``) will not fire and is left out, as is one whose
+        ID carries no round suffix.
         """
-        result: set[str] = set()
+        result: set[tuple[int, str]] = set()
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
             round_id = job.kwargs.get("round_id")
-            if round_id in round_ids:
-                result.add(job.id)
+            if round_id not in round_ids:
+                continue
+            event_type = _job_event_type(job.id)
+            if event_type is not None:
+                result.add((round_id, event_type))
         return result
 
     # ------------------------------------------------------------------
