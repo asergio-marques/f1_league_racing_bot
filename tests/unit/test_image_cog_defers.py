@@ -12,7 +12,8 @@ and only the log carrying the traceback.
 the race results template, and reaches it through the same sixteen-template sweep — 1.7 to
 2.1 seconds of it on the Pi, measured 2026-09-24, before the command's own queries. So did
 `/images config per-tier-colour-toggle`, whose switching on reports the colour shortfall
-off the same sweep.
+off the same sweep, and `/images config per-tier-set-colour`, which asks it whether any
+template marks the slot it was given.
 
 Deferring buys fifteen minutes. What these pin is that it happens *before* the reading,
 and that every reply thereafter goes through `_reply`, which follows up when the
@@ -39,6 +40,7 @@ READS_TEMPLATES = [
     "_set_template_filename",
     "config_fastest_lap_colour",
     "_set_per_tier_colours",
+    "_set_tier_colour",
 ]
 
 
@@ -296,6 +298,26 @@ REPLY_PATHS = {
         True,
         lambda cog, i: ImageCog._set_per_tier_colours(cog, i, False),
         "now **off**",
+    ),
+    "per-tier-set-colour, module off": (
+        False,
+        lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "accent", "#A78BFA"),
+        "not enabled",
+    ),
+    "per-tier-set-colour, bad slot": (
+        True,
+        lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "no good!", "#A78BFA"),
+        "Nothing was stored",
+    ),
+    "per-tier-set-colour, bad colour": (
+        True,
+        lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "accent", "violet"),
+        "Nothing was stored",
+    ),
+    "per-tier-set-colour, stored": (
+        True,
+        lambda cog, i: ImageCog._set_tier_colour(cog, i, "Division 1", "accent", "#A78BFA"),
+        "set to `#A78BFA`",
     ),
 }
 

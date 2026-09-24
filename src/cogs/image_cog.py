@@ -1137,6 +1137,11 @@ class ImageCog(commands.Cog):
         self, interaction, division: str, slot: str, colour: str
     ) -> None:
         """Shared body for the setter. See `_set_per_tier_colours` for why it is split."""
+        # Whether any template marks the slot comes from `_declared_colour_slots`, which
+        # reads `template_reports` and so the whole sixteen-template sweep. Deferred first,
+        # as `config_toggle` is, so the refusals below answer on the followup too.
+        await interaction.response.defer(ephemeral=True)
+
         if not await self._guard_module_enabled(interaction):
             return
 
