@@ -1011,19 +1011,41 @@ async def _show_approval_step(
     One at a time (#402): pressing **No Penalties / Confirm** again replaces the message rather
     than leaving two approvals standing, and the one posted is recorded so that its buttons can
     tell it from any other.
+
+    **It lists what its Approve commits, the attendance pardons included** (#403). It is reached
+    only with no penalty staged — the prompt's own Approve takes a staged list at once — so a
+    review holding only pardons, a first pass's or an amendment's, was approved on a message
+    saying nothing was staged. A pardon's justification stays in the log channel, as on the
+    prompt.
     """
+    pardons = [
+        f"  • <@{await _shown(state, p.driver_user_id)}> — **{p.pardon_type}**"
+        for p in state.staged_pardons
+    ]
+    pardon_heading = f"**Staged Attendance Pardons ({len(pardons)}):**"
     if state.staged:
         lines = ["**Review and approve the following penalties:**", ""]
         for i, sp in enumerate(state.staged, 1):
             pl = _pen_label(sp)
             sl = sp.session_type.value.replace("_", " ").title()
             lines.append(f"{i}. <@{await _shown(state, sp.driver_user_id)}> | {sl} | **{pl}**")
-        content = "\n".join(lines)
+        if pardons:
+            lines += ["", pardon_heading, *pardons]
+    elif pardons:
+        lines = [
+            "✅ **No penalties staged.**",
+            "",
+            pardon_heading,
+            *pardons,
+            "",
+            "Approve to move on to the appeals with no penalty applied and these pardons granted.",
+        ]
     else:
-        content = (
+        lines = [
             "✅ **No penalties staged.** "
-            "Approve to finalize the round with results as submitted."
-        )
+            "Approve to move on to the appeals with no penalty applied."
+        ]
+    content = "\n".join(lines)
 
     ch = as_text_channel(state.bot.get_channel(state.submission_channel_id))
     if ch is not None:

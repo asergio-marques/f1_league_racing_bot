@@ -136,6 +136,7 @@
     - A justification holding a role mention, "@everyone" or "@here", in any case, an emoji, or Discord markup, shall be refused, saying why, as a penalty's texts are. A mention of a driver shall stand. Decided 2026-09-21 (#204).
     - Multiple pardons may be attributed to the same driver (so that a "failure to check-in, did not attend" may be fully waived).
     - The attendance pardons shall be displayed together with the list of staged penalties.
+        - On the approval message as on the review prompt: a review holding only pardons is committed through that message, and approving it grants them (#403).
     - Each staged pardon shall carry its own button removing it, as a staged penalty does, until the post-race penalties are approved (#356). A resubmission of the round's results shall discard the staged pardons with the staged penalties, and the log shall name both.
     - The drivers who had one of their attendance penalties waived by this process shall not receive attendance points for that reason.
 - After the post-race penalties are approved, attendance pardons cannot be applied.
