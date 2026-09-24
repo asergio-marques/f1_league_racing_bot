@@ -1106,3 +1106,40 @@ async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
 
     assert result is not None
     assert result["phase_number"] == 4
+
+
+# ---------------------------------------------------------------------------
+# A last notice switched off (#426)
+# ---------------------------------------------------------------------------
+# `/attendance config rsvp-last-notice 0` means no last notice is sent, and a live season arms no
+# job for one. Advance once found one owing from database state regardless, and posted it.
+
+
+async def _last_notice_switched_off(db_path: str) -> None:
+    """The check-in on with its last notice set to 0, and round 1's call and distribution posted
+    — so no last notice, the one a live season would never have sent."""
+    fortnight = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"track_name": "Monaco"}, {"track_name": "Spa", "scheduled_at": fortnight}])
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (id, module_enabled, rsvp_last_notice_hours) "
+            "VALUES (1, 1, 0)"
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at, distribution_msg_id) "
+            "VALUES (1, 1, 'call1', 'ch1', '2026-01-01T00:00:00', 'dist1')"
+        )
+        await db.commit()
+
+
+async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_scheduler) -> None:
+    db_path = str(tmp_path / "last_notice_off.db")
+    await _last_notice_switched_off(db_path)
+    await _arm(db_path, paused_scheduler, [2], weather=False, last_notice_hours=0)
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 5)

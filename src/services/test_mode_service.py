@@ -304,9 +304,13 @@ async def get_next_pending_phase(
         wm_row = await wm_cursor.fetchone()
         weather_module_enabled = bool(wm_row[0]) if wm_row else False
 
-        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
+        att_cursor = await db.execute(
+            "SELECT module_enabled, rsvp_last_notice_hours FROM attendance_config"
+        )
         att_row = await att_cursor.fetchone()
-        attendance_module_enabled = bool(att_row[0]) if att_row else False
+        attendance_module_enabled = bool(att_row["module_enabled"]) if att_row else False
+        # A last notice set to 0 is never sent, and no job is armed for it (#426).
+        last_notice_enabled = bool(att_row["rsvp_last_notice_hours"]) if att_row else False
 
         # RSVP embed state: keyed by round_id (one row per round since each
         # round belongs to exactly one division).
@@ -421,7 +425,8 @@ async def get_next_pending_phase(
             return _make(2)
 
         # ── Phase 6: RSVP last-notice ─────────────────────────────────────
-        if attendance_module_enabled:
+        # Not where the league has set it to 0: a live season sends none (#426).
+        if attendance_module_enabled and last_notice_enabled:
             rsvp = rsvp_state.get(rid)
             if rsvp is not None and not rsvp["last_notice_msg_id"]:
                 return _make(6)
