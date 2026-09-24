@@ -468,6 +468,11 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
     2. The driver role is revoked from every such real driver, where a guild is to hand.
     3. Every real driver at Not Signed Up without the former-driver flag — pending deletion —
        is deleted, with their placements and history entries. Their signups remain.
+    4. The portraits the bot obtained for every account of a deleted driver are discarded,
+       where a bot is to hand (issue #235). A portrait is keyed by account, not by profile,
+       and nothing else would ever remove it. Where the league's driver directory cannot be
+       resolved they are left, file and row alike: see
+       ``driver_portrait_service.discard_portraits``.
 
     A former driver is kept. A driver created by test mode is not deleted here: switching test
     mode off does that, and keeps their history. Returns ``{"reset": n, "deleted": m}``.
@@ -505,7 +510,7 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
             "AND former_driver = 0 AND current_state = 'NOT_SIGNED_UP'",
         )
         pending_deletion = [r["id"] for r in await cursor.fetchall()]
-        await delete_driver_profiles(db, pending_deletion, keep_history=False)
+        accounts = await delete_driver_profiles(db, pending_deletion, keep_history=False)
         await db.execute(
             "INSERT INTO audit_entries "
             "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
@@ -516,6 +521,12 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
             ),
         )
         await db.commit()
+
+    if bot is not None:
+        # Once committed, so a deletion that fails leaves every portrait where it was.
+        from services.driver_portrait_service import discard_portraits
+
+        await discard_portraits(bot, accounts)
 
     return {"reset": len(to_reset), "deleted": len(pending_deletion)}
 

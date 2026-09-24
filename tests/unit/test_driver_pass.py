@@ -279,3 +279,163 @@ async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
     assert row["actor_name"] == "system"
     assert json.loads(row["old_value"])["2"] == "ASSIGNED"
     assert json.loads(row["new_value"])["deleted"] == [2, 3, 4, 5]
+
+
+# ---------------------------------------------------------------------------
+# The portraits of the drivers deleted (issue #235)
+# ---------------------------------------------------------------------------
+#
+# A portrait is keyed by account, so nothing of it goes with the profile. The pass discards
+# those the bot obtained for a deleted driver once the deletion has committed. The configured
+# directory is the league's own, so these resolve one under `tmp_path` instead.
+
+
+@pytest.fixture
+def portraits(tmp_path, monkeypatch):
+    from services import image_render_service
+
+    directory = tmp_path / "drivers"
+    directory.mkdir()
+    monkeypatch.setattr(
+        image_render_service,
+        "resolve_configured_directories",
+        lambda *a, **k: ({"driver": directory}, {}),
+    )
+    return directory
+
+
+def _bot_for(db_path, directory):
+    from types import SimpleNamespace
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.image_config_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(driver_image_directory=str(directory))
+    )
+    return bot
+
+
+async def _obtained(db_path, directory, *accounts) -> None:
+    """Seed a portrait the bot obtained for each of *accounts*: its file and its row."""
+    async with get_connection(db_path) as db:
+        for account in accounts:
+            (directory / f"{account}.svg").write_text("<svg>obtained</svg>")
+            await db.execute(
+                "INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at) "
+                "VALUES (?, 'hash@1.0000', '2026-09-01T03:00:00+00:00')",
+                (account,),
+            )
+        await db.commit()
+
+
+async def _owned(db_path) -> list[str]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id FROM driver_portraits ORDER BY discord_user_id"
+        )
+        return [r["discord_user_id"] for r in await cursor.fetchall()]
+
+
+def _files(directory) -> list[str]:
+    return sorted(p.name for p in directory.iterdir())
+
+
+async def test_a_deleted_driver_s_portrait_is_discarded_with_them(db_path, portraits):
+    await _obtained(db_path, portraits, "1001", "1002", "1005")
+
+    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+
+    assert await _owned(db_path) == ["1001"], "the former driver keeps theirs"
+    assert _files(portraits) == ["1001.svg"]
+
+
+async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
+    """A reassign that could not resolve the directory leaves the replaced account's portrait
+    behind. The driver's deletion is the last chance to discard it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_accounts (driver_profile_id, discord_user_id) VALUES (2, '2002')"
+        )
+        await db.commit()
+    await _obtained(db_path, portraits, "1002", "2002")
+
+    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+
+    assert await _owned(db_path) == []
+    assert _files(portraits) == []
+
+
+async def test_a_deleted_driver_s_own_artwork_is_left(db_path, portraits):
+    """A file with no row was placed by the league, and is never the bot's to delete."""
+    (portraits / "1003.svg").write_text("<svg>the league's own</svg>")
+
+    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+
+    assert (portraits / "1003.svg").read_text() == "<svg>the league's own</svg>"
+
+
+async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
+    db_path, portraits, monkeypatch
+):
+    """The row taken without its file would disown the bot's own portrait for good."""
+    from services import image_render_service
+
+    await _obtained(db_path, portraits, "1002")
+    monkeypatch.setattr(
+        image_render_service,
+        "resolve_configured_directories",
+        lambda *a, **k: ({}, {"driver": "outside the project root"}),
+    )
+
+    result = await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+
+    assert result["deleted"] == 4
+    assert await _owned(db_path) == ["1002"]
+    assert _files(portraits) == ["1002.svg"]
+
+
+async def test_portraits_are_discarded_only_once_the_deletion_has_committed(
+    db_path, portraits, monkeypatch
+):
+    """A deletion that fails must leave every portrait where it was, so the discarding waits
+    for the commit. The remover reads the database as another connection would."""
+    from services import driver_portrait_service
+
+    seen = []
+
+    async def remover(path, user_id, directory):
+        async with get_connection(path) as db:
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM driver_accounts WHERE discord_user_id = ?", (user_id,)
+            )
+            seen.append((user_id, (await cursor.fetchone())[0]))
+        return True
+
+    monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
+
+    await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+
+    assert seen == [("1002", 0), ("1003", 0), ("1004", 0), ("1005", 0)]
+
+
+async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
+    db_path, portraits, monkeypatch
+):
+    from services import driver_portrait_service
+
+    monkeypatch.setattr(
+        driver_portrait_service,
+        "remove_portrait",
+        AsyncMock(side_effect=PermissionError("read-only")),
+    )
+
+    result = await run_driver_pass(db_path, bot=_bot_for(db_path, portraits))
+
+    assert result == {"reset": 5, "deleted": 4}
+    assert await _states(db_path) == {1: "NOT_SIGNED_UP", 7: "NOT_SIGNED_UP"}
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'DRIVER_PASS'"
+        )
+        assert (await cursor.fetchone())[0] == 1
