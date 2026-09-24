@@ -354,9 +354,20 @@ class AmendmentService:
             if not _verdict.check_in_stays_closed:
                 # The check-in is open again, so a round whose check-in had been taken down a
                 # day after it is so no longer (#425); test mode reads the mark.
+                #
+                # And the reserves are placed no longer (#429). The answers carry over to the
+                # call that replaces this one, but the distribution was made against this one,
+                # and the new call's own deadline makes it afresh. Left standing, a reserve
+                # that deadline puts on standby would keep the old team, and be charged as a
+                # no-show for not racing in it.
                 async with get_connection(self._db_path) as db:
                     await db.execute(
                         "UPDATE rounds SET checkin_cleared = 0 WHERE id = ?", (round_id,)
+                    )
+                    await db.execute(
+                        "UPDATE driver_round_attendance "
+                        "SET assigned_team_id = NULL, is_standby = 0 WHERE round_id = ?",
+                        (round_id,),
                     )
                     await db.commit()
                 if _verdict.check_in["call"].stands:
