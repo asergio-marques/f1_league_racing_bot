@@ -327,6 +327,125 @@ async def test_a_missing_file_is_refetched_even_where_the_hash_matches(db_path, 
     assert (directory / "7.svg").is_file()
 
 
+# ── Discarding the portraits of accounts no longer drawn ─────────────────
+#
+# What `/driver reassign` and the season's driver pass call (issues #222 and #235). The
+# configured directory is the league's own, so these resolve one under `tmp_path` instead.
+
+
+def _bot_with_portraits(db_path, directory, monkeypatch, *, config=True):
+    from services import image_render_service
+
+    monkeypatch.setattr(
+        image_render_service,
+        "resolve_configured_directories",
+        lambda *a, **k: ({"driver": directory}, {}),
+    )
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.image_config_service.get_config = AsyncMock(
+        return_value=SimpleNamespace(driver_image_directory=str(directory)) if config else None
+    )
+    return bot
+
+
+async def test_discarding_takes_the_portrait_of_every_account_named(
+    db_path, directory, monkeypatch
+):
+    from services.driver_portrait_service import discard_portraits
+
+    await refresh_portraits(
+        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory, now=NOW
+    )
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+
+    assert await discard_portraits(bot, ["7", "8"]) == 2
+
+    assert sorted(await _rows(db_path)) == ["9"]
+    assert sorted(p.name for p in directory.iterdir()) == ["9.svg"]
+
+
+async def test_discarding_leaves_the_league_s_own_artwork_alone(db_path, directory, monkeypatch):
+    from services.driver_portrait_service import discard_portraits
+
+    (directory / "7.svg").write_text("<svg>the league's own</svg>")
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+
+    assert await discard_portraits(bot, ["7"]) == 0
+    assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
+
+
+async def test_discarding_removes_nothing_where_no_directory_resolves(
+    db_path, directory, monkeypatch
+):
+    """A row taken without its file would disown a portrait the bot wrote, after which the
+    bot would refuse to overwrite its own leftover for good. Both are left alone instead."""
+    from services import image_render_service
+    from services.driver_portrait_service import discard_portraits
+
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+    monkeypatch.setattr(
+        image_render_service,
+        "resolve_configured_directories",
+        lambda *a, **k: ({}, {"driver": "outside the project root"}),
+    )
+
+    assert await discard_portraits(bot, ["7"]) == 0
+    assert sorted(await _rows(db_path)) == ["7"]
+    assert (directory / "7.svg").is_file()
+
+
+async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
+    db_path, directory, monkeypatch
+):
+    from services.driver_portrait_service import discard_portraits
+
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    bot = _bot_with_portraits(db_path, directory, monkeypatch, config=False)
+
+    assert await discard_portraits(bot, ["7"]) == 0
+    assert sorted(await _rows(db_path)) == ["7"]
+    assert (directory / "7.svg").is_file()
+
+
+async def test_discarding_no_account_reads_no_configuration(db_path, directory, monkeypatch):
+    """The driver pass calls this every season, most often with nobody deleted."""
+    from services.driver_portrait_service import discard_portraits
+
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+
+    assert await discard_portraits(bot, []) == 0
+    bot.image_config_service.get_config.assert_not_awaited()
+
+
+async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_nothing(
+    db_path, directory, monkeypatch
+):
+    from services.driver_portrait_service import discard_portraits
+
+    await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+    bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("unreadable"))
+
+    assert await discard_portraits(bot, ["7"]) == 0
+    assert sorted(await _rows(db_path)) == ["7"]
+
+
+async def test_one_portrait_that_cannot_be_removed_does_not_keep_the_rest(
+    db_path, directory, monkeypatch
+):
+    from services import driver_portrait_service
+    from services.driver_portrait_service import discard_portraits
+
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+    remover = AsyncMock(side_effect=[PermissionError("read-only"), True])
+    monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
+
+    assert await discard_portraits(bot, ["7", "8"]) == 1
+    assert [c.args[1] for c in remover.await_args_list] == ["7", "8"]
+
+
 # ── Failure never reaches the render ──────────────────────────────────────
 
 
