@@ -352,6 +352,13 @@ class AmendmentService:
 
             _division_id = row["division_id"]
             if not _verdict.check_in_stays_closed:
+                # The check-in is open again, so a round whose check-in had been taken down a
+                # day after it is so no longer (#425); test mode reads the mark.
+                async with get_connection(self._db_path) as db:
+                    await db.execute(
+                        "UPDATE rounds SET checkin_cleared = 0 WHERE id = ?", (round_id,)
+                    )
+                    await db.commit()
                 if _verdict.check_in["call"].stands:
                     await repost_rsvp_call(round_id, _division_id, bot)
                 else:
