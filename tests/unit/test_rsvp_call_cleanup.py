@@ -189,11 +189,11 @@ def _make_channel() -> MagicMock:
     return channel
 
 
-def _make_bot(db_path: str, channel: MagicMock) -> MagicMock:
+def _make_bot(db_path: str, channel: MagicMock, *, attendance_enabled: bool = True) -> MagicMock:
     bot = MagicMock()
     bot.db_path = db_path
     bot.attendance_service = AttendanceService(db_path)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.get_channel = MagicMock(return_value=channel)
     bot.output_router.post_log = AsyncMock(return_value=None)
     return bot
@@ -243,6 +243,118 @@ async def test_posting_a_call_takes_down_no_other_call(tmp_path, scheduled_at, d
 
     assert channel.deleted == []
     assert await _standing_rounds(db_path) == {EARLIER_ROUND, POSTED_ROUND}
+
+
+# ---------------------------------------------------------------------------
+# The cleanup, 24 hours after the round
+# ---------------------------------------------------------------------------
+
+
+async def _clean_up(
+    db_path: str, round_id: int = EARLIER_ROUND, *, attendance_enabled: bool = True
+) -> MagicMock:
+    """Run *round_id*'s cleanup, and hand back the channel it deleted from."""
+    channel = _make_channel()
+    await rsvp_service.run_rsvp_cleanup(
+        round_id, _make_bot(db_path, channel, attendance_enabled=attendance_enabled)
+    )
+    return channel
+
+
+async def _cleared(db_path: str, round_id: int = EARLIER_ROUND) -> bool:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = ?", (round_id,))
+        return bool((await cursor.fetchone())["checkin_cleared"])
+
+
+async def test_the_cleanup_takes_down_the_call_and_its_notices(tmp_path):
+    """The call, its last notice and its distribution message, and the row recording them."""
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+
+    channel = await _clean_up(db_path)
+
+    assert sorted(channel.deleted) == sorted(_msg_ids(EARLIER_ROUND))
+    assert await _standing_rounds(db_path) == set()
+
+
+async def test_the_cleanup_keeps_the_answers(tmp_path):
+    """The messages go; what the drivers answered is the attendance record and stays."""
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, rsvp_status) VALUES (?, ?, ?, 'ACCEPTED')",
+            (EARLIER_ROUND, DIVISION_ID, DRIVER_PROFILE),
+        )
+        await db.commit()
+
+    await _clean_up(db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT rsvp_status FROM driver_round_attendance WHERE round_id = ?",
+            (EARLIER_ROUND,),
+        )
+        rows = await cursor.fetchall()
+    assert [row["rsvp_status"] for row in rows] == ["ACCEPTED"]
+
+
+@pytest.mark.parametrize("call_standing", [True, False], ids=["call-standing", "no-call"])
+async def test_the_cleanup_marks_the_round_cleared(tmp_path, call_standing):
+    """Test mode reads a round with no call recorded as one whose call is still to be posted.
+    The mark is what stops it posting a day-old round's call again, and a round whose call never
+    posted is no more due one afterwards than a round whose call did."""
+    db_path = await _make_db(tmp_path)
+    if call_standing:
+        await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+    else:
+        await _add_round(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+
+    await _clean_up(db_path)
+
+    assert await _cleared(db_path)
+
+
+async def test_the_cleanup_does_nothing_while_attendance_is_disabled(tmp_path):
+    """A call already posted when the module is switched off stays where it is (attendance
+    specification), so the cleanup leaves it, and does not mark the round either."""
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+
+    channel = await _clean_up(db_path, attendance_enabled=False)
+
+    assert channel.deleted == []
+    assert await _standing_rounds(db_path) == {EARLIER_ROUND}
+    assert not await _cleared(db_path)
+
+
+async def test_the_cleanup_leaves_a_cancelled_round_alone(tmp_path):
+    """A cancelled round's call came down with the cancellation; a cleanup job that survived it
+    has nothing to do."""
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (EARLIER_ROUND,))
+        await db.commit()
+
+    channel = await _clean_up(db_path)
+
+    assert channel.deleted == []
+    assert not await _cleared(db_path)
+
+
+async def test_the_cleanup_leaves_the_other_round_of_a_double_header_standing(tmp_path):
+    db_path = await _make_db(tmp_path)
+    await _add_standing_call(db_path, EARLIER_ROUND, NOW - timedelta(days=1))
+    await _add_call(db_path, POSTED_ROUND, NOW + timedelta(days=NOTICE_DAYS), distributed=False)
+
+    channel = await _clean_up(db_path)
+
+    assert sorted(channel.deleted) == sorted(_msg_ids(EARLIER_ROUND))
+    assert await _standing_rounds(db_path) == {POSTED_ROUND}
+    assert not await _cleared(db_path, POSTED_ROUND)
 
 
 # ---------------------------------------------------------------------------

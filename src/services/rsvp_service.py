@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import discord
 
 from services.channel_registry_service import as_text_channel
-from db.database import get_connection
+from db.database import get_connection, sole_row
 from models.round import RoundFormat
 from utils.league_bot import LeagueBot
 from utils.league_server import LeagueView
@@ -703,6 +703,44 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
         await db.commit()
 
     await run_rsvp_notice(round_id, bot)
+
+
+# ── run_rsvp_cleanup ──────────────────────────────────────────────────────────
+
+
+async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
+    """Take down *round_id*'s check-in call, last notice and distribution message.
+
+    Fired 24 hours after the round's scheduled start by its ``rsvp_cleanup`` job, by the restart
+    recovery where that moment passed while the bot was down, and by ``/test-mode advance``
+    (#425). The answers are kept: `withdraw_rsvp_call` never touches them.
+
+    The round is then marked ``checkin_cleared``, whether or not a call was standing. Test mode
+    reads a round with no ``rsvp_embed_messages`` row as one whose call is still to be posted,
+    and without the mark it would post the call of a round a day past all over again.
+
+    Produces nothing while the attendance module is disabled — see the module gate above. A
+    call already posted then stays, as the module's specification requires of a disabling.
+    """
+    if not await _check_in_runs_for_round(round_id, bot):
+        log.info(
+            "run_rsvp_cleanup: attendance module disabled, or the round is cancelled, for "
+            "round %d — nothing taken down",
+            round_id,
+        )
+        return
+
+    # The gate above has just found the round, so it is there to be read.
+    async with get_connection(bot.db_path) as db:
+        cur = await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))
+        division_id: int = (await sole_row(cur))["division_id"]
+
+    await withdraw_rsvp_call(round_id, division_id, bot)
+
+    async with get_connection(bot.db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        await db.commit()
+    log.info("run_rsvp_cleanup: check-in taken down for round %d", round_id)
 
 
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
