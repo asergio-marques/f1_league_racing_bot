@@ -317,7 +317,7 @@ class AmendmentService:
 
         # Arm the round's check-in again (issue #120).
         #
-        # ``cancel_round`` above takes all eight of the round's jobs, the three the check-in runs
+        # ``cancel_round`` above takes all nine of the round's jobs, the four the check-in runs
         # on included, and until now only the weather ones were put back. Nothing else arms them:
         # ``schedule_attendance_round`` is called from the confirmation of placements and nowhere else, and
         # that cannot be run again on an active season. So an amended round asked nobody whether
@@ -352,6 +352,13 @@ class AmendmentService:
 
             _division_id = row["division_id"]
             if not _verdict.check_in_stays_closed:
+                # The check-in is open again, so a round whose check-in had been taken down a
+                # day after it is so no longer (#425); test mode reads the mark.
+                async with get_connection(self._db_path) as db:
+                    await db.execute(
+                        "UPDATE rounds SET checkin_cleared = 0 WHERE id = ?", (round_id,)
+                    )
+                    await db.commit()
                 if _verdict.check_in["call"].stands:
                     await repost_rsvp_call(round_id, _division_id, bot)
                 else:

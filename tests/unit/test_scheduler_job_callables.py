@@ -52,6 +52,7 @@ ROUND_JOBS = [
     ("_rsvp_notice_job", "_rsvp_notice_callback"),
     ("_rsvp_last_notice_job", "_rsvp_last_notice_callback"),
     ("_rsvp_deadline_job", "_rsvp_deadline_callback"),
+    ("_rsvp_cleanup_job", "_rsvp_cleanup_callback"),
 ]
 ALL_JOBS = ROUND_JOBS
 

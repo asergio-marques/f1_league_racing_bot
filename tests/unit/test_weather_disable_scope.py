@@ -32,10 +32,10 @@ from db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 4242
 
-# The eight job kinds a round carries, split by the module that owns them.
+# The nine job kinds a round carries, split by the module that owns them.
 WEATHER_PREFIXES = ("weather_p1", "weather_p2", "weather_p3", "cleanup")
 RESULTS_PREFIXES = ("results",)
-ATTENDANCE_PREFIXES = ("rsvp_notice", "rsvp_last_notice", "rsvp_deadline")
+ATTENDANCE_PREFIXES = ("rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup")
 ALL_PREFIXES = WEATHER_PREFIXES + RESULTS_PREFIXES + ATTENDANCE_PREFIXES
 
 
@@ -65,7 +65,7 @@ def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
 
 
 def _round_jobs(round_id: int, *, season: int, tier: int, rnum: int) -> list[MagicMock]:
-    """All eight jobs a round carries, as the scheduler would hold them."""
+    """All nine jobs a round carries, as the scheduler would hold them."""
     suffix = f"_s{season}_d{tier}_r{rnum}"
     return [_make_mock_job(f"{prefix}{suffix}", round_id) for prefix in ALL_PREFIXES]
 
@@ -185,9 +185,9 @@ async def test_disable_leaves_the_result_submission_job(tmp_path):
     assert "results_s1_d1_r2" not in removed
 
 
-async def test_disable_leaves_the_three_rsvp_jobs(tmp_path):
-    """The check-in call, its reminder and its deadline survive — nothing short of
-    the confirmation of placements would put them back."""
+async def test_disable_leaves_the_four_rsvp_jobs(tmp_path):
+    """The check-in call, its reminder, its deadline and its cleanup survive — nothing short
+    of the confirmation of placements would put them back."""
     removed = await _disable_weather(tmp_path, _all_seeded_jobs)
 
     for prefix in ATTENDANCE_PREFIXES:
@@ -227,7 +227,7 @@ async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
 
 async def test_cancel_round_without_a_filter_still_removes_every_job(tmp_path):
     """`/season cancel`, `/round cancel`, reset and amend all cancel a *round* and want
-    all eight of its jobs gone.  The new keyword must not have changed that."""
+    all nine of its jobs gone.  The new keyword must not have changed that."""
     db_path = os.path.join(str(tmp_path), "test.db")
     await _seed(db_path)
     svc = _make_scheduler(db_path)

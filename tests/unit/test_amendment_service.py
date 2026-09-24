@@ -781,6 +781,59 @@ async def test_a_closed_check_in_is_left_alone(tmp_path):
     _withdrawn.assert_not_awaited()
 
 
+async def _cleared(path: str) -> bool:
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = 1")
+        return bool((await cursor.fetchone())["checkin_cleared"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "days_out,changes,cleared",
+    [
+        (2, "moved-out", False),
+        (2, "track", False),
+        (1 / 24, "track", True),
+    ],
+    ids=["call-withdrawn", "call-reposted", "check-in-closed"],
+)
+async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
+    tmp_path, days_out, changes, cleared
+):
+    """A round's check-in marked taken down, then reopened by an amendment, is no longer taken
+    down (#425): test mode reads the mark, and would otherwise never offer the new call. A
+    check-in the amendment leaves closed keeps it."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_cleared.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=days_out))
+    async with get_connection(path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=True)
+    change = (
+        ("scheduled_at", now + timedelta(days=40))
+        if changes == "moved-out"
+        else ("track_name", "Silverstone Circuit")
+    )
+
+    with patch("services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
+        "services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
+    ):
+        await AmendmentService(path).amend_round(1, actor, [change], bot, now=now)
+
+    assert await _cleared(path) is cleared
+
+
 # ---------------------------------------------------------------------------
 # approve_amendment reposts what it rescored (#130)
 # ---------------------------------------------------------------------------

@@ -32,7 +32,8 @@ class PhaseEntry(TypedDict):
     division_id: int
     #: 0 = mystery notice (database path only — from the job store a mystery notice comes
     #: back as 1), 1|2|3 = weather phases, 4 = result submission, 5|6|7 = the check-in
-    #: call, its last notice and its deadline.
+    #: call, its last notice and its deadline, 8|9 = the forecast and the check-in cleanups a
+    #: day after the round (#425).
     phase_number: int
     track_name: str
     division_name: str
@@ -210,6 +211,7 @@ async def get_next_pending_phase(
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
+                r.checkin_cleared,
                 r.status,
                 d.name         AS division_name
             FROM rounds r
@@ -323,6 +325,50 @@ async def get_next_pending_phase(
         else:
             rsvp_state = {}
 
+        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (8).
+        if weather_module_enabled:
+            forecast_cursor = await db.execute(
+                "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+            )
+            standing_forecasts: set[int] = {
+                r["round_id"] for r in await forecast_cursor.fetchall()
+            }
+        else:
+            standing_forecasts = set()
+
+    def _make_entry(row: Any, phase: int, job_id: str | None = None) -> PhaseEntry:
+        is_mystery = str(row["format"]).upper() == "MYSTERY"
+        return PhaseEntry(
+            round_id=row["round_id"],
+            round_number=row["round_number"],
+            division_id=row["division_id"],
+            phase_number=phase,
+            track_name=row["track_name"] or ("Mystery" if is_mystery else "Unknown"),
+            division_name=row["division_name"],
+            job_id=job_id,
+        )
+
+    def _cleanup_pending(row: Any, phase: int | None = None) -> "PhaseEntry | None":
+        """Return *row*'s cleanup still to run — *phase* alone where given — or None.
+
+        Kept apart from `_first_pending_for_row` for two reasons (#425). A cleanup falls a day
+        after its round, so offering one while checking the rounds before a scheduler job would
+        pull it ahead of a later round's earlier work — the first of a double-header's cleanup
+        before the second's deadline. And a finished round still has its cleanups to run, where
+        `_first_pending_for_row` offers nothing for one, which would discard its cleanup job as
+        stale.
+
+        Pending means there is still something to take down: a Phase 3 forecast (8), or a
+        check-in call recorded as standing (9). Once taken down there is nothing, and a cleanup
+        with nothing to take down is not offered either.
+        """
+        rid = row["round_id"]
+        if phase in (None, 8) and rid in standing_forecasts:
+            return _make_entry(row, 8)
+        if phase in (None, 9) and attendance_module_enabled and rid in rsvp_state:
+            return _make_entry(row, 9)
+        return None
+
     def _first_pending_for_row(row: Any) -> "PhaseEntry | None":
         """Return the first pending phase for *row* detected from DB state only.
 
@@ -364,7 +410,9 @@ async def get_next_pending_phase(
                 return _make(1)
 
         # ── Phase 5: RSVP notice ──────────────────────────────────────────
-        if attendance_module_enabled and rid not in rsvp_state:
+        # A round whose check-in has been taken down after it has no call recorded either, and
+        # is not owed one (#425).
+        if attendance_module_enabled and rid not in rsvp_state and not row["checkin_cleared"]:
             return _make(5)
 
         # ── Phase 2: weather P2 (normal rounds only) ──────────────────────
@@ -398,17 +446,21 @@ async def get_next_pending_phase(
 
     if pending_jobs:
         for job in pending_jobs:
+            is_cleanup = job["phase_number"] in (8, 9)
             # Before returning this scheduler job, check all earlier rounds (by
             # scheduled_at) for any pending work that the scheduler cannot see —
             # misfired/evicted phase jobs, result submission (excluded from
             # pending_jobs), or RSVP phases that were never created for past-dated
             # rounds.  Ensures chronological advance order is preserved even when
             # the job store is incomplete.
+            #
+            # A cleanup checks its own round as well: it falls a day after the round, so the
+            # round's own result submission, which never comes from the job store, is due first.
             first_job_idx = next(
                 (i for i, r in enumerate(rows) if r["round_id"] == job["round_id"]),
                 len(rows),
             )
-            for row in rows[:first_job_idx]:
+            for row in rows[: first_job_idx + 1 if is_cleanup else first_job_idx]:
                 entry = _first_pending_for_row(row)
                 if entry is not None:
                     return entry
@@ -416,20 +468,15 @@ async def get_next_pending_phase(
             # job can become stale when phases were already completed (e.g. run via
             # a previous advance invocation) but APScheduler still holds the job
             # because cancel_job was never called or the job fired-and-was-missed.
+            # A cleanup is judged by its own work alone — see `_cleanup_pending`.
             rnd = round_info[job["round_id"]]
-            if _first_pending_for_row(rnd) is None:
+            if is_cleanup:
+                if _cleanup_pending(rnd, job["phase_number"]) is None:
+                    continue
+            elif _first_pending_for_row(rnd) is None:
                 # Round is fully done — stale scheduler job; try the next one.
                 continue
-            is_mystery = str(rnd["format"]).upper() == "MYSTERY"
-            return PhaseEntry(
-                round_id=job["round_id"],
-                round_number=rnd["round_number"],
-                division_id=rnd["division_id"],
-                phase_number=job["phase_number"],
-                track_name=rnd["track_name"] or ("Mystery" if is_mystery else "Unknown"),
-                division_name=rnd["division_name"],
-                job_id=job["job_id"],
-            )
+            return _make_entry(rnd, job["phase_number"], job["job_id"])
 
     # ── DB fallback: all scheduler jobs have misfired or been evicted ─────────
     # Walk rounds in scheduled_at order and return the first pending phase
@@ -438,6 +485,13 @@ async def get_next_pending_phase(
     # APScheduler's misfire_grace_time, leaving the job store empty.
     for row in rows:
         entry = _first_pending_for_row(row)
+        if entry is not None:
+            return entry
+
+    # The cleanups come last: each falls a day after its round, so with nothing else pending
+    # anywhere, whatever is still standing is what remains to take down.
+    for row in rows:
+        entry = _cleanup_pending(row)
         if entry is not None:
             return entry
 
@@ -492,9 +546,10 @@ async def build_review_summary(
     """Return a formatted multi-line string summarising all rounds and phase status.
 
     Groups results by division (insertion order), then by round (scheduled_at).
-    Covers weather phases (P1-P3), result submission, and RSVP phases (notice /
-    last-notice / deadline) based on DB state — so it reflects actual progress
-    regardless of whether scheduler jobs have fired or been evicted.
+    Covers weather phases (P1-P3) and the forecast cleanup, result submission, and RSVP
+    phases (notice / last-notice / deadline) and the check-in cleanup, based on DB state —
+    so it reflects actual progress regardless of whether scheduler jobs have fired or been
+    evicted.
 
     When *scheduler_service* is supplied, each pending phase is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
@@ -537,6 +592,7 @@ async def build_review_summary(
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
+                r.checkin_cleared,
                 r.status,
                 d.name        AS division_name,
                 d.id          AS division_id
@@ -563,6 +619,12 @@ async def build_review_summary(
             """,
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
+
+        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (#425)
+        forecast_cursor = await db.execute(
+            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+        )
+        standing_forecasts: set[int] = {r["round_id"] for r in await forecast_cursor.fetchall()}
 
         # RSVP embed message rows: keyed by (round_id, division_id)
         rsvp_cursor = await db.execute(
@@ -625,7 +687,13 @@ async def build_review_summary(
                 p1 = _phase_status(bool(row["phase1_done"]), f"phase1_r{rid}", live_ids)
                 p2 = _phase_status(bool(row["phase2_done"]), f"phase2_r{rid}", live_ids)
                 p3 = _phase_status(bool(row["phase3_done"]), f"phase3_r{rid}", live_ids)
-                parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}")
+                # Done once Phase 3 has run and nothing of it is left standing (#425).
+                cleanup = _phase_status(
+                    bool(row["phase3_done"]) and rid not in standing_forecasts,
+                    f"cleanup_r{rid}",
+                    live_ids,
+                )
+                parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}  Cleanup: {cleanup}")
 
             # ── Result submission ─────────────────────────────────────────
             if results_module_enabled:
@@ -638,7 +706,11 @@ async def build_review_summary(
                 parts.append(f"Results: {res}")
 
             # ── RSVP / attendance phases ──────────────────────────────────
-            if attendance_module_enabled:
+            if attendance_module_enabled and row["checkin_cleared"]:
+                # Taken down a day after the round, and its record with it (#425): every step
+                # before the cleanup had run by then.
+                parts.append("RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅")
+            elif attendance_module_enabled:
                 rsvp = rsvp_rows.get((rid, row["division_id"]))
                 notice_s = (
                     "✅" if rsvp is not None
@@ -652,7 +724,11 @@ async def build_review_summary(
                     "✅" if (rsvp and rsvp["distribution_msg_id"])
                     else _phase_status(False, f"rsvp_deadline_r{rid}", live_ids)
                 )
-                parts.append(f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}")
+                cleared_s = _phase_status(False, f"rsvp_cleanup_r{rid}", live_ids)
+                parts.append(
+                    f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}  "
+                    f"Cleared: {cleared_s}"
+                )
 
             line = f"  Round {rnum} · {track:<15} · {date_str}  " + "  |  ".join(parts)
             lines.append(line)

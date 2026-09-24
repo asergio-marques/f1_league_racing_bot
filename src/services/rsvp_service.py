@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import discord
 
 from services.channel_registry_service import as_text_channel
-from db.database import get_connection
+from db.database import get_connection, sole_row
 from models.round import RoundFormat
 from utils.league_bot import LeagueBot
 from utils.league_server import LeagueView
@@ -397,6 +397,10 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     5. Bulk-insert driver_round_attendance rows (all drivers NO_RSVP).
     6. Store message_id + channel_id in rsvp_embed_messages.
 
+    It takes down no other round's call. Each round's call comes down 24 hours after its own
+    round, by `run_rsvp_cleanup` (#425): posting one call once took down all the division's
+    others, the first of a double-header's included while it was still open.
+
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
     if not await _check_in_runs_for_round(round_id, bot):
@@ -481,29 +485,6 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
             reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
         )
         return
-
-    # Delete any old RSVP embed messages for this division (previous rounds)
-    old_embeds = await bot.attendance_service.get_all_embed_messages()
-    for _old in old_embeds:
-        if _old.division_id != division_id:
-            continue
-        if _old.round_id == round_id:
-            continue  # shouldn't exist yet, but skip defensively
-        _old_ch = as_text_channel(bot.get_channel(int(_old.channel_id)))
-        if _old_ch is not None:
-            for _mid in (_old.message_id, _old.last_notice_msg_id, _old.distribution_msg_id):
-                if _mid is None:
-                    continue
-                try:
-                    _old_msg = await _old_ch.fetch_message(int(_mid))
-                    await _old_msg.delete()
-                except discord.HTTPException:
-                    pass  # Already gone or no permission — safe to continue
-    # Remove stale DB rows so embed look-ups always find the current round
-    await bot.attendance_service.delete_stale_embed_messages(
-        division_id=division_id,
-        keep_round_id=round_id,
-    )
 
     # Query roster
     roster = await query_division_roster(bot.db_path, division_id)
@@ -643,10 +624,10 @@ async def withdraw_rsvp_call(
     deleted, by hand or otherwise, is not among them: it is gone, which is what was asked. The
     row goes either way, since nothing would take the messages down again from it.
 
-    `run_rsvp_notice` clears a division's *previous* rounds' messages and deliberately skips the
-    round it is posting for, so a round whose call is posted twice would end up with both
-    standing. This is the other half: it removes the call, its last notice and its distribution
-    announcement for one round, so a fresh call can take their place.
+    `run_rsvp_notice` takes down no call at all, the round's own included, so a round whose call
+    is posted twice would end up with both standing. This is the other half: it removes the
+    call, its last notice and its distribution announcement for one round, so a fresh call can
+    take their place. It is also how `run_rsvp_cleanup` takes them down after the round.
 
     The recorded answers are **not** touched. They are what a repost carries over — a driver who
     said they were racing has not unsaid it because the round moved, and asking the division to
@@ -722,6 +703,44 @@ async def repost_rsvp_call(round_id: int, division_id: int, bot: LeagueBot) -> N
         await db.commit()
 
     await run_rsvp_notice(round_id, bot)
+
+
+# ── run_rsvp_cleanup ──────────────────────────────────────────────────────────
+
+
+async def run_rsvp_cleanup(round_id: int, bot: LeagueBot) -> None:
+    """Take down *round_id*'s check-in call, last notice and distribution message.
+
+    Fired 24 hours after the round's scheduled start by its ``rsvp_cleanup`` job, by the restart
+    recovery where that moment passed while the bot was down, and by ``/test-mode advance``
+    (#425). The answers are kept: `withdraw_rsvp_call` never touches them.
+
+    The round is then marked ``checkin_cleared``, whether or not a call was standing. Test mode
+    reads a round with no ``rsvp_embed_messages`` row as one whose call is still to be posted,
+    and without the mark it would post the call of a round a day past all over again.
+
+    Produces nothing while the attendance module is disabled — see the module gate above. A
+    call already posted then stays, as the module's specification requires of a disabling.
+    """
+    if not await _check_in_runs_for_round(round_id, bot):
+        log.info(
+            "run_rsvp_cleanup: attendance module disabled, or the round is cancelled, for "
+            "round %d — nothing taken down",
+            round_id,
+        )
+        return
+
+    # The gate above has just found the round, so it is there to be read.
+    async with get_connection(bot.db_path) as db:
+        cur = await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))
+        division_id: int = (await sole_row(cur))["division_id"]
+
+    await withdraw_rsvp_call(round_id, division_id, bot)
+
+    async with get_connection(bot.db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+        await db.commit()
+    log.info("run_rsvp_cleanup: check-in taken down for round %d", round_id)
 
 
 # ── run_rsvp_last_notice ──────────────────────────────────────────────────────
@@ -833,7 +852,7 @@ async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
         log.error("run_rsvp_last_notice: failed to post for division %d: %s", division_id, exc)
         return
 
-    # Track message ID so the next round's cleanup can delete it
+    # Track message ID so the round's cleanup, a day after it, can delete it
     await bot.attendance_service.update_embed_last_notice_msg(
         round_id=round_id,
         division_id=division_id,
@@ -1229,7 +1248,7 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot: 
         log.error("_post_distribution_announcement: failed for division %d: %s", division_id, exc)
         return
 
-    # Track message ID so the next round's cleanup can delete it
+    # Track message ID so the round's cleanup, a day after it, can delete it
     await bot.attendance_service.update_embed_distribution_msg(
         round_id=round_id,
         division_id=division_id,

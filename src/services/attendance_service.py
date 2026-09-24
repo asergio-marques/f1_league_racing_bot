@@ -402,22 +402,33 @@ class AttendanceService:
             rows = await cursor.fetchall()
         return [_rem_from_row(r) for r in rows]
 
-    async def delete_stale_embed_messages(
-        self,
-        division_id: int,
-        keep_round_id: int,
-    ) -> None:
-        """Delete all rsvp_embed_messages rows for *division_id* except the one
-        for *keep_round_id*.  Called after a new RSVP notice is posted so that
-        stale rows from previous rounds do not confuse embed look-ups.
+    async def get_current_embed_message(self, division_id: int) -> RsvpEmbedMessage | None:
+        """The call *division_id*'s check-in is at: the earliest whose deadline has not run.
+
+        Where every standing call's deadline has run, the latest of them; where none stands,
+        None. A deadline records its distribution message on the call, which is how
+        `/test-mode advance` tells the same thing, and the two must agree.
+
+        A division can hold more than one call. Each stands until 24 hours after its own round
+        (#425), so two rounds close together — a double-header — stand side by side, and "the
+        division's call" is no longer the only row it holds.
         """
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM rsvp_embed_messages"
-                " WHERE division_id = ? AND round_id != ?",
-                (division_id, keep_round_id),
+            cursor = await db.execute(
+                """
+                SELECT rem.*
+                  FROM rsvp_embed_messages rem
+                  JOIN rounds r ON r.id = rem.round_id
+                 WHERE rem.division_id = ?
+                 ORDER BY r.scheduled_at, rem.round_id
+                """,
+                (division_id,),
             )
-            await db.commit()
+            calls = [_rem_from_row(r) for r in await cursor.fetchall()]
+        still_open = [call for call in calls if call.distribution_msg_id is None]
+        if still_open:
+            return still_open[0]
+        return calls[-1] if calls else None
 
     async def update_embed_last_notice_msg(
         self,

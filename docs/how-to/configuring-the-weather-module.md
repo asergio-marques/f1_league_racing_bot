@@ -194,7 +194,7 @@ Worth knowing so you do not go looking for the setting.
 | The weather words themselves | Sunny, Mixed and Rain for a session; Clear, Light Cloud, Overcast, Wet and Very Wet for a slot |
 | How many slots a session gets | Fixed by the kind of session — see the table in step 4 |
 | The wording and symbols of the posts | Fixed. The symbols become pictures you can replace once the image module is on |
-| When the final forecast is tidied away | Always 24 hours after the race starts |
+| When the final forecast is tidied away | Always 24 hours after the race starts, or as soon as the bot starts again if it was switched off then |
 | Re-rolling a round's weather | There is no command for it. Amending the round is what clears the old forecast and draws a new one |
 
 The bot keeps a full record of every draw in the log channel, so a forecast that looks surprising can always be checked rather than argued about.

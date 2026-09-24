@@ -79,6 +79,10 @@ async def _make_db(
     return db_path
 
 
+#: `_make_cog`'s default: the division has a call standing.
+_UNSET = object()
+
+
 def _embed_row(division_id: int = DIVISION_ID):
     return SimpleNamespace(
         division_id=division_id,
@@ -94,7 +98,7 @@ def _make_cog(
     test_mode: bool = True,
     config_missing: bool = False,
     attendance_enabled: bool = True,
-    embed_rows=None,
+    current_embed=_UNSET,
 ) -> TestModeCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -108,8 +112,8 @@ def _make_cog(
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.attendance_service = MagicMock()
-    bot.attendance_service.get_all_embed_messages = AsyncMock(
-        return_value=embed_rows if embed_rows is not None else [_embed_row()]
+    bot.attendance_service.get_current_embed_message = AsyncMock(
+        return_value=_embed_row() if current_embed is _UNSET else current_embed
     )
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -323,7 +327,7 @@ async def test_a_division_with_no_open_check_in_says_what_to_run_first(tmp_path)
     """Met by `/test-mode advance`, not by re-running this — and a maintainer who is not
     told that will retype the same thing."""
     db_path = await _make_db(tmp_path, name="rsvp_noembed")
-    cog = _make_cog(db_path, embed_rows=[])
+    cog = _make_cog(db_path, current_embed=None)
     interaction = _interaction()
 
     await _set_status(cog, interaction)
@@ -334,28 +338,18 @@ async def test_a_division_with_no_open_check_in_says_what_to_run_first(tmp_path)
     interaction.response.send_modal.assert_not_awaited()
 
 
-async def test_another_divisions_check_in_is_not_used(tmp_path):
+async def test_the_division_s_own_current_call_is_the_one_used(tmp_path):
     """Every division of a round has its own embed; picking the wrong one would write one
-    division's answers onto another's board."""
-    db_path = await _make_db(tmp_path, name="rsvp_otherdiv")
-    cog = _make_cog(db_path, embed_rows=[_embed_row(division_id=99)])
+    division's answers onto another's board. Which of a division's calls is current, now that
+    it can hold more than one (#425), is `get_current_embed_message`'s, and is tested there
+    against a real database."""
+    db_path = await _make_db(tmp_path, name="rsvp_own_division")
+    cog = _make_cog(db_path)
     interaction = _interaction()
 
     await _set_status(cog, interaction)
 
-    assert "No active RSVP embed" in _replied(interaction)
-
-
-async def test_the_right_embed_is_chosen_from_several(tmp_path):
-    db_path = await _make_db(tmp_path, name="rsvp_many")
-    other = _embed_row(division_id=99)
-    other.round_id = 999
-    cog = _make_cog(db_path, embed_rows=[other, _embed_row()])
-    interaction = _interaction()
-
-    await _set_status(cog, interaction)
-
-    assert interaction.response.send_modal.await_args.args[0]._round_id == ROUND_ID
+    cog.bot.attendance_service.get_current_embed_message.assert_awaited_once_with(DIVISION_ID)
 
 
 @pytest.mark.parametrize("kwargs", [{"test_mode": False}, {"config_missing": True}])

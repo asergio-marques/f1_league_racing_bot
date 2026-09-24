@@ -238,7 +238,7 @@ class TestModeCog(commands.Cog):
 
     @test_mode.command(
         name="advance",
-        description="Execute the next pending scheduled event (weather phase or result submission) immediately.",
+        description="Run the next scheduled event now: a forecast, a check-in step, results or a cleanup.",
     )
     @league_admin_only
     async def advance(self, interaction: discord.Interaction) -> None:
@@ -469,6 +469,49 @@ class TestModeCog(commands.Cog):
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
                 f"  phase: rsvp_deadline\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: {entry['round_number']}",
+            )
+            return
+
+        # ── The cleanups a day after the round (phase_number=8 and 9, #425) ─────
+        if phase_number in (8, 9):
+            from services.forecast_cleanup_service import run_post_race_cleanup
+            from services.rsvp_service import run_rsvp_cleanup
+
+            if phase_number == 8:
+                prefix, what, cleanup = "cleanup", "forecast cleanup", run_post_race_cleanup
+                done = "Its Phase 3 forecast has been deleted."
+            else:
+                prefix, what, cleanup = "rsvp_cleanup", "check-in cleanup", run_rsvp_cleanup
+                done = (
+                    "Its check-in call, last notice and reserve distribution have been "
+                    "taken down."
+                )
+            # By prefix rather than by the entry's job, which is None where the step was found
+            # from database state; a job left queued would fire again at its own moment.
+            self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
+            try:
+                await cleanup(entry["round_id"], self.bot)
+            except Exception:
+                log.exception(
+                    "Test mode advance: unhandled error in the %s for round_id=%d",
+                    what, entry["round_id"],
+                )
+                await interaction.followup.send(
+                    f"❌ An internal error occurred while firing the {what} for "
+                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
+                    ephemeral=True,
+                )
+                return
+            await interaction.followup.send(
+                f"🧹 Fired the **{what}** for "
+                f"**{entry['division_name']}** — **Round {entry['round_number']}**. {done}",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: {prefix}\n"
                 f"  division: {entry['division_name']}\n"
                 f"  round: {entry['round_number']}",
             )
@@ -1179,8 +1222,7 @@ class TestModeCog(commands.Cog):
             return
         division_id: int = div_row["division_id"]
 
-        embed_rows = await self.bot.attendance_service.get_all_embed_messages()
-        target_embed = next((r for r in embed_rows if r.division_id == division_id), None)
+        target_embed = await self.bot.attendance_service.get_current_embed_message(division_id)
         if target_embed is None:
             await interaction.response.send_message(
                 f"❌ No active RSVP embed found for division **{division}**. "
