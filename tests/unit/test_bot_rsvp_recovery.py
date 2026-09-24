@@ -60,13 +60,18 @@ async def _make_db(
     round_status: str = "NOT_RUN",
     deadline_hours: int = 6,
     hours_until_round: int = -1,
-    distributed: bool = False,
+    placed: bool = False,
+    distribution_msg_id: str | None = None,
     with_embed: bool = True,
 ) -> str:
     """A division with a check-in call standing, and a round *hours_until_round* away.
 
     A negative offset puts the round — and so its deadline — in the past. Taken from the
     clock rather than pinned, because the recovery reads the clock itself.
+
+    What a deadline leaves behind is in two places, and they are seeded apart: *placed* gives a
+    reserve a team, as the distribution writes it onto the driver, and *distribution_msg_id*
+    records the message the deadline posted, as it writes it onto the call.
     """
     db_path = os.path.join(str(tmp_path), "rsvp_recovery.db")
     await run_migrations(db_path)
@@ -101,16 +106,18 @@ async def _make_db(
         if with_embed:
             await db.execute(
                 "INSERT INTO rsvp_embed_messages "
-                "(round_id, division_id, message_id, channel_id, posted_at) "
-                "VALUES (?, ?, ?, '770001', ?)",
+                "(round_id, division_id, message_id, channel_id, posted_at, "
+                " distribution_msg_id) "
+                "VALUES (?, ?, ?, '770001', ?, ?)",
                 (
                     ROUND_ID,
                     DIVISION_ID,
                     str(MESSAGE_ID),
                     datetime.now(timezone.utc).isoformat(),
+                    distribution_msg_id,
                 ),
             )
-        if distributed:
+        if placed:
             await db.execute(
                 "INSERT INTO driver_profiles "
                 "(id, discord_user_id, current_state) "
@@ -256,11 +263,11 @@ async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     assert await _recover(bot) == []
 
 
-async def test_a_deadline_already_distributed_is_not_run_again(tmp_path):
-    """Assessed by whether any driver holds a team or a standby place, because that is
-    what the distribution writes — a second run would redistribute seats the division has
-    already been told about."""
-    db_path = await _make_db(tmp_path, hours_until_round=-1, distributed=True)
+async def test_a_deadline_that_placed_reserves_is_not_run_again(tmp_path):
+    """A second run would redistribute seats the division has already been told about."""
+    db_path = await _make_db(
+        tmp_path, hours_until_round=-1, placed=True, distribution_msg_id="990099"
+    )
     bot = _bot(db_path)
 
     assert await _recover(bot) == []
