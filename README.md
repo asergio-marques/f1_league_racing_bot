@@ -891,14 +891,14 @@ A real posting is suppressed the same way: the switch is read before the driver'
 #### `/test-mode advance` — Execute the next pending event
 *Access: League admin · Requires test mode active*
 
-No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced.
+No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced. Nor is a last notice set to 0 with `/attendance config rsvp-last-notice`.
 
 Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, result submission, the check-in call, its reminder and its deadline, and the two tidy-ups a day after each round: its last forecast being deleted, and its check-in messages being taken down.
 
 #### `/test-mode review` — View phase completion status
 *Access: League admin · Requires test mode active*
 
-No parameters. Displays a summary of all rounds for the active season, per round and division, the tidy-ups a day after each round included: ✅ for a step that has run, ⏳ for one still to come whose job is queued and will fire on its own, and ⚠️ for one still to come with no job queued — run it with `/test-mode advance`. Result submission reads instead as finalized, or as pending review once results are in. A module that is switched off shows no steps: the forecasts and a mystery round's notice while the weather module is off, as result submission and the check-in while theirs are.
+No parameters. Displays a summary of all rounds for the active season, per round and division, the tidy-ups a day after each round included: ✅ for a step that has run, ⏳ for one still to come whose job is queued and will fire on its own, and ⚠️ for one still to come with no job queued — run it with `/test-mode advance`. Result submission reads instead as finalized, or as pending review once results are in. A module that is switched off shows no steps: the forecasts and a mystery round's notice while the weather module is off, as result submission and the check-in while theirs are. Nor does a last notice set to 0.
 
 #### `/test-mode set-former-driver` — Override the former_driver flag
 *Access: League admin · Requires test mode active*
