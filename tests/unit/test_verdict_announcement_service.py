@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from services.verdict_announcement_service import (
+    describe_penalty,
     translate_penalty,
     post_penalty_announcements,
     post_appeal_announcements,
@@ -53,6 +54,25 @@ class TestTranslatePenalty:
 
     def test_single_second_removed(self):
         assert translate_penalty("-1s") == "1 seconds removed"
+
+    @pytest.mark.parametrize("typed", ["NFA", "nfa", "  Nfa  "])
+    def test_no_further_action_says_no_penalty_follows(self, typed):
+        assert translate_penalty(typed) == NO_FURTHER_ACTION
+
+
+#: What a cleared driver's verdict reads (decided 2026-09-24, #138): it says outright that no
+#: penalty follows, so it reads rightly under a "Penalty" label and a "SANCTION" heading alike.
+NO_FURTHER_ACTION = "None \u2014 no further action"
+
+
+def test_no_further_action_is_described_as_no_penalty_and_never_as_a_disqualification():
+    """It carries no seconds, as a disqualification does — and a record with no seconds was
+    read as one, so it has to be recognised before that fallback is reached (#138)."""
+    assert describe_penalty("NFA", None) == NO_FURTHER_ACTION
+
+
+def test_a_disqualification_is_still_described_as_one():
+    assert describe_penalty("DSQ", None) == "Disqualified"
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +568,51 @@ async def test_mock_driver_is_still_drawn_under_its_test_name(tmp_path, capture_
     )
 
     assert capture_drawings["built"][0]["driver_name"] == "Mock Driver"
+
+
+def _nfa_record(race_result_id: int) -> dict:
+    return _penalty_record(race_result_id) | {"penalty_type": "NFA", "time_seconds": None}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("post", [post_penalty_announcements, post_appeal_announcements])
+async def test_no_further_action_is_drawn_as_no_penalty(tmp_path, capture_drawings, post):
+    """A report or a correction alike: the graphic takes the same rendering (#138)."""
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    assert await post(bot, state, [_nfa_record(seeded["race_result_id"])]) == []
+
+    assert capture_drawings["built"][0]["penalty_description"] == NO_FURTHER_ACTION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("post", [post_penalty_announcements, post_appeal_announcements])
+async def test_no_further_action_is_announced_as_no_penalty(tmp_path, capture_drawings, post):
+    """The textual announcement names the driver and the incident, and says no penalty
+    follows — never "Disqualified", and never a number of seconds added (#138)."""
+    capture_drawings["enabled"] = False
+    db_path = str(tmp_path / "test.db")
+    seeded = await _seed_round(db_path)
+    await _seed_driver(db_path)
+
+    channel = _Channel(_Member("Ada on Server"))
+    bot = _Bot(db_path, channel)
+    state = _make_state(db_path, round_id=seeded["round_id"])
+
+    assert await post(bot, state, [_nfa_record(seeded["race_result_id"])]) == []
+
+    verdict = channel.sent[-1][0]
+    assert f"**Driver**: <@{DRIVER_ID}>" in verdict
+    assert "**Description**: Contact at turn four." in verdict
+    assert f"**Penalty**: {NO_FURTHER_ACTION}" in verdict
+    assert "Disqualified" not in verdict
+    assert "seconds" not in verdict
 
 
 # ---------------------------------------------------------------------------
