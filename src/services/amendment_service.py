@@ -317,7 +317,7 @@ class AmendmentService:
 
         # Arm the round's check-in again (issue #120).
         #
-        # ``cancel_round`` above takes all eight of the round's jobs, the three the check-in runs
+        # ``cancel_round`` above takes all nine of the round's jobs, the four the check-in runs
         # on included, and until now only the weather ones were put back. Nothing else arms them:
         # ``schedule_attendance_round`` is called from the confirmation of placements and nowhere else, and
         # that cannot be run again on an active season. So an amended round asked nobody whether

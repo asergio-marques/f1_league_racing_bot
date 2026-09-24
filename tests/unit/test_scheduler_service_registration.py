@@ -65,6 +65,7 @@ def _service():
         "_rsvp_notice_callback",
         "_rsvp_last_notice_callback",
         "_rsvp_deadline_callback",
+        "_rsvp_cleanup_callback",
     ):
         setattr(service, attr, None)
     return service
@@ -98,6 +99,7 @@ def _added(service) -> list:
         ("register_rsvp_notice_callback", "_rsvp_notice_callback"),
         ("register_rsvp_last_notice_callback", "_rsvp_last_notice_callback"),
         ("register_rsvp_deadline_callback", "_rsvp_deadline_callback"),
+        ("register_rsvp_cleanup_callback", "_rsvp_cleanup_callback"),
         ("register_signup_close_callback", "_signup_close_callback"),
         ("register_portrait_refresh_callback", "_portrait_refresh_callback"),
     ],
@@ -232,6 +234,69 @@ def test_a_naive_round_time_is_read_as_utc():
     service.schedule_result_submission_jobs([_round(naive=True)], division_meta={11: (7, 1)})
 
     assert _added(service)[0].kwargs["trigger"].run_date.utcoffset() == timedelta(0)
+
+
+# ---------------------------------------------------------------------------
+# The check-in cleanup (#425)
+# ---------------------------------------------------------------------------
+#
+# `schedule_attendance_round` skips any job whose moment has passed against the wall clock, so
+# these place the round relative to it rather than on a pinned date.
+
+
+def _round_starting(start: datetime) -> SimpleNamespace:
+    return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
+
+
+def _attendance_jobs(service, rnd) -> dict:
+    service.schedule_attendance_round(
+        rnd,
+        season_number=7,
+        division_tier=1,
+        notice_days=5,
+        last_notice_hours=24,
+        deadline_hours=2,
+    )
+    return {c.kwargs["id"]: c for c in _added(service)}
+
+
+def _a_month_out() -> datetime:
+    return datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=30)
+
+
+def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
+    service = _service()
+    start = _a_month_out()
+
+    cleanup = _attendance_jobs(service, _round_starting(start))["rsvp_cleanup_s7_d1_r3_id21"]
+
+    assert cleanup.args[0] is scheduler_module._rsvp_cleanup_job
+    assert cleanup.kwargs["trigger"].run_date == start + timedelta(hours=24)
+    assert cleanup.kwargs["replace_existing"] is True
+    assert cleanup.kwargs["kwargs"] == {"round_id": 21}
+
+
+def test_a_check_in_cleanup_already_due_is_not_armed():
+    """The same rule as the attendance module's other three jobs: a moment gone by is skipped."""
+    service = _service()
+    started = datetime.now(timezone.utc) - timedelta(days=2)
+
+    jobs = _attendance_jobs(service, _round_starting(started))
+
+    assert not [job_id for job_id in jobs if job_id.startswith("rsvp_cleanup")]
+
+
+def test_a_round_s_forecast_and_check_in_come_down_together():
+    """One figure for both modules, so a round's channels clear at the same moment."""
+    service = _service()
+    rnd = _round_starting(_a_month_out())
+
+    service.schedule_round(rnd, season_number=7, division_tier=1)
+    jobs = _attendance_jobs(service, rnd)
+
+    forecast = jobs["cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
+    check_in = jobs["rsvp_cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
+    assert forecast == check_in == rnd.scheduled_at + scheduler_module.POST_RACE_CLEANUP_DELAY
 
 
 # ---------------------------------------------------------------------------

@@ -225,7 +225,12 @@ async def main() -> None:
         bot.scheduler_service.register_result_submission_callback(_result_submission_cb)
 
         # Register RSVP attendance callbacks
-        from services.rsvp_service import run_rsvp_notice, run_rsvp_last_notice, run_rsvp_deadline
+        from services.rsvp_service import (
+            run_rsvp_cleanup,
+            run_rsvp_deadline,
+            run_rsvp_last_notice,
+            run_rsvp_notice,
+        )
 
         async def _rsvp_notice_cb(round_id: int) -> None:
             await run_rsvp_notice(round_id, bot)
@@ -236,9 +241,13 @@ async def main() -> None:
         async def _rsvp_deadline_cb(round_id: int) -> None:
             await run_rsvp_deadline(round_id, bot)
 
+        async def _rsvp_cleanup_cb(round_id: int) -> None:
+            await run_rsvp_cleanup(round_id, bot)
+
         bot.scheduler_service.register_rsvp_notice_callback(_rsvp_notice_cb)
         bot.scheduler_service.register_rsvp_last_notice_callback(_rsvp_last_notice_cb)
         bot.scheduler_service.register_rsvp_deadline_callback(_rsvp_deadline_cb)
+        bot.scheduler_service.register_rsvp_cleanup_callback(_rsvp_cleanup_cb)
 
         # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
         # every other job here the trigger is recurring, so recovery re-adds it rather than

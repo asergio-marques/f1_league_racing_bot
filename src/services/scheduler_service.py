@@ -38,6 +38,11 @@ log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
 
+#: How long after a round's scheduled start its posted messages come down: the weather module's
+#: Phase 3 forecast, and the attendance module's check-in call with its last notice and its
+#: distribution message (#425). One figure for both, so a round's channels clear together.
+POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
+
 
 # Regex that matches the ``_s{S}_d{D}_r{R}_id{round_id}`` suffix appended to every
 # round-scoped job ID. Used to extract the event-type prefix for dispatch.
@@ -52,8 +57,8 @@ _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 # The event-type prefixes of the jobs the **weather module** owns: its three forecast
 # phases and the post-race cleanup that deletes what they posted.
 #
-# Ownership can only be read from the job ID. All eight of a round's jobs — these four,
-# the result submission and the three RSVP jobs — carry the same ``round_id`` kwarg, so
+# Ownership can only be read from the job ID. All nine of a round's jobs — these four,
+# the result submission and the four attendance jobs — carry the same ``round_id`` kwarg, so
 # the kwarg says which round a job belongs to and nothing about which module it is for.
 # The prefix is the only marker there is, and ``_JOB_SUFFIX_RE`` above is what exposes it.
 _WEATHER_JOB_PREFIXES = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
@@ -288,6 +293,22 @@ async def _rsvp_deadline_job(round_id: int) -> None:
     await cb(round_id)
 
 
+async def _rsvp_cleanup_job(round_id: int) -> None:
+    """Top-level APScheduler callable for the check-in cleanup, 24 h after a round's start."""
+    if _GLOBAL_SERVICE is None:
+        log.warning(
+            "_rsvp_cleanup_job fired but _GLOBAL_SERVICE is None "
+            "(round=%s) — skipping",
+            round_id,
+        )
+        return
+    cb = _GLOBAL_SERVICE._rsvp_cleanup_callback
+    if cb is None:
+        log.warning("No RSVP cleanup callback registered; skipping round %s.", round_id)
+        return
+    await cb(round_id)
+
+
 def default_jobstore_path(db_path: str) -> str:
     """Where the job store lives when nothing names it: `scheduler.db` beside *db_path*.
 
@@ -353,6 +374,7 @@ class SchedulerService:
         self._rsvp_notice_callback: "Callable | None" = None
         self._rsvp_last_notice_callback: "Callable | None" = None
         self._rsvp_deadline_callback: "Callable | None" = None
+        self._rsvp_cleanup_callback: "Callable | None" = None
 
     def register_callbacks(
         self,
@@ -412,6 +434,14 @@ class SchedulerService:
         Called from bot.py on_ready after the scheduler is started.
         """
         self._rsvp_deadline_callback = callback
+
+    def register_rsvp_cleanup_callback(self, callback: Callable) -> None:
+        """Register the async callable invoked when a round's check-in cleanup job fires.
+
+        The callable must accept ``(round_id: int)``.
+        Called from bot.py on_ready after the scheduler is started.
+        """
+        self._rsvp_cleanup_callback = callback
 
     @property
     def jobstore_path(self) -> str:
@@ -498,9 +528,9 @@ class SchedulerService:
             )
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
-        # Post-race Phase 3 cleanup: +24 h after round start
+        # Post-race Phase 3 cleanup, a day after round start
         cleanup_job_id = f"cleanup{_suffix}"
-        cleanup_fire_at = scheduled_at + timedelta(hours=24)
+        cleanup_fire_at = scheduled_at + POST_RACE_CLEANUP_DELAY
         self._scheduler.add_job(
             _forecast_cleanup_job,
             trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
@@ -546,6 +576,9 @@ class SchedulerService:
             notice_days:         Days before round to post RSVP embed.
             last_notice_hours:   Hours before round for last-notice ping (0 = disabled).
             deadline_hours:      Hours before round for distribution deadline.
+
+        A fourth job, ``rsvp_cleanup``, takes the round's call, last notice and distribution
+        message down `POST_RACE_CLEANUP_DELAY` after the round's start (#425).
         """
         scheduled_at = rnd.scheduled_at
         if scheduled_at.tzinfo is None:
@@ -607,6 +640,22 @@ class SchedulerService:
         else:
             log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
 
+        # Cleanup job, a day after the round
+        cleanup_fire_at = scheduled_at + POST_RACE_CLEANUP_DELAY
+        cleanup_job_id = f"rsvp_cleanup{_suffix}"
+        if cleanup_fire_at > now:
+            self._scheduler.add_job(
+                _rsvp_cleanup_job,
+                trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
+                id=cleanup_job_id,
+                replace_existing=True,
+                name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
+                kwargs={"round_id": rnd.id},
+            )
+            log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
+        else:
+            log.info("Skipping %s — fire time %s is in the past", cleanup_job_id, cleanup_fire_at.isoformat())
+
     def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> None:
         """Remove scheduler jobs belonging to *round_id*.
 
@@ -619,7 +668,7 @@ class SchedulerService:
             only: When given, restricts the removal to jobs whose event-type
                 prefix — the job ID with its ``_s{S}_d{D}_r{R}`` suffix stripped
                 — is in the set.  Callers cancelling a *round* want the default,
-                which takes all eight of its jobs; a caller switching **one
+                which takes all nine of its jobs; a caller switching **one
                 module** off wants that module's prefixes and nothing else, or
                 it takes the other modules' work down with it (issue #117).
                 A job whose ID does not carry the round suffix is left alone
@@ -641,7 +690,7 @@ class SchedulerService:
     async def cancel_all_weather(self) -> None:
         """Cancel the weather module's jobs for every round in active/setup seasons.
 
-        Only the four jobs in ``_WEATHER_JOB_PREFIXES`` are taken. The other four a round
+        Only the four jobs in ``_WEATHER_JOB_PREFIXES`` are taken. The other five a round
         carries belong to modules that are still switched on and must survive:
 
         * ``results`` is not only the results module's. ``run_result_submission_job`` is
@@ -649,9 +698,10 @@ class SchedulerService:
           whatever the modules — with results off it simply closes the round as FINAL.
           Cancelled, the round never leaves NOT_RUN, its division never finishes and its
           season can never be completed.
-        * ``rsvp_notice``, ``rsvp_last_notice`` and ``rsvp_deadline`` are attendance's, and
-          nothing short of the confirmation of placements recreates them — which cannot be run again
-          on an active season, so cancelling them loses the season's check-ins for good.
+        * ``rsvp_notice``, ``rsvp_last_notice``, ``rsvp_deadline`` and ``rsvp_cleanup`` are
+          attendance's, and nothing short of the confirmation of placements recreates them — which
+          cannot be run again on an active season, so cancelling them loses the season's check-ins
+          for good.
 
         Do not widen this back to a whole-round cancel: that was issue #117, in which
         switching weather off silently stopped results collection and check-ins for the

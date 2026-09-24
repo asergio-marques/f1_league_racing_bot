@@ -295,7 +295,7 @@ class TestScheduleAttendanceRoundMystery:
         assert mystery_count == normal_count
 
     def test_mystery_no_last_notice_when_disabled(self):
-        """When last_notice_hours=0, MYSTERY round gets only notice + deadline (2 jobs)."""
+        """When last_notice_hours=0, MYSTERY round gets notice, deadline and cleanup (3 jobs)."""
         svc = _make_scheduler_no_db()
         svc.schedule_attendance_round(
             _future_round(5, RoundFormat.MYSTERY),
@@ -305,7 +305,7 @@ class TestScheduleAttendanceRoundMystery:
             last_notice_hours=0,
             deadline_hours=2,
         )
-        assert svc._scheduler.add_job.call_count == 2
+        assert svc._scheduler.add_job.call_count == 3
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert "rsvp_last_notice_s1_d1_r1" not in job_ids
 
