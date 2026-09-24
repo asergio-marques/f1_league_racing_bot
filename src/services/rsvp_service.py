@@ -929,6 +929,14 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
     Produces nothing while the attendance module is disabled — see the module gate above.
     Its only caller today is ``run_rsvp_deadline``, which is gated as well; the gate is
     repeated here so a later caller cannot reach the seat writes around it.
+
+    **Each run is the whole answer** (#429). A round's distribution can run more than once —
+    again after an amendment posts its call again, and again at a restart where its
+    announcement never posted — and the answers, the roster or both may have moved in between.
+    `_write_distribution` clears every placement of the round in the division before it writes
+    the new ones, the run finding no reserve accepted included, so a reserve the last run
+    seated and this one does not holds no team. Every reader takes a team to mean the reserve
+    was sent to race, and scoring would charge one left on standby as a no-show.
     """
     if not await _attendance_enabled_for_division(division_id, bot):
         log.info(
@@ -961,6 +969,8 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
 
     if not accepted_reserves:
         log.info("run_reserve_distribution: no accepted reserves for round %d / division %d", round_id, division_id)
+        # Still written: an earlier run of this round may have seated a reserve since withdrawn.
+        await _write_distribution(bot.db_path, round_id, division_id, [], [])
         return False
 
     async with get_connection(bot.db_path) as db:
@@ -1067,8 +1077,34 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
         team_vacancy[team_id] -= 1
         reserves_assigned[team_id] += 1
 
-    # Write results
-    async with get_connection(bot.db_path) as db:
+    await _write_distribution(bot.db_path, round_id, division_id, assignments, standby_ids)
+
+    log.info(
+        "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
+        round_id, division_id, len(assignments), len(standby_ids),
+    )
+    return bool(assignments or standby_ids)
+
+
+async def _write_distribution(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    assignments: list[tuple[int, int]],
+    standby_ids: list[int],
+) -> None:
+    """Replace the round's placements in *division_id* with *assignments* and *standby_ids*.
+
+    One transaction: every placement of the round in the division is cleared, then the new
+    ones written, so no reader ever sees a reserve holding both a team and a standby place, or
+    a team from a run that no longer stands. See `run_reserve_distribution`.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_round_attendance SET assigned_team_id = NULL, is_standby = 0 "
+            "WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
         for dra_id, team_id in assignments:
             await db.execute(
                 "UPDATE driver_round_attendance SET assigned_team_id = ?, is_standby = 0 WHERE id = ?",
@@ -1080,12 +1116,6 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
                 (dra_id,),
             )
         await db.commit()
-
-    log.info(
-        "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
-        round_id, division_id, len(assignments), len(standby_ids),
-    )
-    return bool(assignments or standby_ids)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
