@@ -649,7 +649,7 @@ async def _recover_missed_check_in_calls(
                 f"  season: {row['season_number']}\n"
                 f"  division: {row['division_name']} (id={division_id})\n"
                 f"  round: {row['round_number']}\n"
-                f"  reason: the call fell due while the bot was not running\n"
+                f"  reason: the call was not posted when it fell due\n"
                 f"  deadline: <t:{int(deadline_at.timestamp())}:F>",
             )
         except Exception:

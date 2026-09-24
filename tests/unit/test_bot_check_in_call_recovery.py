@@ -206,7 +206,7 @@ async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
         "  season: 3\n"
         f"  division: Division 1 (id={DIVISION_ID})\n"
         "  round: 4\n"
-        "  reason: the call fell due while the bot was not running\n"
+        "  reason: the call was not posted when it fell due\n"
         f"  deadline: <t:{int(deadline.timestamp())}:F>"
     ]
 
