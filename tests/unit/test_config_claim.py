@@ -7,6 +7,7 @@ configured server, and that the next `/bot init` claims it again, once.
 """
 from __future__ import annotations
 
+import dataclasses
 import os
 import sqlite3
 import sys
@@ -105,15 +106,28 @@ async def test_another_server_claims_a_released_row(service):
 
 
 async def test_the_claim_carries_test_mode_and_the_module_flags_over(service):
-    """`ServerConfig` defaults test mode and both flags off; the claim must not write them."""
+    """`ServerConfig` defaults test mode off; the claim must write neither it nor the flags."""
     await service.release_claim()
     await service.save_server_config(_config(NEW_SERVER))
 
     config = await service.get_server_config()
     assert config.test_mode_active is True
-    assert config.weather_module_enabled is True
-    assert config.signup_module_enabled is True
     assert config.test_mode_nationality_required is False
+    row = await _row(service)
+    assert row["weather_module_enabled"] == 1
+    assert row["signup_module_enabled"] == 1
+
+
+def test_server_config_carries_no_module_flags():
+    """Whether a module is on is `module_service`'s to answer (issue #158).
+
+    `ServerConfig` once carried the weather and signup flags, which nothing read and which
+    no other module had, so a reader taking enablement from it got a partial answer that
+    looked whole — the trap #153 removed for `previous_season_number`.
+    """
+    names = [f.name for f in dataclasses.fields(ServerConfig)]
+
+    assert [n for n in names if n.endswith("_module_enabled")] == []
 
 
 async def test_only_one_server_claims_a_released_row(service):
