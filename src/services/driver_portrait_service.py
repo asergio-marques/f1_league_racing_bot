@@ -236,9 +236,9 @@ async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     current account, whose replaced account is drawn by nothing (issues #222 and #243).
 
     **Only where the file is ours to remove.** `driver_portraits` is the ownership register:
-    a portrait with no row was placed by the league itself, and migration 047 is explicit
-    that the bot never overwrites such a file and never fetches over it. An unowned portrait
-    is therefore left exactly where it is, being the league's own artwork and deliberate.
+    a portrait with no row was placed by the league itself, and the bot never overwrites such
+    a file and never fetches over it (see the module docstring). An unowned portrait is
+    therefore left exactly where it is, being the league's own artwork and deliberate.
 
     **The row never goes without the file.** Deleting the row alone would *disown* a portrait
     the bot wrote, after which the bot would refuse to overwrite its own leftover for good —

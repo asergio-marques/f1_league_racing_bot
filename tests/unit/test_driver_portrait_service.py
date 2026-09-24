@@ -262,8 +262,8 @@ async def test_removing_a_portrait_takes_the_file_and_the_row(db_path, directory
 
 
 async def test_removing_a_portrait_leaves_the_league_s_own_artwork_alone(db_path, directory):
-    """A file with no row was placed by the league, and migration 047 is explicit that the
-    bot never overwrites one. Removing it on a re-key would delete a deliberate choice."""
+    """A file with no row was placed by the league, and the bot never overwrites one (the
+    service's module docstring). Removing it on a re-key would delete a deliberate choice."""
     from services.driver_portrait_service import remove_portrait
 
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
