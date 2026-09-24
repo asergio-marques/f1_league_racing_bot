@@ -553,8 +553,9 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     button interactions survive bot restarts (FR-007).
 
     T019: For any round whose rsvp_deadline fire time has already passed but no
-    distribution has run (assessed by absence of assigned_team_id rows), run
-    run_rsvp_deadline immediately (FR-027).
+    distribution has run, run run_rsvp_deadline immediately (FR-027). A call whose deadline
+    recorded its message on it has run (#429): a deadline with no reserve to place writes
+    nothing onto a driver, but it posts its notice like any other.
 
     T023: For any round whose rsvp_last_notice fire time has already passed,
     silently skip — do NOT fire retroactively (FR-029 edge case).
@@ -624,6 +625,7 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
                  WHERE r.status != 'CANCELLED'
                    AND s.status = 'ACTIVE'
                    AND ac.module_enabled = 1
+                   AND rem.distribution_msg_id IS NULL
                 """
             )
             round_rows = await cur.fetchall()
