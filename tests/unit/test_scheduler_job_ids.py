@@ -102,6 +102,46 @@ def test_a_stale_round_number_is_only_cosmetic():
 # Reading the identifier back
 # ---------------------------------------------------------------------------
 
+#: Every event type a round's jobs are armed under, by `schedule_round` and
+#: `schedule_attendance_round`.
+_ROUND_EVENT_TYPES = (
+    "weather_p1",
+    "weather_p2",
+    "weather_p3",
+    "cleanup",
+    "results",
+    "rsvp_notice",
+    "rsvp_last_notice",
+    "rsvp_deadline",
+    "rsvp_cleanup",
+)
+
+
+@pytest.mark.parametrize(
+    "job_id,event_type",
+    [
+        ("weather_p1_s3_d2_r5_id42", "weather_p1"),
+        ("rsvp_last_notice_s2_d3_r11_id97", "rsvp_last_notice"),
+        ("weather_p1_s1_d1_r4", "weather_p1"),
+        ("portrait_refresh", None),
+        ("something_odd", None),
+    ],
+    ids=["current", "check-in", "written-before-the-round-id", "no-round", "unparseable"],
+)
+def test_the_event_type_is_the_id_less_its_round_suffix(job_id, event_type):
+    """One reader for the whole scheme (#426). Every caller asking what a job is for reads it
+    here — the review once built IDs of its own instead, in a shape no job has ever had, and
+    found none of them."""
+    assert ss._job_event_type(job_id) == event_type
+
+
+@pytest.mark.parametrize("event_type", _ROUND_EVENT_TYPES)
+def test_the_reader_undoes_the_writer(event_type):
+    """Whatever `_round_job_suffix` appends, the reader takes off again, for all nine."""
+    job_id = f"{event_type}{_round_job_suffix(_round(42, 5), 3, 2)}"
+
+    assert ss._job_event_type(job_id) == event_type
+
 
 def _job(job_id: str, round_id: int | None, *, minutes: int = 5, paused: bool = False):
     job = MagicMock()

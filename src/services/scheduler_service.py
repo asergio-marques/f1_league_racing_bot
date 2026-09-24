@@ -83,6 +83,22 @@ def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> s
     """
     return f"_s{season_number}_d{division_tier}_r{rnd.round_number}_id{rnd.id}"
 
+
+def _job_event_type(job_id: str) -> str | None:
+    """The event type of a round's job — its ID less the `_round_job_suffix` tail — or None.
+
+    The one reader of the scheme `_round_job_suffix` writes. None stands for an ID carrying no
+    round suffix, whose owner cannot be read: a server-scoped job such as the portrait refresh, or
+    one from a version of the bot that named its jobs otherwise.
+
+    Every caller asking what a job is for asks here, and pairs the answer with the job's
+    ``round_id`` kwarg — never rebuilding an ID to look one up. The review summary once built
+    IDs of its own, in a shape no job has ever had, and so found none of them (#426).
+    """
+    m = _JOB_SUFFIX_RE.search(job_id)
+    return None if m is None else job_id[: m.start()]
+
+
 # Module-level service reference so APScheduler can pickle the job callable.
 # Set in SchedulerService.start(); always non-None when jobs fire.
 _GLOBAL_SERVICE: "SchedulerService | None" = None
@@ -661,13 +677,12 @@ class SchedulerService:
 
         Iterates the live jobstore and removes every job whose ``round_id``
         kwarg matches.  This is format-agnostic and works with both the
-        current ``<event>_s{S}_d{D}_r{R}`` ID scheme and any other jobs that
-        carry ``round_id`` in their kwargs.
+        current ``<event>_s{S}_d{D}_r{R}_id{round_id}`` ID scheme and any other jobs
+        that carry ``round_id`` in their kwargs.
 
         Args:
-            only: When given, restricts the removal to jobs whose event-type
-                prefix — the job ID with its ``_s{S}_d{D}_r{R}`` suffix stripped
-                — is in the set.  Callers cancelling a *round* want the default,
+            only: When given, restricts the removal to jobs whose event type — as
+                `_job_event_type` reads it off the job ID — is in the set.  Callers cancelling a *round* want the default,
                 which takes all nine of its jobs; a caller switching **one
                 module** off wants that module's prefixes and nothing else, or
                 it takes the other modules' work down with it (issue #117).
@@ -678,8 +693,8 @@ class SchedulerService:
             if job.kwargs.get("round_id") != round_id:
                 continue
             if only is not None:
-                m = _JOB_SUFFIX_RE.search(job.id)
-                if m is None or job.id[: m.start()] not in only:
+                event_type = _job_event_type(job.id)
+                if event_type is None or event_type not in only:
                     continue
             try:
                 self._scheduler.remove_job(job.id)
@@ -852,11 +867,10 @@ class SchedulerService:
             round_id = job.kwargs.get("round_id")
             if round_id is None or round_id not in round_ids:
                 continue
-            # Extract event-type prefix by stripping the _s{S}_d{D}_r{R} suffix
-            m = _JOB_SUFFIX_RE.search(job.id)
-            if m is None:
+            # The event type, read off the ID by the scheme's one reader
+            event_type = _job_event_type(job.id)
+            if event_type is None:
                 continue
-            event_type = job.id[: m.start()]
             phase = _PHASE_PREFIX_MAP.get(event_type)
             if phase is None:
                 continue  # results, season_end, etc.
