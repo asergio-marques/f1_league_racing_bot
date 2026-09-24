@@ -614,11 +614,17 @@ class ImageRenderService:
         self._config_service = config_service
         self._validity_service = validity_service
 
-    async def _apply_tier_palette(self, root, division_name: str) -> None:
+    async def apply_tier_palette(self, root, division_name: str) -> None:
         """Paint this tier's configured colours into the parsed template (051).
 
         Reads nothing while the feature is off, which is what keeps it inert: a league that
         has not asked for per-tier colours pays not even a query for them.
+
+        Public because it has two callers and must stay the one step both take. `render`
+        paints a division's graphic through it; the fastest-lap contrast check (#165)
+        paints each division's copy of the race results template through it before reading
+        the plate. A second way of resolving a tier's colours would let the figure a
+        league is told drift from the colour it is drawn in, which is the defect #165 was.
         """
         from utils.svg_palette import apply_palette
 
@@ -714,7 +720,7 @@ class ImageRenderService:
         # to post over it would be a worse answer than posting the wrong shade of blue.
         if division_name:
             try:
-                await self._apply_tier_palette(root, division_name)
+                await self.apply_tier_palette(root, division_name)
             except Exception:  # noqa: BLE001
                 log.exception(
                     "render: per-tier palette failed for %s / %s", image_type, division_name
