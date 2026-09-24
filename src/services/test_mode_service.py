@@ -30,10 +30,15 @@ class PhaseEntry(TypedDict):
     round_id: int
     round_number: int
     division_id: int
-    phase_number: int  # 0=mystery notice, 1|2|3=weather phases, 4=result submission
+    #: 0 = mystery notice (database path only — from the job store a mystery notice comes
+    #: back as 1), 1|2|3 = weather phases, 4 = result submission, 5|6|7 = the check-in
+    #: call, its last notice and its deadline.
+    phase_number: int
     track_name: str
     division_name: str
-    job_id: str | None  # APScheduler job ID; None for mystery-round result fallback
+    #: The APScheduler job the entry came from; None wherever it was found from database
+    #: state instead — result submission always, and any phase the job store has lost.
+    job_id: str | None
 
 
 # ---------------------------------------------------------------------------
