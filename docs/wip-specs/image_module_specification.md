@@ -1384,14 +1384,14 @@ These hold for every image type of the module and are stated here rather than re
     - The "images test verdict" command is the one exception, having no textual counterpart to fall back to. A fatal error met by it shall be reported to the league manager who invoked it and no image posted.
 
 ### Test data
-- The "images test verdict" command shall generate one image for each of the cases below, each drawn for the division and round named, and each reported to the league manager who invoked the command and never posted to the verdicts channel of a division:
-    - a verdict of the penalty phase carrying a time penalty added to the time of a driver;
-    - a verdict of the penalty phase carrying a time penalty removed from the time of a driver;
-    - a verdict of the penalty phase carrying a disqualification;
-    - a verdict of the penalty phase carrying no further action. Decided 2026-09-24 (#138);
-    - a verdict of the appeal phase, so that the rendering of the stage of an appeal may be evaluated;
-    - a verdict of an autosack and a verdict of an autoreserve, so that the rendering of a verdict naming no session and no team may be evaluated.
-- The sanction fabricated shall be drawn from those the module can record and issue, which are a time penalty added to the time of a driver, a time penalty removed from it, a disqualification, and no further action. Five seconds added, ten seconds added and three seconds removed shall each be drawn among the cases above. A sanction the module cannot issue shall never be drawn.
+- The "images test verdict" command shall generate one image for each of the cases below, each a verdict of the penalty phase drawn for the division and round named, and each reported to the league manager who invoked the command and never posted to the verdicts channel of a division:
+    - five seconds added to the time of a driver;
+    - ten seconds added to it;
+    - three seconds removed from it;
+    - a disqualification;
+    - no further action. Decided 2026-09-24 (#138).
+- These are the outcomes the module can record and issue. An outcome the module cannot issue shall never be drawn.
+- Neither a verdict of the appeal phase nor a verdict of an attendance sanction shall be drawn. Corrected 2026-09-24: the cases formerly listed one of each, which the command no longer draws.
 - The driver a fabricated verdict pertains to shall be one of the drivers of the division named, and the same driver for every case of one invocation, so that the cases are read as a set of verdicts upon one driver rather than as unrelated pictures.
 - The session a fabricated verdict pertains to shall be one of those the round named is run over.
 - The descriptions and justifications fabricated shall include, insofar as the number of cases allows:
