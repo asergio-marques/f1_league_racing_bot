@@ -339,6 +339,10 @@ async def main() -> None:
         # and run missed RSVP deadline jobs for rounds whose deadline already passed (T019)
         await _recover_rsvp_views_and_deadlines(bot)
 
+        # Take down the forecasts and check-in messages due to come down while the bot was
+        # stopped (#425). After the deadlines above, so a check-in is distributed before it goes.
+        await _recover_missed_cleanups(bot)
+
         # Route the hub's buttons again, and post its panel afresh where it was deleted (#279).
         try:
             from services.hub_service import recover_hub
@@ -740,6 +744,94 @@ async def staged_penalties_warning(db_path: str, entries: list[dict]) -> str:
         label = f"+{psecs}s" if ptype == "TIME" and psecs is not None else ptype
         lines.append(f"• <@{uid}> | {stype} | **{label}**")
     return "\n".join(lines)
+
+
+async def _recover_missed_cleanups(bot: LeagueBot) -> None:
+    """Take down what a round's cleanups would have, their moment passing while the bot was down.
+
+    A round's Phase 3 forecast, and its check-in call with its last notice and its distribution
+    message, come down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and
+    ``rsvp_cleanup`` jobs (#425). A job falling due while the bot is stopped is discarded by the
+    scheduler's misfire grace rather than run late, and nothing else would take those messages
+    down: a forecast whose cleanup was missed used to stay for good.
+
+    A cancelled round or division is left alone. Its cancellation removed both jobs, and the
+    weather module keeps the forecasts of a round called off. The season's status is not asked,
+    since the live jobs fire after a season completes as well. Each module's own gate applies:
+    weather's here, and attendance's inside `run_rsvp_cleanup`.
+
+    Running a cleanup a second time finds nothing left to take down, so a job the scheduler
+    still runs inside its grace alongside this does no harm.
+    """
+    from datetime import datetime, timezone
+
+    from db.database import get_connection
+    from services.forecast_cleanup_service import run_post_race_cleanup
+    from services.rsvp_service import run_rsvp_cleanup
+    from services.scheduler_service import POST_RACE_CLEANUP_DELAY
+
+    now = datetime.now(timezone.utc)
+
+    def _due(scheduled_at_raw: object) -> bool:
+        try:
+            scheduled_at = datetime.fromisoformat(str(scheduled_at_raw))
+        except ValueError:
+            return False
+        if scheduled_at.tzinfo is None:
+            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        return scheduled_at + POST_RACE_CLEANUP_DELAY <= now
+
+    try:
+        async with get_connection(bot.db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT DISTINCT fm.round_id, r.scheduled_at
+                  FROM forecast_messages fm
+                  JOIN rounds r ON r.id = fm.round_id
+                  JOIN divisions d ON d.id = r.division_id
+                 WHERE fm.phase_number = 3
+                   AND r.status != 'CANCELLED'
+                   AND d.status != 'CANCELLED'
+                 ORDER BY r.scheduled_at, fm.round_id
+                """
+            )
+            forecasts = [r["round_id"] for r in await cursor.fetchall() if _due(r["scheduled_at"])]
+            cursor = await db.execute(
+                """
+                SELECT DISTINCT rem.round_id, r.scheduled_at
+                  FROM rsvp_embed_messages rem
+                  JOIN rounds r ON r.id = rem.round_id
+                  JOIN divisions d ON d.id = r.division_id
+                 WHERE r.status != 'CANCELLED'
+                   AND d.status != 'CANCELLED'
+                 ORDER BY r.scheduled_at, rem.round_id
+                """
+            )
+            check_ins = [r["round_id"] for r in await cursor.fetchall() if _due(r["scheduled_at"])]
+    except Exception:
+        log.exception("_recover_missed_cleanups: failed to read the messages still standing")
+        return
+
+    if forecasts and not await bot.module_service.is_weather_enabled():
+        forecasts = []
+
+    for round_id in forecasts:
+        log.info("_recover_missed_cleanups: deleting round %d's Phase 3 forecast", round_id)
+        try:
+            await run_post_race_cleanup(round_id, bot)
+        except Exception:
+            log.exception(
+                "_recover_missed_cleanups: forecast cleanup failed for round %d", round_id
+            )
+
+    for round_id in check_ins:
+        log.info("_recover_missed_cleanups: taking down round %d's check-in", round_id)
+        try:
+            await run_rsvp_cleanup(round_id, bot)
+        except Exception:
+            log.exception(
+                "_recover_missed_cleanups: check-in cleanup failed for round %d", round_id
+            )
 
 
 async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
