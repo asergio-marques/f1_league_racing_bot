@@ -852,7 +852,7 @@ async def run_rsvp_last_notice(round_id: int, bot: LeagueBot) -> None:
         log.error("run_rsvp_last_notice: failed to post for division %d: %s", division_id, exc)
         return
 
-    # Track message ID so the next round's cleanup can delete it
+    # Track message ID so the round's cleanup, a day after it, can delete it
     await bot.attendance_service.update_embed_last_notice_msg(
         round_id=round_id,
         division_id=division_id,
@@ -1248,7 +1248,7 @@ async def _post_distribution_announcement(round_id: int, division_id: int, bot: 
         log.error("_post_distribution_announcement: failed for division %d: %s", division_id, exc)
         return
 
-    # Track message ID so the next round's cleanup can delete it
+    # Track message ID so the round's cleanup, a day after it, can delete it
     await bot.attendance_service.update_embed_distribution_msg(
         round_id=round_id,
         division_id=division_id,

@@ -363,8 +363,8 @@ async def test_a_channel_the_bot_cannot_see_posts_nothing(tmp_path, caplog):
 
 
 async def test_a_failed_send_records_no_message(tmp_path, caplog):
-    """The recorded id is what the next round's cleanup deletes; one pointing at a message
-    that was never sent would have it delete something else, or nothing."""
+    """The recorded id is what the round's cleanup, a day after it, deletes; one pointing at
+    a message that was never sent would have it delete something else, or nothing."""
     db_path = await _make_db(tmp_path)
     channel = _make_channel()
     channel.send = AsyncMock(side_effect=discord.HTTPException(MagicMock(), "forbidden"))
@@ -380,7 +380,7 @@ async def test_a_failed_send_records_no_message(tmp_path, caplog):
         assert (await cursor.fetchone())["last_notice_msg_id"] is None
 
 
-async def test_the_posted_notice_is_recorded_for_the_next_cleanup(tmp_path):
+async def test_the_posted_notice_is_recorded_for_the_cleanup(tmp_path):
     db_path = await _make_db(tmp_path)
     channel = _make_channel()
 

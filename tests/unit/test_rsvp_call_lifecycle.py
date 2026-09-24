@@ -447,7 +447,7 @@ async def test_a_repost_of_a_round_with_no_standing_call_still_posts_one(tmp_pat
 
 
 async def test_the_no_reserve_notice_is_posted_and_recorded(tmp_path):
-    """Recording the message id is what lets the next round's cleanup take it down."""
+    """Recording the message id is what lets the round's cleanup take it down."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
     channel = _make_channel()
@@ -490,7 +490,7 @@ async def test_the_no_reserve_notice_is_skipped_when_the_channel_is_not_cached(
 
 
 async def test_a_failed_no_reserve_notice_records_no_message(tmp_path, caplog):
-    """A send that fails must not leave a message id pointing at nothing, which the next
+    """A send that fails must not leave a message id pointing at nothing, which the round's
     cleanup would try to delete."""
     db_path = await _make_db(tmp_path)
     await _seed_embed_row(db_path)
