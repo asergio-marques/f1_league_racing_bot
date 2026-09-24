@@ -98,6 +98,49 @@ def test_validate_invalid_penalty_value():
     assert isinstance(result, str)
 
 
+@pytest.mark.parametrize("typed", ["NFA", "nfa", " Nfa "])
+@pytest.mark.parametrize(
+    "session_type",
+    [
+        SessionType.FEATURE_RACE,
+        SessionType.SPRINT_RACE,
+        SessionType.FEATURE_QUALIFYING,
+        SessionType.SPRINT_QUALIFYING,
+    ],
+)
+def test_no_further_action_is_accepted_for_every_session(typed, session_type):
+    """No further action clears a driver, so it carries no seconds and alters nothing — a
+    qualifying incident can be cleared as well as a race one (#138)."""
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=session_type,
+        penalty_value=typed,
+    )
+    assert isinstance(result, StagedPenalty)
+    assert result.penalty_type == "NFA"
+    assert result.penalty_seconds is None
+
+
+def test_the_qualifying_refusal_names_no_further_action():
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_QUALIFYING,
+        penalty_value="+5s",
+    )
+    assert isinstance(result, str)
+    assert "NFA" in result
+
+
+def test_an_unreadable_value_names_no_further_action_among_the_forms():
+    result = validate_penalty_input(
+        driver_user_id=100,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_value="notapenalty",
+    )
+    assert isinstance(result, str)
+    assert "NFA" in result
+
+
 def test_validate_zero_accepted():
     result = validate_penalty_input(
         driver_user_id=100,
