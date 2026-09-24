@@ -68,7 +68,7 @@ Phase numbers in the queue entry mean:
 
 | `phase_number` | Event |
 |---|---|
-| 0 | Mystery-round notice — **database path only** |
+| 0 | Mystery-round notice |
 | 1, 2, 3 | Weather phases |
 | 4 | Result submission |
 | 5 | RSVP notice |
@@ -77,7 +77,7 @@ Phase numbers in the queue entry mean:
 | 8 | Forecast cleanup — the Phase 3 message deleted a day after the round |
 | 9 | Check-in cleanup — the call, last notice and distribution taken down a day after the round |
 
-Phase 0 never arrives from the job store: there is no mystery prefix in the job-store mapping, and a mystery round's notice is scheduled under the `weather_p1` prefix. A mystery round backed by a live job therefore comes back as phase 1 and `advance` dispatches it to `run_phase1`, which resolves the format and posts the notice.
+A mystery round's notice is armed as a `weather_p1` job, with `weather_p2` and `weather_p3` beside it that do nothing when they fire. The job store knows nothing of a round's format, so `get_next_pending_phase` reads it: a mystery round's `weather_p1` job comes back as phase 0 unless the notice has already been posted, and its `weather_p2` and `weather_p3` are passed over. Phases 1–3 go to `run_phase1`–`run_phase3`, which do not read the format. When `advance` posts a notice it takes the round's `weather_p1` job down by round and prefix, whether the entry came from the job store or from database state, so the notice cannot be posted twice.
 
 **Result submission is the exception: it never comes from the job store.** `get_pending_advance_jobs` filters results jobs out deliberately, so that a past-dated job which already auto-fired can neither block the wizard nor trigger it twice. Phase 4 is detected from database state instead — a round with no active session results, standing at *not run* or *awaiting results*, is due for submission — and it is therefore reached for every round format, mystery included.
 
