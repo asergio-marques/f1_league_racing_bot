@@ -1,7 +1,9 @@
 """RSVP service — notice dispatch, last-notice, deadline, distribution, embed builder."""
 from __future__ import annotations
 
+import asyncio
 import logging
+import weakref
 from datetime import datetime, timezone
 
 import discord
@@ -215,6 +217,34 @@ async def _attendance_enabled_for_division(division_id: int, bot: LeagueBot) -> 
     return await bot.module_service.is_attendance_enabled()
 
 
+# ── One round's check-in, one step at a time ─────────────────────────────────
+#
+# A round's deadline can be reached twice at once (#429). The scheduler runs a job overdue by
+# less than its five-minute misfire grace as soon as it starts, and the restart's catch-up
+# reaches the same deadline moments later; two presses of `/test-mode advance` can do the same.
+# Neither could tell the other was running, since what says a deadline has run — the message it
+# records on the call — is written at its very end.
+#
+# So the deadline runs under a lock of its round's, and reads the call again once it holds it:
+# the second to arrive waits for the first, then finds its message and does nothing. A lock in
+# the process is the right grain rather than a claim written to the database, because the bot is
+# one process and a claim would outlive a crash — the restart that should retry a deadline cut
+# short would find it claimed and pass it by.
+#
+# The locks are held weakly, so the registry holds only the locks in use: it does not grow over a
+# season, and no lock outlives the event loop it came to wait on.
+_CHECK_IN_LOCKS: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
+
+
+def _check_in_lock(round_id: int) -> asyncio.Lock:
+    """The lock one round's check-in work runs under. See the note above."""
+    lock = _CHECK_IN_LOCKS.get(round_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CHECK_IN_LOCKS[round_id] = lock
+    return lock
+
+
 # ── Roster query helper ───────────────────────────────────────────────────────
 
 
@@ -291,6 +321,7 @@ async def _report_call_failure(
     season_number: int,
     round_number: int,
     reason: str,
+    note: str | None = None,
 ) -> None:
     """Tell the league's staff that a check-in call did not post.
 
@@ -314,7 +345,18 @@ async def _report_call_failure(
     again", which no command could do; `/attendance post-check-in` is that command, and naming
     it here with the division and round already filled in is what makes the advice followable.
     `tests/unit/test_rsvp_call_failure_report.py` pins the name, so the two cannot drift apart.
+
+    *note* replaces that advice where it cannot be followed (#429). A call given up at a
+    restart, its deadline passed, is past what the command will post, and its report must not
+    send a manager to a command that refuses it.
     """
+    if note is None:
+        note = (
+            f"no attendance rows were opened for this round. Once the cause is "
+            f"cleared, post the call again with `/attendance post-check-in division: "
+            f"{division_name} round: {round_number}`, or the round will count nothing "
+            f"against anyone."
+        )
     try:
         await bot.output_router.post_log(
             f"ATTENDANCE | check-in call | NOT POSTED\n"
@@ -322,10 +364,7 @@ async def _report_call_failure(
             f"  division: {division_name} (id={division_id})\n"
             f"  round: {round_number}\n"
             f"  reason: {reason}\n"
-            f"  note: no attendance rows were opened for this round. Once the cause is "
-            f"cleared, post the call again with `/attendance post-check-in division: "
-            f"{division_name} round: {round_number}`, or the round will count nothing "
-            f"against anyone.",
+            f"  note: {note}",
         )
     except Exception:  # noqa: BLE001 — reporting must never mask the original failure
         log.exception("run_rsvp_notice: failed to report a failed check-in call")
@@ -401,6 +440,11 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     round, by `run_rsvp_cleanup` (#425): posting one call once took down all the division's
     others, the first of a double-header's included while it was still open.
 
+    It posts nothing where the round's call already stands (#429), judged under the round's
+    check-in lock so that two posters reaching the round at once post one call between them.
+    `test_two_calls_posted_at_once_for_one_round_post_one` pins it. `repost_rsvp_call` takes
+    the standing call down before it comes here.
+
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
     if not await _check_in_runs_for_round(round_id, bot):
@@ -454,155 +498,169 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
-    # Get division RSVP channel
-    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
-    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-        log.warning(
-            "run_rsvp_notice: no RSVP channel for division %d (%s) — skipping (FR-008)",
-            division_id, division_name,
-        )
-        await bot.output_router.post_log(
-            f"SYSTEM | run_rsvp_notice | SKIP\n"
-            f"  reason: no rsvp_channel configured\n"
-            f"  division: {division_name} (id={division_id})\n"
-            f"  round: {round_number}",
-        )
-        return
+    # One call for a round, whoever posts it (#429). The scheduler's job — run late inside its
+    # misfire grace when the bot starts — the same start's late post of a call missed while the
+    # bot was down, `/attendance post-check-in` and `/test-mode advance` can reach a round at
+    # once, and the row saying a call stands is written only after the post. Under the round's
+    # lock, a call found standing is left as it is: a second one beside it would be answered by
+    # drivers and tracked by nothing.
+    async with _check_in_lock(round_id):
+        if await bot.attendance_service.get_embed_message(round_id, division_id) is not None:
+            log.info(
+                "run_rsvp_notice: a check-in call already stands for round %d — nothing posted",
+                round_id,
+            )
+            return
 
-    channel_id_str: str = att_div_cfg.rsvp_channel_id
-    channel = as_text_channel(bot.get_channel(int(channel_id_str)))
-    if channel is None:
-        log.error(
-            "run_rsvp_notice: RSVP channel %s not found for division %d",
-            channel_id_str, division_id,
+        # Get division RSVP channel
+        att_div_cfg = await bot.attendance_service.get_division_config(division_id)
+        if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+            log.warning(
+                "run_rsvp_notice: no RSVP channel for division %d (%s) — skipping (FR-008)",
+                division_id, division_name,
+            )
+            await bot.output_router.post_log(
+                f"SYSTEM | run_rsvp_notice | SKIP\n"
+                f"  reason: no rsvp_channel configured\n"
+                f"  division: {division_name} (id={division_id})\n"
+                f"  round: {round_number}",
+            )
+            return
+
+        channel_id_str: str = att_div_cfg.rsvp_channel_id
+        channel = as_text_channel(bot.get_channel(int(channel_id_str)))
+        if channel is None:
+            log.error(
+                "run_rsvp_notice: RSVP channel %s not found for division %d",
+                channel_id_str, division_id,
+            )
+            await _report_call_failure(
+                bot,
+                division_id=division_id,
+                division_name=division_name,
+                season_number=season_number,
+                round_number=round_number,
+                reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
+            )
+            return
+
+        # Query roster
+        roster = await query_division_roster(bot.db_path, division_id)
+
+        # Collect driver_profile_ids for bulk DRA insert
+        all_driver_profile_ids: list[int] = [
+            d["driver_profile_id"]
+            for team in roster
+            for d in team["drivers"]
+        ]
+
+        # Build team list for embed (no rsvp_status yet — all NO_RSVP)
+        embed_teams = [
+            {
+                "name": team["name"],
+                "is_reserve": team["is_reserve"],
+                "drivers": [
+                    {
+                        "display_str": _driver_display_str(d),
+                        "rsvp_status": "NO_RSVP",
+                    }
+                    for d in team["drivers"]
+                ],
+            }
+            for team in roster
+        ]
+
+        embed = build_rsvp_embed(
+            season_number=season_number,
+            round_number=round_number,
+            track_name=track_name,
+            scheduled_at=scheduled_at,
+            round_format=round_format,
+            teams=embed_teams,
         )
-        await _report_call_failure(
+        view = RsvpView(round_id=round_id)
+
+        role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
+
+        # ── The graphic, where the league draws one ───────────────────────────
+        # THE ONE GENERATION CALL IN THIS MODULE (Constitution XIV.17). The check-in graphic is a
+        # **static** graphic: drawn once, here, and never again while this call stands. The embed
+        # beneath it is edited in place on every button press, every reserve distribution and at
+        # the deadline, and the attachment rides through each of those untouched.
+        #
+        # Nothing below the button callbacks, `run_reserve_distribution`, `run_rsvp_deadline` or
+        # `_rebuild_embed_for_round` may reach the image module. If a later session finds it needs
+        # to redraw this picture, the type is not static and belongs on the delete-and-repost
+        # lifecycle every other graphic uses — which is a change to its declaration, not a tweak.
+        attachment = await _checkin_attachment(
             bot,
             division_id=division_id,
             division_name=division_name,
+            division_tier=row["division_tier"] if "division_tier" in row.keys() else None,
             season_number=season_number,
             round_number=round_number,
-            reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
+            round_format=round_format,
+            scheduled_at=scheduled_at,
+            track_name=track_name,
+            race_name=row["track_gp_name"] if "track_gp_name" in row.keys() else None,
+            country_name=row["track_country"] if "track_country" in row.keys() else None,
         )
-        return
 
-    # Query roster
-    roster = await query_division_roster(bot.db_path, division_id)
+        try:
+            msg = await channel.send(
+                content=role_ping or None,
+                embed=embed,
+                view=view,
+                file=attachment,
+                allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+            ) if attachment is not None else await channel.send(
+                content=role_ping or None,
+                embed=embed,
+                view=view,
+                allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+            )
+        except discord.HTTPException as exc:
+            log.error(
+                "run_rsvp_notice: failed to post embed for division %d: %s",
+                division_id, exc,
+            )
+            await _report_call_failure(
+                bot,
+                division_id=division_id,
+                division_name=division_name,
+                season_number=season_number,
+                round_number=round_number,
+                reason=f"the call could not be posted: {exc}",
+            )
+            return
+        finally:
+            # The check-in graphic is drawn once and never redrawn — the button callbacks and
+            # the deadline job never reach the image module — so once this send is over the
+            # file has no further reader.
+            from services.image_rsvp_post import discard_attachment
 
-    # Collect driver_profile_ids for bulk DRA insert
-    all_driver_profile_ids: list[int] = [
-        d["driver_profile_id"]
-        for team in roster
-        for d in team["drivers"]
-    ]
+            discard_attachment(attachment)
 
-    # Build team list for embed (no rsvp_status yet — all NO_RSVP)
-    embed_teams = [
-        {
-            "name": team["name"],
-            "is_reserve": team["is_reserve"],
-            "drivers": [
-                {
-                    "display_str": _driver_display_str(d),
-                    "rsvp_status": "NO_RSVP",
-                }
-                for d in team["drivers"]
-            ],
-        }
-        for team in roster
-    ]
+        # Bulk-insert DRA rows
+        if all_driver_profile_ids:
+            await bot.attendance_service.bulk_insert_attendance_rows(
+                round_id=round_id,
+                division_id=division_id,
+                driver_profile_ids=all_driver_profile_ids,
+            )
 
-    embed = build_rsvp_embed(
-        season_number=season_number,
-        round_number=round_number,
-        track_name=track_name,
-        scheduled_at=scheduled_at,
-        round_format=round_format,
-        teams=embed_teams,
-    )
-    view = RsvpView(round_id=round_id)
-
-    role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
-
-    # ── The graphic, where the league draws one ───────────────────────────
-    # THE ONE GENERATION CALL IN THIS MODULE (Constitution XIV.17). The check-in graphic is a
-    # **static** graphic: drawn once, here, and never again while this call stands. The embed
-    # beneath it is edited in place on every button press, every reserve distribution and at
-    # the deadline, and the attachment rides through each of those untouched.
-    #
-    # Nothing below the button callbacks, `run_reserve_distribution`, `run_rsvp_deadline` or
-    # `_rebuild_embed_for_round` may reach the image module. If a later session finds it needs
-    # to redraw this picture, the type is not static and belongs on the delete-and-repost
-    # lifecycle every other graphic uses — which is a change to its declaration, not a tweak.
-    attachment = await _checkin_attachment(
-        bot,
-        division_id=division_id,
-        division_name=division_name,
-        division_tier=row["division_tier"] if "division_tier" in row.keys() else None,
-        season_number=season_number,
-        round_number=round_number,
-        round_format=round_format,
-        scheduled_at=scheduled_at,
-        track_name=track_name,
-        race_name=row["track_gp_name"] if "track_gp_name" in row.keys() else None,
-        country_name=row["track_country"] if "track_country" in row.keys() else None,
-    )
-
-    try:
-        msg = await channel.send(
-            content=role_ping or None,
-            embed=embed,
-            view=view,
-            file=attachment,
-            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
-        ) if attachment is not None else await channel.send(
-            content=role_ping or None,
-            embed=embed,
-            view=view,
-            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
-        )
-    except discord.HTTPException as exc:
-        log.error(
-            "run_rsvp_notice: failed to post embed for division %d: %s",
-            division_id, exc,
-        )
-        await _report_call_failure(
-            bot,
-            division_id=division_id,
-            division_name=division_name,
-            season_number=season_number,
-            round_number=round_number,
-            reason=f"the call could not be posted: {exc}",
-        )
-        return
-    finally:
-        # The check-in graphic is drawn once and never redrawn — the button callbacks and
-        # the deadline job never reach the image module — so once this send is over the
-        # file has no further reader.
-        from services.image_rsvp_post import discard_attachment
-
-        discard_attachment(attachment)
-
-    # Bulk-insert DRA rows
-    if all_driver_profile_ids:
-        await bot.attendance_service.bulk_insert_attendance_rows(
+        # Store message reference
+        await bot.attendance_service.insert_embed_message(
             round_id=round_id,
             division_id=division_id,
-            driver_profile_ids=all_driver_profile_ids,
+            message_id=str(msg.id),
+            channel_id=str(msg.channel.id),
         )
 
-    # Store message reference
-    await bot.attendance_service.insert_embed_message(
-        round_id=round_id,
-        division_id=division_id,
-        message_id=str(msg.id),
-        channel_id=str(msg.channel.id),
-    )
-
-    log.info(
-        "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
-        round_id, division_id, msg.id,
-    )
+        log.info(
+            "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
+            round_id, division_id, msg.id,
+        )
 
 
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
@@ -870,6 +928,9 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
     Distribution is the costliest thing to let through: it writes ``assigned_team_id`` and
     ``is_standby`` onto drivers, moving reserves into seats for a module the league has
     switched off.
+
+    **It runs once for each call** (#429), under the round's check-in lock — see the note on
+    `_check_in_lock`. `test_two_deadline_runs_at_once_post_one_announcement` pins it.
     """
     if not await _check_in_runs_for_round(round_id, bot):
         log.info(
@@ -892,30 +953,51 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
 
     division_id: int = row["division_id"]
 
-    reserves_placed = await run_reserve_distribution(round_id, division_id, bot)
+    # One run of a round's deadline at a time, and each run reads the call afresh once it has
+    # the lock: a deadline that has recorded its message has run (#429). One whose message never
+    # posted has not, and runs again — which is how a failed announcement is retried.
+    async with _check_in_lock(round_id):
+        stored = await bot.attendance_service.get_embed_message(round_id, division_id)
+        if stored is None:
+            # A deadline closes the call standing, and with none there is nothing to close. Run
+            # anyway, it posted a notice with no call to record it on, which nothing ever took
+            # down (#429).
+            log.info(
+                "run_rsvp_deadline: no check-in call stands for round %d — nothing done",
+                round_id,
+            )
+            return
+        if stored.distribution_msg_id is not None:
+            log.info(
+                "run_rsvp_deadline: round %d's deadline has already run — nothing done",
+                round_id,
+            )
+            return
 
-    # Disable the RSVP embed buttons
-    embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
-    if embed_row is not None:
-        channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
-        if channel is not None:
-            try:
-                msg = await channel.fetch_message(int(embed_row.message_id))
-            except discord.HTTPException:
-                msg = None
-            if msg is not None:
-                # Rebuild embed with current statuses and no view (buttons removed)
-                embed = await _rebuild_embed_for_round(round_id, division_id, bot)
+        reserves_placed = await run_reserve_distribution(round_id, division_id, bot)
+
+        # Disable the RSVP embed buttons
+        embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
+        if embed_row is not None:
+            channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
+            if channel is not None:
                 try:
-                    await msg.edit(embed=embed, view=None)
-                except discord.HTTPException as exc:
-                    log.error("run_rsvp_deadline: failed to disable embed buttons for round %d: %s", round_id, exc)
+                    msg = await channel.fetch_message(int(embed_row.message_id))
+                except discord.HTTPException:
+                    msg = None
+                if msg is not None:
+                    # Rebuild embed with current statuses and no view (buttons removed)
+                    embed = await _rebuild_embed_for_round(round_id, division_id, bot)
+                    try:
+                        await msg.edit(embed=embed, view=None)
+                    except discord.HTTPException as exc:
+                        log.error("run_rsvp_deadline: failed to disable embed buttons for round %d: %s", round_id, exc)
 
-    # Post assignment announcement (or a notice when no reserves were needed)
-    if reserves_placed:
-        await _post_distribution_announcement(round_id, division_id, bot)
-    else:
-        await _post_no_reserve_notice(round_id, division_id, bot)
+        # Post assignment announcement (or a notice when no reserves were needed)
+        if reserves_placed:
+            await _post_distribution_announcement(round_id, division_id, bot)
+        else:
+            await _post_no_reserve_notice(round_id, division_id, bot)
 
 
 async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:
@@ -929,6 +1011,14 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
     Produces nothing while the attendance module is disabled — see the module gate above.
     Its only caller today is ``run_rsvp_deadline``, which is gated as well; the gate is
     repeated here so a later caller cannot reach the seat writes around it.
+
+    **Each run is the whole answer** (#429). A round's distribution can run more than once —
+    again after an amendment posts its call again, and again at a restart where its
+    announcement never posted — and the answers, the roster or both may have moved in between.
+    `_write_distribution` clears every placement of the round in the division before it writes
+    the new ones, the run finding no reserve accepted included, so a reserve the last run
+    seated and this one does not holds no team. Every reader takes a team to mean the reserve
+    was sent to race, and scoring would charge one left on standby as a no-show.
     """
     if not await _attendance_enabled_for_division(division_id, bot):
         log.info(
@@ -961,6 +1051,8 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
 
     if not accepted_reserves:
         log.info("run_reserve_distribution: no accepted reserves for round %d / division %d", round_id, division_id)
+        # Still written: an earlier run of this round may have seated a reserve since withdrawn.
+        await _write_distribution(bot.db_path, round_id, division_id, [], [])
         return False
 
     async with get_connection(bot.db_path) as db:
@@ -1067,8 +1159,34 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
         team_vacancy[team_id] -= 1
         reserves_assigned[team_id] += 1
 
-    # Write results
-    async with get_connection(bot.db_path) as db:
+    await _write_distribution(bot.db_path, round_id, division_id, assignments, standby_ids)
+
+    log.info(
+        "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
+        round_id, division_id, len(assignments), len(standby_ids),
+    )
+    return bool(assignments or standby_ids)
+
+
+async def _write_distribution(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+    assignments: list[tuple[int, int]],
+    standby_ids: list[int],
+) -> None:
+    """Replace the round's placements in *division_id* with *assignments* and *standby_ids*.
+
+    One transaction: every placement of the round in the division is cleared, then the new
+    ones written, so no reader ever sees a reserve holding both a team and a standby place, or
+    a team from a run that no longer stands. See `run_reserve_distribution`.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_round_attendance SET assigned_team_id = NULL, is_standby = 0 "
+            "WHERE round_id = ? AND division_id = ?",
+            (round_id, division_id),
+        )
         for dra_id, team_id in assignments:
             await db.execute(
                 "UPDATE driver_round_attendance SET assigned_team_id = ?, is_standby = 0 WHERE id = ?",
@@ -1080,12 +1198,6 @@ async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueB
                 (dra_id,),
             )
         await db.commit()
-
-    log.info(
-        "run_reserve_distribution: round %d / division %d — %d assigned, %d standby",
-        round_id, division_id, len(assignments), len(standby_ids),
-    )
-    return bool(assignments or standby_ids)
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

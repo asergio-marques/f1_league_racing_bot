@@ -70,6 +70,7 @@
         - "Tentative" with default background and the white question mark emoji
         - "Decline" with the red cross mark emoji
 - 24 hours after a round's scheduled start, its check-in call, its last notice and its reserve distribution announcement shall be deleted from the check-in channel. Posting a round's call shall delete no other round's messages, so that the calls of two rounds close together stand side by side. The answers recorded for a round shall be kept whatever becomes of its messages. Decided 2026-09-24 (#425).
+- A check-in call that came due while the bot was not running shall be posted when the bot next starts, provided the round's check-in deadline is still ahead, and drivers shall answer it in the time left. Where the deadline has passed as well, the call shall not be posted, a call nobody could answer recording every driver as not having answered; the log channel shall say that the round has no check-in. Decided 2026-09-24 (#429).
 - When a driver picks any of the three options above, the RSVP status indicator in the embed shall change:
     - Green checkmark emoji within the brackets if accepted (will race)
     - White question mark emoji within the brackets if tentative (uncertain)
@@ -205,3 +206,4 @@
     - An entry naming a driver without a profile, or without an attendance record for the round, or carrying a status that cannot be read, shall be reported and passed over; the remaining entries shall still be applied.
     - The check-in call shall be redrawn once after the entries are applied, and the change shall be written to the log channel.
 - The test mode "advance" command shall fire the deletion of a round's check-in messages in its turn, as it fires the call, the last notice and the deadline. Decided 2026-09-24 (#425).
+- While test mode is enabled, the bot shall post no check-in call late when it starts; the test mode "advance" command shall post it in its turn. Decided 2026-09-24 (#429).

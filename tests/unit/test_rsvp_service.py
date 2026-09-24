@@ -542,6 +542,87 @@ class TestStandbyClassification:
 
 
 # ---------------------------------------------------------------------------
+# 6b. A later distribution of the same round starts from nothing (#429)
+# ---------------------------------------------------------------------------
+#
+# A round's distribution can run more than once: again after a call is posted again by an
+# amendment, and again at a restart where its announcement never posted. Each run is the whole
+# answer. A reserve the earlier run seated and this one does not must not keep the team, since
+# every reader takes a team to mean the reserve was sent to race — scoring charges them a no-show.
+
+
+async def _seed_one_seat_one_reserve(db_path: str, full_timer_answer: str) -> int:
+    """One single-seat team and one reserve who accepted; returns the reserve's row id."""
+    async with get_connection(db_path) as db:
+        await _insert_driver(db, 1, "Full Timer")
+        await _insert_driver(db, 2, "Stand In")
+        await _insert_team(db, 101, 10, "SoloTeam", max_seats=1)
+        await _insert_team(db, 102, 10, "Reserve", is_reserve=1)
+        await _add_driver_to_team(db, 101, 1)
+        await _add_driver_to_team(db, 102, 2)
+        await _insert_dra(db, 42, 10, 1, full_timer_answer)
+        reserve = await _insert_dra(db, 42, 10, 2, "ACCEPTED", "2025-06-01T10:00:00+00:00")
+        await db.commit()
+    return reserve
+
+
+async def _answer(db_path: str, driver_profile_id: int, status: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE driver_round_attendance SET rsvp_status = ? "
+            "WHERE round_id = 42 AND driver_profile_id = ?",
+            (status, driver_profile_id),
+        )
+        await db.commit()
+
+
+class TestRedistribution:
+    @pytest.mark.asyncio
+    async def test_a_later_distribution_leaves_a_reserve_it_puts_on_standby_without_a_team(
+        self, tmp_path
+    ):
+        """The full-time driver declined, so the reserve took the seat; then they came back,
+        and the next run had no seat to give. The reserve is on standby and holds no team."""
+        db_path = await _make_db(tmp_path)
+        await _seed_base(db_path)
+        reserve = await _seed_one_seat_one_reserve(db_path, "DECLINED")
+        bot = _make_bot(db_path)
+
+        await run_reserve_distribution(42, 10, bot)
+        async with get_connection(db_path) as db:
+            assert (await _get_dra(db, reserve))["assigned_team_id"] == 101
+
+        await _answer(db_path, 1, "ACCEPTED")
+        await run_reserve_distribution(42, 10, bot)
+
+        async with get_connection(db_path) as db:
+            row = await _get_dra(db, reserve)
+        assert row["is_standby"] == 1
+        assert row["assigned_team_id"] is None, "a reserve on standby kept an earlier run's team"
+
+    @pytest.mark.asyncio
+    async def test_a_later_distribution_leaves_a_reserve_no_longer_accepted_without_a_team(
+        self, tmp_path
+    ):
+        """A reserve seated by one run who has since declined is placed by nobody. The next run
+        finds no reserve accepted at all, and must still take the earlier seat away."""
+        db_path = await _make_db(tmp_path)
+        await _seed_base(db_path)
+        reserve = await _seed_one_seat_one_reserve(db_path, "DECLINED")
+        bot = _make_bot(db_path)
+
+        await run_reserve_distribution(42, 10, bot)
+        await _answer(db_path, 2, "DECLINED")
+        placed = await run_reserve_distribution(42, 10, bot)
+
+        async with get_connection(db_path) as db:
+            row = await _get_dra(db, reserve)
+        assert placed is False
+        assert row["is_standby"] == 0
+        assert row["assigned_team_id"] is None, "a reserve no longer accepted kept a team"
+
+
+# ---------------------------------------------------------------------------
 # 7. AttendanceService CRUD round-trips
 # ---------------------------------------------------------------------------
 

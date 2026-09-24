@@ -503,7 +503,8 @@ CREATE TABLE "rounds" (
     phase1_done     INTEGER NOT NULL DEFAULT 0,
     phase2_done     INTEGER NOT NULL DEFAULT 0,
     phase3_done     INTEGER NOT NULL DEFAULT 0,
-    checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once the check-in cleanup has run (#425)
+    checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once no call is owed: the check-in cleanup has run (#425),
+                                                 -- or a restart gave up a call whose deadline had passed (#429)
     status          TEXT    NOT NULL DEFAULT 'NOT_RUN'
                         CHECK (status IN ('NOT_RUN', 'AWAITING_RESULTS',
                                           'AWAITING_REPORT_VERDICTS',

@@ -17,9 +17,10 @@ set.
 answer before a deadline that has already passed is worse than no reminder, so the recovery
 covers deadlines only.
 
-**The deadline is skipped where the distribution already ran.** Assessed by whether any driver
-holds an assigned team or a standby place, because that is what the distribution writes — a
-second run would redistribute seats the division has already been told about.
+**The deadline is skipped where the distribution already ran.** A second run would redistribute
+seats the division has already been told about, or post its notice again. A call carrying the
+message its deadline posted has run (#429), whether or not any driver was placed: a deadline with
+no reserve to place writes nothing onto a driver, and was taken for one that never ran.
 
 **Every failure is contained.** This runs during startup, so a database that cannot be read, a
 row whose timestamp will not parse, or a deadline run that raises must not take the bot down —
@@ -60,13 +61,18 @@ async def _make_db(
     round_status: str = "NOT_RUN",
     deadline_hours: int = 6,
     hours_until_round: int = -1,
-    distributed: bool = False,
+    placed: bool = False,
+    distribution_msg_id: str | None = None,
     with_embed: bool = True,
 ) -> str:
     """A division with a check-in call standing, and a round *hours_until_round* away.
 
     A negative offset puts the round — and so its deadline — in the past. Taken from the
     clock rather than pinned, because the recovery reads the clock itself.
+
+    What a deadline leaves behind is in two places, and they are seeded apart: *placed* gives a
+    reserve a team, as the distribution writes it onto the driver, and *distribution_msg_id*
+    records the message the deadline posted, as it writes it onto the call.
     """
     db_path = os.path.join(str(tmp_path), "rsvp_recovery.db")
     await run_migrations(db_path)
@@ -101,16 +107,18 @@ async def _make_db(
         if with_embed:
             await db.execute(
                 "INSERT INTO rsvp_embed_messages "
-                "(round_id, division_id, message_id, channel_id, posted_at) "
-                "VALUES (?, ?, ?, '770001', ?)",
+                "(round_id, division_id, message_id, channel_id, posted_at, "
+                " distribution_msg_id) "
+                "VALUES (?, ?, ?, '770001', ?, ?)",
                 (
                     ROUND_ID,
                     DIVISION_ID,
                     str(MESSAGE_ID),
                     datetime.now(timezone.utc).isoformat(),
+                    distribution_msg_id,
                 ),
             )
-        if distributed:
+        if placed:
             await db.execute(
                 "INSERT INTO driver_profiles "
                 "(id, discord_user_id, current_state) "
@@ -256,14 +264,87 @@ async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     assert await _recover(bot) == []
 
 
-async def test_a_deadline_already_distributed_is_not_run_again(tmp_path):
-    """Assessed by whether any driver holds a team or a standby place, because that is
-    what the distribution writes — a second run would redistribute seats the division has
-    already been told about."""
-    db_path = await _make_db(tmp_path, hours_until_round=-1, distributed=True)
+async def test_a_deadline_that_placed_reserves_is_not_run_again(tmp_path):
+    """A second run would redistribute seats the division has already been told about."""
+    db_path = await _make_db(
+        tmp_path, hours_until_round=-1, placed=True, distribution_msg_id="990099"
+    )
     bot = _bot(db_path)
 
     assert await _recover(bot) == []
+
+
+async def test_a_deadline_that_placed_no_reserves_is_not_run_again(tmp_path):
+    """Issue #429. A deadline with no reserve to place writes nothing onto a driver, but it
+    posts its notice and records it on the call like any other — and that is what says it ran.
+    Judged by the placements it looked as if it never had, and every restart before the round's
+    check-in came down posted another "No reserves were placed"."""
+    db_path = await _make_db(tmp_path, hours_until_round=-1, distribution_msg_id="990099")
+    bot = _bot(db_path)
+
+    assert await _recover(bot) == []
+
+
+async def test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say(
+    tmp_path,
+):
+    """The call's own record decides, never the drivers' placements (#429). Two things leave
+    placements on a call whose deadline has not run: a call posted again after an amendment
+    carries over the placements of the call it replaced, and a deadline whose announcement
+    failed to post has placed reserves the division was never told about. The first must still
+    have its deadline caught up; the second is run again, and its announcement retried."""
+    db_path = await _make_db(tmp_path, hours_until_round=-1, placed=True)
+    bot = _bot(db_path)
+
+    assert await _recover(bot) == [ROUND_ID]
+
+
+def _live_channel() -> MagicMock:
+    """A check-in channel whose call can be fetched and edited, and which records its posts."""
+    channel = MagicMock()
+    call = MagicMock()
+    call.edit = AsyncMock()
+    channel.fetch_message = AsyncMock(return_value=call)
+    posted = MagicMock()
+    posted.id = 990099
+    channel.send = AsyncMock(return_value=posted)
+    return channel
+
+
+def _live_bot(db_path: str, channel: MagicMock):
+    """A bot double carrying the real attendance service, so a deadline runs as it would."""
+    from services.attendance_service import AttendanceService
+
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.add_view = MagicMock()
+    bot.attendance_service = AttendanceService(db_path)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    bot.get_channel = MagicMock(return_value=channel)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    return bot
+
+
+async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_notice(tmp_path):
+    """Issue #429, end to end. The first start runs the missed deadline for real: nobody is
+    placed, the notice goes out, and the call records it. The second start must find it done.
+    `run_rsvp_deadline` is not stubbed here, because a stub writes nothing a second start could
+    read."""
+    db_path = await _make_db(tmp_path, hours_until_round=-1)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) "
+            "VALUES (?, '770001')",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+    channel = _live_channel()
+    bot = _live_bot(db_path, channel)
+
+    await _recover_rsvp_views_and_deadlines(bot)
+    await _recover_rsvp_views_and_deadlines(bot)
+
+    assert channel.send.await_count == 1, "a restart posted the deadline's notice again"
 
 
 async def test_a_cancelled_round_s_deadline_is_not_run(tmp_path):
