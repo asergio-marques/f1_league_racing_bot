@@ -930,7 +930,16 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
     # posted has not, and runs again — which is how a failed announcement is retried.
     async with _check_in_lock(round_id):
         stored = await bot.attendance_service.get_embed_message(round_id, division_id)
-        if stored is not None and stored.distribution_msg_id is not None:
+        if stored is None:
+            # A deadline closes the call standing, and with none there is nothing to close. Run
+            # anyway, it posted a notice with no call to record it on, which nothing ever took
+            # down (#429).
+            log.info(
+                "run_rsvp_deadline: no check-in call stands for round %d — nothing done",
+                round_id,
+            )
+            return
+        if stored.distribution_msg_id is not None:
             log.info(
                 "run_rsvp_deadline: round %d's deadline has already run — nothing done",
                 round_id,

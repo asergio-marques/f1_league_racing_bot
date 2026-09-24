@@ -177,3 +177,16 @@ async def test_a_deadline_whose_message_never_posted_is_run_again(tmp_path):
 
     assert channel.send.await_count == 2
     assert await _recorded(db_path) == str(POSTED_MSG_ID)
+
+
+async def test_a_deadline_with_no_call_standing_posts_nothing(tmp_path):
+    """A deadline closes the call standing, and with none there is nothing to close. It used to
+    distribute and post its notice anyway, with no call to record the message on — so nothing
+    took the notice down a day after the round, and it stood in the channel for good."""
+    db_path = await _make_db(tmp_path, with_call=False)
+    channel = _make_channel()
+    bot = _make_bot(db_path, channel)
+
+    await rsvp_service.run_rsvp_deadline(ROUND_ID, bot)
+
+    channel.send.assert_not_awaited()
