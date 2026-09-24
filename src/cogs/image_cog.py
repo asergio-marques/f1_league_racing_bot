@@ -1007,6 +1007,13 @@ class ImageCog(commands.Cog):
     async def config_fastest_lap_colour(
         self, interaction: discord.Interaction, colour: str
     ) -> None:
+        # Measuring the contrast reads the race results template through
+        # `template_reports` → `evaluate_all_templates`, which parses all sixteen templates:
+        # 1.7 to 2.1 seconds on the Pi (measured 2026-09-24) before this command's own
+        # queries, against Discord's three. Answering late lands on an expired token with
+        # the colour already stored and the contrast — the point of the reply — lost.
+        await interaction.response.defer(ephemeral=True)
+
         if not await self._guard_module_enabled(interaction):
             return
 
