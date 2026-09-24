@@ -11,6 +11,7 @@ is disabled (FR-005).
 """
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass
 
@@ -86,11 +87,15 @@ class FastestLapContrast:
 
     Either `ratio` and `background` are set, or `problem` says why nothing could be
     measured: an unmeasurable contrast is reported as such, never guessed (FR-027).
+
+    `divisions` names the tier the figure belongs to. It is empty where the plate was
+    measured as the template was authored, which is what per-tier colours being off means.
     """
 
     ratio: float | None = None
     background: str | None = None
     problem: str | None = None
+    divisions: tuple[str, ...] = ()
 
 
 def _no_plate_problem() -> str:
@@ -145,10 +150,17 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
     if reading.ratio is None:
         return [f"ℹ️ Contrast could not be measured: {reading.problem}"]
 
-    lines = [
-        f"Contrast against the template's plate (`{reading.background}`): "
-        f"**{reading.ratio:.2f}:1**"
-    ]
+    if reading.divisions:
+        named = " and ".join(f"**{name}**" for name in reading.divisions)
+        lines = [
+            f"Contrast against the template's plate is lowest for {named} "
+            f"(`{reading.background}`): **{reading.ratio:.2f}:1**"
+        ]
+    else:
+        lines = [
+            f"Contrast against the template's plate (`{reading.background}`): "
+            f"**{reading.ratio:.2f}:1**"
+        ]
     if not meets_aa_normal(reading.ratio):
         lines.append(
             f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "
@@ -342,6 +354,10 @@ class ImageCog(commands.Cog):
     @property
     def _validity_service(self):
         return self.bot.image_validity_service
+
+    @property
+    def _render_service(self):
+        return self.bot.image_render_service
 
     @staticmethod
     async def _reply(interaction: discord.Interaction, content: str) -> None:
@@ -1393,13 +1409,27 @@ class ImageCog(commands.Cog):
         }
 
     async def _measure_fastest_lap_contrast(self, colour: str) -> FastestLapContrast:
-        """Measure *colour* against the plate the race results template draws behind it.
+        """Measure *colour* against the plate each tier draws behind it, and keep the lowest.
+
+        With per-tier colours off the plate is measured once, as the template was
+        authored. With them on it is measured once per division of the season under way —
+        the same divisions the colour shortfall is checked against — and the lowest figure
+        is the one reported, with the division it belongs to (#165).
+
+        **Each division is painted by the render's own step, on a copy of its own.**
+        `ImageRenderService.apply_tier_palette` is what draws a division's graphic, so
+        measuring through it is what makes the figure the colour the plate is drawn in; a
+        slot the tier has not set is left as authored there, and so here. The copy is
+        because the palette is injected into the tree, and a second division painted over
+        the first would be measured against whatever the first left behind.
+        `test_the_contrast_check_paints_each_tier_through_the_render_path` pins it.
 
         The plate's absence is an unmeasurable contrast, not a template validity failure:
         Layer 1 cannot establish that the element exists (FR-026a).
         """
+        from models.image_constants import FASTEST_LAP_BACKGROUND_ID
         from utils.colour import contrast_ratio
-        from utils.svg_document import SvgError, load_svg
+        from utils.svg_document import FieldIndex, SvgError, load_svg
 
         reports = await self._validity_service.template_reports()
         report = reports.get("results_race_template")
@@ -1420,11 +1450,42 @@ class ImageCog(commands.Cog):
                 problem=f"the race results template could not be parsed — {exc}"
             )
 
-        background, problem = _plate_fill(root)
-        if background is None:
-            return FastestLapContrast(problem=problem)
+        config = await self._config_service.get_config()
+        divisions: list[str] = []
+        if config is not None and config.per_tier_colour_enabled:
+            divisions = await self._config_service.season_division_names()
+
+        if not divisions:
+            background, problem = _plate_fill(root)
+            if background is None:
+                return FastestLapContrast(problem=problem)
+            return FastestLapContrast(
+                ratio=contrast_ratio(colour, background), background=background
+            )
+
+        # A palette neither adds an element nor takes one away, so a plate missing from
+        # the template is missing for every tier and is said once.
+        if FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID) is None:
+            return FastestLapContrast(problem=_no_plate_problem())
+
+        measured: list[tuple[float, str, str]] = []
+        problems: list[str] = []
+        for division in divisions:
+            tree = copy.deepcopy(root)
+            await self._render_service.apply_tier_palette(tree, division)
+            background, problem = _plate_fill(tree)
+            if background is None:
+                problems.append(problem or "")
+            else:
+                measured.append((contrast_ratio(colour, background), division, background))
+
+        if not measured:
+            return FastestLapContrast(problem=problems[0])
+
+        # `min` keeps the first of equals, and `divisions` is in tier order.
+        ratio, division, background = min(measured, key=lambda entry: entry[0])
         return FastestLapContrast(
-            ratio=contrast_ratio(colour, background), background=background
+            ratio=ratio, background=background, divisions=(division,)
         )
 
     @config.command(

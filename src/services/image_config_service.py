@@ -280,6 +280,10 @@ class ImageConfigService:
         choice `SeasonService.get_previewable_divisions` makes, so what `/season placements-review`
         validates is what `/images test` would draw.
 
+        The fastest-lap contrast check reads the same list (#165), so the tiers it measures
+        the plate in are the tiers a colour is demanded of — "the season under way" means
+        one thing in the image module, not two.
+
         It sits on **this** service, though it reads season data, because this is the
         service that owns `image_tier_colour` and the one `ImageValidityService` already
         holds. The alternative was a fourth constructor dependency on the validity service
