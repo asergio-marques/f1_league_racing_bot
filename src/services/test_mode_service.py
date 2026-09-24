@@ -380,6 +380,7 @@ async def get_next_pending_phase(
         Canonical order mirrors APScheduler fire-time ordering with defaults:
           normal:  P1(1) → RSVP-notice(5) → P2(2) → RSVP-last(6) → P3(3) → RSVP-deadline(7) → results(4)
           mystery: notice(0) → RSVP-notice(5) → RSVP-last(6) → RSVP-deadline(7) → results(4)
+        Each only while its module is on, and the last notice only where it is not set to 0.
 
         Used for two purposes:
           1. Priority check: detect misfired/absent work in earlier rounds before
@@ -407,12 +408,10 @@ async def get_next_pending_phase(
             )
 
         # ── Phase 0 / Phase 1: mystery notice or weather P1 ──────────────
-        if is_mystery:
-            if not row["phase1_done"]:
-                return _make(0)
-        else:
-            if weather_module_enabled and not row["phase1_done"]:
-                return _make(1)
+        # The notice is a weather posting like Phase 1, and a disabled module produces
+        # nothing: a live season arms no job for either while weather is off (#426).
+        if weather_module_enabled and not row["phase1_done"]:
+            return _make(0 if is_mystery else 1)
 
         # ── Phase 5: RSVP notice ──────────────────────────────────────────
         # A round whose check-in has been taken down after it has no call recorded either, and

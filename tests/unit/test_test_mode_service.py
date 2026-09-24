@@ -1159,3 +1159,18 @@ async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> Non
     assert "Last:" not in summary, summary
     assert _round_row(summary, 1).endswith("RSVP: ✅  Deadline: ✅  Cleared: ⏳")
     assert _round_row(summary, 2).endswith("RSVP: ✅  Deadline: ✅  Cleared: ✅")
+
+
+# ---------------------------------------------------------------------------
+# A mystery round's notice while weather is off (#426)
+# ---------------------------------------------------------------------------
+
+
+async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> None:
+    """The notice is a weather posting, and a disabled module produces nothing: a live season
+    arms no job for it. Advance once found it owing from database state regardless."""
+    db_path = str(tmp_path / "mystery_weather_off.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"format": "MYSTERY", "track_name": None}])
+
+    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
