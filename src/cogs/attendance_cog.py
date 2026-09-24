@@ -559,13 +559,12 @@ class AttendanceCog(commands.Cog):
         answer the manager, and again immediately before posting, because the scheduled call
         falls due at the very moment this command's window opens.
 
-        A residual window remains between that second check and the `channel.send` inside
-        `run_rsvp_notice`, which no check on this side can close; shutting it properly means
-        claiming the `rsvp_embed_messages` row before posting and releasing it on failure, which
-        is a change to the shared posting path rather than to this command. It is not closed
-        here because the two posters would have to collide inside a span of a few hundred
-        milliseconds, after a call had already failed to post once. `test_the_scheduled_call_
-        winning_the_race_stops_this_one` pins the check that does the work.
+        The window left between that second check and the `channel.send` inside
+        `run_rsvp_notice` is closed in the shared posting path (#429): `run_rsvp_notice` checks
+        for a standing call itself, under the round's check-in lock, so a scheduled call landing
+        in that window leaves this one posting nothing. The reply then says a call was posted,
+        which is true of the channel. `test_the_scheduled_call_winning_the_race_stops_this_one`
+        pins the check made here, which is what lets the reply name the scheduled call.
         """
         if not await self._guard_module_enabled(interaction):
             return
@@ -658,12 +657,11 @@ class AttendanceCog(commands.Cog):
             return
 
         # The scheduled call becomes due at exactly the moment the window above opens, so a
-        # manager running this around that moment races it. `run_rsvp_notice` does not guard
-        # against a call already standing for its own round — it leaves that round out when
-        # taking down a division's old calls — and `insert_embed_message` upserts, so
-        # the second post to land would overwrite the first's id and orphan a live call in the
-        # channel: still answerable, tracked by nothing, never locked at the deadline. Checking
-        # again here, as late as possible, is what keeps the two apart.
+        # manager running this around that moment races it. Were both to post, the second to
+        # land would overwrite the first's id and orphan a live call in the channel: still
+        # answerable, tracked by nothing, never locked at the deadline. `run_rsvp_notice` now
+        # refuses a round whose call stands (#429); checking again here as well is what lets the
+        # reply say the scheduled call won.
         if await _call_stands(self.bot, round_id, div.id):
             await interaction.followup.send(
                 f"\u26d4 The scheduled check-in call for round {round} of **{div.name}** "

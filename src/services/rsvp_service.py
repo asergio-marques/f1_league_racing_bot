@@ -431,6 +431,11 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     round, by `run_rsvp_cleanup` (#425): posting one call once took down all the division's
     others, the first of a double-header's included while it was still open.
 
+    It posts nothing where the round's call already stands (#429), judged under the round's
+    check-in lock so that two posters reaching the round at once post one call between them.
+    `test_two_calls_posted_at_once_for_one_round_post_one` pins it. `repost_rsvp_call` takes
+    the standing call down before it comes here.
+
     Produces nothing while the attendance module is disabled — see the module gate above.
     """
     if not await _check_in_runs_for_round(round_id, bot):
@@ -484,155 +489,168 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
 
-    # Get division RSVP channel
-    att_div_cfg = await bot.attendance_service.get_division_config(division_id)
-    if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
-        log.warning(
-            "run_rsvp_notice: no RSVP channel for division %d (%s) — skipping (FR-008)",
-            division_id, division_name,
-        )
-        await bot.output_router.post_log(
-            f"SYSTEM | run_rsvp_notice | SKIP\n"
-            f"  reason: no rsvp_channel configured\n"
-            f"  division: {division_name} (id={division_id})\n"
-            f"  round: {round_number}",
-        )
-        return
+    # One call for a round, whoever posts it (#429). The scheduler's job — run late inside its
+    # misfire grace when the bot starts — `/attendance post-check-in` and `/test-mode advance`
+    # can reach a round at once, and the row saying a call stands is written only after the
+    # post. Under the round's lock, a call found standing is left as it is: a second one beside
+    # it would be answered by drivers and tracked by nothing.
+    async with _check_in_lock(round_id):
+        if await bot.attendance_service.get_embed_message(round_id, division_id) is not None:
+            log.info(
+                "run_rsvp_notice: a check-in call already stands for round %d — nothing posted",
+                round_id,
+            )
+            return
 
-    channel_id_str: str = att_div_cfg.rsvp_channel_id
-    channel = as_text_channel(bot.get_channel(int(channel_id_str)))
-    if channel is None:
-        log.error(
-            "run_rsvp_notice: RSVP channel %s not found for division %d",
-            channel_id_str, division_id,
+        # Get division RSVP channel
+        att_div_cfg = await bot.attendance_service.get_division_config(division_id)
+        if att_div_cfg is None or not att_div_cfg.rsvp_channel_id:
+            log.warning(
+                "run_rsvp_notice: no RSVP channel for division %d (%s) — skipping (FR-008)",
+                division_id, division_name,
+            )
+            await bot.output_router.post_log(
+                f"SYSTEM | run_rsvp_notice | SKIP\n"
+                f"  reason: no rsvp_channel configured\n"
+                f"  division: {division_name} (id={division_id})\n"
+                f"  round: {round_number}",
+            )
+            return
+
+        channel_id_str: str = att_div_cfg.rsvp_channel_id
+        channel = as_text_channel(bot.get_channel(int(channel_id_str)))
+        if channel is None:
+            log.error(
+                "run_rsvp_notice: RSVP channel %s not found for division %d",
+                channel_id_str, division_id,
+            )
+            await _report_call_failure(
+                bot,
+                division_id=division_id,
+                division_name=division_name,
+                season_number=season_number,
+                round_number=round_number,
+                reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
+            )
+            return
+
+        # Query roster
+        roster = await query_division_roster(bot.db_path, division_id)
+
+        # Collect driver_profile_ids for bulk DRA insert
+        all_driver_profile_ids: list[int] = [
+            d["driver_profile_id"]
+            for team in roster
+            for d in team["drivers"]
+        ]
+
+        # Build team list for embed (no rsvp_status yet — all NO_RSVP)
+        embed_teams = [
+            {
+                "name": team["name"],
+                "is_reserve": team["is_reserve"],
+                "drivers": [
+                    {
+                        "display_str": _driver_display_str(d),
+                        "rsvp_status": "NO_RSVP",
+                    }
+                    for d in team["drivers"]
+                ],
+            }
+            for team in roster
+        ]
+
+        embed = build_rsvp_embed(
+            season_number=season_number,
+            round_number=round_number,
+            track_name=track_name,
+            scheduled_at=scheduled_at,
+            round_format=round_format,
+            teams=embed_teams,
         )
-        await _report_call_failure(
+        view = RsvpView(round_id=round_id)
+
+        role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
+
+        # ── The graphic, where the league draws one ───────────────────────────
+        # THE ONE GENERATION CALL IN THIS MODULE (Constitution XIV.17). The check-in graphic is a
+        # **static** graphic: drawn once, here, and never again while this call stands. The embed
+        # beneath it is edited in place on every button press, every reserve distribution and at
+        # the deadline, and the attachment rides through each of those untouched.
+        #
+        # Nothing below the button callbacks, `run_reserve_distribution`, `run_rsvp_deadline` or
+        # `_rebuild_embed_for_round` may reach the image module. If a later session finds it needs
+        # to redraw this picture, the type is not static and belongs on the delete-and-repost
+        # lifecycle every other graphic uses — which is a change to its declaration, not a tweak.
+        attachment = await _checkin_attachment(
             bot,
             division_id=division_id,
             division_name=division_name,
+            division_tier=row["division_tier"] if "division_tier" in row.keys() else None,
             season_number=season_number,
             round_number=round_number,
-            reason=f"the configured RSVP channel ({channel_id_str}) could not be reached",
+            round_format=round_format,
+            scheduled_at=scheduled_at,
+            track_name=track_name,
+            race_name=row["track_gp_name"] if "track_gp_name" in row.keys() else None,
+            country_name=row["track_country"] if "track_country" in row.keys() else None,
         )
-        return
 
-    # Query roster
-    roster = await query_division_roster(bot.db_path, division_id)
+        try:
+            msg = await channel.send(
+                content=role_ping or None,
+                embed=embed,
+                view=view,
+                file=attachment,
+                allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+            ) if attachment is not None else await channel.send(
+                content=role_ping or None,
+                embed=embed,
+                view=view,
+                allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
+            )
+        except discord.HTTPException as exc:
+            log.error(
+                "run_rsvp_notice: failed to post embed for division %d: %s",
+                division_id, exc,
+            )
+            await _report_call_failure(
+                bot,
+                division_id=division_id,
+                division_name=division_name,
+                season_number=season_number,
+                round_number=round_number,
+                reason=f"the call could not be posted: {exc}",
+            )
+            return
+        finally:
+            # The check-in graphic is drawn once and never redrawn — the button callbacks and
+            # the deadline job never reach the image module — so once this send is over the
+            # file has no further reader.
+            from services.image_rsvp_post import discard_attachment
 
-    # Collect driver_profile_ids for bulk DRA insert
-    all_driver_profile_ids: list[int] = [
-        d["driver_profile_id"]
-        for team in roster
-        for d in team["drivers"]
-    ]
+            discard_attachment(attachment)
 
-    # Build team list for embed (no rsvp_status yet — all NO_RSVP)
-    embed_teams = [
-        {
-            "name": team["name"],
-            "is_reserve": team["is_reserve"],
-            "drivers": [
-                {
-                    "display_str": _driver_display_str(d),
-                    "rsvp_status": "NO_RSVP",
-                }
-                for d in team["drivers"]
-            ],
-        }
-        for team in roster
-    ]
+        # Bulk-insert DRA rows
+        if all_driver_profile_ids:
+            await bot.attendance_service.bulk_insert_attendance_rows(
+                round_id=round_id,
+                division_id=division_id,
+                driver_profile_ids=all_driver_profile_ids,
+            )
 
-    embed = build_rsvp_embed(
-        season_number=season_number,
-        round_number=round_number,
-        track_name=track_name,
-        scheduled_at=scheduled_at,
-        round_format=round_format,
-        teams=embed_teams,
-    )
-    view = RsvpView(round_id=round_id)
-
-    role_ping = f"<@&{mention_role_id}>\n" if mention_role_id else ""
-
-    # ── The graphic, where the league draws one ───────────────────────────
-    # THE ONE GENERATION CALL IN THIS MODULE (Constitution XIV.17). The check-in graphic is a
-    # **static** graphic: drawn once, here, and never again while this call stands. The embed
-    # beneath it is edited in place on every button press, every reserve distribution and at
-    # the deadline, and the attachment rides through each of those untouched.
-    #
-    # Nothing below the button callbacks, `run_reserve_distribution`, `run_rsvp_deadline` or
-    # `_rebuild_embed_for_round` may reach the image module. If a later session finds it needs
-    # to redraw this picture, the type is not static and belongs on the delete-and-repost
-    # lifecycle every other graphic uses — which is a change to its declaration, not a tweak.
-    attachment = await _checkin_attachment(
-        bot,
-        division_id=division_id,
-        division_name=division_name,
-        division_tier=row["division_tier"] if "division_tier" in row.keys() else None,
-        season_number=season_number,
-        round_number=round_number,
-        round_format=round_format,
-        scheduled_at=scheduled_at,
-        track_name=track_name,
-        race_name=row["track_gp_name"] if "track_gp_name" in row.keys() else None,
-        country_name=row["track_country"] if "track_country" in row.keys() else None,
-    )
-
-    try:
-        msg = await channel.send(
-            content=role_ping or None,
-            embed=embed,
-            view=view,
-            file=attachment,
-            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
-        ) if attachment is not None else await channel.send(
-            content=role_ping or None,
-            embed=embed,
-            view=view,
-            allowed_mentions=discord.AllowedMentions(roles=bool(mention_role_id)),
-        )
-    except discord.HTTPException as exc:
-        log.error(
-            "run_rsvp_notice: failed to post embed for division %d: %s",
-            division_id, exc,
-        )
-        await _report_call_failure(
-            bot,
-            division_id=division_id,
-            division_name=division_name,
-            season_number=season_number,
-            round_number=round_number,
-            reason=f"the call could not be posted: {exc}",
-        )
-        return
-    finally:
-        # The check-in graphic is drawn once and never redrawn — the button callbacks and
-        # the deadline job never reach the image module — so once this send is over the
-        # file has no further reader.
-        from services.image_rsvp_post import discard_attachment
-
-        discard_attachment(attachment)
-
-    # Bulk-insert DRA rows
-    if all_driver_profile_ids:
-        await bot.attendance_service.bulk_insert_attendance_rows(
+        # Store message reference
+        await bot.attendance_service.insert_embed_message(
             round_id=round_id,
             division_id=division_id,
-            driver_profile_ids=all_driver_profile_ids,
+            message_id=str(msg.id),
+            channel_id=str(msg.channel.id),
         )
 
-    # Store message reference
-    await bot.attendance_service.insert_embed_message(
-        round_id=round_id,
-        division_id=division_id,
-        message_id=str(msg.id),
-        channel_id=str(msg.channel.id),
-    )
-
-    log.info(
-        "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
-        round_id, division_id, msg.id,
-    )
+        log.info(
+            "run_rsvp_notice: posted embed for round %d / division %d (msg_id=%s)",
+            round_id, division_id, msg.id,
+        )
 
 
 # ── withdraw_rsvp_call / repost_rsvp_call ─────────────────────────────────────
