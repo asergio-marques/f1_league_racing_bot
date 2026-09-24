@@ -407,7 +407,8 @@ class AttendanceService:
 
         Where every standing call's deadline has run, the latest of them; where none stands,
         None. A deadline records its distribution message on the call, which is how
-        `/test-mode advance` tells the same thing, and the two must agree.
+        `/test-mode advance` and the restart's catch-up of a missed deadline tell the same thing
+        (#429), and the three must agree.
 
         A division can hold more than one call. Each stands until 24 hours after its own round
         (#425), so two rounds close together — a double-header — stand side by side, and "the
