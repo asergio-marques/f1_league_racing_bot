@@ -305,9 +305,13 @@ class TestModeCog(commands.Cog):
                 )
                 return
             # Mark notice as sent so this round is excluded from future advance calls
-            # Cancel the scheduler job so it doesn't double-fire later
-            if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])
+            # Take the round's notice job down so it doesn't post the notice again at its own
+            # moment. By round and the `weather_p1` it is armed under, rather than by the entry's
+            # job: one found from database state carries none, yet its job may still be queued,
+            # and `run_mystery_notice` does not ask whether a notice is already up (#426).
+            self.bot.scheduler_service.cancel_round(
+                entry["round_id"], only=frozenset({"weather_p1"})
+            )
             async with get_connection(self.bot.db_path) as db:
                 await db.execute(
                     "UPDATE rounds SET phase1_done = 1 WHERE id = ?",
