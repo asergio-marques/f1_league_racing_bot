@@ -232,9 +232,10 @@ async def _disown(db_path: str, user_id: str) -> None:
 async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     """Remove the portrait this bot obtained for *user_id*, the file and its row together.
 
-    Returns whether anything was removed. Two paths want this: a driver who takes their
-    profile picture down, whose seat reverts to the placeholder, and a driver given another
-    current account, whose replaced account is drawn by nothing (issues #222 and #243).
+    Returns whether anything was removed. A driver who takes their profile picture down wants
+    this, their seat reverting to the placeholder; so does every account no driver is drawn
+    under any longer, which :func:`discard_portraits` passes on — one a driver has replaced
+    (issues #222 and #243), and each of a driver deleted (issue #235).
 
     **Only where the file is ours to remove.** `driver_portraits` is the ownership register:
     a portrait with no row was placed by the league itself, and the bot never overwrites such
