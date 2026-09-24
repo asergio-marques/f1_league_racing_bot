@@ -54,7 +54,7 @@ def _stub_database(db_path: str) -> None:
 
 @pytest.mark.asyncio
 async def test_run_migrations_creates_tables() -> None:
-    """run_migrations() should create all 8 expected tables."""
+    """run_migrations() should create the core tables, among the rest."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
 
@@ -77,8 +77,6 @@ async def test_run_migrations_creates_tables() -> None:
             "phase_results",
             "audit_entries",
             "tracks",
-            "track_records",
-            "lap_records",
         }
         assert expected.issubset(tables), f"Missing tables: {expected - tables}"
     finally:
@@ -172,7 +170,7 @@ async def test_foreign_keys_enabled() -> None:
 
 @pytest.mark.asyncio
 async def test_the_baseline_seeds_every_track() -> None:
-    """The schema seeds the 28 circuits a league can schedule, beside the two record tables."""
+    """The schema seeds the 28 circuits a league can schedule."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
 
@@ -184,13 +182,6 @@ async def test_the_baseline_seeds_every_track() -> None:
             cursor = await db.execute("SELECT COUNT(*) FROM tracks")
             (track_count,) = await cursor.fetchone()
             assert track_count == 28, f"Expected 28 track rows, got {track_count}"
-
-            # track_records and lap_records exist
-            cursor = await db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('track_records', 'lap_records')"
-            )
-            found = {row[0] for row in await cursor.fetchall()}
-            assert found == {"track_records", "lap_records"}, f"Missing track tables: {found}"
     finally:
         _remove_database(db_path)
 

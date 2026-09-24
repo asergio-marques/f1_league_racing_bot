@@ -288,34 +288,6 @@ CREATE TABLE tracks (
     sigma    REAL    NOT NULL
 );
 
--- track_records
-CREATE TABLE track_records (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    track_id       INTEGER NOT NULL REFERENCES tracks(id),
-    tier           INTEGER NOT NULL,
-    session_type   TEXT    NOT NULL,
-    game           TEXT    NOT NULL,
-    season_number  INTEGER NOT NULL,
-    round_number   INTEGER NOT NULL,
-    lap_time       TEXT    NOT NULL,
-    driver_id      INTEGER NOT NULL,
-    UNIQUE (track_id, tier, session_type)
-);
-
--- lap_records
-CREATE TABLE lap_records (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    track_id       INTEGER NOT NULL REFERENCES tracks(id),
-    tier           INTEGER NOT NULL,
-    session_type   TEXT    NOT NULL,
-    game           TEXT    NOT NULL,
-    season_number  INTEGER NOT NULL,
-    round_number   INTEGER NOT NULL,
-    lap_time       TEXT    NOT NULL,
-    driver_id      INTEGER NOT NULL,
-    UNIQUE (track_id, tier, session_type)
-);
-
 -- driver_round_attendance
 CREATE TABLE driver_round_attendance (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
