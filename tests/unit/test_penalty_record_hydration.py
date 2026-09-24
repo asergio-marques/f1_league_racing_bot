@@ -380,3 +380,31 @@ async def test_several_sessions_are_read_back_together(tmp_path):
 
     assert sorted(r.description for r in both) == ["Quali", "Race"]
     assert [r.description for r in race_only] == ["Race"]
+
+
+async def test_no_further_action_comes_back_as_no_further_action(tmp_path):
+    """It carries no seconds, as a DSQ does, and must not be read back as one: an amendment
+    re-applies what it reads, and a cleared driver would come out of it disqualified (#138)."""
+    db_path, ids = await _seed(tmp_path, "hydrate_nfa")
+    await _penalty(db_path, ids["race_101"], penalty_type="NFA", seconds=None,
+                   description="Contact at turn one.", justification="Racing incident.")
+
+    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+
+    assert appeals == []
+    assert [(r.penalty_type, r.penalty_seconds, r.description) for r in reports] == [
+        ("NFA", None, "Contact at turn one.")
+    ]
+
+
+async def test_an_appeal_closed_with_no_further_action_is_paired_off_its_penalty_row(tmp_path):
+    """The appeal phase writes it to both tables like any correction, and it is read back
+    once, as the appeal it was (#138)."""
+    db_path, ids = await _seed(tmp_path, "hydrate_nfa_appeal")
+    await _penalty(db_path, ids["race_101"], penalty_type="NFA", seconds=None)
+    await _appeal(db_path, ids["race_101"], penalty_type="NFA", seconds=None)
+
+    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+
+    assert reports == []
+    assert [(a.penalty_type, a.penalty_seconds) for a in appeals] == [("NFA", None)]
