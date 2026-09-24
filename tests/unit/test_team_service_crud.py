@@ -387,7 +387,7 @@ async def test_a_mapped_role_is_carried_through(tmp_path):
 
 
 async def test_listing_teams_with_roles_restores_a_lost_reserve(tmp_path):
-    """`/team list`, `/team role` and team autocomplete read the list through here, so the
+    """`/team list`, `/team reserve-role` and team autocomplete read the list through here, so the
     Reserve team must be restored on this read as on every other (issue #146). `/bot init`
     no longer seeds it, and a server whose Reserve row was lost would otherwise list none."""
     db_path = await _make_db(tmp_path)

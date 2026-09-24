@@ -415,7 +415,7 @@ class TeamService:
         Ordered: non-reserve alphabetically first, Reserve last.
 
         Restores a missing Reserve team first, as ``get_default_teams`` does: this is the
-        read behind `/team list`, `/team role` and team autocomplete, and the Reserve team
+        read behind `/team list`, `/team reserve-role` and team autocomplete, and the Reserve team
         must be present on every read of the list (issue #146).
         """
         async with get_connection(self._db_path) as db:
