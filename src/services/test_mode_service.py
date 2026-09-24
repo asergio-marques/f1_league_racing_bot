@@ -30,8 +30,9 @@ class PhaseEntry(TypedDict):
     round_id: int
     round_number: int
     division_id: int
-    #: 0 = mystery notice (database path only — from the job store a mystery notice comes
-    #: back as 1), 1|2|3 = weather phases, 4 = result submission, 5|6|7 = the check-in
+    #: 0 = mystery notice — from the job store as well, where it is armed as `weather_p1` and
+    #: `get_next_pending_phase` reads the round's format (#426), 1|2|3 = weather phases of a
+    #: round of any other format, 4 = result submission, 5|6|7 = the check-in
     #: call, its last notice and its deadline, 8|9 = the forecast and the check-in cleanups a
     #: day after the round (#425).
     phase_number: int
@@ -446,7 +447,18 @@ async def get_next_pending_phase(
 
     if pending_jobs:
         for job in pending_jobs:
-            is_cleanup = job["phase_number"] in (8, 9)
+            rnd = round_info[job["round_id"]]
+            phase = job["phase_number"]
+            # A mystery round's notice is armed as `weather_p1`, and the job store knows nothing
+            # of formats: a live season's `_weather_phase_job` reads the format as the job fires,
+            # and this is where advance reads it, once. The job is the notice (0) — and stale once
+            # the notice is up, since advancing it would post the notice a second time. Handed
+            # on as phase 1 it reached `run_phase1`, which reads no format (#426).
+            if phase == 1 and str(rnd["format"]).upper() == "MYSTERY":
+                if rnd["phase1_done"]:
+                    continue
+                phase = 0
+            is_cleanup = phase in (8, 9)
             # Before returning this scheduler job, check all earlier rounds (by
             # scheduled_at) for any pending work that the scheduler cannot see —
             # misfired/evicted phase jobs, result submission (excluded from
@@ -469,14 +481,13 @@ async def get_next_pending_phase(
             # a previous advance invocation) but APScheduler still holds the job
             # because cancel_job was never called or the job fired-and-was-missed.
             # A cleanup is judged by its own work alone — see `_cleanup_pending`.
-            rnd = round_info[job["round_id"]]
             if is_cleanup:
-                if _cleanup_pending(rnd, job["phase_number"]) is None:
+                if _cleanup_pending(rnd, phase) is None:
                     continue
             elif _first_pending_for_row(rnd) is None:
                 # Round is fully done — stale scheduler job; try the next one.
                 continue
-            return _make_entry(rnd, job["phase_number"], job["job_id"])
+            return _make_entry(rnd, phase, job["job_id"])
 
     # ── DB fallback: all scheduler jobs have misfired or been evicted ─────────
     # Walk rounds in scheduled_at order and return the first pending phase

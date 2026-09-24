@@ -842,7 +842,8 @@ class SchedulerService:
           - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
             last notice and its deadline, 8/9 = the forecast and the check-in cleanups a day
             after the round (#425). A mystery round's notice is armed as ``weather_p1`` and so
-            comes back as 1: 0 never occurs here.
+            comes back as 1, which ``get_next_pending_phase`` then reads as the notice — this
+            method knows nothing of formats. 0 never occurs here.
           - ``next_run_time``— datetime when the job is scheduled to fire
 
         Result submission and season-end jobs are excluded, so 4 never occurs either. Jobs

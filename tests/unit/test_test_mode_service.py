@@ -1038,3 +1038,57 @@ async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -
     assert _round_row(summary, 1) and _round_row(summary, 2)
     for cell in ("P1:", "P2:", "P3:", "Cleanup:", "Notice:"):
         assert cell not in summary, summary
+
+
+# ---------------------------------------------------------------------------
+# A mystery round's weather jobs in advance (#426)
+# ---------------------------------------------------------------------------
+# A mystery round's notice is armed as `weather_p1`, with `weather_p2` and `weather_p3` beside it
+# that do nothing when they fire. The job store knows nothing of formats, and advance once ran
+# the three as weather Phases 1 to 3 — posting nothing and reporting success, or, where the round
+# names its hidden track, forecasting it.
+
+
+async def _mystery_round_armed(
+    tmp_path, service: SchedulerService, *, notice_posted: bool
+) -> str:
+    """A mystery round a week ahead, weather and results on, its jobs armed as approval arms
+    them."""
+    db_path = str(tmp_path / "mystery_jobs.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(
+        db_path,
+        [{"format": "MYSTERY", "track_name": None, "phase1_done": 1 if notice_posted else 0}],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.commit()
+    await _arm(db_path, service, [1], attendance=False)
+    return db_path
+
+
+async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
+    tmp_path, paused_scheduler
+) -> None:
+    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=False)
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert result["phase_number"] == 0
+    assert str(result["job_id"]).startswith("weather_p1_")
+
+
+async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
+    tmp_path, paused_scheduler
+) -> None:
+    """A notice posted from database state can leave its job queued. Advancing that job would
+    post the notice a second time, so the round's next step — its result submission — comes
+    instead."""
+    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
+    paused_scheduler.cancel_round(1, only=frozenset({"weather_p2", "weather_p3"}))
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert result["phase_number"] == 4
