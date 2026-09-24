@@ -1092,3 +1092,17 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
 
     assert result is not None
     assert result["phase_number"] == 4
+
+
+async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
+    tmp_path, paused_scheduler
+) -> None:
+    """They do nothing when they fire in a live season, so advance has nothing to fire for them:
+    handed on as Phases 2 and 3, they reached the weather runners, which read no format."""
+    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
+    paused_scheduler.cancel_round(1, only=frozenset({"weather_p1"}))
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert result["phase_number"] == 4

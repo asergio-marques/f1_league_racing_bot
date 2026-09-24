@@ -449,13 +449,15 @@ async def get_next_pending_phase(
         for job in pending_jobs:
             rnd = round_info[job["round_id"]]
             phase = job["phase_number"]
-            # A mystery round's notice is armed as `weather_p1`, and the job store knows nothing
-            # of formats: a live season's `_weather_phase_job` reads the format as the job fires,
-            # and this is where advance reads it, once. The job is the notice (0) — and stale once
-            # the notice is up, since advancing it would post the notice a second time. Handed
-            # on as phase 1 it reached `run_phase1`, which reads no format (#426).
-            if phase == 1 and str(rnd["format"]).upper() == "MYSTERY":
-                if rnd["phase1_done"]:
+            # A mystery round's notice is armed as `weather_p1`, with `weather_p2` and
+            # `weather_p3` beside it, and the job store knows nothing of formats: a live season's
+            # `_weather_phase_job` reads the format as the job fires, and this is where advance
+            # reads it, once. `weather_p1` is the notice (0) — and stale once the notice is up,
+            # since advancing it would post the notice a second time. The other two do nothing
+            # when they fire, so there is nothing to advance for them. Handed on as phases 1 to 3
+            # they reached `run_phase1` to `run_phase3`, which read no format (#426).
+            if phase in (1, 2, 3) and str(rnd["format"]).upper() == "MYSTERY":
+                if phase != 1 or rnd["phase1_done"]:
                     continue
                 phase = 0
             is_cleanup = phase in (8, 9)
