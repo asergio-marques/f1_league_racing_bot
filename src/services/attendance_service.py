@@ -402,23 +402,6 @@ class AttendanceService:
             rows = await cursor.fetchall()
         return [_rem_from_row(r) for r in rows]
 
-    async def delete_stale_embed_messages(
-        self,
-        division_id: int,
-        keep_round_id: int,
-    ) -> None:
-        """Delete all rsvp_embed_messages rows for *division_id* except the one
-        for *keep_round_id*.  Called after a new RSVP notice is posted so that
-        stale rows from previous rounds do not confuse embed look-ups.
-        """
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "DELETE FROM rsvp_embed_messages"
-                " WHERE division_id = ? AND round_id != ?",
-                (division_id, keep_round_id),
-            )
-            await db.commit()
-
     async def update_embed_last_notice_msg(
         self,
         round_id: int,
