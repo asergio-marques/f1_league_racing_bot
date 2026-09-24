@@ -845,3 +845,51 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
+
+
+# ---------------------------------------------------------------------------
+# The review reports the cleanups (#425)
+# ---------------------------------------------------------------------------
+# Test mode shall report, for every round, which of its scheduled work has run and which
+# remains — the cleanups a day after the round among it.
+
+
+@pytest.mark.parametrize(
+    "phase3_done,forecast_standing,shown",
+    [(0, False, "Cleanup: ⏳"), (1, True, "Cleanup: ⏳"), (1, False, "Cleanup: ✅")],
+    ids=["phase-3-to-come", "forecast-standing", "taken-down"],
+)
+async def test_the_review_shows_the_forecast_cleanup(
+    tmp_path, phase3_done, forecast_standing, shown
+) -> None:
+    db_path = str(tmp_path / "review_forecast_cleanup.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": phase3_done}])
+    await _stand(db_path, 1, forecast=forecast_standing)
+
+    assert shown in await build_review_summary(db_path)
+
+
+async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) -> None:
+    db_path = str(tmp_path / "review_standing_call.db")
+    await run_migrations(db_path)
+    await _seed_with_attendance(db_path, [{"track_name": "Monaco"}])
+    await _stand(db_path, 1, call=True)
+
+    summary = await build_review_summary(db_path)
+
+    assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ⏳" in summary
+
+
+async def test_the_review_shows_a_cleared_check_in_as_done_throughout(tmp_path) -> None:
+    """Its record went with its messages, which would otherwise read as a call still to come."""
+    db_path = str(tmp_path / "review_cleared.db")
+    await run_migrations(db_path)
+    await _seed_with_attendance(db_path, [{"track_name": "Monaco"}])
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
+        await db.commit()
+
+    summary = await build_review_summary(db_path)
+
+    assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅" in summary

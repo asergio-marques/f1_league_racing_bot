@@ -546,9 +546,10 @@ async def build_review_summary(
     """Return a formatted multi-line string summarising all rounds and phase status.
 
     Groups results by division (insertion order), then by round (scheduled_at).
-    Covers weather phases (P1-P3), result submission, and RSVP phases (notice /
-    last-notice / deadline) based on DB state — so it reflects actual progress
-    regardless of whether scheduler jobs have fired or been evicted.
+    Covers weather phases (P1-P3) and the forecast cleanup, result submission, and RSVP
+    phases (notice / last-notice / deadline) and the check-in cleanup, based on DB state —
+    so it reflects actual progress regardless of whether scheduler jobs have fired or been
+    evicted.
 
     When *scheduler_service* is supplied, each pending phase is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
@@ -591,6 +592,7 @@ async def build_review_summary(
                 r.phase1_done,
                 r.phase2_done,
                 r.phase3_done,
+                r.checkin_cleared,
                 r.status,
                 d.name        AS division_name,
                 d.id          AS division_id
@@ -617,6 +619,12 @@ async def build_review_summary(
             """,
         )
         rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
+
+        # Rounds whose Phase 3 forecast is still standing, for the forecast cleanup (#425)
+        forecast_cursor = await db.execute(
+            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number = 3",
+        )
+        standing_forecasts: set[int] = {r["round_id"] for r in await forecast_cursor.fetchall()}
 
         # RSVP embed message rows: keyed by (round_id, division_id)
         rsvp_cursor = await db.execute(
@@ -679,7 +687,13 @@ async def build_review_summary(
                 p1 = _phase_status(bool(row["phase1_done"]), f"phase1_r{rid}", live_ids)
                 p2 = _phase_status(bool(row["phase2_done"]), f"phase2_r{rid}", live_ids)
                 p3 = _phase_status(bool(row["phase3_done"]), f"phase3_r{rid}", live_ids)
-                parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}")
+                # Done once Phase 3 has run and nothing of it is left standing (#425).
+                cleanup = _phase_status(
+                    bool(row["phase3_done"]) and rid not in standing_forecasts,
+                    f"cleanup_r{rid}",
+                    live_ids,
+                )
+                parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}  Cleanup: {cleanup}")
 
             # ── Result submission ─────────────────────────────────────────
             if results_module_enabled:
@@ -692,7 +706,11 @@ async def build_review_summary(
                 parts.append(f"Results: {res}")
 
             # ── RSVP / attendance phases ──────────────────────────────────
-            if attendance_module_enabled:
+            if attendance_module_enabled and row["checkin_cleared"]:
+                # Taken down a day after the round, and its record with it (#425): every step
+                # before the cleanup had run by then.
+                parts.append("RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅")
+            elif attendance_module_enabled:
                 rsvp = rsvp_rows.get((rid, row["division_id"]))
                 notice_s = (
                     "✅" if rsvp is not None
@@ -706,7 +724,11 @@ async def build_review_summary(
                     "✅" if (rsvp and rsvp["distribution_msg_id"])
                     else _phase_status(False, f"rsvp_deadline_r{rid}", live_ids)
                 )
-                parts.append(f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}")
+                cleared_s = _phase_status(False, f"rsvp_cleanup_r{rid}", live_ids)
+                parts.append(
+                    f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}  "
+                    f"Cleared: {cleared_s}"
+                )
 
             line = f"  Round {rnum} · {track:<15} · {date_str}  " + "  |  ".join(parts)
             lines.append(line)
