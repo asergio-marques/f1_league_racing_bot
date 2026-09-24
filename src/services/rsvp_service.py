@@ -1,7 +1,9 @@
 """RSVP service — notice dispatch, last-notice, deadline, distribution, embed builder."""
 from __future__ import annotations
 
+import asyncio
 import logging
+import weakref
 from datetime import datetime, timezone
 
 import discord
@@ -213,6 +215,34 @@ async def _attendance_enabled_for_division(division_id: int, bot: LeagueBot) -> 
     if row is None:
         return False
     return await bot.module_service.is_attendance_enabled()
+
+
+# ── One round's check-in, one step at a time ─────────────────────────────────
+#
+# A round's deadline can be reached twice at once (#429). The scheduler runs a job overdue by
+# less than its five-minute misfire grace as soon as it starts, and the restart's catch-up
+# reaches the same deadline moments later; two presses of `/test-mode advance` can do the same.
+# Neither could tell the other was running, since what says a deadline has run — the message it
+# records on the call — is written at its very end.
+#
+# So the deadline runs under a lock of its round's, and reads the call again once it holds it:
+# the second to arrive waits for the first, then finds its message and does nothing. A lock in
+# the process is the right grain rather than a claim written to the database, because the bot is
+# one process and a claim would outlive a crash — the restart that should retry a deadline cut
+# short would find it claimed and pass it by.
+#
+# The locks are held weakly, so the registry holds only the locks in use: it does not grow over a
+# season, and no lock outlives the event loop it came to wait on.
+_CHECK_IN_LOCKS: weakref.WeakValueDictionary[int, asyncio.Lock] = weakref.WeakValueDictionary()
+
+
+def _check_in_lock(round_id: int) -> asyncio.Lock:
+    """The lock one round's check-in work runs under. See the note above."""
+    lock = _CHECK_IN_LOCKS.get(round_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CHECK_IN_LOCKS[round_id] = lock
+    return lock
 
 
 # ── Roster query helper ───────────────────────────────────────────────────────
@@ -870,6 +900,9 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
     Distribution is the costliest thing to let through: it writes ``assigned_team_id`` and
     ``is_standby`` onto drivers, moving reserves into seats for a module the league has
     switched off.
+
+    **It runs once for each call** (#429), under the round's check-in lock — see the note on
+    `_check_in_lock`. `test_two_deadline_runs_at_once_post_one_announcement` pins it.
     """
     if not await _check_in_runs_for_round(round_id, bot):
         log.info(
@@ -892,30 +925,42 @@ async def run_rsvp_deadline(round_id: int, bot: LeagueBot) -> None:
 
     division_id: int = row["division_id"]
 
-    reserves_placed = await run_reserve_distribution(round_id, division_id, bot)
+    # One run of a round's deadline at a time, and each run reads the call afresh once it has
+    # the lock: a deadline that has recorded its message has run (#429). One whose message never
+    # posted has not, and runs again — which is how a failed announcement is retried.
+    async with _check_in_lock(round_id):
+        stored = await bot.attendance_service.get_embed_message(round_id, division_id)
+        if stored is not None and stored.distribution_msg_id is not None:
+            log.info(
+                "run_rsvp_deadline: round %d's deadline has already run — nothing done",
+                round_id,
+            )
+            return
 
-    # Disable the RSVP embed buttons
-    embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
-    if embed_row is not None:
-        channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
-        if channel is not None:
-            try:
-                msg = await channel.fetch_message(int(embed_row.message_id))
-            except discord.HTTPException:
-                msg = None
-            if msg is not None:
-                # Rebuild embed with current statuses and no view (buttons removed)
-                embed = await _rebuild_embed_for_round(round_id, division_id, bot)
+        reserves_placed = await run_reserve_distribution(round_id, division_id, bot)
+
+        # Disable the RSVP embed buttons
+        embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
+        if embed_row is not None:
+            channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
+            if channel is not None:
                 try:
-                    await msg.edit(embed=embed, view=None)
-                except discord.HTTPException as exc:
-                    log.error("run_rsvp_deadline: failed to disable embed buttons for round %d: %s", round_id, exc)
+                    msg = await channel.fetch_message(int(embed_row.message_id))
+                except discord.HTTPException:
+                    msg = None
+                if msg is not None:
+                    # Rebuild embed with current statuses and no view (buttons removed)
+                    embed = await _rebuild_embed_for_round(round_id, division_id, bot)
+                    try:
+                        await msg.edit(embed=embed, view=None)
+                    except discord.HTTPException as exc:
+                        log.error("run_rsvp_deadline: failed to disable embed buttons for round %d: %s", round_id, exc)
 
-    # Post assignment announcement (or a notice when no reserves were needed)
-    if reserves_placed:
-        await _post_distribution_announcement(round_id, division_id, bot)
-    else:
-        await _post_no_reserve_notice(round_id, division_id, bot)
+        # Post assignment announcement (or a notice when no reserves were needed)
+        if reserves_placed:
+            await _post_distribution_announcement(round_id, division_id, bot)
+        else:
+            await _post_no_reserve_notice(round_id, division_id, bot)
 
 
 async def run_reserve_distribution(round_id: int, division_id: int, bot: LeagueBot) -> bool:
