@@ -6,7 +6,9 @@ are pinned here because they are the reason the mechanism has the shape it has, 
 a later maintainer looking at `svg_palette` would otherwise see only an odd-looking
 stylesheet and a special case for `<stop>`:
 
-1. a later rule of equal specificity wins — the cascade is the whole mechanism;
+1. a later rule of equal specificity wins — the cascade is the whole mechanism — and
+   wins whichever order the element writes its classes in, which is the order the bot's
+   own style resolution must follow too;
 2. a class rule beats a `fill=` presentation attribute, which is what lets a template keep a
    literal default colour that Inkscape and a browser both show;
 3. a class on a `<g>` reaches its children;
@@ -30,7 +32,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from lxml import etree  # noqa: E402
 
 from services.image_render_service import rasterise  # noqa: E402
-from utils.svg_document import parse_svg_bytes  # noqa: E402
+from utils.svg_document import (  # noqa: E402
+    FieldIndex,
+    computed_style,
+    parse_svg_bytes,
+    stylesheet,
+)
 from utils.svg_palette import apply_palette  # noqa: E402
 
 pytestmark = pytest.mark.rasteriser
@@ -149,3 +156,58 @@ def test_a_custom_property_would_destroy_the_whole_stylesheet(tmp_path):
         defs=f"<style>:root {{ --tier:{TIER} }} .other {{ fill:{HOUSE} }}</style>",
     )
     assert _hex(_pixel(tmp_path, root, (100, 50))) != HOUSE
+
+
+# ── The class order the drawing follows, and the bot with it ──────────────
+#
+# Each test asserts the drawing first and the bot's reading of it second, so a failure says
+# which of the two moved: the first is Inkscape's cascade, the second `computed_style`,
+# which the fit engine, Layer 3 validation and the fastest-lap contrast all read.
+
+
+def _resolved_fill(root) -> str:
+    return computed_style(FieldIndex(root).resolve("plate"), stylesheet(root))["fill"].upper()
+
+
+#: Until the resolver follows rule order, it reads the class written last. Strict, so the
+#: marker has to come off in the same change that makes these pass.
+_READS_CLASS_ORDER = pytest.mark.xfail(
+    strict=True, reason="computed_style resolves class rules in class-attribute order"
+)
+
+
+@pytest.mark.parametrize(
+    "classes",
+    [
+        "accent colour-fill-accent",
+        pytest.param("colour-fill-accent accent", marks=_READS_CLASS_ORDER),
+    ],
+    ids=["classes in rule order", "classes reversed"],
+)
+def test_the_injected_rule_wins_whichever_order_the_classes_are_written(tmp_path, classes):
+    root = _svg(
+        f'<rect id="plate" x="0" y="0" width="200" height="100" class="{classes}"/>',
+        defs=f"<style>.accent {{ fill:{HOUSE} }}</style>",
+    )
+    apply_palette(root, {"accent": TIER})
+
+    drawn = _hex(_pixel(tmp_path, root, (100, 50), name="palette.png"))
+    assert drawn == TIER, f"Inkscape drew {drawn} for class=\"{classes}\""
+    assert _resolved_fill(root) == drawn, "the bot reads a colour the drawing does not show"
+
+
+@pytest.mark.parametrize(
+    "classes",
+    [pytest.param("a b", marks=_READS_CLASS_ORDER), "b a"],
+    ids=["later rule's class last", "later rule's class first"],
+)
+def test_the_resolver_reads_the_colour_a_class_cascade_draws(tmp_path, classes):
+    """No palette at all: two of a template's own classes, the later rule declaring `.a`."""
+    root = _svg(
+        f'<rect id="plate" x="0" y="0" width="200" height="100" class="{classes}"/>',
+        defs=f"<style>.b {{ fill:{HOUSE} }} .a {{ fill:{TIER} }}</style>",
+    )
+
+    drawn = _hex(_pixel(tmp_path, root, (100, 50), name="cascade.png"))
+    assert drawn == TIER, f"Inkscape drew {drawn} for class=\"{classes}\""
+    assert _resolved_fill(root) == drawn, "the bot reads a colour the drawing does not show"
