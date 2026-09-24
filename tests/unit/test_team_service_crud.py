@@ -210,26 +210,6 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
         await service.remove_default_team("Standbys")
 
 
-async def test_seeding_an_empty_server_creates_only_the_reserve(tmp_path):
-    db_path = await _make_db(tmp_path)
-
-    await TeamService(db_path).seed_default_teams_if_empty()
-
-    assert await _names(db_path) == [RESERVE]
-
-
-async def test_seeding_leaves_an_existing_team_list_alone(tmp_path):
-    """`/bot init` may be run again on a configured server."""
-    db_path = await _make_db(tmp_path)
-    service = TeamService(db_path)
-    await service.add_default_team("Alpha", full_name="Alpha")
-    before = await _names(db_path)
-
-    await service.seed_default_teams_if_empty()
-
-    assert await _names(db_path) == before
-
-
 # ---------------------------------------------------------------------------
 # The server's default teams
 # ---------------------------------------------------------------------------

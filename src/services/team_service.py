@@ -404,27 +404,6 @@ class TeamService:
             await db.commit()
 
     # ------------------------------------------------------------------
-    # /bot init seeding (US4)
-    # ------------------------------------------------------------------
-
-    async def seed_default_teams_if_empty(self) -> None:
-        """Insert the Reserve team if no teams exist yet for this server."""
-        async with get_connection(self._db_path) as db:
-            existing = await (
-                await db.execute(
-                    "SELECT 1 FROM default_teams LIMIT 1",
-                )
-            ).fetchone()
-            if existing:
-                return
-            await db.execute(
-                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
-                "VALUES (?, ?, -1, 1)",
-                (_RESERVE_NAME, _RESERVE_NAME),
-            )
-            await db.commit()
-
-    # ------------------------------------------------------------------
     # Read helpers for /team list (016-team-cmd-qol)
     # ------------------------------------------------------------------
 

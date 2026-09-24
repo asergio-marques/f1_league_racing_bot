@@ -176,9 +176,6 @@ class BotCog(commands.Cog):
             self.bot, interaction.user, "BOT_INITIALISED", dict.fromkeys(claimed), claimed
         )
 
-        # Seed default F1 teams + Reserve for this server if none exist yet
-        await self.bot.team_service.seed_default_teams_if_empty()
-
         await interaction.response.send_message(
             f"✅ Bot configuration saved!\n"
             f"**Interaction role**: {interaction_role.mention}\n"
