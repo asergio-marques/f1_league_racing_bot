@@ -659,8 +659,8 @@ class AttendanceCog(commands.Cog):
 
         # The scheduled call becomes due at exactly the moment the window above opens, so a
         # manager running this around that moment races it. `run_rsvp_notice` does not guard
-        # against a call already standing for its own round — it skips it when clearing a
-        # division's old calls, "shouldn't exist yet" — and `insert_embed_message` upserts, so
+        # against a call already standing for its own round — it leaves that round out when
+        # taking down a division's old calls — and `insert_embed_message` upserts, so
         # the second post to land would overwrite the first's id and orphan a live call in the
         # channel: still answerable, tracked by nothing, never locked at the deadline. Checking
         # again here, as late as possible, is what keeps the two apart.

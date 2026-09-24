@@ -385,7 +385,7 @@ async def _checkin_attachment(
 
 
 #: How long a round's call outlives its check-in before a later call may take it down (#274).
-CLOSED_CALL_KEPT_FOR = timedelta(hours=24)
+_CLOSED_CALL_KEPT_FOR = timedelta(hours=24)
 
 
 async def _closed_calls(
@@ -398,13 +398,15 @@ async def _closed_calls(
 ) -> list[int]:
     """The rounds of *division_id* whose call a new call takes down, judged as at *as_at*.
 
-    Only those whose check-in closed at least `CLOSED_CALL_KEPT_FOR` before it. Which moment
-    *as_at* is, and why it is not simply the wall clock, is `run_rsvp_notice`'s to say. A round still
+    Only those whose check-in closed at least `_CLOSED_CALL_KEPT_FOR` before it. A round still
     open, or closed more recently, keeps its call, its last notice and its distribution message
     until a later call is posted. Taking them all down, as this once did, meant the second call
     of a double-header deleted the first while it was still open: nobody could answer it, its
     deadline could not take the buttons off, and its distribution message was posted with no
     row to record it in (#425).
+
+    Which moment *as_at* is, and why it is not simply the wall clock, is `run_rsvp_notice`'s
+    to say.
 
     A round closes at `derive_checkin_deadline`, which is the round's own start where the
     deadline is switched off. The deadline is read from the configuration rather than from the
@@ -435,7 +437,7 @@ async def _closed_calls(
         if isinstance(scheduled_at, str):
             scheduled_at = datetime.fromisoformat(scheduled_at)
         closes_at = derive_checkin_deadline(scheduled_at, deadline_hours)
-        if closes_at + CLOSED_CALL_KEPT_FOR <= as_at:
+        if closes_at + _CLOSED_CALL_KEPT_FOR <= as_at:
             closed.append(row["round_id"])
     return closed
 
