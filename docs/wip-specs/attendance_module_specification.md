@@ -69,6 +69,7 @@
         - "Accept" with the green checkmark emoji
         - "Tentative" with default background and the white question mark emoji
         - "Decline" with the red cross mark emoji
+- When a division's check-in call for a round is posted, the check-in call, the last notice and the reserve distribution announcement of every earlier round of that division whose check-in closed at least 24 hours before shall be deleted from its check-in channel. Those of a round whose check-in is still open, or closed less recently, shall stay until a later call is posted. The answers recorded for a round shall be kept whatever becomes of its messages. Decided 2026-09-24 (#274).
 - When a driver picks any of the three options above, the RSVP status indicator in the embed shall change:
     - Green checkmark emoji within the brackets if accepted (will race)
     - White question mark emoji within the brackets if tentative (uncertain)
