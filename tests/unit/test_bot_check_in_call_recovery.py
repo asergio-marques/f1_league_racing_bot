@@ -285,3 +285,52 @@ def test_missed_calls_are_posted_before_the_deadlines_are_caught_up():
     calls = source.index("await _recover_missed_check_in_calls(bot)")
     deadlines = source.index("await _recover_rsvp_views_and_deadlines(bot)")
     assert calls < deadlines
+
+
+# ---------------------------------------------------------------------------
+# A call whose deadline has passed as well is given up, and reported once
+# ---------------------------------------------------------------------------
+
+
+_GIVEN_UP = (
+    "ATTENDANCE | check-in call | NOT POSTED\n"
+    "  season: 3\n"
+    f"  division: Division 1 (id={DIVISION_ID})\n"
+    "  round: 4\n"
+    "  reason: the round's check-in deadline passed before its call could be posted\n"
+    "  note: a call posted now could not be answered, so none was posted. No attendance rows "
+    "were opened, and this round will count nothing against anyone."
+)
+
+
+async def _checkin_cleared(db_path: str) -> bool:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT checkin_cleared FROM rounds WHERE id = ?", (ROUND_ID,))
+        return bool((await cursor.fetchone())["checkin_cleared"])
+
+
+async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tmp_path):
+    """Decided 2026-09-24. A call nobody could answer would record every driver as not having
+    answered, so none is posted — and the log channel says the round has no check-in."""
+    db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
+    bot = _make_bot(db_path)
+    notice = AsyncMock()
+
+    with patch("services.rsvp_service.run_rsvp_notice", new=notice):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+
+    notice.assert_not_awaited()
+    assert _logged(bot) == [_GIVEN_UP]
+    assert await _checkin_cleared(db_path), "a call given up is still owed"
+
+
+async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
+    """The round's check-in is over once given up, so the next start has nothing to say."""
+    db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
+    bot = _make_bot(db_path)
+
+    with patch("services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+        await _recover_missed_check_in_calls(bot, now=NOW + timedelta(minutes=10))
+
+    assert _logged(bot) == [_GIVEN_UP]

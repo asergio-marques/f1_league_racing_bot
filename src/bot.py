@@ -5,7 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import cast
+from typing import Any, cast
 
 import discord
 from discord.ext import commands
@@ -569,6 +569,10 @@ async def _recover_missed_check_in_calls(
     passed. **Nothing is posted while test mode is on** (decided 2026-09-24): `/test-mode
     advance` posts a test season's calls in their turn.
 
+    Where the deadline has passed as well, no call is posted and the log channel is told —
+    see `_give_up_missed_check_in_call`, which also closes the round's check-in so that the
+    next start does not report it again.
+
     The call is posted by `run_rsvp_notice`, which checks for a standing call under the round's
     check-in lock — so the scheduler's own job, run late inside its misfire grace at this same
     start, and this cannot both post one. A call posted late is written to the log channel; one
@@ -626,11 +630,15 @@ async def _recover_missed_check_in_calls(
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
         due_at = scheduled_at - timedelta(days=row["rsvp_notice_days"] or 0)
         deadline_at = scheduled_at - timedelta(hours=row["rsvp_deadline_hours"] or 0)
-        if moment < due_at or moment >= deadline_at:
+        if moment < due_at:
             continue
 
         round_id: int = row["round_id"]
         division_id: int = row["division_id"]
+        if moment >= deadline_at:
+            await _give_up_missed_check_in_call(bot, row)
+            continue
+
         log.info("_recover_missed_check_in_calls: posting round %d's call late", round_id)
         try:
             await run_rsvp_notice(round_id, bot)
@@ -648,6 +656,48 @@ async def _recover_missed_check_in_calls(
             log.exception(
                 "_recover_missed_check_in_calls: late call failed for round %d", round_id
             )
+
+
+async def _give_up_missed_check_in_call(bot: LeagueBot, row: Any) -> None:
+    """Report a round whose call and deadline both went by unposted, and close its check-in.
+
+    Decided 2026-09-24 (#429): no call is posted once the deadline has passed. A call nobody
+    could answer would open the round's attendance rows only to record every driver as not
+    having answered. The log channel is told instead, with a note in place of the usual advice,
+    since `/attendance post-check-in` refuses a round past its deadline too.
+
+    The round is then marked ``checkin_cleared``: no call is owed it any more, which is what the
+    mark says, and it is what keeps the next start from reporting it again. An amendment that
+    reopens the round's check-in clears the mark, as it does after a cleanup.
+    """
+    from db.database import get_connection
+    from services.rsvp_service import _report_call_failure
+
+    round_id: int = row["round_id"]
+    log.info(
+        "_recover_missed_check_in_calls: round %d's deadline has passed — call not posted",
+        round_id,
+    )
+    try:
+        await _report_call_failure(
+            bot,
+            division_id=row["division_id"],
+            division_name=row["division_name"],
+            season_number=row["season_number"],
+            round_number=row["round_number"],
+            reason="the round's check-in deadline passed before its call could be posted",
+            note=(
+                "a call posted now could not be answered, so none was posted. No attendance "
+                "rows were opened, and this round will count nothing against anyone."
+            ),
+        )
+        async with get_connection(bot.db_path) as db:
+            await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = ?", (round_id,))
+            await db.commit()
+    except Exception:
+        log.exception(
+            "_recover_missed_check_in_calls: could not give up round %d's call", round_id
+        )
 
 
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
