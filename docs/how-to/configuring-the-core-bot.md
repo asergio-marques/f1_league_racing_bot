@@ -48,7 +48,7 @@ A season is **live** from `/season setup` until it is completed, cancelled or ab
 
 ## Before you start
 
-**Somebody has to run the bot on a computer.** It is not a service you invite and forget — it is a program that must stay running for forecasts to post and results to be collected. If it is switched off, nothing happens while it is down. Some of it is picked up when it starts again — missed weather phases, missed check-in deadlines, the forecasts and check-in messages due to be tidied away a day after a round, and a signup window's auto-close timer are all recovered — but anything else that came due is simply missed.
+**Somebody has to run the bot on a computer.** It is not a service you invite and forget — it is a program that must stay running for forecasts to post and results to be collected. If it is switched off, nothing happens while it is down. Some of it is picked up when it starts again — missed weather phases, missed check-in calls whose deadline is still ahead, missed check-in deadlines, the forecasts and check-in messages due to be tidied away a day after a round, and a signup window's auto-close timer are all recovered — but anything else that came due is simply missed.
 
 Three things have to be done on that computer, by hand, before any command in this guide works. They are covered in [Setup](../../README.md#setup) in the main README:
 
@@ -797,6 +797,6 @@ command.
 | The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced |
 | Drivers placed mid-season were turned down on their own | Every division finished while their placements were still unconfirmed. There was no round left for them, so their placements were discarded and they returned to Not Signed Up |
 | "❌ … stopped on a fault in the bot, not on anything you entered" | The bot ran into a fault of its own, not a mistake in what you typed. It may have done part of the job, so check what the command was meant to change before you run it again. The log channel has a line naming the command and the kind of fault: if it happens again, give that line to whoever hosts the bot |
-| Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in deadlines, the tidying away of forecasts and check-in messages a day after a round, and a signup auto-close timer; anything else that came due while it was down is missed |
+| Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in calls whose deadline has not yet passed, missed check-in deadlines, the tidying away of forecasts and check-in messages a day after a round, and a signup auto-close timer; anything else that came due while it was down is missed |
 
 Anything the bot works out, fails to find, falls back on or fails at is written to the log channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.
