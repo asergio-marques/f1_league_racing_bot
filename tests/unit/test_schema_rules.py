@@ -9,8 +9,10 @@ them with it.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -110,6 +112,40 @@ async def test_a_single_row_table_refuses_a_second_row(db_path, table):
     with pytest.raises(sqlite3.IntegrityError, match="CHECK constraint failed: id = 1"):
         db.execute(f"INSERT INTO {table} ({columns}) VALUES ({values})")
     db.close()
+
+
+# ── Every table is the bot's ──────────────────────────────────────────────────
+
+_SRC = Path(__file__).resolve().parents[2] / "src"
+
+
+async def test_every_table_the_baseline_creates_is_named_in_src(db_path):
+    """A table enters the baseline with the code that reads or writes it, never ahead of it.
+
+    Three stood in the schema with nothing to use them (#427): `signup_division_config`, whose
+    only writer went with #248, and `track_records` and `lap_records`, raised for records that
+    were never built and whose shape that build will settle (#159). An empty table still reads
+    to the next person as something that matters, and once the bot is live, reshaping one costs
+    a migration where adding it with its code would have cost nothing.
+
+    The test asks only that some Python file under `src/`, the migrations aside, name the table
+    as a whole word. That is a floor, not a proof — a table named only in a docstring passes —
+    but it catches what happened here, a table that nothing mentions at all.
+    """
+    tables = [
+        row[0]
+        for row in _query(
+            db_path,
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )
+    ]
+    source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(_SRC.rglob("*.py"))
+        if "migrations" not in path.relative_to(_SRC).parts
+    )
+    unnamed = sorted(t for t in tables if not re.search(rf"\b{re.escape(t)}\b", source))
+    assert unnamed == [], f"tables nothing in src/ names: {unnamed}"
 
 
 # ── Cascades ──────────────────────────────────────────────────────────────────
