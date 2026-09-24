@@ -3,7 +3,8 @@
 It stands in the place of the phase 1 message and shares its horizon, which the league
 configures; see ``phase1_service`` for why no horizon is named as fixed.
 
-Called by the APScheduler ``mystery_r{round_id}`` job for Mystery rounds.
+Called when a Mystery round's ``weather_p1_s{S}_d{D}_r{N}_id{round_id}`` job fires —
+``_weather_phase_job`` reads the round's format as it does — and by `/test-mode advance`.
 No random draws are performed; no phase_results row is written; no log-channel
 message is produced (FR-008).  The notice is posted to the division's forecast
 channel only, with no role tag (FR-003).

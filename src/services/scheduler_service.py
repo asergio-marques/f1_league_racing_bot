@@ -505,10 +505,12 @@ class SchedulerService:
         * MYSTERY + weather_p2/3 → no-op
         * Non-mystery           → normal phase callbacks
 
-        Job IDs follow the human-readable convention
-        ``<event_type>_s{season_number}_d{division_tier}_r{round_number}``
-        so they appear meaningful in APScheduler admin views.  The database
-        ``round_id`` is always stored as a kwarg for programmatic lookups.
+        Job IDs follow the convention
+        ``<event_type>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
+        written by `_round_job_suffix` and read back by `_job_event_type`. The season,
+        tier and number make them readable in APScheduler admin views; the round id is
+        what makes them unique. The database ``round_id`` is always stored as a kwarg
+        for programmatic lookups.
 
         Jobs use ``replace_existing=True`` so re-scheduling an amended round
         is safe.
@@ -581,8 +583,8 @@ class SchedulerService:
     ) -> None:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
-        Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}`` convention as
-        ``schedule_round``.  Jobs are only created when their fire time is in
+        Job IDs follow the same ``<event_type>_s{S}_d{D}_r{R}_id{round_id}`` convention
+        as ``schedule_round``.  Jobs are only created when their fire time is in
         the future.  ``replace_existing=True`` makes re-scheduling amended
         rounds safe.
 

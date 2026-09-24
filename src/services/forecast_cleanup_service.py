@@ -141,8 +141,8 @@ async def delete_forecast_message(
 async def run_post_race_cleanup(round_id: int, bot: "LeagueBot") -> None:
     """Delete the Phase 3 forecast message for all divisions of *round_id*.
 
-    Invoked 24 hours after round start by the APScheduler ``cleanup_r{round_id}``
-    job registered in SchedulerService.
+    Invoked 24 hours after round start by the APScheduler
+    ``cleanup_s{S}_d{D}_r{N}_id{round_id}`` job registered in SchedulerService.
 
     Each division is processed independently so a single failure does not block
     the others.
