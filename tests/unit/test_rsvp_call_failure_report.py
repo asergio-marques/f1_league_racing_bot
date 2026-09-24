@@ -142,3 +142,24 @@ def test_the_command_the_note_names_is_a_real_one():
     from cogs.attendance_cog import AttendanceCog
 
     assert "post-check-in" in {c.name for c in AttendanceCog.attendance.commands}
+
+
+@pytest.mark.asyncio
+async def test_a_report_can_carry_a_note_of_its_own():
+    """A call given up at a restart, its deadline passed (#429), cannot be posted by hand
+    either — the command refuses once the deadline has gone — so its report must not advise it.
+    The reporter takes the note it is given in place of the usual advice."""
+    bot = _bot()
+    await _report_call_failure(
+        bot,
+        division_id=7,
+        division_name="Division 1",
+        season_number=4,
+        round_number=11,
+        reason="whatever",
+        note="nothing can be done about it",
+    )
+
+    (content,) = bot.output_router.post_log.await_args.args
+    assert "  note: nothing can be done about it" in content
+    assert "/attendance post-check-in" not in content

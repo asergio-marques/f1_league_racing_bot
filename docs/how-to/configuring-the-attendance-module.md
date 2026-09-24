@@ -210,7 +210,7 @@ You are not going to wait five days to find out whether any of this works, and y
 /test-mode rsvp set-status  division: Division One
 ```
 
-`advance` fires the next thing due — the call, then the reminder, then the deadline — straight away, and posts each to the real channels so you see exactly what your drivers will see. `set-status` then opens a box where you can set every test driver's answer in one pass, which is the only practical way to drive a check-in to a known state; it needs a call already posted, so run it after the first `advance`. Keep advancing to fire the reminder and close check-in, and watch the reserves get distributed.
+`advance` fires the next thing due — the call, then the reminder unless you have set it to `0`, then the deadline — straight away, and posts each to the real channels so you see exactly what your drivers will see. `set-status` then opens a box where you can set every test driver's answer in one pass, which is the only practical way to drive a check-in to a known state; it needs a call already posted, so run it after the first `advance`. Keep advancing to fire the reminder and close check-in, and watch the reserves get distributed.
 
 See [Test mode](test-mode.md) for the whole picture, including the synthetic drivers you will need first.
 
@@ -222,7 +222,7 @@ See [Test mode](test-mode.md) for the whole picture, including the synthetic dri
 
 ## What your drivers see
 
-**The call**, at the notice moment. A ping for the division role, then an embed titled with the season, the round and the circuit — or *Mystery*, for a mystery round. It gives the date as a live Discord timestamp, the location and the kind of weekend, then lists every driver grouped by team with the Reserve team last, a marker beside each name: `()` for no answer yet, `(✅)` accepted, `(❓)` tentative, `(❌)` declined. Under it, three buttons: **✅ Accept**, **❓ Tentative**, **❌ Decline**.
+**The call**, at the notice moment. A ping for the division role, then an embed titled with the season, the round and the circuit — or *Mystery*, for a mystery round. It gives the date as a live Discord timestamp, the location and the kind of weekend, then lists every driver grouped by team with the Reserve team last, a marker beside each name: `()` for no answer yet, `(✅)` accepted, `(❓)` tentative, `(❌)` declined. Under it, three buttons: **✅ Accept**, **❓ Tentative**, **❌ Decline**. If the bot was switched off at that moment, the call goes out as soon as it starts again, as long as the deadline is still ahead — your drivers just have less time to answer. If the deadline has passed too, no call is posted at all, and the log channel tells you that round has no check-in.
 
 Pressing one updates the roster in the message itself, so the division can see at a glance who is still missing. The driver gets a small private confirmation nobody else sees. Pressing the same button twice is harmless, and changing your mind is fine until the deadline — except for a reserve who has not accepted, who can still change right up to the moment the race is scheduled to start. A reserve who *has* accepted is locked at the deadline like anybody else.
 

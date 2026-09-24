@@ -8,10 +8,14 @@ import tempfile
 from datetime import datetime, timezone, timedelta
 
 import pytest
+from apscheduler.jobstores.memory import MemoryJobStore
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from db.database import get_connection, run_migrations
+from services.scheduler_service import SchedulerService
+from services.season_service import SeasonService
 from services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
@@ -454,7 +458,7 @@ async def test_review_shows_phase_status() -> None:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
-        await _seed(db_path, [
+        await _seed_with_weather(db_path, [
             {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0, "track_name": "Monaco"},
         ])
         summary = await build_review_summary(db_path)
@@ -472,7 +476,7 @@ async def test_review_mystery_round_shows_notice_not_phases() -> None:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
-        await _seed(db_path, [
+        await _seed_with_weather(db_path, [
             {
                 "format": "MYSTERY",
                 "track_name": "Silverstone",
@@ -506,7 +510,9 @@ class _StubScheduler:
     def get_pending_advance_jobs(self, round_ids: set[int]) -> list[dict]:  # noqa: ARG002
         return [j for j in self._jobs if j["round_id"] in round_ids]
 
-    def get_job_ids_for_rounds(self, round_ids: set[int]) -> set[str]:  # noqa: ARG002
+    def get_queued_events_for_rounds(
+        self, round_ids: set[int]  # noqa: ARG002
+    ) -> set[tuple[int, str]]:
         return set()
 
 
@@ -864,7 +870,9 @@ async def test_the_review_shows_the_forecast_cleanup(
 ) -> None:
     db_path = str(tmp_path / "review_forecast_cleanup.db")
     await run_migrations(db_path)
-    await _seed(db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": phase3_done}])
+    await _seed_with_weather(
+        db_path, [{"phase1_done": 1, "phase2_done": 1, "phase3_done": phase3_done}]
+    )
     await _stand(db_path, 1, forecast=forecast_standing)
 
     assert shown in await build_review_summary(db_path)
@@ -893,3 +901,276 @@ async def test_the_review_shows_a_cleared_check_in_as_done_throughout(tmp_path) 
     summary = await build_review_summary(db_path)
 
     assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅" in summary
+
+
+# ---------------------------------------------------------------------------
+# The review finds the scheduler's own jobs (#426)
+# ---------------------------------------------------------------------------
+# The review once looked for jobs under IDs of its own making — `phase1_r{id}`, `results_r{id}` —
+# a shape no job has ever had, so every pending step read ⚠️ whether its job was queued or not.
+# These tests arm their jobs with the production writers, never with hand-written IDs, so the
+# review and the scheduler cannot drift apart unseen again.
+
+
+@pytest.fixture
+async def paused_scheduler():
+    """A `SchedulerService` over a real APScheduler, started paused so nothing it holds can fire.
+
+    In memory rather than on SQLite: the store is not the subject, and a job store left holding a
+    file fails only on Windows. Started, because a stopped scheduler keeps its jobs pending with
+    no fire time at all.
+    """
+    service = SchedulerService.__new__(SchedulerService)
+    service._scheduler = AsyncIOScheduler(jobstores={"default": MemoryJobStore()}, timezone="UTC")
+    service._scheduler.start(paused=True)
+    yield service
+    service._scheduler.shutdown(wait=False)
+
+
+async def _arm(
+    db_path: str,
+    service: SchedulerService,
+    round_ids: list[int],
+    *,
+    weather: bool = True,
+    attendance: bool = True,
+    last_notice_hours: int = 24,
+) -> None:
+    """Arm *round_ids* as approval arms them, with the production `schedule_*` writers."""
+    season_service = SeasonService(db_path)
+    for round_id in round_ids:
+        rnd = await season_service.get_round(round_id)
+        assert rnd is not None
+        if weather:
+            service.schedule_round(rnd, season_number=1, division_tier=rnd.division_id)
+        if attendance:
+            service.schedule_attendance_round(
+                rnd,
+                season_number=1,
+                division_tier=rnd.division_id,
+                notice_days=5,
+                last_notice_hours=last_notice_hours,
+                deadline_hours=2,
+            )
+
+
+async def _season_armed_as_approval_arms_it(tmp_path, service: SchedulerService) -> str:
+    """Weather, the check-in and results on; a normal and a mystery round in Division A and a
+    normal round in Division B, all a week ahead; every one of their jobs queued."""
+    db_path = str(tmp_path / "review_jobs.db")
+    await run_migrations(db_path)
+    await _seed_with_attendance(
+        db_path,
+        [
+            {"track_name": "Monaco"},
+            {"format": "MYSTERY", "track_name": None},
+            {"track_name": "Spa", "division_id": 2},
+        ],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.commit()
+    await _arm(db_path, service, [1, 2, 3])
+    return db_path
+
+
+def _round_row(summary: str, round_number: int) -> str:
+    rows = [line for line in summary.splitlines() if line.startswith(f"  Round {round_number} ")]
+    assert len(rows) == 1, summary
+    return rows[0]
+
+
+async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_scheduler) -> None:
+    """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
+    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
+
+    summary = await build_review_summary(db_path, paused_scheduler)
+
+    check_in = "Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳"
+    assert _round_row(summary, 1).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
+    assert _round_row(summary, 2).endswith(f"Notice: ⏳  |  {check_in}")
+    assert _round_row(summary, 3).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
+
+
+@pytest.mark.parametrize(
+    "round_id,event_type,cell",
+    [
+        (1, "weather_p1", "P1"),
+        (1, "weather_p2", "P2"),
+        (1, "weather_p3", "P3"),
+        (1, "cleanup", "Cleanup"),
+        (1, "results", "Results"),
+        (1, "rsvp_notice", "RSVP"),
+        (1, "rsvp_last_notice", "Last"),
+        (1, "rsvp_deadline", "Deadline"),
+        (1, "rsvp_cleanup", "Cleared"),
+        (2, "weather_p1", "Notice"),
+    ],
+    ids=[
+        "p1", "p2", "p3", "forecast-cleanup", "results", "call", "last-notice", "deadline",
+        "check-in-cleanup", "mystery-notice",
+    ],
+)
+async def test_a_job_taken_from_the_store_reads_as_missing(
+    tmp_path, paused_scheduler, round_id, event_type, cell
+) -> None:
+    """Each cell reads its own job and no other. A mystery round's notice is armed as
+    `weather_p1`, so taking that job away is what leaves its `Notice` without one."""
+    db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
+    paused_scheduler.cancel_round(round_id, only=frozenset({event_type}))
+
+    row = _round_row(await build_review_summary(db_path, paused_scheduler), round_id)
+
+    assert f"{cell}: ⚠️" in row
+    assert row.count("⚠️") == 1, row
+
+
+async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -> None:
+    """Nothing of the weather module is armed while it is off, and advance runs none of it, so
+    the review shows none of it — as it shows no result submission or check-in while theirs are
+    off (decided 2026-09-24, #426). A mystery round's notice is a weather posting too."""
+    db_path = str(tmp_path / "review_weather_off.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"track_name": "Monaco"}, {"format": "MYSTERY", "track_name": None}])
+
+    summary = await build_review_summary(db_path)
+
+    assert _round_row(summary, 1) and _round_row(summary, 2)
+    for cell in ("P1:", "P2:", "P3:", "Cleanup:", "Notice:"):
+        assert cell not in summary, summary
+
+
+# ---------------------------------------------------------------------------
+# A mystery round's weather jobs in advance (#426)
+# ---------------------------------------------------------------------------
+# A mystery round's notice is armed as `weather_p1`, with `weather_p2` and `weather_p3` beside it
+# that do nothing when they fire. The job store knows nothing of formats, and advance once ran
+# the three as weather Phases 1 to 3 — posting nothing and reporting success, or, where the round
+# names its hidden track, forecasting it.
+
+
+async def _mystery_round_armed(
+    tmp_path, service: SchedulerService, *, notice_posted: bool
+) -> str:
+    """A mystery round a week ahead, weather and results on, its jobs armed as approval arms
+    them."""
+    db_path = str(tmp_path / "mystery_jobs.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(
+        db_path,
+        [{"format": "MYSTERY", "track_name": None, "phase1_done": 1 if notice_posted else 0}],
+    )
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
+        await db.commit()
+    await _arm(db_path, service, [1], attendance=False)
+    return db_path
+
+
+async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
+    tmp_path, paused_scheduler
+) -> None:
+    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=False)
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert result["phase_number"] == 0
+    assert str(result["job_id"]).startswith("weather_p1_")
+
+
+async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
+    tmp_path, paused_scheduler
+) -> None:
+    """A notice posted from database state can leave its job queued. Advancing that job would
+    post the notice a second time, so the round's next step — its result submission — comes
+    instead."""
+    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
+    paused_scheduler.cancel_round(1, only=frozenset({"weather_p2", "weather_p3"}))
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert result["phase_number"] == 4
+
+
+async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
+    tmp_path, paused_scheduler
+) -> None:
+    """They do nothing when they fire in a live season, so advance has nothing to fire for them:
+    handed on as Phases 2 and 3, they reached the weather runners, which read no format."""
+    db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
+    paused_scheduler.cancel_round(1, only=frozenset({"weather_p1"}))
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert result["phase_number"] == 4
+
+
+# ---------------------------------------------------------------------------
+# A last notice switched off (#426)
+# ---------------------------------------------------------------------------
+# `/attendance config rsvp-last-notice 0` means no last notice is sent, and a live season arms no
+# job for one. Advance once found one owing from database state regardless, and posted it.
+
+
+async def _last_notice_switched_off(db_path: str) -> None:
+    """The check-in on with its last notice set to 0, and round 1's call and distribution posted
+    — so no last notice, the one a live season would never have sent."""
+    fortnight = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"track_name": "Monaco"}, {"track_name": "Spa", "scheduled_at": fortnight}])
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_config (id, module_enabled, rsvp_last_notice_hours) "
+            "VALUES (1, 1, 0)"
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at, distribution_msg_id) "
+            "VALUES (1, 1, 'call1', 'ch1', '2026-01-01T00:00:00', 'dist1')"
+        )
+        await db.commit()
+
+
+async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_scheduler) -> None:
+    db_path = str(tmp_path / "last_notice_off.db")
+    await _last_notice_switched_off(db_path)
+    await _arm(db_path, paused_scheduler, [2], weather=False, last_notice_hours=0)
+
+    result = await get_next_pending_phase(db_path, paused_scheduler)
+
+    assert result is not None
+    assert (result["round_id"], result["phase_number"]) == (2, 5)
+
+
+async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> None:
+    """A step the league has switched off is left out rather than marked, as a module's steps are
+    while it is off (decided 2026-09-24, #426) — here, and where the check-in has come down."""
+    db_path = str(tmp_path / "review_last_notice_off.db")
+    await _last_notice_switched_off(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 2")
+        await db.commit()
+
+    summary = await build_review_summary(db_path)
+
+    assert "Last:" not in summary, summary
+    assert _round_row(summary, 1).endswith("RSVP: ✅  Deadline: ✅  Cleared: ⏳")
+    assert _round_row(summary, 2).endswith("RSVP: ✅  Deadline: ✅  Cleared: ✅")
+
+
+# ---------------------------------------------------------------------------
+# A mystery round's notice while weather is off (#426)
+# ---------------------------------------------------------------------------
+
+
+async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> None:
+    """The notice is a weather posting, and a disabled module produces nothing: a live season
+    arms no job for it. Advance once found it owing from database state regardless."""
+    db_path = str(tmp_path / "mystery_weather_off.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{"format": "MYSTERY", "track_name": None}])
+
+    assert await get_next_pending_phase(db_path, _StubScheduler()) is None

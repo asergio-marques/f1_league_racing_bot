@@ -834,6 +834,76 @@ async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
     assert await _cleared(path) is cleared
 
 
+async def _placement(path: str) -> tuple[int | None, int]:
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT assigned_team_id, is_standby FROM driver_round_attendance WHERE round_id = 1"
+        )
+        row = await cursor.fetchone()
+    return row["assigned_team_id"], row["is_standby"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "days_out,changes,forgotten",
+    [
+        (2, "moved-out", True),
+        (2, "track", True),
+        (1 / 24, "track", False),
+    ],
+    ids=["call-withdrawn", "call-reposted", "check-in-closed"],
+)
+async def test_reopening_a_check_in_forgets_the_distribution_of_the_call_it_replaces(
+    tmp_path, days_out, changes, forgotten
+):
+    """A check-in reopened by an amendment carries its answers over, not its distribution
+    (#429). The reserves were placed against the call being withdrawn, and the call that
+    replaces it has its own deadline to place them; a reserve keeping the old team was charged
+    as a no-show after the new deadline put them on standby. A check-in the amendment leaves
+    closed keeps its distribution: it is the one the division was told about."""
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from services.amendment_service import AmendmentService
+
+    path = str(tmp_path / "amend_placements.db")
+    await run_migrations(path)
+    now = datetime.now(timezone.utc)
+    await _seed_one_round(path, now + timedelta(days=days_out))
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (1, '4242', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (10, 1, 'Alpha', 'Alpha', 2, 0)"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, rsvp_status, assigned_team_id) "
+            "VALUES (1, 1, 1, 'ACCEPTED', 10)"
+        )
+        await db.commit()
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    bot = _amend_bot_with_attendance(path, attendance=True)
+    change = (
+        ("scheduled_at", now + timedelta(days=40))
+        if changes == "moved-out"
+        else ("track_name", "Silverstone Circuit")
+    )
+
+    with patch("services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
+        "services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
+    ):
+        await AmendmentService(path).amend_round(1, actor, [change], bot, now=now)
+
+    assert await _placement(path) == ((None, 0) if forgotten else (10, 0))
+
+
 # ---------------------------------------------------------------------------
 # approve_amendment reposts what it rescored (#130)
 # ---------------------------------------------------------------------------

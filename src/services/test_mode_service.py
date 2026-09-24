@@ -30,8 +30,9 @@ class PhaseEntry(TypedDict):
     round_id: int
     round_number: int
     division_id: int
-    #: 0 = mystery notice (database path only — from the job store a mystery notice comes
-    #: back as 1), 1|2|3 = weather phases, 4 = result submission, 5|6|7 = the check-in
+    #: 0 = mystery notice — from the job store as well, where it is armed as `weather_p1` and
+    #: `get_next_pending_phase` reads the round's format (#426), 1|2|3 = weather phases of a
+    #: round of any other format, 4 = result submission, 5|6|7 = the check-in
     #: call, its last notice and its deadline, 8|9 = the forecast and the check-in cleanups a
     #: day after the round (#425).
     phase_number: int
@@ -303,9 +304,13 @@ async def get_next_pending_phase(
         wm_row = await wm_cursor.fetchone()
         weather_module_enabled = bool(wm_row[0]) if wm_row else False
 
-        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
+        att_cursor = await db.execute(
+            "SELECT module_enabled, rsvp_last_notice_hours FROM attendance_config"
+        )
         att_row = await att_cursor.fetchone()
-        attendance_module_enabled = bool(att_row[0]) if att_row else False
+        attendance_module_enabled = bool(att_row["module_enabled"]) if att_row else False
+        # A last notice set to 0 is never sent, and no job is armed for it (#426).
+        last_notice_enabled = bool(att_row["rsvp_last_notice_hours"]) if att_row else False
 
         # RSVP embed state: keyed by round_id (one row per round since each
         # round belongs to exactly one division).
@@ -375,6 +380,7 @@ async def get_next_pending_phase(
         Canonical order mirrors APScheduler fire-time ordering with defaults:
           normal:  P1(1) → RSVP-notice(5) → P2(2) → RSVP-last(6) → P3(3) → RSVP-deadline(7) → results(4)
           mystery: notice(0) → RSVP-notice(5) → RSVP-last(6) → RSVP-deadline(7) → results(4)
+        Each only while its module is on, and the last notice only where it is not set to 0.
 
         Used for two purposes:
           1. Priority check: detect misfired/absent work in earlier rounds before
@@ -402,12 +408,10 @@ async def get_next_pending_phase(
             )
 
         # ── Phase 0 / Phase 1: mystery notice or weather P1 ──────────────
-        if is_mystery:
-            if not row["phase1_done"]:
-                return _make(0)
-        else:
-            if weather_module_enabled and not row["phase1_done"]:
-                return _make(1)
+        # The notice is a weather posting like Phase 1, and a disabled module produces
+        # nothing: a live season arms no job for either while weather is off (#426).
+        if weather_module_enabled and not row["phase1_done"]:
+            return _make(0 if is_mystery else 1)
 
         # ── Phase 5: RSVP notice ──────────────────────────────────────────
         # A round whose check-in has been taken down after it has no call recorded either, and
@@ -420,7 +424,8 @@ async def get_next_pending_phase(
             return _make(2)
 
         # ── Phase 6: RSVP last-notice ─────────────────────────────────────
-        if attendance_module_enabled:
+        # Not where the league has set it to 0: a live season sends none (#426).
+        if attendance_module_enabled and last_notice_enabled:
             rsvp = rsvp_state.get(rid)
             if rsvp is not None and not rsvp["last_notice_msg_id"]:
                 return _make(6)
@@ -446,7 +451,20 @@ async def get_next_pending_phase(
 
     if pending_jobs:
         for job in pending_jobs:
-            is_cleanup = job["phase_number"] in (8, 9)
+            rnd = round_info[job["round_id"]]
+            phase = job["phase_number"]
+            # A mystery round's notice is armed as `weather_p1`, with `weather_p2` and
+            # `weather_p3` beside it, and the job store knows nothing of formats: a live season's
+            # `_weather_phase_job` reads the format as the job fires, and this is where advance
+            # reads it, once. `weather_p1` is the notice (0) — and stale once the notice is up,
+            # since advancing it would post the notice a second time. The other two do nothing
+            # when they fire, so there is nothing to advance for them. Handed on as phases 1 to 3
+            # they reached `run_phase1` to `run_phase3`, which read no format (#426).
+            if phase in (1, 2, 3) and str(rnd["format"]).upper() == "MYSTERY":
+                if phase != 1 or rnd["phase1_done"]:
+                    continue
+                phase = 0
+            is_cleanup = phase in (8, 9)
             # Before returning this scheduler job, check all earlier rounds (by
             # scheduled_at) for any pending work that the scheduler cannot see —
             # misfired/evicted phase jobs, result submission (excluded from
@@ -469,14 +487,13 @@ async def get_next_pending_phase(
             # a previous advance invocation) but APScheduler still holds the job
             # because cancel_job was never called or the job fired-and-was-missed.
             # A cleanup is judged by its own work alone — see `_cleanup_pending`.
-            rnd = round_info[job["round_id"]]
             if is_cleanup:
-                if _cleanup_pending(rnd, job["phase_number"]) is None:
+                if _cleanup_pending(rnd, phase) is None:
                     continue
             elif _first_pending_for_row(rnd) is None:
                 # Round is fully done — stale scheduler job; try the next one.
                 continue
-            return _make_entry(rnd, job["phase_number"], job["job_id"])
+            return _make_entry(rnd, phase, job["job_id"])
 
     # ── DB fallback: all scheduler jobs have misfired or been evicted ─────────
     # Walk rounds in scheduled_at order and return the first pending phase
@@ -522,7 +539,9 @@ async def round_result_status(db_path: str, round_id: int) -> str | None:
 # Review summary
 # ---------------------------------------------------------------------------
 
-def _phase_status(done: bool, job_id: str, live_ids: set[str] | None) -> str:
+def _phase_status(
+    done: bool, event: tuple[int, str], queued: set[tuple[int, str]] | None
+) -> str:
     """Return a status emoji for a single phase slot.
 
     ✅ — phase complete (DB flag set)
@@ -530,13 +549,16 @@ def _phase_status(done: bool, job_id: str, live_ids: set[str] | None) -> str:
     ⚠️  — pending; scheduler job is absent (misfired, never created, or
           already auto-fired — must use /test-mode advance)
 
-    When *live_ids* is None (no scheduler available) pending phases show ⏳.
+    *event* is the ``(round_id, event_type)`` the slot's job is armed under, and *queued* the
+    scheduler's own answer from ``get_queued_events_for_rounds`` — a job is found by its round
+    and its type, never by an ID rebuilt here, which is how every slot once read ⚠️ (#426).
+    When *queued* is None (no scheduler available) pending phases show ⏳.
     """
     if done:
         return "✅"
-    if live_ids is None:
+    if queued is None:
         return "⏳"
-    return "⏳" if job_id in live_ids else "⚠️"
+    return "⏳" if event in queued else "⚠️"
 
 
 async def build_review_summary(
@@ -549,7 +571,8 @@ async def build_review_summary(
     Covers weather phases (P1-P3) and the forecast cleanup, result submission, and RSVP
     phases (notice / last-notice / deadline) and the check-in cleanup, based on DB state —
     so it reflects actual progress regardless of whether scheduler jobs have fired or been
-    evicted.
+    evicted. A module's steps are shown only while it is on — nothing of one that is off is
+    armed, and advance runs none of it (#426).
 
     When *scheduler_service* is supplied, each pending phase is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
@@ -576,9 +599,20 @@ async def build_review_summary(
         rmc_row = await rmc_cursor.fetchone()
         results_module_enabled = bool(rmc_row[0]) if rmc_row else False
 
-        att_cursor = await db.execute("SELECT module_enabled FROM attendance_config")
+        att_cursor = await db.execute(
+            "SELECT module_enabled, rsvp_last_notice_hours FROM attendance_config"
+        )
         att_row = await att_cursor.fetchone()
-        attendance_module_enabled = bool(att_row[0]) if att_row else False
+        attendance_module_enabled = bool(att_row["module_enabled"]) if att_row else False
+        # A last notice set to 0 is never sent, and is left out like a step of a module that is
+        # off — the setting cannot change while a season runs, so no job was ever armed (#426).
+        last_notice_enabled = bool(att_row["rsvp_last_notice_hours"]) if att_row else False
+
+        # The weather module's steps are shown only while it is on, as the others' are:
+        # nothing of it is armed while it is off, and advance runs none of it (#426).
+        wm_cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
+        wm_row = await wm_cursor.fetchone()
+        weather_module_enabled = bool(wm_row[0]) if wm_row else False
 
         # All non-cancelled rounds for the active season
         cursor = await db.execute(
@@ -645,10 +679,10 @@ async def build_review_summary(
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
 
-    # Live scheduler job IDs — populated when a scheduler_service is available.
+    # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
     round_ids: set[int] = {r["round_id"] for r in rows}
-    live_ids: set[str] | None = (
-        scheduler_service.get_job_ids_for_rounds(round_ids)
+    queued: set[tuple[int, str]] | None = (
+        scheduler_service.get_queued_events_for_rounds(round_ids)
         if scheduler_service is not None
         else None
     )
@@ -680,18 +714,20 @@ async def build_review_summary(
             parts: list[str] = []
 
             # ── Weather / mystery notice phases ───────────────────────────
-            if is_mystery:
-                notice = _phase_status(bool(row["phase1_done"]), f"mystery_r{rid}", live_ids)
+            if weather_module_enabled and is_mystery:
+                # A mystery round's notice is armed as `weather_p1`: `_weather_phase_job` reads
+                # the round's format as it fires.
+                notice = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
                 parts.append(f"Notice: {notice}")
-            else:
-                p1 = _phase_status(bool(row["phase1_done"]), f"phase1_r{rid}", live_ids)
-                p2 = _phase_status(bool(row["phase2_done"]), f"phase2_r{rid}", live_ids)
-                p3 = _phase_status(bool(row["phase3_done"]), f"phase3_r{rid}", live_ids)
+            elif weather_module_enabled:
+                p1 = _phase_status(bool(row["phase1_done"]), (rid, "weather_p1"), queued)
+                p2 = _phase_status(bool(row["phase2_done"]), (rid, "weather_p2"), queued)
+                p3 = _phase_status(bool(row["phase3_done"]), (rid, "weather_p3"), queued)
                 # Done once Phase 3 has run and nothing of it is left standing (#425).
                 cleanup = _phase_status(
                     bool(row["phase3_done"]) and rid not in standing_forecasts,
-                    f"cleanup_r{rid}",
-                    live_ids,
+                    (rid, "cleanup"),
+                    queued,
                 )
                 parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}  Cleanup: {cleanup}")
 
@@ -702,40 +738,39 @@ async def build_review_summary(
                 elif rid in rounds_with_results:
                     res = "⏸️ pending review"
                 else:
-                    res = _phase_status(False, f"results_r{rid}", live_ids)
+                    res = _phase_status(False, (rid, "results"), queued)
                 parts.append(f"Results: {res}")
 
             # ── RSVP / attendance phases ──────────────────────────────────
-            if attendance_module_enabled and row["checkin_cleared"]:
-                # Taken down a day after the round, and its record with it (#425): every step
-                # before the cleanup had run by then.
-                parts.append("RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅")
-            elif attendance_module_enabled:
-                rsvp = rsvp_rows.get((rid, row["division_id"]))
-                notice_s = (
-                    "✅" if rsvp is not None
-                    else _phase_status(False, f"rsvp_notice_r{rid}", live_ids)
-                )
-                last_notice_s = (
-                    "✅" if (rsvp and rsvp["last_notice_msg_id"])
-                    else _phase_status(False, f"rsvp_last_notice_r{rid}", live_ids)
-                )
-                deadline_s = (
-                    "✅" if (rsvp and rsvp["distribution_msg_id"])
-                    else _phase_status(False, f"rsvp_deadline_r{rid}", live_ids)
-                )
-                cleared_s = _phase_status(False, f"rsvp_cleanup_r{rid}", live_ids)
-                parts.append(
-                    f"RSVP: {notice_s}  Last: {last_notice_s}  Deadline: {deadline_s}  "
-                    f"Cleared: {cleared_s}"
-                )
+            if attendance_module_enabled:
+                check_in: list[tuple[str, str]]
+                if row["checkin_cleared"]:
+                    # Taken down a day after the round, and its record with it (#425): every
+                    # step before the cleanup had run by then.
+                    check_in = [
+                        ("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "✅")
+                    ]
+                else:
+                    rsvp = rsvp_rows.get((rid, row["division_id"]))
+                    check_in = [
+                        ("RSVP", "✅" if rsvp is not None
+                         else _phase_status(False, (rid, "rsvp_notice"), queued)),
+                        ("Last", "✅" if (rsvp and rsvp["last_notice_msg_id"])
+                         else _phase_status(False, (rid, "rsvp_last_notice"), queued)),
+                        ("Deadline", "✅" if (rsvp and rsvp["distribution_msg_id"])
+                         else _phase_status(False, (rid, "rsvp_deadline"), queued)),
+                        ("Cleared", _phase_status(False, (rid, "rsvp_cleanup"), queued)),
+                    ]
+                if not last_notice_enabled:
+                    check_in = [(name, mark) for name, mark in check_in if name != "Last"]
+                parts.append("  ".join(f"{name}: {mark}" for name, mark in check_in))
 
             line = f"  Round {rnum} · {track:<15} · {date_str}  " + "  |  ".join(parts)
             lines.append(line)
 
         lines.append("")  # blank line between divisions
 
-    if live_ids is not None:
+    if queued is not None:
         lines.append("*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode advance)*")
 
     return "\n".join(lines).rstrip()

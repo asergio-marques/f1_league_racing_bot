@@ -891,14 +891,14 @@ A real posting is suppressed the same way: the switch is read before the driver'
 #### `/test-mode advance` — Execute the next pending event
 *Access: League admin · Requires test mode active*
 
-No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase is ever advanced.
+No parameters. Immediately runs the next pending scheduled event, bypassing its fire time. The queue is read from the scheduler itself, so it holds only what was genuinely scheduled — with the weather module off, no weather phase and no mystery-round notice is ever advanced. Nor is a last notice set to 0 with `/attendance config rsvp-last-notice`.
 
 Events are taken in scheduled-fire-time order, tie-broken by round then phase, and cover mystery-round notices, weather phases 1–3, result submission, the check-in call, its reminder and its deadline, and the two tidy-ups a day after each round: its last forecast being deleted, and its check-in messages being taken down.
 
 #### `/test-mode review` — View phase completion status
 *Access: League admin · Requires test mode active*
 
-No parameters. Displays a summary of all rounds for the active season, showing which phases (✅/⏳) have been completed per round and division, the tidy-ups a day after each round included.
+No parameters. Displays a summary of all rounds for the active season, per round and division, the tidy-ups a day after each round included: ✅ for a step that has run, ⏳ for one still to come whose job is queued and will fire on its own, and ⚠️ for one still to come with no job queued — run it with `/test-mode advance`. Result submission reads instead as finalized, or as pending review once results are in. A module that is switched off shows no steps: the forecasts and a mystery round's notice while the weather module is off, as result submission and the check-in while theirs are. Nor does a last notice set to 0.
 
 #### `/test-mode set-former-driver` — Override the former_driver flag
 *Access: League admin · Requires test mode active*
@@ -2005,6 +2005,8 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 All commands below require the attendance module to be enabled (`/module enable attendance`). Where check-in calls and attendance sheets are posted is set per division by [`/division rsvp-channel`](#division-rsvp-channel--set-the-rsvp-notice-channel-for-a-division) and [`/division attendance-channel`](#division-attendance-channel--set-the-attendance-logging-channel-for-a-division).
 
 > **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, and names the [`/attendance post-check-in`](#attendance-post-check-in--post-a-rounds-check-in-call-by-hand) that does it, with the division and round already filled in. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
+
+> **A call that fell due while the bot was off goes out late.** If the bot is not running when a round's check-in call is due, it posts the call as soon as it starts again, provided the round's deadline has not yet passed — your drivers answer in whatever time is left, and the deadline stays where it was. If the deadline has passed too, no call is posted, because nobody could answer it and every driver would be counted as not having replied. The log channel says so instead, and that round counts nothing against anyone.
 
 > **A driver who joins a division while a call is standing can still answer it.** A call lists the division as it stood when it was posted, but it is redrawn from the current roster every time anybody presses a button — so a driver you assign, move or confirm into the division before the deadline appears on it and their answer counts, exactly as everyone else's does. They have no attendance record for that round until they answer, and the ordinary locks still apply: a full-time driver placed after the deadline has gone by is told it has passed, and a reserve who has not accepted can still step in until the round is due to start.
 >
