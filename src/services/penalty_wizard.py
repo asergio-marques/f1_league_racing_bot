@@ -153,9 +153,13 @@ async def _require_lm(
 # ---------------------------------------------------------------------------
 
 def _pen_label(sp: StagedPenalty) -> str:
-    """Format a staged penalty as a human-readable string."""
-    if sp.penalty_type == "DSQ":
-        return "DSQ"
+    """Format a staged penalty as a human-readable string.
+
+    A disqualification and no further action carry no seconds, and are labelled by the word the
+    manager typed (#138).
+    """
+    if sp.penalty_type in ("DSQ", "NFA"):
+        return sp.penalty_type
     assert sp.penalty_seconds is not None
     return f"+{sp.penalty_seconds}s" if sp.penalty_seconds > 0 else f"{sp.penalty_seconds}s"
 
@@ -572,7 +576,7 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
     )
     penalty_input: discord.ui.TextInput = discord.ui.TextInput(
         label="Penalty value",
-        placeholder="+5s  or  -3s  or  DSQ",
+        placeholder="+5s  or  -3s  or  DSQ  or  NFA (no further action)",
         required=True,
         max_length=10,
     )
