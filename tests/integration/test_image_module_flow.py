@@ -1395,6 +1395,56 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     assert painted == ["Division 1", "Division 2", "Division 3"]
 
 
+@pytest.mark.parametrize(
+    "seasons",
+    [[], [("SETUP", [])]],
+    ids=["no season", "a season with no division"],
+)
+async def test_no_season_under_way_measures_as_authored_and_says_so(
+    db_path, module_service, config_service, template_dir, monkeypatch, seasons
+):
+    """Decided 2026-09-24 (#165): no tier to measure is said, not left to be inferred."""
+    await _enable(module_service, config_service)
+    for status, divisions in seasons:
+        await _seed_season(db_path, divisions, status=status)
+    await _per_tier(
+        config_service,
+        template_dir,
+        monkeypatch,
+        _slotted_plate("#000000"),
+        {"Division 1": {"plate": "#777777"}},
+    )
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.background == "#000000"
+    assert reading.divisions == ()
+    assert reading.no_season is True
+    assert _lines(reading) == [
+        "Contrast against the template's plate (`#000000`): **21.00:1**",
+        "ℹ️ There is no division of a season under way to measure, so no tier was "
+        "measured: this is the drawing as authored.",
+    ]
+
+
+async def test_per_tier_colours_off_say_nothing_of_a_season(
+    db_path, module_service, config_service, template_dir, monkeypatch
+):
+    """With the feature off, drawing as authored is simply what happens — nothing to explain."""
+    await _enable(module_service, config_service)
+    await _per_tier(
+        config_service, template_dir, monkeypatch, _slotted_plate("#000000"), {}
+    )
+    await config_service.set_flag("per_tier_colour_enabled", False)
+
+    cog = _image_cog(config_service, module_service)
+    reading = await cog._measure_fastest_lap_contrast("#FFFFFF")
+
+    assert reading.no_season is False
+    assert len(_lines(reading)) == 1
+
+
 async def test_every_tier_unmeasurable_is_reported_once(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):

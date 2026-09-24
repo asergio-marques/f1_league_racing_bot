@@ -90,12 +90,15 @@ class FastestLapContrast:
 
     `divisions` names the tier the figure belongs to. It is empty where the plate was
     measured as the template was authored, which is what per-tier colours being off means.
+    `no_season` says per-tier colours were on and there was no division to measure in, so
+    the authored plate stood in for every tier (decided 2026-09-24, #165).
     """
 
     ratio: float | None = None
     background: str | None = None
     problem: str | None = None
     divisions: tuple[str, ...] = ()
+    no_season: bool = False
 
 
 def _no_plate_problem() -> str:
@@ -166,6 +169,11 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
             f"⚠️ That is below {CONTRAST_AA_NORMAL}:1, the threshold at which text "
             f"of this size stays legible. The colour is stored all the same — "
             f"it is your league's to choose."
+        )
+    if reading.no_season:
+        lines.append(
+            "ℹ️ There is no division of a season under way to measure, so no tier was "
+            "measured: this is the drawing as authored."
         )
     return lines
 
@@ -1451,16 +1459,22 @@ class ImageCog(commands.Cog):
             )
 
         config = await self._config_service.get_config()
+        per_tier = config is not None and config.per_tier_colour_enabled
         divisions: list[str] = []
-        if config is not None and config.per_tier_colour_enabled:
+        if per_tier:
             divisions = await self._config_service.season_division_names()
 
         if not divisions:
+            # Per-tier colours off, or on with no season under way — or one holding no
+            # division yet. Either way no tier's colours exist to draw in, so the plate
+            # as authored is the plate; with the feature on, the reply says so.
             background, problem = _plate_fill(root)
             if background is None:
                 return FastestLapContrast(problem=problem)
             return FastestLapContrast(
-                ratio=contrast_ratio(colour, background), background=background
+                ratio=contrast_ratio(colour, background),
+                background=background,
+                no_season=per_tier,
             )
 
         # A palette neither adds an element nor takes one away, so a plate missing from
