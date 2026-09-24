@@ -12,6 +12,7 @@ from db.database import get_connection
 from models.points_config import SessionType
 from utils.input_validator import (
     is_disqualification,
+    is_no_further_action,
     parse_gap,
     parse_penalty_seconds,
     parse_time,
@@ -28,7 +29,9 @@ log = logging.getLogger(__name__)
 class StagedPenalty:
     driver_user_id: int
     session_type: SessionType
-    penalty_type: Literal["TIME", "DSQ"]
+    #: ``NFA`` is no further action (#138): a finding that the incident was investigated and no
+    #: penalty follows. It carries no seconds, as ``DSQ`` does, and alters no classification.
+    penalty_type: Literal["TIME", "DSQ", "NFA"]
     penalty_seconds: int | None
     description: str = ""
     justification: str = ""
@@ -59,7 +62,7 @@ def validate_penalty_input(
     Args:
         driver_user_id: The Discord user ID of the driver.
         session_type: The session the penalty applies to.
-        penalty_value: Raw input string, e.g. ``+5s``, ``-3``, ``10``, ``DSQ``.
+        penalty_value: Raw input string, e.g. ``+5s``, ``-3``, ``10``, ``DSQ``, ``NFA``.
         current_time_ms: The driver's current total race time in milliseconds.
             When provided, negative penalties are rejected if they would make
             the resulting time negative.  Pass ``None`` to skip this check.
@@ -76,12 +79,33 @@ def validate_penalty_input(
             penalty_seconds=None,
         )
 
+    # Taken before the qualifying refusal: it alters nothing, so a qualifying incident can be
+    # cleared as well as a race one.
+    if is_no_further_action(penalty_value):
+        return StagedPenalty(
+            driver_user_id=driver_user_id,
+            session_type=session_type,
+            penalty_type="NFA",
+            penalty_seconds=None,
+        )
+
     if session_type.is_qualifying:
-        return "Only DSQ is accepted for qualifying sessions."
+        return "Only DSQ or NFA (no further action) is accepted for qualifying sessions."
 
     seconds = parse_penalty_seconds(penalty_value)
     if seconds is None:
-        return "Invalid penalty. Use seconds (e.g. `5`, `+5s`, `-3s`) or `DSQ`."
+        return (
+            "Invalid penalty. Use seconds (e.g. `5`, `+5s`, `-3s`), `DSQ`, "
+            "or `NFA` for no further action."
+        )
+
+    # A penalty of no seconds is no sanction (#138). It was the only way to publish a cleared
+    # driver before no further action existed, and it published them as sanctioned.
+    if seconds == 0:
+        return (
+            "A penalty of no seconds is no sanction. To clear the driver, enter `NFA` "
+            "for no further action."
+        )
 
     if seconds < 0 and current_time_penalty_s is not None:
         if abs(seconds) > current_time_penalty_s:
@@ -233,6 +257,11 @@ async def apply_penalties(
                 continue
             session_result_id: int = sr_row["id"]
 
+            # No further action alters no classification (#138), so a session nothing else
+            # touches is not re-sorted: its rows are read for the verdict's record and left as
+            # they stand, rather than trusting a re-sort to put them back where they were.
+            reorders = any(sp.penalty_type != "NFA" for sp in session_penalties)
+
             # --- Update new result tables ---
             if not session_type.is_qualifying:
                 for sp in session_penalties:
@@ -270,6 +299,8 @@ async def apply_penalties(
                 rsr_rows = list(await rr_cursor.fetchall())
                 for rr in rsr_rows:
                     driver_to_new_result_id[(session_type.value, int(rr["driver_user_id"]))] = rr["id"]
+                if not reorders:
+                    continue
                 sortable_rsr = []
                 fixed_rsr = []
                 for rr in rsr_rows:
@@ -321,6 +352,8 @@ async def apply_penalties(
                 qsr_rows = list(await qr_cursor.fetchall())
                 for qr in qsr_rows:
                     driver_to_new_result_id[(session_type.value, int(qr["driver_user_id"]))] = qr["id"]
+                if not reorders:
+                    continue
                 sortable_qsr = []
                 fixed_qsr = []
                 for qr in qsr_rows:

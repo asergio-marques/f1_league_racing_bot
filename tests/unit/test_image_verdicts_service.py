@@ -103,6 +103,7 @@ def test_the_sanction_rendering_is_the_announcement_service_s():
         ("TIME_PENALTY", -3, "3 seconds removed"),
         ("DSQ", None, "Disqualified"),
         ("TIME_PENALTY", None, "Disqualified"),
+        ("NFA", None, "No further action"),
     ],
 )
 def test_a_positive_magnitude_adds_and_a_negative_one_removes(

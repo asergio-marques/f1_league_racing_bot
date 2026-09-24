@@ -371,9 +371,13 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A description or justification holding Discord markup shall be refused likewise, saying which text holds it and quoting the markup found: formatting (bold, italics, underline, strikethrough, code, spoilers), a heading, quote or subtext line, a masked link, and a mention of a channel, a time or a command. A list and a bare link are no markup. Decided 2026-09-21 (#204).
     - A verdict shall notify nobody but the people it mentions, whatever its texts hold. A role mention posted in one shall notify none of the role's holders, and "@everyone" or "@here" nobody.
     - The sanction shall be either "DSQ" or a whole number of seconds, positive or negative. Fractions of a second shall be rejected.
+    - A sanction of no seconds shall be rejected, the refusal pointing to no further action. Decided 2026-09-24 (#138).
+    - A driver may instead be given **no further action**: a finding that the incident was investigated and no penalty follows. It shall alter no classification, and its verdict shall name the driver and the incident and say that no penalty follows, never reading as a sanction. Decided 2026-09-24 (#138).
+        - No further action shall be given by entering "NFA", in any case, in place of the sanction. Decided 2026-09-24.
+        - Its verdict shall carry "No further action" where a sanction's verdict carries the sanction, in the textual announcement and on the graphic alike. Decided 2026-09-24.
     - "DSQ" invalidates the entry, which is ranked last in that session.
     - A number of seconds is added to the driver's total race time.
-    - For "Sprint Qualifying" and "Feature Qualifying", only "DSQ" is accepted.
+    - For "Sprint Qualifying" and "Feature Qualifying", only "DSQ" and no further action are accepted.
     - A negative sanction shall be rejected where its magnitude exceeds the time penalties the driver already carries in that session, counting anything staged in the same review, or where it would produce a negative total race time.
     - A driver not present in the chosen session's results shall be rejected.
 - **No Penalties / Confirm** — proceeds with no penalty applied. Where penalties are staged, it shall first ask for confirmation that they are to be discarded. The staged attendance pardons shall be kept.
@@ -396,7 +400,7 @@ Penalties are not applied by a command. Once every session of a round has been s
 - The approval message shall be withdrawn when anything staged changes or **Make Changes** is pressed, and a second one shall replace the first. Its buttons shall act only on the approval message last posted.
 - The approval message shall list the attendance pardons staged, which its **Approve** grants, and shall not say that nothing is staged while any is. Their justifications stay in the log channel (#403).
 
-**Stage two — appeals.** Committing stage one shall post a second prompt to the same channel, carrying **Add Correction**, **No Changes / Confirm**, **Approve** and one **Remove** per staged correction. A correction takes and validates the same values as a penalty, and is the surface for overturning one.
+**Stage two — appeals.** Committing stage one shall post a second prompt to the same channel, carrying **Add Correction**, **No Changes / Confirm**, **Approve** and one **Remove** per staged correction. A correction takes and validates the same values as a penalty, no further action included, and is the surface for overturning one.
 
 Approving stage two shall apply any staged corrections, republish the round's results and standings under the final state, post a verdict for each correction, recompute the standings of every later round, mark the round final, and delete the submission channel. There shall be no second confirmation on this stage.
 

@@ -264,7 +264,9 @@ Each staged penalty also gets its own **Remove** button, so you can take one bac
 
 > **A restart during a resubmission loses what you had pasted, not the round's results.** The earlier results stand and the prompt comes back, with a note in the channel. Press **🔄 Resubmit Initial Results** again to start over.
 
-**A sanction is `DSQ` or a number of whole seconds**, positive or negative — `+5s` for the usual thing, `-3s` to give time back, `DSQ` to drop a driver to the bottom of the classification. Qualifying sessions take `DSQ` only. The bot refuses a negative penalty larger than the penalties that driver actually holds, and one that would leave them with a negative race time. Fractions of a second are refused: five and a half seconds cannot be given here.
+**A sanction is `DSQ` or a number of whole seconds**, positive or negative — `+5s` for the usual thing, `-3s` to give time back, `DSQ` to drop a driver to the bottom of the classification. Qualifying sessions take `DSQ` only, or the `NFA` below. The bot refuses a negative penalty larger than the penalties that driver actually holds, and one that would leave them with a negative race time. Fractions of a second are refused: five and a half seconds cannot be given here.
+
+**To clear a driver, enter `NFA` — no further action.** Use it when you looked at an incident and decided no penalty follows. It changes nothing in the results, and the verdict it posts names the driver and the incident and reads **No further action** where a sanction would stand, so your league reads it as the all-clear it is. It works in qualifying sessions as well as races. A penalty of `0` seconds is refused, with a reply pointing you here: it would be published as a sanction.
 
 **Both the description and the justification are published.** They go into the verdict your whole league reads, so write them as though the driver will quote them back at you — because they will. This is the opposite of an attendance pardon, whose justification is never shown to the league.
 
@@ -280,7 +282,7 @@ The second prompt you may have seen — **✏️ Make Changes** alongside **✅ 
 
 ### Stage two — appeals
 
-A second prompt appears in the same channel, with the same shape: **➕ Add Correction**, **No Changes / Confirm**, **✅ Approve**, and a Remove button per correction. A correction takes the same values as a penalty and is the place to undo one on appeal — a `-5s` against a driver who was given five seconds unfairly, or a `DSQ` upheld.
+A second prompt appears in the same channel, with the same shape: **➕ Add Correction**, **No Changes / Confirm**, **✅ Approve**, and a Remove button per correction. A correction takes the same values as a penalty and is the place to undo one on appeal — a `-5s` against a driver who was given five seconds unfairly, or a `DSQ` upheld. An appeal you turn down can be closed with an `NFA`, which posts a verdict saying no further action follows.
 
 **Approving here finishes the round.** It republishes everything as **Final Results**, posts a verdict for each correction, updates every later standing, and **deletes the submission channel**. As in stage one, **✅ Approve** commits on the first click, and **No Changes / Confirm** is the one that asks again if you have corrections staged.
 

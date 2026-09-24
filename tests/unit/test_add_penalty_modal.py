@@ -10,9 +10,13 @@ would otherwise stage a penalty against somebody who did not race it, and it wou
 on approval against a row that does not exist. The check runs against the *active* results for
 that exact session, and race and qualifying are separate queries against separate tables.
 
-**Qualifying takes only a disqualification.** There is no race time to add seconds to, so
-`validate_penalty_input` refuses a time penalty outright for a qualifying session — the modal is
-shared between the two and the difference lives in the validator.
+**Qualifying takes only a disqualification or no further action.** There is no race time to add
+seconds to, so `validate_penalty_input` refuses a time penalty outright for a qualifying session —
+the modal is shared between the two and the difference lives in the validator.
+
+**No further action is typed as `NFA`, and a penalty of no seconds is refused** (#138). The one
+clears a driver and alters nothing; the other was the only way to say so before it existed, and
+published a cleared driver as sanctioned.
 
 **The staged adjustment is the rule worth the file.** A negative penalty removes time already
 applied, and cannot remove more than was applied. Penalties are held in memory until the pass is
@@ -455,6 +459,77 @@ async def test_the_appeals_pass_counts_its_own_staged_corrections(tmp_path):
 
     assert len(state.staged_appeals) == 1
     assert _replied(interaction).startswith("❌")
+
+
+# ---------------------------------------------------------------------------
+# No further action (#138)
+# ---------------------------------------------------------------------------
+
+
+async def test_the_form_names_no_further_action_among_the_values(tmp_path):
+    """The manager has to know the word to type, and the form is where they look."""
+    state = _state(await _make_db(tmp_path))
+
+    modal = AddPenaltyModal(state, SessionType.FEATURE_RACE)
+
+    assert "NFA" in (modal.penalty_input.placeholder or "")
+
+
+async def test_no_further_action_is_staged(tmp_path):
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, penalty="nfa")
+
+    assert [(sp.penalty_type, sp.penalty_seconds) for sp in state.staged] == [("NFA", None)]
+    assert state.staged[0].description == "Contact at turn one"
+    assert "**NFA**" in _replied(interaction)
+
+
+async def test_no_further_action_is_staged_for_qualifying(tmp_path):
+    state = _state(await _make_db(tmp_path, qualifying=True))
+
+    await _submit(state, session=SessionType.FEATURE_QUALIFYING, penalty="NFA")
+
+    assert [sp.penalty_type for sp in state.staged] == ["NFA"]
+
+
+async def test_no_further_action_is_staged_as_a_correction(tmp_path):
+    """A correction takes the same values as a penalty, so an appeal can be closed with
+    no further action as well."""
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, penalty="NFA", appeals=True)
+
+    assert state.staged == []
+    assert [sp.penalty_type for sp in state.staged_appeals] == ["NFA"]
+    assert "Staged Correction" in _replied(interaction)
+
+
+@pytest.mark.parametrize("appeals", [False, True])
+async def test_a_penalty_of_no_seconds_is_refused_pointing_to_no_further_action(
+    tmp_path, appeals
+):
+    """Refused in both passes, a correction taking the same values as a penalty."""
+    state = _state(await _make_db(tmp_path))
+
+    interaction = await _submit(state, penalty="0s", appeals=appeals)
+
+    assert state.staged == [] and state.staged_appeals == []
+    replied = _replied(interaction)
+    assert replied.startswith("\u274c")
+    assert "NFA" in replied
+
+
+async def test_a_staged_no_further_action_does_not_distort_the_arithmetic(tmp_path):
+    """It carries no seconds, as a DSQ does, so it neither raises nor uses up headroom."""
+    state = _state(
+        await _make_db(tmp_path, ingame_ms=6_000),
+        staged=[_penalty(None, penalty_type="NFA")],
+    )
+
+    await _submit(state, penalty="-4s")
+
+    assert len(state.staged) == 2
 
 
 # ---------------------------------------------------------------------------

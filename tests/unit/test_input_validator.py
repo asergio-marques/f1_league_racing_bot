@@ -22,6 +22,7 @@ from utils.input_validator import (  # noqa: E402
     Mode,
     Rule,
     is_disqualification,
+    is_no_further_action,
     parse_datetime,
     parse_gap,
     parse_lap_gap,
@@ -393,6 +394,17 @@ def test_parse_user_refuses_a_role_or_a_name(typed):
 @pytest.mark.parametrize("typed", ["DSQ", "dsq", " Dsq "])
 def test_a_disqualification_is_read_in_any_case(typed):
     assert is_disqualification(typed)
+
+
+@pytest.mark.parametrize("typed", ["NFA", "nfa", " Nfa "])
+def test_no_further_action_is_read_in_any_case(typed):
+    assert is_no_further_action(typed)
+
+
+@pytest.mark.parametrize("typed", ["DSQ", "0", "N F A", "NFA0", "", None])
+def test_no_further_action_is_nothing_else(typed):
+    """Neither a disqualification nor a zero is read as clearing the driver (#138)."""
+    assert not is_no_further_action(typed)
 
 
 @pytest.mark.parametrize(

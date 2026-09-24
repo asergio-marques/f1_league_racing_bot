@@ -364,6 +364,11 @@ def is_disqualification(text: str | None) -> bool:
     return (text or "").strip().upper() == "DSQ"
 
 
+def is_no_further_action(text: str | None) -> bool:
+    """Whether *text* is no further action, ``NFA``, in any case (#138)."""
+    return (text or "").strip().upper() == "NFA"
+
+
 def parse_penalty_seconds(text: str | None) -> int | None:
     """The seconds a time penalty adds, negative where it gives time back, or None."""
     match = _PENALTY_SECONDS_RE.match((text or "").strip())

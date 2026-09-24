@@ -741,7 +741,8 @@ async def staged_penalties_warning(db_path: str, entries: list[dict]) -> str:
         uid = e.get("driver_user_id", "?")
         if isinstance(uid, int):
             uid = current_of.get(uid, uid)
-        label = f"+{psecs}s" if ptype == "TIME" and psecs is not None else ptype
+        # Signed either way: a negative penalty read "+-3s" when the plus was written by hand.
+        label = f"{psecs:+d}s" if ptype == "TIME" and psecs is not None else ptype
         lines.append(f"• <@{uid}> | {stype} | **{label}**")
     return "\n".join(lines)
 

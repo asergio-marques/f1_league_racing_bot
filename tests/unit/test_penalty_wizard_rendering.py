@@ -85,6 +85,12 @@ def test_a_negative_penalty_keeps_its_own_sign():
     assert _pen_label(_penalty(-5)) == "-5s"
 
 
+def test_no_further_action_is_labelled_as_typed():
+    """It carries no seconds, as a DSQ does, and is labelled by the word the manager typed
+    rather than read as a time (#138)."""
+    assert _pen_label(_penalty(None, "NFA")) == "NFA"
+
+
 # ---------------------------------------------------------------------------
 # The permission gate
 # ---------------------------------------------------------------------------
@@ -302,6 +308,18 @@ async def test_every_staged_penalty_appears_on_the_prompt(tmp_path):
     assert "Staged Penalties (2)" in content
     assert "+5s" in content
     assert "DSQ" in content
+
+
+async def test_a_staged_no_further_action_appears_on_the_prompt(tmp_path):
+    """It is a decision the approval publishes, so the manager reads it before approving
+    as they read a sanction (#138)."""
+    db_path = await _make_db(tmp_path, attendees=(DRIVER_A,))
+    staged = [StagedPenalty(DRIVER_A, SessionType.FEATURE_RACE, "NFA", None)]
+
+    content = await _render_prompt_content(_state_for(db_path, staged=staged))
+
+    assert "Staged Penalties (1)" in content
+    assert "**NFA**" in content
 
 
 async def test_each_staged_penalty_is_numbered_for_removal(tmp_path):

@@ -35,3 +35,24 @@ async def test_a_penalty_applied_under_a_past_account_names_the_current_one(tmp_
     assert "• <@8102> | Feature Race | **+5s**" in text
     assert "• <@9999> | Feature Race | **DSQ**" in text
     assert "<@8101>" not in text
+
+
+async def test_each_penalty_is_labelled_with_its_own_sign(tmp_path):
+    """A negative penalty — a report against in-game time penalties, or an appeal correction —
+    read "+-3s". Labelled as the review labels it, and no further action by its word (#138)."""
+    db_path = os.path.join(str(tmp_path), "warning_signs.db")
+    await run_migrations(db_path)
+
+    text = await staged_penalties_warning(db_path, [
+        {"session_type": "FEATURE_RACE", "penalty_type": "TIME", "penalty_seconds": -3,
+         "driver_user_id": 9001},
+        {"session_type": "FEATURE_RACE", "penalty_type": "TIME", "penalty_seconds": 5,
+         "driver_user_id": 9002},
+        {"session_type": "FEATURE_RACE", "penalty_type": "NFA", "penalty_seconds": None,
+         "driver_user_id": 9003},
+    ])
+
+    assert "• <@9001> | Feature Race | **-3s**" in text
+    assert "• <@9002> | Feature Race | **+5s**" in text
+    assert "• <@9003> | Feature Race | **NFA**" in text
+    assert "+-" not in text

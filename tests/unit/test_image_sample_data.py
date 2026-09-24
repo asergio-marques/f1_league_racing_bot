@@ -91,7 +91,7 @@ class TestWeatherSampleData:
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 043 — the six verdicts `/images test verdicts` draws (T021-T023)
+# 043 — the seven verdicts `/images test verdicts` draws (T021-T023)
 #
 # specs/043-verdicts-image-generation/contracts/verdicts-posting.md § The test command.
 # ══════════════════════════════════════════════════════════════════════════
@@ -131,21 +131,22 @@ def _all_verdict_drawings():
     return {case: build_verdict_drawing(None, case=case) for case in SAMPLE_VERDICT_CASES}
 
 
-def test_six_verdict_cases_are_drawn_from_the_one_template():
+def test_seven_verdict_cases_are_drawn_from_the_one_template():
     from tests.support.image_sample_data import SAMPLE_VERDICT_CASES
 
-    assert len(SAMPLE_VERDICT_CASES) == 6
+    assert len(SAMPLE_VERDICT_CASES) == 7
     assert set(SAMPLE_VERDICT_CASES) == {
         "penalty_added_sprint",
         "penalty_removed",
         "penalty_dsq",
+        "penalty_nfa",
         "appeal",
         "autosack",
         "autoreserve",
     }
 
 
-def test_the_six_cases_cover_all_three_kinds_and_both_signs_of_a_time_penalty():
+def test_the_cases_cover_all_three_kinds_both_signs_and_no_further_action():
     from services.image_verdict_service import VerdictKind
 
     drawings = _all_verdict_drawings()
@@ -154,6 +155,7 @@ def test_the_six_cases_cover_all_three_kinds_and_both_signs_of_a_time_penalty():
     assert drawings["penalty_added_sprint"].penalty == "5 seconds added"
     assert drawings["penalty_removed"].penalty == "3 seconds removed"
     assert drawings["penalty_dsq"].penalty == "Disqualified"
+    assert drawings["penalty_nfa"].penalty == "No further action"
     assert drawings["appeal"].stage == "Appeal"
 
 
