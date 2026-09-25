@@ -57,7 +57,7 @@ const CONCERNS = [
   },
   {
     key: 'runtime',
-    brief: 'Time-driven work and the event loop: how jobs are registered (scheduler_service and every add_job), how job ids are built, what the database versus the APScheduler job store is authority for, what a restart re-registers, and the one start-up sweep, which only hands each missed event to the handler its module provides, the handler deciding what becomes of it (architecture.md, "Timed work and restarts"; #426, #429); blocking calls inside async def (subprocess, the Inkscape rasteriser), tasks created and not kept, locks held across awaits, timeouts on outbound calls, and the injected clock.',
+    brief: 'Time-driven work and the event loop: how jobs are registered (scheduler_service and every add_job), how job ids are built, what the database versus the APScheduler job store is authority for, what a restart re-registers, and the one start-up sweep, which only asks each kind which of its events came due and hands each, in order and one at a time, to the handler its module provides, the handler deciding what becomes of it (architecture.md, "Timed work and restarts"; #426, #429); blocking calls inside async def (subprocess, the Inkscape rasteriser), tasks created and not kept, locks held across awaits, timeouts on outbound calls, and the injected clock.',
     candidates: 'none directly — say whether a new candidate is owed',
   },
   {

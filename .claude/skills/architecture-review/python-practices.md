@@ -175,10 +175,10 @@ Every practice names its primary source. Cite that source in a finding, not this
   and the event, so re-registering replaces the job rather than duplicating it, and running a
   job twice does no harm (#426, #429).
 - **A run missed while the bot was down is either caught up or skipped by an explicit
-  rule,** never left to the scheduler's default misfire behaviour. **Settled here:** core's one
-  start-up sweep only hands each missed run, in order, to the handler its module provides for
-  that kind of job, and the handler decides what becomes of it (architecture.md, "Timed work
-  and restarts").
+  rule,** never left to the scheduler's default misfire behaviour. **Settled here:** each module
+  tells core's one start-up sweep which of its runs came due; the sweep only hands each, in the
+  order they fell due and one at a time, to the handler its module provides for that kind of job,
+  and the handler decides what becomes of it (architecture.md, "Timed work and restarts").
 - **Inject the clock.** Services take `now`. The house already does this, and CLAUDE.md
   requires tests to pin it. Datetimes are timezone-aware and UTC inside the bot
   (`datetime.now(UTC)`, 3.11 alias), and `zoneinfo` is used only for display. *Source:*
