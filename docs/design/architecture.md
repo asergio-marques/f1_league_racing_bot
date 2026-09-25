@@ -128,7 +128,7 @@ them with the plan for #282.
 
 - Database code lives only in services, never in cogs or in the start-up code.
 - A settings change and its audit record are saved together, or not at all.
-- The bot never waits on Discord while it holds the database for writing (#155).
+- While a save is open, the bot waits on nothing but that save's own connection (#155).
 - Start-up work runs once, in one function that tests can run.
 - Every kind of failure reaches the log channel in one standard way.
 - A catch-all error handler always keeps the full error details for the host's log.
@@ -207,8 +207,9 @@ will be switched off with it. Today it has one entry, attendance needing results
 will add a second.
 
 The image module is used by the others to draw their posts, and a module that finds it turned
-off posts text instead. That is how the constitution's Principle XIV describes it, and it is
-the one module every other may call.
+off posts text instead. That is how the constitution's Principles X and XIV describe it. Every
+other module may call it without an entry in the table; core reaches it through a hook, as
+below.
 
 **Core reaches a module only through hooks.** Where something in core has to let the modules
 act (a round amended or cancelled, placements confirmed, a review gathering its lines, a
@@ -242,9 +243,9 @@ docstring says what it promises.
 migrations. A cog never opens a connection, and neither does the start-up code.
 
 **One service operation is one save.** It opens its connection, makes its changes, and either
-commits them all or none. It does not hand its connection to a caller. When one module has to
-change another module's table as part of the same save, it calls that module's service and
-passes its own connection, so the change still happens all at once.
+commits them all or none. It does not hand its connection back to whoever called it. When one
+module has to change another module's table as part of the same save, it calls that module's
+service and passes its own connection down, so the change still happens all at once.
 
 **A settings change and its audit record are saved together** (decided with the plan for
 #282). The core specification's "The record of what changed" asks for both. Saved separately,
@@ -257,9 +258,8 @@ record can only be written once the outcome is known.
 **While a save is open, the bot waits on nothing but that save's own connection** (#155). Not
 on Discord, and not on a second connection. SQLite lets one writer in at a time, so a post made
 in the middle of a save holds up every other save in the bot for as long as Discord takes to
-answer. A second connection that tried to write would be kept waiting by the first until it gave up
-and failed. Save first,
-then post, then record what was posted in a save of its own.
+answer. A second connection that tried to write would be kept waiting by the first until it
+gave up and failed. Save first, then post, then record what was posted in a save of its own.
 
 **Each table is written by one module** (decision 14). Every statement that changes a table
 lives in the module that owns it, and other modules ask that module to make the change. Each
@@ -422,8 +422,10 @@ so one added handler would quietly switch `report_failure` off for everything it
 
 1. on one of the failure paths above;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not
-   stop the rest. The failure then becomes a line in the result, which the command reports to
-   the manager and marks the log line as incomplete, as #237 settled;
+   stop the rest. The failure becomes a line in the result, which the command reports to the
+   manager (the pattern #237 set), and its log line says `Incomplete` rather than `Success`.
+   This does not apply where an operation's own rule is all or nothing, as a points
+   amendment's is (#187);
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 
@@ -468,15 +470,18 @@ so they cannot drift apart:
 
 ## How the rules are checked
 
-Every rule in this file is checked by a test that fails the build (decision 10):
+Where a rule can be checked by reading the code, a test checks it and fails the build
+(decision 10). The rules about how things are built (the hooks, the one builder, start-up, the
+sweep) cannot be checked that way until they exist; "Known divergences" below lists what is
+not checked yet. The checks are:
 
 - **`.importlinter`**, run by `tests/unit/test_import_contracts.py`, checks which code may
   import which.
 - **`tests/unit/test_architecture_rules.py`** checks the rest: database code outside services,
-  waiting on Discord mid-save, cogs handling their own errors, catch-all handlers that lose the
-  error details, background tasks nobody keeps, jobs made around the scheduler service, jobs
-  that don't say what happens if missed, private names used across modules, and posting outside
-  the handlers.
+  awaiting anything but the connection mid-save, cogs handling their own errors, catch-all
+  handlers that lose the error details, background tasks nobody keeps, jobs made around the
+  scheduler service, jobs that don't say what happens if missed, private names used across
+  modules, and posting outside the handlers.
 - **`tests/unit/test_one_league_server.py`**, **`test_schema_rules.py`** and
   **`test_import_roots.py`** check the one-league rule, the schema's own rules and how the
   package is imported.
