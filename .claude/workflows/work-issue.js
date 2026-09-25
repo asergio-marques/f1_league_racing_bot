@@ -352,9 +352,9 @@ const NO_PYTEST = `Never run pytest: ${stage === 'build' ? 'the suite is running
 
 const RUN_PYTEST = `How to run pytest here: always from ${worktree}, behind the test lock, with the pinned interpreter, so that the run tests this checkout's code:
 
-    cd ${worktree} && flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q
+    cd ${worktree} && flock -w 480 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q
 
-Another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes, so give every such Bash call a timeout of 600000 ms. A run that may outlast that (the full suite always does on this host) is started detached, and waited on through its process:
+Give every such Bash call a timeout of 600000 ms. Another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes, so flock gives up waiting after eight: where it exits 1 before pytest has printed anything, the lock is still held, and you run the same line again. A run that may itself outlast ten minutes (the full suite always does on this host) is started detached instead, and waited on through its process:
 
     cd ${worktree} && rm -f LOG LOG.exit && nohup bash -c 'flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
     timeout 540 tail --pid=<that pid> -f /dev/null; cat LOG.exit 2>/dev/null || echo still running
