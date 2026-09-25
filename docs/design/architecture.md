@@ -45,8 +45,9 @@ leaguebot/
 Each folder holds that part's **cogs** (its commands, and the buttons and forms they post), its
 **services** (its rules and its database code) and its **models** (plain data). Which module owns
 a file is then plain from where it sits. The tests follow the same folders, one for core and one
-for each module under `tests/`, beside `tests/repository/` for the checks on the repository itself:
-these rules, its configuration and its tools.
+for each module under `tests/`, beside `tests/repository/` for the checks on the repository itself
+(these rules, its configuration and its tools) and `tests/support/` for the helpers the tests
+share.
 
 Inside each folder, each kind of code has a folder of its own: `cogs/`, `services/`, `models/`,
 and `utils/` for the part's helpers, with `db/` in core for the database code. What kind of code a
