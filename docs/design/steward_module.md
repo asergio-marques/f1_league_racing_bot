@@ -38,10 +38,10 @@ and `steward_ballot_service` in wave 6 ahead of it. The seam that makes that ord
 stops, and nothing before S30 reads it. The same seam holds between S16 and S19 — the close calls
 an auto-rule hook that is a no-op until S19 fills it in, rather than S16 and S19 being one issue.
 
-`tools/coverage_by_module.py` must gain a `steward` bucket, and the `"steward"` pattern must come
-out of the `results` bucket where it sits today. First match wins in `RULES`, so otherwise the
-whole module's coverage would be counted as the results module's — which is exactly the failure
-issue #208 added the per-module gate to make visible.
+The module's code sits in its own folder, `src/leaguebot/steward/` (`architecture.md`, "How the
+code is laid out"), and that folder is its bucket in `tools/coverage_by_module.py`, which reads a
+file's module from where it sits. The first file there adds `steward` to the modules
+`test_every_file_of_the_bot_is_in_a_module_that_exists` expects, and nothing else records it.
 
 ---
 
