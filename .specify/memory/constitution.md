@@ -1,6 +1,40 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-25 — v14.6.2 → v14.6.3: PATCH — three paths follow the code into the leaguebot package (issue #438)]
+  Version change    : 14.6.2 → 14.6.3
+  Bump rationale    : PATCH. The bot moved into one installed package, `leaguebot`, with a folder
+                      for core and one for each module, and a folder per kind of code inside each
+                      (docs/design/architecture.md, "How the code is laid out"). Three paths in the
+                      body named files where they no longer are. No principle is added, removed or
+                      redefined, and nothing a league can do changes.
+
+  Modified sections :
+    - Data & State Management, New Entities (v5.0.0), the nationality-to-country map —
+      `utils/nationality_data.py` becomes `image/utils/nationality_data.py`.
+    - Data & State Management, New Entities (v4.8.0), the text-measuring dependency —
+      `utils/font_metrics.py` becomes `image/utils/font_metrics.py`.
+    - Data & State Management, New Entities (v4.7.0), the slot constants —
+      `models/session.py` becomes `core/models/session.py`.
+    Each path is relative to `src/leaguebot/`, as the body's paths were relative to `src/`.
+
+  Unchanged, deliberately : every path inside an earlier sync impact report, which records what
+                      was true when it was written (CLAUDE.md).
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch fix/438-module-folders-in-one-package.
+
+  Templates / docs  : none. The README, CLAUDE.md, CONTRIBUTING.md and the design files are
+                      corrected on the same branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-24 — v14.6.1 → v14.6.2: PATCH — SignupDivisionConfig is retired with its table (issue #427)]
   Version change    : 14.6.1 → 14.6.2
   Bump rationale    : PATCH, on the precedent of v14.6.1: statements of fact are corrected to
@@ -8188,7 +8222,7 @@ is recorded here so that it is not re-derived as a schema one.
 - `Track.country` is read as it stands. It has been an entity field since v2.9.0 and is now the
   datum a round's flag resolves by; nothing about the registry changes.
 - The **nationality-to-country map** is a module-shipped constant, not a table. It belongs beside
-  `utils/nationality_data.py`, whose `NATIONALITY_LOOKUP` already carries every country name the
+  `image/utils/nationality_data.py`, whose `NATIONALITY_LOOKUP` already carries every country name the
   map needs as a key of its own — the obligation is to state the correspondence in the opposite
   direction, adjective to country, and to leave no canonical adjective out of it. Its totality is
   a unit-test obligation (Rule 13).
@@ -8218,7 +8252,7 @@ here so that it is not re-derived.
   the code Rule 7's one rendering obliges the graphic to call. The **compact** rendering a results
   graphic places in a sanction column is a second presentation of the same datum and MUST NOT be
   substituted for it.
-- `utils/font_metrics.py` and the `fonttools` declaration in `requirements.txt` are the third
+- `image/utils/font_metrics.py` and the `fonttools` declaration in `requirements.txt` are the third
   dependency the module was always specified to need — the means by which a text's width is measured
   (Rule 5) — and are read as they stand. Inkscape remains the one dependency no package declaration
   installs.
@@ -8242,7 +8276,7 @@ here so that it is not re-derived.
   and writes exactly the rows the textual flow reads and writes, and no column is added.
 - `Session` already carries `phase2_slot_type` and `phase3_slots` — the type drawn for a session and
   the sequence drawn within it — which are what the phase 2 and phase 3 graphics place.
-- `MAX_SLOTS` and `SESSIONS_BY_FORMAT` in `models/session.py` are the constants Rule 12's third
+- `MAX_SLOTS` and `SESSIONS_BY_FORMAT` in `core/models/session.py` are the constants Rule 12's third
   capacity reads to compute a slot's floor: four sessions of at most three slots for the sprint slot,
   two sessions of at most four for the plain one. They are read as they stand and MUST NOT be restated
   in the image module, a second copy being a second thing to get wrong.
@@ -8527,4 +8561,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.6.2 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-24
+**Version**: 14.6.3 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-25
