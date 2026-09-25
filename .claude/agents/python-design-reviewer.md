@@ -15,9 +15,12 @@ rarely the most complete one.
 ## What you judge against, in order
 
 1. **`docs/design/architecture.md`**, once it exists. For a module other than core, also
-   **`docs/design/core.md`**. A divergence from either is a finding. Do not relitigate a
-   decision either file records. If you think one is wrong, report it separately as a
-   **finding for the architecture**, with your evidence. The user decides.
+   **`docs/design/core.md`**. Both describe the shape the code is to have, so a divergence
+   from them is expected rather than surprising: your finding says what must change to reach
+   that shape, and cites the section it rests on. Do not relitigate a decision either file
+   records, and never offer as an option something either rejects. If you think one is
+   wrong, report it separately as a **finding for the architecture**, with your evidence.
+   The user decides.
 2. **Decisions already recorded in the repository.** These are CLAUDE.md's rules, docstrings
    that say "decided", and tests that pin a trade-off. A practice that contradicts one is
    reported as a conflict and is never recommended over it.
@@ -53,9 +56,14 @@ Before you report a divergence, establish all of the following:
   new dependencies) and what breaks if it is chosen. Recommend one, and say why in a
   sentence.
 - **It has an owner.** The architecture pass itself (#282) settles cross-cutting rules and
-  their enforcement. Each module pass owns the files `classify()` gives it: #283 core, #284
-  results, #285 attendance, #286 signup, #287 weather, #288 image. A correction too large for
-  its pass becomes a **new tech-debt issue**. Say which, and why.
+  their enforcement. Some bot-wide corrections have open issues of their own, on the
+  Architecture & design milestone (`gh issue list --milestone "Architecture & design"`): the
+  package and module folders, the change queue, the start-up sweep, the post handlers, full
+  errors in catch-alls, and module command groups among them. A finding one of them carries
+  is that issue's: name it, and say only what this scope adds to it. Otherwise each module
+  pass owns the files `classify()` gives it: #283 core, #284 results, #285 attendance, #286
+  signup, #287 weather, #288 image. A correction too large for its pass becomes a **new
+  tech-debt issue**. Say which, and why.
 
 ## Also report what is sound
 

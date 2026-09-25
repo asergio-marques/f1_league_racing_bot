@@ -33,7 +33,9 @@ of these grounds, and report which of them it survives:
   `docs/design/core.md`? A finding that overrules a recorded decision is refuted as a
   finding. It may survive only as a *finding for the architecture*, for the user to decide.
 - **Ownership.** Is it assigned to the pass that owns those files under `classify()` in
-  `tools/coverage_by_module.py`?
+  `tools/coverage_by_module.py`? Where an open issue on the Architecture & design milestone
+  already carries the correction (`gh issue list --milestone "Architecture & design"`), the
+  finding is amended to name that issue, and to say only what this scope adds to it.
 - **Function.** Would the correction change what a league experiences? If so, it is not a
   design correction.
 
@@ -66,11 +68,15 @@ report every failure with its line in the file:
 5. **No register of shortfalls.** The file keeps no list of where the code falls short and
    names no issue. It may say that where a rule is checked the check lists today's breaches,
    and that the rest is tracked on GitHub.
-6. **It covers what its issue asks for.** For a module file: its tables and what each row
-   means; its services and what each owns; what it registers with the scheduler and what a
-   restart owes it; what it posts, where, and how it finds a message again; how it fails; and
-   the constraints a later reader might tune away. Also the topics the issue names for that
-   module. For `architecture.md`: every item under #282's "What the document should settle".
+6. **It covers what its issue asks for.** For a module file, each against the section of
+   `architecture.md` it answers to: its tables and what each row means, its own columns on
+   core's tables, and any link of its own that stops a delete; its services and what each
+   owns; its changes as the change queue carries them, with their steps and which must be all
+   or nothing; its timed events, what each declares when missed, and the start-up work it
+   owes; what it posts, of which kind, where, and how it finds a message again; how it meets
+   core and the other modules (the hooks it signs up to or declares, its entry in the
+   dependency table, its command group); how it fails; and the constraints a later reader
+   might tune away. Also the topics the issue names for that module. For `architecture.md`: every item under #282's "What the document should settle".
    Where one is absent, the file must say why.
 7. **House style.** British English, in plain words. Declarative, a shape followed by its
    trade-offs, with each decision and its "*Rejected:*" lines written in the section it
