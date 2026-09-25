@@ -49,6 +49,11 @@ for each module under `tests/`, beside `tests/repository/` for the checks on the
 (these rules, its configuration and its tools) and `tests/support/` for the helpers the tests
 share.
 
+*Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which
+spreads one module over four folders. *Rejected:* grouping only the services. *Rejected:* staying
+flat with a list of which file belongs where, which is the arrangement that misfiled core's
+driver and team code under signup. *Rejected:* leaving the tests in one flat folder.
+
 Inside each folder, each kind of code has a folder of its own: `cogs/`, `services/`, `models/`,
 and `utils/` for the part's helpers, with `db/` in core for the database code. What kind of code a
 file holds is then plain from where it sits as well, so a rule about one kind (no service imports
@@ -56,11 +61,6 @@ a cog) is written once for every module, and the checks tell a service from a co
 
 *Rejected:* a module's files side by side in its folder, where a file's kind is known only from
 its name, and several files are named for neither.
-
-*Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which
-spreads one module over four folders. *Rejected:* grouping only the services. *Rejected:* staying
-flat with a list of which file belongs where, which is the arrangement that misfiled core's
-driver and team code under signup. *Rejected:* leaving the tests in one flat folder.
 
 Core holds what every module shares: the database connection and the migrations, the bot object
 (`LeagueBot`), the change queue, the scheduler service and the start-up sweep, the base classes
@@ -253,14 +253,13 @@ audit record, which is how some settings came to have none.
   later change that would post to the same place, or change what the waiting step is about to post,
   waits behind it, and every other change goes ahead. Two kinds of change are never held behind it.
   A command that repairs what the step needs, such as setting a channel, runs, and the waiting step
-  is tried again at once, as `steward_module.md` §4 has a waiting close tried again when its
-  channel is set; a repair made in Discord, such as restoring the bot's permission, is found at the
-  next try. And a change that makes the waiting step's work no longer due, such as cancelling its
-  round or turning its module off, runs, and the waiting change is checked again after it: its steps
-  whose work is no longer due are dropped and the rest go ahead, since switching a module off stops
-  that module's work and no other's (the core specification's "Modules"). A step that keeps failing
-  is reported to the log channel, as the core specification's "When the bot stops" requires of a
-  failed post, in the form the owning specification asks for (for a republication, the results
+  is tried again at once; a repair made in Discord, such as restoring the bot's permission, is found
+  at the next try. And a change that makes the waiting step's work no longer due, such as cancelling
+  its round or turning its module off, runs, and the waiting change is checked again after it: its
+  steps whose work is no longer due are dropped and the rest go ahead, since switching a module off
+  stops that module's work and no other's (the core specification's "Modules"). A step that keeps
+  failing is reported to the log channel, as the core specification's "When the bot stops" requires
+  of a failed post, in the form the owning specification asks for (for a republication, the results
   specification's "A republication that does not land shall be reported", with the commands that
   finish the job), and it is still retried. Discord answering that a message is already gone is no
   failure: a step that deletes it is done, and one that edits it is done too, with a line in the log
@@ -301,9 +300,10 @@ its tables, and the check of this rule holds the owner of every table (see "How 
 checked"), failing on a table added without one. Where a module keeps its own columns on a core
 table (weather on rounds, sessions and a division's forecast channel, attendance on rounds, and the
 weather and signup on/off flags on the settings row), that module's design file names those columns
-as an exception. The other modules keep their on/off flag in their own settings table. A round's
-status is core's, though results moves it through the stages of a round's results: results asks
-core's service to set it, so a round can still be cancelled while results is switched off.
+as an exception. Those columns are that module's alone, and core does not set them either. The other
+modules keep their on/off flag in their own settings table. A round's status is core's, though
+results moves it through the stages of a round's results: results asks core's service to set it, so
+a round can still be cancelled while results is switched off.
 
 *Rejected:* moving each module's columns off core's tables now, which touches every reader of those
 columns before go-live for a cleaner line of ownership.
@@ -367,19 +367,19 @@ stewarding's own design. *Rejected:* reporting half-done work for a league manag
 hand instead of finishing it.
 
 **The database says when something is due.** A timed event is a row with the moment it is due. The
-scheduled job (APScheduler) only wakes the bot at that moment. The code it runs reads the row again
-and acts only if the row still says the work is due. A job that fires after its work was changed or
-cancelled then does nothing. The job store becomes a convenience: if it were lost, the bot could
-rebuild every job from the database.
+scheduled job (APScheduler) only wakes the bot at that moment, and calls its kind's handler, the
+same one the start-up sweep calls for a missed event (below), so a job run on time and one caught up
+take one path. The handler reads the row again and acts only if the row still says the work is due.
+A job that fires after its work was changed or cancelled then does nothing. The job store becomes a
+convenience: if it were lost, the bot could rebuild every job from the database.
 
 **Each kind of job's handler decides what happens if it is missed.** When the bot was down at the
 moment a job was due, the handler its module provides for that kind of job (below) decides what
-becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks
-(for stewarding, [STW-RST-001] to [STW-RST-003]). The handler records a skip on the event's row, the
-row being its own module's, as a change on the queue like any other, so the late job finds nothing
-due when the scheduler runs it. Every job is armed with no limit on how late it may run
-(`misfire_grace_time=None`), so the scheduler never drops one on its own and its default never
-decides, as `steward_module.md` §3 sets out. What each kind does when missed is a rule a league
+becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
+The handler records a skip on the event's row, the row being its own module's, as a change on the
+queue like any other, so the late job finds nothing due when the scheduler runs it. Every job is
+armed with no limit on how late it may run (`misfire_grace_time=None`), so the scheduler never drops
+one on its own and its default never decides. What each kind does when missed is a rule a league
 notices, so it belongs to the specifications (the core specification's "When the bot stops", and the
 stewarding specification's [STW-RST-001] to [STW-RST-003]).
 
@@ -402,7 +402,8 @@ Start-up:
    store (the core specification's "Saving a state and returning to it");
 3. applies the migrations, before connecting to Discord;
 4. runs the builder: the services, the cogs, the hooks and the kinds of timed job;
-5. runs the start-up sweep once, when Discord first connects;
+5. runs the start-up sweep once, when Discord first connects, while the changes members ask for
+   wait until the sweep has put its own on the queue;
 6. starts the queue, which carries on with any change a stop cut off, and tries a change waiting on
    a repair again at once;
 7. only then lets scheduled jobs run.
@@ -421,12 +422,13 @@ does not stop the rest.
 **The sweep only delegates.** It is core's: it asks each kind of job, through what its module signed
 up, which of its events came due, puts them all in the order they fell due, and hands each to the
 handler its module provides for that kind of job, one at a time: each handler finishes before the
-next is called, and none runs beside another. It also calls whoever signed up for the bot starting.
-It holds no module's logic. The builder signs each handler up with its kind of job, together with
-the kind's own way of telling which of its events came due, as it registers the kind with the
-scheduler service; that is the hook core offers for a timed event falling due. The handler holds its
-module's logic, what becomes of a missed event included; core holds none of it. Each module writes
-the handler for every kind of timed job it has, and the entry point holds none of it.
+next is called, and none runs beside another. Before any of them, it calls whoever signed up for the
+bot starting, one at a time as well. It holds no module's logic. The builder signs each handler up
+with its kind of job, together with the kind's own way of telling which of its events came due, as
+it registers the kind with the scheduler service; that is the hook core offers for a timed event
+falling due. The handler holds its module's logic, what becomes of a missed event included; core
+holds none of it. Each module writes the handler for every kind of timed job it has, and the entry
+point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
