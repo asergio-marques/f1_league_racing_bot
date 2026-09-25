@@ -185,7 +185,9 @@ Workflow({ name: "work-issue", args: { stage: "tests", ... } })
 ```
 
 The builder writes and commits only the tests the plan says fail before the fix, each marked
-`xfail(strict=True)` so that every commit stays green. The tester shows each test's real
+`xfail(strict=True)` so that every commit stays green. A test the plan names as pinning behaviour
+already built, as after a rejection at Gate 3, is written unmarked, and the tester checks that it
+passes. The tester shows each test's real
 failure, and the product owner and the issue reviewer judge whether each fails for the right
 reason, and whether together they pin every spec rule the fix touches and everything a league
 should see. Skip the stage only where the approved plan names no test that fails before the fix,
