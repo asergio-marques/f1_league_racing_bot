@@ -485,3 +485,58 @@ Every rule in this file is checked by a test that fails the build (decision 10):
 will fix it. The check fails on any new breach. It also fails when a listed breach has been
 fixed but its line was not deleted, so the list can only get shorter. Fixing a breach and
 deleting its line go in the same commit.
+
+---
+
+## Known divergences
+
+**The code does not match this file yet.** Below is everything known to differ, how much of it
+there is, and the issue that will fix it. Where a check counts it, the number is the check's,
+measured on 25 September 2026, and the check's own list is the up-to-date one. Lines leave this
+table as the issues close.
+
+### Counted by a check
+
+| What does not match yet | How much today | Fixed by |
+|---|---|---|
+| Code below the cogs imports a cog | 11 imports in 5 services | #283, #285, #286 |
+| A utility imports a service (the log writer queues its own retries) | 1 | T3 |
+| Database code outside services | 176 calls in 68 functions (the cogs and the start-up code) | #283, #284, #285, #286 |
+| Something else awaited while a save is open | 1 (test mode's fake drivers) | #283 |
+| Catch-all handlers that lose the error details | 125 in 109 functions | T4 |
+| Background tasks started and dropped | 5 | B9 |
+| Code reaching past the scheduler service | 22 places in 13 functions | #283, #286 |
+| Jobs that don't say what happens if missed | 13 | #283, #286 |
+| Private names used across modules | 28 uses of 25 names | the pass owning each name |
+| Posts made directly rather than through a handler | 128 in 61 functions | T3, then each module's pass |
+
+### Not counted by a check
+
+| What does not match yet | Fixed by |
+|---|---|
+| The code is grouped by layer, not by module, and is not one installed package | T1 |
+| The rules between modules (core never imports a module, tables written by one module) have no check until the code is grouped by module | T1 |
+| Services are built one by one in the start-up code, and the signup wizard is wired in afterwards | #283, #286 |
+| The settings are read when the start-up file is imported | #283 |
+| Start-up runs in the "ready" handler, which can run again after a network drop, and one failing step skips the rest | #283, B1, B2 |
+| Restart recovery for five modules is written into the start-up code | #283, then each module's pass |
+| Core calls into every module directly; there are no hooks | #283, then each module's pass |
+| Every module's switch-on and switch-off is in core's module cog, and there is no dependency table | #283, #286 |
+| Seasons being set up are held on the season cog and found by its class name | #283 |
+| `season_cog.py` holds three whole workflows | #283, #284 |
+| League rules written in cogs (attendance's thresholds and check-in rules, the reserves toggle) | #285, #284 |
+| Settings commands write their audit record in a second save, and some write none | #283, #286, B25, B26 |
+| A round's timed work is armed, timed and caught up in separate places | #283, #285, T2 |
+| Work still owed after a save is recorded nowhere | #283, #284, #286 |
+| The retry queue forgets what it delivered | T3, B8 |
+| Timed jobs, events and background tasks have no failure path | B9 |
+| Some commands answer their own failures, naming the error | B10 |
+| Cancelling a job treats every error as "no such job" | #283, #286 |
+| Deletes are not proven by a test | #283 |
+| Migrations are not applied whole with the foreign keys checked | #283 |
+| No test ties the schema's fixed lists to their Python enums | #283 |
+| The go-live obligations for the schema are scattered | #283 |
+| Three standings columns are stored and never read | #283 |
+| Penalty and appeal reviews resume only their prompt after a restart | #284 |
+| Two docstrings say a verdict's message id is never stored | #284 |
+| Checking the templates blocks the bot for about 1.7 seconds per graphic | #288 |
