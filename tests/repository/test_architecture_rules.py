@@ -702,10 +702,10 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.results.services.result_submission_service._build_penalty_review_state"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.attendance.services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
-    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._ConfigSelectView"): (1, PASS["results"]),
-    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._build_division_validation_data"): (1, PASS["results"]),
-    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._close_amend_channel_record"): (2, PASS["results"]),
-    ("core/cogs/test_mode_cog.py", "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round"): (1, PASS["attendance"]),
+    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._ConfigSelectView"): (1, COMMAND_GROUPS),
+    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._build_division_validation_data"): (1, COMMAND_GROUPS),
+    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._close_amend_channel_record"): (2, COMMAND_GROUPS),
+    ("core/cogs/test_mode_cog.py", "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round"): (1, COMMAND_GROUPS),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
@@ -732,7 +732,9 @@ def test_no_private_name_crosses_a_module():
     "How modules and core fit together"; PEP 8). A module is what `classify()` in
     `tools/coverage_by_module.py` says it is. Here a breach is keyed by the file using the name
     and the name it uses, and the issue is the pass of the module that owns the name: it either
-    makes the name public or moves the code that needs it."""
+    makes the name public or moves the code that needs it. Where the code using the name is one of
+    that module's commands written in core's cog, the issue is the one that moves those commands
+    into the module's own, which leaves the name inside its module."""
     _check(
         "no private name crosses a module",
         _private_names_across_modules(),
