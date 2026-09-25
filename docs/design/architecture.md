@@ -359,3 +359,73 @@ unseen.
 
 **The time is always passed in.** A service that needs the current time takes a `now`
 argument, and every time inside the bot is in UTC. Tests fix `now`, as CLAUDE.md requires.
+
+---
+
+## Posting to Discord
+
+**One small handler for each kind of post** (decision 8). The posts the bot makes fall into
+four kinds, and each kind has its own rules for failures and for later changes:
+
+| Kind | Examples | What its handler looks after |
+|---|---|---|
+| **Log line** | configuration changes, outcomes, failures | posting to the log channel, never mentioning anyone, splitting a long record across messages, retrying a failed line |
+| **Standing post** | calendar, lineup, standings, attendance sheet, forecast | remembering every message it posts, replacing the previous one, and on failure having the owner post it again |
+| **Notice** | a cancellation notice, a verdict | remembering the message wherever it might later be edited or deleted, and retrying a failure as text |
+| **Bot-owned channel** | a results submission channel, a signup channel | posts inside a channel the bot creates and later deletes whole, so nothing needs remembering |
+
+The code that makes a post still builds its own text, pictures and buttons. The handler looks
+after everything that happens once it is sent.
+
+**Every post keeps three things,** whichever handler sends it:
+
+- **Its message id,** wherever the bot might later edit, delete or replace it. The id is saved
+  against its owner's record at the time. A message nobody recorded can never be found again,
+  which is what #189 was.
+- **Who it may mention,** stated where it is sent.
+- **What happens if it fails:** either it is retried, or the failure is named in the log
+  channel.
+
+**A failed standing post is retried by its owner** (decision 9). The retry queue records what
+the post was, and the retry asks the owning module to post it again. The text is then written
+at the moment it is finally sent, and the owner remembers the new message as it always does.
+The queue never holds a picture. The constitution's Principle XIV, rule 8, says why.
+
+Which channels exist, and what may go in each, is the constitution's Principle VII and the
+channel registry (`channel_registry_service`).
+
+**Today** only the log channel and a forecast's text go through the router
+(`utils/output_router.py`), and it is the one writer of the log channel. Everything else is
+posted directly by the module concerned.
+
+---
+
+## Errors and failures
+
+**Each kind of starting point has one failure path.** Whatever goes wrong, the full error goes
+to the host's log and one line goes to the log channel, and reporting it never raises another
+error:
+
+- **Commands, buttons and forms** go through `report_failure`
+  (`utils/interaction_errors.py`), called by the `LeagueCommandTree`, `LeagueView` and
+  `LeagueModal` base classes. What the member and the log channel are told is the core
+  specification's "When a command fails".
+- **Scheduled jobs and repeating loops** go through one job runner.
+- **Discord events** (a message, a member leaving) go through one error handler on the bot.
+- **Background tasks** go through the helper that starts them.
+
+**No cog handles its own errors** (decision 2). The command tree steps aside for any command or
+cog that has its own error handler (`LeagueCommandTree.on_error` in `utils/league_server.py`),
+so one added handler would quietly switch `report_failure` off for everything it covers.
+
+**A catch-all error handler** (`except Exception`) is allowed in only four places:
+
+1. on one of the failure paths above;
+2. where the bot works through a list (divisions, drivers, posts) and one item failing must not
+   stop the rest. The failure then becomes a line in the result, which the command reports to
+   the manager and marks the log line as incomplete, as #237 settled;
+3. around reporting a failure, where the report itself might fail;
+4. around a clean-up that then raises the error again.
+
+In every case it keeps the full error details for the host's log. A command catches only the
+errors it expects by name, and only to turn them into a refusal the member can act on.
