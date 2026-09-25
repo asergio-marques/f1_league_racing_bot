@@ -1038,12 +1038,13 @@ def _tables_written(sql: str, module: str) -> list[str]:
 
 
 #: Functions whose `UPDATE` of a table holding a module's columns sets columns chosen at run time,
-#: read by hand and found to set none of a module's, with where the columns come from.
-COLUMNS_READ_BY_HAND = {
+#: read by hand and found to set none of a module's: how many such statements, and where their
+#: columns come from. The count is held exactly, so a statement added later is read by hand too.
+COLUMNS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/config_service.py", "ConfigService.set_core_setting"):
-        "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's",
+        (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"):
-        "sets only a division's name, tier and role",
+        (1, "sets only a division's name, tier and role"),
 }
 
 #: A statement that changes a table named at run time: the SQL up to the table, whose name is
@@ -1054,20 +1055,21 @@ _SPLICED_WRITE = re.compile(
 )
 
 #: Functions that change tables named at run time, read by hand and found to name only tables
-#: their own module owns, with the list they name them from.
-TABLES_READ_BY_HAND = {
+#: their own module owns: how many such statements, and the tables they name. The count is held
+#: exactly, so a statement added later is read by hand too.
+TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_purge_service.py", "_delete_rows"):
-        "results' own result, standings and submission tables",
+        (2, "results' own result, standings and submission tables"),
     ("results/services/verdict_announcement_service.py", "_record_announcement"):
-        "the penalty and appeal records, results' own",
+        (1, "the penalty and appeal records, results' own"),
     ("results/services/result_submission_service.py", "_detach_verdicts"):
-        "the penalty and appeal records, results' own",
+        (1, "the penalty and appeal records, results' own"),
     ("results/services/result_submission_service.py", "_repoint_verdicts"):
-        "the penalty and appeal records, results' own",
+        (1, "the penalty and appeal records, results' own"),
     ("results/services/result_submission_service.py", "revert_abandoned_amendment"):
-        "results' own session result tables",
+        (3, "results' own session result tables, and the penalty and appeal records"),
     ("results/services/verdict_records.py", "delete_verdicts"):
-        "`VERDICT_TABLES`, the penalty and appeal records, results' own",
+        (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
 }
 
 
@@ -1092,19 +1094,34 @@ def _docstrings(tree: ast.Module) -> set[int]:
     return found
 
 
-def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
-    found: Counter[tuple[str, str]] = Counter()
+@cache
+def _writes_by_function() -> tuple[Counter, Counter, Counter]:
+    """Per function: writes refused, writes whose columns could not be read, and writes to a
+    table named at run time. The first includes the second, and neither includes the third."""
+    refused: Counter[tuple[str, str]] = Counter()
+    unread: Counter[tuple[str, str]] = Counter()
+    spliced: Counter[tuple[str, str]] = Counter()
     docstrings = {id_ for _path, tree in _sources() for id_ in _docstrings(tree)}
     for path, function, node in _nodes():
-        if isinstance(node, ast.JoinedStr) and (path, function) not in TABLES_READ_BY_HAND:
-            found[(path, function)] += _spliced_writes(node)
+        if isinstance(node, ast.JoinedStr):
+            spliced[(path, function)] += _spliced_writes(node)
         if (isinstance(node, ast.Constant) and isinstance(node.value, str)
                 and id(node) not in docstrings):
             module = "entry point" if path == "__main__.py" else classify(f"src/leaguebot/{path}")
-            found[(path, function)] += sum(
-                1 for _table, unread in _writes_refused(node.value, module)
-                if not (unread and (path, function) in COLUMNS_READ_BY_HAND)
-            )
+            for _table, columns_unread in _writes_refused(node.value, module):
+                refused[(path, function)] += 1
+                unread[(path, function)] += columns_unread
+    return +refused, +unread, +spliced
+
+
+def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
+    refused, unread, spliced = _writes_by_function()
+    found = Counter(refused)
+    for key in COLUMNS_READ_BY_HAND:
+        found[key] -= unread[key]
+    for key, count in spliced.items():
+        if key not in TABLES_READ_BY_HAND:
+            found[key] += count
     return +found
 
 
@@ -1178,6 +1195,35 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
 def test_every_table_has_an_owner():
     """A table added to the schema is given its owner here, so the rule below covers it."""
     assert set(TABLE_OWNER) == _declared_tables()
+
+
+def test_every_module_column_is_in_the_schema():
+    """A module's own column that the schema renamed or dropped would drop out of the rule below
+    without a word."""
+    schema = BASELINE.read_text(encoding="utf-8")
+    missing = sorted(
+        f"{table}.{column}"
+        for columns_of in OWN_COLUMNS.values()
+        for table, columns in columns_of.items()
+        for column in columns
+        if not re.search(
+            rf'CREATE TABLE "?{table}"?\s*\((?:[^;]*?)\b{column}\b', schema
+        )
+    )
+    assert missing == []
+
+
+def test_what_was_read_by_hand_is_still_what_it_was():
+    """Each function read by hand is excused the statements that were read, and no more: one
+    added since, or one gone, fails here until it is read again and the count set to match."""
+    _refused, unread, spliced = _writes_by_function()
+
+    assert {key: unread[key] for key in COLUMNS_READ_BY_HAND} == {
+        key: count for key, (count, _reason) in COLUMNS_READ_BY_HAND.items()
+    }
+    assert {key: spliced[key] for key in TABLES_READ_BY_HAND} == {
+        key: count for key, (count, _reason) in TABLES_READ_BY_HAND.items()
+    }
 
 
 def test_the_scan_reads_which_tables_a_statement_changes():
