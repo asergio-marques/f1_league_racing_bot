@@ -2867,6 +2867,9 @@ Phase 2 and Phase 3 horizons.
 
 ## Running Tests
 
+With the virtualenv from Setup active, and the bot installed into it (`pip install -e .`), which
+is how the tests import it:
+
 ```bash
 pytest
 ```
@@ -2876,15 +2879,21 @@ pytest
 ## Architecture
 
 ```
-src/
-  bot.py               Entry point
-  models/              Dataclasses and enums
-  db/                  Database connection + migrations
-  services/            Business logic (season, phases, scheduler, amendments)
-  cogs/                Discord slash commands
-  utils/               Math formulas, message builders, channel guard, output router,
-                       autocomplete bounds, logging filters
+src/leaguebot/         The bot, one installed package
+  __main__.py          Entry point: builds everything and starts the bot
+  core/                What every module shares: seasons, divisions, rounds, drivers, teams,
+                       the database and its migrations, the scheduler, the log channel
+  results/             Results & standings
+  attendance/          Attendance
+  signup/              Signup
+  weather/             Weather
+  image/               Image generation
+                       Each holds cogs/ (slash commands), services/ (rules and database code),
+                       models/ (dataclasses and enums) and utils/ (helpers); core also db/
 tests/
-  unit/                Pure-function tests (math_utils)
-  integration/         Database migration and query tests
+  core/, results/, …   One folder per module, as under src/leaguebot/
+  repository/          The repository's own rules: architecture checks, configuration, tools
+  support/             Helpers the tests share
 ```
+
+Why the code is laid out this way is in `docs/design/architecture.md`.
