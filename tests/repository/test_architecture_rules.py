@@ -873,3 +873,233 @@ def test_posts_go_through_the_output_handlers():
     built, so today every `.send` outside the router is listed: core's under the handlers' own
     issue, which moves them, and each module's under its pass."""
     _check("posts go through the output handlers", _direct_posts(), KNOWN_DIRECT_POSTS)
+
+
+# ── 11. Each table is written by the module that owns it ────────────────────────────────────
+
+#: The schema, whose tables the rule is about.
+BASELINE = PACKAGE / "core" / "db" / "migrations" / "001_baseline.sql"
+
+#: The module that owns each table the schema declares (architecture.md, "The database"). Core
+#: owns the driver and the team (CLAUDE.md); a module owns the records of its own work, its
+#: settings, and the ids of what it posts.
+TABLE_OWNER: dict[str, str] = {
+    # core
+    "server_configs": "core", "seasons": "core", "divisions": "core", "rounds": "core",
+    "sessions": "core", "tracks": "core", "team_instances": "core", "team_seats": "core",
+    "default_teams": "core", "team_role_configs": "core", "driver_profiles": "core",
+    "driver_accounts": "core", "driver_history_entries": "core",
+    "driver_season_assignments": "core", "driver_division_memberships": "core",
+    "audit_entries": "core", "pending_messages": "core", "season_review_prompts": "core",
+    # results
+    "session_results": "results", "qualifying_session_results": "results",
+    "race_session_results": "results", "driver_standings_snapshots": "results",
+    "team_standings_snapshots": "results", "round_submission_channels": "results",
+    "round_amend_channels": "results", "penalty_records": "results", "appeal_records": "results",
+    "verdict_banner_messages": "results", "division_results_config": "results",
+    "results_module_config": "results", "points_config_store": "results",
+    "points_config_entries": "results", "points_config_fl": "results",
+    "season_points_links": "results", "season_points_entries": "results",
+    "season_points_fl": "results", "season_amendment_state": "results",
+    "season_modification_entries": "results", "season_modification_fl": "results",
+    # attendance
+    "attendance_config": "attendance", "attendance_division_config": "attendance",
+    "driver_round_attendance": "attendance", "rsvp_embed_messages": "attendance",
+    "attendance_pardons": "attendance",
+    # signup
+    "signup_module_settings": "signup", "signup_module_config": "signup",
+    "season_signup_config": "signup", "signup_wizard_records": "signup",
+    "signup_availability_slots": "signup", "signup_windows": "signup", "signup_records": "signup",
+    # weather
+    "weather_pipeline_config": "weather", "phase_results": "weather", "forecast_messages": "weather",
+    # image
+    "image_config": "image", "image_aspect_toggles": "image", "image_tier_colour": "image",
+    "driver_portraits": "image",
+}
+
+#: A module's own columns on a core table, which that module sets itself (architecture.md, "The
+#: database"). A round's status is not among them: results asks core to set it.
+OWN_COLUMNS: dict[str, dict[str, frozenset[str]]] = {
+    "weather": {
+        "rounds": frozenset({"phase1_done", "phase2_done", "phase3_done"}),
+        "sessions": frozenset({"phase2_slot_type", "phase3_slots"}),
+        "divisions": frozenset({"forecast_channel_id"}),
+        "server_configs": frozenset({"weather_module_enabled"}),
+    },
+    "attendance": {"rounds": frozenset({"checkin_cleared"})},
+    "signup": {"server_configs": frozenset({"signup_module_enabled"})},
+}
+
+#: A statement that changes a table, in upper case as the bot writes its SQL, so prose ("update
+#: the round") is not taken for one.
+_WRITES = re.compile(
+    r"\b(?P<verb>INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+[A-Z]+)?|DELETE\s+FROM)\s+"
+    r"\"?(?P<table>[a-z_][a-z0-9_]*)\"?"
+)
+#: The columns an `UPDATE` sets: everything from `SET` to the `WHERE`, or to the end.
+_SET = re.compile(r"\A\s+SET\s+(?P<columns>.*?)(?:\bWHERE\b|\bRETURNING\b|\Z)", re.S)
+
+
+def _declared_tables() -> set[str]:
+    return {
+        match.group(1)
+        for match in re.finditer(
+            r'CREATE TABLE (?:IF NOT EXISTS )?"?(\w+)"?', BASELINE.read_text(encoding="utf-8")
+        )
+    }
+
+
+def _columns_set(update_tail: str) -> set[str] | None:
+    """The columns an `UPDATE` sets, from the text after its table name; None where they
+    cannot all be read, as when a column is spliced in at run time."""
+    match = _SET.match(update_tail)
+    if match is None:
+        return None
+    columns: set[str] = set()
+    for assignment in match.group("columns").split(","):
+        name, equals, _value = assignment.partition("=")
+        if not equals:
+            continue  # a comma inside a value
+        name = name.strip()
+        if not re.fullmatch(r"[a-z_][a-z0-9_]*", name):
+            return None
+        columns.add(name)
+    return columns or None
+
+
+def _tables_written(sql: str, module: str) -> list[str]:
+    """Every table *sql* changes that *module* may not, one entry per statement."""
+    foreign = []
+    for match in _WRITES.finditer(sql):
+        table = match.group("table")
+        owner = TABLE_OWNER.get(table)
+        if owner is None or owner == module:
+            continue
+        own = OWN_COLUMNS.get(module, {}).get(table)
+        if own and match.group("verb") == "UPDATE":
+            columns = _columns_set(sql[match.end():])
+            if columns is not None and columns <= own:
+                continue
+        foreign.append(table)
+    return foreign
+
+
+def _docstrings(tree: ast.Module) -> set[int]:
+    """The ids of every docstring's node in *tree*, which describe SQL rather than run it."""
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+                found.add(id(body[0].value))
+    return found
+
+
+def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    docstrings = {id_ for _path, tree in _sources() for id_ in _docstrings(tree)}
+    for path, function, node in _nodes():
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and id(node) not in docstrings):
+            module = "entry point" if path == "__main__.py" else classify(f"src/leaguebot/{path}")
+            found[(path, function)] += len(_tables_written(node.value, module))
+    return +found
+
+
+KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
+    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["core"]),
+    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["core"]),
+    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["core"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._apply_results_disable"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["results"]),
+    ("core/services/amendment_service.py", "AmendmentService.amend_round"): (2, PASS["core"]),
+    ("core/services/amendment_service.py", "approve_amendment"): (7, PASS["results"]),
+    ("core/services/amendment_service.py", "disable_amendment_mode"): (3, PASS["results"]),
+    ("core/services/amendment_service.py", "enable_amendment_mode"): (5, PASS["results"]),
+    ("core/services/amendment_service.py", "modify_fl_bonus"): (2, PASS["results"]),
+    ("core/services/amendment_service.py", "modify_fl_position_limit"): (2, PASS["results"]),
+    ("core/services/amendment_service.py", "modify_session_points"): (2, PASS["results"]),
+    ("core/services/amendment_service.py", "revert_modification_store"): (5, PASS["results"]),
+    ("core/services/module_service.py", "ModuleService.set_attendance_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_results_enabled"): (1, PASS["core"]),
+    ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
+    ("core/services/season_lifecycle_service.py", "delete_driver_profiles"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.delete_division"): (2, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.delete_round"): (2, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.delete_season"): (15, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
+    ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
+    ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
+    ("results/services/result_submission_service.py", "_apply_approved_reports"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "enter_penalty_state"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "finalize_appeals_review"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
+    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
+}
+
+
+def test_every_table_has_an_owner():
+    """A table added to the schema is given its owner here, so the rule below covers it."""
+    assert set(TABLE_OWNER) == _declared_tables()
+
+
+def test_the_scan_reads_which_tables_a_statement_changes():
+    """The scan itself: each kind of write, a module's own columns on a core table, and SQL
+    that only reads."""
+    assert _tables_written("INSERT INTO penalty_records (round_id) VALUES (?)", "core") == [
+        "penalty_records"
+    ]
+    assert _tables_written("INSERT OR REPLACE INTO image_config (id) VALUES (1)", "core") == [
+        "image_config"
+    ]
+    assert _tables_written("DELETE FROM forecast_messages WHERE id = ?", "results") == [
+        "forecast_messages"
+    ]
+    assert _tables_written("UPDATE rounds SET phase1_done = 1 WHERE id = ?", "weather") == []
+    assert _tables_written("UPDATE rounds SET status = ? WHERE id = ?", "weather") == ["rounds"]
+    assert _tables_written(
+        "UPDATE rounds SET phase1_done = 1, status = ? WHERE id = ?", "weather"
+    ) == ["rounds"]
+    assert _tables_written("UPDATE rounds SET checkin_cleared = 1", "attendance") == []
+    assert _tables_written("DELETE FROM rounds WHERE id = ?", "weather") == ["rounds"]
+    assert _tables_written("UPDATE penalty_records SET x = 1", "results") == []
+    assert _tables_written("SELECT * FROM penalty_records", "core") == []
+    assert _tables_written(
+        "INSERT INTO seasons (id) VALUES (1) ON CONFLICT(id) DO UPDATE SET status = 1", "core"
+    ) == []
+    assert _tables_written("we update the rounds here", "weather") == []
+    assert _tables_written("INSERT INTO seasons (id) VALUES (1)", "entry point") == ["seasons"]
+
+
+def test_each_table_is_written_by_the_module_that_owns_it():
+    """Every statement that changes a table lives in the module that owns it, and another module
+    asks that module to make the change (architecture.md, "The database"). A module may set its
+    own columns on a core table, which the architecture names. The entry point owns no table and
+    writes none. Only SQL written out in upper case, naming its table, is read: a table named at
+    run time is missed. A breach is keyed by the writing function, and the issue is the pass of
+    the module whose code it is."""
+    _check(
+        "each table is written by the module that owns it",
+        _tables_written_by_another_module(),
+        KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE,
+    )
