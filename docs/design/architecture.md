@@ -2,7 +2,8 @@
 
 This file says how the bot's code is meant to be laid out, and why. It covers what applies to
 every module. Core's design file (`core.md`) and each module's (`results_module.md` and the
-rest) cover their own part only, and point back here instead of repeating anything.
+rest) are to cover their own part only, and point back here instead of repeating anything. They
+are written by #283 to #289.
 
 **This is a goal, not a description of today.** Much of the code does not match it yet. Every
 place that does not match is listed under "Known divergences" at the end, with the issue that
@@ -32,9 +33,10 @@ bot itself for Discord, so it would add a second object without removing the fir
 code path before (#240), and a service wired in two steps failed between them (the note where
 `bot.py` wires the wizard, #228).
 
-**2. No shared base class for cogs, and no cog handles its own errors.** Every command's
-failure already reaches `report_failure` through the command tree. If a cog handled its own
-errors, the tree would step aside and `report_failure` would never run. A test stops that.
+**2. No shared base class for cogs, and no cog handles its own errors.** Every failure a command
+does not catch itself already reaches `report_failure` through the command tree. If a cog
+handled its own errors, the tree would step aside and `report_failure` would never run. A test
+stops that.
 *Rejected:* a `LeagueCog` base class. It would hold two lines of code, and an error handler
 added to it would switch off the one failure path for every command.
 
@@ -48,7 +50,7 @@ spreads one module over four folders. *Rejected:* grouping only the services. *R
 staying flat with a corrected list of which file belongs where, which is what failed before:
 #282's survey found core's driver and team code filed under signup.
 
-**4. The move into module folders is its own issue**, done straight after #282 and before
+**4. The move into module folders is its own issue** (#438), done straight after #282 and before
 #283, so that every module pass starts from the new layout.
 *Rejected:* each pass moving its own module, which leaves the code half-moved for weeks.
 *Rejected:* doing it inside #282, which would bury the decisions in a mass rename.
@@ -127,8 +129,9 @@ run a delete.
 change. Each module's design file lists the tables it owns.
 *Rejected:* also moving each module's columns off core's tables now.
 
-**15. No ruff for now.** The architecture's own checks already cover the rules settled here.
-ruff may come later as an issue of its own.
+**15. No ruff for now.** It may come later as an issue of its own.
+*Rejected:* adopting ruff now, which adds a second way of checking some of the same things, and,
+with its formatter, a commit touching nearly every file.
 
 **16. Every change goes through one queue.** Every change to the bot's data, whether a person
 asks for it (a command, a button, a form, a typed answer) or a timer does, is put on one queue
@@ -155,7 +158,7 @@ plan the owner approved for #282, except the two marked *(told)*: those were tol
 while the change queue was decided and in the summary that followed, and have not been approved
 as such.
 
-- Database code lives only in services, never in cogs or in the start-up code.
+- Database code lives only in services, never in cogs or in the entry point.
 - *(told)* Services may use Discord: they post and build the buttons they post. Keeping
   Discord out of them would need a separate posting layer, which a bot this size has no use for.
 - *(told)* The queue carries out one change at a time across the whole bot, since SQLite lets
@@ -191,6 +194,7 @@ leaguebot/
     weather/
     image/
     steward/      once it is built
+    __main__.py   the entry point: builds everything and starts the bot
 ```
 
 Each folder holds that part's **cogs** (its commands, and the buttons and forms they post), its
@@ -198,9 +202,13 @@ Each folder holds that part's **cogs** (its commands, and the buttons and forms 
 follow the same folders (decision 6).
 
 Core holds what every module shares: the database connection and the migrations, the bot
-object (`LeagueBot`) and the one function that builds its services, the scheduler service, the
-base classes for the command tree, buttons and forms, `report_failure`, and the log channel
-writer.
+object (`LeagueBot`), the scheduler service, the base classes for the command tree, buttons and
+forms, `report_failure`, and the log channel writer.
+
+**The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
+imports every module. It holds the builder that makes every service, loads every module's cogs,
+signs each module up to core's hooks, and starts the bot. That is how core can offer hooks
+without ever importing a module.
 
 **What each part may do:**
 
@@ -218,8 +226,8 @@ writer.
 - **A model** is plain data. It uses no Discord and no database.
 - **The database code in core** opens connections and applies migrations, and imports nothing
   else of the bot's.
-- **The start-up code** builds the services, wires them together and starts the bot. It holds
-  no rules and no database code of its own.
+- **The entry point** builds the services, wires them together and starts the bot. It holds no
+  rules and no database code of its own.
 
 **Services are built in one place** (decision 1). The builder function makes every service,
 passing each the other services it needs, and attaches it to the bot. A service is complete when
@@ -254,8 +262,8 @@ act (results after a round, for attendance), it does so through a hook too, as c
 
 **Core reaches a module only through hooks.** Where something in core has to let the modules
 act (a round amended or cancelled, placements confirmed, a review gathering its lines, a
-season ending, a module turned off), core declares a hook. Each module signs up to it when the
-bot starts. Core calls whoever signed up and never imports a module.
+season ending, a module turned off), core declares a hook. The entry point signs each module
+up to it when the bot starts. Core calls whoever signed up and never imports a module.
 
 Each module still checks its own on/off switch where its own work starts, as it does today.
 `tests/unit/test_attendance_module_gate.py` pins that for attendance. A hook does not replace
@@ -284,7 +292,7 @@ module offers the others is public, and its docstring says what it promises.
 **All database code is in services**, or in core's database code for connections and
 migrations. A cog never opens a connection, and neither does the start-up code.
 
-**One step of a change is one save.** A step opens its connection, makes its changes, and
+**A step saves in one go.** A step that saves opens its connection, makes its changes, and
 either commits them all or none. It does not hand its connection back to whoever called it. When
 one module has to change another module's table in the same step, it calls that module's service
 and passes its own connection down, so the step still happens all at once.
@@ -315,7 +323,8 @@ the design file names those columns as an exception rather than moving them.
   only where the list is not expected to grow, and a test ties the two together, in
   `tests/unit/test_schema_rules.py`, which already ties the image defaults to their Python
   constants.
-- A trigger only keeps tables of one module in step.
+- A trigger only keeps tables of one module in step, or refuses a row that contradicts itself
+  (as the season's stage triggers do).
 - Everything else is service code.
 
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by
@@ -352,15 +361,19 @@ not.
 
 - **A person asks, or a timer fires.** Either way the change is put on the queue. What the
   person who asked is told, and when, is the core specification's, which gains it with the queue
-  (#439, "What a league sees"). Discord lets a reply be updated for 15 minutes; a change that
-  finishes later still has its outcome in the log channel.
+  (#439, "What a league sees"). Discord lets a reply be updated for 15 minutes after the member
+  acts (the life of an interaction's token); a change that finishes later still has its outcome
+  in the log channel.
 - **Checked before it is queued.** Whatever can be checked at the start is checked (the channel
   exists, the bot may post there, the text fits, the change is allowed in the season's current
-  stage), and the request is refused if not. That is the gate `steward_module.md` §4 designs for
+  stage), and the request is refused if not (what the member is told is the core
+  specification's, through #439). That is the gate `steward_module.md` §4 designs for
   a cycle's close, made bot-wide.
 - **One change at a time.** One worker runs one change at a time, across the whole bot, taking
-  them in the order they were asked for. Two presses of the same button can no longer run into
-  each other, and a request for a change already waiting, running or done is refused.
+  them in the order they were asked for; the one exception is a change waiting on a retry
+  (below). Two presses of the same button can no longer run into each other, and a request for
+  a change already waiting, running or done is refused (the refusal a member sees is the core
+  specification's, through #439).
 - **Steps, each saved.** A change is made of steps: save this, post that, save the next. Each step
   is recorded as done when it finishes. After a restart, the worker carries on from the last
   finished step, and nothing already done is done again.
@@ -372,12 +385,11 @@ not.
   over.
 - **A failed step is retried, without holding up the queue.** A step that fails because of
   Discord is retried with growing waits, by running the owner's post again, as text where it
-  would have been a picture (Constitution XIV, rule 8). While it waits, it steps aside: the worker
-  runs other changes, and only a later change to the same round or division waits behind it. It
-  is retried
-  until it succeeds, and reported to the log channel if it keeps failing, as the core
-  specification's "When the bot stops" requires of a failed post. The old retry queue is kept
-  for log lines only.
+  would have been a picture (Constitution XIV, rule 8). While it waits, it steps aside: a later
+  change to anything it touches (its round, its division or its season) waits behind it, and
+  the rest go ahead. It is retried until it succeeds, and reported to the log channel if it keeps
+  failing, as the core specification's "When the bot stops" requires of a failed post. The old
+  retry queue is kept for log lines only.
 - **The record is the queue's.** The queue writes the audit record and the log-channel line for
   every change.
 
@@ -405,12 +417,13 @@ no limit on how late it may run (`misfire_grace_time=None`), so the scheduler ne
 its own and its default never decides, as `steward_module.md` §3 sets out. Which choice is right
 is a rule a league notices, so it belongs to the core specification ("When the bot stops").
 
-**Jobs are made only through the scheduler service.** Nothing else touches APScheduler directly.
+**Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job.
 A round's job is named from the round and the event, so arming it again replaces the old one
 instead of adding a second (the `_round_job_suffix` docstring in the scheduler service). One
 function works out when each of a round's events falls, and one function arms them. Every path
-that arms a round (a season approved, a round amended, test mode) uses those two, so the timings
-cannot drift apart between copies again (five defects came from such copies; #440 lists them).
+that arms a round (a season approved, a round amended, a restart, test mode) uses those two, so
+the timings cannot drift apart between copies again (five defects came from such copies; #440
+lists them).
 
 **Start-up runs once, in one function.** discord.py can report the bot as "ready" more than once
 in a single run, after a network drop (#446), so start-up work does not belong in the handler
@@ -437,8 +450,8 @@ carried out"). Approving a season, for example, is one change: its lineups, cale
 are its later steps, and a restart carries on with them.
 
 **Background work is started through one helper** that keeps hold of it. Python only keeps a
-weak hold on a task nobody stores, so such a task can vanish part-way, and its failure goes
-unseen.
+weak hold on a task nobody stores (asyncio's documentation says so), so such a task can vanish
+part-way, and its failure goes unseen.
 
 **Nothing blocks the bot.** Slow work (drawing a graphic, checking the templates, reading a large
 file) runs off the bot's main loop, so commands and buttons keep being answered while it runs.
@@ -482,10 +495,10 @@ Principle XIV, rule 8, says why. The old retry queue is kept for log lines.
 Which channels exist, and what may go in each, is the constitution's Principle VII and the
 channel registry (`channel_registry_service`).
 
-**Today** only the log channel and a forecast's text go through the router
-(`utils/output_router.py`), and it is the only code that writes to the log channel, though a
-failed log line is re-sent later by the retry worker. Everything else is posted directly by the
-module concerned.
+**Today** only the log channel, a forecast's text and the notices posted in a forecast's place
+go through the router (`utils/output_router.py`), and it is the only code that writes to the log
+channel, though a failed log line is re-sent later by the retry worker. Everything else is
+posted directly by the module concerned.
 
 ---
 
@@ -517,8 +530,9 @@ so one added handler would quietly switch `report_failure` off for everything it
    stop the rest. The failure becomes a line in the result, which the command reports to the
    manager (the pattern #237 adopted), and its log line says the job did not complete, as the
    results module specification's "A republication that does not land shall be reported"
-   requires. This does not apply where an operation's own rule is all or nothing, as a points
-   amendment's is (the results specification's "Changing points system mid-season");
+   requires of a republication. This does not apply where an operation's own rule is all or
+   nothing, as a points amendment's is (the results specification's "Changing points system
+   mid-season");
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 
@@ -644,7 +658,7 @@ Lines leave this table as the issues close.
 | Two docstrings say a verdict's message id is never stored | #284 |
 | Services read the clock themselves in about fifty places, and one reads the local date rather than UTC | #283, then each module's pass |
 | Tables are written by more than one module: by a rough count of the SQL naming each table, the audit table by four and `divisions` by three | #438 (the check), then each module's pass |
-| Modules import one another outside the dependency table: image reads results, attendance and weather; results calls attendance; results and signup call each other; signup calls weather | #438 (the check), then each module's pass |
+| Modules import one another outside the dependency table: image reads results, attendance and weather; results calls attendance; signup calls results and weather | #438 (the check), then each module's pass |
 | A failed log line is re-sent by the retry worker, not by the log writer, and without its setting that stops a line notifying anyone | #441 |
 | Not yet checked or counted: catch-all handlers outside the four places, errors caught other than by name, a connection handed back to its caller | #283–#288 |
 | Checking the templates runs on the bot's main loop, holding everything up each time a graphic is prepared | #288 |
