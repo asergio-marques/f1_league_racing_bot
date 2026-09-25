@@ -546,3 +546,43 @@ def test_no_background_task_is_started_and_dropped():
     _check("no background task is dropped", _dropped_tasks(), KNOWN_DROPPED_TASKS)
 
 
+# ── 6. Nothing reaches past the scheduler service ───────────────────────────────────────────
+
+SCHEDULER_SERVICE = "services/scheduler_service.py"
+
+
+def _scheduler_reached_around() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if path != SCHEDULER_SERVICE and isinstance(node, ast.Attribute) and node.attr == "_scheduler":
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
+    ("bot.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["core"]),
+    ("cogs/bot_cog.py", "BotCog.handle_factory_reset"): (1, PASS["core"]),
+    ("cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
+    ("cogs/module_cog.py", "execute_forced_close"): (1, PASS["core"]),
+    ("cogs/season_cog.py", "_BackupBeforeApprovalView.save"): (3, PASS["core"]),
+    ("cogs/test_mode_cog.py", "TestModeCog.backup_save"): (3, PASS["core"]),
+    ("services/season_lifecycle_service.py", "_close_driver_signups"): (1, PASS["core"]),
+    ("services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._arm_channel_delete_job"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._arm_inactivity_job"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._cancel_inactivity_job"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService.move_held_channel"): (2, PASS["signup"]),
+}
+
+
+def test_nothing_reaches_past_the_scheduler_service():
+    """Jobs are made, found and removed only through `SchedulerService` (architecture.md, "Timed
+    work and restarts"), so its conventions (job names, missed-run rules) hold for every job."""
+    _check(
+        "nothing reaches past the scheduler service",
+        _scheduler_reached_around(),
+        KNOWN_SCHEDULER_REACHED_AROUND,
+    )
+
+
