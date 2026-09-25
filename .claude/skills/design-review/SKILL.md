@@ -191,8 +191,8 @@ The corrections are built by the `work-issue` workflow, as [`fix-issue`](../fix-
 Phase 5 builds a fix, with `kind: "design-pass"` and three differences:
 
 - **No check stage.** This pass's own review is that check, and the plan approved in Phase 5
-  already carries its results. Pass the plan's corrections and ratchet entries as `checks`, and no
-  `criteria`: nothing a league sees may change.
+  already carries its results. Pass the plan's corrections and ratchet entries as `checks`, the
+  user's answers from Phase 4 as `decisions`, and no `criteria`: nothing a league sees may change.
 - **The tests stage runs only where the plan names a test that fails before a correction.** A pure
   move or rename is pinned by the existing tests staying green, and by the ratchet entry it removes.
   Where it runs, Gate 2 follows it as in `fix-issue`.
