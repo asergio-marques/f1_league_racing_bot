@@ -146,10 +146,10 @@ league-facing guide changed.
 7. **What did the change do to coverage?** Where production code changed, measure coverage
    **before and after** — on the base branch (usually `main`) and on the finished branch — and
    compare them per module and for `src/` as a whole. Take the base-branch figures from a
-   separate worktree, never by checking out over your work, with `PYTHONPATH=src` there so the
-   run measures the worktree's code and not the checkout the virtualenv was installed from, and
-   run the two measurements one after the other, never at once (the suite's schema template is
-   shared). The measured run
+   separate worktree, never by checking out over your work. Any run in a worktree, the branch's
+   own included where it lives in one, goes with `PYTHONPATH=src`, so it measures that worktree's
+   code and not the checkout the virtualenv was installed from. Run the two measurements one
+   after the other, never at once (the suite's schema template is shared). The measured run
    doubles as the suite run for the branch:
 
    ```

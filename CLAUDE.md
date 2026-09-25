@@ -201,7 +201,8 @@ under four. It needs Python 3.12+, and both the Pi and CI are on 3.13.
 statements and is ~98% "covered" by construction, because a test file's lines are hit by
 running it — before #208 nothing scoped the run, so the gate counted the suite and reported
 86% while the bot sat at 68.8%, under the floor, on every green build. Do not add a scope to
-`pyproject.toml` or `setup.cfg`: coverage reads those first and the two would drift.
+`pyproject.toml` or `setup.cfg`: coverage reads `.coveragerc` alone when it exists, so a scope
+written in either would be silently ignored, and the two would drift.
 `tests/repository/test_coverage_scope.py` pins both halves.
 
 A file's module is the folder it sits in under `src/leaguebot/`, so the tool keeps no list of its

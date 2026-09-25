@@ -189,9 +189,11 @@ Follow `fix-issue` Phase 4 exactly.
 - **One correction per commit**, with its tests, staged by name from `git status --porcelain`.
   Use `git mv` for moves, so history follows the file.
 - **Run tests behind the lock:** `flock -w 3600 /tmp/f1-pytest.lock .venv/bin/python -m pytest
-  tests/ -q`, for subsets and full runs alike. Run `.venv/bin/mypy` before each commit that
-  touches `src/`. After a move, also run `python3 tools/coverage_by_module.py` on a fresh
-  report and confirm nothing lands `UNASSIGNED`.
+  tests/ -q`, for subsets and full runs alike, with `PYTHONPATH=src` in front when working in a
+  worktree (CLAUDE.md, Testing). Run `.venv/bin/mypy` before each commit that touches `src/`. A
+  file moved into another module's folder moves its coverage with it: run
+  `python3 tools/coverage_by_module.py` on a fresh report and check that module still clears the
+  floor.
 - **Remove this module's entries from the ratchet lists as you correct them.** The
   enforcement test fails on an entry whose breach has gone, which is how it tells you.
 - **For the image module:** run `pytest tests/ -q -m rasteriser` by hand, in the main checkout
