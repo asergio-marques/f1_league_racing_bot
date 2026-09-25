@@ -967,21 +967,91 @@ def _columns_set(update_tail: str) -> set[str] | None:
     return columns or None
 
 
-def _tables_written(sql: str, module: str) -> list[str]:
-    """Every table *sql* changes that *module* may not, one entry per statement."""
-    foreign = []
+def _columns_of_other_modules(table: str, module: str) -> frozenset[str]:
+    """The columns of *table* that belong to a module other than *module*."""
+    return frozenset().union(
+        *(columns.get(table, frozenset()) for owner, columns in OWN_COLUMNS.items() if owner != module)
+    )
+
+
+def _writes_refused(sql: str, module: str) -> list[tuple[str, bool]]:
+    """Every write in *sql* that *module* may not make, one entry per statement, as ``(table,
+    whether the columns it sets could not be read)``.
+
+    A table's owner creates and deletes its rows whatever columns they carry. An `UPDATE` of a
+    core table that holds a module's own columns is weighed by the columns it sets: the module
+    may set its own columns and no others, and the owner every column but those. Where the
+    columns cannot be read, as when one is spliced in at run time, it is refused.
+    """
+    refused = []
     for match in _WRITES.finditer(sql):
         table = match.group("table")
         owner = TABLE_OWNER.get(table)
-        if owner is None or owner == module:
+        if owner is None:
             continue
-        own = OWN_COLUMNS.get(module, {}).get(table)
-        if own and match.group("verb") == "UPDATE":
-            columns = _columns_set(sql[match.end():])
-            if columns is not None and columns <= own:
+        others = _columns_of_other_modules(table, module)
+        if match.group("verb").startswith("UPDATE") and (others or owner != module):
+            own = OWN_COLUMNS.get(module, {}).get(table, frozenset())
+            if owner != module and not own:
+                refused.append((table, False))
                 continue
-        foreign.append(table)
-    return foreign
+            columns = _columns_set(sql[match.end():])
+            if columns is None:
+                refused.append((table, True))
+            elif columns & others or (owner != module and not columns <= own):
+                refused.append((table, False))
+        elif owner != module:
+            refused.append((table, False))
+    return refused
+
+
+def _tables_written(sql: str, module: str) -> list[str]:
+    """Every table *sql* changes that *module* may not, one entry per statement."""
+    return [table for table, _unread in _writes_refused(sql, module)]
+
+
+#: Functions whose `UPDATE` of a table holding a module's columns sets columns chosen at run time,
+#: read by hand and found to set none of a module's, with where the columns come from.
+COLUMNS_READ_BY_HAND = {
+    ("core/services/config_service.py", "ConfigService.set_core_setting"):
+        "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's",
+    ("core/cogs/season_cog.py", "SeasonCog.division_amend"):
+        "sets only a division's name, tier and role",
+}
+
+#: A statement that changes a table named at run time: the SQL up to the table, whose name is
+#: spliced into an f-string.
+_SPLICED_WRITE = re.compile(
+    r"\b(?:INSERT(?:\s+OR\s+[A-Z]+)?\s+INTO|REPLACE\s+INTO|UPDATE(?:\s+OR\s+[A-Z]+)?|DELETE\s+FROM)"
+    r"\s+\"?\Z"
+)
+
+#: Functions that change tables named at run time, read by hand and found to name only tables
+#: their own module owns, with the list they name them from.
+TABLES_READ_BY_HAND = {
+    ("results/services/results_purge_service.py", "_delete_rows"):
+        "results' own result, standings and submission tables",
+    ("results/services/verdict_announcement_service.py", "_record_announcement"):
+        "the penalty and appeal records, results' own",
+    ("results/services/result_submission_service.py", "_detach_verdicts"):
+        "the penalty and appeal records, results' own",
+    ("results/services/result_submission_service.py", "_repoint_verdicts"):
+        "the penalty and appeal records, results' own",
+    ("results/services/result_submission_service.py", "revert_abandoned_amendment"):
+        "results' own session result tables",
+    ("results/services/verdict_records.py", "delete_verdicts"):
+        "`VERDICT_TABLES`, the penalty and appeal records, results' own",
+}
+
+
+def _spliced_writes(node: ast.JoinedStr) -> int:
+    """How many statements in the f-string *node* change a table whose name is spliced in."""
+    return sum(
+        1
+        for part, following in zip(node.values, node.values[1:])
+        if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        and isinstance(following, ast.FormattedValue) and _SPLICED_WRITE.search(part.value)
+    )
 
 
 def _docstrings(tree: ast.Module) -> set[int]:
@@ -999,10 +1069,15 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
     found: Counter[tuple[str, str]] = Counter()
     docstrings = {id_ for _path, tree in _sources() for id_ in _docstrings(tree)}
     for path, function, node in _nodes():
+        if isinstance(node, ast.JoinedStr) and (path, function) not in TABLES_READ_BY_HAND:
+            found[(path, function)] += _spliced_writes(node)
         if (isinstance(node, ast.Constant) and isinstance(node.value, str)
                 and id(node) not in docstrings):
             module = "entry point" if path == "__main__.py" else classify(f"src/leaguebot/{path}")
-            found[(path, function)] += len(_tables_written(node.value, module))
+            found[(path, function)] += sum(
+                1 for _table, unread in _writes_refused(node.value, module)
+                if not (unread and (path, function) in COLUMNS_READ_BY_HAND)
+            )
     return +found
 
 
@@ -1016,8 +1091,10 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["results"]),
-    ("core/services/amendment_service.py", "AmendmentService.amend_round"): (2, PASS["core"]),
+    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
+    ("core/services/amendment_service.py", "AmendmentService.amend_round"): (6, PASS["core"]),
     ("core/services/amendment_service.py", "approve_amendment"): (7, PASS["results"]),
     ("core/services/amendment_service.py", "disable_amendment_mode"): (3, PASS["results"]),
     ("core/services/amendment_service.py", "enable_amendment_mode"): (5, PASS["results"]),
@@ -1025,18 +1102,26 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/amendment_service.py", "modify_fl_position_limit"): (2, PASS["results"]),
     ("core/services/amendment_service.py", "modify_session_points"): (2, PASS["results"]),
     ("core/services/amendment_service.py", "revert_modification_store"): (5, PASS["results"]),
+    ("core/services/driver_service.py", "_merge"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_attendance_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
     ("core/services/module_service.py", "ModuleService.set_results_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
-    ("core/services/season_lifecycle_service.py", "delete_driver_profiles"): (1, PASS["core"]),
+    ("core/services/season_lifecycle_service.py", "delete_driver_profiles"): (2, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_division"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_round"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_season"): (15, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_forecast_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.update_round_field"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.update_session_phase2"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.update_session_phase3"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
@@ -1089,15 +1174,47 @@ def test_the_scan_reads_which_tables_a_statement_changes():
     ) == []
     assert _tables_written("we update the rounds here", "weather") == []
     assert _tables_written("INSERT INTO seasons (id) VALUES (1)", "entry point") == ["seasons"]
+    assert _tables_written("REPLACE INTO driver_portraits (id) VALUES (1)", "results") == [
+        "driver_portraits"
+    ]
+    assert _tables_written("UPDATE OR IGNORE tracks SET name = ?", "weather") == ["tracks"]
+    assert _tables_written("DELETE FROM a_table_nobody_declared", "core") == []
+
+
+def test_the_scan_keeps_a_module_s_own_columns_to_that_module():
+    """Core owns the table, and the module its own columns on it: core may not set them either,
+    and a statement whose columns cannot be read is refused on a table that holds any."""
+    assert _tables_written("UPDATE rounds SET status = ? WHERE id = ?", "core") == []
+    assert _tables_written("UPDATE rounds SET phase1_done = 0 WHERE id = ?", "core") == ["rounds"]
+    assert _tables_written(
+        "UPDATE server_configs SET signup_module_enabled = 1", "core"
+    ) == ["server_configs"]
+    assert _tables_written("UPDATE rounds SET checkin_cleared = 1", "weather") == ["rounds"]
+    assert _writes_refused("UPDATE rounds SET ", "core") == [("rounds", True)]
+    assert _tables_written("INSERT INTO rounds (id, phase1_done) VALUES (1, 0)", "core") == []
+    assert _tables_written("UPDATE seasons SET status = ?", "core") == []
+
+
+def test_the_scan_sees_a_table_named_at_run_time():
+    """A table spliced into an f-string is counted as a write the scan cannot read."""
+    def spliced(source: str) -> int:
+        return _spliced_writes(ast.parse(source).body[0].value)
+
+    assert spliced('f"UPDATE {table} SET driver_profile_id = ?"') == 1
+    assert spliced('f"DELETE FROM {table} WHERE id = ?"') == 1
+    assert spliced('f"INSERT OR REPLACE INTO {table} (id) VALUES (?)"') == 1
+    assert spliced('f"DELETE FROM penalty_records WHERE id IN ({placeholders})"') == 0
+    assert spliced('f"SELECT * FROM {table}"') == 0
 
 
 def test_each_table_is_written_by_the_module_that_owns_it():
     """Every statement that changes a table lives in the module that owns it, and another module
-    asks that module to make the change (architecture.md, "The database"). A module may set its
-    own columns on a core table, which the architecture names. The entry point owns no table and
-    writes none. Only SQL written out in upper case, naming its table, is read: a table named at
-    run time is missed. A breach is keyed by the writing function, and the issue is the pass of
-    the module whose code it is."""
+    asks that module to make the change (architecture.md, "The database"). A module's own columns
+    on a core table, which the architecture names, are that module's alone: core may not set them
+    either. The entry point owns no table and writes none. SQL written out in upper case is read.
+    A statement whose table or columns are named at run time is counted, unless its function is
+    listed in `TABLES_READ_BY_HAND` or `COLUMNS_READ_BY_HAND` with what it names. A breach is keyed
+    by the writing function, and listed with the issue that will fix it."""
     _check(
         "each table is written by the module that owns it",
         _tables_written_by_another_module(),
