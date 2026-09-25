@@ -20,8 +20,9 @@ layout. Follow it; this skill does not restate it. Two of its rules bear directl
 
 - GitHub issues are **the register of defects** — what is wrong, never what shall be done. Do
   not read an issue as a rule.
-- **Where a wip-spec and the implementation disagree, the implementation wins.** Verify against
-  `src/` before quoting a spec.
+- **Where a wip-spec and the implementation disagree, the implementation wins** by default.
+  Verify against `src/` before quoting a spec. The product owner in the `work-issue` workflow
+  does not apply the default itself: it brings each disagreement to the user.
 
 ## Phase 1 — Read the issue
 
@@ -53,9 +54,9 @@ read it, and establish for yourself:
 Raise a **new** issue for any *separate* defect you turn up along the way — draft it in the
 message and wait for an explicit yes before filing. Do not widen this fix to cover it.
 
-## Phase 3 — Plan the fix, and get the plan approved
+## Phase 3 — Plan the fix, check it, and have it approved (Gate 1)
 
-Present the plan through plan mode (`ExitPlanMode`). It must carry:
+Draft the plan. It must carry:
 
 1. **The root cause**, in a sentence, in terms of what a league sees.
 2. **The change**, file by file, with the functions touched.
@@ -66,8 +67,50 @@ Present the plan through plan mode (`ExitPlanMode`). It must carry:
    guide — or a stated "none, this restores documented behaviour".
 6. **The branch name you propose**, prefixed by what the change is: `fix/`, `hotfix/`,
    `feature/` or `docs/`, matching the convention already on the remote.
+7. **The spec rules it follows, and what a league will see**, from the check below.
+8. **Architecture and design**, from the check below: the rules the fix touches, the listed
+   breaches it removes, with their ratchet lines deleted in the same commit, that it adds none, and
+   the changes each touched module's design file needs, or that the module has none yet.
 
-Nothing is created on GitHub until this plan is approved.
+**Then check the draft through the `work-issue` workflow** (`.claude/workflows/work-issue.js`).
+Invoking this skill is the user's opt-in to running it. Its checkers are read-only and cannot
+reach the user. **Do not enter plan mode while it runs:** plan mode reaches running agents and
+halts them.
+
+```
+Workflow({ name: "work-issue", args: { stage: "check", issue: <N>, commit: "<short sha>", modules: [<module>, ...], plan: "<the draft>" } })
+```
+
+If the name does not resolve, pass `scriptPath: ".claude/workflows/work-issue.js"` instead.
+`modules` names the module of every folder under `src/leaguebot/` the plan touches, and the
+module of the issue's label: `core`, `results`, `attendance`, `signup`, `weather`, `image`,
+`steward` or `stats`. Three checkers run side by side:
+
+- **the issue reviewer**, against `docs/design/architecture.md` and its ratchet lists;
+- **the issue reviewer again**, against each module's design file, or against the architecture
+  alone where the module has none yet;
+- **the product owner**, against the wip-specs, the constitution, the README and the guides. It
+  alone judges a spec rule, and it asks where the documents do not settle something.
+
+Settle what it returns before the user sees the plan:
+
+- **`failed` is not empty:** resume the run. A missing check is a hole in the plan.
+- **A breach the plan would add** changes the plan, as does every item of `planChanges`.
+- **A breach the plan can remove** goes into it where the change already touches that code.
+  Otherwise it stays with the issue its ratchet line names.
+- **A change a design file needs** is a document owed.
+- **`questions` go to the user through `AskUserQuestion`, before the plan.** Put the product
+  owner's first, as it framed them, with its recommendation first. Every answer is a project rule
+  from that moment, and a spec correction it calls for is a document owed. Where an answer changes
+  the plan's substance, check the plan again.
+- **`citations`**, the rules the product owner cited rather than ask, go into item 7, so that the
+  user sees each one and can overrule it.
+
+Keep the check's result: the build is handed items 7 and 8 from it.
+
+**Then present the plan through plan mode: this is Gate 1.** The approval dialog does not always
+show the plan, so also send the plan file with `SendUserFile` and paste it. Nothing is created on
+GitHub until the plan is approved.
 
 ## Phase 4 — Claim the issue on GitHub
 
