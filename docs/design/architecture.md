@@ -71,8 +71,11 @@ hooks without importing a module.
   imports a cog.
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
-- **Shared helpers** in core use no services, and core uses no module. The one exception to both
-  is the bot's type, which names every service for the type checker (below).
+- **Shared helpers in core** are of two kinds. Those used by cogs (the base classes, the guards,
+  autocomplete) reach core's own services through the bot, as a cog does. Plain helpers
+  (formatting, parsing, time) use no service at all. Neither imports a service, and core uses no
+  module; the one exception to both is the bot's type, which names every service for the type
+  checker (below). The log line's handler is a service in core, not a helper.
 - **A module's own helpers** sit in its folder beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database.
 - **The database code in core** opens connections and applies migrations, and imports nothing else
@@ -147,41 +150,46 @@ module offers the others is public, and its docstring says what it promises.
 
 ## How a change is carried out
 
-**Every change goes through one queue.** Every change to the bot's data, whether a person asks for
-it (a command, a button, a form, a typed answer) or a timer does, is put on one queue and carried
-out one at a time. Commands that only read do not use it. Carrying out changes on the spot is what
-left data half-changed when two presses overlapped, the bot stopped part-way or a step failed, and
-what let a success be reported over a change only half done.
+**Every change goes through one queue.** Every change to the bot's data is put on one queue and
+carried out one at a time, whoever or whatever asks for it: a person (a command, a button, a form,
+a typed answer), a timer, a Discord event (a member leaving), or the start-up sweep. Commands that
+only read do not use it. Carrying out changes on the spot is what left data half-changed when two
+presses overlapped, the bot stopped part-way or a step failed, and what let a success be reported
+over a change only half done.
 
 *Rejected:* putting only the championship changes, or only the long approvals, through the queue,
 which leaves every other change with the same risks. *Rejected:* each command writing its own
 audit record, which is how some settings came to have none.
 
-- **A person asks, or a timer fires.** Either way the change is put on the queue. What the person
-  who asked is told, and when, is for the core specification, which gains it with the queue. The
-  design allows for Discord letting a reply be updated for only 15 minutes after the member acts
-  (the life of an interaction's token): a change's outcome is recorded by the queue (below),
-  however long the change takes.
+- **The queue is kept in the database,** so a change waiting on it survives a stop.
+- **What whoever asked is told,** and when, is for the core specification, which gains it with the
+  queue. The design allows for Discord letting a reply be updated for only 15 minutes after the
+  member acts (the life of an interaction's token): a change's outcome is recorded by the queue
+  (below), however long the change takes.
 
   *Rejected:* making whoever asked wait for the result, which shows them nothing until the end,
   and nothing at all if the change takes longer than those 15 minutes.
-- **Checked before it is queued.** Whatever can be checked at the start is checked (the channel
-  exists, the bot may post there, the text fits, the change is allowed in the season's current
-  stage), and the change is not queued if a check fails. That is the gate `steward_module.md` §4
-  designs for a cycle's close, made bot-wide. A change a timer asked for that fails a check is
-  reported to the log channel, not dropped. Where a change must be all or nothing (as the results
+- **Checked before it is queued, and again before it runs.** Whatever can be checked is checked
+  (the channel exists, the bot may post there, the text fits, the change is allowed in the
+  season's current stage): once when it is asked for, and again when the worker takes it up, since
+  changes ahead of it may have moved the season on. A request that fails is refused. A change a
+  timer asked for that fails a check waits instead, and is tried again once the command that
+  repairs what it lacks has run, or at the next start-up; meanwhile the log channel records what
+  failed, as the core specification's "Setting the bot up" has it do. This is the gate
+  `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+- **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
-  saves is saved in one step behind the gate, and only its posts come after, as that section does
-  for the cycle close.
+  saves is saved in one step behind the gate, and only its posts come after, as
+  `steward_module.md` §4 does for the cycle close.
 - **One change at a time.** One worker runs one change at a time, across the whole bot, since
   SQLite lets one writer in at a time anyway. It takes changes in the order they were asked for,
   the one exception being a change waiting on a retry (below). Two presses of the same button can
   no longer run into each other.
 - **The same change is not queued twice.** A change is named by what it does and what it acts on
   (approving a round's appeals, reposting a division's calendar). A request for a change already
-  waiting or running is not queued again. A request for one already done is refused only where
-  doing it twice would do harm, as a second approval would, and not where repeating is the point,
-  as with a repost.
+  waiting or running is not queued again. A change that can only be done once, such as approving
+  a round's appeals, is refused by the checks once it has been done, since the round has moved on;
+  one that may be repeated, such as a repost, is not.
 - **Steps, each saved with its mark.** A change is made of steps. The worker opens each saving
   step's connection and hands it down, so the step's changes, the change's audit record where it
   has one, and the mark saying the step is done all commit together or not at all. After a
@@ -189,21 +197,22 @@ audit record, which is how some settings came to have none.
   done again.
 
   *Rejected:* starting a cut-off change again from the top.
-- **Posts are remembered.** A posting step sends the post, then saves its message id and the
-  step's mark together, so repeating the step replaces the post rather than adding a second. One
-  rare window remains: if the bot stops after a post is sent but before that save, repeating the
-  step sends it again, and where the post was replacing an earlier message, that earlier message
-  is also left standing. The design accepts that window, and Constitution XIV rule 8 ("at most
-  one such message stands at any moment") is amended with the queue to allow it. Scanning the
-  channel to spot such a copy is not done: `steward_module.md` §7 rejects scanning a channel as
-  guesswork, and that reasoning carries over.
-- **A failed step is retried, without holding up the queue.** A step that fails because of Discord
-  is retried with growing waits, by running the owner's post again, as text where it would have
-  been a picture (Constitution XIV, rule 8). While it waits, it steps aside: a later change that
-  would post to the same place, or change what the waiting step is about to post, waits behind
-  it, and every other change goes ahead. A command that repairs what the step needs (setting a
-  channel, restoring the bot's permission) is never held behind it; once it has run, the waiting
-  step is tried again at once, as `steward_module.md` §3 has a repaired channel resume a cycle's
+- **Posts are remembered.** A posting step sends the post, then saves its message id with the
+  step's mark. Where the post replaces an earlier message, deleting that message is a step of its
+  own, after it, so the new post stands before the old one goes (Constitution XIV rule 8). One rare
+  window remains: if the bot stops after a post is sent but before its id is saved, the step runs
+  again after the restart and sends a second copy, and the first copy is left behind. The design
+  accepts that window, and Constitution XIV rule 8 ("at most one such message stands at any
+  moment") is amended with the queue to allow it. Scanning the channel to spot such a copy is not
+  done: `steward_module.md` §7 rejects scanning a channel as guesswork, and that reasoning carries
+  over.
+- **A step that fails because of Discord is retried, without holding up the queue.** It is retried
+  with growing waits, by running the owning module's post again, as text where it would have been a
+  picture (Constitution XIV, rule 8). While it waits, it steps aside: a later change that would
+  post to the same place, or change what the waiting step is about to post, waits behind it, and
+  every other change goes ahead. A command that repairs what the step needs (setting a channel,
+  restoring the bot's permission) is never held behind it; once it has run, the waiting step is
+  tried again at once, as `steward_module.md` §4 has the channel-setting commands resume a waiting
   close. A step that keeps failing is reported to the log channel after about an hour, as the core
   specification's "When the bot stops" requires of a failed post, in the form the owning
   specification asks for (for a republication, the results specification's "A republication that
@@ -211,6 +220,9 @@ audit record, which is how some settings came to have none.
   retried.
 
   *Rejected:* stopping a change at its first failed step.
+- **A step that fails for any other reason is a fault.** The change stops there and goes to the
+  failure path (see "Errors and failures"), and holds nothing up. What its earlier steps saved
+  stays saved, which is why anything that must be all or nothing is saved in one step.
 - **The record is the queue's.** The queue writes the records the specifications ask of a change:
   for every change to the league's configuration, an audit record and a log-channel line (the core
   specification's "The record of what changed"), and for any other change, whatever log line its
@@ -405,6 +417,8 @@ registry (`channel_registry_service`).
 
 **Each kind of starting point has one failure path.** Whatever goes wrong, the full error goes to
 the host's log and one line goes to the log channel, and reporting it never raises another error.
+A change that succeeds is recorded in the log channel as its specification asks; a failure always
+is.
 A command that asks for a change meets two in turn: `report_failure` if the request itself fails,
 and the queue once the change is under way.
 
@@ -430,11 +444,11 @@ to it would switch off the one failure path for every command.
 
 1. on one of the failure paths above;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not
-   stop the rest. Inside a queued change, each item is a step the queue retries and reports (see
-   "How a change is carried out"). Outside one, the failure becomes a line in the result,
-   reported to whoever asked (or to the log channel, for a timer), and its log line says the job
-   did not complete. Neither applies where an operation's own rule is all or nothing, as a
-   points amendment's is (the results specification's "Changing points system mid-season");
+   stop the rest. Inside a queued change, each item is a step, which the queue retries or
+   reports (see "How a change is carried out"). Outside one, the failure becomes a line in the
+   result, reported to whoever asked (or to the log channel, for a timer), and its log line says
+   the job did not complete. Neither applies where an operation's own rule is all or nothing, as
+   a points amendment's is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 
@@ -453,15 +467,15 @@ only ever holds the one league. `tests/unit/test_one_league_server.py` and
 `test_no_server_id_is_left_outside_server_configs` in `tests/unit/test_schema_rules.py` hold this
 in place.
 
-The owner-only `!sync` command is the one command that skips the check. It only
-refreshes Discord's list of commands and touches no league data.
+The `!sync` command, which only the bot's owner may use, is the one command that skips the
+check. It only refreshes Discord's list of commands and touches no league data.
 
 ---
 
 ## Where the other rules already live
 
 These rules bind every module but are written down elsewhere. They are linked here, not copied, so
-they cannot drift apart:
+they cannot drift apart. The paths are today's, and move with the code:
 
 - **The base classes** for commands, buttons and forms: `LeagueCommandTree`, `LeagueView` and
   `LeagueModal`, in `utils/league_server.py`. `tests/unit/test_one_league_server.py` checks that
