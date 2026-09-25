@@ -152,6 +152,7 @@ ignore_imports =
     leaguebot.core.services.test_roster_service -> leaguebot.results.models.points_config
     leaguebot.core.utils.xml_import -> leaguebot.results.models.points_config
     # #283: signup:
+    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
     leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
     leaguebot.core.cogs.module_cog -> leaguebot.signup.services.wizard_service
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
@@ -181,8 +182,6 @@ ignore_imports =
     leaguebot.core.services.amendment_service -> leaguebot.results.models.amendment_state
     leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service
     leaguebot.core.services.amendment_service -> leaguebot.results.utils.points_ordering
-    # #286: the in-memory state reaches for pending reasons, which are signup's to publish.
-    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
 
 # The dependency table (architecture.md, "How modules and core fit together"): attendance needs
 # results, and every module may ask the image module to draw its posts. No other module uses
