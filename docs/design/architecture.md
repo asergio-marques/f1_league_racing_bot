@@ -45,7 +45,8 @@ classes, the log channel writer) belongs to core. Which module owns a file is th
 where it sits.
 *Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which
 spreads one module over four folders. *Rejected:* grouping only the services. *Rejected:*
-staying flat with a corrected list of which file belongs where, which is what failed before.
+staying flat with a corrected list of which file belongs where, which is what failed before:
+#282's survey found core's driver and team code filed under signup.
 
 **4. The move into module folders is its own issue**, done straight after #282 and before
 #283, so that every module pass starts from the new layout.
@@ -82,11 +83,11 @@ described as what it is: the log writer, and the poster of a forecast's text.
 
 **9. A failed post is retried by its owner.** A post that fails inside a change is retried by
 the change queue (decision 16), which runs the owning module's post again. The text is then
-written at the moment it is sent, and the owner remembers the new message as usual. The old
-retry queue is kept for log lines only.
+written at the moment it is sent, and the new message is recorded against the owner's record as
+usual. The old retry queue is kept for log lines only.
 *Rejected:* the retry queue re-sending its stored text and writing the new message's id back
-itself. *Rejected:* no longer retrying these posts. *Rejected:* keeping the retry queue for posts
-beside the change queue, as two mechanisms for one job (decided with decision 16).
+itself. *Rejected:* no longer retrying these posts. *Rejected:* keeping the retry queue for
+posts beside the change queue, as two mechanisms for one job (decided with decision 16).
 
 **10. The rules are checked by import-linter and by our own tests.** import-linter checks
 which code may import which. Our own tests check the rest. Where today's code breaks a rule,
@@ -126,7 +127,8 @@ run a delete.
 change. Each module's design file lists the tables it owns.
 *Rejected:* also moving each module's columns off core's tables now.
 
-**15. No ruff for now.** It may come later as an issue of its own.
+**15. No ruff for now.** The architecture's own checks already cover the rules settled here.
+ruff may come later as an issue of its own.
 
 **16. Every change goes through one queue.** Every change to the bot's data, whether a person
 asks for it (a command, a button, a form, a typed answer) or a timer does, is put on one queue
@@ -140,21 +142,24 @@ issues, after carrying out changes on the spot turned out to cause thirteen of t
 (#439 lists them).
 *Rejected:* putting only the league's championship changes, or only the long approvals, through
 the queue, which leaves every other change with today's risks. *Rejected:* making whoever asked
-wait for the result, which a long queue could stretch past the 15 minutes Discord allows for a
-reply. *Rejected:* starting a cut-off change again from the top. *Rejected:* each command
-writing its own audit record, which is how settings came to have none. *Rejected:* stopping a
-change at its first failed step.
+wait for the result, which shows them nothing until the end, and nothing at all if the change
+takes longer than the 15 minutes Discord allows for a reply. Told at once, they know the change
+is under way, and the log channel has its outcome however long it takes. *Rejected:* starting a
+cut-off change again from the top. *Rejected:* each command writing its own audit record, which
+is how settings came to have none. *Rejected:* stopping a change at its first failed step.
 
 ### Decided as usual good practice
 
-These were not put to the owner as questions, being the usual practice. The owner approved them
-with the plan for #282, or saw them in the summary of the architecture that followed it.
+These were decided as usual practice rather than put to the owner as questions. Each was in the
+plan the owner approved for #282, except the two marked *(told)*: those were told to the owner
+while the change queue was decided and in the summary that followed, and have not been approved
+as such.
 
 - Database code lives only in services, never in cogs or in the start-up code.
-- Services may use Discord: they post and build the buttons they post. Keeping Discord out of
-  them would need a separate posting layer, which a bot this size has no use for.
-- The queue carries out one change at a time across the whole bot, since SQLite lets one
-  writer in at a time anyway, and refuses a request for a change already waiting, running or
+- *(told)* Services may use Discord: they post and build the buttons they post. Keeping
+  Discord out of them would need a separate posting layer, which a bot this size has no use for.
+- *(told)* The queue carries out one change at a time across the whole bot, since SQLite lets
+  one writer in at a time anyway, and refuses a request for a change already waiting, running or
   done.
 - While a save is open, the bot waits on nothing but that save's own connection (#155).
 - Start-up work runs once, in one function that tests can run.
@@ -206,9 +211,10 @@ writer.
   it can post to a channel and build the buttons it posts. It never imports a cog.
 - **Buttons live beside the code that posts them:** with the cog when a command posts them,
   with the service when a service does. A service never reaches into a cog for a view.
-- **Shared helpers** (today's `utils`) use no services, apart from the bot's type naming them
-  (below). Once the code is grouped by module they are part of core, and the rule becomes core's
-  own: core uses no module.
+- **Shared helpers** (the `utils` files that belong to core) use no services, apart from the
+  bot's type naming them (below). The other `utils` files belong to a module and move to it
+  (#438). Once the code is grouped by module the helpers are part of core, and the rule becomes
+  core's own: core uses no module.
 - **A model** is plain data. It uses no Discord and no database.
 - **The database code in core** opens connections and applies migrations, and imports nothing
   else of the bot's.
@@ -216,16 +222,17 @@ writer.
   no rules and no database code of its own.
 
 **Services are built in one place** (decision 1). The builder function makes every service,
-passing each the other services it needs, and attaches it to the bot. A service is complete
-when it is built: nothing is added to it later. A service that needs Discord itself (to post,
-or to find a channel) is given the bot for that and nothing more. It does not use the bot to
-look up other services. That lookup is what lets a hand-made fake bot in a test decide which
-code runs (#240).
+passing each the other services it needs, and attaches it to the bot. A service is complete when
+it is built: nothing is added to it later. A service that needs Discord itself (to post, or to
+find a channel) is given the bot for that and nothing more. It does not use the bot to look up
+other services. That lookup is what lets a hand-made fake bot in a test decide which code runs
+(#240). Most services are plain functions rather than objects; such a function is handed the
+services it needs by whoever calls it, and does not look them up on the bot either.
 
-Because the services stay on the bot, the bot's type (`LeagueBot`) names every service of
-every module. It does so for the type checker only, under `TYPE_CHECKING`, and nothing runs
-because of it. That is the one place core names the modules' services, and it is the cost of
-decision 1. `.importlinter` lists it as a stated exception rather than a breach.
+Because the services stay on the bot, the bot's type (`LeagueBot`) names every service object.
+It does so for the type checker only, under `TYPE_CHECKING`, and nothing runs because of it.
+That is the one place core names the modules' services, and it is the cost of decision 1.
+`.importlinter` lists it as a stated exception rather than a breach.
 
 ---
 
@@ -267,8 +274,8 @@ module on or off must do is set by the constitution's Principle X and by each mo
 specification, not here.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
-inside its own module (PEP 8's convention, which fits exactly once each module is a package).
-What a module offers the others is public, and its docstring says what it promises.
+inside its own module (after PEP 8's convention, extended to the files of one module). What a
+module offers the others is public, and its docstring says what it promises.
 
 ---
 
@@ -303,7 +310,7 @@ the design file names those columns as an exception rather than moving them.
 
 - A rule about identity or reference (a round belongs to one division; the bot holds at most
   one live season)
-  goes in the schema, as a key.
+  goes in the schema, as a key or a unique index.
 - A fixed list of values lives in its Python enum. It is repeated as a CHECK in the schema
   only where the list is not expected to grow, and a test ties the two together, in
   `tests/unit/test_schema_rules.py`, which already ties the image defaults to their Python
@@ -345,7 +352,8 @@ not.
 
 - **A person asks, or a timer fires.** Either way the change is put on the queue. What the
   person who asked is told, and when, is the core specification's, which gains it with the queue
-  (#439, "What a league sees").
+  (#439, "What a league sees"). Discord lets a reply be updated for 15 minutes; a change that
+  finishes later still has its outcome in the log channel.
 - **Checked before it is queued.** Whatever can be checked at the start is checked (the channel
   exists, the bot may post there, the text fits, the change is allowed in the season's current
   stage), and the request is refused if not. That is the gate `steward_module.md` §4 designs for
@@ -380,8 +388,9 @@ not.
 The bot is mostly driven by the clock: weather phases, check-in calls and deadlines, results
 channels opening, clean-ups. It also has to carry on correctly after it has been stopped. The
 whole bot does this in the shape `steward_module.md` §3 already designs for stewarding (decision
-12). Where stewarding's own design keeps a record the queue now keeps (§4's close states, §7's
-message table), bringing it into line is #289's.
+12). Where stewarding's own design keeps a record that the queue or the post handlers now keep
+(§4's close states for the queue, §7's message table for the handlers), bringing it into line is
+#289's.
 
 **The database says when something is due.** A timed event is a row with the moment it is
 due. The scheduled job (APScheduler) only wakes the bot at that moment. The code it runs reads
@@ -396,12 +405,12 @@ no limit on how late it may run (`misfire_grace_time=None`), so the scheduler ne
 its own and its default never decides, as `steward_module.md` §3 sets out. Which choice is right
 is a rule a league notices, so it belongs to the core specification ("When the bot stops").
 
-**Jobs are made only through the scheduler service.** Nothing else touches APScheduler
-directly. A round's job is named from the round and the event, so arming it again replaces the
-old one instead of adding a second (the `_round_job_suffix` docstring in the scheduler
-service). One function works out when each of a round's events
-falls, and one function arms them. Every path that arms a round (a season approved, a round
-amended, test mode) uses those two, so the timings cannot drift apart between copies again.
+**Jobs are made only through the scheduler service.** Nothing else touches APScheduler directly.
+A round's job is named from the round and the event, so arming it again replaces the old one
+instead of adding a second (the `_round_job_suffix` docstring in the scheduler service). One
+function works out when each of a round's events falls, and one function arms them. Every path
+that arms a round (a season approved, a round amended, test mode) uses those two, so the timings
+cannot drift apart between copies again (five defects came from such copies; #440 lists them).
 
 **Start-up runs once, in one function.** discord.py can report the bot as "ready" more than once
 in a single run, after a network drop (#446), so start-up work does not belong in the handler
@@ -456,18 +465,19 @@ after everything that happens once it is sent.
 
 **Every post keeps three things,** whichever handler sends it:
 
-- **Its message id,** wherever the bot might later edit, delete or replace it. The id is saved
-  against its owner's record at the time. A message nobody recorded can never be found again,
+- **Its message id,** wherever the bot might later edit, delete or replace it. The post's
+  handler saves the id at the time, against the owner's record (the row or table the owner
+  names). A message nobody recorded can never be found again,
   which is what #189 was.
 - **Who it may mention,** stated where it is sent.
-- **What happens if it fails:** either it is retried, or the failure is named in the log
-  channel.
+- **What happens if it fails:** it is retried, and named in the log channel if it keeps
+  failing.
 
 **A failed post is retried by its owner** (decision 9). A post that fails inside a change is
 retried by the change queue, which runs the owning module's post again, as text. The text is
-then written at the moment it is finally sent, and the owner remembers the new message as it
-always does. No queue ever holds a picture; the constitution's Principle XIV, rule 8, says why.
-The old retry queue is kept for log lines.
+then written at the moment it is finally sent, and the handler records the new message against
+the owner's record as it always does. No queue ever holds a picture; the constitution's
+Principle XIV, rule 8, says why. The old retry queue is kept for log lines.
 
 Which channels exist, and what may go in each, is the constitution's Principle VII and the
 channel registry (`channel_registry_service`).
@@ -483,7 +493,8 @@ module concerned.
 
 **Each kind of starting point has one failure path.** Whatever goes wrong, the full error goes
 to the host's log and one line goes to the log channel, and reporting it never raises another
-error:
+error. A command that asks for a change meets two in turn: `report_failure` if the request
+itself fails, and the queue once the change is under way.
 
 - **Changes**, from whatever starting point, are reported by the queue: the outcome to whoever
   asked, and a line to the log channel (decision 16).
@@ -526,7 +537,7 @@ because the database only ever holds the one league. `tests/unit/test_one_league
 and `test_no_server_id_is_left_outside_server_configs` in `tests/unit/test_schema_rules.py`
 hold this in place.
 
-The owner-only `!sync` command in the start-up code is the one way in that skips the check. It
+The owner-only `!sync` command in the start-up code is the one command that skips the check. It
 only refreshes Discord's list of commands and touches no league data.
 
 ---
@@ -569,9 +580,8 @@ not checked yet. The checks are:
   **`test_import_roots.py`** check the one-league rule, the schema's own rules, and that nothing
   imports the bot through a package named `src` (#398).
 
-**Where today's code breaks a rule, the breach is listed in the check** with the issue that
-will fix it, and the list can only get shorter. How to work with the lists is CLAUDE.md's, under
-"Testing".
+**Where today's code breaks a rule, the breach is listed in the check** with its issue (decision
+10). How to work with the lists is CLAUDE.md's, under "Testing".
 
 Once the queue exists, a further check holds that nothing writes to the database outside a
 queued change (#439).
@@ -607,6 +617,7 @@ Lines leave this table as the issues close.
 | The code is grouped by layer, not by module, and is not one installed package | #438 |
 | The rules between modules (core never imports a module, tables written by one module) have no check until the code is grouped by module | #438 |
 | Services are built one by one in the start-up code, and the signup wizard is wired in afterwards | #283, #286 |
+| Services look other services up on the bot, in about 170 places in 32 files | #283, then each module's pass |
 | The settings are read when the start-up file is imported | #283 |
 | Start-up runs in the "ready" handler, which can run again after a network drop, and one failing step skips the rest | #283, #446, #447 |
 | Migrations run after Discord connects, and the scheduler starts before any recovery | #283 |
