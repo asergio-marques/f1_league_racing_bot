@@ -145,12 +145,17 @@ def test_the_bot_s_type_names_the_services_for_the_type_checker_only():
         for node in ast.walk(tree)
         if isinstance(node, ast.If)
         and ast.unparse(node.test) in ("TYPE_CHECKING", "typing.TYPE_CHECKING")
-        for inner in ast.walk(node)
+        for statement in node.body
+        for inner in ast.walk(statement)
     }
     unguarded = sorted(
         ast.unparse(node)
         for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and ".services" in (node.module or "")
-        and id(node) not in guarded
+        if id(node) not in guarded
+        and (
+            (isinstance(node, ast.ImportFrom) and ".services" in (node.module or ""))
+            or (isinstance(node, ast.Import)
+                and any(".services" in alias.name for alias in node.names))
+        )
     )
     assert unguarded == []
