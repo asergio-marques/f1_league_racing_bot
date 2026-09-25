@@ -2,7 +2,8 @@
 #
 # Run by tests/repository/test_import_contracts.py, so the ordinary test run checks them on every
 # host and in CI. By hand: `.venv/bin/lint-imports` from the repository root, with the package
-# installed (`pip install -e .`).
+# installed (`pip install -e .`). In a worktree sharing that virtualenv, run it with
+# `PYTHONPATH=src`, or it reads the checkout the virtualenv was installed from.
 #
 # Where today's code breaks a rule, the import is listed under `ignore_imports` with the issue
 # that will remove it. A listed import that no longer exists fails the run, so each list can
