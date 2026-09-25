@@ -181,10 +181,10 @@ module offers the others is public, and its docstring says what it promises.
 
 **Every change goes through one queue.** Every change to the bot's data is put on one queue and
 carried out one at a time, whoever or whatever asks for it: a person (a command, a button, a form, a
-typed answer), a timer, a Discord event (a member leaving), or a handler the start-up sweep calls.
-Commands that only read do not use it. Carrying out changes on the spot is what left data
-half-changed when two presses overlapped, the bot stopped part-way or a step failed, and what let a
-success be reported over a change only half done.
+typed answer), a timer, a Discord event (a member leaving), or a handler or start step the start-up
+sweep calls. Commands that only read do not use it. Carrying out changes on the spot is what left
+data half-changed when two presses overlapped, the bot stopped part-way or a step failed, and what
+let a success be reported over a change only half done.
 
 *Rejected:* putting only the championship changes, or only the long approvals, through the queue,
 which leaves every other change with the same risks. *Rejected:* each command writing its own
@@ -203,22 +203,22 @@ audit record, which is how some settings came to have none.
   channel exists, the bot may post there, the text fits, the change is allowed in the season's
   current stage): once when it is asked for, and again when the worker takes it up, since changes
   ahead of it may have moved the season on. A request a person made that fails is refused. A change
-  a timer, an event or a handler the sweep calls asked for is dropped once its work is no longer
-  due, as a job that fires after its work was cancelled does nothing (see "Timed work and
-  restarts"). Where it fails a check the league can repair (a channel, set by a command; the bot's
-  permission, restored in Discord), it waits instead, and is retried the way a step that failed
-  because of Discord is (below); meanwhile the log channel records what failed, as the core
+  a timer, an event, or a handler or start step the sweep calls asked for is dropped once its work
+  is no longer due, as a job that fires after its work was cancelled does nothing (see "Timed work
+  and restarts"). Where it fails a check the league can repair (a channel, set by a command; the
+  bot's permission, restored in Discord), it waits instead, and is retried the way a step that
+  failed because of Discord is (below); meanwhile the log channel records what failed, as the core
   specification's "Setting the bot up" has it do. Any other check it fails is a fault (below). This
   is the gate `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
   `steward_module.md` §4 does for the cycle close.
-- **One change at a time.** One worker runs one change at a time, across the whole bot, since
-  SQLite lets one writer in at a time anyway. It takes changes in the order they were asked for,
-  the exception being a change waiting to be retried (below). Two presses of the same button can
-  no longer run into each other. A change's posts hold the worker while they are sent, so a long
-  run of posts delays the changes behind it; that is the price of one change at a time.
+- **One change at a time.** One worker runs one change at a time, across the whole bot, since SQLite
+  lets one writer in at a time anyway. It takes changes in the order they were put on it, the
+  exception being a change waiting to be retried (below). Two presses of the same button can no
+  longer run into each other. A change's posts hold the worker while they are sent, so a long run of
+  posts delays the changes behind it; that is the price of one change at a time.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
   division's channel to a given one). A request for the same change as the last one waiting is not
@@ -377,7 +377,7 @@ convenience: if it were lost, the bot could rebuild every job from the database.
 moment a job was due, the handler its module provides for that kind of job (below) decides what
 becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
 The handler records a skip on the event's row, the row being its own module's, as a change on the
-queue like any other, so the late job finds nothing due when the scheduler runs it. Every job is
+queue like any other, so the late job, or the change it asks for, finds nothing due. Every job is
 armed with no limit on how late it may run (`misfire_grace_time=None`), so the scheduler never drops
 one on its own and its default never decides. What each kind does when missed is a rule a league
 notices, so it belongs to the specifications (the core specification's "When the bot stops", and the
@@ -403,7 +403,8 @@ Start-up:
 3. applies the migrations, before connecting to Discord;
 4. runs the builder: the services, the cogs, the hooks and the kinds of timed job;
 5. runs the start-up sweep once, when Discord first connects, while the changes members ask for
-   wait until the sweep has put its own on the queue;
+   wait until the sweep has put its own on the queue, so none overtakes a missed event that would
+   have happened first;
 6. starts the queue, which carries on with any change a stop cut off, and tries a change waiting on
    a repair again at once;
 7. only then lets scheduled jobs run.
@@ -423,12 +424,14 @@ does not stop the rest.
 up, which of its events came due, puts them all in the order they fell due, and hands each to the
 handler its module provides for that kind of job, one at a time: each handler finishes before the
 next is called, and none runs beside another. Before any of them, it calls whoever signed up for the
-bot starting, one at a time as well. It holds no module's logic. The builder signs each handler up
-with its kind of job, together with the kind's own way of telling which of its events came due, as
-it registers the kind with the scheduler service; that is the hook core offers for a timed event
-falling due. The handler holds its module's logic, what becomes of a missed event included; core
-holds none of it. Each module writes the handler for every kind of timed job it has, and the entry
-point holds none of it.
+bot starting, one at a time as well, so a module's start step is in place before its missed events
+are handled. A handler asks for its change on the queue; what an earlier event changed is seen by a
+later one's change when the queue runs it, not by the later one's handler. It holds no module's
+logic. The builder signs each handler up with its kind of job, together with the kind's own way of
+telling which of its events came due, as it registers the kind with the scheduler service; that is
+the hook core offers for a timed event falling due. The handler holds its module's logic, what
+becomes of a missed event included; core holds none of it. Each module writes the handler for every
+kind of timed job it has, and the entry point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
