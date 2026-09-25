@@ -35,7 +35,7 @@ import pathlib
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src"
-TEST_DIRS = ("tests/unit", "tests/integration")
+TESTS = REPO_ROOT / "tests"
 
 # A branch body that only inspects state, rather than standing in for the code under test.
 _INSPECTING = ("assert", "pytest.skip", "pytest.fail", "return", "raise", "pass")
@@ -67,41 +67,42 @@ def _called_names(node: ast.AST) -> set[str]:
     return called
 
 
+def _test_files() -> list[pathlib.Path]:
+    """Every file of the suite, in every folder of it."""
+    return sorted(TESTS.rglob("*.py"))
+
+
 def _offenders() -> list[str]:
     src_names = _src_function_names()
     found: list[str] = []
-    for directory in TEST_DIRS:
-        root = REPO_ROOT / directory
-        if not root.exists():
+    for path in _test_files():
+        source = path.read_text(encoding="utf-8")
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:  # pragma: no cover - collection would fail first
             continue
-        for path in sorted(root.rglob("*.py")):
-            source = path.read_text(encoding="utf-8")
-            try:
-                tree = ast.parse(source)
-            except SyntaxError:  # pragma: no cover - collection would fail first
+        for func in ast.walk(tree):
+            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            for func in ast.walk(tree):
-                if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not func.name.startswith("test"):
+                continue
+            for branch in ast.walk(func):
+                if not isinstance(branch, ast.If):
                     continue
-                if not func.name.startswith("test"):
+                decided_by = _called_names(branch.test) & src_names
+                if not decided_by:
                     continue
-                for branch in ast.walk(func):
-                    if not isinstance(branch, ast.If):
-                        continue
-                    decided_by = _called_names(branch.test) & src_names
-                    if not decided_by:
-                        continue
-                    body = "\n".join(
-                        ast.get_source_segment(source, stmt) or ""
-                        for stmt in branch.body
-                    ).strip()
-                    if not body or body.startswith(_INSPECTING):
-                        continue
-                    found.append(
-                        f"{path.relative_to(REPO_ROOT)}:{branch.lineno} "
-                        f"in {func.name}() — branches on {sorted(decided_by)} "
-                        f"and then acts: {body.splitlines()[0][:60]}"
-                    )
+                body = "\n".join(
+                    ast.get_source_segment(source, stmt) or ""
+                    for stmt in branch.body
+                ).strip()
+                if not body or body.startswith(_INSPECTING):
+                    continue
+                found.append(
+                    f"{path.relative_to(REPO_ROOT)}:{branch.lineno} "
+                    f"in {func.name}() — branches on {sorted(decided_by)} "
+                    f"and then acts: {body.splitlines()[0][:60]}"
+                )
     return found
 
 
@@ -115,6 +116,18 @@ def test_no_test_stands_in_for_the_code_it_is_testing():
         "These tests decide what the production code should have decided, rather than "
         "calling it (issue #185):\n  " + "\n  ".join(offenders)
     )
+
+
+def test_the_scan_reads_the_whole_suite():
+    """A scan that reads no file finds no offender, and passes whatever the tests do. When the
+    suite moved into a folder per module (#438), this check went on reading the two folders the
+    tests had left, found nothing there, and passed."""
+    files = {path.relative_to(TESTS).as_posix() for path in _test_files()}
+
+    assert pathlib.Path(__file__).relative_to(TESTS).as_posix() in files
+    assert {name.split("/")[0] for name in files if "/" in name} >= {
+        "core", "results", "attendance", "signup", "weather", "image", "repository",
+    }
 
 
 def test_the_detector_recognises_the_shape_it_refuses():
