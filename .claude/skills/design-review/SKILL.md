@@ -46,7 +46,10 @@ enter plan mode while the workflow runs.**
 The yardstick is `docs/design/architecture.md`, then `docs/design/core.md` for every module
 but core, and then [`python-practices.md`](../architecture-review/python-practices.md) for what
 those leave open. Once the architecture has decided something, its decision wins over the
-practice file.
+practice file. The architecture describes the shape the code is to have, so the pass's work is
+to bring the module to it, section by section, and its design file describes the module in the
+architecture's terms: its changes as the queue carries them, its posts by kind, its timed
+events and start-up work, its hooks and its command group.
 
 ## Phase 0 — Resolve, and check the gates
 
@@ -71,10 +74,16 @@ gh issue develop --list <N>
 ## Phase 1 — Read
 
 - **The issue, with its comments** (`--json`; plain `--comments` fails here). Its "What the
-  document should settle" names the topics this file must cover beyond the six every module
-  file covers.
+  document should settle" names the topics this file must cover beyond what every module file
+  covers (Phase 5).
 - **`architecture.md` in full.** Note this module's entries in the enforcement tests' ratchet
   lists, and the open issues for this module. Those are this pass's to remove.
+- **The Architecture & design milestone** (`gh issue list --milestone "Architecture & design"`).
+  Its bot-wide issues (the package and module folders, the change queue, the start-up sweep,
+  the post handlers, full errors in catch-alls, module command groups) each carry a correction
+  across every module. A divergence one of them carries is that issue's: the pass names it,
+  says what this module adds to it, and files nothing new for it. Where the issue has already
+  landed, the module's part of it is this pass's to finish.
 - **`core.md`**, for every module but core.
 - **The module's wip-spec.** A design file cites it and never restates it: by `[REQ-ID]`
   where the spec has requirement IDs (only the stewarding spec does today), and by section
@@ -146,12 +155,24 @@ plan carries:
    preserved throughout.
 3. **What is deferred** to new tech-debt issues, and why each is too large for this pass.
 4. **Amendments to `architecture.md` or `core.md`**, where the user took any.
-5. **The outline of the design file.** List the six contents — the tables and what each row
-   means; the services and what each owns; what is registered with the scheduler and what a
-   restart owes it; what is posted, where, and how the message is found again; how the module
-   fails; and the constraints a later reader might tune away. Add the issue's own topics, map
-   each to the inventory facts behind it. There is no divergence section (CLAUDE.md, the
-  `docs/design/` row).
+5. **The outline of the design file.** List the contents every module file covers, each
+   against the section of `architecture.md` it answers to:
+   - its tables and what each row means, its own columns on core's tables, and any link of its
+     own that stops a delete ("The database");
+   - its services and what each owns ("How the code is laid out");
+   - its changes as the change queue carries them: what starts each, its steps, and which must
+     be all or nothing ("How a change is carried out");
+   - its timed events, what each declares when missed, and the start-up work it owes ("Timed
+     work and restarts");
+   - what it posts, of which kind, where, and how it finds a message again ("Posting to
+     Discord");
+   - how it meets core and the other modules: the hooks it signs up to or declares, its entry
+     in the dependency table, and its command group ("How modules and core fit together");
+   - how it fails ("Errors and failures");
+   - the constraints a later reader might tune away.
+
+   Add the issue's own topics, and map each to the inventory facts behind it. There is no
+   divergence section (CLAUDE.md, the `docs/design/` row).
 6. **The commit points.** Err well on the side of more. The design file comes last, in the
    same pull request as the final correction.
 7. **The documents owed.** These are the design file, any docstrings the inventory found
@@ -185,7 +206,7 @@ branch's final commit, not at the survey's.
 - **Title and opening.** The title is "# <Module> — why the code is shaped as it is". The
   opening says what the file holds, that it cites rules instead of restating them, and that it
   is corrected at close-out.
-- **Cover the six contents and the issue's own topics**, or say why one is absent.
+- **Cover the contents Phase 5 lists and the issue's own topics**, or say why one is absent.
 - **Reference `architecture.md`, and `core.md` for modules; never restate either.** For core,
   describe its implementation of the cross-cutting mechanisms as core's own code, and leave
   the rules those mechanisms serve to `architecture.md`.
