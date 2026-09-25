@@ -182,8 +182,8 @@ breaks any of the rules below.
 - **`internal` follows the files.** A pull request that changes nothing a league sees must carry
   `internal`, which leaves it out of the release notes; one that changes anything a league sees
   must not. A league sees `src/`, `resources/defaults/`, `docs/how-to/` other than
-  `test-mode.md`, `README.md` and `requirements.txt`. A renamed file counts under its old path
-  too.
+  `test-mode.md`, `README.md`, `requirements.txt` and `pyproject.toml`, the last two being what a
+  host installs. A renamed file counts under its old path too.
 
 The check runs again whenever the labels, the description or the commits change. To see what it
 will say, run it against the open pull request:

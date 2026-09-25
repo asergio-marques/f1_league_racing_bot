@@ -110,6 +110,7 @@ def test_internal_is_refused_when_src_changed():
         "docs/how-to/configuring-the-core-bot.md",
         "README.md",
         "requirements.txt",
+        "pyproject.toml",
     ],
 )
 def test_what_a_league_sees(path):
