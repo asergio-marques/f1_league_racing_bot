@@ -50,8 +50,10 @@ flat with a list of which file belongs where, which is the arrangement that misf
 driver and team code under signup. *Rejected:* leaving the tests in one flat folder.
 
 Core holds what every module shares: the database connection and the migrations, the bot object
-(`LeagueBot`), the scheduler service, the base classes for the command tree, buttons and forms,
-`report_failure`, and the log channel writer.
+(`LeagueBot`), the change queue, the scheduler service and the start-up sweep, the base classes
+for the command tree, buttons and forms, the failure paths (`report_failure`, the job runner, the
+bot's error handler for events, the helper that starts background work), and the handlers for
+each kind of post, the log line's among them.
 
 **The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
 imports every module at run time. It holds the builder, which makes every service, loads every
@@ -64,7 +66,15 @@ hooks without importing a module.
 - **A cog** turns a command, button or form into a call to one service, and replies. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
-  large, its workflows move into services before it is split.
+  large, its workflows move into services before it is split. A module's commands sit under its
+  own top-level group, never under one of core's: `/results channel`, not `/division
+  results-channel`. discord.py binds a subcommand only to the cog that declares its group
+  (`steward_module.md` §5), so a module's command under core's group would have to be core's code.
+
+  *Rejected:* core's cog holding a module's commands and handing the work to the module through a
+  hook, which puts part of every module in core. *Rejected:* a module attaching its own commands to
+  core's groups as it loads, which works, but leaves a module's commands under names that are
+  core's.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts. Keeping Discord out of the services entirely
   would need a separate posting layer, which a bot this size has no use for. A service never
@@ -164,27 +174,28 @@ audit record, which is how some settings came to have none.
 - **The queue is kept in the database,** so a change waiting on it survives a stop.
 - **What whoever asked is told,** and when, is for the core specification, which gains it with the
   queue. The design allows for Discord letting a reply be updated for only 15 minutes after the
-  member acts (the life of an interaction's token): a change's outcome is recorded by the queue
-  (below), however long the change takes.
+  member acts (the life of an interaction's token): whatever the specifications ask to be
+  recorded of a change goes to the log channel, however long the change takes.
 
   *Rejected:* making whoever asked wait for the result, which shows them nothing until the end,
   and nothing at all if the change takes longer than those 15 minutes.
-- **Checked before it is queued, and again before it runs.** Whatever can be checked is checked
-  (the channel exists, the bot may post there, the text fits, the change is allowed in the
-  season's current stage): once when it is asked for, and again when the worker takes it up, since
-  changes ahead of it may have moved the season on. A request that fails is refused. A change a
-  timer asked for that fails a check waits instead, and is tried again once the command that
-  repairs what it lacks has run, or at the next start-up; meanwhile the log channel records what
-  failed, as the core specification's "Setting the bot up" has it do. This is the gate
-  `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+- **Checked before it is queued, and again before it runs.** Whatever can be checked is checked (the
+  channel exists, the bot may post there, the text fits, the change is allowed in the season's
+  current stage): once when it is asked for, and again when the worker takes it up, since changes
+  ahead of it may have moved the season on. A request a person made that fails is refused. A change
+  a timer, an event or the sweep asked for that fails a check waits instead, and is retried the way
+  a step that failed because of Discord is (below); meanwhile the log channel records what failed,
+  as the core specification's "Setting the bot up" has it do. This is the gate `steward_module.md`
+  §4 designs for a cycle's close, made bot-wide.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
   `steward_module.md` §4 does for the cycle close.
 - **One change at a time.** One worker runs one change at a time, across the whole bot, since
   SQLite lets one writer in at a time anyway. It takes changes in the order they were asked for,
-  the one exception being a change waiting on a retry (below). Two presses of the same button can
-  no longer run into each other.
+  the exception being a change waiting to be retried (below). Two presses of the same button can
+  no longer run into each other. A change's posts hold the worker while they are sent, so a long
+  run of posts delays the changes behind it; that is the price of one change at a time.
 - **The same change is not queued twice.** A change is named by what it does and what it acts on
   (approving a round's appeals, reposting a division's calendar). A request for a change already
   waiting or running is not queued again. A change that can only be done once, such as approving
@@ -201,23 +212,23 @@ audit record, which is how some settings came to have none.
   step's mark. Where the post replaces an earlier message, deleting that message is a step of its
   own, after it, so the new post stands before the old one goes (Constitution XIV rule 8). One rare
   window remains: if the bot stops after a post is sent but before its id is saved, the step runs
-  again after the restart and sends a second copy, and the first copy is left behind. The design
-  accepts that window, and Constitution XIV rule 8 ("at most one such message stands at any
-  moment") is amended with the queue to allow it. Scanning the channel to spot such a copy is not
-  done: `steward_module.md` §7 rejects scanning a channel as guesswork, and that reasoning carries
-  over.
+  again after the restart and sends a second copy, and the first copy is left behind. And a stop
+  between a post and the deletion after it leaves the old and new messages standing together until
+  the change finishes on restart. The design accepts both, and Constitution XIV rule 8 ("at most
+  one such message stands at any moment") is amended with the queue to allow them. Scanning the
+  channel to spot such a copy is not done: `steward_module.md` §7 rejects scanning a channel as
+  guesswork, and that reasoning carries over.
 - **A step that fails because of Discord is retried, without holding up the queue.** It is retried
   with growing waits, by running the owning module's post again, as text where it would have been a
-  picture (Constitution XIV, rule 8). While it waits, it steps aside: a later change that would
-  post to the same place, or change what the waiting step is about to post, waits behind it, and
-  every other change goes ahead. A command that repairs what the step needs (setting a channel,
-  restoring the bot's permission) is never held behind it; once it has run, the waiting step is
-  tried again at once, as `steward_module.md` §4 has the channel-setting commands resume a waiting
-  close. A step that keeps failing is reported to the log channel after about an hour, as the core
-  specification's "When the bot stops" requires of a failed post, in the form the owning
-  specification asks for (for a republication, the results specification's "A republication that
-  does not land shall be reported", with the commands that finish the job), and it is still
-  retried.
+  picture (Constitution XIV, rule 8). While it waits, it steps aside: a later change that would post
+  to the same place, or change what the waiting step is about to post, waits behind it, and every
+  other change goes ahead. A command that repairs what the step needs (setting a channel, restoring
+  the bot's permission) is never held behind it; once it has run, the waiting step is tried again at
+  once, as `steward_module.md` §4 has the channel-setting commands resume a waiting close. A step
+  that keeps failing is reported to the log channel, as the core specification's "When the bot
+  stops" requires of a failed post, in the form the owning specification asks for (for a
+  republication, the results specification's "A republication that does not land shall be reported",
+  with the commands that finish the job), and it is still retried.
 
   *Rejected:* stopping a change at its first failed step.
 - **A step that fails for any other reason is a fault.** The change stops there and goes to the
@@ -270,7 +281,7 @@ columns before go-live for a cleaner line of ownership.
 - Everything else is service code.
 
 Once the bot is live, a CHECK, or a key declared inside a table, can only be changed by rebuilding
-the table, which is why the rule holds before more tables are added.
+the table, so the rule is fixed before more tables are added.
 
 **Deletes are proven by a test, and the database deletes linked data only where it is safe.**
 Deleting a season, division, round or driver removes what hangs off it through lists written by
@@ -377,7 +388,7 @@ kind has its own rules for failures and for later changes:
 
 | Kind | Examples | What its handler looks after |
 |---|---|---|
-| **Log line** | configuration changes, outcomes, failures | posting to the log channel, and retrying a failed line; what a log line may hold (a mention names without notifying; a long record is split) is the core specification's "The record of what changed" |
+| **Log line** | configuration changes, outcomes, failures | posting to the log channel, and retrying a failed line; what a log line may hold is the core specification's "The record of what changed" |
 | **Standing post** | calendar, lineup, standings, attendance sheet, forecast | remembering every message it posts, replacing the previous one, and on failure having the owner post it again |
 | **Notice** | a cancellation notice, a verdict | remembering the message wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | posts inside a channel the bot creates and later deletes whole; only a post the bot must find again, such as a prompt it replaces, is remembered |
@@ -415,12 +426,11 @@ registry (`channel_registry_service`).
 
 ## Errors and failures
 
-**Each kind of starting point has one failure path.** Whatever goes wrong, the full error goes to
-the host's log and one line goes to the log channel, and reporting it never raises another error.
-A change that succeeds is recorded in the log channel as its specification asks; a failure always
-is.
-A command that asks for a change meets two in turn: `report_failure` if the request itself fails,
-and the queue once the change is under way.
+**Each kind of starting point has one failure path.** Whatever fails in the end, the full error goes
+to the host's log and one line goes to the log channel, and reporting it never raises another error.
+A step still being retried has not failed yet. A change that succeeds is recorded in the log channel
+as its specification asks; a failure always is. A command that asks for a change meets two in turn:
+`report_failure` if the request itself fails, and the queue once the change is under way.
 
 - **Changes**, from whatever starting point, are reported by the queue: the outcome to whoever
   asked, and to the log channel as the change's specification asks.
@@ -517,8 +527,8 @@ under "Testing".
 
 Not every rule has its check yet. The rules between modules (core uses no module; a module uses
 another only where the dependency table allows; each table has one writer) are checked, beyond
-private names, once the code is grouped by module, since a module is then a folder a check can
-see. Once the queue exists, a further check holds that nothing writes to the database outside a
-queued change, apart from the migrations run at start-up and the retry queue for log lines. The
-rules about how things are built (the hooks, the one builder, start-up, the sweep) cannot be
-checked by reading the code until they exist.
+private names, once the code is grouped by module, since a module is then a folder a check can see.
+Once the queue exists, a further check holds that nothing writes to the database outside a queued
+change, apart from putting a change on the queue, the migrations run at start-up and the retry queue
+for log lines. The rules about how things are built (the hooks, the one builder, start-up, the
+sweep) cannot be checked by reading the code until they exist.
