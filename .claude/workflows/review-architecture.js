@@ -35,7 +35,7 @@ const CANDIDATES = [
   '2. Settled: no LeagueCog base; the League* bases for the tree, views and forms stay (architecture.md, "Errors and failures")',
   '3. Settled: the layering rules are enforced by import-linter contracts (.importlinter, run by tests/repository/test_import_contracts.py) and ast checks (tests/repository/test_architecture_rules.py), each listing today\'s breaches against the issue that removes them (architecture.md, "How the rules are checked")',
   '4. Settled: one installed package, leaguebot, with a folder per module and a folder per kind of code inside each; ownership is the folder a file sits in (architecture.md, "How the code is laid out")',
-  '5. Settled: a cog holds one command group, so season_cog.py is split along its groups, with git mv (architecture.md, "How the code is laid out")',
+  '5. Settled: a cog holds one command group, so season_cog.py is split along its groups (architecture.md, "How the code is laid out")',
   '6. Settled: report_failure, the League* bases and the one-league claim kept; one handler per kind of post, the log line\'s handler being core/services/output_router.py (architecture.md, "Posting to Discord")',
 ]
 
@@ -250,7 +250,7 @@ const criticPrompt = (reviewed, mechanisms) => `Completeness check for the #282 
 docs/design/architecture.md must settle each of these:
 ${SETTLE.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
-And check that each settled decision still holds in the code:
+And check that a concern answered each settled decision:
 ${CANDIDATES.map(x => `- ${x}`).join('\n')}
 
 What the pass produced, per concern — confirmed and amended findings by title, candidate stances, sound parts:
