@@ -811,12 +811,12 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, HANDLERS),
+    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (1, HANDLERS),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (2, HANDLERS),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (1, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, HANDLERS),
+    ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["signup"]),
+    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["results"]),
     ("core/cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, HANDLERS),
