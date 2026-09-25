@@ -17,7 +17,7 @@
 # entirely missed, which is the honest answer and the reason the scoped figure came out
 # slightly *worse* than a filtered report suggested.
 #
-# Pinned by tests/unit/test_coverage_scope.py: without that test a later reader deletes this
+# Pinned by tests/repository/test_coverage_scope.py: without that test a later reader deletes this
 # file and the gate silently goes back to measuring the suite.
 [run]
 source = src
