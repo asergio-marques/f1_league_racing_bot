@@ -36,9 +36,10 @@ The inventory, the review and the verification run through the **`review-module-
 workflow** (`.claude/workflows/review-module-design.js`). Invoking this skill is the user's
 opt-in to running it. Its agents are read-only and cannot reach the user.
 
-The corrections are made in the main session, one commit at a time on one branch, and are
-never fanned out to parallel agents. They touch the same files, and the test suite runs one
-session at a time.
+The corrections are built through the **`work-issue` workflow**'s build loop
+(`.claude/workflows/work-issue.js`), one commit at a time on one branch, in the main checkout
+(Phase 7). They are never fanned out to parallel builders: they touch the same files, and the test
+suite runs one session at a time.
 
 Every decision, the plan, every issue filed and every push goes through the user. **Do not
 enter plan mode while the workflow runs.**
@@ -184,18 +185,37 @@ plan carries:
 
 Follow `fix-issue` Phase 4 exactly.
 
-## Phase 7 — Correct
+## Phase 7 — Correct, through the build loop
+
+The corrections are built by the `work-issue` workflow, as [`fix-issue`](../fix-issue/SKILL.md)
+Phase 5 builds a fix, with `kind: "design-pass"` and three differences:
+
+- **No check stage.** This pass's own review is that check, and the plan approved in Phase 5
+  already carries its results. Pass the plan's corrections and ratchet entries as `checks`, and no
+  `criteria`: nothing a league sees may change.
+- **The tests stage runs only where the plan names a test that fails before a correction.** A pure
+  move or rename is pinned by the existing tests staying green, and by the ratchet entry it removes.
+  Where it runs, Gate 2 follows it as in `fix-issue`.
+- **No Gate 3.** A design pass changes nothing a league sees. The product owner confirms exactly
+  that in every round, and anything a league would notice is a finding. The pass keeps its own
+  second review, in Phase 10.
+
+`modules` is this pass's module, and any other whose folder a correction touches. The `worktree`
+is the main checkout, on the pass's branch; leave it alone while a stage runs. What the stage
+returns is handled as `fix-issue` Phase 5 says. The builder keeps to what this phase has always
+asked, and the checkers hold it to that:
 
 - **One correction per commit**, with its tests, staged by name from `git status --porcelain`.
-  Use `git mv` for moves, so history follows the file.
-- **Run tests behind the lock:** `flock -w 3600 /tmp/f1-pytest.lock .venv/bin/python -m pytest
-  tests/ -q`, for subsets and full runs alike, with `PYTHONPATH=src` in front when working in a
-  worktree (CLAUDE.md, Testing). Run `.venv/bin/mypy` before each commit that touches `src/`. A
-  file moved into another module's folder moves its coverage with it: run
+  `git mv` for moves, in commits of their own, so history follows the file.
+- **Tests behind the lock**, and `.venv/bin/mypy` before each commit that touches `src/`.
+- **This module's entries leave the ratchet lists as they are corrected.** The enforcement test
+  fails on an entry whose breach has gone, which is how it tells the builder.
+
+Two checks stay yours, once the build has passed:
+
+- **Coverage.** A file moved into another module's folder moves its coverage with it: run
   `python3 tools/coverage_by_module.py` on a fresh report and check that module still clears the
   floor.
-- **Remove this module's entries from the ratchet lists as you correct them.** The
-  enforcement test fails on an entry whose breach has gone, which is how it tells you.
 - **For the image module:** run `pytest tests/ -q -m rasteriser` by hand, in the main checkout
   (a worktree has no league artwork), on a host with Inkscape. Verify the output as PNG,
   never as SVG in a browser. CI deselects the marker, so nothing else catches a break.
