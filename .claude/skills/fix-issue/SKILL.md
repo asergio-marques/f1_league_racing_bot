@@ -102,7 +102,8 @@ Settle what it returns before the user sees the plan:
   Otherwise it stays with the issue its ratchet line names.
 - **A change a design file needs** is a document owed.
 - **`questions` go to the user through `AskUserQuestion`, before the plan.** Put the product
-  owner's first, as it framed them, with its recommendation first. Every answer is a project rule
+  owner's first, as it framed them, with its recommendation first. Two checkers can meet the same
+  question and ask it twice: merge those into one before the user sees them. Every answer is a project rule
   from that moment, and a spec correction it calls for is a document owed. Where an answer changes
   the plan's substance, check the plan again.
 - **`specRulesToSettle`** lists every spec rule the plan would change, or that is unclear or at odds
