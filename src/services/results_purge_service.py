@@ -384,8 +384,7 @@ async def _delete_rows(db_path: str, round_ids: list[int]) -> tuple[int, int]:
     """Delete the season's result rows in foreign-key order. Returns (sessions, standings).
 
     ``penalty_records`` and ``appeal_records`` go first. Each points at a driver's row in
-    ``race_session_results`` or ``qualifying_session_results`` — migration 036 moved them off
-    the old ``driver_session_results`` and onto those two — and neither reference carries
+    ``race_session_results`` or ``qualifying_session_results``, and neither reference carries
     ``ON DELETE CASCADE``. ``PRAGMA foreign_keys`` is ON, so deleting a session's results while
     a verdict still points into them fails the whole transaction. The per-format tables
     themselves cascade from ``session_results`` and need no statement of their own.

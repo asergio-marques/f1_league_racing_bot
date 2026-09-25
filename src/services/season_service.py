@@ -132,9 +132,9 @@ class SeasonService:
     async def get_setup_or_active_season(self) -> Season | None:
         """Return the live (SETUP or ACTIVE) season, or None.
 
-        A server holds at most one, enforced by the partial unique index migration 049
-        builds, so the two states cannot both be present and there is nothing to choose
-        between. The ordering is stated anyway: this was a bare ``LIMIT 1`` over both
+        A server holds at most one, enforced by the partial unique index
+        `idx_seasons_one_live`, so the two states cannot both be present and there is nothing to
+        choose between. The ordering is stated anyway: this was a bare ``LIMIT 1`` over both
         states, which returned an uncontracted row wherever the invariant had been
         broken, and matching :meth:`get_previewable_season` keeps every reader of a
         league's current season agreeing on which one that is.
@@ -157,7 +157,7 @@ class SeasonService:
         never previewable: a preview is a check on what the league is running or about to
         run, and a server keeps its whole archive besides.
 
-        A server holds at most one live season (migration 049), so the ACTIVE-before-SETUP
+        A server holds at most one live season (`idx_seasons_one_live`), so the ACTIVE-before-SETUP
         ordering below no longer arbitrates anything and is kept as defence: it costs
         nothing, and it means this and every other reader of "the season of this server"
         answer the same row even on a database that predates the constraint.
@@ -334,9 +334,9 @@ class SeasonService:
         does not:
 
         - **the season row**, when *season_id* is 0 and there is none yet. *initial_stage* is
-          the stage it begins in; left unset it takes the default migration 057 gives a SETUP
-          row. An existing season row is not written — no setup command changes its start
-          date or game edition once it exists;
+          the stage it begins in; left unset it takes the default the
+          `seasons_stage_fill_on_insert` trigger gives a SETUP row. An existing season row is not
+          written — no setup command changes its start date or game edition once it exists;
         - **a division named in the config and absent from the DB**, inserted. A division
           already in the DB is **never written**: its name, role, tier and channels are each
           owned by a command that writes them directly and reloads the PendingConfig, which is
@@ -1752,8 +1752,7 @@ def _row_to_division(row: aiosqlite.Row) -> Division:
         lineup_channel_id=row["lineup_channel_id"] if "lineup_channel_id" in keys else None,
         calendar_channel_id=row["calendar_channel_id"] if "calendar_channel_id" in keys else None,
         lineup_message_id=row["lineup_message_id"] if "lineup_message_id" in keys else None,
-        # Guarded like every other optional column, so a database that has not yet run
-        # migration 040 still loads its divisions rather than raising.
+        # Guarded like every other optional column.
         calendar_message_id=(
             row["calendar_message_id"] if "calendar_message_id" in keys else None
         ),

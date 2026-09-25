@@ -68,7 +68,7 @@ async def run_phase1(round_id: int, bot: "LeagueBot") -> None:
         log.error("Phase 1: round %s has no track_name", round_id)
         return
 
-    # --- Resolve (mu, sigma) from the tracks table (migration 029+) ---
+    # --- Resolve (mu, sigma) from the tracks table ---
     async with get_connection(bot.db_path) as db:
         track_cursor = await db.execute(
             "SELECT mu, sigma FROM tracks WHERE name = ?",
@@ -79,7 +79,7 @@ async def run_phase1(round_id: int, bot: "LeagueBot") -> None:
     if track_row is None:
         err_msg = (
             f"\u26a0\ufe0f Phase 1 BLOCKED for round {round_id} ({track_name}): "
-            "no track row found in the database — check that migration 029 has run."
+            "no track row found in the database for this circuit."
         )
         log.error(err_msg)
         await bot.output_router.post_log(err_msg)

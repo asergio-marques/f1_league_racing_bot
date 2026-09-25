@@ -94,8 +94,8 @@ async def _reattach_history(db, discord_user_id: str, profile_id: int) -> None:
 async def _get_active_season_id(db_path: str) -> int | None:
     """Return the live season ID for a server, or None if it has none.
 
-    A server holds at most one live (SETUP or ACTIVE) season — migration 049 enforces it
-    with a partial unique index, and `/season setup` refuses to start a second — so this
+    A server holds at most one live (SETUP or ACTIVE) season — the partial unique index
+    `idx_seasons_one_live` enforces it, and `/season setup` refuses to start a second — so this
     reads at most one row and needs no precedence between the two states.
 
     The ordering is written in regardless, because it costs nothing and the query used to

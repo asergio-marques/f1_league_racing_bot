@@ -7,7 +7,7 @@ that one directory serves both a driver's flag and a round's (Constitution XIV.1
 The country names here are spelled exactly as ``tracks.country`` spells them, which
 is what lets a British driver and the British Grand Prix resolve the same file. That
 is why ``American`` yields ``"United States of America"`` and not ``"United States"``:
-migration 029 seeds the longer form, and the two vocabularies must agree or one
+the schema baseline seeds the longer form into `tracks`, and the two vocabularies must agree or one
 country would own two flag files.
 
 This map is **authored, not derived**. ``NATIONALITY_LOOKUP`` maps adjectives *and*

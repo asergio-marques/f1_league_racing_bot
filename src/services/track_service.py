@@ -1,6 +1,6 @@
 """Track service — queries against the ``tracks`` database table.
 
-Provides application-layer access to the 28 F1 circuits seeded by migration 029.
+Provides application-layer access to the 28 F1 circuits the schema baseline seeds.
 The retired ``track_rpc_params`` CRUD functions have been removed along with that table.
 """
 

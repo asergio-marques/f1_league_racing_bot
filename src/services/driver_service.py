@@ -284,8 +284,9 @@ async def _describe_division(db, division_id: int) -> str:
 
 
 #: Every column naming a driver by their profile, which a merge moves onto the driver kept.
-#: The division memberships come first: moving a placement fires migration 057's trigger,
-#: which would otherwise add the membership a second time.
+#: The division memberships come first: moving a placement fires the
+#: `driver_division_membership_on_update` trigger, which would otherwise add the membership a
+#: second time.
 _PROFILE_COLUMNS = (
     "driver_division_memberships",
     "team_seats",
@@ -499,9 +500,9 @@ class DriverService:
 
         A person changing Discord account keeps their history because a driver owns every
         account they have held (issue #243): the profile's current account changes, the
-        migration 059 triggers list the new one beside the old, and **no record is
-        rewritten**. A result, a standing, a signup or a history entry keeps the account it
-        was written under, and an archived season stays exactly as it was. Everything read
+        `driver_account_on_current_change` trigger lists the new one beside the old, and **no
+        record is rewritten**. A result, a standing, a signup or a history entry keeps the account
+        it was written under, and an archived season stays exactly as it was. Everything read
         from then on maps the old account to the new one. This replaced the re-key of issue
         #222, which rewrote every such record onto the new account, completed seasons
         included, against the rule that one is immutable.

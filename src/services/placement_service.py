@@ -1302,7 +1302,8 @@ class PlacementService:
         *committed* says whether the placement is committed (issue #220). `/driver assign`
         places uncommitted drivers only, so it passes False: the placement stands outside the
         championship — no role granted, no lineup posted — until placements are confirmed.
-        Left None, the placement takes the default migration 057 gives its season: committed
+        Left None, the placement takes the default the `driver_season_assignments_committed_default`
+        trigger gives it: committed
         where the season's placements are confirmed. *uncommitted_only* refuses a driver who
         already holds a committed placement in the season, which is how Ongoing, placements
         keeps the assign command to the drivers of the window just closed.
