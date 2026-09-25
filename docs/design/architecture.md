@@ -429,3 +429,59 @@ so one added handler would quietly switch `report_failure` off for everything it
 
 In every case it keeps the full error details for the host's log. A command catches only the
 errors it expects by name, and only to turn them into a refusal the member can act on.
+
+---
+
+## One bot, one league, one server
+
+The bot serves one league on one Discord server. `utils/league_server.py` explains how, in its
+docstring (#244, #247). In short: the server is checked once, where a command, button, form or
+event first arrives, and nowhere after. Below that, nothing in the bot is told which server it
+is on. The tables carry no server id except the one settings row, and the services take none,
+because the database only ever holds the one league. `tests/unit/test_one_league_server.py`
+and `test_no_server_id_is_left_outside_server_configs` in `tests/unit/test_schema_rules.py`
+hold this in place.
+
+The owner-only `!sync` command in the start-up code is the one way in that skips the check. It
+only refreshes Discord's list of commands and touches no league data.
+
+---
+
+## Where the other rules already live
+
+These rules bind every module but are written down elsewhere. They are linked here, not copied,
+so they cannot drift apart:
+
+- **The base classes** for commands, buttons and forms: `LeagueCommandTree`, `LeagueView` and
+  `LeagueModal`, in `utils/league_server.py`. `tests/unit/test_one_league_server.py` checks
+  that nothing uses discord.py's own classes directly.
+- **The failure path for commands, buttons and forms**: `report_failure`, in
+  `utils/interaction_errors.py`.
+- **The coverage floor for each module, and the single schema baseline until go-live**:
+  CLAUDE.md, under "Testing". The values are in the CI workflow and the `run_migrations`
+  docstring.
+- **The type check**: CLAUDE.md and `mypy.ini`.
+- **Staging files by name, and moving files with `git mv`**: CLAUDE.md, under "Working
+  conventions".
+
+---
+
+## How the rules are checked
+
+Every rule in this file is checked by a test that fails the build (decision 10):
+
+- **`.importlinter`**, run by `tests/unit/test_import_contracts.py`, checks which code may
+  import which.
+- **`tests/unit/test_architecture_rules.py`** checks the rest: database code outside services,
+  waiting on Discord mid-save, cogs handling their own errors, catch-all handlers that lose the
+  error details, background tasks nobody keeps, jobs made around the scheduler service, jobs
+  that don't say what happens if missed, private names used across modules, and posting outside
+  the handlers.
+- **`tests/unit/test_one_league_server.py`**, **`test_schema_rules.py`** and
+  **`test_import_roots.py`** check the one-league rule, the schema's own rules and how the
+  package is imported.
+
+**Where today's code breaks a rule, the breach is listed in the check,** with the issue that
+will fix it. The check fails on any new breach. It also fails when a listed breach has been
+fixed but its line was not deleted, so the list can only get shorter. Fixing a breach and
+deleting its line go in the same commit.
