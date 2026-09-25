@@ -1,6 +1,6 @@
 ---
 name: "fix-issues"
-description: "Work several tracked issues in parallel, one branch and one pull request each, chosen by severity label rather than by number. Analysis runs concurrently in isolated worktrees; every plan and every question still reaches the user, and the test suite still runs one session at a time. Invoke when the user names a severity — Critical, High, Medium or Low — rather than an issue number."
+description: "Work several tracked issues in parallel, one branch and one pull request each, chosen by severity label rather than by number. Analysis runs concurrently in isolated worktrees, and each issue is checked and built through the work-issue workflow; every plan, every gate and every question still reaches the user, and the test suite still runs one session at a time. Invoke when the user names a severity — Critical, High, Medium or Low — rather than an issue number."
 argument-hint: "One or more severity labels, e.g. High, or Critical High"
 user-invocable: true
 disable-model-invocation: false
@@ -15,8 +15,9 @@ request**.
 `$ARGUMENTS` holds one or more of `Critical`, `High`, `Medium`, `Low`, in any case and any order. If
 none was given, ask which severity to work — do not guess, and do not fall back to "the most urgent".
 
-This skill orchestrates. The per-issue work is [`fix-issue`](../fix-issue/SKILL.md) and its six
-phases are followed as written, except where a subagent cannot follow them — each such deviation is
+This skill orchestrates. The per-issue work is [`fix-issue`](../fix-issue/SKILL.md) and its
+phases are followed as written, the `work-issue` workflow and its gates included, except where a
+subagent cannot follow them — each such deviation is
 named below, with its reason, at the point it applies. `CLAUDE.md` governs the work itself: British
 English, testing, the documentation layout. Neither document is restated here.
 
