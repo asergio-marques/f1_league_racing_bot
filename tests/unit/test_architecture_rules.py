@@ -331,3 +331,32 @@ def test_nothing_else_is_awaited_while_a_write_is_open():
     )
 
 
+# ── 3. No cog or command handles its own errors ─────────────────────────────────────────────
+
+#: Where an `on_error` may be defined: the base classes that send every failure to
+#: `report_failure`.
+ON_ERROR_ALLOWED = frozenset({"utils/league_server.py"})
+
+
+def _own_error_handlers() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name in ("cog_app_command_error", "cog_command_error"):
+            found[(path, f"{function}.{node.name}")] += 1
+        elif node.name == "on_error" and path not in ON_ERROR_ALLOWED:
+            found[(path, f"{function}.{node.name}")] += 1
+        elif any(isinstance(d, ast.Attribute) and d.attr == "error" for d in node.decorator_list):
+            found[(path, f"{function}.{node.name}")] += 1
+    return found
+
+
+def test_no_cog_or_command_handles_its_own_errors():
+    """Every failure of a command, button or form goes to `report_failure` (architecture.md,
+    "Errors and failures"). `LeagueCommandTree.on_error` steps aside for a command or cog with a
+    handler of its own, so one such handler would quietly switch `report_failure` off for
+    everything it covers. The same holds for an `on_error` on a view or form outside the bases."""
+    _check("no cog or command handles its own errors", _own_error_handlers(), {})
+
+
