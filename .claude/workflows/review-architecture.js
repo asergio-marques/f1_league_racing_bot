@@ -225,7 +225,7 @@ ${c.brief}
 #282's candidate decisions this concern answers: ${c.candidates}. The six, for reference:
 ${CANDIDATES.map(x => `- ${x}`).join('\n')}
 
-Read #282 in full first: gh issue view 282 --json body,comments. There is no docs/design/architecture.md yet — this pass writes it — so judge against decisions already recorded in the repository and then .claude/skills/architecture-review/python-practices.md, as your instructions say. Assign each finding's owner by the files it touches: #282 for a cross-cutting rule or its enforcement, a module pass for that module's files, "new tech-debt" for a correction too large for its pass.
+Read #282 in full first: gh issue view 282 --json body,comments. docs/design/architecture.md exists, so this run revises it: judge against it first, then decisions already recorded in the repository, then .claude/skills/architecture-review/python-practices.md, as your instructions say. Its decisions are settled; a divergence from it is owned by the open issue on the Architecture & design milestone that carries it where there is one (gh issue list --milestone "Architecture & design"), and a case for changing one of its decisions is a finding for the architecture, for the user to decide. Assign each finding's owner by the files it touches: #282 for a cross-cutting rule or its enforcement, a module pass for that module's files, "new tech-debt" for a correction too large for its pass.
 
 The survey, from tools/architecture_survey.py at ${commit}:
 
