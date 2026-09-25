@@ -13,8 +13,8 @@
 # reported again through every chain that passes through it.
 #
 # These contracts describe today's layout, a folder per layer. When the code moves into one
-# folder per module (architecture.md, decisions 3 and 4), they are rewritten for that layout,
-# and the rules between modules are added then.
+# folder per module (architecture.md, "How the code is laid out"), they are rewritten for that
+# layout, and the rules between modules are added then.
 
 [importlinter]
 root_packages =
@@ -83,7 +83,7 @@ forbidden_modules =
 allow_indirect_imports = True
 ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
-    # (under TYPE_CHECKING). Services stay typed attributes on the bot (decision 1).
+    # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
     utils.league_bot -> services.*
     # #441: the log writer queues a failed line on the retry queue itself.
     utils.output_router -> services.retry_service

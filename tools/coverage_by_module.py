@@ -19,7 +19,8 @@ than the only thing keeping the suite out of the figure.
 path first, where a file's name points at the wrong module. Then `RULES`, an ordered list of
 (module, patterns), places the rest: the first pattern matching a path wins. It is also the
 one record of which module owns a file until the code is grouped into module folders
-(`docs/design/architecture.md`, decision 3), so the architecture checks read it too.
+(`docs/design/architecture.md`, "How the code is laid out"), so the architecture checks read it
+too.
 Anything matching nothing lands in `UNASSIGNED` and
 is printed, rather than being swept into `core` where it would quietly distort that module's
 figure. A new service therefore shows up as unassigned until someone places it, which is the
@@ -98,13 +99,13 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
     )),
 ]
 
-#: Files whose names point at the wrong module, placed by their full path before any pattern
-#: is tried (#282). Core owns the driver, the team and the test roster, and signup owns only the
+#: Files whose names point at the wrong module, placed by their full path before any pattern is
+#: tried (#282). Core owns the driver, the team and the test roster, and signup owns only the
 #: signing up (CLAUDE.md); placing drivers and posting the lineup are core's (the core
 #: specification's "Placement into a division and team"); the signup review panel is signup's;
-#: the mid-season points amendment is results'; fetching a driver's portrait is image's. A full path cannot catch a later file
-#: whose name merely contains it: `src/services/team_service.py` is not in
-#: `src/services/steward_team_service.py`.
+#: the mid-season points amendment is results'; fetching a driver's portrait is image's. A full
+#: path cannot catch a later file whose name merely contains it: `src/services/team_service.py`
+#: is not in `src/services/steward_team_service.py`.
 OWNED_BY_PATH: dict[str, str] = {
     "src/cogs/admin_review_cog.py": "signup",
     "src/models/amendment_state.py": "results",
