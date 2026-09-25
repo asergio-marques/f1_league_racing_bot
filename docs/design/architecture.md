@@ -142,3 +142,94 @@ them with the plan for #282.
   the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes; and one bot for one
   league on one server.
 - import-linter runs as part of the normal test run.
+
+---
+
+## How the code is laid out
+
+Everything is in one package, `leaguebot`, with one folder for each module (decisions 3 and 5):
+
+```
+leaguebot/
+    core/         the shared plumbing, and core's own commands and rules
+    results/
+    attendance/
+    signup/
+    weather/
+    image/
+    steward/      once it is built
+```
+
+Each module folder holds that module's **cogs** (its commands, buttons and forms), its
+**services** (its rules and its database code) and its **models** (plain data). The tests
+follow the same folders (decision 6).
+
+Core holds what every module shares: the database connection and the migrations, the bot
+object (`LeagueBot`) and the one function that builds its services, the scheduler service, the
+base classes for the command tree, buttons and forms, `report_failure`, and the log channel
+writer.
+
+**What each part may do:**
+
+- **A cog** turns a command, button or form into a call to one service, and replies. It holds
+  no database code and no league rule. Every rule a league relies on can then be tested by
+  calling a service, with no Discord interaction involved.
+- **A service** holds the league's rules and all the database code. It may use discord.py:
+  it can post to a channel and build the buttons it posts. It never imports a cog. Keeping
+  Discord out of the services entirely would need a separate posting layer, which a bot this
+  size has no use for.
+- **A model** is plain data. It uses no Discord and no database.
+- **The database code in core** opens connections and applies migrations, and imports nothing
+  else of the bot's.
+- **The start-up code** builds the services, wires them together and starts the bot. It holds
+  no rules and no database code of its own.
+
+**Services are built in one place** (decision 1). The builder function makes every service,
+passing each the other services it needs, and attaches it to the bot. A service is complete
+when it is built: nothing is added to it later. A service that needs Discord itself (to post,
+or to find a channel) is given the bot for that and nothing more. It does not use the bot to
+look up other services. That lookup is what lets a hand-made fake bot in a test decide which
+code runs (#240).
+
+Because the services stay on the bot, the bot's type (`LeagueBot`) names every service of
+every module. It does so for the type checker only, under `TYPE_CHECKING`, and nothing runs
+because of it. That is the one place core names the modules' services, and it is the cost of
+decision 1. `.importlinter` lists it as a stated exception rather than a breach.
+
+---
+
+## How modules and core fit together
+
+**Modules depend on core, never the other way round** (decision 11). A module may use another
+module only where the dependency table says so. The table is written once and read wherever
+it matters: when a module is turned on, when one is turned off, and when a warning names what
+will be switched off with it. Today it has one entry, attendance needing results. Stewarding
+will add a second.
+
+The image module is used by the others to draw their posts, and a module that finds it turned
+off posts text instead. That is how the constitution's Principle XIV describes it, and it is
+the one module every other may call.
+
+**Core reaches a module only through hooks.** Where something in core has to let the modules
+act (a round amended or cancelled, placements confirmed, a review gathering its lines, a
+season ending, a module turned off), core declares a hook. Each module signs up to it when the
+bot starts. Core calls whoever signed up and never imports a module.
+
+Each module still checks its own on/off switch where its own work starts, as it does today.
+`tests/unit/test_attendance_module_gate.py` pins that for attendance. A hook does not replace
+the switch. It only means core no longer needs to know the module is there.
+
+**Core draws its own graphics through a hook too.** Core posts graphics of its own (the
+calendar, the lineup). It asks for them through a hook the image module signs up to, rather
+than importing the image module.
+
+**Each module turns itself on and off.** A module's service has the code that turns it on and
+off, next to the code that sets up what turning it off must remove. Keeping them apart is how
+a module's switch-off came to leave things behind (#372) and clear the wrong things (#127). The
+`/module` commands in core only handle the command itself, the confirmation, and anything the
+dependency table says must go with it. What turning a module on or off must do is set by the
+constitution's Principle X and by each module's specification, not here.
+
+**A module's private code stays inside it.** A name starting with an underscore is used only
+inside its own module (PEP 8's convention). What a module offers the others is public, and its
+docstring says what it promises.
