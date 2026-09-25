@@ -5,7 +5,7 @@ database, so jobs survive restarts. A job whose moment passed while the bot was 
 on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, every job's
 misfire grace). Later than that, APScheduler skips it with a warning in the host's log, and
 whatever should be caught up after a longer stop is caught up by the start-up recovery in
-`__main__.py`. Each kind of job is to state its own rule where it is registered
+`__main__.py`. What becomes of a job missed in a longer stop is its kind's handler's to decide
 (`docs/design/architecture.md`, "Timed work and restarts").
 
 The separation is deliberate and is not tidiness. `SQLAlchemyJobStore` is synchronous, and
