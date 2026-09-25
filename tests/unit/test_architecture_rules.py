@@ -48,6 +48,8 @@ PASS = {
 TRACEBACKS = "#442"
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
+#: The handlers for each kind of post, which move core's own posts onto them.
+HANDLERS = "#441"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -597,11 +599,20 @@ def test_nothing_reaches_past_the_scheduler_service():
 # ── 7. Every job says what happens if it is missed ──────────────────────────────────────────
 
 
+def _has_no_lateness_limit(call: ast.Call) -> bool:
+    """Whether *call* passes ``misfire_grace_time=None``, so APScheduler never drops the job."""
+    return any(
+        keyword.arg == "misfire_grace_time"
+        and isinstance(keyword.value, ast.Constant) and keyword.value.value is None
+        for keyword in call.keywords
+    )
+
+
 def _jobs_without_a_missed_run_rule() -> Counter[tuple[str, str]]:
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in _nodes():
         if (isinstance(node, ast.Call) and _call_name(node) == "add_job"
-                and not any(keyword.arg == "misfire_grace_time" for keyword in node.keywords)):
+                and not _has_no_lateness_limit(node)):
             found[(path, function)] += 1
     return found
 
@@ -619,9 +630,10 @@ KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE: dict[tuple[str, str], tuple[int, str]] = {
 
 
 def test_every_job_says_what_happens_if_it_is_missed():
-    """Each `add_job` states its `misfire_grace_time` (architecture.md, "Timed work and
-    restarts"): whether a job due while the bot was down runs late or is skipped is a choice made
-    for each kind of job, not the scheduler's default."""
+    """Each `add_job` passes `misfire_grace_time=None` (architecture.md, "Timed work and
+    restarts"). Whether a job due while the bot was down runs late or is skipped is declared for
+    each kind of job and applied by the start-up sweep, so the scheduler must never drop a late
+    job on its own, which its default grace, or any number here, would do."""
     _check(
         "every job says what happens if it is missed",
         _jobs_without_a_missed_run_rule(),
@@ -782,28 +794,28 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("bot.py", "_abandon_interrupted_resubmission"): (1, PASS["core"]),
-    ("bot.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
-    ("bot.py", "_recover_orphaned_submission_channels"): (2, PASS["core"]),
-    ("cogs/bot_cog.py", "_open_progress"): (1, PASS["core"]),
-    ("cogs/module_cog.py", "execute_forced_close"): (1, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog._review_mid_season_placements"): (7, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog._send_channel_faults"): (1, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog.on_message"): (1, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog.season_config_review"): (3, PASS["core"]),
-    ("cogs/season_cog.py", "SeasonCog.season_review"): (18, PASS["core"]),
-    ("cogs/season_cog.py", "_ApproveView.on_timeout"): (1, PASS["core"]),
-    ("cogs/season_cog.py", "_confirm_privately"): (1, PASS["core"]),
+    ("bot.py", "_abandon_interrupted_resubmission"): (1, HANDLERS),
+    ("bot.py", "_recover_expired_review_prompts"): (1, HANDLERS),
+    ("bot.py", "_recover_orphaned_submission_channels"): (2, HANDLERS),
+    ("cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
+    ("cogs/module_cog.py", "execute_forced_close"): (1, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog._review_mid_season_placements"): (7, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog._send_channel_faults"): (1, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog.on_message"): (1, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog.season_config_review"): (3, HANDLERS),
+    ("cogs/season_cog.py", "SeasonCog.season_review"): (18, HANDLERS),
+    ("cogs/season_cog.py", "_ApproveView.on_timeout"): (1, HANDLERS),
+    ("cogs/season_cog.py", "_confirm_privately"): (1, HANDLERS),
     ("cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
     ("services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
-    ("services/calendar_post_service.py", "replace_calendar_message"): (2, PASS["core"]),
-    ("services/cancellation_notice_service.py", "_send"): (1, PASS["core"]),
+    ("services/calendar_post_service.py", "replace_calendar_message"): (2, HANDLERS),
+    ("services/cancellation_notice_service.py", "_send"): (1, HANDLERS),
     ("services/forecast_cleanup_service.py", "post_phase_message"): (1, PASS["weather"]),
-    ("services/hub_service.py", "refresh_panel"): (1, PASS["core"]),
+    ("services/hub_service.py", "refresh_panel"): (1, HANDLERS),
     ("services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
     ("services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("services/image_standings_post.py", "_post_one"): (1, PASS["image"]),
@@ -818,7 +830,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
     ("services/result_submission_service.py", "run_result_submission_job"): (13, PASS["results"]),
     ("services/results_post_service.py", "_send_chunked"): (1, PASS["results"]),
-    ("services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
+    ("services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
     ("services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
     ("services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),
     ("services/rsvp_service.py", "run_rsvp_last_notice"): (1, PASS["attendance"]),
@@ -842,13 +854,13 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("services/wizard_service.py", "WizardService.request_changes"): (1, PASS["signup"]),
     ("services/wizard_service.py", "WizardService.select_correction_parameter"): (1, PASS["signup"]),
     ("services/wizard_service.py", "WizardService.start_wizard"): (1, PASS["signup"]),
-    ("utils/batch_notice.py", "batch_notice"): (1, PASS["core"]),
+    ("utils/batch_notice.py", "batch_notice"): (1, HANDLERS),
 }
 
 
 def test_posts_go_through_the_output_handlers():
     """A post to a channel goes through the handler for its kind: log line, standing post, notice
     or bot-owned channel (architecture.md, "Posting to Discord"). The handlers are still to be
-    built, so today every `.send` outside the router is listed, under the pass of the module that
-    makes it."""
+    built, so today every `.send` outside the router is listed: core's under the handlers' own
+    issue, which moves them, and each module's under its pass."""
     _check("posts go through the output handlers", _direct_posts(), KNOWN_DIRECT_POSTS)
