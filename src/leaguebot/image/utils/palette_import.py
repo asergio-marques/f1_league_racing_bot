@@ -33,7 +33,7 @@ __all__ = [
 ]
 
 #: Entities off and the network unreachable: this parses a file a league uploaded.
-#: Same settings as `leaguebot.core.utils.xml_import`, and for the same reason.
+#: Same settings as `leaguebot.results.utils.xml_import`, and for the same reason.
 _XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
 
 #: What may sit between a slot and its colour in a pasted line. A league pastes what the

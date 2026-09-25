@@ -11,7 +11,7 @@ from leaguebot.results.services.points_config_service import (
     get_config_entries,
     xml_import_config,
 )
-from leaguebot.core.utils.xml_import import (
+from leaguebot.results.utils.xml_import import (
     XmlImportError,
     XmlImportPayload,
     parse_xml_payload,

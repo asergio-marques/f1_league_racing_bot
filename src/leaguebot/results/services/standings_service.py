@@ -9,8 +9,8 @@ from typing import Collection, Iterable, Mapping
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier
-from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
+from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 
 log = logging.getLogger(__name__)
 

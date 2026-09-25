@@ -14,14 +14,14 @@ from leaguebot.core.services.driver_service import current_account_map_for_divis
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.models.session_result import (
+from leaguebot.results.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,
     SessionResult,
 )
-from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from leaguebot.results.services import standings_service
 from leaguebot.core.services.channel_registry_service import (
     SETTING_LABELS,
@@ -2356,7 +2356,7 @@ async def _is_sprint_round(db_path: str, round_id: int) -> bool:
 
 def _sr_from_row(sr_row) -> "SessionResult":
     """Construct a :class:`SessionResult` from a DB row dict."""
-    from leaguebot.core.models.session_result import SessionResult
+    from leaguebot.results.models.session_result import SessionResult
     return SessionResult(
         id=sr_row["id"],
         round_id=sr_row["round_id"],

@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.core.models.session_result import (
+from leaguebot.results.models.session_result import (
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,

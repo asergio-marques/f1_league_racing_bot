@@ -536,7 +536,7 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     from leaguebot.results.services.penalty_service import apply_penalties
     from leaguebot.results.services.standings_service import compute_points_for_session
     from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap
-    from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier
+    from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)

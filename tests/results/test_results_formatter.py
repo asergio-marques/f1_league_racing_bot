@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
-from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot
+from leaguebot.results.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
+from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
 from leaguebot.results.utils.results_formatter import (
     NOT_APPLICABLE,
     _collapse_trailing_zeros,

@@ -223,7 +223,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
     A round with no active session result is **absent** from the mapping, which is how the
     grid tells "not yet run, or cancelled" from "run, and this driver took no part".
     """
-    from leaguebot.core.models.session_result import SessionType
+    from leaguebot.results.models.session_result import SessionType
     from leaguebot.results.services.results_post_service import _load_driver_rows
 
     if not ordinal_of_round:

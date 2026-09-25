@@ -16,7 +16,7 @@ from leaguebot.results.models.points_config import (
 from leaguebot.results.utils.points_ordering import ordering_violations
 
 if TYPE_CHECKING:
-    from leaguebot.core.utils.xml_import import XmlImportPayload
+    from leaguebot.results.utils.xml_import import XmlImportPayload
 
 log = logging.getLogger(__name__)
 

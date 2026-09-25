@@ -166,7 +166,7 @@ class TestStandingsScatter:
 
     def test_a_qualifying_field_large_enough_carries_a_disqualification(self):
         """#144 — DNF and DNS were fabricated already; DSQ was the one literal never drawn."""
-        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.results.models.session_result import OutcomeModifier
         from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows
 
         rows = fabricate_qualifying_rows(self._drivers(20), {"Team": 900}, {})
@@ -179,7 +179,7 @@ class TestStandingsScatter:
         )
 
     def test_a_race_field_large_enough_carries_a_disqualification(self):
-        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.results.models.session_result import OutcomeModifier
         from leaguebot.image.services.image_preview_data import fabricate_race_rows
 
         rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
@@ -199,7 +199,7 @@ class TestStandingsScatter:
         checks needing a division, so it is stated here rather than called. A DSQ placed
         ahead of the lapped car and the DNF first shipped exactly that refusal (#144).
         """
-        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.results.models.session_result import OutcomeModifier
         from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
 
         def race_category(row) -> int:
@@ -231,7 +231,7 @@ class TestStandingsScatter:
 
     def test_a_small_field_is_not_forced_to_carry_a_disqualification(self):
         """The spec's own qualifier: none of the cases are fabricated into existence."""
-        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.results.models.session_result import OutcomeModifier
         from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
 
         for count in (2, 3, 4):

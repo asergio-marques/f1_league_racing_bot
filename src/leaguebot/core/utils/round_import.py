@@ -162,7 +162,7 @@ def parse_bulk_round_lines(text: str) -> tuple[list[ParsedRound], list[str]]:
 
 # ── The XML format ────────────────────────────────────────────────────────
 
-#: Entity resolution off and the network unreachable, as `leaguebot.core.utils.xml_import` has it. The
+#: Entity resolution off and the network unreachable, as `leaguebot.results.utils.xml_import` has it. The
 #: payload is typed by a league manager into a Discord modal and is not to be trusted with
 #: either.
 _XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)

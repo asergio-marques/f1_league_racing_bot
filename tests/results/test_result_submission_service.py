@@ -5,7 +5,7 @@ import pytest
 
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.models.session_result import OutcomeModifier
+from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.results.services.result_submission_service import (
     ParsedQualifyingRow,
     ParsedRaceRow,

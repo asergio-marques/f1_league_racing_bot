@@ -10,7 +10,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from leaguebot.core.models.session_result import OutcomeModifier
+from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.results.services.result_submission_service import save_session_result
 from leaguebot.results.services.standings_service import (
     compute_driver_standings,

@@ -252,7 +252,7 @@ def build_results_drawing(root, template_key: str, teams):
     """
     from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.core.models.session_result import (
+    from leaguebot.results.models.session_result import (
         OutcomeModifier,
         QualifyingSessionResult,
         RaceSessionResult,
@@ -1191,7 +1191,7 @@ def build_standings_drawing(root, template_key: str, teams):
     imitating it (Constitution XIV.7).
     """
     from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
-    from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+    from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
     from leaguebot.image.services.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         StandingsDataError,

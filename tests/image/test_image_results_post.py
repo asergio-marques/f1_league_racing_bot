@@ -17,7 +17,7 @@ pytestmark = pytest.mark.asyncio
 async def _seeded(tmp_path, *, result_status="AWAITING_REPORT_VERDICTS", message_id=None):
     """A database holding one season, division, round and session result."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.core.models.session_result import SessionResult
+    from leaguebot.results.models.session_result import SessionResult
 
     db_path = str(tmp_path / "image.db")
     await run_migrations(db_path)

@@ -627,7 +627,7 @@ async def _seed_league(tmp_path):
 
 
 def _snapshots(round_id, division_id):
-    from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+    from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 
     drivers = [
         DriverStandingsSnapshot(
@@ -1083,7 +1083,7 @@ async def test_a_textual_fallback_is_posted_before_the_message_it_replaces_is_de
 ):
     """FR-048 holds for a textual replacement as much as for a graphic."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot
+    from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.results_post_service import (
         _get_standings_message_id,
         _set_standings_message_id,

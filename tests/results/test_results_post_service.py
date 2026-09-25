@@ -52,7 +52,7 @@ async def test_post_session_results_includes_heading_and_label(tmp_path):
     """post_session_results must prepend 'heading\\nlabel\\n' to the table."""
     from leaguebot.core.db.database import run_migrations, get_connection
     from leaguebot.results.services.results_post_service import post_session_results
-    from leaguebot.core.models.session_result import SessionResult, DriverSessionResult
+    from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -143,7 +143,7 @@ async def test_post_session_results_label_appears_for_all_status_values(tmp_path
     """Each of the three lifecycle label values must appear in the post content."""
     from leaguebot.core.db.database import run_migrations, get_connection
     from leaguebot.results.services.results_post_service import post_session_results
-    from leaguebot.core.models.session_result import SessionResult, DriverSessionResult
+    from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)

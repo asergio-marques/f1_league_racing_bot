@@ -22,7 +22,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.core.models.session_result import SessionResult
+from leaguebot.results.models.session_result import SessionResult
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.results.services.result_submission_service import (
     _build_division_validation_data,

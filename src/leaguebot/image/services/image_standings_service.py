@@ -172,7 +172,7 @@ def highlight_for(row) -> tuple[str | None, bool]:
     ``QualifyingSessionResult`` carries no such field, which is also why a qualifying cell
     can never hold the overlay.
     """
-    from leaguebot.core.models.session_result import OutcomeModifier
+    from leaguebot.results.models.session_result import OutcomeModifier
 
     classified = getattr(row, "outcome", None) is OutcomeModifier.CLASSIFIED
 

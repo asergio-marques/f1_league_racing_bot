@@ -374,7 +374,7 @@ async def _run_xml_import(
     Posts an audit log entry on both success and failure.
     """
     from leaguebot.results.services.points_config_service import ConfigNotFoundError, xml_import_config
-    from leaguebot.core.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
+    from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
     async def _audit(msg: str) -> None:
         await bot_of(interaction).output_router.post_log(

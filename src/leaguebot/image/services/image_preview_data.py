@@ -65,7 +65,7 @@ VERDICT_TEXT_CASES: tuple[str, ...] = (
 # against a template than a shifting one.
 
 from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT, SessionType  # noqa: E402
-from leaguebot.core.models.session_result import (  # noqa: E402
+from leaguebot.results.models.session_result import (  # noqa: E402
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,

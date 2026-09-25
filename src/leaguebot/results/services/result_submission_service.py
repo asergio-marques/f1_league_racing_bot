@@ -13,7 +13,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
-from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.team_service import resolve_team_reference
 from leaguebot.results.utils import results_formatter

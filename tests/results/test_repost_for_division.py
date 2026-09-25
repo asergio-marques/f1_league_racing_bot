@@ -996,7 +996,7 @@ async def test_a_standings_table_that_shrinks_drops_the_chunks_it_no_longer_fill
     one, the anchor is edited and the others have to go — and once the stored list is rewritten
     as a single message, nothing could reach them again now that the adjacency walk is retired.
     """
-    from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot
+    from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.results_post_service import post_standings, _set_standings_message_id
 
     db_path = await _make_db(tmp_path, name="std_shrink")
