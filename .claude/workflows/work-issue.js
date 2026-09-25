@@ -541,7 +541,7 @@ ${start}${answered}
 ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
 
-const issuePrompt = (k, questions, testReport) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[]. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section('The tester\'s report', testReport)}`
+const issuePrompt = (k, questions, testReport) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[]; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section('The tester\'s report', testReport)}`
 
 const summaryAsk = () => {
   if (stage === 'tests') return 'If you find nothing material and escalate nothing, write summary: the tests, for the owner to review before any code is written, in plain terms: each acceptance criterion and each spec rule the work touches, the test that pins it and what that test checks, and every rule you cited. Otherwise leave summary empty.'
@@ -549,7 +549,7 @@ const summaryAsk = () => {
   return 'If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. Otherwise leave summary empty.'
 }
 
-const productPrompt = (k, questions, testReport) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[]. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[]; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section('The tester\'s report', testReport)}`
 
 const testsTesterPrompt = (k, tests) => `You check the failing tests written in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
@@ -718,6 +718,10 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   citations.push(...got.flatMap(r => r.answers))
   separateDefects.push(...got.flatMap(r => r.separateDefects))
   const roundEscalations = got.flatMap(r => r.escalations)
+  // A checker that returned nothing answered none of the builder's questions routed to it: they
+  // go to the owner, as a failed triage's do.
+  if (reviewed.lanes.product === null) roundEscalations.push(...questions.business)
+  if (reviewed.lanes.issue === null) roundEscalations.push(...questions.engineering)
   const raised = got.flatMap(r => r.raised)
   if (raised.length) {
     const t = await triage(raised, `r${k}`, BRANCH_READ, `${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}`)
@@ -737,7 +741,9 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (roundEscalations.length) { status = 'question'; escalations = roundEscalations; break }
   if (reviewed.test && reviewed.test.environmentProblem) { status = 'failed'; failure = `the host, not the code: ${reviewed.test.environmentProblem}`; break }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
-  if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean) {
+  // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
+  // reaches the builder only in the next round.
+  if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean && !built.questions.length) {
     const product = reviewed.lanes.product
     summary = product.summary
     if (!summary) {
