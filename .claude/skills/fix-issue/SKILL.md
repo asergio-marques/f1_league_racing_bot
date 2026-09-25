@@ -220,6 +220,21 @@ A checker that returned nothing is never read as a pass: the stage cannot pass w
 `pytest tests/ -q -m rasteriser` in the main checkout, on a host with Inkscape, with the output
 checked as PNG. CI cannot run it, and neither does the workflow.
 
+### Gate 3 — acceptance
+
+When the build returns `passed` and the minor findings are settled, put the result to the user
+through `AskUserQuestion`. Show the product owner's acceptance `summary`: what a league will now
+see, criterion by criterion, with the test that proves each, and every rule it cited. The options
+are to accept it or to reject it.
+
+**On a rejection, ask what should change in terms of behaviour**, and take the answer in the
+user's own words. It is a decided rule. Add it to `decisions`, amend the plan with it, and go
+back to Phase 3's check, passing `worktree` and `base` as well, so that the amendment is checked
+against the branch as built. Then come Gate 1, the tests stage, Gate 2, the build and Gate 3
+again. The claim is not repeated, and the commits already made stay.
+
+On acceptance, go on to Phase 6.
+
 ## Phase 6 — Close out
 
 Invoke the `close-out` skill before reporting the work complete. It is mandatory, and it covers
