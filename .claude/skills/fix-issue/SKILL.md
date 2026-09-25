@@ -27,8 +27,10 @@ layout. Follow it; this skill does not restate it. Two of its rules bear directl
 ## Phase 1 — Read the issue
 
 ```bash
-gh issue view <N> --comments
+gh issue view <N> --json title,state,assignees,labels,body,comments
 ```
+
+(`gh issue view --comments` fails on this repository. Use `--json`.)
 
 Take from it: the behaviour a league sees, the reproduction path, the labels (the module label
 names the spec and the how-to guide that own the area), and the priority. Read the comments — a
