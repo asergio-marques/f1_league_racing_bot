@@ -275,6 +275,12 @@ importing apt's `dist-packages`. The tests import the bot as that installed pack
 the bot needs discord.py 2.6 or later, which apt does not ship, so a system-Python run now fails at
 import rather than testing a library the bot never runs on.
 
+**A worktree sharing that virtualenv runs the suite with `PYTHONPATH=src`.** An editable install
+points the virtualenv at the `src/` of the checkout it was made from, so without it a worktree's
+run would test the other checkout's code. `tests/conftest.py` refuses to start such a run and says
+so. Never `pip install -e .` from a worktree into a shared virtualenv: that moves it, and every
+other checkout using it, onto the worktree's code.
+
 **The suite keeps no scratch.** `pytest.ini` sets `tmp_path_retention_count = 0` and
 `tmp_path_retention_policy = failed`, and `tests/conftest.py` sweeps the template scratch
 pytest does not own. The `tmp_path` trees fill the 923 MB tmpfs `/tmp` is on the Pi two

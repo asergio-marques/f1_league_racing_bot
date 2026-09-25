@@ -47,6 +47,31 @@ import pytest
 os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
 
 
+def _refuse_another_checkouts_bot() -> None:
+    """Stop the run before it starts when the bot it would test is another checkout's.
+
+    The tests import the bot as the package installed into the virtualenv (`pip install -e .`),
+    and an editable install points the virtualenv at the `src/` of the checkout it was made from.
+    A worktree sharing that virtualenv would run every test against the other checkout's code,
+    and pass on code that is not its own. The remedy is to put this checkout's `src/` first, as
+    `PYTHONPATH=src`, which Python reads before the install. `test_import_roots.py` holds the same
+    thing as a test; this stops the thousands of others from running first.
+    """
+    import leaguebot
+
+    here = Path(__file__).resolve().parents[1] / "src" / "leaguebot"
+    found = Path(leaguebot.__file__).resolve().parent
+    if found != here:
+        pytest.exit(
+            f"The bot these tests would import is {found}, not this checkout's {here}. The "
+            "virtualenv was installed from another checkout: run with PYTHONPATH=src.",
+            returncode=pytest.ExitCode.USAGE_ERROR,
+        )
+
+
+_refuse_another_checkouts_bot()
+
+
 _TEMPLATE_PREFIX = "f1-schema-"
 _TEMPLATE_SCRATCH: Path | None = None
 
