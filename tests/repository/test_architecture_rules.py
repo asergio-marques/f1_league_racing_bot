@@ -645,9 +645,9 @@ KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
 
 def test_no_job_is_armed_with_a_lateness_limit():
     """Each `add_job` passes `misfire_grace_time=None` (architecture.md, "Timed work and
-    restarts"). What becomes of a job due while the bot was down is decided by its kind's handler,
-    which the start-up sweep hands it to, so the scheduler must never drop a late job on its own,
-    which its default grace, or any number here, would do."""
+    restarts"). What becomes of a job due while the bot was down is its kind's handler's to
+    decide, never the scheduler's, which its default grace, or any number here, would decide by
+    dropping it."""
     _check(
         "no job is armed with a lateness limit",
         _jobs_with_a_lateness_limit(),
