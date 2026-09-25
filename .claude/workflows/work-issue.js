@@ -36,7 +36,7 @@ const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
 }
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, previous, kind ("fix" or "design-pass") and maxRounds.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, previous, rulings, kind ("fix" or "design-pass") and maxRounds.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -346,8 +346,14 @@ let written = previous && previous.tests ? [...previous.tests] : []
 // round, so that a design finding is always judged by the verifier and never closed on the
 // builder's word.
 const designFiles = new Set(previous && previous.designFiles ? previous.designFiles : [])
-// A dispute the owner has since ruled on goes back to the builder, which follows the ruling.
-for (const f of ledger.values()) if (f.status === 'upheld') { f.status = 'open'; f.ownerRuled = true; f.asked = false }
+// A dispute the owner has since ruled on, in `rulings` as {<finding id>: "fix" or "leave"}: one
+// left as built is closed; any other goes back to the builder, which follows the ruling.
+const rulings = ARGS.rulings || {}
+for (const f of ledger.values()) {
+  if (f.status !== 'upheld') continue
+  if (rulings[f.id] === 'leave') { f.status = 'closed'; f.ownerLeft = true }
+  else { f.status = 'open'; f.ownerRuled = true; f.asked = false }
+}
 
 const STAGE_NAME = stage === 'tests' ? 'the tests stage, where only the failing tests are written' : 'the build'
 const WHERE = `Work only in the checkout at ${worktree}, on branch ${branch}. First check that git -C ${worktree} branch --show-current prints ${branch}; if it does not, change nothing and report onBranch false. Run every git command as git -C ${worktree}, and read and edit files under ${worktree} only. The branch's work starts at ${base}.`
@@ -497,7 +503,10 @@ const SUITE_SCHEMA = {
 
 // ---- the round loop's prompts ---------------------------------------------------------------
 
+// Open: the builder still owes it. Pending: it still stops the stage passing, which a fix the
+// builder claims does until its checker confirms it.
 const materialOpen = f => f.material && (f.status === 'open' || f.status === 'disputed')
+const materialPending = f => materialOpen(f) || (f.material && f.status === 'fixed')
 
 const priorSection = lane => {
   const mine = [...ledger.values()].filter(f => f.lane === lane)
@@ -523,7 +532,9 @@ const builderPrompt = k => {
     why: f.why,
     fix: f.fix,
     evidence: f.evidence,
-    note: f.ownerRuled ? 'the owner has ruled on your dispute: follow the decisions below' : f.status === 'disputed' ? 'your dispute was not judged: fix it or dispute it again' : '',
+    note: f.ownerRuled ? 'the owner has ruled on your dispute: follow the decisions below'
+      : f.status === 'disputed' ? 'your dispute was not judged: fix it or dispute it again'
+        : f.notFixedBecause ? `the ${LANE_NAMES[f.lane]} judged it not fixed: ${f.notFixedBecause}` : '',
   }))
   // A branch may carry this issue's work before the stage's first round: from an earlier run
   // of the stage, or, after the owner refused the result at acceptance, from a whole earlier pass.
@@ -566,7 +577,7 @@ Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder wrote', tests)}`
 
-const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${priorSection('code')}`
+const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
 
 const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks. Read and follow .claude/skills/architecture-review/SKILL.md, Phase 9, and .claude/skills/architecture-review/python-practices.md, and judge against the owner's decisions below as well. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
 
@@ -594,24 +605,28 @@ const addFindings = (lane, found) => {
   }
 }
 
-// A checker's verdicts on its own earlier findings. One it saw and said nothing of keeps the
-// builder's word: fixed is closed, anything else stays open. One whose checker returned nothing
-// waits for the next round.
+// A checker's verdicts on its own earlier findings. Only a verdict closes a finding: a fix the
+// builder claims stays pending until its checker confirms it. A dispute the checker rejects,
+// whether it upholds the finding or judges it not fixed, goes to the owner. A checker that
+// returned nothing judges nothing, and its findings wait for the next round.
 const judge = (lane, result) => {
-  const verdicts = new Map((result ? result.prior : []).map(p => [p.id, p]))
+  if (!result) return
+  const verdicts = new Map(result.prior.map(p => [p.id, p]))
   for (const f of ledger.values()) {
     if (f.lane !== lane || !f.material || !['open', 'fixed', 'disputed'].includes(f.status)) continue
     const v = verdicts.get(f.id)
-    if (v && (v.status === 'fixed' || v.status === 'dispute-accepted')) f.status = 'closed'
-    else if (v && v.status === 'dispute-upheld') { f.status = 'upheld'; f.upheldBecause = v.grounds }
-    else if (v) f.status = 'open'
-    else if (result) f.status = f.status === 'fixed' ? 'closed' : 'open'
+    if (!v) { if (f.status === 'disputed') f.status = 'open'; continue }
+    if (v.status === 'fixed' || v.status === 'dispute-accepted') f.status = 'closed'
+    else if (v.status === 'dispute-upheld' || f.status === 'disputed') { f.status = 'upheld'; f.upheldBecause = v.grounds }
+    else { f.status = 'open'; f.notFixedBecause = v.grounds }
   }
 }
 
+// `finding` names the dispute, so the calling session can pass the owner's choice back in `rulings`.
 const upheldQuestion = f => ({
+  finding: f.id,
   kind: f.lane === 'product' ? 'business' : 'engineering',
-  question: `The builder disputes a finding of the ${LANE_NAMES[f.lane]}'s, which upholds it: ${f.title}`,
+  question: `The builder disputes a finding of the ${LANE_NAMES[f.lane]}'s (${f.id}), which upholds it: ${f.title}`,
   context: `The finding: ${f.why}\nThe builder: ${f.dispute}\nThe ${LANE_NAMES[f.lane]}: ${f.upheldBecause}`,
   options: [{ label: 'Fix it', meaning: f.fix }, { label: 'Leave it as built', meaning: 'the finding is dropped' }],
   recommendation: `The ${LANE_NAMES[f.lane]}'s grounds are above; this is the owner's call.`,
@@ -739,7 +754,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   roundEscalations.push(...upheld.map(upheldQuestion))
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
-  const open = [...ledger.values()].filter(materialOpen)
+  const open = [...ledger.values()].filter(materialPending)
   rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: roundEscalations.length, dead })
   log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${roundEscalations.length} question(s) for the owner.`)
 
@@ -774,7 +789,7 @@ return {
   tests: written,
   lastTest,
   lastFailures,
-  openMaterial: [...ledger.values()].filter(materialOpen),
+  openMaterial: [...ledger.values()].filter(materialPending),
   minor: [...ledger.values()].filter(f => !f.material && f.status === 'open'),
   citations,
   separateDefects,
