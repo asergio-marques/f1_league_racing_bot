@@ -23,10 +23,13 @@ jobs:
       with:
         python-version: 3.13
 
+    # The pins first, then the bot itself as the package `leaguebot`, which is how the tests
+    # import it: `pytest.ini` puts nothing on the path.
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install -e .
     # `rasteriser`-marked tests need Inkscape, which is too heavy to install on a hosted
     # runner for what it returns. They are run by hand — see CLAUDE.md, Testing.
     #
@@ -134,6 +137,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install -e .
 
     # Inkscape is absent here as it is on the Linux runner, so the marker is deselected for
     # the same reason. See CLAUDE.md, Testing. `-rs` as on the Linux job: this runner's fonts

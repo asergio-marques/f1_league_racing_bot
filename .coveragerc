@@ -9,6 +9,8 @@
 #
 # `source = src` is the whole fix: the gate now measures the bot. Both `coverage run` and
 # `coverage json` pick this file up automatically, so the workflow's commands are unchanged.
+# The bot is the package in `src/leaguebot/`, installed editable (`pip install -e .`), so its
+# files are imported from where they sit and measured there.
 #
 # It also makes coverage report the files no test imports at all. Under the old arrangement
 # an unimported module was simply absent and counted as nothing; here it is counted and

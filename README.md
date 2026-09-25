@@ -27,9 +27,11 @@ cd f1_league_weather_randomizer_bot
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
-Install into the virtualenv, not system-wide. `requirements.txt` pins exact versions, and a
+The last line installs the bot itself into the virtualenv, as the package `leaguebot`, which is how
+it is started (below). Install into the virtualenv, not system-wide. `requirements.txt` pins exact versions, and a
 virtualenv is what makes those pins apply. On Debian and Raspberry Pi OS especially, a
 system-wide install leaves the interpreter importing apt's own copies from
 `/usr/lib/python3/dist-packages` — which pip never writes to — so the bot runs against
@@ -70,8 +72,18 @@ SCHEDULER_DB_PATH=
 ### 3. Run the bot
 
 ```bash
-python src/bot.py
+python -m leaguebot
 ```
+
+Run it from the repository's root, with the virtualenv active: a relative `DB_PATH` is read from
+the folder the bot is started in.
+
+**Upgrading to v0.5.0.** The bot became an installed package in v0.5.0. After updating to it, run
+`pip install -e .` once in the virtualenv, and start the bot with `python -m leaguebot` rather
+than `python src/bot.py`, changing a service's start command to match. Timed work saved by an
+earlier version is not carried over: on the first start, the scheduler writes a line to the host's
+log for each such job, saying it is unable to restore it, and removes it. Upgrade with no season
+running.
 
 On first run the bot creates **two** database files and applies all schema migrations
 automatically:
