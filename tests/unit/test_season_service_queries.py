@@ -98,9 +98,9 @@ async def _seed_full_division(
     """A division with a round, a team and an empty seat hanging off it.
 
     *seated_driver* additionally places a driver in the seat and records the season
-    assignment. It defaults to **off** because `delete_division` cannot currently delete a
-    division in that state — see the note on
-    `test_deleting_a_division_leaves_nothing_behind`.
+    assignment. It defaults to **off** because `delete_division` does not delete a division
+    in that state, by decision — see
+    `test_a_division_with_a_driver_placed_in_it_is_not_deleted`.
     """
     await _seed_division(db_path, division_id, season_id)
     async with get_connection(db_path) as db:
@@ -359,12 +359,8 @@ async def test_deleting_a_division_leaves_nothing_behind(tmp_path):
     leaves rows pointing at a division that no longer exists, which surfaces much later as
     a lineup drawing a team nobody can find.
 
-    **This covers a division whose seats are empty.** A division with a driver actually
-    seated in it cannot be deleted at all: the method removes `team_seats` while
-    `driver_season_assignments.team_seat_id` still references those rows, and that foreign
-    key is `NO ACTION`, so SQLite refuses. Reproduced and reported separately; fixing it is
-    out of scope for #208, and the assignment is left out here rather than have this file
-    assert that the failure is correct.
+    **This covers a division whose seats are empty.** A division with a driver placed in it
+    is not deleted at all, by decision; see the test below.
     """
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")
@@ -381,6 +377,29 @@ async def test_deleting_a_division_leaves_nothing_behind(tmp_path):
     assert await _count(
         db_path, "driver_season_assignments", "division_id = ?", (11,)
     ) == 0
+
+
+async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
+    """A division is deleted only once every driver placed in it has been unassigned
+    (core specification, Divisions; decided 2026-09-25, #282). The deletion is destructive
+    enough that refusing is preferred to taking the placements with it.
+
+    The refusal is the schema's: `driver_season_assignments.team_seat_id` references the seat
+    with no delete action, so removing the seats fails while a placement points at one, and
+    the whole deletion rolls back. Adding a cascade to that key, or deleting the placements
+    first, would quietly reverse the decision, which is why this test pins it.
+    """
+    import sqlite3
+
+    db_path = await _make_db(tmp_path)
+    await _seed_season(db_path, 1, "SETUP")
+    await _seed_full_division(db_path, 11, 1, seated_driver=True)
+
+    with pytest.raises(sqlite3.IntegrityError):
+        await SeasonService(db_path).delete_division(11)
+
+    assert await _count(db_path, "divisions", "id = ?", (11,)) == 1
+    assert await _count(db_path, "driver_season_assignments", "division_id = ?", (11,)) == 1
 
 
 async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
