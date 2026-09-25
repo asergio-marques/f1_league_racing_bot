@@ -325,8 +325,6 @@ if (stage === 'check') {
 
 // ---- the round loop, shared by the tests and build stages -----------------------------------
 
-if (stage === 'build') throw new Error('The build stage is not written yet.')
-
 const { worktree, python, branch, base } = ARGS
 const BIN = python.slice(0, python.lastIndexOf('/'))
 const MAX_ROUNDS = { tests: 2, build: 3 }
@@ -375,6 +373,8 @@ const BUILDER_RULES = `The rules of the work:
 ${RUN_PYTEST}`
 
 const TESTS_JOB = `This is the tests stage. Write only the tests the plan says fail before the change, and no production code at all. Mark each new test, and each existing test whose expectation the change alters, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. Run the new tests both ways, as below: with --runxfail each must fail, for the reason the plan gives; without it each must be reported xfailed, and nothing else in their files may fail. Commit them as the first commit of this work, unless the plan places them otherwise. List every test in tests[], each with what it checks in plain terms, and the acceptance criterion it pins where there is one.`
+
+const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed. By the end, none may be left.`
 
 // ---- the round loop's schemas ---------------------------------------------------------------
 
@@ -472,6 +472,25 @@ const TESTS_CHECK_SCHEMA = {
   },
 }
 
+const SUITE_SCHEMA = {
+  type: 'object',
+  required: ['exitCode', 'summary', 'failures', 'mypyClean', 'mypyErrors', 'xfailMarkersLeft', 'tmpFree', 'environmentProblem', 'log'],
+  properties: {
+    exitCode: { type: 'integer', description: 'the suite\'s exit code, read from its .exit file' },
+    summary: { type: 'string', description: 'pytest\'s closing line' },
+    failures: {
+      type: 'array',
+      items: { type: 'object', required: ['test', 'reason'], properties: { test: { type: 'string' }, reason: { type: 'string' } } },
+    },
+    mypyClean: { type: 'boolean' },
+    mypyErrors: { type: 'array', items: { type: 'string' } },
+    xfailMarkersLeft: { type: 'integer', description: 'the lines git grep finds for the issue\'s expected-failure reason' },
+    tmpFree: { type: 'string' },
+    environmentProblem: { type: 'string', description: 'empty unless the host, not the code, is at fault' },
+    log: { type: 'string', description: 'the suite\'s log file' },
+  },
+}
+
 // ---- the round loop's prompts ---------------------------------------------------------------
 
 const materialOpen = f => f.material && (f.status === 'open' || f.status === 'disputed')
@@ -540,6 +559,25 @@ Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder wrote', tests)}`
 
+const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${priorSection('code')}`
+
+const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks. Read and follow .claude/skills/architecture-review/SKILL.md, Phase 9, and .claude/skills/architecture-review/python-practices.md, and judge against the owner's decisions below as well. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
+
+const buildTesterPrompt = k => {
+  const logFile = `/tmp/work-issue-${issue}-build-r${k}.log`
+  return `You run the checks for round ${k} of the build for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
+
+1. Run df -h /tmp, and note in tmpFree what is free.
+2. Start the whole suite detached, as below, with tests/ as the targets and ${logFile} as LOG.
+3. While it runs, run the type check: cd ${worktree} && ${BIN}/mypy, with a Bash timeout of 600000 ms. Note every error.
+4. Count the expected-failure markers left: git -C ${worktree} grep -n -F 'reason="#${issue}:' -- tests/, and report how many lines it finds.
+5. Wait for the suite, as below, until its exit code appears.
+6. Read the outcome: the exit code from ${logFile}.exit; pytest's closing line, from tail -n 5 ${logFile}; and every line grep -E '^(FAILED|ERROR)' ${logFile} finds, each with the reason pytest gives for it further up the log.
+7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem.
+
+${RUN_PYTEST}`
+}
+
 // ---- the round loop's bookkeeping -----------------------------------------------------------
 
 const addFindings = (lane, found) => {
@@ -595,6 +633,43 @@ const reviewTests = async (k, built, questions) => {
   return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !test.environmentProblem && written.length > 0 && !problems.length }
 }
 
+const suiteProblems = t => {
+  if (t === undefined) return ['the suite was not run: the builder was blocked and made no commit']
+  if (!t) return ['the tester returned nothing']
+  const problems = t.failures.map(f => `${f.test}: ${f.reason}`)
+  if (t.exitCode !== 0 && !t.failures.length) problems.push(`pytest exited ${t.exitCode}: ${t.summary}`)
+  problems.push(...t.mypyErrors.map(e => `mypy: ${e}`))
+  if (!t.mypyClean && !t.mypyErrors.length) problems.push('mypy reported errors')
+  if (t.xfailMarkersLeft) problems.push(`${t.xfailMarkersLeft} expected-failure marker(s) naming #${issue} are left in tests/`)
+  return problems
+}
+
+// The four checkers run side by side, and the design verifier follows the issue reviewer where
+// the branch changes a design file. A checker left undefined was not due this round; one that is
+// null returned nothing.
+const reviewBuild = async (k, built, questions) => {
+  const quiet = built.blocked && !built.commits.length
+  if (quiet) log(`Round ${k}: the builder is blocked and made no commit, so the suite is not run.`)
+  const [issueAndDesign, code, product, test] = await parallel([
+    () => agent(issuePrompt(k, questions.engineering, null), { label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
+      .then(async issueResult => {
+        if (!issueResult || !issueResult.designDocsChanged.length) return { issue: issueResult, design: undefined }
+        const design = await agent(designPrompt(k, issueResult.designDocsChanged), { label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
+        return { issue: issueResult, design }
+      }),
+    () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
+    () => agent(productPrompt(k, questions.business, null), { label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => quiet ? Promise.resolve(undefined) : agent(buildTesterPrompt(k), { label: `build:r${k}:tester`, phase: 'Review', effort: 'low', schema: SUITE_SCHEMA }),
+  ])
+  const green = !!test && !test.environmentProblem && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0
+  return {
+    lanes: { issue: issueAndDesign ? issueAndDesign.issue : null, code, product, design: issueAndDesign ? issueAndDesign.design : undefined },
+    test,
+    problems: suiteProblems(test),
+    green,
+  }
+}
+
 // ---- the round loop -------------------------------------------------------------------------
 
 const rounds = []
@@ -611,7 +686,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (!built.onBranch) { status = 'failed'; failure = `the checkout at ${worktree} is not on ${branch}`; break }
   commits.push(...built.commits)
   separateDefects.push(...built.separateDefects)
-  if (stage === 'tests') written = built.tests
+  written = stage === 'tests' ? built.tests : [...written, ...built.tests]
   for (const x of built.fixed) { const f = ledger.get(x.id); if (f) { f.status = 'fixed'; f.fixedIn = x.commit } }
   for (const x of built.disputed) { const f = ledger.get(x.id); if (f) { f.status = 'disputed'; f.dispute = x.reason } }
   if (stage === 'tests' && built.planComplete && !built.tests.length) {
@@ -625,7 +700,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     business: built.questions.filter(q => q.kind === 'business'),
     engineering: built.questions.filter(q => q.kind !== 'business'),
   }
-  const reviewed = await reviewTests(k, built, questions)
+  const reviewed = stage === 'tests' ? await reviewTests(k, built, questions) : await reviewBuild(k, built, questions)
   const dead = []
   for (const [lane, result] of Object.entries(reviewed.lanes)) {
     if (result === undefined) continue
@@ -633,7 +708,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     judge(lane, result)
     if (result) addFindings(lane, result.findings)
   }
-  if (!reviewed.test) dead.push('tester')
+  if (reviewed.test === null) dead.push('tester')
   lastTest = reviewed.test
 
   const got = Object.values(reviewed.lanes).filter(Boolean)
