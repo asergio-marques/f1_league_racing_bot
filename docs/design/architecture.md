@@ -141,10 +141,11 @@ It starts with one entry, attendance needing results (the attendance module spec
 opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks.** Where something in core has to let the modules act
-(the bot starting, a round amended or cancelled, placements confirmed, a review gathering its lines,
-a season ending, a module turned on or off, the hub's panel gathering its options), core declares a
-hook. The builder signs each module up to it before the bot connects. Core calls whoever signed up,
-and never imports a module, the bot's type aside (see "How the code is laid out").
+(the bot starting, a timed event falling due, a round amended or cancelled, placements confirmed, a
+review gathering its lines, a season ending, a module turned on or off, the hub's panel gathering
+its options), core declares a hook. The builder signs each module up to it before the bot connects.
+Core calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is
+laid out").
 
 *Rejected:* only writing the dependencies down as a table, which leaves each module's switch-off
 code in core. *Rejected:* registering a module object for each module, more machinery than a
@@ -414,8 +415,7 @@ separate, so one failing is reported and does not stop the rest.
 due and in what order, and hands each to the handler its module provides for that kind of job. The
 builder signs each handler up with its kind of job, beside the kind's missed-run choice. The handler
 does the module's own work, and core holds no module's catch-up code: each module writes the
-handler for every kind of timed job it has, and its catch-up work moves out of the entry point into
-those handlers.
+handler for every kind of timed job it has, and the entry point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
