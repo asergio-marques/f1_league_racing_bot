@@ -80,3 +80,18 @@ def test_pytest_puts_nothing_on_the_path():
 
     assert parser.has_section("pytest")
     assert not parser.has_option("pytest", "pythonpath")
+
+
+def test_python_m_leaguebot_starts_the_bot():
+    """`python -m leaguebot` runs the package's `__main__.py`, which starts the bot only when it is
+    run that way: the tests import the same file, and must not start anything by doing so."""
+    import importlib.util
+
+    spec = importlib.util.find_spec("leaguebot.__main__")
+    assert spec is not None and spec.origin is not None
+    assert Path(spec.origin).resolve() == SRC / "leaguebot" / "__main__.py"
+
+    last = ast.parse(Path(spec.origin).read_text(encoding="utf-8")).body[-1]
+    assert isinstance(last, ast.If)
+    assert ast.unparse(last.test) == "__name__ == '__main__'"
+    assert [ast.unparse(statement) for statement in last.body] == ["asyncio.run(main())"]
