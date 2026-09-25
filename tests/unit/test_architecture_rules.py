@@ -45,9 +45,9 @@ PASS = {
     "image": "#288",
 }
 #: Keeping the full error details in every catch-all handler.
-TRACEBACKS = "T4"
+TRACEBACKS = "#442"
 #: One failure path for timed jobs, events and background tasks.
-BACKGROUND_FAILURES = "B9"
+BACKGROUND_FAILURES = "#453"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────

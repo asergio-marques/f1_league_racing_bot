@@ -84,5 +84,5 @@ ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (decision 1).
     utils.league_bot -> services.*
-    # T3: the log writer queues a failed line on the retry queue itself.
+    # #441: the log writer queues a failed line on the retry queue itself.
     utils.output_router -> services.retry_service

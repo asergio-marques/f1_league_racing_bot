@@ -538,7 +538,7 @@ fixed but its line was not deleted, so the list can only get shorter. Fixing a b
 deleting its line go in the same commit.
 
 Once the queue exists, a further check holds that nothing writes to the database outside a
-queued change (T5).
+queued change (#439).
 
 ---
 
@@ -554,38 +554,38 @@ table as the issues close.
 | What does not match yet | How much today | Fixed by |
 |---|---|---|
 | Code below the cogs imports a cog | 11 imports in 5 services | #283, #285, #286 |
-| A utility imports a service (the log writer queues its own retries) | 1 | T3 |
+| A utility imports a service (the log writer queues its own retries) | 1 | #441 |
 | Database code outside services | 176 calls in 68 functions (the cogs and the start-up code) | #283, #284, #285, #286 |
 | Something else awaited while a save is open | 1 (test mode's fake drivers) | #283 |
-| Catch-all handlers that lose the error details | 125 in 109 functions | T4 |
-| Background tasks started and dropped | 5 | B9 |
+| Catch-all handlers that lose the error details | 125 in 109 functions | #442 |
+| Background tasks started and dropped | 5 | #453 |
 | Code reaching past the scheduler service | 22 places in 13 functions | #283, #286 |
 | Jobs that don't say what happens if missed | 13 | #283, #286 |
 | Private names used across modules | 28 uses of 25 names | the pass owning each name |
-| Posts made directly rather than through a handler | 128 in 61 functions | T3, then each module's pass |
+| Posts made directly rather than through a handler | 128 in 61 functions | #441, then each module's pass |
 
 ### Not counted by a check
 
 | What does not match yet | Fixed by |
 |---|---|
-| The code is grouped by layer, not by module, and is not one installed package | T1 |
-| The rules between modules (core never imports a module, tables written by one module) have no check until the code is grouped by module | T1 |
+| The code is grouped by layer, not by module, and is not one installed package | #438 |
+| The rules between modules (core never imports a module, tables written by one module) have no check until the code is grouped by module | #438 |
 | Services are built one by one in the start-up code, and the signup wizard is wired in afterwards | #283, #286 |
 | The settings are read when the start-up file is imported | #283 |
-| Start-up runs in the "ready" handler, which can run again after a network drop, and one failing step skips the rest | #283, B1, B2 |
+| Start-up runs in the "ready" handler, which can run again after a network drop, and one failing step skips the rest | #283, #446, #447 |
 | Restart recovery for five modules is written into the start-up code | #283, then each module's pass |
 | Core calls into every module directly; there are no hooks | #283, then each module's pass |
 | Every module's switch-on and switch-off is in core's module cog, and there is no dependency table | #283, #286 |
 | Seasons being set up are held on the season cog and found by its class name | #283 |
 | `season_cog.py` holds three whole workflows | #283, #284 |
 | League rules written in cogs (attendance's thresholds and check-in rules, the reserves toggle) | #285, #284 |
-| Changes run on the spot, inside the command, button or timer that asked for them, not through one queue | T5, then each module's pass |
-| Settings commands write their audit record in a second save, and some write none | T5 |
-| A round's timed work is armed, timed and caught up in separate places | #283, #285, T2 |
-| A change cut off by a stop is left half-done | T5 |
-| The retry queue forgets what it delivered | T5 |
-| Timed jobs, events and background tasks have no failure path | T5, B9 |
-| Some commands answer their own failures, naming the error | B10 |
+| Changes run on the spot, inside the command, button or timer that asked for them, not through one queue | #439, then each module's pass |
+| Settings commands write their audit record in a second save, and some write none | #439 |
+| A round's timed work is armed, timed and caught up in separate places | #283, #285, #440 |
+| A change cut off by a stop is left half-done | #439 |
+| The retry queue forgets what it delivered | #439 |
+| Timed jobs, events and background tasks have no failure path | #439, #453 |
+| Some commands answer their own failures, naming the error | #454 |
 | Cancelling a job treats every error as "no such job" | #283, #286 |
 | Deletes are not proven by a test | #283 |
 | Migrations are not applied whole with the foreign keys checked | #283 |
