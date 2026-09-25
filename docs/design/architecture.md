@@ -76,11 +76,13 @@ described as what it is, the one writer of the log channel.
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.
 
-**9. A failed post that the bot later replaces is retried by its owner.** The retry queue
-records what the post is, and the retry asks the owning module to post it again. The text is
-then written at the moment it is sent, and the owner remembers the new message as usual.
-*Rejected:* the queue re-sending its stored text and writing the new message's id back itself.
-*Rejected:* no longer retrying these posts.
+**9. A failed post is retried by its owner.** A post that fails inside a change is retried by
+the change queue (decision 16), which runs the owning module's post again. The text is then
+written at the moment it is sent, and the owner remembers the new message as usual. The old
+retry queue is kept for log lines only.
+*Rejected:* the retry queue re-sending its stored text and writing the new message's id back
+itself. *Rejected:* no longer retrying these posts. *Rejected:* keeping the retry queue for posts
+beside the change queue, as two mechanisms for one job (decided with decision 16).
 
 **10. The rules are checked by import-linter and by our own tests.** import-linter checks
 which code may import which. Our own tests check the rest. Where today's code breaks a rule,
@@ -99,12 +101,13 @@ machinery than six modules need.
 **12. Timed work and restarts work the same way across the whole bot**, the way
 `steward_module.md` §3–4 already designs them for stewarding. The database records when each
 thing is due. A scheduled job only wakes the bot up, and the code it runs checks the database
-again. When a command's change is saved, what it still has to post is saved with it. After a
-restart, one sweep picks up whatever was missed or left half-done. Existing modules move over
-to this through tracked issues.
+again. After a restart, one sweep picks up the timed events that came due while the bot was
+down. A change cut off part-way is finished by the change queue (decision 16). Existing modules
+move over to this through tracked issues.
 *Rejected:* using this shape for stewarding only, which leaves the bot with three different
 ways of recovering. *Rejected:* reporting half-done work for a league manager to repair by
-hand instead of finishing it.
+hand instead of finishing it. *Rejected:* a separate record of work still owed after a save,
+beside the queue (decided with decision 16).
 
 **13. Deletes are proven by a test, and the database deletes linked data only where it is
 safe.** A test fills a database with one row in every table and runs every kind of delete
@@ -121,13 +124,31 @@ change. Each module's design file lists the tables it owns.
 
 **15. No ruff for now.** It may come later as an issue of its own.
 
+**16. Every change goes through one queue.** Every change to the bot's data, whether a person
+asks for it (a command, a button, a form, a typed answer) or a timer does, is put on one queue
+and carried out one at a time. A change is made of steps, each saved as it finishes, so after a
+restart the change carries on from its last finished step. Whoever asked is told at once that
+the change is under way, and then told how it turned out. What can be checked is checked before
+a change is queued. A step that fails because of Discord is retried, and reported if it keeps
+failing. The queue writes the audit record and the log-channel line for every change. Decided
+while reviewing #282's issues, after a change carried out on the spot turned out to be the
+cause of thirteen of the defects found.
+*Rejected:* putting only the league's championship changes, or only the long approvals, through
+the queue, which leaves every other change with today's risks. *Rejected:* making whoever asked
+wait for the result, which a long queue could stretch past the 15 minutes Discord allows for a
+reply. *Rejected:* starting a cut-off change again from the top. *Rejected:* each command
+writing its own audit record, which is how settings came to have none. *Rejected:* stopping a
+change at its first failed step.
+
 ### Decided as usual good practice
 
 These were not put to the owner as questions, being the usual practice; the owner approved
 them with the plan for #282.
 
 - Database code lives only in services, never in cogs or in the start-up code.
-- A settings change and its audit record are saved together, or not at all.
+- The queue carries out one change at a time across the whole bot, since SQLite lets one
+  writer in at a time anyway, and refuses a request for a change already waiting, running or
+  done.
 - While a save is open, the bot waits on nothing but that save's own connection (#155).
 - Start-up work runs once, in one function that tests can run.
 - Every kind of failure reaches the log channel in one standard way.
@@ -242,18 +263,15 @@ docstring says what it promises.
 **All database code is in services**, or in core's database code for connections and
 migrations. A cog never opens a connection, and neither does the start-up code.
 
-**One service operation is one save.** It opens its connection, makes its changes, and either
-commits them all or none. It does not hand its connection back to whoever called it. When one
-module has to change another module's table as part of the same save, it calls that module's
-service and passes its own connection down, so the change still happens all at once.
+**One step of a change is one save.** A step opens its connection, makes its changes, and
+either commits them all or none. It does not hand its connection back to whoever called it. When
+one module has to change another module's table in the same step, it calls that module's service
+and passes its own connection down, so the step still happens all at once.
 
-**A settings change and its audit record are saved together** (decided with the plan for
-#282). The core specification's "The record of what changed" asks for both. Saved separately,
-a failure between the two leaves a change with no record of who made it. The exception is a
-record of how an operation turned out, where the operation is deliberately not all-or-nothing.
-Turning off the results module is one: it keeps going when the erasure of the season's
-messages fails part-way (the docstring of `_apply_results_disable`, decided 2026-09-21). Its
-record can only be written once the outcome is known.
+**The queue writes a change's audit record** in the same save as the step that makes the
+change, and its log-channel line once the change is done, saying how it turned out (decision
+16). The core specification's "The record of what changed" asks for both, and no command has to
+remember them.
 
 **While a save is open, the bot waits on nothing but that save's own connection** (#155). Not
 on Discord, and not on a second connection. SQLite lets one writer in at a time, so a post made
@@ -297,6 +315,39 @@ row that points at it. The rules for the schema baseline itself are CLAUDE.md's.
 
 ---
 
+## How a change is carried out
+
+Every change to the bot's data goes through one queue (decision 16). Commands that only read do
+not.
+
+- **A person asks, or a timer fires.** Either way the change is put on the queue, and the person
+  who asked is told at once that it is under way. That reply is updated with the outcome when the
+  change is done. What a league sees of this is the core specification's, which gains it with the
+  queue.
+- **Checked before it is queued.** Whatever can be checked at the start is checked (the channel
+  exists, the bot may post there, the text fits, the change is allowed in the season's current
+  stage), and the request is refused if not. That is the gate `steward_module.md` §4 designs for
+  a cycle's close, made bot-wide.
+- **One change at a time.** One worker takes changes in the order they were asked for, across the
+  whole bot. Two presses of the same button can no longer run into each other, and a request for a
+  change already waiting, running or done is refused.
+- **Steps, each saved.** A change is made of steps: save this, post that, save the next. Each step
+  is recorded as done when it finishes. After a restart, the worker carries on from the last
+  finished step, and nothing already done is done again.
+- **Posts are remembered.** A post a step makes is recorded with its message id, so repeating the
+  step replaces the post rather than adding a second. The one gap: if the bot stops after sending
+  a one-off notice but before recording it, the notice is sent again. Scanning the channel to spot
+  that was rejected as guesswork in `steward_module.md` §7, and the same reasoning holds here.
+- **A failed step is retried.** A step that fails because of Discord is retried with growing
+  waits, by running the owner's post again, as text where it would have been a picture
+  (Constitution XIV, rule 8). After about an hour of failures it is reported to the log channel,
+  as the core specification already requires of a failed post. The old retry queue is kept for
+  log lines only.
+- **The record is the queue's.** The queue writes the audit record and the log-channel line for
+  every change.
+
+---
+
 ## Timed work and restarts
 
 The bot is mostly driven by the clock: weather phases, check-in calls and deadlines, results
@@ -330,28 +381,20 @@ for that event. Start-up:
 2. applies the migrations, before connecting to Discord;
 3. builds the services with the one builder;
 4. runs the start-up sweep once, when Discord first connects;
-5. only then lets scheduled jobs run.
+5. starts the queue, which carries on with any change a stop cut off;
+6. only then lets scheduled jobs run.
 
 Tests can then run the whole start-up in order, instead of checking its order by searching the
 source code.
 
-**One sweep picks up what was missed or left half-done.** It walks everything that came due
+**One sweep picks up the timed events that were missed.** It walks everything that came due
 while the bot was down, in the order it would have happened, and applies each kind's missed-job
-choice. It also finishes work that was saved but not completed (below). Each step is kept
-separate, so one step failing is reported and does not stop the rest.
+choice. A timed event that makes a change puts it on the queue, like any other. Each step of the
+sweep is kept separate, so one failing is reported and does not stop the rest.
 
-**Work still owed after a save is saved with it.** A command often saves a change and then
-posts about it. Approving a season, for example, saves the season and then posts its lineups,
-calendar and sheets. If the bot stops between the two, nothing records that the posts are
-still owed, and they are silently lost. So the save also records what is still to do, as a
-stage on the row it belongs to, and the sweep finishes it after a restart. Whether finished
-work is posted late or reported to the log channel for a league manager is again the core
-specification's choice.
-
-Because the bot remembers each message it posts, finishing a post twice replaces it rather
-than posting a duplicate. The one gap left: if the bot stops after sending a one-off notice but
-before recording that it did, the notice is sent again. Scanning the channel to spot that was
-rejected as guesswork in `steward_module.md` §7, and the same reasoning holds here.
+**A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
+carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
+are its later steps, and a restart carries on with them.
 
 **Background work is started through one helper** that keeps hold of it. Python only keeps a
 weak hold on a task nobody stores, so such a task can vanish part-way, and its failure goes
@@ -371,7 +414,7 @@ four kinds, and each kind has its own rules for failures and for later changes:
 |---|---|---|
 | **Log line** | configuration changes, outcomes, failures | posting to the log channel, never mentioning anyone, splitting a long record across messages, retrying a failed line |
 | **Standing post** | calendar, lineup, standings, attendance sheet, forecast | remembering every message it posts, replacing the previous one, and on failure having the owner post it again |
-| **Notice** | a cancellation notice, a verdict | remembering the message wherever it might later be edited or deleted, and retrying a failure as text |
+| **Notice** | a cancellation notice, a verdict | remembering the message wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a signup channel | posts inside a channel the bot creates and later deletes whole, so nothing needs remembering |
 
 The code that makes a post still builds its own text, pictures and buttons. The handler looks
@@ -386,10 +429,11 @@ after everything that happens once it is sent.
 - **What happens if it fails:** either it is retried, or the failure is named in the log
   channel.
 
-**A failed standing post is retried by its owner** (decision 9). The retry queue records what
-the post was, and the retry asks the owning module to post it again. The text is then written
-at the moment it is finally sent, and the owner remembers the new message as it always does.
-The queue never holds a picture. The constitution's Principle XIV, rule 8, says why.
+**A failed post is retried by its owner** (decision 9). A post that fails inside a change is
+retried by the change queue, which runs the owning module's post again, as text. The text is
+then written at the moment it is finally sent, and the owner remembers the new message as it
+always does. No queue ever holds a picture; the constitution's Principle XIV, rule 8, says why.
+The old retry queue is kept for log lines.
 
 Which channels exist, and what may go in each, is the constitution's Principle VII and the
 channel registry (`channel_registry_service`).
@@ -406,6 +450,8 @@ posted directly by the module concerned.
 to the host's log and one line goes to the log channel, and reporting it never raises another
 error:
 
+- **Changes**, from whatever starting point, are reported by the queue: the outcome to whoever
+  asked, and a line to the log channel (decision 16).
 - **Commands, buttons and forms** go through `report_failure`
   (`utils/interaction_errors.py`), called by the `LeagueCommandTree`, `LeagueView` and
   `LeagueModal` base classes. What the member and the log channel are told is the core
@@ -491,6 +537,9 @@ will fix it. The check fails on any new breach. It also fails when a listed brea
 fixed but its line was not deleted, so the list can only get shorter. Fixing a breach and
 deleting its line go in the same commit.
 
+Once the queue exists, a further check holds that nothing writes to the database outside a
+queued change (T5).
+
 ---
 
 ## Known divergences
@@ -530,11 +579,12 @@ table as the issues close.
 | Seasons being set up are held on the season cog and found by its class name | #283 |
 | `season_cog.py` holds three whole workflows | #283, #284 |
 | League rules written in cogs (attendance's thresholds and check-in rules, the reserves toggle) | #285, #284 |
-| Settings commands write their audit record in a second save, and some write none | #283, #286, B25, B26 |
+| Changes run on the spot, inside the command, button or timer that asked for them, not through one queue | T5, then each module's pass |
+| Settings commands write their audit record in a second save, and some write none | T5 |
 | A round's timed work is armed, timed and caught up in separate places | #283, #285, T2 |
-| Work still owed after a save is recorded nowhere | #283, #284, #286 |
-| The retry queue forgets what it delivered | T3, B8 |
-| Timed jobs, events and background tasks have no failure path | B9 |
+| A change cut off by a stop is left half-done | T5 |
+| The retry queue forgets what it delivered | T5 |
+| Timed jobs, events and background tasks have no failure path | T5, B9 |
 | Some commands answer their own failures, naming the error | B10 |
 | Cancelling a job treats every error as "no such job" | #283, #286 |
 | Deletes are not proven by a test | #283 |
