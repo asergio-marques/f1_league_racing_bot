@@ -1,8 +1,12 @@
 """SchedulerService — APScheduler wrapper for phase job management.
 
 Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the league
-database, so jobs survive restarts. Jobs that missed their fire time are executed
-immediately (APScheduler default with past DateTrigger + replace_existing=True).
+database, so jobs survive restarts. A job whose moment passed while the bot was stopped runs
+on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, every job's
+misfire grace). Later than that, APScheduler skips it with a warning in the host's log, and
+whatever should be caught up after a longer stop is caught up by the start-up recovery in
+`bot.py`. Each kind of job is to state its own rule where it is registered
+(`docs/design/architecture.md`, "Timed work and restarts").
 
 The separation is deliberate and is not tidiness. `SQLAlchemyJobStore` is synchronous, and
 it is attached to an `AsyncIOScheduler`, so every job it adds, updates or removes writes to
