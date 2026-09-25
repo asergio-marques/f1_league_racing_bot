@@ -342,6 +342,10 @@ const commits = previous ? [...previous.commits] : []
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 let written = previous && previous.tests ? [...previous.tests] : []
+// Every design file the branch has changed. Once there is one, the design verifier runs in every
+// round, so that a design finding is always judged by the verifier and never closed on the
+// builder's word.
+const designFiles = new Set(previous && previous.designFiles ? previous.designFiles : [])
 // A dispute the owner has since ruled on goes back to the builder, which follows the ruling.
 for (const f of ledger.values()) if (f.status === 'upheld') { f.status = 'open'; f.ownerRuled = true; f.asked = false }
 
@@ -647,8 +651,8 @@ const suiteProblems = t => {
   return problems
 }
 
-// The four checkers run side by side, and the design verifier follows the issue reviewer where
-// the branch changes a design file. A checker left undefined was not due this round; one that is
+// The four checkers run side by side, and the design verifier follows the issue reviewer once the
+// branch has changed a design file. A checker left undefined was not due this round; one that is
 // null returned nothing.
 const reviewBuild = async (k, built, questions) => {
   const quiet = built.blocked && !built.commits.length
@@ -656,8 +660,9 @@ const reviewBuild = async (k, built, questions) => {
   const [issueAndDesign, code, product, test] = await parallel([
     () => agent(issuePrompt(k, questions.engineering, null), { label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
       .then(async issueResult => {
-        if (!issueResult || !issueResult.designDocsChanged.length) return { issue: issueResult, design: undefined }
-        const design = await agent(designPrompt(k, issueResult.designDocsChanged), { label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
+        for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
+        if (!designFiles.size) return { issue: issueResult, design: undefined }
+        const design = await agent(designPrompt(k, [...designFiles].sort()), { label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
         return { issue: issueResult, design }
       }),
     () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
@@ -775,4 +780,5 @@ return {
   separateDefects,
   commits,
   ledger: [...ledger.values()],
+  designFiles: [...designFiles].sort(),
 }
