@@ -402,9 +402,9 @@ Start-up:
    store (the core specification's "Saving a state and returning to it");
 3. applies the migrations, before connecting to Discord;
 4. runs the builder: the services, the cogs, the hooks and the kinds of timed job;
-5. runs the start-up sweep once, when Discord first connects, while the changes members ask for
-   wait until the sweep has put its own on the queue, so none overtakes a missed event that would
-   have happened first;
+5. runs the start-up sweep once, when Discord first connects, while every other change, whether a
+   member or a Discord event asks for it, waits until the sweep has put its own on the queue, so
+   none overtakes a missed event that would have happened first;
 6. starts the queue, which carries on with any change a stop cut off, and tries a change waiting on
    a repair again at once;
 7. only then lets scheduled jobs run.
