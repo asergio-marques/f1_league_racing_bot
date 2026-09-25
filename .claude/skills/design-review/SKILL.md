@@ -201,8 +201,9 @@ Phase 5 builds a fix, with `kind: "design-pass"` and three differences:
   second review, in Phase 10.
 
 `modules` is this pass's module, and any other whose folder a correction touches. The `worktree`
-is the main checkout, on the pass's branch; leave it alone while a stage runs. What the stage
-returns is handled as `fix-issue` Phase 5 says. The builder keeps to what this phase has always
+is the main checkout, on the pass's branch; leave it alone while a stage runs. The `base` is
+`git rev-parse HEAD` taken straight after Phase 6's claim. What the stage returns is handled as
+`fix-issue` Phase 5 says, with the minor findings settled before Phase 8 rather than Gate 3. The builder keeps to what this phase has always
 asked, and the checkers hold it to that:
 
 - **One correction per commit**, with its tests, staged by name from `git status --porcelain`.
