@@ -200,11 +200,23 @@ removed as soon as the agent stops. This one takes up the branch `gh issue devel
 local branch tracking it, and leaves the user's `HEAD` alone. Its absolute path is the `worktree`
 handed to the workflow.
 
-## Stage 4 — Build: parallel edits, one test run at a time
+## Stage 4 — Build: through the workflow, one test run at a time
 
-Agents implement their approved plans concurrently and commit at the points their plans named.
+**Each issue is built by the `work-issue` workflow, exactly as `fix-issue` Phase 5 builds one**:
+the tests stage, Gate 2, the build stage and Gate 3, with the arguments listed there. The
+`worktree` is the issue's own `.claude/worktrees/fix-<N>`, by absolute path; the `python` is the
+main checkout's `.venv/bin/python`; and `criteria` and `checks` come from its Stage 2 check. The
+issues' runs go on concurrently, one run per issue at a time. Tell the user each build takes about
+ten agents, and that the Pi runs two of a workflow's agents at once.
 
-**Stage every path by name. `git add -A`, `git add .` and `git commit -a` are forbidden in this
+**Every gate and every question goes to the user through `AskUserQuestion`, one issue at a
+time,** never through plan mode, which would halt every other issue's build. A rejection at Gate 3,
+or an answer that amends a plan, sends that issue back to the Stage 2 check. Its amended plan
+waits for plan mode until no build is running.
+
+The workflow's builders and testers keep two rules the whole batch depends on.
+
+**Every path is staged by name. `git add -A`, `git add .` and `git commit -a` are forbidden in this
 workflow** (decided 2026-09-17). Three separate things here are ignored or untracked and a blanket
 stage sweeps up all of them: the league's own artwork under `resources/league/`, the worktrees under
 `.claude/worktrees/` — each a full checkout carrying its own `.git`, which commits as a bare gitlink
@@ -232,8 +244,8 @@ it test the worktree's own code rather than the checkout it was installed from (
 
 This is the whole mechanism by which "never run two pytest sessions at once" survives having several
 agents at work. An agent waits for the lock; it does not skip the run, and it does not open a second
-terminal. The timeout is an hour because the full suite takes about eight minutes and an agent may
-be behind two others.
+terminal. The timeout is an hour because a builder or tester may be waiting behind two other issues'
+full runs.
 
 Scratch stays on `/tmp` deliberately. Serialising means only one run's `tmp_path` trees exist at a
 time, which is what the tmpfs has room for; pointing `TMPDIR` at the SD card instead would trade a
@@ -249,9 +261,11 @@ checkout, where the artwork lives, and verify its output as PNG rather than as S
 
 ## Stage 5 — Close out, and deliver
 
-Each agent invokes the `close-out` skill for its own issue, in its own worktree, before reporting
-that issue complete. It is mandatory per issue — one batch-wide close-out at the end would not know
-what each branch changed.
+**You run the `close-out` skill for each issue**, in that issue's worktree, once the user has
+accepted it at Gate 3, and one issue at a time: its suite runs go behind the lock like any other.
+It is mandatory per issue — one batch-wide close-out at the end would not know what each branch
+changed. It is yours rather than a subagent's because you alone hold the user's answers, and
+close-out writes each one into the wip-spec, as `fix-issue` Phase 6 says.
 
 **Push and open the pull request only on the user's explicit yes**, one pull request per issue,
 closing its number. **Label each as it is opened**, from its own issue: one work type, one severity
