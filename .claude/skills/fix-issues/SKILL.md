@@ -135,19 +135,28 @@ something that was never built. Ask instead: is it already built, is it still wa
 the owning wip-spec say about it — bearing in mind that where a wip-spec and the implementation
 disagree, the implementation wins.
 
-The report must carry `fix-issue` Phase 3's six items in full: the root cause in terms of what a
-league sees, the change file by file, the named test that fails before and passes after, the commit
-points, the documents owed, and the proposed branch name. Anything less goes back to the agent
-before it reaches the user.
+The report must carry `fix-issue` Phase 3's first six items in full: the root cause in terms of
+what a league sees, the change file by file, the named test that fails before and passes after,
+the commit points, the documents owed, and the proposed branch name. Anything less goes back to the
+agent before it reaches the user. Items 7 and 8 come from the check in Stage 2, not from the agent.
 
 An agent that finds the defect does not reproduce returns that finding and its evidence instead of a
 plan. That is a success, not a failure.
 
-## Stage 2 — Review, one at a time, through the user
+## Stage 2 — Check, then review, one at a time, through the user
 
-Bring each returned plan to the user in plan mode, singly. Bring each question through
-`AskUserQuestion`. Relay the answers to the owning agent with `SendMessage`, which resumes it with
-its analysis intact — a fresh `Agent` call would start cold and re-read everything.
+**Check each returned plan before the user sees it**, through the `work-issue` workflow's check
+stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
+product owner's questions to the user first, and items 7 and 8 added to the plan from its result.
+Keep each check's result for the issue's build. Run the checks one at a time, as the plans come
+back: each is three read-only agents, and the Pi runs two at once.
+
+Bring each checked plan to the user in plan mode, singly: that is its Gate 1. Bring each question
+through `AskUserQuestion`. Relay the answers to the owning agent with `SendMessage`, which resumes
+it with its analysis intact — a fresh `Agent` call would start cold and re-read everything.
+
+**Every plan passes Gate 1 before any issue's tests or build start.** Plan mode reaches every
+running agent, a workflow's builders included, and halts them mid-edit.
 
 Nothing here is inferred. A reply that changes the subject is not approval, and an agent waits until
 its own plan is answered. A plan the user rejects ends that agent; a plan they amend goes back for
