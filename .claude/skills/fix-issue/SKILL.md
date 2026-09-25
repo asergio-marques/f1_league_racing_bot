@@ -105,6 +105,9 @@ Settle what it returns before the user sees the plan:
   owner's first, as it framed them, with its recommendation first. Every answer is a project rule
   from that moment, and a spec correction it calls for is a document owed. Where an answer changes
   the plan's substance, check the plan again.
+- **`specRulesToSettle`** lists every spec rule the plan would change, or that is unclear or at odds
+  with the code. Each must reach the user as a question: where the product owner framed none for
+  one, frame it yourself from the entry.
 - **`citations`**, the rules the product owner cited rather than ask, go into item 7, so that the
   user sees each one and can overrule it.
 
@@ -153,6 +156,10 @@ git branch --show-current
 
 If the link is missing, do not carry on down an unlinked branch — say so.
 
+**Record where the branch starts**, straight after the checkout and before anything is committed:
+`git rev-parse HEAD`. That is the `base` every stage is handed, so its reviewers read this issue's
+work and nothing else. Take it again after any rebase.
+
 ## Phase 5 — Build it, through the workflow
 
 The `work-issue` workflow builds the fix, in two stages with a gate between them. Build nothing by
@@ -162,9 +169,11 @@ hand. Pass every stage the same arguments:
 - `worktree`: the checkout's absolute path. That is the main checkout, which `--checkout` put on
   the branch;
 - `python`: the absolute path of that checkout's `.venv/bin/python`;
-- `branch`, and `base`: `git merge-base origin/main HEAD`, taken once;
+- `branch`, and `base`: the commit Phase 4 recorded;
 - `criteria`: the plan's item 7, and `checks`: its item 8;
-- `decisions`: every answer the user has given on this issue, word for word, with its date.
+- `decisions`: every answer the user has given on this issue, word for word, with its date. A
+  spec change an answer calls for is written by the build, as a document owed;
+- `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on.
 
 **Leave the checkout alone while a stage runs:** its builder is working in it.
 
@@ -205,7 +214,9 @@ second round.
 
 - **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
   the product owner framed them, its recommendation first. Add the answers to `decisions`, and
-  run the same stage again with this result as `previous`, so its rounds carry on.
+  run the same stage again with this result as `previous`, so its rounds carry on. An escalation
+  that carries `finding` is a dispute the user rules on: pass their choice as
+  `rulings: { "<finding>": "fix" }` or `"leave"`, and a finding left as built is closed.
 - **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
   with `openMaterial` and `lastFailures`.
 - **`failed`:** read `failure`. A host at fault, such as a full `/tmp`, is repaired and the stage
@@ -213,18 +224,23 @@ second round.
   before anything runs again.
 - **`separateDefects`** are drafts for the tracker. Draft each in full, wait for an explicit
   yes, and file only what is approved.
-- **`minor`** findings are settled with the user before Gate 3: fix the wording yourself where
-  the answer is plain, and ask where it is not.
+- **`minor`** findings go to the user before the next gate, as a short list. Those they want made
+  go back to the build stage in `decisions`, with this result as `previous`: nothing is fixed by
+  hand, however small.
+- **An empty `summary`** on a `passed` result means the product owner left it out twice. Ask a
+  `product-owner` agent for it through the `Agent` tool, with the branch and the criteria, before
+  the gate.
 
 A checker that returned nothing is never read as a pass: the stage cannot pass without it.
 
-**The `rasteriser` marker still runs by hand** if the fix touches the image module:
-`pytest tests/ -q -m rasteriser` in the main checkout, on a host with Inkscape, with the output
-checked as PNG. CI cannot run it, and neither does the workflow.
+**For the image module, look at the pictures yourself.** The build's suite includes the
+`rasteriser` tests wherever Inkscape is installed, but no agent looks at what they draw. Run
+`pytest tests/ -q -m rasteriser` in the main checkout, where the league's artwork is, and check the
+output as PNG, never as SVG in a browser. CI deselects the marker, so nothing else catches a break.
 
 ### Gate 3 — acceptance
 
-When the build returns `passed` and the minor findings are settled, put the result to the user
+When the build returns `passed` and the minor findings are settled with the user, put the result to the user
 through `AskUserQuestion`. Show the product owner's acceptance `summary`: what a league will now
 see, criterion by criterion, with the test that proves each, and every rule it cited. The options
 are to accept it or to reject it.
@@ -247,9 +263,10 @@ A bug fix that restores documented behaviour needs no document change — but th
 while planning this fix is a project rule from that moment and belongs in the wip-spec,
 whatever the issue said. That includes every answer the user gave to a business question at a
 gate or mid-build, and every behaviour change they asked for at Gate 3: each goes into the
-wip-spec, and into the README and the module's guide where a league sees it. A rule the product
-owner cited needs nothing, being written down already. Where the user ruled that the code was
-right and a spec wrong, the spec's correction is owed here.
+wip-spec, and into the README and the module's guide where a league sees it. The build has written
+these as documents owed, and its product owner has checked them; close-out confirms none was
+missed. A rule the product owner cited needs nothing, being written down already. Where the user
+ruled that the code was right and a spec wrong, the spec's correction is owed the same way.
 
 Reference the issue by number in the closing report, and say plainly whether it is fixed,
 partly fixed, or turned out not to reproduce.
