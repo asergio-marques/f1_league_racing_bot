@@ -73,8 +73,8 @@ hooks without importing a module.
   So do its tools for test mode, which sit under the module's group and work only while test mode is
   on, rather than under `/test-mode`. A command's name then says which module owns it, and the
   module's code stays in its folder. discord.py binds a subcommand only to the cog that declares its
-  group (`steward_module.md` §5), so a module's command under core's group would otherwise have to
-  be written in core's cog, or bound to the module by hand.
+  group (`steward_module.md` §5), so a module's command under core's group would have to be written
+  in core's cog, or bound to the module by hand.
 
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
@@ -130,10 +130,10 @@ It starts with one entry, attendance needing results (the attendance module spec
 opening rules). Stewarding adds a second [STW-MOD-007].
 
 **Core reaches a module only through hooks.** Where something in core has to let the modules act
-(a round amended or cancelled, placements confirmed, a review gathering its lines, a season ending,
-a module turned on or off, the hub's panel gathering its options), core declares a hook. The builder
-signs each module up to it before the bot connects. Core calls whoever signed up, and never imports
-a module, the bot's type aside (see "How the code is laid out").
+(the bot starting, a round amended or cancelled, placements confirmed, a review gathering its lines,
+a season ending, a module turned on or off, the hub's panel gathering its options), core declares a
+hook. The builder signs each module up to it before the bot connects. Core calls whoever signed up,
+and never imports a module, the bot's type aside (see "How the code is laid out").
 
 *Rejected:* only writing the dependencies down as a table, which leaves each module's switch-off
 code in core. *Rejected:* registering a module object for each module, more machinery than a
@@ -153,10 +153,11 @@ after a round, for attendance), it does so through a hook too.
 
 **Each module turns itself on and off.** A module's service has the code that turns it on and off,
 next to the code that sets up what turning it off must remove. Kept apart, a switch-off comes to
-miss what setup added: signup sets four permissions on its channel and its switch-off clears
-three. The `/module` commands in core only handle the command itself, the confirmation, and
-anything the dependency table says must go with it. What turning a module on or off must do is set
-by the constitution's Principle X and by each module's specification, not here.
+miss what setup added, as signup's switch-off came to leave behind the permission its setup gives
+the league admin role on its channel. The `/module` commands in core only handle the command itself,
+the confirmation, and anything the dependency table says must go with it. What turning a module on
+or off must do is set by the constitution's Principle X and by each module's specification, not
+here.
 
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (after PEP 8's convention, extended to the files of one module). What a
@@ -192,9 +193,10 @@ audit record, which is how some settings came to have none.
   ahead of it may have moved the season on. A request a person made that fails is refused. A change
   a timer, an event or the sweep asked for is dropped once its work is no longer due, as a job that
   fires after its work was cancelled does nothing (see "Timed work and restarts"). Where it fails a
-  check a command can repair (a channel, the bot's permission), it waits instead, and is retried the
-  way a step that failed because of Discord is (below); meanwhile the log channel records what
-  failed, as the core specification's "Setting the bot up" has it do. This is the gate
+  check the league can repair (a channel, set by a command; the bot's permission, restored in
+  Discord), it waits instead, and is retried the way a step that failed because of Discord is
+  (below); meanwhile the log channel records what failed, as the core specification's "Setting the
+  bot up" has it do. Any other check it fails is a fault (below). This is the gate
   `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
@@ -205,12 +207,13 @@ audit record, which is how some settings came to have none.
   the exception being a change waiting to be retried (below). Two presses of the same button can
   no longer run into each other. A change's posts hold the worker while they are sent, so a long
   run of posts delays the changes behind it; that is the price of one change at a time.
-- **The same change is not queued twice.** A change is named by what it does, what it acts on and
-  the values it sets (approving a round's appeals, reposting a division's calendar, setting a
-  division's channel to a given one). A request for a change already
-  waiting or running is not queued again. A change that can only be done once, such as approving
-  a round's appeals, is refused by the checks once it has been done, since the round has moved on;
-  one that may be repeated, such as a repost, is not.
+- **The same change is not queued twice in a row.** A change is named by what it does, what it acts
+  on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
+  division's channel to a given one). A request for the same change as the last one waiting is not
+  queued again, so a second press does nothing. A change that can only be done once, such as
+  approving a round's appeals, is refused by the checks once it has been done, since the round has
+  moved on. One that may be repeated, such as a repost, is queued again once it is running or once
+  anything else waits behind it, since a repost reads what it posts when it runs.
 - **Steps, each saved with its mark.** A change is made of steps. The worker opens each saving
   step's connection and hands it down, so the step's changes, the change's audit record where it
   has one, and the mark saying the step is done all commit together or not at all. After a
@@ -218,29 +221,35 @@ audit record, which is how some settings came to have none.
   done again.
 
   *Rejected:* starting a cut-off change again from the top.
-- **Posts are remembered.** A posting step sends the post, then saves its message id with the
-  step's mark. Where the post replaces an earlier message, deleting that message is a step of its
-  own, after it, so the new post stands before the old one goes (Constitution XIV rule 8). One rare
-  window remains: if the bot stops after a post is sent but before its id is saved, the step runs
-  again after the restart and sends a second copy, and the first copy is left behind. And the old
-  and new messages stand together between a post and the deletion after it: until the change
-  finishes on restart, if the bot stops in between, or for as long as the deletion waits on a
-  retry. The design accepts both, and Constitution XIV rule 8 ("at most
-  one such message stands at any moment") is amended with the queue to allow them. Scanning the
-  channel to spot such a copy is not done: `steward_module.md` §7 rejects scanning a channel as
-  guesswork, and that reasoning carries over.
+- **A restored state brings back no queue.** Restoring a saved state (the core specification's
+  "Saving a state and returning to it") empties the queue that comes back with it, so a change under
+  way when the state was saved is not resumed.
+- **Posts are remembered.** A posting step sends the post, then saves its message id with the step's
+  mark. Where the post replaces an earlier message, deleting that message is a step of its own,
+  after it, so the new post stands before the old one goes (Constitution XIV rule 8). Two windows
+  remain. If the bot stops after a post is sent but before its id is saved, the step runs again
+  after the restart and sends a second copy, and the first copy is left behind. And the old and new
+  messages stand together between a post and the deletion after it: until the change finishes on
+  restart, if the bot stops in between, or for as long as the deletion waits on a retry. The design
+  accepts both, and Constitution XIV rule 8 ("at most one such message stands at any moment") is
+  amended with the queue to allow them. Scanning the channel to spot such a copy is not done:
+  `steward_module.md` §7 rejects scanning a channel as guesswork, and that reasoning carries over.
 - **A step that fails because of Discord is retried, without holding up the queue.** It is retried
-  with growing waits, by running the owning module's post again, as text where it would have been a
-  picture (Constitution XIV, rule 8). While it waits, it steps aside: a later change that would post
-  to the same place, or change what the waiting step is about to post, waits behind it, and every
-  other change goes ahead. A command that repairs what the step needs (setting a channel, restoring
-  the bot's permission) is never held behind it; once it has run, the waiting step is tried again at
-  once, as `steward_module.md` §4 has the channel-setting commands resume a waiting close. A step
-  that keeps failing is reported to the log channel, as the core specification's "When the bot
-  stops" requires of a failed post, in the form the owning specification asks for (for a
-  republication, the results specification's "A republication that does not land shall be reported",
-  with the commands that finish the job), and it is still retried. Discord answering that a message
-  is already gone is no failure for a step that deletes it: the step is done.
+  with growing waits, up to a fixed ceiling, by running the owning module's post again, as text
+  where it would have been a picture (Constitution XIV, rule 8). While it waits, it steps aside: a
+  later change that would post to the same place, or change what the waiting step is about to post,
+  waits behind it, and every other change goes ahead. Two kinds of change are never held behind it.
+  A command that repairs what the step needs, such as setting a channel, runs, and the waiting step
+  is tried again at once, as `steward_module.md` §4 has the channel-setting commands resume a
+  waiting close; a repair made in Discord, such as restoring the bot's permission, is found at the
+  next try. And a change that makes the waiting step's work no longer due, such as cancelling its
+  round or turning its module off, runs, and the waiting change is checked again after it and
+  dropped. A step that keeps failing is reported to the log channel, as the core specification's
+  "When the bot stops" requires of a failed post, in the form the owning specification asks for (for
+  a republication, the results specification's "A republication that does not land shall be
+  reported", with the commands that finish the job), and it is still retried. Discord answering that
+  a message is already gone is no failure: a step that deletes it is done, and one that edits it is
+  done too, with a line in the log channel saying the message was gone.
 
   *Rejected:* stopping a change at its first failed step.
 - **A step that fails for any other reason is a fault.** The change stops there and goes to the
@@ -248,8 +257,9 @@ audit record, which is how some settings came to have none.
   stays saved, which is why anything that must be all or nothing is saved in one step.
 - **The record is the queue's.** The queue writes the records the specifications ask of a change:
   for every change to the league's configuration, an audit record and a log-channel line (the core
-  specification's "The record of what changed"), and for any other change, whatever log line its
-  own specification asks for. No command writes them itself.
+  specification's "The record of what changed"), and for any other change, whatever log line its own
+  specification asks for. No command writes them itself. A log line is put on the log line's own
+  retry queue in the same save as the step it records, so a stop cannot lose it.
 
 ---
 
@@ -330,7 +340,10 @@ written, and goes stale without anyone noticing.
 
 The bot is mostly driven by the clock: weather phases, check-in calls and deadlines, results
 channels opening, clean-ups. It also has to carry on correctly after it has been stopped. The whole
-bot does this in the shape `steward_module.md` §3 designs for stewarding.
+bot does this in the shape `steward_module.md` §3 designs for stewarding: the database holds the
+moment work is due, a job only wakes the bot, no job is dropped for being late, and one sweep at
+start-up works through what was missed, in order, before the scheduler runs. §3's heartbeat and
+downtime extension stay stewarding's own.
 
 *Rejected:* using this shape for stewarding only, which leaves the bot with three different ways
 of recovering: the entry point's own steps, the results module's "results posted" flag, and
@@ -345,10 +358,11 @@ rebuild every job from the database.
 
 **Each kind of job says what happens if it is missed.** When the bot was down at the moment a job
 was due, the job either runs late or is skipped. That choice is declared once for each kind of job,
-where the kind is registered, and the start-up sweep applies it. Every job is armed with no limit on
-how late it may run (`misfire_grace_time=None`), so the scheduler never drops one on its own and its
-default never decides, as `steward_module.md` §3 sets out. Which choice is right is a rule a league
-notices, so it belongs to the core specification ("When the bot stops").
+where the kind is registered, and the start-up sweep applies it. A skip is recorded on the event's
+row, so the late job finds nothing due when the scheduler runs it. Every job is armed with no limit
+on how late it may run (`misfire_grace_time=None`), so the scheduler never drops one on its own and
+its default never decides, as `steward_module.md` §3 sets out. Which choice is right is a rule a
+league notices, so it belongs to the core specification ("When the bot stops").
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -375,8 +389,11 @@ source code.
 
 **One sweep picks up the timed events that were missed.** It walks everything that came due while
 the bot was down, in the order it would have happened, and applies each kind's declared choice: run
-it late, or skip it. A timed event that makes a change puts it on the queue, like any other. Each
-step of the sweep is kept separate, so one failing is reported and does not stop the rest.
+it late, or skip it. A timed event that makes a change puts it on the queue, like any other. A
+module's start-up work that is no missed event (a review posted again, an interrupted submission
+reopened, the hub's panel posted again, as the core specification's "When the bot stops" lists) is a
+step of the sweep too, reached through the hook for the bot starting. Each step of the sweep is kept
+separate, so one failing is reported and does not stop the rest.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
@@ -420,17 +437,18 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
 
 **Every post keeps three things,** whichever handler sends it:
 
-- **Its message id,** wherever the bot might later edit, delete or replace it. The owner tells
-  the handler which message a post replaces, and saves the id the handler hands back, in the same
-  step, so each table keeps one writer. A message nobody recorded can never be found again, to be
-  edited or deleted.
+- **Its message id,** wherever the bot might later edit, delete or replace it. The owning module
+  saves the id the handler hands back in the posting step, and asks the handler to delete the
+  message it replaces in the step after, so each table keeps one writer. A message nobody recorded
+  can never be found again, to be edited or deleted.
 - **Who it may mention,** stated where it is sent.
 - **What happens if it fails:** it is retried, and named in the log channel if it keeps failing (a
   log line that keeps failing, in the host's log).
 
-**A failed post is retried by its owner.** A post that fails inside a change is retried by the
-change queue, which runs the owning module's post again, as text. The text is then written at
-the moment it is finally sent, and the owner saves the new message's id as it always does. No
+**A failed post is sent again by its owning module, on the queue's retry.** A post that fails inside
+a change is retried by the change queue, which runs the owning module's post again, as text. The
+text is then written at the moment it is finally sent, and the owning module saves the new message's
+id as it always does. No
 queue ever holds a picture; the constitution's Principle XIV, rule 8, says why. The old retry
 queue is kept for log lines only.
 
@@ -460,6 +478,7 @@ as its specification asks; a failure always is. A command that asks for a change
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler on the bot.
 - **Background tasks** go through the helper that starts them.
+- **The start-up sweep** goes through the job runner, one step at a time, like a scheduled job.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps
@@ -473,12 +492,12 @@ to it would switch off the one failure path for every command.
 **A catch-all error handler** (`except Exception`) is allowed in only four places:
 
 1. on one of the failure paths above;
-2. where the bot works through a list (divisions, drivers, posts) and one item failing must not
-   stop the rest. Inside a queued change, each item is a step, which the queue retries or
-   reports (see "How a change is carried out"). Outside one, the failure is reported as the core
-   specification's "When a command fails" asks. Neither applies where an operation's own rule is
-   all or nothing, as a points amendment's is (the results specification's "Changing points system
-   mid-season");
+2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
+   the rest. Inside a queued change, each item is a step: a Discord failure is retried, and a fault
+   stops the change, so items that must each go ahead whatever befalls the others are queued as
+   changes of their own. Outside one, the failure goes to the failure path of whatever started the
+   work (above). Neither applies where an operation's own rule is all or nothing, as a points
+   amendment's is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 
@@ -549,6 +568,7 @@ Not every rule has its check yet. The rules between modules (core uses no module
 another only where the dependency table allows; each table has one writer) are checked, beyond
 private names, once the code is grouped by module, since a module is then a folder a check can see.
 Once the queue exists, a further check holds that nothing writes to the database outside a queued
-change, apart from putting a change on the queue, the migrations run at start-up and the retry queue
-for log lines. The rules about how things are built (the hooks, the one builder, start-up, the
-sweep) cannot be checked by reading the code until they exist.
+change, apart from the queue's own records (a change put on it, dropped, or waiting on a retry), the
+migrations run at start-up and the retry queue for log lines. The rules about how things are built
+(the hooks, the one builder, start-up, the sweep) cannot be checked by reading the code until they
+exist.
