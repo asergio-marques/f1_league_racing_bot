@@ -53,6 +53,10 @@ BACKGROUND_FAILURES = "#453"
 HANDLERS = "#441"
 #: Each module's commands, moved out of core's command groups into the module's own.
 COMMAND_GROUPS = "#462"
+#: The start-up catch-up in the entry point: each module moves its own share into the handler it
+#: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
+#: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
+CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -167,18 +171,18 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["core"]),
-    ("__main__.py", "_give_up_missed_check_in_call"): (2, PASS["core"]),
+    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
+    ("__main__.py", "_give_up_missed_check_in_call"): (2, PASS["attendance"]),
     ("__main__.py", "_recover_expired_review_prompts"): (4, PASS["core"]),
-    ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["core"]),
-    ("__main__.py", "_recover_missed_cleanups"): (3, PASS["core"]),
-    ("__main__.py", "_recover_missed_phases"): (2, PASS["core"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (8, PASS["core"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (7, PASS["core"]),
-    ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["core"]),
-    ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["core"]),
-    ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["core"]),
-    ("__main__.py", "staged_penalties_warning"): (1, PASS["core"]),
+    ("__main__.py", "_recover_missed_check_in_calls"): (2, PASS["attendance"]),
+    ("__main__.py", "_recover_missed_cleanups"): (3, CLEANUPS),
+    ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (8, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (7, PASS["results"]),
+    ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
+    ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
+    ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
+    ("__main__.py", "staged_penalties_warning"): (1, PASS["results"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.post_check_in"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_call_stands"): (2, PASS["attendance"]),
@@ -580,7 +584,7 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 
 
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["core"]),
+    ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["core"]),
@@ -1126,11 +1130,11 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["core"]),
-    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["core"]),
+    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
+    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
     ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
-    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["core"]),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["core"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("core/cogs/module_cog.py", "ModuleCog._apply_results_disable"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
