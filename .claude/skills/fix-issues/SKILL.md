@@ -183,14 +183,22 @@ stop — do not assign, do not create a branch, do not switch account.
 `gh issue develop` is that the branch is created **through GitHub and linked to the issue**; a branch
 created locally and pushed is not linked. That linkage happens with or without `--checkout`. What
 `--checkout` would additionally do is move the main checkout's `HEAD` — which belongs to the user,
-may hold other work, and would then own the branch the agent's worktree needs, since git permits one
-checkout of a branch at a time. The agent takes it up in its own worktree instead:
-
-```bash
-git fetch origin && git checkout <approved-branch-name>
-```
+may hold other work, and would then own the branch the build's worktree needs, since git permits one
+checkout of a branch at a time.
 
 If the link is missing, do not carry on down an unlinked branch — say so and stop that issue.
+
+**Once the link is confirmed, make the build's worktree by hand**, from the main checkout:
+
+```bash
+git fetch origin
+git worktree add .claude/worktrees/fix-<N> <approved-branch-name>
+```
+
+The analysis agent's own worktree is gone by now: an isolated worktree its agent left unchanged is
+removed as soon as the agent stops. This one takes up the branch `gh issue develop` created, as a
+local branch tracking it, and leaves the user's `HEAD` alone. Its absolute path is the `worktree`
+handed to the workflow.
 
 ## Stage 4 — Build: parallel edits, one test run at a time
 
