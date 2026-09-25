@@ -25,18 +25,15 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
-from leaguebot.results.services.results_purge_service import purge_season_results  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
+from leaguebot.core.services.season_service import SeasonService
+from leaguebot.results.services.results_purge_service import purge_season_results
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 5150
 ACTOR_ID = 4242

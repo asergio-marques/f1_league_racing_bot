@@ -15,24 +15,20 @@ it was deleted.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 from discord import app_commands
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.__main__ as bot_module  # noqa: E402
-import leaguebot.core.cogs.bot_cog as bot_cog  # noqa: E402
-from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
-from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services import hub_service  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+import leaguebot.__main__ as bot_module
+import leaguebot.core.cogs.bot_cog as bot_cog
+from leaguebot.core.cogs.bot_cog import BotCog
+from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import hub_service
+from leaguebot.core.services.config_service import ConfigService
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 27903
 

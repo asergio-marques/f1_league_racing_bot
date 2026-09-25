@@ -6,26 +6,22 @@ specs/035-image-module/contracts/render-service.md.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     NOTICE_FIELD_REDUCED,
     NOTICE_FONT_SUBSTITUTED,
 )
-from leaguebot.image.utils.font_metrics import resolve_family  # noqa: E402
-from leaguebot.image.utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.font_metrics import resolve_family
+from leaguebot.image.utils.svg_document import (
     computed_style,
     FieldIndex,
     parse_svg_bytes,
     stylesheet,
 )
-from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, fill
 
 
 def _doc(body: str, width: int = 1200, height: int = 675):

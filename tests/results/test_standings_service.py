@@ -1,12 +1,7 @@
 """Unit tests for standings_service (T031)."""
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -18,7 +13,7 @@ from leaguebot.results.services.standings_service import (
     opening_driver_standings,
     opening_team_standings,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 
 # ---------------------------------------------------------------------------
@@ -668,7 +663,6 @@ async def test_classified_driver_ranks_above_dnf_at_same_position(db_path):
     assert uid_to_pos[111] < uid_to_pos[222], (
         "CLASSIFIED P6 (in finish_counts) should rank above DNF P6 (not in finish_counts)"
     )
-
 
 
 # ---------------------------------------------------------------------------

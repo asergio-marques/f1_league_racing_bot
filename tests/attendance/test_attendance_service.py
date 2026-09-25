@@ -1,12 +1,7 @@
 """Unit tests for AttendanceService — T006, T012, T018, T024."""
 from __future__ import annotations
 
-import sys
-import os
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 # ---------------------------------------------------------------------------

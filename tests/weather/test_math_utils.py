@@ -5,11 +5,6 @@ from __future__ import annotations
 import math
 import pytest
 
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
 from leaguebot.weather.utils.math_utils import (
     compute_rpc_beta,
     compute_ir,

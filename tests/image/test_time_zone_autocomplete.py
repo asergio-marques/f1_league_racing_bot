@@ -7,17 +7,13 @@ on — and it carried no error guard at all. Both are covered here.
 
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.image.cogs.image_cog as image_cog  # noqa: E402
-import leaguebot.core.utils.timezones as timezones  # noqa: E402
-from leaguebot.image.cogs.image_cog import ImageCog, clear_zone_cache  # noqa: E402
+import leaguebot.image.cogs.image_cog as image_cog
+import leaguebot.core.utils.timezones as timezones
+from leaguebot.image.cogs.image_cog import ImageCog, clear_zone_cache
 
 
 class _Interaction:

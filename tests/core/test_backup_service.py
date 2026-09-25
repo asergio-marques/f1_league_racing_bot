@@ -9,17 +9,13 @@ good one, a restore that cannot be walked back.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.services import backup_service as bs  # noqa: E402
+from leaguebot.core.services import backup_service as bs
 
 
 def _database(path: Path, *, wal: bool = True, rows: int = 3) -> None:
@@ -406,7 +402,6 @@ def test_a_real_migrated_database_survives_the_round_trip(tmp_path):
     """
     import asyncio
 
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
     from leaguebot.core.db.database import run_migrations
 
     live = tmp_path / "bot.db"

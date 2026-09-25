@@ -8,14 +8,10 @@ draw, or drawing where it should refuse. These tests pin every column.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     PREVIEW_KINDS,
     ROSTER_DRAWING_KINDS,
 )

@@ -10,16 +10,12 @@ It also covers the live grid resolution (FR-014, FR-016) and the two `/images te
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services import attendance_service  # noqa: E402
-from leaguebot.image.services.image_attendance_service import resolve_drawing, DriverRecord  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import attendance_service
+from leaguebot.image.services.image_attendance_service import resolve_drawing, DriverRecord
 
 
 # ── The values both paths draw (FR-013) ───────────────────────────────────

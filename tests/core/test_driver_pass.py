@@ -7,16 +7,12 @@ left for test mode to delete. A banned driver is left untouched.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.season_lifecycle_service import run_driver_pass  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_lifecycle_service import run_driver_pass
 
 SERVER_ID = 22130
 

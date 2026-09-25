@@ -12,20 +12,16 @@ the registry the postings read.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services import image_preview_service  # noqa: E402
-from leaguebot.image.services.image_preview_service import (  # noqa: E402
+from leaguebot.image.services import image_preview_service
+from leaguebot.image.services.image_preview_service import (
     PreviewContext,
     _race_name,
 )
-from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME  # noqa: E402
+from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME
 
 pytestmark = pytest.mark.asyncio
 

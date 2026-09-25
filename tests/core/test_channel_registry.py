@@ -16,18 +16,14 @@ manager hunting a conflict that does not exist.
 from __future__ import annotations
 
 import ast
-import os
 import re
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.channel_registry_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.channel_registry_service import (
     SETTING_LABELS,
     ChannelUse,
     as_text_channel,

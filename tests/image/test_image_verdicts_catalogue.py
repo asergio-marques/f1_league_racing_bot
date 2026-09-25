@@ -9,22 +9,18 @@ the weather mystery notice had reached that before it.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CATALOGUES,
     catalogue_for,
     sibling_fields_declared,
 )
-from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes
 
 KEY = "verdicts_template"
 

@@ -31,14 +31,9 @@ depicts rather than a gap it reports.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.results.services.result_submission_service import (
     _validate_qualifying_row_wizard,
     _validate_race_row_wizard,
 )

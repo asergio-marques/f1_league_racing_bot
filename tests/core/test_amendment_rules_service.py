@@ -6,13 +6,9 @@ code read the wall clock would pass today and fail silently months later.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
 from leaguebot.core.services.amendment_rules_service import judge_amendment

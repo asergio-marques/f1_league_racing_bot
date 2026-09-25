@@ -40,7 +40,6 @@ again. Neither is discoverable from the absence of a message.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -48,10 +47,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.__main__ as bot_module  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+import leaguebot.__main__ as bot_module
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 11808
 SEASON_ID = 1

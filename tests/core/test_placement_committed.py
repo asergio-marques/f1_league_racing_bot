@@ -7,17 +7,13 @@ instead. A placement written without saying takes the default its season implies
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection  # noqa: E402
-from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
-from tests.core.test_placement_assign import (  # noqa: E402
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.placement_service import PlacementService
+from tests.core.test_placement_assign import (
     DIVISION_ID,
     PROFILE_ID,
     SEASON_ID,

@@ -7,14 +7,9 @@ fault at once, so a manager fixes one paste rather than one row per attempt.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.roster_import import (  # noqa: E402
+from leaguebot.core.utils.roster_import import (
     SYNTHETIC_ID_BASE,
     divisions_named,
     parse_roster_csv,

@@ -30,16 +30,13 @@ the difference between a league proceeding and a league wondering what happened.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.config_service import ConfigService
 
 SERVER_ID = 11408
 ACTOR_ID = 77

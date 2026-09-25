@@ -15,18 +15,13 @@ hand-built one once it exists.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services import points_config_service, season_points_service  # noqa: E402
-from leaguebot.core.services.test_roster_service import ensure_test_configs  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.core.services.test_roster_service import ensure_test_configs
 
 SERVER_ID = 9310
 

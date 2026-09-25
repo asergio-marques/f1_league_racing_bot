@@ -20,15 +20,11 @@ results channel that refused a post has already been put back as it was by the t
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.services.results_post_service import replay_division_channels  # noqa: E402
+from leaguebot.results.services.results_post_service import replay_division_channels
 
 DIVISION_ID = 91
 FROM_ROUND = 3

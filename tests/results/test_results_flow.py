@@ -6,12 +6,7 @@ compute_driver_standings + persist_snapshots produce correct totals.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -22,7 +17,7 @@ from leaguebot.results.services.standings_service import (
     compute_points_for_session,
     persist_snapshots,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 
 # ---------------------------------------------------------------------------

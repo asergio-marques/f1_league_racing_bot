@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import os
-import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -18,10 +16,8 @@ import aiosqlite
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.services.driver_portrait_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.services.driver_portrait_service import (
     has_own_avatar,
     portrait_path,
     refresh_portraits,
@@ -32,7 +28,6 @@ from leaguebot.image.services.driver_portrait_service import (  # noqa: E402
 SERVER_ID = 4242
 NOW = datetime(2026, 9, 1, 3, 0, tzinfo=timezone.utc)
 PNG = b"\x89PNG\r\n\x1a\nFAKEBYTES"
-
 
 
 @pytest.fixture

@@ -26,20 +26,17 @@ the backup produces, not the file handling underneath, which has its own cover i
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Aliased on import: pytest tries to collect any module-level name starting with `Test`
 # as a test class, and warns that it cannot because the cog has an `__init__`.
-from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 10008
 ACTOR_ID = 77

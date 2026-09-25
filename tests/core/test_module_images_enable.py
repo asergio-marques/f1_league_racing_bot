@@ -29,15 +29,12 @@ at all.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 13008
 ACTOR_ID = 77

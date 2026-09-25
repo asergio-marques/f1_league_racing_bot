@@ -27,7 +27,7 @@ def test_bot_imports_with_no_dotenv_and_no_token_once_conftest_has_run():
         import dotenv
         dotenv.load_dotenv = lambda *args, **kwargs: False   # as on a runner: no .env
         os.environ.pop("BOT_TOKEN", None)
-        sys.path[:0] = [{str(REPO_ROOT / "src")!r}, {str(REPO_ROOT / "tests")!r}]
+        sys.path[:0] = [{str(REPO_ROOT / "tests")!r}]
         import conftest                                      # the suite's collection-time setup
         import leaguebot.__main__                            # must not raise KeyError
         print("imported")

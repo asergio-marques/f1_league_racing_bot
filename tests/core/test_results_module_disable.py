@@ -31,20 +31,17 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.module_cog import (  # noqa: E402
+from leaguebot.core.cogs.module_cog import (
     ModuleCog,
     _ConfirmDisableResultsView,
     _results_disable_warning,
 )
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 12408
 ACTOR_ID = 77

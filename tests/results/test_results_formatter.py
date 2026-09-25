@@ -1,12 +1,7 @@
 """Unit tests for results_formatter (T032)."""
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
 from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot
@@ -248,7 +243,6 @@ def test_driver_standings_reserve_with_points_hidden_reserves_off():
     snaps = [_make_snap(200, 1, 5)]
     result = format_driver_standings(snaps, reserve_user_ids={200}, show_reserves=False)
     assert "<@200>" not in result
-
 
 
 # ---------------------------------------------------------------------------

@@ -13,16 +13,12 @@ Covers:
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 import leaguebot.core.services.calendar_post_service as cps
 

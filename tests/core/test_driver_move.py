@@ -7,17 +7,13 @@ left the driver roleless in between, posted the lineup twice and let the seat be
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.placement_service import PlacementService
 
 SERVER_ID = 22090
 SEASON_ID = 1

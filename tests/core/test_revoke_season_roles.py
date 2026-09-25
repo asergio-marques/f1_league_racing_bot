@@ -24,16 +24,13 @@ placed this season keeps whatever roles the current season gave them.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.season_end_service import _revoke_season_roles  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_end_service import _revoke_season_roles
 
 SERVER_ID = 13908
 SEASON_ID = 1

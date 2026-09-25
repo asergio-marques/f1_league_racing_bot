@@ -35,19 +35,16 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.channel_registry_service import ChannelUse  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.channel_registry_service import ChannelUse
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 9808
 SEASON_ID = 1

@@ -11,14 +11,11 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import run_migrations  # noqa: E402
+from leaguebot.core.db.database import run_migrations
 
 LEAGUE = 2540
 

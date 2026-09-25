@@ -10,11 +10,7 @@ run. A season is completed explicitly, by `/season complete`, and in no other wa
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
-
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService

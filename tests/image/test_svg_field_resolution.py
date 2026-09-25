@@ -4,14 +4,9 @@ Pure tests — no database, no Discord, no rasteriser.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from leaguebot.image.utils.svg_document import FieldIndex, canvas_of, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex, canvas_of, parse_svg_bytes
 
 SVG_OPEN = (
     '<svg xmlns="http://www.w3.org/2000/svg" '

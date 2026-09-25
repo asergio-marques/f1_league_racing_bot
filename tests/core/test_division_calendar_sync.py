@@ -28,19 +28,15 @@ pins that, and fails if the value is ever normalised to `None` again.
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from datetime import date
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 13208
 

@@ -13,18 +13,14 @@ the assignment are the very rows the manager made.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import date
 
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
-from leaguebot.core.services.test_roster_service import add_test_driver, list_test_drivers  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.test_roster_service import add_test_driver, list_test_drivers
 
 SERVER_ID = 8420
 DIVISION = "Division 1"

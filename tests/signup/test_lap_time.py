@@ -8,12 +8,7 @@ asked again, so the two ways a time enters the bot can no longer disagree.
 
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 def _normalise(raw: str):

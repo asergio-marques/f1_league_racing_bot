@@ -40,21 +40,18 @@ channel a division reads.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.penalty_wizard import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_wizard import (
     AddPardonModal,
     PenaltyReviewState,
     StagedPardon,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 11008
 SEASON_ID = 1

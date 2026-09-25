@@ -5,14 +5,9 @@ is stored never depends on how it happened to be typed.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.time_parsing import parse_time_of_day  # noqa: E402
+from leaguebot.core.utils.time_parsing import parse_time_of_day
 
 
 @pytest.mark.parametrize(

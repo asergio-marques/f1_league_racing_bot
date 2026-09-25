@@ -9,21 +9,17 @@ against the PNG, per quickstart.md, and is deliberately not a task here.
 """
 from __future__ import annotations
 
-import os
 import struct
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
-from leaguebot.image.services.image_render_service import ImageRenderService  # noqa: E402
-from leaguebot.image.services.image_preview_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.services.image_config_service import ImageConfigService
+from leaguebot.image.services.image_render_service import ImageRenderService
+from leaguebot.image.services.image_preview_service import (
     build_attendance_preview,
     build_calendar_preview,
     build_lineup_preview,
@@ -35,8 +31,8 @@ from leaguebot.image.services.image_preview_service import (  # noqa: E402
     build_weather_preview,
     resolve_context,
 )
-from leaguebot.image.services.image_validity_service import ImageValidityService  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.image.services.image_validity_service import ImageValidityService
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 9494
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)

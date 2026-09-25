@@ -9,22 +9,17 @@ about the tree and needs nothing.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 from lxml import etree
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from leaguebot.image.utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.svg_document import (
     SVG_NS,
     FieldIndex,
     computed_style,
     parse_svg_bytes,
     stylesheet,
 )
-from leaguebot.image.utils.svg_palette import (  # noqa: E402
+from leaguebot.image.utils.svg_palette import (
     InvalidSlot,
     apply_palette,
     colour_slots,

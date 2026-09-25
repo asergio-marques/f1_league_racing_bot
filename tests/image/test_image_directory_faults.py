@@ -12,13 +12,9 @@ passed through: its assets fall back, as Rule XIV.13 requires.
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from types import SimpleNamespace
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_render_service import (  # noqa: E402
+from leaguebot.image.services.image_render_service import (
     resolve_configured_directories,
     spec_builder_with_faults,
 )

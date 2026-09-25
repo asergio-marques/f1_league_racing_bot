@@ -1,13 +1,9 @@
 """`SchedulerService.cancel_all` — every job at once, for pack and factory reset (#247)."""
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.services.scheduler_service import (  # noqa: E402
+from leaguebot.core.services.scheduler_service import (
     PORTRAIT_REFRESH_JOB_ID,
     SIGNUP_CLOSE_JOB_ID,
     SchedulerService,

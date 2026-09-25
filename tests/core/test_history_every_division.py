@@ -7,16 +7,12 @@ is in their history beside the one they finished in.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection  # noqa: E402
-from leaguebot.core.services.season_end_service import _write_driver_history_entries  # noqa: E402
-from tests.core.test_driver_move import (  # noqa: E402
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.season_end_service import _write_driver_history_entries
+from tests.core.test_driver_move import (
     AM,
     PRO,
     PROFILE_ID,

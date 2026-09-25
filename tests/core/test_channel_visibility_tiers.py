@@ -16,16 +16,13 @@ before it existed.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.server_config import ServerConfig
 
 SERVER_ID = 4242
 MANAGER_ROLE = 222

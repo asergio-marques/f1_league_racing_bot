@@ -9,20 +9,16 @@ render, which is the reading the forecasts already take of the same three fields
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_verdict_banner_service import (  # noqa: E402
+from leaguebot.image.services.image_verdict_banner_service import (
     TEMPLATE_KEY,
     VerdictBannerDrawing,
     build_fill_spec,
     resolve_drawing,
 )
-from leaguebot.image.utils.svg_document import load_svg, parse_svg_bytes  # noqa: E402
-from leaguebot.image.utils.svg_fill import fill  # noqa: E402
+from leaguebot.image.utils.svg_document import load_svg, parse_svg_bytes
+from leaguebot.image.utils.svg_fill import fill
 
 SHIPPED = (
     Path(__file__).resolve().parents[2]

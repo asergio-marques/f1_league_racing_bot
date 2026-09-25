@@ -29,17 +29,14 @@ inside is logged and swallowed — a season review must not fail on a capacity e
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.models.image_catalogues import CapacityError  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.models.image_catalogues import CapacityError
 
 SERVER_ID = 13108
 SEASON_ID = 1

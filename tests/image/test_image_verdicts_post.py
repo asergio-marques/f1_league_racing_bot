@@ -8,16 +8,10 @@ real server. That is full system testing and is done by hand against quickstart.
 """
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.services import verdict_announcement_service as vas  # noqa: E402
-from leaguebot.image.services.image_verdict_service import VerdictKind  # noqa: E402
+from leaguebot.results.services import verdict_announcement_service as vas
+from leaguebot.image.services.image_verdict_service import VerdictKind
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────

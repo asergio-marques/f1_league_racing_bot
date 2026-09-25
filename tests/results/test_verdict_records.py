@@ -9,16 +9,13 @@ either way, since a qualifying verdict points at a qualifying row.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.verdict_records import delete_verdicts, select_verdicts  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.verdict_records import delete_verdicts, select_verdicts
+from tests.support.teams import seed_team_instances
 
 ROUND_ID = 21
 OTHER_ROUND_ID = 22

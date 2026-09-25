@@ -14,19 +14,15 @@ a running loop when a view is made.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services import hub_service  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
-from leaguebot.core.services.hub_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import hub_service
+from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.hub_service import (
     CUSTOM_ID_PREFIX,
     HubOption,
     HubPanelView,
@@ -39,7 +35,7 @@ from leaguebot.core.services.hub_service import (  # noqa: E402
     registered_options,
     render_panel,
 )
-from leaguebot.core.utils.league_server import LeagueView  # noqa: E402
+from leaguebot.core.utils.league_server import LeagueView
 
 
 @pytest.fixture(autouse=True)

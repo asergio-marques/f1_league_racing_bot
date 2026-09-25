@@ -10,12 +10,7 @@ default team names surviving all of it.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.services.team_service import validate_full_name, validate_team_name
 
@@ -158,11 +153,7 @@ def test_the_key_and_the_asset_filename_come_from_one_rule():
 # feature rewrote.
 # ══════════════════════════════════════════════════════════════════════════
 
-import os as _os  # noqa: E402
-import sys as _sys  # noqa: E402
 from unittest.mock import MagicMock as _MagicMock  # noqa: E402
-
-_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
 from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402

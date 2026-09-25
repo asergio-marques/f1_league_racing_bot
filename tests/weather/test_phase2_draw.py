@@ -28,16 +28,13 @@ from __future__ import annotations
 import json
 import math
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.weather.services.phase2_service import run_phase2  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.weather.services.phase2_service import run_phase2
 
 SERVER_ID = 1
 ROUND_ID = 1

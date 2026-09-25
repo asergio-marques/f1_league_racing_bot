@@ -20,19 +20,16 @@ delete whatever happened to sit there.
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.services.verdict_announcement_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.verdict_announcement_service import (
     republish_verdicts_from_round,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 SEASON_ID = 71
 DIVISION_ID = 81

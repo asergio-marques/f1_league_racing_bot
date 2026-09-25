@@ -11,16 +11,12 @@ Reported to the log channel, it becomes a thing staff can act on.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.attendance.services import rsvp_service  # noqa: E402
-from leaguebot.attendance.services.rsvp_service import _report_call_failure  # noqa: E402
+from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.services.rsvp_service import _report_call_failure
 
 
 def _bot():
@@ -135,10 +131,7 @@ def test_the_note_names_the_command_that_posts_the_call_again():
 
 def test_the_command_the_note_names_is_a_real_one():
     """Pinned against the cog itself, so a rename breaks this rather than a league's recovery."""
-    import os
-    import sys
 
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
     from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 
     assert "post-check-in" in {c.name for c in AttendanceCog.attendance.commands}

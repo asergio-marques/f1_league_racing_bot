@@ -6,12 +6,7 @@ and no Discord in view. The projection onto a template is covered by
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.session_result import (

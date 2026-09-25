@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-import os
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +67,6 @@ class TestGetTrackByName:
         from leaguebot.core.services.track_service import get_track_by_name
         row = await get_track_by_name(db, "Unknown Circuit")
         assert row is None
-
-
 
 
 # ---------------------------------------------------------------------------

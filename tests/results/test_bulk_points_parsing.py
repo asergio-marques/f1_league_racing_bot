@@ -26,14 +26,9 @@ would never know which of their lines had been reinterpreted.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.cogs.results_cog import _parse_bulk_lines  # noqa: E402
+from leaguebot.results.cogs.results_cog import _parse_bulk_lines
 
 
 # ---------------------------------------------------------------------------

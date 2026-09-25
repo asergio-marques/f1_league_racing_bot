@@ -15,19 +15,15 @@ stands where it was drawn while the plate beside it rides in without it.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_catalogues import column_crop_fields  # noqa: E402
-from leaguebot.image.models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS  # noqa: E402
-from leaguebot.image.utils.svg_document import length  # noqa: E402
-from leaguebot.image.utils.svg_fill import FillSpec, _left_edge, _path_rule_x, fill  # noqa: E402
+from leaguebot.image.models.image_catalogues import column_crop_fields
+from leaguebot.image.models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS
+from leaguebot.image.utils.svg_document import length
+from leaguebot.image.utils.svg_fill import FillSpec, _left_edge, _path_rule_x, fill
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 SVG = "http://www.w3.org/2000/svg"

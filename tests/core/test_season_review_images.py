@@ -16,17 +16,13 @@ Three states and not two, which is the part most at risk from a well-meant simpl
 from __future__ import annotations
 
 import ast
-import os
 import re
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import _ReviewPoster  # noqa: E402
+from leaguebot.core.cogs.season_cog import _ReviewPoster
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 

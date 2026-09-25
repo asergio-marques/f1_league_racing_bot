@@ -9,15 +9,11 @@ classification, and two drivers level on totals stand level.
 """
 from __future__ import annotations
 
-import os
-import sys
 import xml.etree.ElementTree as ET
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_attendance_service import (  # noqa: E402
+from leaguebot.image.services.image_attendance_service import (
     LIMIT_LABEL_RESERVE,
     LIMIT_LABEL_SACK,
     MARK_ASSET_CLASS,

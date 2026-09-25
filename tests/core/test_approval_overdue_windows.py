@@ -18,14 +18,10 @@ wall clock would pass today and fail silently some months from now.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.round import Round, RoundFormat, RoundStatus  # noqa: E402
-from leaguebot.core.services.approval_window_service import (  # noqa: E402
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
+from leaguebot.core.services.approval_window_service import (
     AttendanceWindows,
     WeatherWindows,
     calendar_faults,

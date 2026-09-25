@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-import os
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +237,6 @@ class TestSignupDataClearing:
         svc = _make_svc(db_path)
         result = await svc.transition("nfd1", DriverState.NOT_SIGNED_UP)
         assert result is not None and result.current_state == DriverState.NOT_SIGNED_UP
-
 
 
 async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):

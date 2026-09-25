@@ -42,22 +42,19 @@ than posting a result titled after nothing.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.result_submission_service import (
     _build_division_validation_data,
     _get_round_context,
     _make_slug,
     other_active_team_assignments,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 10208
 SEASON_ID = 1

@@ -28,16 +28,13 @@ so a later reader sees why there are two.
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 11908
 

@@ -7,23 +7,19 @@ to Placements where it is not or the season runs in test mode.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import (
     PendingConfig,
     SeasonCog,
     _ConfirmConfigurationView,
 )
-from leaguebot.core.models.season import InvalidStageTransition, SeasonStage  # noqa: E402
-from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.models.season import InvalidStageTransition, SeasonStage
+from leaguebot.core.models.server_config import ServerConfig
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 7
 SEASON_ID = 31

@@ -12,20 +12,16 @@ disagree with what the bot will post.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_preview_service import (  # noqa: E402
+from leaguebot.image.services.image_preview_service import (
     PreviewContext,
     build_verdict_banner_preview,
     build_verdict_preview,
 )
-from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes
 
 pytestmark = pytest.mark.asyncio
 

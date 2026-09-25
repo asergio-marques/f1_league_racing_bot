@@ -16,18 +16,15 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.result_submission_service import (
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
     _claim_amendment,
     cancel_amendment,
@@ -35,7 +32,7 @@ from leaguebot.results.services.result_submission_service import (  # noqa: E402
     snapshot_before_amendment,
     sweep_expired_amendments,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 SEASON_ID = 91
 DIVISION_ID = 92

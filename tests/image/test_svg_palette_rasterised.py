@@ -22,23 +22,18 @@ CI — see CLAUDE.md. Run them by hand on a host with Inkscape.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from lxml import etree
 
-from lxml import etree  # noqa: E402
-
-from leaguebot.image.services.image_render_service import rasterise  # noqa: E402
-from leaguebot.image.utils.svg_document import (  # noqa: E402
+from leaguebot.image.services.image_render_service import rasterise
+from leaguebot.image.utils.svg_document import (
     FieldIndex,
     computed_style,
     parse_svg_bytes,
     stylesheet,
 )
-from leaguebot.image.utils.svg_palette import apply_palette  # noqa: E402
+from leaguebot.image.utils.svg_palette import apply_palette
 
 pytestmark = pytest.mark.rasteriser
 

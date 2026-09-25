@@ -9,11 +9,8 @@ as though it were would let pastes into a locked review channel.
 from __future__ import annotations
 
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 
 
 async def _columns(db_path: str) -> dict[str, tuple]:

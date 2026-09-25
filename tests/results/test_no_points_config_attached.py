@@ -12,19 +12,15 @@ Points when it is enabled and at no other moment, so all three judge a test seas
 from __future__ import annotations
 
 import ast
-import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services import points_config_service, season_points_service  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services import points_config_service, season_points_service
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5700

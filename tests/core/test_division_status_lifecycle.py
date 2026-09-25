@@ -27,15 +27,12 @@ would hold a season open on a division nobody intends to run.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.round import RoundStatus  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 12608
 SEASON_ID = 1

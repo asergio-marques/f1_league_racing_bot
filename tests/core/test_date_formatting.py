@@ -20,17 +20,13 @@ is what stops one going stale.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import DATE_FORMATS, TIME_FORMATS  # noqa: E402
-from leaguebot.core.utils.date_formatting import (  # noqa: E402
+from leaguebot.image.models.image_constants import DATE_FORMATS, TIME_FORMATS
+from leaguebot.core.utils.date_formatting import (
     DEFAULT_DATE_FORMAT,
     format_date,
     format_date_and_time,

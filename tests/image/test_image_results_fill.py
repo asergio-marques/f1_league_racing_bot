@@ -6,13 +6,8 @@ canvas, and the single recolour. The values themselves are settled in
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 from lxml import etree
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.services.image_results_service import (
     QUALIFYING_TEMPLATE_KEY,

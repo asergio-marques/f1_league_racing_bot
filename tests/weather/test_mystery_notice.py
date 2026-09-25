@@ -10,14 +10,11 @@ Covers NFR-003 cases:
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.weather.utils.message_builder import mystery_notice_message
 from leaguebot.core.models.round import Round, RoundFormat

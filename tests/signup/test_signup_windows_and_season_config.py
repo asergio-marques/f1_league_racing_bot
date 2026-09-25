@@ -6,15 +6,10 @@ configuration was confirmed with. Both go with the season when it is deleted.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 SERVER_ID = 22040
 

@@ -1,9 +1,7 @@
 """`/bot factory-reset` — backup first, then the wipe, then the Discord clean-up (#247)."""
 from __future__ import annotations
 
-import os
 import sqlite3
-import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,11 +10,9 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services import backup_service, factory_reset_service  # noqa: E402
-from leaguebot.core.services.factory_reset_service import take_backup  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import backup_service, factory_reset_service
+from leaguebot.core.services.factory_reset_service import take_backup
 
 NOW = datetime(2026, 9, 19, 10, 15, 0, tzinfo=timezone.utc)
 

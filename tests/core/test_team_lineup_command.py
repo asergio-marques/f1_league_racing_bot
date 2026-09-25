@@ -27,19 +27,15 @@ enumerated from the team's capacity rather than from the rows that happen to exi
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from leaguebot.core.models.season import SeasonStage
 
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-
-from leaguebot.core.cogs.team_cog import TeamCog  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.team_cog import TeamCog
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 9208
 SEASON_ID = 3

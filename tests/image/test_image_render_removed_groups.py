@@ -17,20 +17,17 @@ preview suites stop at assembling the fill spec, one step before this check.
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_lineup_service import build_fill_spec, resolve_drawing  # noqa: E402
-from leaguebot.image.services.image_render_service import (  # noqa: E402
+from leaguebot.image.services.image_lineup_service import build_fill_spec, resolve_drawing
+from leaguebot.image.services.image_render_service import (
     _removed_field_ids,
     _verify_against_data,
 )
-from leaguebot.image.utils.svg_document import FieldIndex  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex
 
 LINEUP_TEMPLATE = os.path.join(
     os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates", "lineup_template.svg"

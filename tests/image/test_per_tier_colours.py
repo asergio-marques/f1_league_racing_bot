@@ -8,22 +8,17 @@ therefore one tier, found by the same rule that finds `division_1.svg`.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.services.image_config_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.services.image_config_service import (
     FLAG_COLUMNS,
     PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,
     ImageConfigService,
     UnknownConfigField,
 )
-from leaguebot.image.utils.svg_palette import InvalidSlot  # noqa: E402
+from leaguebot.image.utils.svg_palette import InvalidSlot
 
 @pytest.fixture
 async def db_path(tmp_path):

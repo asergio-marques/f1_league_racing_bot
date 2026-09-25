@@ -15,12 +15,9 @@ from __future__ import annotations
 
 import os
 import re
-import sys
 
 import pytest
 from lxml import etree
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_catalogues import (
     STANDINGS_CONSTRUCTORS_CATALOGUE,
@@ -580,9 +577,5 @@ def test_the_fastest_lap_of_a_grid_cell_is_not_the_one_a_race_result_draws():
         _canonical("row_2_round_7_feature_race_fastest_lap"),
         _canonical("row_2_round_7_driver_1_feature_race_fastest_lap"),
     }) == 3
-
-
-
-
 
 

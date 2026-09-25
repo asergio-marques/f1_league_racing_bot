@@ -36,19 +36,16 @@ on both paths.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.results.cogs.results_cog as results_cog  # noqa: E402
-from leaguebot.results.cogs.results_cog import ResultsCog, XmlImportModal, _run_xml_import  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.services.points_config_service import create_config  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+import leaguebot.results.cogs.results_cog as results_cog
+from leaguebot.results.cogs.results_cog import ResultsCog, XmlImportModal, _run_xml_import
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.points_config_service import create_config
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 10108
 ACTOR_ID = 77

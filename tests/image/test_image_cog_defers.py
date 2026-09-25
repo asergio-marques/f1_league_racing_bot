@@ -22,17 +22,13 @@ interaction is already deferred rather than opening a second response.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog
+from tests.support.undecorate import undecorate
 
 #: The commands that read a template from disk before they can answer.
 READS_TEMPLATES = [

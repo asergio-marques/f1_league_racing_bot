@@ -42,20 +42,17 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
-from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
-from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.bot_cog import BotCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.signup.services.signup_module_service import SignupModuleService
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 27601
 SIGNUP_CHANNEL = 700

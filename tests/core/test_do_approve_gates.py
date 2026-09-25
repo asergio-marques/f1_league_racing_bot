@@ -38,19 +38,15 @@ review, in `test_season_review_report.py`.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from leaguebot.core.cogs.season_cog import SeasonCog
 
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 3300
 SEASON_ID = 11
@@ -882,7 +878,6 @@ async def test_the_refusal_names_every_phantom_at_once(db_path):
     replies = _replies(interaction)
     assert "Standrad" in replies
     assert "Haf Points" in replies
-
 
 
 # ── #408: a refused approval writes no sessions ──────────────────────────────

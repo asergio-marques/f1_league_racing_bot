@@ -19,15 +19,12 @@ merely its resolvability: a name that exists but names the wrong image type woul
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 pytestmark = pytest.mark.asyncio
 

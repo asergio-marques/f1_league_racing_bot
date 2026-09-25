@@ -35,15 +35,12 @@ league is actually looking at.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.services.results_post_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.results_post_service import (
     STANDINGS_CONSTRUCTORS,
     STANDINGS_DRIVERS,
     repost_subsequent_standings,

@@ -7,17 +7,13 @@ are added.
 """
 from __future__ import annotations
 
-import os
 import pathlib
 import re
-import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.signup.cogs import admin_review_cog  # noqa: E402
-from leaguebot.core.services.in_memory_state import clear_in_memory_state  # noqa: E402
+from leaguebot.signup.cogs import admin_review_cog
+from leaguebot.core.services.in_memory_state import clear_in_memory_state
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 

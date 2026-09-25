@@ -30,18 +30,14 @@ these tests hold both ends against each other.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.core.services.scheduler_service as ss  # noqa: E402
-from leaguebot.core.services.scheduler_service import (  # noqa: E402
+import leaguebot.core.services.scheduler_service as ss
+from leaguebot.core.services.scheduler_service import (
     SchedulerService,
     _portrait_refresh_job,
     _round_job_suffix,

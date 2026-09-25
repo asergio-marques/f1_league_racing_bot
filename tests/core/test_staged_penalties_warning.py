@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.__main__ import staged_penalties_warning  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import staged_penalties_warning
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 2435
 

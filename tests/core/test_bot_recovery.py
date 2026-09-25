@@ -29,17 +29,14 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.__main__ import _recover_orphaned_amend_channels, _recover_portrait_refresh_job  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import _recover_orphaned_amend_channels, _recover_portrait_refresh_job
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 10108
 SEASON_ID = 1

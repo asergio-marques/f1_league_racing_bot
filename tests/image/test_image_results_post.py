@@ -6,13 +6,10 @@ textual body still runs exactly as it did before 039 where it did not.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 pytestmark = pytest.mark.asyncio
 

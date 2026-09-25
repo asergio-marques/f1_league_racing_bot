@@ -96,10 +96,7 @@ def test_relative_to_root_renders_forward_slashed(root):
 
 # ── What ships, and where (047 US4) ───────────────────────────────────────
 
-import sys as _sys  # noqa: E402
 from pathlib import Path as _Path  # noqa: E402
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))
 
 from leaguebot.image.models.image_constants import (  # noqa: E402
     ASSET_CLASS_TO_COLUMN,

@@ -32,18 +32,14 @@ reviews, each tied to one stage of one season.
 from __future__ import annotations
 
 import contextlib
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.weather.cogs.weather_cog import WeatherCog  # noqa: E402
-from leaguebot.core.models.season import Season, SeasonStatus  # noqa: E402
-from leaguebot.weather.models.weather_config import WeatherPipelineConfig  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.weather.cogs.weather_cog import WeatherCog
+from leaguebot.core.models.season import Season, SeasonStatus
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 7161
 DB_PATH = "/nonexistent/weather.db"  # never opened: every service call is patched

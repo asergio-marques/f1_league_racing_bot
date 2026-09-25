@@ -1,14 +1,10 @@
 """Unit tests for TeamCog — /team add, /team remove, /team rename, /team list."""
 from __future__ import annotations
 
-import sys
-import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from tests.support.undecorate import undecorate  # noqa: E402
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from tests.support.undecorate import undecorate
 
 
 # ---------------------------------------------------------------------------

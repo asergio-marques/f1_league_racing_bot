@@ -7,18 +7,14 @@ other cog suites unwrap them.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.signup.cogs import signup_cog  # noqa: E402
-from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.signup.cogs import signup_cog
+from leaguebot.core.models.server_config import ServerConfig
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
 

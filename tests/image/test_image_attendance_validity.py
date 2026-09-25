@@ -9,21 +9,17 @@ season review and warns; what needs the concrete data is checked before the rend
 """
 from __future__ import annotations
 
-import os
-import sys
 import xml.etree.ElementTree as ET
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (
     CapacityError,
     catalogue_for,
     row_capacity_problem,
     sibling_fields_declared,
 )
-from leaguebot.image.services.image_attendance_service import (  # noqa: E402
+from leaguebot.image.services.image_attendance_service import (
     AttendanceDataError,
     DriverRecord,
     RoundHeading,

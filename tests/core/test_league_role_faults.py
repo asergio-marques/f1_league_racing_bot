@@ -7,13 +7,9 @@ with only the host's log told.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.channel_guard import league_role_faults  # noqa: E402
+from leaguebot.core.utils.channel_guard import league_role_faults
 
 BASE = 501
 DRIVER = 502

@@ -21,17 +21,13 @@ that needed a live Discord connection would belong to full system testing and no
 from __future__ import annotations
 
 import importlib
-import os
 import pkgutil
-import sys
 
 import pytest
 from discord import app_commands
 from discord.ext import commands as discord_commands
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.channel_guard import (  # noqa: E402
+from leaguebot.core.utils.channel_guard import (
     CHANNEL_EXEMPT_ATTRIBUTE,
     LEAGUE_ADMIN,
     LEAGUE_MANAGER,

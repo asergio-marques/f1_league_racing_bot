@@ -9,13 +9,9 @@ Each test is `async def`, as every test building a modal must be.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX  # noqa: E402
+from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 
 
 def _role(role_id: int = 111) -> MagicMock:

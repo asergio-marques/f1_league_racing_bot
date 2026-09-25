@@ -17,20 +17,16 @@ one; a permission Discord refuses is repaired in Discord.
 from __future__ import annotations
 
 import json
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services import hub_service  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.bot_cog import BotCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import hub_service
+from leaguebot.core.services.config_service import ConfigService
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 27902
 LOG_CHANNEL = 101

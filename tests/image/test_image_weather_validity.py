@@ -10,19 +10,14 @@ race, and it costs no new call site: ``CatalogueLayer`` already surfaces ``Capac
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from leaguebot.image.models.image_module import ImageConfig  # noqa: E402
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.models.image_module import ImageConfig
+from leaguebot.image.services.image_validity_service import (
     LAYER_CATALOGUE,
     CatalogueLayer,
     TemplateContext,

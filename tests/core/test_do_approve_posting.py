@@ -32,9 +32,7 @@ approval is four attempts at a season they are trying to start.
 from __future__ import annotations
 
 import logging
-import os
 import sqlite3
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,17 +40,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import (
     PendingConfig,
     PendingDivision,
     SeasonCog,
     _ConfirmView,
 )
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.round import Round, RoundFormat  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.round import Round, RoundFormat
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 12608
 SEASON_ID = 11
@@ -317,8 +313,6 @@ async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
 
     assert "/bot" not in _replied(interaction)
     cog.bot.season_service.transition_to_active.assert_awaited_once()
-
-
 
 
 async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path):

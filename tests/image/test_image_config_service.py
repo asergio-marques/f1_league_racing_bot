@@ -5,19 +5,14 @@ config row plus eight toggle rows, and the allow-list guarding the generic sette
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
 from types import SimpleNamespace
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import run_migrations  # noqa: E402
-from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS  # noqa: E402
-from leaguebot.image.models.image_module import ImageConfig  # noqa: E402
-from leaguebot.image.services.image_config_service import (  # noqa: E402
+from leaguebot.core.db.database import run_migrations
+from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
+from leaguebot.image.models.image_module import ImageConfig
+from leaguebot.image.services.image_config_service import (
     PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,
     ImageConfigService,

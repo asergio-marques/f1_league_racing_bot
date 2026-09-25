@@ -11,15 +11,11 @@ pins them to one another.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_calendar_service import (  # noqa: E402
+from leaguebot.image.services.image_calendar_service import (
     MYSTERY_RACE_NAME as CALENDAR_MYSTERY_RACE_NAME,
 )
-from leaguebot.image.services.image_rsvp_service import (  # noqa: E402
+from leaguebot.image.services.image_rsvp_service import (
     MYSTERY_RACE_NAME as RSVP_MYSTERY_RACE_NAME,
 )
 

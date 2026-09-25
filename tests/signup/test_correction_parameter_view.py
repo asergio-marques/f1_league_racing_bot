@@ -26,17 +26,13 @@ two-tier check.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.signup.cogs.admin_review_cog as arc  # noqa: E402
-from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView  # noqa: E402
+import leaguebot.signup.cogs.admin_review_cog as arc
+from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView
 
 SERVER_ID = 10608
 DRIVER_ID = "4242"

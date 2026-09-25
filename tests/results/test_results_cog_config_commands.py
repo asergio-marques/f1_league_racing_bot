@@ -11,21 +11,17 @@ removal has to ask before it costs a season its points.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
-from leaguebot.results.services import points_config_service, season_points_service  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.results.services import points_config_service, season_points_service
 
 SERVER_ID = 7700
 SEASON_ID = 21

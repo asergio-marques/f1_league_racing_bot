@@ -26,17 +26,14 @@ finalised round rather than stopping at the next one.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services import attendance_service  # noqa: E402
-from leaguebot.attendance.services.attendance_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.attendance_service import (
     AttendanceService,
     recalculate_attendance_for_round,
 )

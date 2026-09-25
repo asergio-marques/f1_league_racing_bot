@@ -17,16 +17,12 @@ The load-bearing rules pinned here:
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.round import RoundFormat  # noqa: E402
-from leaguebot.core.utils.round_import import (  # noqa: E402
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.utils.round_import import (
     parse_bulk_round_lines,
     parse_round_xml,
 )

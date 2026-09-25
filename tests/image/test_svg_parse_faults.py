@@ -5,14 +5,11 @@ readiest way for a hand-authored template to become unparseable.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from leaguebot.image.utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.svg_document import (
     SvgParseError,
     load_svg,
     parse_svg_bytes,

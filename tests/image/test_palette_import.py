@@ -7,14 +7,9 @@ configured looking unconfigured.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from leaguebot.image.utils.palette_import import (  # noqa: E402
+from leaguebot.image.utils.palette_import import (
     PaletteXmlError,
     parse_palette_lines,
     parse_palette_xml,

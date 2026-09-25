@@ -7,13 +7,9 @@ construction rather than by coincidence.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_catalogues import CATALOGUES, catalogue_for
 from leaguebot.image.services.image_validity_service import (

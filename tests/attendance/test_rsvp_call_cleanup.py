@@ -18,17 +18,14 @@ choose. `get_current_embed_message` does, and its tests are at the foot of this 
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services import rsvp_service  # noqa: E402
-from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.services.attendance_service import AttendanceService
 
 #: The moment every round is placed relative to.
 NOW = datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc)

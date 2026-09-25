@@ -13,15 +13,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
-from leaguebot.core.services.driver_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.driver_service import (
     DriverService,
     accounts_of,
     accounts_of_profile,
@@ -30,7 +27,7 @@ from leaguebot.core.services.driver_service import (  # noqa: E402
     current_account_of,
     resolve_driver_profile_id,
 )
-from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles  # noqa: E402
+from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
 SERVER_ID = 2430
 A, B, C = "1111", "2222", "3333"

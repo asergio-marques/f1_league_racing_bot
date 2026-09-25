@@ -9,15 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import time
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations
 
 
 class _Interaction:

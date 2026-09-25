@@ -7,14 +7,9 @@ naming no cause.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.__main__ as bot_module  # noqa: E402
+import leaguebot.__main__ as bot_module
 
 
 def test_the_installed_discord_py_meets_the_minimum():

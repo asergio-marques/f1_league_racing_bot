@@ -27,18 +27,15 @@ has to end up closed and audited whatever Discord makes of it.
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.module_cog import execute_forced_close  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.cogs.module_cog import execute_forced_close
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.driver_profile import DriverState
 
 SERVER_ID = 13308
 SIGNUP_CHANNEL = 700

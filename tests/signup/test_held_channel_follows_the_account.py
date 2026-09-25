@@ -13,17 +13,14 @@ that records its jobs.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
-from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
-from leaguebot.signup.services.wizard_service import WizardService  # noqa: E402
+from leaguebot.signup.services.signup_module_service import SignupModuleService
+from leaguebot.signup.services.wizard_service import WizardService
 
 SERVER_ID = 2439
 OLD, NEW = "6401", "6402"

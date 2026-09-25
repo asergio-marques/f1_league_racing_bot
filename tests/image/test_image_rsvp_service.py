@@ -11,17 +11,13 @@ of that; the result would be a stale picture under a live message, reporting not
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services import image_rsvp_service  # noqa: E402
-from leaguebot.image.services.image_rsvp_service import (  # noqa: E402
+from leaguebot.image.services import image_rsvp_service
+from leaguebot.image.services.image_rsvp_service import (
     MYSTERY_LITERAL,
     MYSTERY_RACE_NAME,
     RsvpDataError,

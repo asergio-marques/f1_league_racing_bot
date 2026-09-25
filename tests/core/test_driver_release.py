@@ -6,16 +6,12 @@ is not released — they are sacked or moved instead — and an uncommitted plac
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from tests.core.test_driver_move import (  # noqa: E402
+from tests.core.test_driver_move import (
     AM,
     PRO,
     PROFILE_ID,

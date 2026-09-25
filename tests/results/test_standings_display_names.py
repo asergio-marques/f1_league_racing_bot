@@ -28,16 +28,13 @@ highest round number and why it skips cancelled rounds, whose roster is not the 
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.services.results_post_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.results_post_service import (
     _build_member_display,
     _build_test_driver_display,
     driver_standings_for_display,

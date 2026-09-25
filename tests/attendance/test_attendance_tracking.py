@@ -4,14 +4,10 @@ Covers FR-001–FR-031 as enumerated in research.md §8.
 """
 from __future__ import annotations
 
-import sys
-import os
 from datetime import datetime, timezone
 
 import aiosqlite
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import (

@@ -8,17 +8,14 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-from leaguebot.core.services.pack_service import KEPT_JOBS, PackRefused, pack  # noqa: E402
-from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.pack_service import KEPT_JOBS, PackRefused, pack
+from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
 
 SERVER = 4242
 

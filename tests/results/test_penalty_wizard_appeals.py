@@ -26,22 +26,19 @@ failing to edit it must not take down the review the manager is part-way through
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
-from leaguebot.results.services.penalty_wizard import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.penalty_wizard import (
     PenaltyReviewState,
     _refresh_appeals_prompt,
     _render_appeals_prompt_content,

@@ -6,16 +6,11 @@ occupant holds no placement row at all reads as it always did.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services.attendance_service import _opening_attendance_rows  # noqa: E402
-from leaguebot.attendance.services.rsvp_service import query_division_roster  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.attendance_service import _opening_attendance_rows
+from leaguebot.attendance.services.rsvp_service import query_division_roster
 
 SERVER_ID = 22080
 DIVISION_ID = 1

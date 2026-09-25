@@ -42,17 +42,14 @@ silently once it went by. Every round here is scheduled relative to the real pre
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.attendance_service import AttendanceService
 
 SERVER_ID = 8508
 SEASON_ID = 1

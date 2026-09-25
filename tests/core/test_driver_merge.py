@@ -12,16 +12,13 @@ leaves the league as it was (E33).
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services import driver_service  # noqa: E402
-from leaguebot.core.services.driver_service import DriverService  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import driver_service
+from leaguebot.core.services.driver_service import DriverService
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"

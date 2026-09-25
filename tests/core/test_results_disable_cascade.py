@@ -19,16 +19,13 @@ calls `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 def
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 6611
 ACTOR_ID = 4242

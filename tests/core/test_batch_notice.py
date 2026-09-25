@@ -7,16 +7,12 @@ refuse either half leaves the body's own outcome untouched.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.batch_notice import batch_notice  # noqa: E402
+from leaguebot.core.utils.batch_notice import batch_notice
 
 
 def _channel():

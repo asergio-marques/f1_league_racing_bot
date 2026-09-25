@@ -9,15 +9,12 @@ and takes them from the one it replaced where that one is still in the server (E
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.placement_service import PlacementService
 
 SERVER_ID = 2438
 DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE = 7001, 7002, 7003

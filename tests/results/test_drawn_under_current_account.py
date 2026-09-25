@@ -11,14 +11,11 @@ not one stored row changes.
 from __future__ import annotations
 
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.results_post_service import _load_driver_rows  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.results_post_service import _load_driver_rows
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 2436
 PAST, NOW, OTHER = 9101, 9102, 9103

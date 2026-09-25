@@ -35,7 +35,6 @@ import ast
 import importlib
 import pkgutil
 import re
-import sys
 from pathlib import Path
 
 import pytest
@@ -43,7 +42,6 @@ from discord import app_commands
 from discord.ext import commands as discord_commands
 
 SRC = Path(__file__).resolve().parents[2] / "src"
-sys.path.insert(0, str(SRC))
 
 #: A command as the bot writes it in a message: backticked, slash-led, lowercase words.
 #: Trailing words are kept so an argument spelled out in the message can be recognised.

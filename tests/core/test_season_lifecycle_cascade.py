@@ -25,16 +25,12 @@ Issue #154.
 from __future__ import annotations
 
 import itertools
-import os
-import sys
 
 import pytest
 from unittest.mock import MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService, SeasonImmutableError  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_service import SeasonService, SeasonImmutableError
 
 SERVER_ID = 7654
 ACTOR_ID = 999
@@ -394,7 +390,6 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
     import inspect
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
     from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)

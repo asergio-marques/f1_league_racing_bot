@@ -13,16 +13,12 @@ the ordinary way.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_validity_service import calendar_overlay_faults_of  # noqa: E402
+from leaguebot.image.services.image_validity_service import calendar_overlay_faults_of
 
 SVG_NS = "http://www.w3.org/2000/svg"
 PACKAGED = (

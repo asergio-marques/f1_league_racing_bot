@@ -29,17 +29,14 @@ each is logged and the rest of the recovery continues.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.__main__ import _recover_rsvp_views_and_deadlines  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 12908
 SEASON_ID = 1

@@ -5,14 +5,9 @@ FR-026 names 4.5:1, the WCAG AA threshold for normal-size text.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.utils.colour import (  # noqa: E402
+from leaguebot.image.utils.colour import (
     CONTRAST_AA_NORMAL,
     InvalidColour,
     coerce_css_colour,

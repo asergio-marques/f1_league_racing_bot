@@ -1,11 +1,6 @@
 """Unit tests for rendering the points configuration listing (#200)."""
 from __future__ import annotations
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.utils.results_formatter import format_config_list
 

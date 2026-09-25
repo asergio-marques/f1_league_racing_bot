@@ -27,19 +27,14 @@ or was never armed, is the ordinary case for every cancellation here.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.core.services.scheduler_service as scheduler_module  # noqa: E402
-from leaguebot.core.services.scheduler_service import SchedulerService  # noqa: E402
-
+import leaguebot.core.services.scheduler_service as scheduler_module
+from leaguebot.core.services.scheduler_service import SchedulerService
 
 
 @pytest.fixture(autouse=True)

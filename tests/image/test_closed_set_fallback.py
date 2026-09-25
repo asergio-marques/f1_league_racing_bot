@@ -18,21 +18,18 @@ country is never handed a packaged file of its own name. See `test_asset_resolve
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     FALLBACK_ASSET_NAME,
     is_closed_set_datum,
 )
-from leaguebot.image.utils.asset_resolver import AssetOutcome, normalise, resolve_asset  # noqa: E402
-from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
-from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
-from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.asset_resolver import AssetOutcome, normalise, resolve_asset
+from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
+from leaguebot.image.utils.svg_document import parse_svg_bytes
+from leaguebot.image.utils.svg_fill import FillSpec, fill
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"/>'
 

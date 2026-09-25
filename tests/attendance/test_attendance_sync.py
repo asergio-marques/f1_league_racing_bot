@@ -12,18 +12,14 @@ no longer a candidate, which a double that recorded calls would never show.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection  # noqa: E402
-from leaguebot.attendance.services import attendance_service  # noqa: E402
-from leaguebot.attendance.services.attendance_service import SanctionOutcome, sync_attendance  # noqa: E402
-from tests.attendance.test_attendance_sanctions import (  # noqa: E402
+from leaguebot.core.db.database import get_connection
+from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.attendance_service import SanctionOutcome, sync_attendance
+from tests.attendance.test_attendance_sanctions import (
     DIVISION_ID,
     FULL_TIME_PROFILE,
     ROUND_ID,
@@ -32,7 +28,7 @@ from tests.attendance.test_attendance_sanctions import (  # noqa: E402
     _make_db,
     _seed_totals,
 )
-from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db  # noqa: E402
+from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 
 async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:

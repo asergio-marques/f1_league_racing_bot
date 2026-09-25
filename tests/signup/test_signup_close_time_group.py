@@ -13,19 +13,15 @@ against the registered command list rather than against a string a reader has to
 """
 from __future__ import annotations
 
-import os
 import re
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 7731
 

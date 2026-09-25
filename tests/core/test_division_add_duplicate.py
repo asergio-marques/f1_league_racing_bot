@@ -38,7 +38,6 @@ a defer, is a 404, so both halves are pinned.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -46,11 +45,9 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 9908
 SEASON_ID = 1

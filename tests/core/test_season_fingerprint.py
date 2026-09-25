@@ -12,16 +12,13 @@ is the test that stops the coverage rotting.
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
-from leaguebot.core.services.season_fingerprint_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.services.image_config_service import ImageConfigService
+from leaguebot.core.services.season_fingerprint_service import (
     AREA_LABELS,
     SeasonFingerprint,
     take_fingerprint,

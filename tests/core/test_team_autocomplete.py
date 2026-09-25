@@ -6,16 +6,12 @@ the shorthand — the one thing the command accepts.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.autocomplete import team_autocomplete, team_choices  # noqa: E402
+from leaguebot.core.utils.autocomplete import team_autocomplete, team_choices
 
 TEAMS = [
     {"name": "MCL", "full_name": "McLaren Formula 1 Team", "is_reserve": False},

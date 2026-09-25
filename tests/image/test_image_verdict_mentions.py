@@ -11,15 +11,11 @@ nothing here depends on a calendar it is not testing.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_verdict_service import VerdictKind  # noqa: E402
+from leaguebot.image.services.image_verdict_service import VerdictKind
 
 SERVER_ID = 1001
 ROUND_ID = 77

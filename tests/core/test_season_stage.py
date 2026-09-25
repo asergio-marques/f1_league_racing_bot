@@ -7,16 +7,12 @@ of rows already in the old shape, and the transitions `SeasonService.set_stage` 
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import (
     ALLOWED_STAGE_TRANSITIONS,
     STAGES_OF_STATUS,
     InvalidStageTransition,
@@ -24,7 +20,7 @@ from leaguebot.core.models.season import (  # noqa: E402
     SeasonStatus,
     status_of_stage,
 )
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 2200
 

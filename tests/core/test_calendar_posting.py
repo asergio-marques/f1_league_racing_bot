@@ -31,7 +31,6 @@ leaves its renders behind fills the Pi's disk.
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -39,10 +38,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.calendar_post_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.calendar_post_service import (
     post_division_calendar,
     replace_calendar_message,
 )

@@ -6,12 +6,7 @@ These tests are written before T012 implements the helper (TDD).
 
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.results.cogs.results_cog import _parse_bulk_lines
 

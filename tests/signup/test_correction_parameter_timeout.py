@@ -22,17 +22,14 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
-from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 
 SERVER_ID = 5129
 DRIVER_ID = "700100"

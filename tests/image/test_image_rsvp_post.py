@@ -13,17 +13,13 @@ from __future__ import annotations
 
 import ast
 import inspect
-import os
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.attendance.services import rsvp_service  # noqa: E402
-from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach  # noqa: E402
+from leaguebot.attendance.services import rsvp_service
+from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach
 
 _SRC = Path(__file__).resolve().parents[2] / "src"
 

@@ -6,14 +6,9 @@ format must have a label — one added without would raise on race day, not here
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.round import RoundFormat  # noqa: E402
+from leaguebot.core.models.round import RoundFormat
 
 
 @pytest.mark.parametrize(

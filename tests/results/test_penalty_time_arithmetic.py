@@ -30,14 +30,9 @@ so a floor added here would silently disagree with the validator that already do
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.services.penalty_service import (  # noqa: E402
+from leaguebot.results.services.penalty_service import (
     _apply_time_penalty,
     _delta_to_ms,
     _ms_to_delta,

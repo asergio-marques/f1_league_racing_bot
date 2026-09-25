@@ -23,24 +23,20 @@ mode went, and the two entries are written separately.
 """
 from __future__ import annotations
 
-import os
-import sys
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from leaguebot.core.models.season import SeasonStage
 
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-
-from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
-from leaguebot.core.services.amendment_service import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog
+from leaguebot.core.services.amendment_service import (
     AmendmentModifiedError,
     AmendmentNotActiveError,
 )
-from tests.support.undecorate import undecorate  # noqa: E402
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 12108
 SEASON_ID = 3

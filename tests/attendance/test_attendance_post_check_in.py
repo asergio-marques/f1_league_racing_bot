@@ -30,20 +30,17 @@ controls, so none of them can pass today and fail next month.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.attendance.cogs.attendance_cog import AttendanceCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
-from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import SeasonStage
+from tests.support.undecorate import undecorate
+from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
 
 SERVER_ID = 4242
 SEASON_ID = 1
@@ -441,7 +438,6 @@ async def test_the_scheduled_call_winning_the_race_stops_this_one(tmp_path):
     notice.assert_not_awaited()
     assert "posted while this ran" in _replied(interaction)
     assert calls["n"] == 2, "the second check is what catches the race"
-
 
 
 async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):

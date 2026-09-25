@@ -21,14 +21,9 @@ are `test_asset_resolver`'s subject and this class goes through exactly the same
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     BLANK_FALLBACK_ASSET_CLASSES,
     FALLBACK_ASSET_NAME,
     NOTICE_ASSET_FALLBACK_USED,
@@ -37,9 +32,9 @@ from leaguebot.image.models.image_constants import (  # noqa: E402
     PACKAGED_ASSET_ASPECTS,
     packaged_directory_for,
 )
-from leaguebot.image.utils.asset_resolver import normalise  # noqa: E402
-from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
-from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes
+from leaguebot.image.utils.svg_fill import FillSpec, fill
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>'
 LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">' \

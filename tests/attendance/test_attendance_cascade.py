@@ -11,22 +11,18 @@ attended flags, which is the subject of its own test below.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock
 
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection  # noqa: E402
-from leaguebot.attendance.services import attendance_service  # noqa: E402
-from leaguebot.attendance.services.attendance_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection
+from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.attendance_service import (
     cascade_attendance_from_round,
     distribute_attendance_points,
 )
-from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db  # noqa: E402
+from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 
 async def _total(db_file: str, round_id: int):

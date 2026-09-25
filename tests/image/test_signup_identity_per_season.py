@@ -6,17 +6,13 @@ signup; with no season named, or none held for it, it reads the driver's latest 
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.services.image_results_post import _driver_names, _nationalities  # noqa: E402
-from leaguebot.image.services.image_verdict_post import _driver_nationality  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.services.image_results_post import _driver_names, _nationalities
+from leaguebot.image.services.image_verdict_post import _driver_nationality
 
 SERVER_ID = 22060
 USER = 5150

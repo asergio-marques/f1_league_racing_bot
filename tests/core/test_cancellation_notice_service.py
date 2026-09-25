@@ -8,16 +8,13 @@ module to its own channel and its own enabled state, and the calendar to being r
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services import cancellation_notice_service as cns  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import cancellation_notice_service as cns
 
 SEASON_ID = 1
 DIVISION_ID = 11

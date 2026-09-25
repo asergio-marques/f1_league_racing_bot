@@ -7,12 +7,7 @@ the answer is*, so the rule can be read in one place rather than inferred from t
 """
 from __future__ import annotations
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.utils.points_ordering import ordering_violations  # noqa: E402
+from leaguebot.results.utils.points_ordering import ordering_violations
 
 
 def test_a_table_running_down_has_no_violations():

@@ -17,17 +17,14 @@ from __future__ import annotations
 
 import inspect
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.__main__ as bot_module  # noqa: E402
-from leaguebot.__main__ import _recover_missed_check_in_calls  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services import rsvp_service  # noqa: E402
-from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
+import leaguebot.__main__ as bot_module
+from leaguebot.__main__ import _recover_missed_check_in_calls
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.services.attendance_service import AttendanceService
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1

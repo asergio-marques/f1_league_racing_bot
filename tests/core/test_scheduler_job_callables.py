@@ -30,15 +30,12 @@ lookup finding nothing is an ordinary consequence rather than a broken state.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.core.services.scheduler_service as scheduler_service  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+import leaguebot.core.services.scheduler_service as scheduler_service
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 10908
 SEASON_ID = 1

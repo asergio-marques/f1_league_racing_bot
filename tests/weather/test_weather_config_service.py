@@ -26,15 +26,12 @@ insert a second row.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.weather.models.weather_config import WeatherPipelineConfig  # noqa: E402
-from leaguebot.weather.services.weather_config_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+from leaguebot.weather.services.weather_config_service import (
     describe_deadlines,
     get_weather_pipeline_config,
     set_phase_1_days,

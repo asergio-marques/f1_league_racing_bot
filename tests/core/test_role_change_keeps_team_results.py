@@ -15,20 +15,16 @@ league has given Ferrari another.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.core.models.session_result import SessionResult  # noqa: E402
-from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.session_result import SessionResult
+from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.results.services.result_submission_service import (
     _build_division_validation_data,
     _row_dict_from_qualifying,
     _row_dict_from_race,
@@ -36,12 +32,12 @@ from leaguebot.results.services.result_submission_service import (  # noqa: E402
     save_session_result,
     validate_submission_block,
 )
-from leaguebot.results.services.standings_service import (  # noqa: E402
+from leaguebot.results.services.standings_service import (
     compute_and_persist_round,
     compute_team_standings,
     previous_standing_positions,
 )
-from leaguebot.core.services.team_service import TeamService  # noqa: E402
+from leaguebot.core.services.team_service import TeamService
 
 DIVISION_ID = 37
 OTHER_DIVISION_ID = 38

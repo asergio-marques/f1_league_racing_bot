@@ -10,13 +10,9 @@ Covers:
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace as NS
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.services.image_lineup_service import (
     LineupDataError,

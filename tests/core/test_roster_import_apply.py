@@ -12,16 +12,11 @@ Two rules carry the weight:
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk  # noqa: E402
-from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
+from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv
 
 SERVER_ID = 7700
 

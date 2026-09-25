@@ -7,13 +7,10 @@ account and then tidied the old one away would be logged as having left the leag
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 2432
 PAST, CURRENT = "6101", "6102"

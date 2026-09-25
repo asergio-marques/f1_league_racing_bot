@@ -9,14 +9,9 @@ renders as garbage rather than as a table.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.weather.utils.message_builder import DISCORD_MESSAGE_LIMIT, paginate_fenced  # noqa: E402
+from leaguebot.weather.utils.message_builder import DISCORD_MESSAGE_LIMIT, paginate_fenced
 
 HEADER = "**Fake Driver Roster — Challenger**"
 FOOTER = (

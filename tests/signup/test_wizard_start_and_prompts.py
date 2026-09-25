@@ -35,8 +35,6 @@ deletion removes the channel and the wizard record together.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -44,17 +42,15 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
-from leaguebot.signup.models.signup_module import (  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
     SignupRecord,
     SignupWizardRecord,
     WizardState,
 )
-from leaguebot.signup.services.wizard_service import WizardService  # noqa: E402
+from leaguebot.signup.services.wizard_service import WizardService
 
 SERVER_ID = 14208
 DRIVER = "4242"

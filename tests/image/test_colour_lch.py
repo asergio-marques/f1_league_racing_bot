@@ -17,13 +17,11 @@ scripts in `tools/` stopped being unit-tested (2026-09-16). The functions are th
 from __future__ import annotations
 
 import math
-import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
 
 from leaguebot.image.utils.colour import from_lch, restate_in_hue, to_lch  # noqa: E402
 

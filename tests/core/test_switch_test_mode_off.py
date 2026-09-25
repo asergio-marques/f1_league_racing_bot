@@ -5,18 +5,14 @@ together with what holds them, and their history entries are kept by identifier.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.test_mode_service import switch_test_mode_off  # noqa: E402
-from leaguebot.core.services.test_roster_service import clear_all_test_drivers  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.test_mode_service import switch_test_mode_off
+from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 
 SERVER_ID = 22140
 

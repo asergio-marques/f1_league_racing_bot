@@ -12,16 +12,11 @@ than taking what was typed.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.test_roster_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.test_roster_service import (
     add_test_driver,
     list_test_drivers,
     remove_test_driver,

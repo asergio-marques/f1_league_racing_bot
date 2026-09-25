@@ -17,19 +17,15 @@ fault, per the marker rules in `tests/conftest.py`.
 """
 from __future__ import annotations
 
-import os
 import re
 import struct
 import subprocess
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     PACKAGED_ASSET_ASPECTS,
     ASSET_ASPECT_TOLERANCE,
     ASSET_CLASS_TO_COLUMN,

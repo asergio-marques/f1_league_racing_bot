@@ -20,15 +20,12 @@ narrow with it, and pin the unfiltered default the round- and season-level cance
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 4242
 

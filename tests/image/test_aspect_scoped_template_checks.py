@@ -18,15 +18,12 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS  # noqa: E402
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS
+from leaguebot.image.services.image_validity_service import (
     aspect_attaches_files,
     blocking_template_problems,
     check_all_templates,

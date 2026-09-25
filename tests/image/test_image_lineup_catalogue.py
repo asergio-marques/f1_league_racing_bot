@@ -21,13 +21,8 @@ Covers:
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 from lxml import etree
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_catalogues import (
     CALENDAR_CATALOGUE,

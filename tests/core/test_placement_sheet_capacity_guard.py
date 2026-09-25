@@ -17,14 +17,11 @@ to tidy it into line would silently lower a ceiling a league relies on.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 SVG_NS = "http://www.w3.org/2000/svg"
 SHEET = "attendance_template"

@@ -5,19 +5,14 @@ Constitution XIV.3 and XIV.13.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_verdict_service import (  # noqa: E402
+from leaguebot.image.services.image_verdict_service import (
     VerdictDrawing,
     VerdictKind,
     build_fill_spec,
 )
-from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes
 
 FULL_TEMPLATE = (
     b'<svg xmlns="http://www.w3.org/2000/svg" '

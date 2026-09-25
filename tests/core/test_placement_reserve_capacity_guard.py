@@ -15,14 +15,11 @@ Nothing here rasterises: the templates are built in memory and read as SVG.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"

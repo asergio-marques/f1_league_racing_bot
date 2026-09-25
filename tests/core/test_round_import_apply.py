@@ -20,18 +20,14 @@ Three rules carry the weight:
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, apply_round_import  # noqa: E402
-from leaguebot.core.db.database import run_migrations  # noqa: E402
-from leaguebot.core.models.round import RoundFormat  # noqa: E402
-from leaguebot.core.utils.round_import import ParsedDivisionRounds, ParsedRound  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, apply_round_import
+from leaguebot.core.db.database import run_migrations
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.utils.round_import import ParsedDivisionRounds, ParsedRound
 
 
 @pytest.fixture

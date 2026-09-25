@@ -7,21 +7,17 @@ pass, the signup window closed, test mode switched off.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.season_end_service import execute_season_end  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
-from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
-from leaguebot.core.services.test_mode_service import count_live_real_drivers  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_end_service import execute_season_end
+from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.season_service import SeasonService
+from leaguebot.signup.services.signup_module_service import SignupModuleService
+from leaguebot.core.services.test_mode_service import count_live_real_drivers
 
 SERVER_ID = 22150
 

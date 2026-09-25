@@ -1,12 +1,7 @@
 """Unit tests for result_submission_service (T030)."""
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundFormat
@@ -23,7 +18,7 @@ from leaguebot.results.services.result_submission_service import (
     validate_submission_block,
 )
 from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 
 # ---------------------------------------------------------------------------
@@ -1050,8 +1045,6 @@ async def test_other_active_team_assignments_excludes_the_session_being_validate
         db_path, round_id, SessionType.FEATURE_QUALIFYING
     )
     assert result == {}
-
-
 
 
 async def test_other_active_team_assignments_leaves_out_the_sessions_an_amendment_replaces(tmp_path):

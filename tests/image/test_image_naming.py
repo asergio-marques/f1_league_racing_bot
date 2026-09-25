@@ -6,13 +6,9 @@ tell one division's `standings_drivers.png` from another's.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS
 from leaguebot.image.utils.image_naming import (

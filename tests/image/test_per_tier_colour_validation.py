@@ -12,21 +12,17 @@ shortfall, and it is reported wherever a manager looks at their configuration.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_module import (  # noqa: E402
+from leaguebot.image.models.image_module import (
     STATE_DISABLED,
     STATE_ENABLED,
     STATE_ENABLED_INVALID,
     ValidityReport,
 )
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.services.image_validity_service import (
     build_aspect_statuses,
     colour_shortfall,
 )

@@ -42,22 +42,19 @@ a `Modal`: apt's discord.py calls `asyncio.get_running_loop()` in the constructo
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
-from leaguebot.results.services.penalty_wizard import AddPenaltyModal, PenaltyReviewState  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.penalty_wizard import AddPenaltyModal, PenaltyReviewState
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 11208
 SEASON_ID = 1

@@ -8,12 +8,9 @@ migration 009 (T033); since the squash into one baseline (#254) it checks today'
 from __future__ import annotations
 
 import os
-import sys
 import tempfile
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 @pytest.mark.asyncio

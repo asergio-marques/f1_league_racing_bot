@@ -18,18 +18,14 @@ other four; pinned so a tidy-up that passes one does not break it.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs import module_cog  # noqa: E402
-from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs import module_cog
+from leaguebot.core.cogs.module_cog import ModuleCog
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 13808
 MODULES = sorted(choice.value for choice in module_cog._MODULE_CHOICES)

@@ -16,15 +16,12 @@ from __future__ import annotations
 
 import inspect
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_render_service import ImageRenderService  # noqa: E402
-from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.services.image_render_service import ImageRenderService
+from leaguebot.image.utils.svg_document import parse_svg_bytes
 
 TEMPLATE = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'

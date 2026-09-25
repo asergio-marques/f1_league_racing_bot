@@ -10,24 +10,19 @@ no silent pass) are tested in this file too, added by T029-T031.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from leaguebot.image.models.image_module import (  # noqa: E402
+from leaguebot.image.models.image_module import (
     STATE_ENABLED,
     STATE_ENABLED_INVALID,
     ImageConfig,
 )
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.services.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,

@@ -6,14 +6,9 @@ field it names and what it found.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.input_validator import (  # noqa: E402
+from leaguebot.core.utils.input_validator import (
     DRAWN_NAME,
     NAME,
     SIGNUP_ANSWER,

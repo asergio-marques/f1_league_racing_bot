@@ -22,16 +22,12 @@ site must prefer that over the NULL its join yields.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 5150
 USER_ID = 9_100_000_000_000_001

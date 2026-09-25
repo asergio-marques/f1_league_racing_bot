@@ -15,15 +15,11 @@ post would take longer than the whole of the rest of the run.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.services import results_post_service  # noqa: E402
+from leaguebot.results.services import results_post_service
 
 
 #: The interval the module declares, captured at import — before `conftest`'s autouse fixture

@@ -11,24 +11,20 @@ not twenty times, so the whole import lands in one transaction or not at all.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.core.cogs.season_cog as season_cog  # noqa: E402
-from leaguebot.core.cogs.season_cog import (  # noqa: E402
+import leaguebot.core.cogs.season_cog as season_cog
+from leaguebot.core.cogs.season_cog import (
     BulkRoundModal,
     PendingConfig,
     PendingDivision,
     SeasonCog,
     XmlRoundModal,
 )
-from tests.support.undecorate import undecorate  # noqa: E402
+from tests.support.undecorate import undecorate
 
 
 def _interaction() -> MagicMock:

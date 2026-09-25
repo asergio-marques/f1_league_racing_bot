@@ -31,19 +31,16 @@ league with it switched off would be given a success message over a post that ne
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from leaguebot.core.models.season import SeasonStage
 
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-
-from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 11908
 SEASON_ID = 1

@@ -15,14 +15,10 @@ Covers:
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace as NS
 
 import pytest
 from lxml import etree
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_catalogues import LINEUP_CATALOGUE, CapacityError
 from leaguebot.image.services.image_validity_service import (

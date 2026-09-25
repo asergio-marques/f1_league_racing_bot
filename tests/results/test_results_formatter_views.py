@@ -23,15 +23,11 @@ the sort of optional field that reaches a league as the word `None` when nobody 
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.utils.results_formatter import (  # noqa: E402
+from leaguebot.results.utils.results_formatter import (
     format_config_view,
     format_gap_to_leader,
     format_team_standings,

@@ -12,20 +12,16 @@ number, so the plain wording cannot quietly rot back into developer prose.
 from __future__ import annotations
 
 import logging
-import os
 import re
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from leaguebot.image.models.image_module import DirectoryReport, ImageConfig, ValidityReport  # noqa: E402
-from leaguebot.image.services.image_validity_service import (  # noqa: E402
+from leaguebot.image.models.image_module import DirectoryReport, ImageConfig, ValidityReport
+from leaguebot.image.services.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,

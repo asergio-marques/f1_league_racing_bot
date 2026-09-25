@@ -12,22 +12,19 @@ overwrites a league's history run on a league's history.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Imported under another name: pytest tries to *collect* any class whose name
 # begins with "Test", and warns that it cannot because the cog takes arguments.
-from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
-from leaguebot.core.cogs.test_mode_cog import _jobstore_path  # noqa: E402
-from leaguebot.core.services import backup_service as bs  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog
+from leaguebot.core.cogs.test_mode_cog import _jobstore_path
+from leaguebot.core.services import backup_service as bs
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 4400
 USER_ID = 99

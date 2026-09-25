@@ -13,15 +13,11 @@ The second is the one most at risk from a well-meant refactor that unifies the t
 from __future__ import annotations
 
 import ast
-import os
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_module import PostingOrigin
 from leaguebot.image.services.image_lineup_post import (

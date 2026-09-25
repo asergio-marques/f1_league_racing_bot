@@ -16,16 +16,12 @@ they surface, and each is pinned here:
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_module import RenderNotice  # noqa: E402
-from leaguebot.image.services.image_render_service import (  # noqa: E402
+from leaguebot.image.models.image_module import RenderNotice
+from leaguebot.image.services.image_render_service import (
     ImageRenderService,
     grouped_notice_lines,
 )

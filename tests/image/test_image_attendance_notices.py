@@ -10,17 +10,13 @@ something under the one that cannot.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 import xml.etree.ElementTree as ET
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.attendance.services import attendance_service  # noqa: E402
-from leaguebot.image.services import image_attendance_post, image_rsvp_post  # noqa: E402
-from leaguebot.image.services.image_attendance_service import (  # noqa: E402
+from leaguebot.attendance.services import attendance_service
+from leaguebot.image.services import image_attendance_post, image_rsvp_post
+from leaguebot.image.services.image_attendance_service import (
     DriverRecord,
     RoundHeading,
     build_fill_spec,

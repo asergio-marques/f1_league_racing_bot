@@ -6,16 +6,11 @@ remain unsettled or to Ongoing where none do.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
-from leaguebot.core.services import season_lifecycle_service as lifecycle  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import SeasonStage, status_of_stage
+from leaguebot.core.services import season_lifecycle_service as lifecycle
 
 SERVER_ID = 22001
 

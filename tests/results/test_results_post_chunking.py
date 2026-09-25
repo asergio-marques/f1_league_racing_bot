@@ -25,16 +25,12 @@ posted — a league would then have neither.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.services.results_post_service import (  # noqa: E402
+from leaguebot.results.services.results_post_service import (
     _MSG_MAX,
     _delete_posting,
     _ids_json,

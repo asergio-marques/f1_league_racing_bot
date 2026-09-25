@@ -14,17 +14,13 @@ here pin the three things a later reader could quietly undo:
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
-from leaguebot.core.utils.season_gate import (  # noqa: E402
+from leaguebot.core.models.season import SeasonStage, status_of_stage
+from leaguebot.core.utils.season_gate import (
     BEFORE_PENDING_COMPLETION,
     LIVE_STAGES,
     PLACEMENT_STAGES,

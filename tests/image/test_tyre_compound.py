@@ -8,15 +8,10 @@ pinned only the first would let the two drift, so the packaging half is pinned b
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.utils.asset_resolver import normalise  # noqa: E402
-from leaguebot.image.utils.tyre_compound import (  # noqa: E402
+from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.image.utils.tyre_compound import (
     TYRE_COMPOUNDS,
     TYRE_COMPOUND_ALIASES,
     canonicalise_tyre,

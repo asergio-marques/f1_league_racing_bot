@@ -10,15 +10,11 @@ that band up by the height it is about to remove instead of cutting it off.
 """
 from __future__ import annotations
 
-import os
 import re
-import sys
 from pathlib import Path
 
 import pytest
 from lxml import etree
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS
 from leaguebot.image.models.image_catalogues import row_crop_fields

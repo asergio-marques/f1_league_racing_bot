@@ -28,21 +28,17 @@ what the log records; both routes are tested through to the same log line.
 """
 from __future__ import annotations
 
-import os
-import sys
 from contextlib import ExitStack, contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView  # noqa: E402
-from leaguebot.results.services.points_config_service import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
+from leaguebot.results.services.points_config_service import (
     ConfigAlreadyExistsError,
     ConfigNotFoundError,
 )
-from tests.support.undecorate import undecorate  # noqa: E402
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 10208
 ACTOR_ID = 77

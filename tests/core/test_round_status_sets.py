@@ -7,12 +7,7 @@ is not a failing test somewhere else — it is a season that cannot be completed
 """
 from __future__ import annotations
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.round import (  # noqa: E402
+from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
     ROUND_TERMINAL,

@@ -23,17 +23,13 @@ so the next rename that stops halfway is caught on whichever command it lands.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.attendance.cogs.attendance_cog import AttendanceCog  # noqa: E402
-from leaguebot.attendance.models.attendance import AttendanceConfig  # noqa: E402
-from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+from leaguebot.attendance.models.attendance import AttendanceConfig
+from leaguebot.attendance.services.attendance_service import AttendanceService
 
 SERVER_ID = 9119
 

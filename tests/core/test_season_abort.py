@@ -6,20 +6,16 @@ its window is closed and test mode is switched off.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import PendingConfig, SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.season_service import SeasonService
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 22160
 

@@ -40,25 +40,22 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-import leaguebot.results.services.penalty_wizard as pw  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+import leaguebot.results.services.penalty_wizard as pw
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.result_submission_service import (
     ResubmissionCancelView,
     _resubmit_collection_task,
     enter_resubmit_flow,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 14108
 SEASON_ID = 1

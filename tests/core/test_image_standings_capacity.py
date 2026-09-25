@@ -16,14 +16,11 @@ Two ceilings, caught at two moments, as Constitution XIV.12 requires:
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 pytestmark = pytest.mark.asyncio
 

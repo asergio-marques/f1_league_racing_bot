@@ -33,8 +33,6 @@ The recovery tests compute their times from the real clock rather than pinning a
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -42,7 +40,6 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 SERVER_ID = 1
 DRIVER_ID = "7"

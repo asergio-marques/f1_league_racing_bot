@@ -39,21 +39,18 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
-from leaguebot.core.services.cancellation_notice_service import CancellationReport  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+from leaguebot.core.services.cancellation_notice_service import CancellationReport
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.undecorate import undecorate
+from leaguebot.core.models.season import SeasonStage
 
 SERVER_ID = 10008
 SEASON_ID = 1

@@ -9,20 +9,17 @@ the commit to it. `replace_round_results` is the caller that depends on that.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.result_submission_service import (
     _save_session_result_in_tx,
     save_session_result,
 )
-from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 13210
 SEASON_ID = 1

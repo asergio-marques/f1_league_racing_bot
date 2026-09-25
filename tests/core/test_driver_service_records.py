@@ -28,16 +28,13 @@ division, and the audit inserts are raw SQL — none of which a double would che
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
-from leaguebot.core.services.driver_service import DriverService  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.driver_service import DriverService
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 9108
 OLD_USER = "4242"

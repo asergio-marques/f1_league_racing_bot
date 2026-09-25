@@ -9,23 +9,19 @@ the cog handlers call. The gate tests here are:
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.image.models.image_constants import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.image.models.image_constants import (
     ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
-from leaguebot.core.services.module_service import ModuleService  # noqa: E402
-from tests.support import KIND_TEMPLATES  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService
+from leaguebot.core.services.module_service import ModuleService
+from tests.support import KIND_TEMPLATES
 
 SERVER_ID = 4242
 
@@ -2337,9 +2333,7 @@ def test_no_lineup_module_branches_on_test_mode():
 
 def test_the_lineup_draws_a_test_driver_through_the_name_chain():
     """FR-036 — a test driver is drawn by its test display name, not skipped."""
-    import sys as _sys
 
-    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
     from leaguebot.image.services.image_lineup_service import resolve_driver_name
 
     # No Discord account and no signup record: the chain reaches the fourth link.

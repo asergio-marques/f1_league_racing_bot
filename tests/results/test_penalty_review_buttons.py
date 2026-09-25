@@ -32,19 +32,15 @@ either side.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.results.services.penalty_wizard as pw  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
-from leaguebot.results.services.penalty_wizard import (  # noqa: E402
+import leaguebot.results.services.penalty_wizard as pw
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.penalty_wizard import (
     ApprovalView,
     PenaltyReviewState,
     PenaltyReviewView,

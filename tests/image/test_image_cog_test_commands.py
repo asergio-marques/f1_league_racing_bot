@@ -7,18 +7,13 @@ no gateway, no server, no running bot.
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
 import time
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────

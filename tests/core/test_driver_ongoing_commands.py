@@ -12,21 +12,17 @@ undo a rejection already written.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.driver_cog import DriverCog  # noqa: E402
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-from tests.support.teams import resolves_as_typed  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.driver_cog import DriverCog
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.models.season import SeasonStage
+from tests.support.teams import resolves_as_typed
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 22130
 SEASON_ID = 7

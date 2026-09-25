@@ -31,18 +31,15 @@ from the unix seconds the bot supplies, and that number is the only part the bot
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
-from leaguebot.attendance.services.rsvp_service import run_rsvp_last_notice  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.rsvp_service import run_rsvp_last_notice
 
 SERVER_ID = 8608
 SEASON_ID = 1

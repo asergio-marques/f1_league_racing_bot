@@ -7,13 +7,9 @@ Covers:
 """
 from __future__ import annotations
 
-import sys
-import os
 import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 from leaguebot.results.services.results_post_service import _label_from_status
 

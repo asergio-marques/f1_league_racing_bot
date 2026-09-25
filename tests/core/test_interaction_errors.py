@@ -7,16 +7,12 @@ modal call instead.
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from discord import app_commands
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.interaction_errors import (  # noqa: E402
+from leaguebot.core.utils.interaction_errors import (
     describe,
     describe_form,
     failure_reply,

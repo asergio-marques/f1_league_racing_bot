@@ -5,14 +5,9 @@ and XIV.16. Pure: no Discord, no database, no rasteriser.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_verdict_service import (  # noqa: E402
+from leaguebot.image.services.image_verdict_service import (
     VerdictDrawing,
     VerdictKind,
     mention_ids,

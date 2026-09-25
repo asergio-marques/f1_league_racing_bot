@@ -17,12 +17,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from pathlib import Path
 
-from pathlib import Path  # noqa: E402
-
-from leaguebot.attendance.services import attendance_service  # noqa: E402
-from leaguebot.image.services.image_attendance_post import (  # noqa: E402
+from leaguebot.attendance.services import attendance_service
+from leaguebot.image.services.image_attendance_post import (
     SheetRender,
     attendance_enabled,
 )

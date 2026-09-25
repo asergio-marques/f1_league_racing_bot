@@ -6,14 +6,11 @@ import asyncio
 import logging
 import os
 import sqlite3
-import sys
 import tempfile
 
 import aiosqlite
 import pytest
 import pytest_asyncio
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.core.db.database import get_connection, run_migrations
 

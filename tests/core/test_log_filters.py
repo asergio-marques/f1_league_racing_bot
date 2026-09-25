@@ -8,16 +8,12 @@ No live bot and no aiohttp: `discord.HTTPException.__init__` reads only `.status
 from __future__ import annotations
 
 import logging
-import os
-import sys
 from types import SimpleNamespace
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.log_filters import (  # noqa: E402
+from leaguebot.core.utils.log_filters import (
     TREE_LOGGER,
     UNKNOWN_INTERACTION,
     LateAutocompleteFilter,

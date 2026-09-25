@@ -22,21 +22,17 @@ correct its record before `/season complete` draws the final classification off 
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.cogs.team_cog import TeamCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.team_cog import TeamCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import SeasonStage, status_of_stage
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 22400
 SEASON_ID = 1

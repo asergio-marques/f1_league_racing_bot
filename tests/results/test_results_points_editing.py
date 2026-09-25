@@ -27,29 +27,25 @@ the season was configured when it was not.
 """
 from __future__ import annotations
 
-import os
-import sys
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.results.cogs.results_cog import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import (
     BLOCKS_AMENDMENT,
     BLOCKS_APPROVAL,
     ResultsCog,
     _ordering_notice,
 )
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.points_config_service import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.points_config_service import (
     ConfigNotFoundError,
     InvalidSessionTypeError,
 )
-from leaguebot.results.services.season_points_service import SeasonNotInSetupError  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.results.services.season_points_service import SeasonNotInSetupError
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 11308
 SEASON_ID = 3

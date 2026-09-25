@@ -10,20 +10,17 @@ an old account as the same driver.
 from __future__ import annotations
 
 import os
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.result_submission_service import (
     ParsedQualifyingRow,
     current_accounts,
     extract_current_fl_override,
     other_active_team_assignments,
     validate_submission_block,
 )
-from tests.support.teams import seed_team_instances  # noqa: E402
+from tests.support.teams import seed_team_instances
 
 PAST, NOW, OTHER = 100, 150, 200
 TEAM_A, TEAM_B = 300, 400

@@ -16,17 +16,14 @@ cannot be over-applied and quietly switch the feature off for everyone.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.weather.services import phase1_service, phase2_service, phase3_service  # noqa: E402
-from leaguebot.core.services.amendment_service import AmendmentService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.weather.services import phase1_service, phase2_service, phase3_service
+from leaguebot.core.services.amendment_service import AmendmentService
 
 SEEDED_TRACK = "Bahrain International Circuit"
 

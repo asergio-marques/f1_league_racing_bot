@@ -11,16 +11,13 @@ detect that.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
 from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
-    DIVISION_LOGO_FIELD,  # noqa: E402
+    DIVISION_LOGO_FIELD,
     ATTENDANCE_CATALOGUE,
     RSVP_CATALOGUE,
     CapacityError,

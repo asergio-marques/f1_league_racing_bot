@@ -12,16 +12,12 @@ so the difference is opt-in rather than a change to the shared sender.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.utils.output_router import OutputRouter  # noqa: E402
+from leaguebot.core.utils.output_router import OutputRouter
 
 
 def _channel(sent):
@@ -115,7 +111,6 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
     await router.post_log(f"{mention} did something")
 
     assert f"`{mention}`" in sent[0]
-
 
 
 async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing():

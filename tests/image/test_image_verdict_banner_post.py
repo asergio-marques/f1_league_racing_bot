@@ -18,16 +18,12 @@ The rules these pin are the ones a later reader could plausibly undo:
 from __future__ import annotations
 
 import contextlib
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services import image_verdict_banner_post as banner  # noqa: E402
-from leaguebot.results.services import verdict_announcement_service as vas  # noqa: E402
+from leaguebot.image.services import image_verdict_banner_post as banner
+from leaguebot.results.services import verdict_announcement_service as vas
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────

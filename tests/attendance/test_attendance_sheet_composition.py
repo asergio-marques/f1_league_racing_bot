@@ -8,17 +8,13 @@ after an autosack or an autoreserve left out the very drivers it had just sancti
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions
 
 SERVER_ID = 22170
 PRO, AM = 1, 2

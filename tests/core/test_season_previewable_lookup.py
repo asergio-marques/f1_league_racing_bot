@@ -7,18 +7,14 @@ its own, one above it.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import date
 
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.season import SeasonStatus  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.season import SeasonStatus
+from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 5151
 

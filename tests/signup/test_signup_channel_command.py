@@ -12,18 +12,14 @@ three different places.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 5511
 INTERACTION_ROLE = 900

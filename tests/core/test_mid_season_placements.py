@@ -6,22 +6,18 @@ season to Ongoing. The review is refused in the other ongoing stages.
 """
 from __future__ import annotations
 
-import os
 import sqlite3
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-from leaguebot.core.services.placement_service import PlacementService, PlacementsCommitted  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
-from tests.attendance.test_uncommitted_drivers_outside_attendance import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.placement_service import PlacementService, PlacementsCommitted
+from tests.support.undecorate import undecorate
+from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
     SERVER_ID,
     db_path,  # noqa: F401 — the fixture

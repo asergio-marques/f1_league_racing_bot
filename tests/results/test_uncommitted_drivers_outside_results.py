@@ -6,17 +6,13 @@ row at all reads as it always did.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection  # noqa: E402
-from leaguebot.core.services.team_service import TeamService  # noqa: E402
-from tests.attendance.test_uncommitted_drivers_outside_attendance import (  # noqa: E402
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.team_service import TeamService
+from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
     db_path,  # noqa: F401 — the fixture
 )

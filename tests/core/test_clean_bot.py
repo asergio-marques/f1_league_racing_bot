@@ -11,17 +11,13 @@ no confirmation went unremarked for as long as it did.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.clean_cog import MAX_DELETIONS, CleanCog  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.clean_cog import MAX_DELETIONS, CleanCog
+from tests.support.undecorate import undecorate
 
 BOT_USER = MagicMock(name="bot_user")
 SOMEONE_ELSE = MagicMock(name="a_person")

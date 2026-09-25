@@ -29,19 +29,16 @@ delete but kept its row is a round that can never be reposted.
 from __future__ import annotations
 
 import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services import rsvp_service  # noqa: E402
-from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
-from leaguebot.attendance.services.rsvp_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.rsvp_service import (
     _post_distribution_announcement,
     _post_no_reserve_notice,
     repost_rsvp_call,

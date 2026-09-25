@@ -11,18 +11,14 @@ the DB is never written, and the rounds of a division are reconciled one for one
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.models.round import RoundFormat  # noqa: E402
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.season_service import SeasonService
 
 START = date(2026, 1, 1)
 BASE = datetime(2026, 3, 1, 18, 0, tzinfo=timezone.utc)

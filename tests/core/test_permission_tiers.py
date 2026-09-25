@@ -22,17 +22,13 @@ read.
 """
 from __future__ import annotations
 
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
-from leaguebot.core.utils.channel_guard import (  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.core.utils.channel_guard import (
     CHANNEL_EXEMPT_ATTRIBUTE,
     LEAGUE_ADMIN,
     LEAGUE_MANAGER,

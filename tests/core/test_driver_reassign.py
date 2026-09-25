@@ -19,16 +19,13 @@ confirmed, and the season fingerprint catching it is right rather than a fault t
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.driver_service import DriverService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.driver_service import DriverService
 
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"

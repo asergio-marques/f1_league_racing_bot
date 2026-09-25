@@ -16,13 +16,9 @@ Covers:
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.cogs.image_cog import ImageCog
 

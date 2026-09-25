@@ -6,15 +6,10 @@ would silently stop finding them.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-
-from leaguebot.image.models.image_constants import FALLBACK_ASSET_NAME  # noqa: E402
-from leaguebot.image.utils.asset_resolver import (  # noqa: E402
+from leaguebot.image.models.image_constants import FALLBACK_ASSET_NAME
+from leaguebot.image.utils.asset_resolver import (
     AssetOutcome,
     filename_for,
     has_fallback,

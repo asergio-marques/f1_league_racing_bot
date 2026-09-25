@@ -32,21 +32,18 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
+from leaguebot.core.models.season import SeasonStage
 
-from leaguebot.core.models.season import SeasonStage  # noqa: E402
-
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 13508
 SEASON_ID = 1
@@ -1064,7 +1061,6 @@ async def test_of_two_commands_racing_in_one_division_the_first_recorded_keeps_i
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT channel_id FROM round_amend_channels")
         assert [r[0] for r in await cursor.fetchall()] == [5151]
-
 
 
 # ---------------------------------------------------------------------------

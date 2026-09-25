@@ -9,16 +9,12 @@ A mystery round is added throughout, which needs no track and so no database.
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
-from leaguebot.core.models.round import RoundFormat  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+from leaguebot.core.models.round import RoundFormat
+from tests.support.undecorate import undecorate
 
 ACTOR_ID = 77
 

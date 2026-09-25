@@ -7,15 +7,10 @@ name; what keys artwork, a seat or a role mapping is the shorthand.
 """
 from __future__ import annotations
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.attendance.services.attendance_service import _seat_team_keys, _seat_team_names  # noqa: E402
-from leaguebot.results.services.standings_service import opening_team_standings  # noqa: E402
-from leaguebot.core.services.team_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.attendance_service import _seat_team_keys, _seat_team_names
+from leaguebot.results.services.standings_service import opening_team_standings
+from leaguebot.core.services.team_service import (
     team_artwork_keys_for_instances,
     team_names_for_instances,
 )

@@ -25,19 +25,15 @@ These tests drive the command bodies past their permission decorators with
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.driver_cog import DriverCog  # noqa: E402
-from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
-from tests.support.teams import resolves_as_typed  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs.driver_cog import DriverCog
+from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.teams import resolves_as_typed
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 8808
 SEASON_ID = 3

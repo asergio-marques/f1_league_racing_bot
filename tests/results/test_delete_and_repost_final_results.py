@@ -32,15 +32,12 @@ reposted, and neither must stop the review being confirmed.
 from __future__ import annotations
 
 import os
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.services.results_post_service import delete_and_repost_final_results  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.results_post_service import delete_and_repost_final_results
 
 SERVER_ID = 11508
 SEASON_ID = 1

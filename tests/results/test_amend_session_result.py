@@ -33,23 +33,20 @@ the database has to be right whether or not Discord can be told.
 from __future__ import annotations
 
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.results.models.points_config import SessionType  # noqa: E402
-from leaguebot.results.services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.result_submission_service import (
     AmendmentWouldOrphanVerdictError,
     AmendedSession,
     amend_round_results,
 )
-from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
-from tests.support.teams import seed_team_instances  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.teams import seed_team_instances
 
 SERVER_ID = 12908
 SEASON_ID = 1
@@ -914,7 +911,6 @@ async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):
         )
         new_row_id = (await cursor.fetchone())[0]
     assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, new_row_id)]
-
 
 
 # ---------------------------------------------------------------------------

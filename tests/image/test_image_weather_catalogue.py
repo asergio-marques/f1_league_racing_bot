@@ -9,14 +9,11 @@ phases, two round-format variants and a kind of round that runs no phase at all.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 from lxml import etree
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (
     CATALOGUES,
     CapacityError,
     _canonical,
@@ -24,10 +21,10 @@ from leaguebot.image.models.image_catalogues import (  # noqa: E402
     sibling_fields_declared,
     sibling_keys,
 )
-from leaguebot.image.models.image_constants import ASPECT_TEMPLATES  # noqa: E402
-from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT  # noqa: E402
-from leaguebot.core.models.round import RoundFormat  # noqa: E402
-from leaguebot.image.utils.svg_document import FieldIndex  # noqa: E402
+from leaguebot.image.models.image_constants import ASPECT_TEMPLATES
+from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.image.utils.svg_document import FieldIndex
 
 WEATHER_KEYS = (
     "weather_p1_template",

@@ -11,17 +11,14 @@ import ast
 import glob
 import logging
 import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.__main__ import create_bot  # noqa: E402
-from leaguebot.core.utils.league_server import (  # noqa: E402
+from leaguebot.__main__ import create_bot
+from leaguebot.core.utils.league_server import (
     REFUSAL,
     UNCLAIMED_REFUSAL,
     LeagueCommandTree,

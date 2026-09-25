@@ -17,15 +17,10 @@ season it has ever had, and the constraint covers only the live rows.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import aiosqlite
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 4242
 

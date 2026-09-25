@@ -15,20 +15,16 @@ unwrapped the way the other cog suites unwrap them.
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs import test_mode_cog  # noqa: E402
-from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.config_service import ConfigService  # noqa: E402
-from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
-from tests.support.undecorate import undecorate  # noqa: E402
+from leaguebot.core.cogs import test_mode_cog
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.config_service import ConfigService
+from leaguebot.signup.services.signup_module_service import SignupModuleService
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 7272
 

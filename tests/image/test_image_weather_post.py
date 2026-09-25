@@ -12,16 +12,12 @@ in. It was the shipped behaviour until this increment.
 from __future__ import annotations
 
 import inspect
-import os
-import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.weather.services import forecast_cleanup_service, phase2_service, phase3_service  # noqa: E402
-from leaguebot.image.services.image_weather_post import (  # noqa: E402
+from leaguebot.weather.services import forecast_cleanup_service, phase2_service, phase3_service
+from leaguebot.image.services.image_weather_post import (
     ForecastRender,
     describe,
     weather_enabled,

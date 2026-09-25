@@ -27,23 +27,19 @@ driver is told something rather than being shown an empty **Reason:** that reads
 """
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-import leaguebot.signup.cogs.admin_review_cog as arc  # noqa: E402
-from leaguebot.signup.cogs.admin_review_cog import (  # noqa: E402
+import leaguebot.signup.cogs.admin_review_cog as arc
+from leaguebot.signup.cogs.admin_review_cog import (
     AdminReviewCog,
     AdminReviewView,
     _PENDING_REASONS,
 )
-from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState
 
 SERVER_ID = 10308
 DRIVER_ID = "4242"

@@ -5,21 +5,16 @@ Constitution XIV.7, XIV.10 and XIV.16.
 """
 from __future__ import annotations
 
-import os
-import sys
-
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.services.image_weather_service import (  # noqa: E402
+from leaguebot.image.services.image_weather_service import (
     MYSTERY_TEMPLATE_KEY,
     PHASE_DESCRIPTIONS,
     WeatherDataError,
     resolve_drawing,
     weather_template_key,
 )
-from leaguebot.weather.utils.message_builder import (  # noqa: E402
+from leaguebot.weather.utils.message_builder import (
     format_rain_probability,
     format_session_weather_type,
     format_slot_sequence,

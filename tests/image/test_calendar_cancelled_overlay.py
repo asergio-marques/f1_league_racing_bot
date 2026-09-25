@@ -7,16 +7,12 @@ veil drawn beneath the text instead of over it would show (XIV.14).
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
 from lxml import etree
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
 from leaguebot.image.services.image_render_service import rasterise

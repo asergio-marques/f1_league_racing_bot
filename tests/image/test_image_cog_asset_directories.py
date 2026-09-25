@@ -17,18 +17,14 @@ invoked without a gateway.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
-from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS  # noqa: E402
-from leaguebot.core.utils.paths import PathContainmentError  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog
+from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS
+from leaguebot.core.utils.paths import PathContainmentError
 
 
 def _interaction(guild_id: int = 1):

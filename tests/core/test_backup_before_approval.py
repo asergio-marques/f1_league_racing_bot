@@ -13,17 +13,13 @@ open indefinitely by not answering, and approve a season the report no longer de
 """
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-
-from leaguebot.core.cogs.season_cog import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import (
     APPROVAL_WINDOW_SECONDS,
     SeasonCog,
     _ApproveView,
