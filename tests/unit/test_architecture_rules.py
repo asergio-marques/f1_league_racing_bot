@@ -78,12 +78,20 @@ def _owners(tree: ast.Module) -> dict[ast.AST, str]:
     return owner
 
 
+@cache
+def _all_nodes() -> tuple[tuple[str, str, ast.AST], ...]:
+    """Every node in `src/`, as ``(file, function, node)``, walked once for all the rules."""
+    return tuple(
+        (path, owners.get(node, "<module>"), node)
+        for path, tree in _sources()
+        for owners in (_owners(tree),)
+        for node in ast.walk(tree)
+    )
+
+
 def _nodes() -> Iterator[tuple[str, str, ast.AST]]:
     """Every node in `src/`, as ``(file, function, node)``."""
-    for path, tree in _sources():
-        owners = _owners(tree)
-        for node in ast.walk(tree):
-            yield path, owners.get(node, "<module>"), node
+    yield from _all_nodes()
 
 
 def _check(rule: str, found: Counter[tuple[str, str]], known: dict) -> None:
