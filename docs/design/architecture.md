@@ -418,13 +418,15 @@ the core specification's "When the bot stops" lists) is a step of the sweep too,
 hook for the bot starting. Each step of the sweep is kept separate, so one failing is reported and
 does not stop the rest.
 
-**The sweep only delegates.** It is core's: it finds the timed events that came due and hands each,
-in order, to the handler its module provides for that kind of job, and calls whoever signed up for
-the bot starting. It holds no module's logic. The builder signs each handler up with its kind of
-job as it registers the kind with the scheduler service; that is the hook core offers for a timed
-event falling due. The handler holds its module's logic, what becomes of a missed event included;
-core holds none of it. Each module writes the handler for every kind of timed job it has, and the
-entry point holds none of it.
+**The sweep only delegates.** It is core's: it asks each kind of job, through what its module signed
+up, which of its events came due, puts them all in the order they fell due, and hands each to the
+handler its module provides for that kind of job, one at a time: each handler finishes before the
+next is called, and none runs beside another. It also calls whoever signed up for the bot starting.
+It holds no module's logic. The builder signs each handler up with its kind of job, together with
+the kind's own way of telling which of its events came due, as it registers the kind with the
+scheduler service; that is the hook core offers for a timed event falling due. The handler holds its
+module's logic, what becomes of a missed event included; core holds none of it. Each module writes
+the handler for every kind of timed job it has, and the entry point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
