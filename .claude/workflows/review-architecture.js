@@ -18,7 +18,7 @@ if (!ARGS || !ARGS.commit || !ARGS.survey) {
 const { commit, survey } = ARGS
 const MAX_GAPS = 3
 
-// ---- what #282 asks the architecture to settle, and its six candidates --------------------
+// ---- what #282 asked the architecture to settle, and its six candidates, since settled -----
 
 const SETTLE = [
   'The layering — cogs, services, db — what each layer may and may not do, which way a dependency may point, and what a service may import',
@@ -31,38 +31,38 @@ const SETTLE = [
 ]
 
 const CANDIDATES = [
-  '1. A typed service container replacing attribute-bolting on bot — #228 settled the typing half; whether LeagueBot\'s declared attributes are the end state is open',
-  '2. A LeagueCog base, so shared behaviour (typed service access, one error path) has somewhere to live',
-  '3. The layering rule enforced by a test that fails the build: no SQL below src/cogs/ (and src/bot.py\'s own), no service importing a cog',
-  '4. Services grouped into per-module packages, so ownership is a property of the tree rather than of tools/coverage_by_module.py',
-  '5. season_cog.py split along its command groups — season, division, round, with round results beneath round',
-  '6. The sound parts kept and made explicit — report_failure, the League* bases, the one-league claim; and whether every channel write goes through OutputRouter or its docstring stops claiming so',
+  '1. Settled: the services stay typed attributes on LeagueBot, built by one builder; a separate container was rejected (architecture.md, "How the code is laid out")',
+  '2. Settled: no LeagueCog base; the League* bases for the tree, views and forms stay (architecture.md, "Errors and failures")',
+  '3. Settled: the layering rules are enforced by import-linter contracts (.importlinter, run by tests/repository/test_import_contracts.py) and ast checks (tests/repository/test_architecture_rules.py), each listing today\'s breaches against the issue that removes them (architecture.md, "How the rules are checked")',
+  '4. Settled: one installed package, leaguebot, with a folder per module and a folder per kind of code inside each; ownership is the folder a file sits in (architecture.md, "How the code is laid out")',
+  '5. Settled: season_cog.py is split along its command groups by the core pass, with git mv',
+  '6. Settled: report_failure, the League* bases and the one-league claim kept; one handler per kind of post, the log line\'s handler being core/services/output_router.py (architecture.md, "Posting to Discord")',
 ]
 
 const CONCERNS = [
   {
     key: 'layering',
-    brief: 'The layers and the direction of every dependency: cogs, services, utils, models, db and src/bot.py; SQL outside the data layer; services importing cogs (TYPE_CHECKING and function-local imports count); what a service may import. Data access as the layer beneath: connection handling in src/db/database.py, transaction length and the write lock held across a network call (#155 — assign_driver and persist_snapshots), tables written by more than one module, stored derived copies (#238). The one-league claim structurally: what utils/league_server.py guarantees and why nothing below the command tree scopes by server.',
+    brief: 'The layers and the direction of every dependency: each module\'s folders for cogs, services, utils and models, core\'s db, and the entry point src/leaguebot/__main__.py; SQL outside the services; services importing cogs (TYPE_CHECKING and function-local imports count); what a service may import. Data access as the layer beneath: connection handling in src/leaguebot/core/db/database.py, transaction length and the write lock held across a network call (#155 — assign_driver and persist_snapshots), tables written by a module that does not own them, a module\'s own columns on a core table included, stored derived copies (#238). The one-league claim structurally: what core/utils/league_server.py guarantees and why nothing below the command tree scopes by server.',
     candidates: '3 and the one-league part of 6',
   },
   {
     key: 'composition',
-    brief: 'The composition root in src/bot.py and how services are built and reached: the services attached to bot, LeagueBot in src/utils/league_bot.py, bot_of(), services that take bot or reach for another service at call time (service locator), import-time side effects and configuration (BOT_TOKEN read at import). Whether cogs need a LeagueCog base alongside LeagueCommandTree, LeagueView and LeagueModal.',
+    brief: 'The composition root in src/leaguebot/__main__.py and how services are built and reached: the services attached to bot, LeagueBot in src/leaguebot/core/utils/league_bot.py, bot_of(), services that take bot or reach for another service at call time (service locator), import-time side effects and configuration (BOT_TOKEN read at import), and the hooks core offers the modules.',
     candidates: '1 and 2',
   },
   {
     key: 'modules',
-    brief: 'Module boundaries: how modules depend on one another (the survey\'s module-dependency table), how a dependency is declared and what enabling or disabling one does (module_service and the module cogs), ownership recorded only in RULES in tools/coverage_by_module.py and where it misfiles (driver_* and team_* under signup), a public surface per module, the flat 70-file services/ directory, the bare top-level package names (services, utils, models, db, cogs) and running as python src/bot.py, the hubs with the highest fan-in, and the largest files — season_cog.py above all.',
+    brief: 'Module boundaries: how modules depend on one another (the survey\'s module-dependency table), how a dependency is declared and what enabling or disabling one does (module_service and the module cogs), ownership, which is the folder a file sits in, and any file in a folder that is not its module\'s or its kind\'s, a public surface per module, the rules between modules as .importlinter encodes them against the dependency table, the hubs with the highest fan-in, and the largest files — season_cog.py above all.',
     candidates: '4 and 5',
   },
   {
     key: 'runtime',
-    brief: 'Time-driven work and the event loop: how jobs are registered (scheduler_service and every add_job), how job ids are built, what the database versus the APScheduler job store is authority for, what a restart re-registers and how a run missed while the bot was down is caught up (#426, #429); blocking calls inside async def (subprocess, the Inkscape rasteriser), tasks created and not kept, locks held across awaits, timeouts on outbound calls, and the injected clock.',
+    brief: 'Time-driven work and the event loop: how jobs are registered (scheduler_service and every add_job), how job ids are built, what the database versus the APScheduler job store is authority for, what a restart re-registers, and the one start-up sweep, which only hands each missed event to the handler its module provides, the handler deciding what becomes of it (architecture.md, "Timed work and restarts"; #426, #429); blocking calls inside async def (subprocess, the Inkscape rasteriser), tasks created and not kept, locks held across awaits, timeouts on outbound calls, and the injected clock.',
     candidates: 'none directly — say whether a new candidate is owed',
   },
   {
     key: 'output-and-failure',
-    brief: 'How anything reaches Discord: utils/output_router.py and its docstring\'s claim to be the single chokepoint, the channel registry, the log channel, retries (retry_service, retry_cog), direct .send calls around the router, and whether a posted message\'s id is kept so it can be found again (#189). Where failures go: report_failure in utils/interaction_errors.py, the League* bases\' on_error, scheduled jobs\' failures, broad exception handlers by layer, and what a league sees when a post fails.',
+    brief: 'How anything reaches Discord: the handler for each kind of post, core/services/output_router.py being the log line\'s, the channel registry, the log channel, retries (retry_service, retry_cog), direct .send calls around the router, and whether a posted message\'s id is kept so it can be found again (#189). Where failures go: report_failure in core/utils/interaction_errors.py, the League* bases\' on_error, scheduled jobs\' failures, broad exception handlers by layer, and what a league sees when a post fails.',
     candidates: 'the OutputRouter, report_failure and League* parts of 6',
   },
 ]
