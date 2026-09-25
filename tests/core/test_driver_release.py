@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from tests.unit.test_driver_move import (  # noqa: E402
+from tests.core.test_driver_move import (  # noqa: E402
     AM,
     PRO,
     PROFILE_ID,
@@ -88,8 +88,8 @@ async def test_a_division_the_driver_does_not_sit_in_is_refused(db_path):
 
 @pytest.mark.parametrize("stage_name", ["PLACEMENTS", "PENDING_COMPLETION"])
 async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
-    from cogs.driver_cog import DriverCog
-    from models.season import SeasonStage
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from leaguebot.core.models.season import SeasonStage
     from tests.support.undecorate import undecorate
 
     cog = DriverCog.__new__(DriverCog)

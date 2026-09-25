@@ -9,7 +9,7 @@ here. Which channels exist, and what each may carry, is Constitution Principle V
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
 names without notifying, a record longer than one message is split, both are sent with
 mentions switched off, and a failed post is queued for retry where the caller asks. The log
-channel is written nowhere else, which `tests/unit/test_architecture_rules.py` checks. The
+channel is written nowhere else, which `tests/repository/test_architecture_rules.py` checks. The
 target is one handler for each kind of post, of which this is the log writer
 (`docs/design/architecture.md`, "Posting to Discord").
 """

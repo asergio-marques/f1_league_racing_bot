@@ -46,15 +46,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.driver_profile import DriverState  # noqa: E402
-from models.signup_module import (  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.signup.models.signup_module import (  # noqa: E402
     AvailabilitySlot,
     ConfigSnapshot,
     SignupRecord,
     SignupWizardRecord,
     WizardState,
 )
-from services.wizard_service import WizardService  # noqa: E402
+from leaguebot.signup.services.wizard_service import WizardService  # noqa: E402
 
 SERVER_ID = 14208
 DRIVER = "4242"

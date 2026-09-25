@@ -47,7 +47,7 @@ CHANNEL_ID = 99
 
 
 def _wizard(state, **draft):
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord
 
     return SignupWizardRecord(
         id=1,
@@ -72,7 +72,7 @@ def _wizard(state, **draft):
 def service():
     """A `WizardService` with its Discord edges stubbed, plus the channel and a record of
     every advance."""
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     advanced: list = []
@@ -117,7 +117,7 @@ def _serve(ctx, wizard) -> None:
 
 
 async def test_a_platform_button_records_the_platform_and_advances(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
     _serve(service, wizard)
@@ -131,7 +131,7 @@ async def test_a_platform_button_records_the_platform_and_advances(service):
 async def test_a_platform_button_pressed_on_a_later_step_does_nothing(service):
     """The step-2 buttons are still in the channel when the driver reaches step 5.
     Pressing one must not overwrite an answer and shunt the wizard backwards."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_DRIVER_TYPE)
     _serve(service, wizard)
@@ -153,7 +153,7 @@ async def test_a_button_from_a_driver_with_no_wizard_does_nothing(service):
 
 
 async def test_a_button_whose_channel_is_gone_does_not_advance(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
     _serve(service, wizard)
@@ -170,7 +170,7 @@ async def test_a_button_whose_channel_is_gone_does_not_advance(service):
 
 
 async def test_a_driver_type_button_records_the_type_and_advances(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_DRIVER_TYPE)
     _serve(service, wizard)
@@ -184,7 +184,7 @@ async def test_a_driver_type_button_records_the_type_and_advances(service):
 
 
 async def test_a_driver_type_button_pressed_on_a_later_step_does_nothing(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
@@ -205,7 +205,7 @@ async def test_a_driver_type_button_pressed_on_a_later_step_does_nothing(service
 async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(service):
     """The loop continues rather than advancing: a driver picking one team has not yet
     said they are finished."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
@@ -223,7 +223,7 @@ async def test_a_first_team_pick_is_recorded_and_the_next_is_offered(service):
 async def test_the_next_prompt_names_the_ordinal_and_the_picks_so_far(service):
     """The driver is several presses into a list they cannot see; the prompt is the only
     record of what they have already chosen."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
@@ -240,7 +240,7 @@ async def test_the_next_prompt_names_the_ordinal_and_the_picks_so_far(service):
 async def test_a_team_already_picked_is_not_offered_again(service):
     """`excluded` is what stops a driver naming the same team as their first and second
     choice, which would waste a pick."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
@@ -256,7 +256,7 @@ async def test_a_team_already_picked_is_not_offered_again(service):
 
 async def test_a_third_pick_ends_the_loop(service):
     """Three is the limit, so the third press advances rather than offering a fourth."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(
         WizardState.COLLECTING_PREFERRED_TEAMS,
@@ -276,7 +276,7 @@ async def test_a_third_pick_ends_the_loop(service):
 async def test_running_out_of_teams_ends_the_loop(service):
     """A league with two teams cannot offer a third pick. Without this the driver would be
     shown a prompt with no buttons on it and no way forward."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS, preferred_teams=["Alpha"])
     wizard.config_snapshot.team_names = ["Alpha", "Beta"]
@@ -294,7 +294,7 @@ async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(service):
     """The third way out. A driver who wanted only one team says so by pressing No
     Preference, and that first pick must survive — discarding it would lose the one
     preference they expressed."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(
         WizardState.COLLECTING_PREFERRED_TEAMS,
@@ -312,7 +312,7 @@ async def test_no_preference_ends_the_loop_keeping_the_picks_so_far(service):
 
 
 async def test_no_preference_with_no_picks_at_all_stores_an_empty_list(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
@@ -329,7 +329,7 @@ async def test_no_preference_with_no_picks_at_all_stores_an_empty_list(service):
 async def test_the_sub_step_counter_is_cleared_when_the_loop_ends(service, team):
     """It is bookkeeping, not an answer. Left in `draft_answers` it would be carried into
     the committed signup as though the driver had told the league something."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(
         WizardState.COLLECTING_PREFERRED_TEAMS,
@@ -348,7 +348,7 @@ async def test_the_sub_step_counter_is_cleared_when_the_loop_ends(service, team)
 async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(service):
     """Each press is activity. Without the reset a driver working through three picks
     could be timed out mid-choice."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
@@ -363,7 +363,7 @@ async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(service
 
 
 async def test_a_team_button_pressed_on_a_later_step_does_nothing(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NOTES)
     _serve(service, wizard)
@@ -382,7 +382,7 @@ async def test_a_team_button_pressed_on_a_later_step_does_nothing(service):
 
 
 async def test_no_preference_for_a_teammate_records_none_and_advances(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMMATE)
     _serve(service, wizard)
@@ -394,7 +394,7 @@ async def test_no_preference_for_a_teammate_records_none_and_advances(service):
 
 
 async def test_the_teammate_button_pressed_on_a_later_step_does_nothing(service):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NOTES)
     _serve(service, wizard)

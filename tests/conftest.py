@@ -22,7 +22,7 @@ end, and one run's accumulated scratch reached 817 MB and filled the tmpfs befor
 The template scratch below is the one thing pytest does not own, so `pytest_sessionstart`
 sweeps it to the same schedule.
 
-**`BOT_TOKEN` is given a placeholder before any test module is collected.** `src/bot.py` reads
+**`BOT_TOKEN` is given a placeholder before any test module is collected.** `src/leaguebot/__main__.py` reads
 it with `os.environ["BOT_TOKEN"]` at import time, after `load_dotenv()`, so importing the module
 to reach one of its recovery sweeps raises without it. A development host has a gitignored `.env`
 that supplies a real one and hides the problem; a CI runner has neither, and every test file
@@ -30,7 +30,7 @@ importing `bot` at module level then fails at collection, which aborts the whole
 here, once, rather than in the test files, because a per-file default only helps files collected
 after it — which is how the suite passed locally and failed on both runners. `setdefault`, so a
 real token in the environment is left alone; nothing in the suite connects to Discord with it.
-Pinned by `tests/unit/test_suite_needs_no_dotenv.py`.
+Pinned by `tests/repository/test_suite_needs_no_dotenv.py`.
 """
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def _install_template_migrations() -> None:
     module, because the tests bind `run_migrations` by name at *their* import time and a
     later patch would not reach them.
     """
-    from db import database
+    from leaguebot.core.db import database
 
     global _TEMPLATE_SCRATCH
 
@@ -116,7 +116,7 @@ _install_template_migrations()
 def _install_unsynced_connections() -> None:
     """Open every aiosqlite connection in the suite at `synchronous = OFF` (#256).
 
-    The bot runs its database at FULL, deliberately (see `_enable_wal` in `db.database`).
+    The bot runs its database at FULL, deliberately (see `_enable_wal` in `leaguebot.core.db.database`).
     Under WAL that flushes the log on every commit, and the log and the database again when
     the last connection closes and checkpoints — five flushes for a connection that writes.
     Across the suite that came to some seven flushes a test (counted 2026-09-24). Linux
@@ -188,7 +188,7 @@ def pytest_sessionstart(session):
 
 
 def pytest_collection_modifyitems(config, items):
-    from services.image_render_service import converter_available
+    from leaguebot.image.services.image_render_service import converter_available
 
     if converter_available(use_cache=False):
         return
@@ -220,6 +220,6 @@ def _no_posting_throttle(monkeypatch):
     rather than a failure anyone can see. `results_post_service` imports cleanly wherever the
     suite runs; if it ever does not, that is worth a loud error.
     """
-    from services import results_post_service
+    from leaguebot.results.services import results_post_service
 
     monkeypatch.setattr(results_post_service, "POSTING_THROTTLE_SECONDS", 0)

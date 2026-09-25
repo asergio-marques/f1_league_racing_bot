@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     PREVIEW_KINDS,
     ROSTER_DRAWING_KINDS,
 )
@@ -130,7 +130,7 @@ def test_draws_roster_matches_what_the_builder_actually_reads(kind, builder_name
     was made. A builder that stops reading the roster, or starts, fails here rather than
     silently changing which servers can draw it.
     """
-    from services import image_preview_service
+    from leaguebot.image.services import image_preview_service
 
     source = inspect.getsource(getattr(image_preview_service, builder_name))
 

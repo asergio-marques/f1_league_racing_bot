@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection  # noqa: E402
-from services.season_end_service import _write_driver_history_entries  # noqa: E402
-from tests.unit.test_driver_move import (  # noqa: E402
+from leaguebot.core.db.database import get_connection  # noqa: E402
+from leaguebot.core.services.season_end_service import _write_driver_history_entries  # noqa: E402
+from tests.core.test_driver_move import (  # noqa: E402
     AM,
     PRO,
     PROFILE_ID,
@@ -110,7 +110,7 @@ async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(
 
 async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     """The driver pass deletes a driver who never raced; the archive keeps nothing of them."""
-    from services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
     await _seat(db_path, PRO, "Alpha")
     async with get_connection(db_path) as db:

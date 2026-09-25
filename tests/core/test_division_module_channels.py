@@ -44,9 +44,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.channel_registry_service import ChannelUse  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.channel_registry_service import ChannelUse  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9808
@@ -293,7 +293,7 @@ async def test_a_channel_already_doing_another_job_is_refused(tmp_path, which, m
     async def _in_use(*_args, **_kwargs):
         return ChannelUse("results", "Division 2")
 
-    monkeypatch.setattr("services.channel_registry_service.find_channel_use", _in_use)
+    monkeypatch.setattr("leaguebot.core.services.channel_registry_service.find_channel_use", _in_use)
 
     await _run(cog, which, interaction)
 

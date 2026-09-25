@@ -13,10 +13,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.season import SeasonStage, status_of_stage  # noqa: E402
-from services import season_lifecycle_service as lifecycle  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
+from leaguebot.core.services import season_lifecycle_service as lifecycle  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 22110
 SEASON_ID = 1
@@ -197,7 +197,7 @@ async def test_an_open_window_is_closed_before_the_pending_placements_are_turned
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),))
     bot = _wind_down_bot(path, signups_open=True)
 
-    with patch("cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
+    with patch("leaguebot.core.cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
         assert await lifecycle.wind_down_ongoing(bot) is True
 
     closed.assert_awaited_once()
@@ -248,7 +248,7 @@ async def test_completing_winds_a_finished_season_down_first(tmp_path):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
     from tests.support.undecorate import undecorate
 
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),))
@@ -276,7 +276,7 @@ async def test_completing_winds_a_finished_season_down_first(tmp_path):
 
     service.wind_down_ongoing = winding
 
-    with patch("services.season_end_service.execute_season_end", new=AsyncMock()) as ended:
+    with patch("leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock()) as ended:
         await undecorate(SeasonCog.season_complete)(cog, interaction)
 
     assert await _stage(path) is SeasonStage.PENDING_COMPLETION
@@ -290,7 +290,7 @@ async def test_a_wound_down_season_with_rounds_outstanding_is_refused_through_th
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
 
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
     from tests.support.undecorate import undecorate
 
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS)

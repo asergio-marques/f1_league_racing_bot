@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import cancellation_notice_service as cns  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services import cancellation_notice_service as cns  # noqa: E402
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -202,7 +202,7 @@ def test_failures_are_named_for_the_reply():
 
 
 async def test_a_calendar_never_posted_is_left_alone(tmp_path, monkeypatch):
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     post = AsyncMock()
     monkeypatch.setattr(calendar_post_service, "post_division_calendar", post)
@@ -212,7 +212,7 @@ async def test_a_calendar_never_posted_is_left_alone(tmp_path, monkeypatch):
 
 
 async def test_the_calendar_is_posted_again_with_the_round_cancelled(tmp_path, monkeypatch):
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     post = AsyncMock(
         return_value=calendar_post_service.CalendarPosting(division_id=DIVISION_ID, message_id=42)
@@ -242,7 +242,7 @@ async def test_the_calendar_is_posted_again_with_the_round_cancelled(tmp_path, m
 
 
 async def test_a_calendar_that_could_not_be_posted_is_a_failure(tmp_path, monkeypatch):
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     monkeypatch.setattr(
         calendar_post_service,
@@ -262,7 +262,7 @@ async def test_a_calendar_that_could_not_be_posted_is_a_failure(tmp_path, monkey
 
 
 async def test_a_calendar_that_raises_is_a_failure_not_an_error(tmp_path, monkeypatch):
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     monkeypatch.setattr(
         calendar_post_service, "post_division_calendar", AsyncMock(side_effect=RuntimeError("boom"))
@@ -305,7 +305,7 @@ async def test_channels_that_cannot_be_read_still_leave_the_calendar_refreshed(
 
 async def test_a_calendar_that_fell_back_to_text_is_named(tmp_path, monkeypatch):
     """Posted, but not as the league asked: the admin should know the picture failed."""
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     monkeypatch.setattr(
         calendar_post_service,
@@ -403,7 +403,7 @@ def _call_channel(bot, *, refuse=False):
 
 
 def _with_attendance(bot):
-    from services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_service import AttendanceService
 
     bot.attendance_service = AttendanceService(bot.db_path)
     return bot
@@ -496,7 +496,7 @@ async def test_a_round_this_cancellation_does_not_call_off_keeps_its_call(tmp_pa
 async def test_a_call_that_cannot_be_taken_down_is_a_failure_not_an_error(
     tmp_path, monkeypatch
 ):
-    from services import rsvp_service
+    from leaguebot.attendance.services import rsvp_service
 
     db_path = await _make_db(tmp_path)
     await _with_call(db_path)
@@ -665,7 +665,7 @@ async def test_only_the_division_s_own_rounds_are_withdrawn_and_audited(tmp_path
     async def _record(round_id, division_id, bot_, **kwargs):
         withdrawn.append((round_id, division_id))
 
-    from services import rsvp_service
+    from leaguebot.attendance.services import rsvp_service
 
     bot.get_channel = MagicMock(return_value=None)
     guild, _ = _guild()

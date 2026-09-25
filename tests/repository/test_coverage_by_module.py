@@ -59,19 +59,19 @@ def _report(*files: tuple[str, int, int]) -> dict:
 @pytest.mark.parametrize(
     "path, expected",
     [
-        ("src/services/phase1_service.py", "weather"),
-        ("src/services/weather_config_service.py", "weather"),
-        ("src/cogs/weather_cog.py", "weather"),
-        ("src/utils/math_utils.py", "weather"),
-        ("src/services/image_weather_service.py", "image"),
-        ("src/utils/svg_fill.py", "image"),
-        ("src/services/attendance_service.py", "attendance"),
-        ("src/services/rsvp_service.py", "attendance"),
-        ("src/services/standings_service.py", "results"),
-        ("src/services/penalty_service.py", "results"),
-        ("src/services/wizard_service.py", "signup"),
-        ("src/services/season_service.py", "core"),
-        ("src/bot.py", "core"),
+        ("src/leaguebot/weather/services/phase1_service.py", "weather"),
+        ("src/leaguebot/weather/services/weather_config_service.py", "weather"),
+        ("src/leaguebot/weather/cogs/weather_cog.py", "weather"),
+        ("src/leaguebot/weather/utils/math_utils.py", "weather"),
+        ("src/leaguebot/image/services/image_weather_service.py", "image"),
+        ("src/leaguebot/image/utils/svg_fill.py", "image"),
+        ("src/leaguebot/attendance/services/attendance_service.py", "attendance"),
+        ("src/leaguebot/attendance/services/rsvp_service.py", "attendance"),
+        ("src/leaguebot/results/services/standings_service.py", "results"),
+        ("src/leaguebot/results/services/penalty_service.py", "results"),
+        ("src/leaguebot/signup/services/wizard_service.py", "signup"),
+        ("src/leaguebot/core/services/season_service.py", "core"),
+        ("src/leaguebot/__main__.py", "core"),
     ],
 )
 def test_known_files_are_classified(path, expected):
@@ -82,19 +82,19 @@ def test_known_files_are_classified(path, expected):
     "path, expected",
     [
         # Core owns the driver, the team and the test roster; signup owns the signing up.
-        ("src/services/driver_service.py", "core"),
-        ("src/services/team_service.py", "core"),
-        ("src/cogs/driver_cog.py", "core"),
-        ("src/cogs/team_cog.py", "core"),
-        ("src/models/driver_profile.py", "core"),
-        ("src/utils/roster_import.py", "core"),
-        ("src/utils/league_bot.py", "core"),
-        ("src/services/placement_service.py", "core"),
+        ("src/leaguebot/core/services/driver_service.py", "core"),
+        ("src/leaguebot/core/services/team_service.py", "core"),
+        ("src/leaguebot/core/cogs/driver_cog.py", "core"),
+        ("src/leaguebot/core/cogs/team_cog.py", "core"),
+        ("src/leaguebot/core/models/driver_profile.py", "core"),
+        ("src/leaguebot/core/utils/roster_import.py", "core"),
+        ("src/leaguebot/core/utils/league_bot.py", "core"),
+        ("src/leaguebot/core/services/placement_service.py", "core"),
         # The signup review panel, the points amendment, and fetching a portrait.
-        ("src/cogs/admin_review_cog.py", "signup"),
-        ("src/models/amendment_state.py", "results"),
-        ("src/services/season_points_service.py", "results"),
-        ("src/services/driver_portrait_service.py", "image"),
+        ("src/leaguebot/signup/cogs/admin_review_cog.py", "signup"),
+        ("src/leaguebot/results/models/amendment_state.py", "results"),
+        ("src/leaguebot/results/services/season_points_service.py", "results"),
+        ("src/leaguebot/image/services/driver_portrait_service.py", "image"),
     ],
 )
 def test_files_named_for_the_wrong_module_are_placed_with_their_owner(path, expected):
@@ -130,7 +130,7 @@ def test_the_first_matching_rule_wins():
     """
     modules = [module for module, _ in cbm.RULES]
     assert modules.index("image") < modules.index("attendance")
-    assert cbm.classify("src/services/image_weather_service.py") == "image"
+    assert cbm.classify("src/leaguebot/image/services/image_weather_service.py") == "image"
 
 
 def test_windows_paths_classify_the_same():
@@ -147,8 +147,8 @@ def test_windows_paths_classify_the_same():
 @pytest.mark.parametrize(
     "path, measured",
     [
-        ("src/services/phase1_service.py", True),
-        ("tests/unit/test_phase1_draw.py", False),
+        ("src/leaguebot/weather/services/phase1_service.py", True),
+        ("tests/weather/test_phase1_draw.py", False),
         ("tools/coverage_by_module.py", False),
         ("tools/tier_palette.py", False),
     ],
@@ -165,8 +165,8 @@ def test_the_test_suite_cannot_inflate_a_module():
     that let the repository report 86% while `src/` stood at 68.8%.
     """
     report = _report(
-        ("src/services/phase1_service.py", 100, 50),
-        ("tests/unit/test_phase1_draw.py", 200, 0),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 50),
+        ("tests/weather/test_phase1_draw.py", 200, 0),
     )
 
     buckets = cbm.group(report)
@@ -181,13 +181,13 @@ def test_the_test_suite_cannot_inflate_a_module():
 def test_a_file_with_no_statements_is_left_out():
     """An empty `__init__.py` is neither covered nor uncovered; counting it skews nothing."""
     report = _report(
-        ("src/services/phase1_service.py", 100, 25),
-        ("src/services/__init__.py", 0, 0),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 25),
+        ("src/leaguebot/core/services/__init__.py", 0, 0),
     )
 
     buckets = cbm.group(report)
 
-    assert buckets["weather"]["files"] == [("src/services/phase1_service.py", 100, 25)]
+    assert buckets["weather"]["files"] == [("src/leaguebot/weather/services/phase1_service.py", 100, 25)]
 
 
 # ---------------------------------------------------------------------------
@@ -197,9 +197,9 @@ def test_a_file_with_no_statements_is_left_out():
 
 def test_statements_and_misses_are_summed_per_module():
     report = _report(
-        ("src/services/phase1_service.py", 60, 6),
-        ("src/services/phase2_service.py", 40, 4),
-        ("src/services/attendance_service.py", 100, 50),
+        ("src/leaguebot/weather/services/phase1_service.py", 60, 6),
+        ("src/leaguebot/weather/services/phase2_service.py", 40, 4),
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 50),
     )
 
     buckets = cbm.group(report)
@@ -216,9 +216,9 @@ def test_files_are_listed_in_a_deterministic_order():
     The tool has to hold to that too, or its output differs between hosts.
     """
     report = _report(
-        ("src/services/phase3_service.py", 10, 1),
-        ("src/services/phase1_service.py", 10, 1),
-        ("src/services/phase2_service.py", 10, 1),
+        ("src/leaguebot/weather/services/phase3_service.py", 10, 1),
+        ("src/leaguebot/weather/services/phase1_service.py", 10, 1),
+        ("src/leaguebot/weather/services/phase2_service.py", 10, 1),
     )
 
     paths = [path for path, _, _ in cbm.group(report)["weather"]["files"]]
@@ -242,9 +242,9 @@ def test_percentage(statements, missing, expected):
 
 def test_the_table_ranks_best_covered_first():
     report = _report(
-        ("src/services/phase1_service.py", 100, 0),     # weather, 100%
-        ("src/services/attendance_service.py", 100, 50),  # attendance, 50%
-        ("src/services/wizard_service.py", 100, 90),    # signup, 10%
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 0),     # weather, 100%
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 50),  # attendance, 50%
+        ("src/leaguebot/signup/services/wizard_service.py", 100, 90),    # signup, 10%
     )
 
     table = cbm.format_table(cbm.group(report))
@@ -255,8 +255,8 @@ def test_the_table_ranks_best_covered_first():
 
 def test_the_table_totals_only_what_it_measured():
     report = _report(
-        ("src/services/phase1_service.py", 100, 20),
-        ("tests/unit/test_phase1_draw.py", 900, 0),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 20),
+        ("tests/weather/test_phase1_draw.py", 900, 0),
     )
 
     table = cbm.format_table(cbm.group(report))
@@ -267,8 +267,8 @@ def test_the_table_totals_only_what_it_measured():
 
 def test_a_module_breakdown_lists_worst_covered_first():
     report = _report(
-        ("src/services/phase1_service.py", 100, 0),
-        ("src/services/phase2_service.py", 100, 80),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 0),
+        ("src/leaguebot/weather/services/phase2_service.py", 100, 80),
     )
 
     text = cbm.format_module(cbm.group(report), "weather")
@@ -277,7 +277,7 @@ def test_a_module_breakdown_lists_worst_covered_first():
 
 
 def test_asking_for_an_unknown_module_says_so_rather_than_raising():
-    report = _report(("src/services/phase1_service.py", 10, 0))
+    report = _report(("src/leaguebot/weather/services/phase1_service.py", 10, 0))
 
     text = cbm.format_module(cbm.group(report), "telemetry")
 
@@ -295,7 +295,7 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
     """
     report = _report(
         ("src/services/steward_licence_service.py", 10, 5),
-        ("src/services/results_post_service.py", 10, 0),
+        ("src/leaguebot/results/services/results_post_service.py", 10, 0),
     )
 
     buckets = cbm.group(report)
@@ -304,7 +304,7 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
         "src/services/steward_licence_service.py"
     ]
     assert [f[0] for f in buckets["results"]["files"]] == [
-        "src/services/results_post_service.py"
+        "src/leaguebot/results/services/results_post_service.py"
     ]
 
 
@@ -316,8 +316,8 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
 def test_main_prints_the_table(tmp_path, capsys):
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/phase1_service.py", 100, 20),
-        ("src/services/wizard_service.py", 100, 60),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 20),
+        ("src/leaguebot/signup/services/wizard_service.py", 100, 60),
     )))
 
     assert cbm.main([str(report_path)]) == 0
@@ -345,8 +345,8 @@ def test_main_reports_unassigned_files_without_being_asked(tmp_path, capsys):
 def test_main_can_break_one_module_down(tmp_path, capsys):
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/phase1_service.py", 100, 20),
-        ("src/services/attendance_service.py", 100, 20),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 20),
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 20),
     )))
 
     cbm.main([str(report_path), "--module", "weather"])
@@ -397,8 +397,8 @@ def test_no_rule_is_empty():
 def _mixed_report() -> dict:
     """One healthy module and one thin one, by the real rules."""
     return _report(
-        ("src/services/phase1_service.py", 100, 5),      # weather, 95%
-        ("src/services/attendance_service.py", 100, 60),  # attendance, 40%
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 5),      # weather, 95%
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 60),  # attendance, 40%
     )
 
 
@@ -415,8 +415,8 @@ def test_a_module_below_the_floor_fails_the_run(tmp_path, capsys):
 def test_every_module_above_the_floor_passes(tmp_path):
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/phase1_service.py", 100, 5),
-        ("src/services/attendance_service.py", 100, 20),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 5),
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 20),
     )))
 
     assert cbm.main([str(report_path), "--fail-under", "75"]) == 0
@@ -427,7 +427,7 @@ def test_a_module_exactly_on_the_floor_passes(tmp_path):
     number by a contributor who did the arithmetic should not be told it failed."""
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/phase1_service.py", 100, 25),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 25),
     )))
 
     assert cbm.main([str(report_path), "--fail-under", "75"]) == 0
@@ -438,9 +438,9 @@ def test_the_failure_names_every_module_below_the_floor(tmp_path, capsys):
     fixing one module at a time through six red builds."""
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/phase1_service.py", 100, 60),       # weather
-        ("src/services/attendance_service.py", 100, 60),   # attendance
-        ("src/services/wizard_service.py", 100, 60),       # signup
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 60),       # weather
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 60),   # attendance
+        ("src/leaguebot/signup/services/wizard_service.py", 100, 60),       # signup
     )))
 
     assert cbm.main([str(report_path), "--fail-under", "75"]) == 1
@@ -454,7 +454,7 @@ def test_the_failure_names_the_figure_and_the_floor(tmp_path, capsys):
     """A build that says only "below the floor" leaves a contributor guessing how far."""
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/attendance_service.py", 100, 60),
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 60),
     )))
 
     cbm.main([str(report_path), "--fail-under", "75"])
@@ -469,7 +469,7 @@ def test_an_unassigned_bucket_is_gated_like_any_other(tmp_path, capsys):
     message saying exactly that, rather than being tolerated because it has no home yet."""
     report_path = tmp_path / "coverage.json"
     report_path.write_text(json.dumps(_report(
-        ("src/services/phase1_service.py", 100, 0),
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 0),
         ("src/services/brand_new_thing.py", 100, 90),
     )))
 
@@ -502,8 +502,8 @@ def test_the_default_floor_gates_nothing(tmp_path):
 def test_the_shortfalls_are_ordered_worst_first(tmp_path):
     """So the module most worth working on is the first line read."""
     buckets = cbm.group(_report(
-        ("src/services/phase1_service.py", 100, 60),      # weather, 40%
-        ("src/services/attendance_service.py", 100, 30),  # attendance, 70%
+        ("src/leaguebot/weather/services/phase1_service.py", 100, 60),      # weather, 40%
+        ("src/leaguebot/attendance/services/attendance_service.py", 100, 30),  # attendance, 70%
     ))
 
     assert [module for module, _ in cbm.shortfalls(buckets, 75)] == [
@@ -515,6 +515,6 @@ def test_the_shortfalls_are_ordered_worst_first(tmp_path):
 def test_nothing_is_a_shortfall_against_a_floor_of_zero(tmp_path):
     """Which is what makes the default a report rather than a gate that always passes by
     accident."""
-    buckets = cbm.group(_report(("src/services/phase1_service.py", 100, 100)))
+    buckets = cbm.group(_report(("src/leaguebot/weather/services/phase1_service.py", 100, 100)))
 
     assert cbm.shortfalls(buckets, 0) == []

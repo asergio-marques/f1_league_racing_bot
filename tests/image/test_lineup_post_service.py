@@ -23,8 +23,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_module import PostingOrigin
-from services.image_lineup_post import (
+from leaguebot.image.models.image_module import PostingOrigin
+from leaguebot.image.services.image_lineup_post import (
     NOT_APPLICABLE,
     POSTED,
     REJECTED,
@@ -60,7 +60,7 @@ def test_a_missing_guild_is_never_applicable():
 
 
 async def _try_post_without_guild():
-    from services.image_lineup_post import try_post
+    from leaguebot.image.services.image_lineup_post import try_post
 
     return await try_post(object(), None, 1)
 
@@ -124,19 +124,19 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
 
 def test_the_image_path_sends_before_it_deletes():
     """FR-025 — read structurally, so a reordering is caught without a live Discord."""
-    source = _function_source(SRC / "services" / "image_lineup_post.py", "try_post")
+    source = _function_source(SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post")
     send_at = source.index("channel.send(")
     delete_at = source.index("previous.delete()")
     assert send_at < delete_at, "the replacement must exist before the old message goes"
 
 
 def test_the_delete_is_guarded_by_a_persisted_message_id():
-    source = _function_source(SRC / "services" / "image_lineup_post.py", "try_post")
+    source = _function_source(SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post")
     assert 'row["lineup_message_id"] is not None' in source
 
 
 def test_a_failed_send_never_reaches_the_delete():
-    source = _function_source(SRC / "services" / "image_lineup_post.py", "try_post")
+    source = _function_source(SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post")
     failure = source.index("could not post image")
     delete_at = source.index("previous.delete()")
     assert failure < delete_at
@@ -154,7 +154,7 @@ def test_the_textual_path_still_deletes_before_it_builds():
     is the test that catches that.
     """
     source = _function_source(
-        SRC / "services" / "placement_service.py", "_refresh_lineup_post"
+        SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
     )
     delete_at = source.index("old_msg.delete()")
     build_at = source.index("discord.Embed(")
@@ -167,7 +167,7 @@ def test_the_textual_path_still_deletes_before_it_builds():
 def test_the_image_path_is_a_guard_clause_in_front_of_the_textual_body():
     """The image branch must return early, never interleave with the embed build."""
     source = _function_source(
-        SRC / "services" / "placement_service.py", "_refresh_lineup_post"
+        SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
     )
     guard_at = source.index("try_post(")
     delete_at = source.index("old_msg.delete()")
@@ -179,7 +179,7 @@ def test_the_image_path_is_a_guard_clause_in_front_of_the_textual_body():
 def test_the_textual_body_runs_when_no_bot_is_attached():
     """Without a bot there is no image module to consult, so the text path runs."""
     source = _function_source(
-        SRC / "services" / "placement_service.py", "_refresh_lineup_post"
+        SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
     )
     assert "if owner is not None:" in source
 
@@ -189,7 +189,7 @@ def test_the_textual_body_runs_when_no_bot_is_attached():
 
 def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
     """FR-024 — it composes one round's grid, not the season's assignment."""
-    source = (SRC / "services" / "rsvp_service.py").read_text(encoding="utf-8")
+    source = (SRC / "leaguebot" / "attendance" / "services" / "rsvp_service.py").read_text(encoding="utf-8")
     assert "_refresh_lineup_post" not in source
 
 
@@ -199,7 +199,7 @@ def test_the_attendance_reserve_distribution_does_not_refresh_the_lineup():
 def test_render_for_command_persists_no_message_id_and_deletes_nothing():
     """FR-028 — `/team lineup` and `/season placements-review` must not touch the record."""
     source = _function_source(
-        SRC / "services" / "image_lineup_post.py", "render_for_command", code_only=True
+        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "render_for_command", code_only=True
     )
     assert "lineup_message_id" not in source
     assert "delete()" not in source
@@ -210,20 +210,20 @@ def test_render_for_command_persists_no_message_id_and_deletes_nothing():
 def test_render_for_command_is_always_a_commanded_posting():
     """A commanded posting rejects rather than falling back (Constitution XIV.7)."""
     source = _function_source(
-        SRC / "services" / "image_lineup_post.py", "render_for_command"
+        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "render_for_command"
     )
     assert "PostingOrigin.COMMANDED" in source
     assert "POST_TEXT_FALLBACK" not in source
 
 
 def test_team_lineup_honours_the_public_parameter():
-    source = (SRC / "cogs" / "team_cog.py").read_text(encoding="utf-8")
+    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
     block = source[source.index("render_for_command"):]
     assert "ephemeral=not public" in block
 
 
 def test_team_lineup_posts_one_image_per_division():
-    source = (SRC / "cogs" / "team_cog.py").read_text(encoding="utf-8")
+    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
     block = source[source.index("render_for_command"):]
     assert "for div in all_divisions:" in block
     assert "files.append(" in block
@@ -235,9 +235,9 @@ def test_season_review_posts_the_image_in_place_of_the_text():
     The review shows a manager what their league will actually see, so where the lineup
     aspect is on the graphic replaces the textual lineup rather than joining it. The
     text is still built and sent where no graphic was drawn — see
-    tests/unit/test_season_review_images.py for the three states in full.
+    tests/core/test_season_review_images.py for the three states in full.
     """
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
     image_at = source.index("_post_review_lineup_image")
     text_at = source.index("join(lineup_lines)")
     assert image_at < text_at, "the graphic must decide before the text is built"
@@ -251,7 +251,7 @@ def test_season_review_sends_one_message_per_subsection():
     them because the image subsection can pass 2000 characters on its own, and an
     over-long send loses the whole message rather than its tail.
     """
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
     block = source[source.index("Send one message per subsection"):]
 
     order = [
@@ -273,7 +273,7 @@ def test_season_review_subsections_do_not_share_a_list():
     """Each subsection collects into its own list, or the split is only cosmetic."""
     import re
 
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
 
     for marker, expected in [
         ("_signup_review_lines", "signup_lines"),
@@ -293,7 +293,7 @@ def test_season_review_subsections_do_not_share_a_list():
 
 
 def test_seated_members_reads_every_occupied_seat():
-    from services.image_lineup_post import seated_members
+    from leaguebot.image.services.image_lineup_post import seated_members
 
     guild = MagicMock()
     members = {5: MagicMock(name="a"), 6: MagicMock(name="b")}
@@ -313,7 +313,7 @@ def test_seated_members_reads_every_occupied_seat():
 
 
 def test_seated_members_is_empty_without_a_guild():
-    from services.image_lineup_post import seated_members
+    from leaguebot.image.services.image_lineup_post import seated_members
 
     teams = [SimpleNamespace(seats=[SimpleNamespace(discord_user_id="5")])]
     assert seated_members(None, teams) == {}
@@ -325,10 +325,10 @@ def _stub_lineup_render(monkeypatch, tmp_path):
     Returns the bot to render with, the spy standing in for `refresh_before_render`, and
     the one member the drawing seats.
     """
-    import services.driver_portrait_service as portraits
-    import services.image_lineup_post as post
-    import services.image_render_service as render_service
-    import utils.image_naming as naming
+    import leaguebot.image.services.driver_portrait_service as portraits
+    import leaguebot.image.services.image_lineup_post as post
+    import leaguebot.image.services.image_render_service as render_service
+    import leaguebot.image.utils.image_naming as naming
 
     member = MagicMock(id=5)
     drawing = SimpleNamespace(division_name="Pro")
@@ -363,7 +363,7 @@ async def test_the_placements_review_render_obtains_missing_portraits(
 ):
     """The review draws the lineup a season is judged on, so a driver seated since the last
     daily update is fetched before it is drawn (#407)."""
-    from services.image_lineup_post import render_for_command
+    from leaguebot.image.services.image_lineup_post import render_for_command
 
     bot, spy, member = _stub_lineup_render(monkeypatch, tmp_path)
 
@@ -382,7 +382,7 @@ async def test_a_lineup_command_render_obtains_nothing_beyond_its_trigger(
     monkeypatch, tmp_path
 ):
     """`/team lineup` is command output, not the review: the league's trigger governs."""
-    from services.image_lineup_post import render_for_command
+    from leaguebot.image.services.image_lineup_post import render_for_command
 
     bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
 
@@ -392,7 +392,7 @@ async def test_a_lineup_command_render_obtains_nothing_beyond_its_trigger(
 
 
 async def test_a_posting_obtains_nothing_beyond_its_trigger(monkeypatch, tmp_path):
-    from services.image_lineup_post import render_png
+    from leaguebot.image.services.image_lineup_post import render_png
 
     bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
 
@@ -403,5 +403,5 @@ async def test_a_posting_obtains_nothing_beyond_its_trigger(monkeypatch, tmp_pat
 
 def test_team_lineup_does_not_ask_for_missing_portraits():
     """Only the placements review may override the league's choice of trigger."""
-    source = (SRC / "cogs" / "team_cog.py").read_text(encoding="utf-8")
+    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
     assert "obtain_missing_portraits" not in source

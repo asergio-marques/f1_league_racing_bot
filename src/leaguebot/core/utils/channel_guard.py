@@ -72,7 +72,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: The tier a decorated command sits in, readable off its callback. Set by the three
-#: decorators below and asserted in bulk by `tests/unit/test_command_tiers.py`, which is
+#: decorators below and asserted in bulk by `tests/core/test_command_tiers.py`, which is
 #: what stops a new command shipping without a tier or drifting into the wrong one.
 TIER_ATTRIBUTE = "__league_tier__"
 

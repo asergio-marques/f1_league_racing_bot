@@ -33,10 +33,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.results_cog import ResultsCog  # noqa: E402
-from services.amendment_service import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
+from leaguebot.core.services.amendment_service import (  # noqa: E402
     AmendmentModifiedError,
     AmendmentNotActiveError,
 )
@@ -112,7 +112,7 @@ def _amendment(*, state=None, **overrides):
     mocks.update(overrides)
     with ExitStack() as stack:
         for name, mock in mocks.items():
-            stack.enter_context(patch(f"services.amendment_service.{name}", new=mock))
+            stack.enter_context(patch(f"leaguebot.core.services.amendment_service.{name}", new=mock))
         yield mocks
 
 

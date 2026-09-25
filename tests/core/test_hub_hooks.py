@@ -25,13 +25,13 @@ from discord import app_commands
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import bot as bot_module  # noqa: E402
-import cogs.bot_cog as bot_cog  # noqa: E402
-from cogs.bot_cog import BotCog  # noqa: E402
-from cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import hub_service  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
+import leaguebot.__main__ as bot_module  # noqa: E402
+import leaguebot.core.cogs.bot_cog as bot_cog  # noqa: E402
+from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services import hub_service  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 27903

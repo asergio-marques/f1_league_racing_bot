@@ -1,6 +1,6 @@
 """`AttendanceService`'s configuration surface, and the amended-round recalculation.
 
-Issue #208. `tests/unit/test_attendance_config_commands.py` covers the *commands* a league
+Issue #208. `tests/attendance/test_attendance_config_commands.py` covers the *commands* a league
 types; nothing covered the service beneath them. The eight `update_*` setters, the
 `get_or_create_config` default row and the division channel upserts were all unexecuted, so
 the SQL that actually persists a league's settings had no cover at all.
@@ -34,9 +34,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import attendance_service  # noqa: E402
-from services.attendance_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import (  # noqa: E402
     AttendanceService,
     recalculate_attendance_for_round,
 )

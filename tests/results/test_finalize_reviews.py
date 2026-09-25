@@ -47,13 +47,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.attendance_service import SanctionOutcome  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import PenaltyReviewState, StagedPardon  # noqa: E402
-from services.results_post_service import ReplayOutcome  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.attendance.services.attendance_service import SanctionOutcome  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import PenaltyReviewState, StagedPardon  # noqa: E402
+from leaguebot.results.services.results_post_service import ReplayOutcome  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     finalize_appeals_review,
     finalize_penalty_review,
 )
@@ -224,32 +224,32 @@ def _patches(
     attendance_errors = attendance_errors or {}
     return {
         "snapshot": patch(
-            "services.result_submission_service._snapshot_staged_drivers",
+            "leaguebot.results.services.result_submission_service._snapshot_staged_drivers",
             new=AsyncMock(return_value=[]),
         ),
         "recompute": patch(
-            "services.result_submission_service._recompute_session_points", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service._recompute_session_points", new=AsyncMock()
         ),
         "apply": patch(
-            "services.penalty_service.apply_penalties",
+            "leaguebot.results.services.penalty_service.apply_penalties",
             new=AsyncMock(return_value=apply_result if apply_result is not None else [{}]),
         ),
         "repost": patch(
-            "services.results_post_service.delete_and_repost_final_results",
+            "leaguebot.results.services.results_post_service.delete_and_repost_final_results",
             new=AsyncMock(return_value=list(repost_faults or [])),
         ),
         "subsequent": patch(
-            "services.results_post_service.repost_subsequent_standings",
+            "leaguebot.results.services.results_post_service.repost_subsequent_standings",
             new=AsyncMock(return_value=list(subsequent_faults or [])),
         ),
         "banner": patch(
-            "services.verdict_announcement_service.banner_for_round", new=MagicMock()
+            "leaguebot.results.services.verdict_announcement_service.banner_for_round", new=MagicMock()
         ),
         # Both return the verdicts they could not announce, so the stubs must too (#237):
         # a bare AsyncMock returns a truthy MagicMock, which would report a fault on every
         # approval that announced perfectly well.
         "penalty_announce": patch(
-            "services.verdict_announcement_service.post_penalty_announcements",
+            "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
             new=AsyncMock(
                 side_effect=announce_error, return_value=list(verdict_faults or [])
             ),
@@ -257,51 +257,51 @@ def _patches(
         # The amendment's own rebuild (#345). Stubbed so the appeals finaliser can be driven
         # with `is_amendment=True` without reaching Discord or the attendance module.
         "replay": patch(
-            "services.results_post_service.replay_division_channels",
+            "leaguebot.results.services.results_post_service.replay_division_channels",
             new=AsyncMock(return_value=ReplayOutcome([], frozenset({ROUND_ID}))),
         ),
         "amend_attendance": patch(
-            "services.result_submission_service._repost_attendance_after_amendment",
+            "leaguebot.results.services.result_submission_service._repost_attendance_after_amendment",
             new=AsyncMock(return_value=[]),
         ),
         "cascade_standings": patch(
-            "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+            "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
         ),
         "appeal_announce": patch(
-            "services.verdict_announcement_service.post_appeal_announcements",
+            "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
             new=AsyncMock(
                 side_effect=announce_error, return_value=list(verdict_faults or [])
             ),
         ),
         "record": patch(
-            "services.attendance_service.record_attendance_from_results",
+            "leaguebot.attendance.services.attendance_service.record_attendance_from_results",
             new=AsyncMock(side_effect=attendance_errors.get("record")),
         ),
         "distribute": patch(
-            "services.attendance_service.distribute_attendance_points",
+            "leaguebot.attendance.services.attendance_service.distribute_attendance_points",
             new=AsyncMock(side_effect=attendance_errors.get("distribute")),
         ),
         "sheet": patch(
-            "services.attendance_service.post_attendance_sheet",
+            "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
             new=AsyncMock(side_effect=attendance_errors.get("sheet")),
         ),
         "sanctions": patch(
-            "services.attendance_service.enforce_attendance_sanctions",
+            "leaguebot.attendance.services.attendance_service.enforce_attendance_sanctions",
             new=AsyncMock(
                 side_effect=attendance_errors.get("sanctions"),
                 return_value=sanction_outcome or SanctionOutcome(),
             ),
         ),
-        "appeals_view": patch("services.penalty_wizard.AppealsReviewView", new=MagicMock()),
+        "appeals_view": patch("leaguebot.results.services.penalty_wizard.AppealsReviewView", new=MagicMock()),
         "appeals_prompt": patch(
-            "services.penalty_wizard._render_appeals_prompt_content",
+            "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content",
             new=AsyncMock(return_value="appeals prompt"),
         ),
         "close": patch(
-            "services.result_submission_service.close_submission_channel", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
         "refresh": patch(
-            "services.season_service.SeasonService.refresh_division_status", new=AsyncMock()
+            "leaguebot.core.services.season_service.SeasonService.refresh_division_status", new=AsyncMock()
         ),
     }
 
@@ -367,7 +367,7 @@ async def test_the_penalties_are_recorded_before_they_are_applied(tmp_path):
 
     patches = _patches()
     patches["apply"] = patch(
-        "services.penalty_service.apply_penalties", new=AsyncMock(side_effect=_record)
+        "leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(side_effect=_record)
     )
     for p in patches.values():
         p.start()
@@ -485,7 +485,7 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
 
     patches = _patches()
     patches["repost"] = patch(
-        "services.results_post_service.delete_and_repost_final_results",
+        "leaguebot.results.services.results_post_service.delete_and_repost_final_results",
         new=AsyncMock(side_effect=_slow_repost),
     )
     stubs = {key: p.start() for key, p in patches.items()}
@@ -514,7 +514,7 @@ async def test_the_claim_is_released_when_the_approval_fails(tmp_path):
     state = _state(db_path, staged=[_penalty()])
     patches = _patches()
     patches["apply"] = patch(
-        "services.penalty_service.apply_penalties",
+        "leaguebot.results.services.penalty_service.apply_penalties",
         new=AsyncMock(side_effect=RuntimeError("disk full")),
     )
     for p in patches.values():
@@ -1432,7 +1432,7 @@ async def test_an_amendment_elsewhere_or_ended_holds_nothing(tmp_path, where):
 
 async def test_an_amendment_is_not_held_by_itself(tmp_path):
     """Its own report and appeal stages are the ones that end it."""
-    from services.result_submission_service import held_by_amendment
+    from leaguebot.results.services.result_submission_service import held_by_amendment
 
     db_path = await _make_db(tmp_path, name="not_held_by_itself")
     await _amend_round_two(db_path)
@@ -1444,7 +1444,7 @@ async def test_an_amendment_is_not_held_by_itself(tmp_path):
 async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypatch):
     """Written out, a tuned deadline left every refusal quoting the old one; and "at most" was
     never true, the sweep running every few minutes."""
-    import services.result_submission_service as rss
+    import leaguebot.results.services.result_submission_service as rss
 
     db_path = await _make_db(tmp_path, name="held_wait")
     await _amend_round_two(db_path)
@@ -1458,7 +1458,7 @@ async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypa
 
 async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_path):
     """What completing the season and approving a change to its points ask (#345)."""
-    from services.result_submission_service import open_amendment_in_season
+    from leaguebot.results.services.result_submission_service import open_amendment_in_season
 
     db_path = await _make_db(tmp_path, name="season_held")
     await _amend_round_two(db_path, division_id=12)
@@ -1471,7 +1471,7 @@ async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_pa
 
 
 async def test_an_ended_amendment_or_another_season_leaves_the_season_free(tmp_path):
-    from services.result_submission_service import open_amendment_in_season
+    from leaguebot.results.services.result_submission_service import open_amendment_in_season
 
     db_path = await _make_db(tmp_path, name="season_not_held")
     await _amend_round_two(db_path, ended=True)
@@ -1884,7 +1884,7 @@ async def test_the_deadline_is_cleared_before_the_rebuild_begins(tmp_path):
         return ReplayOutcome([], frozenset({ROUND_ID}))
 
     with patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(side_effect=_replay),
     ):
         await _run(finalize_appeals_review, state, replay_override=True)
@@ -1985,12 +1985,12 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     interaction = _interaction()
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert, patch(
-        "services.result_submission_service._close_amendment_channel", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service._close_amendment_channel", new=AsyncMock()
     ) as close, patch(
-        "services.penalty_service.apply_penalties",
+        "leaguebot.results.services.penalty_service.apply_penalties",
         new=AsyncMock(side_effect=RuntimeError("disk full")),
     ):
         await _run_real_apply(finalize_penalty_review, state, interaction)
@@ -2076,7 +2076,7 @@ async def test_a_committed_amendment_settles_a_full_tie_by_name(tmp_path):
     names = {101: "Alice"}
 
     with patch(
-        "services.results_post_service.standings_display_names",
+        "leaguebot.results.services.results_post_service.standings_display_names",
         new=AsyncMock(return_value=names),
     ):
         stubs = await _run(finalize_appeals_review, state)
@@ -2151,7 +2151,7 @@ async def test_what_the_rebuild_could_not_post_is_named_in_result_amended(tmp_pa
     interaction = _interaction()
 
     with patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(return_value=ReplayOutcome(["the standings channel refused"], frozenset({ROUND_ID}))),
     ):
         await _run(finalize_appeals_review, state, interaction, replay_override=True)
@@ -2276,10 +2276,10 @@ async def test_an_amendment_whose_appeal_stage_cannot_open_is_undone(tmp_path):
     interaction = _interaction(guild=False)  # no guild, so no channel to post the stage in
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert, patch(
-        "services.result_submission_service._close_amendment_channel", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service._close_amendment_channel", new=AsyncMock()
     ) as close:
         await _run(finalize_penalty_review, state, interaction)
 
@@ -2305,7 +2305,7 @@ async def test_a_rebuild_that_raises_still_closes_the_amendment(tmp_path):
     interaction = _interaction()
 
     with patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(side_effect=RuntimeError("gateway closed")),
     ):
         stubs = await _run(finalize_appeals_review, state, interaction, replay_override=True)
@@ -2327,13 +2327,13 @@ async def test_an_appeal_stage_that_raises_while_opening_is_undone_too(tmp_path)
     interaction = _interaction()
 
     with patch(
-        "services.result_submission_service._post_appeals_prompt",
+        "leaguebot.results.services.result_submission_service._post_appeals_prompt",
         new=AsyncMock(side_effect=RuntimeError("gateway closed")),
     ), patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert, patch(
-        "services.result_submission_service._close_amendment_channel", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service._close_amendment_channel", new=AsyncMock()
     ):
         await _run(finalize_penalty_review, state, interaction)
 
@@ -2355,7 +2355,7 @@ async def test_the_old_announcements_are_left_standing_where_nothing_replaced_th
     await _open_amendment(state)
 
     with patch(
-        "services.result_submission_service.take_down_superseded_announcements",
+        "leaguebot.results.services.result_submission_service.take_down_superseded_announcements",
         new=AsyncMock(return_value=[]),
     ) as taken_down:
         await _run(finalize_appeals_review, state, _interaction(guild=False))
@@ -2371,7 +2371,7 @@ async def test_the_old_announcements_come_down_once_their_replacements_are_up(tm
     await _open_amendment(state)
 
     with patch(
-        "services.result_submission_service.take_down_superseded_announcements",
+        "leaguebot.results.services.result_submission_service.take_down_superseded_announcements",
         new=AsyncMock(return_value=[]),
     ) as taken_down:
         await _run(finalize_appeals_review, state)
@@ -2388,10 +2388,10 @@ async def test_the_old_announcements_stay_where_the_verdicts_were_not_re_announc
     await _open_amendment(state)
 
     with patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(return_value=ReplayOutcome(["the verdicts were not announced"], frozenset())),
     ), patch(
-        "services.result_submission_service.take_down_superseded_announcements",
+        "leaguebot.results.services.result_submission_service.take_down_superseded_announcements",
         new=AsyncMock(return_value=[]),
     ) as taken_down:
         await _run(finalize_appeals_review, state, replay_override=True)
@@ -2407,10 +2407,10 @@ async def test_another_rounds_rebuild_does_not_license_the_take_down(tmp_path):
     await _open_amendment(state)
 
     with patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(return_value=ReplayOutcome(["round 3 failed"], frozenset({ROUND_ID + 1}))),
     ), patch(
-        "services.result_submission_service.take_down_superseded_announcements",
+        "leaguebot.results.services.result_submission_service.take_down_superseded_announcements",
         new=AsyncMock(return_value=[]),
     ) as taken_down:
         await _run(finalize_appeals_review, state, replay_override=True)
@@ -2435,7 +2435,7 @@ async def test_announcements_kept_for_want_of_a_replacement_are_named_with_links
     interaction.guild.id = 555
 
     with patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(return_value=ReplayOutcome(["one verdict failed"], frozenset())),
     ):
         await _run(finalize_appeals_review, state, interaction, replay_override=True)

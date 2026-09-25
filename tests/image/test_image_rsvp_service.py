@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import image_rsvp_service  # noqa: E402
-from services.image_rsvp_service import (  # noqa: E402
+from leaguebot.image.services import image_rsvp_service  # noqa: E402
+from leaguebot.image.services.image_rsvp_service import (  # noqa: E402
     MYSTERY_LITERAL,
     MYSTERY_RACE_NAME,
     RsvpDataError,
@@ -254,7 +254,7 @@ def test_no_per_driver_datum_can_reach_the_utility_at_all():
 
 def test_the_catalogue_declares_both_imagery_classes():
     """The check-in graphic is one of the two types that may draw a circuit map."""
-    from models.image_catalogues import (
+    from leaguebot.image.models.image_catalogues import (
         DIVISION_LOGO_ASSET,
         DIVISION_LOGO_FIELD,
         RSVP_CATALOGUE,

@@ -38,8 +38,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from bot import _recover_rsvp_views_and_deadlines  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import _recover_rsvp_views_and_deadlines  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 12908
 SEASON_ID = 1
@@ -164,7 +164,7 @@ async def _recover(bot, *, deadline_error: Exception | None = None):
             raise deadline_error
         ran.append(round_id)
 
-    with patch("services.rsvp_service.run_rsvp_deadline", new=AsyncMock(side_effect=_deadline)):
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_deadline", new=AsyncMock(side_effect=_deadline)):
         await _recover_rsvp_views_and_deadlines(bot)
     return ran
 
@@ -313,7 +313,7 @@ def _live_channel() -> MagicMock:
 
 def _live_bot(db_path: str, channel: MagicMock):
     """A bot double carrying the real attendance service, so a deadline runs as it would."""
-    from services.attendance_service import AttendanceService
+    from leaguebot.attendance.services.attendance_service import AttendanceService
 
     bot = MagicMock()
     bot.db_path = db_path

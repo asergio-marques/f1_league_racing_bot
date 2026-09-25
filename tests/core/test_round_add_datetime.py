@@ -3,7 +3,7 @@
 A round is stored naive, meaning UTC. The XML import converted a time given with a zone to that
 form, but `/round add` kept the zone as typed, so the same moment could be stored two ways and
 two rounds at one instant would not be seen to clash. Both now read by
-`utils.input_validator.parse_datetime`.
+`leaguebot.core.utils.input_validator.parse_datetime`.
 
 A mystery round is added throughout, which needs no track and so no database.
 """
@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
-from models.round import RoundFormat  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 ACTOR_ID = 77

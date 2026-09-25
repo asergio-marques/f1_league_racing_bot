@@ -23,8 +23,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage, status_of_stage  # noqa: E402
-from utils.season_gate import (  # noqa: E402
+from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
+from leaguebot.core.utils.season_gate import (  # noqa: E402
     BEFORE_PENDING_COMPLETION,
     LIVE_STAGES,
     PLACEMENT_STAGES,

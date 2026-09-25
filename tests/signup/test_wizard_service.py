@@ -18,12 +18,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 
 def _validate(raw: str):
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
     return WizardService._validate_nationality(raw)
 
 
 def _normalise(raw: str):
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
     return WizardService._normalise_lap_time(raw)
 
 
@@ -86,11 +86,11 @@ class TestValidateNationality:
 
 class TestWizardStateEnum:
     def test_unengaged_exists(self):
-        from models.signup_module import WizardState
+        from leaguebot.signup.models.signup_module import WizardState
         assert WizardState.UNENGAGED.value == "UNENGAGED"
 
     def test_nine_collection_states_exist(self):
-        from models.signup_module import WizardState
+        from leaguebot.signup.models.signup_module import WizardState
         collection_states = [
             WizardState.COLLECTING_NATIONALITY,
             WizardState.COLLECTING_PLATFORM,
@@ -105,7 +105,7 @@ class TestWizardStateEnum:
         assert len(collection_states) == 9
 
     def test_total_state_count(self):
-        from models.signup_module import WizardState
+        from leaguebot.signup.models.signup_module import WizardState
         assert len(WizardState) == 10  # UNENGAGED + 9 collection states
 
 

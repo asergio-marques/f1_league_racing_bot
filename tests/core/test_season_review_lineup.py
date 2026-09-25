@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.season_cog import SeasonCog
 
 SVG_NS = "http://www.w3.org/2000/svg"
 

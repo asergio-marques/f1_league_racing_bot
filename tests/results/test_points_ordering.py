@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.points_ordering import ordering_violations  # noqa: E402
+from leaguebot.results.utils.points_ordering import ordering_violations  # noqa: E402
 
 
 def test_a_table_running_down_has_no_violations():

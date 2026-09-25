@@ -14,7 +14,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_results_service import (
+from leaguebot.image.services.image_results_service import (
     QUALIFYING_TEMPLATE_KEY,
     RACE_TEMPLATE_KEY,
     FastestLapBlock,
@@ -427,7 +427,7 @@ def test_a_qualifying_graphic_addresses_no_block_and_no_race_column():
 from types import SimpleNamespace  # noqa: E402
 
 from tests.support.image_sample_data import build_results_drawing  # noqa: E402
-from utils.svg_document import load_svg  # noqa: E402
+from leaguebot.image.utils.svg_document import load_svg  # noqa: E402
 
 
 def _teams(count: int = 3):
@@ -544,7 +544,7 @@ def test_the_shipped_template_fills_from_the_sample_with_no_unresolved_field(fil
     """The end-to-end fill, short of rasterising: every mandatory field resolved."""
     from pathlib import Path
 
-    from utils.svg_fill import fill
+    from leaguebot.image.utils.svg_fill import fill
 
     path = (
         Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates" / filename
@@ -555,7 +555,7 @@ def test_the_shipped_template_fills_from_the_sample_with_no_unresolved_field(fil
         name: Path(__file__).resolve().parents[2] / "resources" / "defaults" / folder
         for name, folder in (("team", "teams"), ("flag", "flags"), ("tyre", "tyres"))
     }
-    from services.image_results_service import build_fill_spec as project
+    from leaguebot.image.services.image_results_service import build_fill_spec as project
 
     result = fill(project(spec, root, asset_directories=directories))
     assert result.unresolved == []

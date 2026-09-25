@@ -28,7 +28,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     BLANK_FALLBACK_ASSET_CLASSES,
     FALLBACK_ASSET_NAME,
     NOTICE_ASSET_FALLBACK_USED,
@@ -37,9 +37,9 @@ from models.image_constants import (  # noqa: E402
     PACKAGED_ASSET_ASPECTS,
     packaged_directory_for,
 )
-from utils.asset_resolver import normalise  # noqa: E402
-from utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
-from utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.asset_resolver import normalise  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>'
 LOGO = b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40">' \
@@ -57,7 +57,7 @@ def league_logos(tmp_path):
 @pytest.fixture()
 def packaged(tmp_path, monkeypatch):
     """A packaged tier carrying the blank fallback for every class these tests touch."""
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
     root = tmp_path / "project"
     made = {}
@@ -272,7 +272,7 @@ def test_every_image_type_admits_the_field():
     unable to draw it with nothing said — and saying nothing is precisely what this class
     does, so nobody would find out.
     """
-    from models.image_catalogues import CATALOGUES, DIVISION_LOGO_ASSET
+    from leaguebot.image.models.image_catalogues import CATALOGUES, DIVISION_LOGO_ASSET
 
     assert len(CATALOGUES) == 16
     for key, catalogue in sorted(CATALOGUES.items()):
@@ -282,7 +282,7 @@ def test_every_image_type_admits_the_field():
 
 def test_the_field_is_optional_on_every_type_and_mandatory_on_none():
     """A template declaring no such id is not faulty — that is what makes it opt-in."""
-    from models.image_catalogues import CATALOGUES
+    from leaguebot.image.models.image_catalogues import CATALOGUES
 
     for key, catalogue in sorted(CATALOGUES.items()):
         assert "division_logo" not in catalogue.mandatory, key
@@ -294,7 +294,7 @@ def test_an_unknown_template_key_is_left_without_it():
     A field on it would make `is_empty` false, and layer 2 passes an empty catalogue over
     rather than reporting a depth nothing was checked to.
     """
-    from models.image_catalogues import catalogue_for
+    from leaguebot.image.models.image_catalogues import catalogue_for
 
     assert catalogue_for("no_such_template").is_empty
 
@@ -303,7 +303,7 @@ def test_every_posting_path_resolves_the_directory_whatever_else_it_draws():
     """Added by the shared resolver, so a posting path added later cannot omit it."""
     from types import SimpleNamespace
 
-    from services.image_render_service import resolve_configured_directories
+    from leaguebot.image.services.image_render_service import resolve_configured_directories
 
     config = SimpleNamespace(
         flag_directory="resources/defaults/flags",
@@ -321,8 +321,8 @@ def test_every_posting_path_resolves_the_directory_whatever_else_it_draws():
 def test_the_preview_resolves_every_class_there_is():
     """A preview is a diagnostic: a class it did not resolve would be reported as
     unconfigured, which is a lie a manager would act on."""
-    from models.image_constants import ASSET_CLASS_TO_COLUMN
-    from services.image_preview_service import ASSET_CLASS_COLUMNS
+    from leaguebot.image.models.image_constants import ASSET_CLASS_TO_COLUMN
+    from leaguebot.image.services.image_preview_service import ASSET_CLASS_COLUMNS
 
     assert dict(ASSET_CLASS_COLUMNS) == ASSET_CLASS_TO_COLUMN
 
@@ -350,7 +350,7 @@ def test_every_builder_offers_the_division_name_as_the_key(module):
     import importlib
     import inspect
 
-    source = inspect.getsource(importlib.import_module(f"services.{module}"))
+    source = inspect.getsource(importlib.import_module(f"leaguebot.image.services.{module}"))
 
     assert "DIVISION_LOGO_FIELD in declared" in source, module
     assert "DIVISION_LOGO_ASSET, drawing.division_name" in source, module
@@ -402,7 +402,7 @@ def test_the_calendar_keeps_the_division_logo_directory_it_was_handed():
     from pathlib import Path
     from types import SimpleNamespace
 
-    from services.image_calendar_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
 
     root = _calendar_template_declaring_a_logo()
     drawing = resolve_drawing(
@@ -476,7 +476,7 @@ def test_no_builder_narrows_the_asset_directories_without_naming_the_logo():
     )
     narrowing = []
     for module in builders:
-        source = inspect.getsource(importlib.import_module(f"services.{module}"))
+        source = inspect.getsource(importlib.import_module(f"leaguebot.image.services.{module}"))
         for line in source.splitlines():
             if "if asset_class in" in line:
                 narrowing.append((module, line.strip()))

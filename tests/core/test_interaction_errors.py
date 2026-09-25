@@ -16,7 +16,7 @@ from discord import app_commands
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.interaction_errors import (  # noqa: E402
+from leaguebot.core.utils.interaction_errors import (  # noqa: E402
     describe,
     describe_form,
     failure_reply,
@@ -107,7 +107,7 @@ async def test_a_failure_still_reaches_the_host_log_with_its_traceback(caplog):
     interaction = _interaction()
     error = KeyError("x")
 
-    with caplog.at_level(logging.ERROR, logger="utils.interaction_errors"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.interaction_errors"):
         await report_failure(interaction, _invoke_error(error), what="`/season approve`")
 
     records = [r for r in caplog.records if r.exc_info]
@@ -183,7 +183,7 @@ def test_a_form_is_named_by_its_title():
 
 
 def _tree():
-    from bot import create_bot
+    from leaguebot.__main__ import create_bot
 
     return create_bot().tree
 
@@ -225,7 +225,7 @@ async def test_a_failure_before_any_command_was_found_is_still_answered():
 
 
 async def test_a_failed_button_tells_the_member_and_the_log_channel():
-    from utils.league_server import LeagueView
+    from leaguebot.core.utils.league_server import LeagueView
 
     view = LeagueView()
     button = discord.ui.Button(label="Approve")
@@ -244,7 +244,7 @@ async def test_a_failed_button_tells_the_member_and_the_log_channel():
 
 
 async def test_a_failed_form_tells_the_member_and_the_log_channel():
-    from utils.league_server import LeagueModal
+    from leaguebot.core.utils.league_server import LeagueModal
 
     class _Form(LeagueModal, title="Edit round"):
         pass

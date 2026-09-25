@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.team_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.team_service import (  # noqa: E402
     TeamService,
     resolve_division_team,
     resolve_team_reference,

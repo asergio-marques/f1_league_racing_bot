@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.batch_notice import batch_notice  # noqa: E402
+from leaguebot.core.utils.batch_notice import batch_notice  # noqa: E402
 
 
 def _channel():

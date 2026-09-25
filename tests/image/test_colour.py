@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.colour import (  # noqa: E402
+from leaguebot.image.utils.colour import (  # noqa: E402
     CONTRAST_AA_NORMAL,
     InvalidColour,
     coerce_css_colour,

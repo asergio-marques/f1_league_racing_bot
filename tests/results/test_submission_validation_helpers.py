@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.result_submission_service import (
+from leaguebot.results.services.result_submission_service import (
     ParsedQualifyingRow,
     ParsedRaceRow,
     _rows_of_kind,

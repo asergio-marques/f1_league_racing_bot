@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import verdict_announcement_service as vas  # noqa: E402
-from services.image_verdict_service import VerdictKind  # noqa: E402
+from leaguebot.results.services import verdict_announcement_service as vas  # noqa: E402
+from leaguebot.image.services.image_verdict_service import VerdictKind  # noqa: E402
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -70,9 +70,9 @@ def stub_image_path(monkeypatch, tmp_path):
         The resolver below names every mention after the penalised driver, which the real
         `build_drawing` stopped doing in #142. That is harmless here — these tests assert on
         the fallback and on what was posted, never on a name — but do not read it as the
-        production rule. tests/unit/test_image_verdict_mentions.py holds that.
+        production rule. tests/image/test_image_verdict_mentions.py holds that.
         """
-        from services.image_verdict_service import VerdictDrawing, resolve_mentions
+        from leaguebot.image.services.image_verdict_service import VerdictDrawing, resolve_mentions
 
         state["built"].append(kwargs)
         return VerdictDrawing(
@@ -93,7 +93,7 @@ def stub_image_path(monkeypatch, tmp_path):
         )
 
     async def _render(_bot, drawing, **_kwargs):
-        from services.image_verdict_post import VerdictRender
+        from leaguebot.image.services.image_verdict_post import VerdictRender
 
         state["rendered"].append(drawing)
         return VerdictRender(
@@ -111,7 +111,7 @@ def stub_image_path(monkeypatch, tmp_path):
     async def _team(_bot, _guild, **_kwargs):
         return "Red Bull"
 
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
@@ -202,7 +202,7 @@ def test_the_posting_module_persists_no_message_id():
     """No table records a verdict's message, so there is no state to reconcile."""
     import inspect
 
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     # SQL statements, not the prose: the module's own docstring explains why
@@ -214,7 +214,7 @@ def test_the_posting_module_persists_no_message_id():
 def test_the_posting_module_never_edits_or_deletes_a_message():
     import inspect
 
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     assert ".edit(" not in source
@@ -264,7 +264,7 @@ async def test_an_exception_in_the_image_path_still_posts_the_announcement(
     channel, stub_image_path, monkeypatch
 ):
     """A graphic never costs a league its announcement (XIV.7's precondition clause)."""
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("rasteriser exploded")
@@ -371,7 +371,7 @@ async def test_the_message_keeps_the_emphasis_it_always_applied(channel, stub_im
 async def test_notices_are_reported_and_never_sent_to_the_verdicts_channel(
     channel, stub_image_path
 ):
-    from models.image_module import RenderNotice
+    from leaguebot.image.models.image_module import RenderNotice
 
     stub_image_path["notices"] = [
         RenderNotice(
@@ -393,7 +393,7 @@ async def test_notices_are_reported_and_never_sent_to_the_verdicts_channel(
 async def test_a_notice_names_the_season_division_round_session_and_driver(
     channel, stub_image_path
 ):
-    from models.image_module import RenderNotice
+    from leaguebot.image.models.image_module import RenderNotice
 
     stub_image_path["notices"] = [
         RenderNotice(
@@ -418,7 +418,7 @@ def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic(
     """
     import inspect
 
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     source = inspect.getsource(attendance_service)
     calls = source.count("post_autosanction_announcement(")
@@ -444,8 +444,8 @@ def _render_artifact(tmp_path):
 async def test_the_graphic_is_gone_once_the_verdict_has_posted(
     channel, stub_image_path, monkeypatch, tmp_path
 ):
-    from services import image_verdict_post
-    from services.image_verdict_post import VerdictRender
+    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.image_verdict_post import VerdictRender
 
     png = _render_artifact(tmp_path)
 
@@ -466,8 +466,8 @@ async def test_the_graphic_is_gone_when_the_send_fails(
     channel, stub_image_path, monkeypatch, tmp_path
 ):
     """The announcement raising must not leave the picture behind."""
-    from services import image_verdict_post
-    from services.image_verdict_post import VerdictRender
+    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.image_verdict_post import VerdictRender
 
     png = _render_artifact(tmp_path)
 

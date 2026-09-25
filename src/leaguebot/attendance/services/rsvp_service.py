@@ -344,7 +344,7 @@ async def _report_call_failure(
     **The note names the command that does it** (#123). It used to say only "post the call
     again", which no command could do; `/attendance post-check-in` is that command, and naming
     it here with the division and round already filled in is what makes the advice followable.
-    `tests/unit/test_rsvp_call_failure_report.py` pins the name, so the two cannot drift apart.
+    `tests/attendance/test_rsvp_call_failure_report.py` pins the name, so the two cannot drift apart.
 
     *note* replaces that advice where it cannot be followed (#429). A call given up at a
     restart, its deadline passed, is past what the command will post, and its report must not

@@ -48,8 +48,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9908
@@ -113,7 +113,7 @@ def _make_cog(
     duplicate_error: Exception | None = None,
     stage=None,
 ) -> SeasonCog:
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -268,7 +268,7 @@ async def test_the_first_empty_slot_is_the_one_filled(tmp_path):
 @pytest.mark.parametrize("stage_name", ["CONFIGURATION", "WAITING", "SIGNUPS"])
 async def test_adding_before_placements_is_refused(tmp_path, stage_name):
     """Issue #220: divisions are built only once the signups are in."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     db_path = await _make_db(tmp_path)
     cfg = _pending()

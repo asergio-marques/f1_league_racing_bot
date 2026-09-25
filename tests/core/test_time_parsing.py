@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.time_parsing import parse_time_of_day  # noqa: E402
+from leaguebot.core.utils.time_parsing import parse_time_of_day  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -85,7 +85,7 @@ def test_the_parser_never_raises():
 
 def test_the_signup_cog_reads_the_same_parser():
     """The two surfaces must agree: a league that learns `7pm` here will type it there."""
-    from cogs.signup_cog import _parse_time
+    from leaguebot.signup.cogs.signup_cog import _parse_time
 
     assert _parse_time("7pm") == parse_time_of_day("7pm") == "19:00"
     assert _parse_time("nonsense") is None

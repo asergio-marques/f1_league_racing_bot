@@ -16,10 +16,10 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs import admin_review_cog  # noqa: E402
-from services.in_memory_state import clear_in_memory_state  # noqa: E402
+from leaguebot.signup.cogs import admin_review_cog  # noqa: E402
+from leaguebot.core.services.in_memory_state import clear_in_memory_state  # noqa: E402
 
-SRC = pathlib.Path(__file__).resolve().parents[2] / "src"
+SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
 #: A mutable container set up empty at module level, or on `self`, typed or not. A
 #: function's own locals are indented and carry no `self.`, and die with the call.
@@ -31,35 +31,35 @@ _STORE = re.compile(
 
 #: Stores `clear_in_memory_state` clears, by (file, name).
 CLEARED = {
-    ("cogs/admin_review_cog.py", "_PENDING_REASONS"),
-    ("cogs/season_cog.py", "_pending"),
-    ("services/wizard_service.py", "_correction_tasks"),
+    ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"),
+    ("core/cogs/season_cog.py", "_pending"),
+    ("signup/services/wizard_service.py", "_correction_tasks"),
 }
 
 #: Stores that hold no league state, and why.
 EXEMPT = {
     # The phase callables bound at start-up: the bot's wiring, not the league's data.
-    ("services/scheduler_service.py", "_phase_callbacks"),
+    ("core/services/scheduler_service.py", "_phase_callbacks"),
     # The placements-review button's own report. It dies with the view, and once no server
     # is claimed every press on it is refused.
-    ("cogs/season_cog.py", "_report"),
+    ("core/cogs/season_cog.py", "_report"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
-    ("cogs/season_cog.py", "selected"),
+    ("core/cogs/season_cog.py", "selected"),
     # A season review's poster: the messages one review command posted, handed to its button
     # and gone when the command returns (#228). `_report` above is where they then live.
-    ("cogs/season_cog.py", "posted"),
+    ("core/cogs/season_cog.py", "posted"),
     # One parsed SVG document's index of its own elements.
-    ("utils/svg_document.py", "by_id"),
-    ("utils/svg_document.py", "by_label"),
+    ("image/utils/svg_document.py", "by_id"),
+    ("image/utils/svg_document.py", "by_label"),
     # One parsed stylesheet's record of the order its rules were declared in, and what each
     # class combination resolved to under it (#165). Both die with the stylesheet, which
     # lives no longer than the render or check that parsed its template.
-    ("utils/svg_document.py", "positions"),
-    ("utils/svg_document.py", "_by_class"),
+    ("image/utils/svg_document.py", "positions"),
+    ("image/utils/svg_document.py", "_by_class"),
     # The hub's options, registered by modules at import (#279): the bot's code, not the
     # league's data. A pack keeps the modules, so it keeps what they offer.
-    ("services/hub_service.py", "_OPTIONS"),
+    ("core/services/hub_service.py", "_OPTIONS"),
 }
 
 

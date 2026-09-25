@@ -28,8 +28,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.verdict_announcement_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.services.verdict_announcement_service import (  # noqa: E402
     republish_verdicts_from_round,
 )
 from tests.support.teams import seed_team_instances  # noqa: E402
@@ -124,15 +124,15 @@ async def _republish(db_path, bot, from_round_id, *, penalties=None, appeals=Non
         events.append(("delete", anchor))
 
     with patch(
-        "services.verdict_announcement_service.post_penalty_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
         new=AsyncMock(side_effect=_post_pen),
     ), patch(
-        "services.verdict_announcement_service.post_appeal_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
         new=AsyncMock(side_effect=_post_app),
     ), patch(
-        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
     ), patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ):
         faults = await republish_verdicts_from_round(
             bot, db_path, DIVISION_ID, from_round_id,
@@ -219,15 +219,15 @@ async def test_the_superseded_message_is_the_one_deleted(tmp_path):
         deleted.append(anchor)
 
     with patch(
-        "services.verdict_announcement_service.post_penalty_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
         new=AsyncMock(side_effect=_post_pen),
     ), patch(
-        "services.verdict_announcement_service.post_appeal_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
     ), patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ):
         await republish_verdicts_from_round(
             _bot(), db_path, DIVISION_ID, 1,
@@ -364,14 +364,14 @@ async def test_each_round_is_announced_under_its_own_number(tmp_path):
         return []
 
     with patch(
-        "services.verdict_announcement_service.post_penalty_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
         new=AsyncMock(side_effect=_post_pen),
     ), patch(
-        "services.verdict_announcement_service.post_appeal_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
-    ), patch("services.results_post_service._delete_posting", new=AsyncMock()):
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+    ), patch("leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()):
         await republish_verdicts_from_round(
             _bot(), db_path, DIVISION_ID, 1,
             lambda round_id: SimpleNamespace(round_id=round_id, db_path=db_path),
@@ -381,7 +381,7 @@ async def test_each_round_is_announced_under_its_own_number(tmp_path):
 
 
 def test_the_replays_states_name_the_division():
-    from services.result_submission_service import _amend_verdict_state
+    from leaguebot.results.services.result_submission_service import _amend_verdict_state
 
     state = _amend_verdict_state("x.db", DIVISION_ID, MagicMock(), division_name="Pro")(21)
 
@@ -466,7 +466,7 @@ async def test_a_banner_over_sanction_cards_is_kept(tmp_path):
 
 
 async def test_a_sanction_card_marks_exactly_its_banner(tmp_path):
-    from services.verdict_announcement_service import _mark_banner_over_sanction
+    from leaguebot.results.services.verdict_announcement_service import _mark_banner_over_sanction
 
     db_path, _ = await _seed(tmp_path, "banner_marked", rounds=(1, 2))
     for round_id, message_id in ((1, 6001), (1, 6003), (2, 6004)):
@@ -482,7 +482,7 @@ async def test_a_sanction_card_marks_exactly_its_banner(tmp_path):
 
 
 async def test_a_card_under_no_banner_marks_nothing(tmp_path):
-    from services.verdict_announcement_service import _mark_banner_over_sanction
+    from leaguebot.results.services.verdict_announcement_service import _mark_banner_over_sanction
 
     db_path, _ = await _seed(tmp_path, "banner_unmarked", rounds=(1,))
     await _banner(db_path, 1, 6001)
@@ -540,16 +540,16 @@ async def test_one_banner_heads_a_rounds_reports_and_its_appeals(tmp_path):
         return []
 
     with patch(
-        "services.verdict_announcement_service.post_penalty_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
         new=AsyncMock(side_effect=_post_pen),
     ), patch(
-        "services.verdict_announcement_service.post_appeal_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
         new=AsyncMock(side_effect=_post_app),
     ), patch(
-        "services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
         MagicMock(return_value="the-banner"),
     ), patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ):
         await republish_verdicts_from_round(
             _bot(), db_path, DIVISION_ID, 1,
@@ -571,15 +571,15 @@ async def test_a_round_whose_announcements_failed_keeps_its_old_ones(tmp_path):
         return ["round one's verdicts channel is gone"] if state.round_id == 1 else []
 
     with patch(
-        "services.verdict_announcement_service.post_penalty_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
         new=AsyncMock(side_effect=_post_pen),
     ), patch(
-        "services.verdict_announcement_service.post_appeal_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
     ), patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ) as delete:
         faults = await republish_verdicts_from_round(
             _bot(), db_path, DIVISION_ID, 1,
@@ -606,15 +606,15 @@ async def test_the_rounds_rebuilt_are_reported_to_the_caller(tmp_path):
 
     rebuilt: list[int] = []
     with patch(
-        "services.verdict_announcement_service.post_penalty_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_penalty_announcements",
         new=AsyncMock(side_effect=_post_pen),
     ), patch(
-        "services.verdict_announcement_service.post_appeal_announcements",
+        "leaguebot.results.services.verdict_announcement_service.post_appeal_announcements",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round", MagicMock(return_value=None)
     ), patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ):
         await republish_verdicts_from_round(
             _bot(), db_path, DIVISION_ID, 1,

@@ -39,11 +39,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.attendance_cog import AttendanceCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
-from utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  # noqa: E402
+from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  # noqa: E402
 
 SERVER_ID = 4242
 SEASON_ID = 1
@@ -149,8 +149,8 @@ async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW, 
 
     clock = MagicMock(wraps=datetime)
     clock.now = MagicMock(return_value=now)
-    with patch("cogs.attendance_cog.datetime", clock), patch(
-        "services.rsvp_service.run_rsvp_notice", new=AsyncMock(side_effect=_fake_notice)
+    with patch("leaguebot.attendance.cogs.attendance_cog.datetime", clock), patch(
+        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock(side_effect=_fake_notice)
     ) as notice:
         await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
     return notice
@@ -424,7 +424,7 @@ async def test_the_scheduled_call_winning_the_race_stops_this_one(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    from cogs import attendance_cog
+    from leaguebot.attendance.cogs import attendance_cog
 
     calls = {"n": 0}
 

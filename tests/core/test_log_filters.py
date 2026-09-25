@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.log_filters import (  # noqa: E402
+from leaguebot.core.utils.log_filters import (  # noqa: E402
     TREE_LOGGER,
     UNKNOWN_INTERACTION,
     LateAutocompleteFilter,

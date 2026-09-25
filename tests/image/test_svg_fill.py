@@ -14,18 +14,18 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     NOTICE_FIELD_REDUCED,
     NOTICE_FONT_SUBSTITUTED,
 )
-from utils.font_metrics import resolve_family  # noqa: E402
-from utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.font_metrics import resolve_family  # noqa: E402
+from leaguebot.image.utils.svg_document import (  # noqa: E402
     computed_style,
     FieldIndex,
     parse_svg_bytes,
     stylesheet,
 )
-from utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
 
 
 def _doc(body: str, width: int = 1200, height: int = 675):
@@ -284,7 +284,7 @@ def test_invariant_8_line_count_is_recomputed_at_the_reduced_leading():
     If leading did not scale, halving the size would give the same number of lines in
     the same box. Because it does scale, the box admits roughly twice as many.
     """
-    from utils.svg_fill import _wrap  # noqa: PLC0415
+    from leaguebot.image.utils.svg_fill import _wrap  # noqa: PLC0415
 
     box_height, box_width, declared, ratio = 120.0, 300.0, 20.0, 1.3
     body = "The stewards reviewed the incident at turn four in detail. " * 8
@@ -597,7 +597,7 @@ def test_image_fill_rewrites_href():
     silently absent from the picture while every check upstream reported success. See
     `_as_href`.
     """
-    import utils.paths as paths
+    import leaguebot.core.utils.paths as paths
 
     root = _doc('<image id="track" xlink:href="placeholder.svg"/>')
     result = fill(FillSpec(root=root, images={"track": "resources/defaults/tracks/fallback.svg"}))
@@ -639,7 +639,7 @@ def test_a_template_authored_relative_href_still_resolves(monkeypatch, tmp_path)
     Pinned rather than assumed: anchoring is only safe because the project root is the
     right base for a template-authored reference as well as a configured one.
     """
-    import utils.paths as paths
+    import leaguebot.core.utils.paths as paths
 
     beside = tmp_path / "templates"
     beside.mkdir()
@@ -712,7 +712,7 @@ def _tyre_dir(tmp_path, *, with_fallback: bool):
 
 
 def _qualifying_catalogue():
-    from models.image_catalogues import RESULTS_QUALIFYING_CATALOGUE
+    from leaguebot.image.models.image_catalogues import RESULTS_QUALIFYING_CATALOGUE
 
     return RESULTS_QUALIFYING_CATALOGUE
 
@@ -745,7 +745,7 @@ def test_absent_datum_removes_the_field_where_the_class_has_no_fallback(
     directory is put out of view here. With it in view the packaged tyre fallback answers,
     the field is drawn, and this branch is never reached.
     """
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path / "elsewhere", raising=False)
     root = _image_doc()
@@ -839,7 +839,7 @@ def test_wrapped_field_breaks_a_word_wider_than_its_box_within_itself():
     size = float(element.get("style").split("font-size:")[1].split("px")[0])
     resolved = resolve_family("Arial")
 
-    from utils.font_metrics import measure  # noqa: PLC0415
+    from leaguebot.image.utils.font_metrics import measure  # noqa: PLC0415
 
     tspans = list(element)
     assert len(tspans) > 1, "a 400-character word must be broken across lines"
@@ -925,8 +925,8 @@ def test_wrapped_field_naming_a_missing_rectangle_is_a_problem():
 
 def test_the_fill_pipeline_passes_the_packaged_directory(tmp_path, monkeypatch):
     """One call site serves every graphic, so wiring it here wires it everywhere."""
-    import utils.paths as paths_module
-    from utils.svg_fill import _packaged_directory
+    import leaguebot.core.utils.paths as paths_module
+    from leaguebot.image.utils.svg_fill import _packaged_directory
 
     packaged = tmp_path / "resources" / "defaults" / "flags"
     packaged.mkdir(parents=True)
@@ -936,14 +936,14 @@ def test_the_fill_pipeline_passes_the_packaged_directory(tmp_path, monkeypatch):
 
 
 def test_an_unknown_asset_class_has_no_packaged_directory():
-    from utils.svg_fill import _packaged_directory
+    from leaguebot.image.utils.svg_fill import _packaged_directory
 
     assert _packaged_directory("nonesuch") is None
 
 
 def test_a_packaged_directory_that_is_not_there_leaves_the_tier_empty(tmp_path, monkeypatch):
-    import utils.paths as paths_module
-    from utils.svg_fill import _packaged_directory
+    import leaguebot.core.utils.paths as paths_module
+    from leaguebot.image.utils.svg_fill import _packaged_directory
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
 

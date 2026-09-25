@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.message_builder import mystery_notice_message
-from models.round import Round, RoundFormat
+from leaguebot.weather.utils.message_builder import mystery_notice_message
+from leaguebot.core.models.round import Round, RoundFormat
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ class TestMysteryNoticeMessage:
         The mystery template declares no ``phase_description`` field either — the carve-out
         the weather specification names, pinned on the textual side.
         """
-        from utils.message_builder import PHASE_DESCRIPTIONS
+        from leaguebot.weather.utils.message_builder import PHASE_DESCRIPTIONS
 
         notice = mystery_notice_message()
         for description in PHASE_DESCRIPTIONS.values():
@@ -79,7 +79,7 @@ class TestMysteryNoticeMessage:
 
 def _make_scheduler_no_db():
     """Instantiate SchedulerService bypassing __init__ (no real APScheduler needed)."""
-    from services.scheduler_service import SchedulerService
+    from leaguebot.core.services.scheduler_service import SchedulerService
     svc = SchedulerService.__new__(SchedulerService)
     svc._phase_callbacks = {}
     svc._mystery_notice_callback = None
@@ -315,7 +315,7 @@ class TestScheduleAttendanceRoundMystery:
 # ---------------------------------------------------------------------------
 
 async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
-    from db.database import get_connection
+    from leaguebot.core.db.database import get_connection
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO server_configs "
@@ -343,8 +343,8 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
 class TestRunMysteryNotice:
 
     async def test_posts_to_forecast_not_log(self):
-        from db.database import run_migrations
-        from services.mystery_notice_service import run_mystery_notice
+        from leaguebot.core.db.database import run_migrations
+        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
 
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
@@ -368,8 +368,8 @@ class TestRunMysteryNotice:
             os.unlink(db_path)
 
     async def test_posted_message_has_no_role_tag(self):
-        from db.database import run_migrations
-        from services.mystery_notice_service import run_mystery_notice
+        from leaguebot.core.db.database import run_migrations
+        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
 
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
@@ -396,8 +396,8 @@ class TestRunMysteryNotice:
 
     async def test_skips_if_format_amended_to_non_mystery(self):
         """Guard: if round was amended away from MYSTERY before job fires, do nothing."""
-        from db.database import run_migrations, get_connection
-        from services.mystery_notice_service import run_mystery_notice
+        from leaguebot.core.db.database import run_migrations, get_connection
+        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
 
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
@@ -421,8 +421,8 @@ class TestRunMysteryNotice:
             os.unlink(db_path)
 
     async def test_skips_if_round_not_found(self):
-        from db.database import run_migrations
-        from services.mystery_notice_service import run_mystery_notice
+        from leaguebot.core.db.database import run_migrations
+        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
 
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = f.name
@@ -445,8 +445,8 @@ class TestRunMysteryNotice:
         """The notice is a weather posting, and a disabled module produces nothing whatever the
         path arrives at it — so the runner refuses, as `run_phase1` to `run_phase3` do (#113),
         and leaves the round's Phase 1 undone (#426)."""
-        from db.database import get_connection, run_migrations
-        from services.mystery_notice_service import run_mystery_notice
+        from leaguebot.core.db.database import get_connection, run_migrations
+        from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
 
         db_path = str(tmp_path / "notice_weather_off.db")
         await run_migrations(db_path)

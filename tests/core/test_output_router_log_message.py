@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.output_router import OutputRouter  # noqa: E402
+from leaguebot.core.utils.output_router import OutputRouter  # noqa: E402
 
 
 def _channel(sent):
@@ -121,7 +121,7 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
 async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing():
     """Nothing to post to. It came to the same before — the router asked Discord for a channel
     with no id and logged the failure — less the request (#228)."""
-    from utils.output_router import ForecastChannel
+    from leaguebot.core.utils.output_router import ForecastChannel
 
     bot = MagicMock()
     bot.fetch_channel = AsyncMock()

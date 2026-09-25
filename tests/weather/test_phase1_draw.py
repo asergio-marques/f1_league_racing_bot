@@ -42,8 +42,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.phase1_service import run_phase1  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.weather.services.phase1_service import run_phase1  # noqa: E402
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -158,9 +158,9 @@ def _run(db_path: str, *, raw_draw: float = 0.05):
 
     async def _invoke():
         with patch("random.betavariate", return_value=raw_draw), patch(
-            "services.forecast_cleanup_service.post_phase_message", new=posted
+            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
         ), patch(
-            "services.image_weather_post.attach_forecast",
+            "leaguebot.image.services.image_weather_post.attach_forecast",
             new=AsyncMock(return_value=None),
         ):
             await run_phase1(ROUND_ID, bot)
@@ -225,9 +225,9 @@ async def test_the_draw_uses_the_circuit_parameters(tmp_path):
     nu = SEEDED_MU * (1.0 - SEEDED_MU) / SEEDED_SIGMA ** 2 - 1.0
 
     with patch("random.betavariate", return_value=0.05) as betavariate, patch(
-        "services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
     ), patch(
-        "services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
+        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
     ):
         await run_phase1(ROUND_ID, bot)
 
@@ -314,8 +314,8 @@ async def test_infeasible_sigma_blocks_the_phase(tmp_path):
     bot = _make_bot(db_path)
     posted = AsyncMock()
 
-    with patch("services.forecast_cleanup_service.post_phase_message", new=posted), patch(
-        "services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
+    with patch("leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted), patch(
+        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
     ):
         await run_phase1(ROUND_ID, bot)
 
@@ -344,7 +344,7 @@ async def test_unknown_round_produces_nothing(tmp_path):
     await _seed(db_path)
     bot, posted, _ = _run(db_path)
 
-    with patch("services.forecast_cleanup_service.post_phase_message", new=posted):
+    with patch("leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted):
         await run_phase1(999, bot)
 
     assert await _phase1_state(db_path) == (0, 0)

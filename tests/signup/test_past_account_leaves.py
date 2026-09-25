@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import SignupCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 2432
 PAST, CURRENT = "6101", "6102"

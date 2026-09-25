@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import forecast_cleanup_service, phase2_service, phase3_service  # noqa: E402
-from services.image_weather_post import (  # noqa: E402
+from leaguebot.weather.services import forecast_cleanup_service, phase2_service, phase3_service  # noqa: E402
+from leaguebot.image.services.image_weather_post import (  # noqa: E402
     ForecastRender,
     describe,
     weather_enabled,
@@ -288,8 +288,8 @@ def _render_bot(decision):
 @pytest.mark.asyncio
 async def test_a_scheduled_posting_falls_back_rather_than_rejecting():
     """FR-055 — nobody is at the keyboard, and the league still needs its forecast."""
-    from models.image_module import PostingOrigin
-    from services.image_weather_post import render_forecast
+    from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.services.image_weather_post import render_forecast
 
     bot = _render_bot(_decision(posts_image=False, problem_detail="template too small"))
     render = await render_forecast(
@@ -304,8 +304,8 @@ async def test_a_scheduled_posting_falls_back_rather_than_rejecting():
 @pytest.mark.asyncio
 async def test_a_commanded_posting_rejects_rather_than_falling_back():
     """FR-056 — the one person able to fix the template is standing there."""
-    from models.image_module import PostingOrigin
-    from services.image_weather_post import render_forecast
+    from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.services.image_weather_post import render_forecast
 
     bot = _render_bot(_decision(rejects=True, problem_detail="missing track_name"))
     render = await render_forecast(
@@ -319,8 +319,8 @@ async def test_a_commanded_posting_rejects_rather_than_falling_back():
 
 @pytest.mark.asyncio
 async def test_a_resolution_fault_rejects_only_when_commanded():
-    from models.image_module import PostingOrigin
-    from services.image_weather_post import render_forecast
+    from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.services.image_weather_post import render_forecast
 
     bot = MagicMock()
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("no config"))
@@ -335,7 +335,7 @@ async def test_a_resolution_fault_rejects_only_when_commanded():
 
 @pytest.mark.asyncio
 async def test_a_successful_render_hands_back_the_png():
-    from services.image_weather_post import render_forecast
+    from leaguebot.image.services.image_weather_post import render_forecast
 
     bot = _render_bot(_decision())
     render = await render_forecast(bot, MagicMock(template_key="weather_p1_template"))
@@ -358,7 +358,7 @@ def _attach_bot(*, notices=(), problem=None, draws=True):
 @pytest.mark.asyncio
 async def test_a_substituted_asset_still_draws_and_reports_its_notice(monkeypatch, tmp_path):
     """FR-059 — the picture is posted and the substitution is reported to staff."""
-    import services.image_weather_post as post
+    import leaguebot.image.services.image_weather_post as post
 
     png = tmp_path / "w.png"
     png.write_bytes(b"x")
@@ -392,7 +392,7 @@ def test_no_notice_and_no_problem_reaches_a_forecast_channel():
     """SC-005 — this module reports through the log-channel reporters and nowhere else."""
     import inspect
 
-    import services.image_weather_post as post
+    import leaguebot.image.services.image_weather_post as post
 
     source = inspect.getsource(post.attach_forecast)
     assert "report_notices(" in source and "report(" in source
@@ -404,7 +404,7 @@ def test_no_notice_and_no_problem_reaches_a_forecast_channel():
 
 @pytest.mark.asyncio
 async def test_a_problem_is_reported_and_the_text_stands_instead(monkeypatch):
-    import services.image_weather_post as post
+    import leaguebot.image.services.image_weather_post as post
 
     reported: list = []
     monkeypatch.setattr(post, "report_notices", AsyncMock())
@@ -432,7 +432,7 @@ def test_the_mystery_notice_rides_on_a_message_carrying_no_mention():
     """FR-052 — its textual counterpart tags nobody, and neither does the graphic's."""
     import inspect
 
-    from services import mystery_notice_service
+    from leaguebot.weather.services import mystery_notice_service
 
     source = inspect.getsource(mystery_notice_service.run_mystery_notice)
     assert 'attachment_text=""' in source, "the notice must carry no role mention"
@@ -443,7 +443,7 @@ def test_the_mystery_notice_supersedes_nothing():
     """It is the only weather posting such a round makes."""
     import inspect
 
-    from services import mystery_notice_service
+    from leaguebot.weather.services import mystery_notice_service
 
     source = inspect.getsource(mystery_notice_service.run_mystery_notice)
     assert "supersedes" not in source
@@ -452,15 +452,15 @@ def test_the_mystery_notice_supersedes_nothing():
 
 def test_no_phase_is_armed_for_a_mystery_round():
     """FR-053 — nothing whatever is posted at the phase 2 and phase 3 horizons."""
-    from models.round import RoundFormat
-    from models.session import SESSIONS_BY_FORMAT
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.core.models.session import SESSIONS_BY_FORMAT
 
     assert SESSIONS_BY_FORMAT[RoundFormat.MYSTERY] == []
 
 
 def test_the_mystery_drawing_takes_the_mystery_template():
     """Whatever phase it is asked for, a mystery round reaches its own type."""
-    from services.image_weather_service import MYSTERY_TEMPLATE_KEY, resolve_drawing
+    from leaguebot.image.services.image_weather_service import MYSTERY_TEMPLATE_KEY, resolve_drawing
 
     for phase in (1, 2, 3):
         drawing = resolve_drawing(

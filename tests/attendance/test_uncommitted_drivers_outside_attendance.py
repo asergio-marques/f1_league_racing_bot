@@ -13,9 +13,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.attendance_service import _opening_attendance_rows  # noqa: E402
-from services.rsvp_service import query_division_roster  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services.attendance_service import _opening_attendance_rows  # noqa: E402
+from leaguebot.attendance.services.rsvp_service import query_division_roster  # noqa: E402
 
 SERVER_ID = 22080
 DIVISION_ID = 1

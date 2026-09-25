@@ -48,12 +48,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
-from services.cancellation_notice_service import CancellationReport  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.season_service import SeasonImmutableError  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog  # noqa: E402
+from leaguebot.core.services.cancellation_notice_service import CancellationReport  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
 SERVER_ID = 10008
 SEASON_ID = 1
@@ -198,7 +198,7 @@ async def _amend(cog, interaction, *, name="Pro", new_name=None, tier=None, role
 async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM", failures=()):
     """Run the command with the modules' announcements stubbed, returning the stub."""
     announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
-    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
     return announce
 
@@ -691,7 +691,7 @@ async def test_the_jobs_go_before_the_division_is_stood_down(tmp_path):
 async def test_the_modules_are_told_the_division_is_off(tmp_path):
     """Each enabled module says so in its own channel — never core, and never the forecast
     channel regardless of the weather module (#175)."""
-    from services import cancellation_notice_service as cns
+    from leaguebot.core.services import cancellation_notice_service as cns
 
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_notice")
     channel = MagicMock()
@@ -731,7 +731,7 @@ async def test_the_check_in_audit_reaches_the_log(tmp_path):
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_audit")
     cog = _make_cog(db_path)
     announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Pro, Round 2"))
-    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
     assert "check-in, Pro, Round 2" in cog.bot.output_router.post_log.await_args.args[0]
 
@@ -746,13 +746,13 @@ async def test_the_modules_are_told_after_the_division_is_recorded_cancelled(tmp
         lambda **_: order.append("division")
     )
     announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
-    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.division_cancel)(cog, _interaction(), "Pro", "CONFIRM")
     assert order == ["division", "announce"]
 
 
 async def test_what_could_not_be_told_is_named_to_the_admin(tmp_path):
-    from services.cancellation_notice_service import NoticeFailure
+    from leaguebot.core.services.cancellation_notice_service import NoticeFailure
 
     db_path = await _make_db(tmp_path, status="ACTIVE", name="cancel_refused")
     cog = _make_cog(db_path)

@@ -33,7 +33,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.results_cog import _parse_bulk_lines  # noqa: E402
+from leaguebot.results.cogs.results_cog import _parse_bulk_lines  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

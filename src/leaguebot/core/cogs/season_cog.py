@@ -642,7 +642,7 @@ class _ReviewPoster:
     sends through it, so every public message is collected in one place and the type check sees
     every send (#228). It replaced patching ``interaction.followup.send`` for the length of the
     review, which collected in one place too but could not be checked;
-    `tests/unit/test_season_review_images.py` holds that nothing in a review sends around it.
+    `tests/core/test_season_review_images.py` holds that nothing in a review sends around it.
 
     Only the public messages are kept. An ephemeral followup is visible to the reviewer alone
     and cannot be deleted by id, and the fault reports among them are the reason a manager

@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import run_migrations  # noqa: E402
+from leaguebot.core.db.database import run_migrations  # noqa: E402
 
 LEAGUE = 2540
 
@@ -284,7 +284,7 @@ async def test_the_image_directory_defaults_match_the_constants(db_path):
     """Written twice — as column defaults in SQL and in `ASSET_DIRECTORIES` — and must not drift:
     a row created by `create_with_defaults` carries the SQL defaults, and the rest of the module
     reads the constants."""
-    from models.image_constants import ASSET_DIRECTORIES
+    from leaguebot.image.models.image_constants import ASSET_DIRECTORIES
 
     db = _connect(db_path)
     db.execute("INSERT INTO image_config (id) VALUES (1)")

@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
 import discord
 
-from services.penalty_wizard import (
+from leaguebot.results.services.penalty_wizard import (
     PenaltyReviewState,
     PenaltyReviewView,
     ApprovalView,
@@ -43,8 +43,8 @@ from services.penalty_wizard import (
     _CID_CONFIRM,
     _CID_APPROVE,
 )
-from services.penalty_service import StagedPenalty
-from models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.models.points_config import SessionType
 
 
 # ---------------------------------------------------------------------------

@@ -42,8 +42,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import REVIEW_IMAGE_FAULT, REVIEW_IMAGE_TEXT, SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_FAULT, REVIEW_IMAGE_TEXT, SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12808
@@ -221,7 +221,7 @@ def _cog(
     cog._post_approval_prompt = AsyncMock()
 
     # The image section. What it prints has tests of its own, in
-    # `tests/integration/test_image_module_flow.py`; under test here is whether its faults withhold the button
+    # `tests/image/test_image_module_flow.py`; under test here is whether its faults withhold the button
     # (#396), so the report lines are stubbed and the fault reading is left real. Its readers
     # are pinned to "nothing wrong" — each is wrapped in a `try` that turns a mock's
     # surprise into a fault of its own, which would withhold the button on the harness.
@@ -238,7 +238,7 @@ def _cog(
 
     # In Placements with nothing unsettled (issue #220); those gates are tested in
     # test_placements_confirmation.py.
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
@@ -271,12 +271,12 @@ async def _review(cog, interaction, *, converter=True):
     """
     sent = interaction.followup.send
     with patch(
-        "services.weather_config_service.get_weather_pipeline_config",
+        "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(
             return_value=SimpleNamespace(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
         ),
     ), patch(
-        "services.image_render_service.converter_available", return_value=converter
+        "leaguebot.image.services.image_render_service.converter_available", return_value=converter
     ):
         await undecorate(SeasonCog.season_review)(cog, interaction)
     return [
@@ -769,7 +769,7 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 
 
 def _broken(template_key: str):
-    from models.image_module import ValidityReport
+    from leaguebot.image.models.image_module import ValidityReport
 
     return ValidityReport(
         template_key=template_key,
@@ -801,7 +801,7 @@ async def test_a_missing_rasteriser_withholds_approval(db_path):
 
 
 async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
-    from models.image_constants import TEMPLATE_LABELS
+    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
 
     cog = _cog(db_path, images=True)
     cog.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})

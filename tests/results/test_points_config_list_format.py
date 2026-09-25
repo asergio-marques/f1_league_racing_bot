@@ -6,8 +6,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.points_config import SessionType
-from utils.results_formatter import format_config_list
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.utils.results_formatter import format_config_list
 
 
 def test_format_config_list_names_each_config_and_what_it_carries():

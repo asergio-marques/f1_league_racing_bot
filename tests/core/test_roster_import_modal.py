@@ -18,8 +18,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
-from cogs.test_mode_cog import _RosterImportModal, _format_roster_errors  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import _RosterImportModal, _format_roster_errors  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 7700
@@ -96,7 +96,7 @@ async def test_the_box_stays_within_discord_s_limits():
 
 
 async def test_a_parse_fault_is_reported_and_nothing_is_added(monkeypatch):
-    import services.test_roster_service as trs
+    import leaguebot.core.services.test_roster_service as trs
 
     seated = AsyncMock()
     monkeypatch.setattr(trs, "add_test_drivers_in_bulk", seated)
@@ -113,7 +113,7 @@ async def test_a_parse_fault_is_reported_and_nothing_is_added(monkeypatch):
 async def test_the_roster_is_held_to_the_template_capacities(monkeypatch):
     """#150: the bot's placement service goes with the roster, so a real season's
     template capacities bound it."""
-    import services.test_roster_service as trs
+    import leaguebot.core.services.test_roster_service as trs
 
     seated = AsyncMock(return_value=(1, []))
     monkeypatch.setattr(trs, "add_test_drivers_in_bulk", seated)

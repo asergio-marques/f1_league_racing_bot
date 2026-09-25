@@ -23,10 +23,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services import points_config_service, season_points_service  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services import points_config_service, season_points_service  # noqa: E402
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5600
@@ -86,7 +86,7 @@ async def _attach_phantom(db_path, config_name: str) -> None:
 
 
 def _function_source(name: str) -> str:
-    text = (SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    text = (SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:

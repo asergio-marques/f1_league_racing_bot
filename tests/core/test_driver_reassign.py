@@ -27,8 +27,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.driver_service import DriverService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.driver_service import DriverService  # noqa: E402
 
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
@@ -208,7 +208,7 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     """E41: the review names the driver by the account the reassign replaces."""
-    from services.season_fingerprint_service import take_fingerprint
+    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

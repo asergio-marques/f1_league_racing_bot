@@ -26,10 +26,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.driver_cog import DriverCog  # noqa: E402
-from models.season import SeasonStage, status_of_stage  # noqa: E402
+from leaguebot.core.cogs.driver_cog import DriverCog  # noqa: E402
+from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
-from utils.season_gate import LIVE_STAGES, PLACEMENT_STAGES  # noqa: E402
+from leaguebot.core.utils.season_gate import LIVE_STAGES, PLACEMENT_STAGES  # noqa: E402
 
 #: Every stage the command is refused in, plus the no-season case. Derived from the live
 #: stages rather than listed, so a stage added to the lifecycle is covered without an edit.

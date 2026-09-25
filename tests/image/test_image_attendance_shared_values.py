@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import attendance_service  # noqa: E402
-from services.image_attendance_service import resolve_drawing, DriverRecord  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.image.services.image_attendance_service import resolve_drawing, DriverRecord  # noqa: E402
 
 
 # ── The values both paths draw (FR-013) ───────────────────────────────────
@@ -90,7 +90,7 @@ def test_the_points_total_is_the_same_number_in_both_presentations():
 
 def test_the_sanction_annotation_matches_the_textual_one_with_its_emphasis_stripped():
     """The graphic draws the plain literal; the message applies the emphasis (FR-017)."""
-    from services.image_attendance_service import SANCTION_ANNOTATION
+    from leaguebot.image.services.image_attendance_service import SANCTION_ANNOTATION
 
     textual_suffix = " *(reached point limit)*"
     stripped = textual_suffix.strip().strip("*").strip("()")
@@ -184,7 +184,7 @@ async def test_the_cells_carry_the_points_each_round_conferred(grid_db):
 @pytest.mark.asyncio
 async def test_an_unfinalised_round_and_a_zero_round_are_the_same_picture(grid_db):
     """``points_awarded`` is NULL before finalisation and 0 after a fully pardoned round."""
-    from services.image_attendance_service import cell_text
+    from leaguebot.image.services.image_attendance_service import cell_text
 
     _, cells = await attendance_service._round_grid(grid_db, 7, [501, 502])
     assert cell_text(cells[502][1]) == ""   # NULL — not yet finalised
@@ -220,7 +220,7 @@ async def test_the_grid_needs_no_drivers_to_list_its_rounds(grid_db):
 # Two tests stood here asserting on the source text of the withdrawn
 # `/images test <kind>` command's `needs_tracks` and `needs_teams` guards. Feature 045
 # replaces that command with eleven previews whose refusals are covered directly against
-# `resolve_context` in `tests/unit/test_image_preview_service.py`.
+# `resolve_context` in `tests/image/test_image_preview_service.py`.
 #
 # The team guard's successor is `require_teams`, which the attendance preview sets and
 # `test_a_division_with_only_a_reserve_team_is_refused` covers. The track guard has no

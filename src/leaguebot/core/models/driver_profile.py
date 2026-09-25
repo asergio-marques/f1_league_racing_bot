@@ -13,7 +13,7 @@ class DriverState(str, Enum):
     league could never see either (issue #221). Sanctions belong to the stewarding module,
     which will bring whatever shape of ban it needs rather than inherit one designed against
     commands that were never written — so do not re-add them here ahead of it.
-    ``tests/unit/test_driver_states.py`` pins this set.
+    ``tests/core/test_driver_states.py`` pins this set.
     """
 
     NOT_SIGNED_UP                  = "NOT_SIGNED_UP"

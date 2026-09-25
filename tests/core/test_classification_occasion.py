@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.classification_occasion import ClassificationOccasion
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
 
 def test_each_occasion_draws_its_own_phrase():

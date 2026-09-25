@@ -24,7 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import services.calendar_post_service as cps
+import leaguebot.core.services.calendar_post_service as cps
 
 TRACKS = {
     "Silverstone Circuit": NS(
@@ -195,7 +195,7 @@ async def test_the_asset_directories_are_absolute(tmp_path):
     Every other posting path goes through `resolve_configured_directories`. This pins the
     calendar to it.
     """
-    from utils.svg_document import load_svg
+    from leaguebot.image.utils.svg_document import load_svg
 
     bot = _bot(tmp_path)
     bot.image_config_service.get_config = AsyncMock(
@@ -235,7 +235,7 @@ async def test_a_rejected_directory_is_carried_through_as_a_fault(tmp_path):
     The hand-rolled resolution reported neither — a directory that escaped the project
     root simply became `None`, and the filler then said the class was never configured.
     """
-    from utils.svg_document import load_svg
+    from leaguebot.image.utils.svg_document import load_svg
 
     bot = _bot(tmp_path)
     bot.image_config_service.get_config = AsyncMock(

@@ -21,7 +21,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_calendar_service import (
+from leaguebot.image.services.image_calendar_service import (
     MYSTERY_COUNTRY,
     MYSTERY_DATUM,
     MYSTERY_RACE_NAME,

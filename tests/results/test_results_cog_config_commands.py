@@ -21,11 +21,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from models.server_config import ServerConfig  # noqa: E402
-from services import points_config_service, season_points_service  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
+from leaguebot.results.services import points_config_service, season_points_service  # noqa: E402
 
 SERVER_ID = 7700
 SEASON_ID = 21

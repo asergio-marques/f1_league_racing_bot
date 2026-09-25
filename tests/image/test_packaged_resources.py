@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from lxml import etree
 
-from models.image_constants import (
+from leaguebot.image.models.image_constants import (
     ASSET_ASPECT_TOLERANCE,
     PACKAGED_ASSET_ASPECTS,
     ASPECT_TEMPLATES,
@@ -126,11 +126,11 @@ def test_every_image_slot_of_a_shipped_template_carries_its_classs_aspect(path):
     shipped set any more, so this is the only thing holding the fifteen templates and the
     artwork that fills them together, and it has to be asserted here or not at all.
     """
-    from models.image_constants import (
+    from leaguebot.image.models.image_constants import (
         PACKAGED_ASSET_ASPECTS,
         RATIO_CONSISTENT_ASSET_CLASSES,
     )
-    from services.image_validity_service import (
+    from leaguebot.image.services.image_validity_service import (
         class_aspect_faults_of,
         class_aspect_of,
         stretch_faults_of,

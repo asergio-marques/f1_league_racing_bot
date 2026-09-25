@@ -16,9 +16,9 @@ import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.season_service import SeasonService
-from services.season_end_service import execute_season_end
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.season_end_service import execute_season_end
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ class _FakeBot:
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self.season_service = SeasonService(db_path)
-        from services.config_service import ConfigService
+        from leaguebot.core.services.config_service import ConfigService
 
         self.config_service = ConfigService(db_path)
         self.scheduler_service = _FakeScheduler()
@@ -357,7 +357,7 @@ async def test_the_final_classification_is_posted_while_the_season_is_still_acti
             return []
 
         with patch(
-            "services.season_classification_service.post_final_classifications",
+            "leaguebot.core.services.season_classification_service.post_final_classifications",
             AsyncMock(side_effect=_post),
         ) as spy:
             await execute_season_end(season_id, bot)
@@ -382,7 +382,7 @@ async def test_the_season_still_completes_when_the_classification_fails() -> Non
         bot = _FakeGuildBot(db_path)
 
         with patch(
-            "services.season_classification_service.post_final_classifications",
+            "leaguebot.core.services.season_classification_service.post_final_classifications",
             AsyncMock(side_effect=RuntimeError("the renderer fell over")),
         ):
             await execute_season_end(season_id, bot)
@@ -404,7 +404,7 @@ async def test_a_classification_problem_reaches_the_logging_channel() -> None:
         bot = _FakeGuildBot(db_path)
 
         with patch(
-            "services.season_classification_service.post_final_classifications",
+            "leaguebot.core.services.season_classification_service.post_final_classifications",
             AsyncMock(return_value=["Div A standings: the template is at fault"]),
         ):
             await execute_season_end(season_id, bot)

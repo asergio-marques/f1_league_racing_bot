@@ -22,7 +22,7 @@ deeper, where the error would name a column instead of the thing the maintainer 
 
 `backup_service.state` is stubbed throughout: what is under test is which message each state of
 the backup produces, not the file handling underneath, which has its own cover in
-`tests/unit/test_backup_service.py`.
+`tests/core/test_backup_service.py`.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Aliased on import: pytest tries to collect any module-level name starting with `Test`
 # as a test class, and warns that it cannot because the cog has an `__init__`.
-from cogs.test_mode_cog import TestModeCog as _Cog  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 10008
@@ -183,7 +183,7 @@ async def test_no_backup_says_so_and_names_the_command_that_takes_one():
     interaction = _interaction()
 
     with patch(
-        "services.backup_service.state", return_value=_backup_state(exists=False)
+        "leaguebot.core.services.backup_service.state", return_value=_backup_state(exists=False)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -197,7 +197,7 @@ async def test_a_saved_backup_reports_when_it_was_taken_and_how_big():
     interaction = _interaction()
 
     with patch(
-        "services.backup_service.state", return_value=_backup_state(size_bytes=8192)
+        "leaguebot.core.services.backup_service.state", return_value=_backup_state(size_bytes=8192)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -213,7 +213,7 @@ async def test_an_unreadable_backup_is_called_out_emphatically():
     interaction = _interaction()
 
     with patch(
-        "services.backup_service.state", return_value=_backup_state(readable=False)
+        "leaguebot.core.services.backup_service.state", return_value=_backup_state(readable=False)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -224,7 +224,7 @@ async def test_a_readable_backup_says_so_plainly():
     cog = _make_cog()
     interaction = _interaction()
 
-    with patch("services.backup_service.state", return_value=_backup_state(readable=True)):
+    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state(readable=True)):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
     assert "Readable: yes" in _replied(interaction)
@@ -236,7 +236,7 @@ async def test_a_locked_backup_names_who_locked_it():
     interaction = _interaction()
 
     with patch(
-        "services.backup_service.state",
+        "leaguebot.core.services.backup_service.state",
         return_value=_backup_state(locked=True, locked_by="Maintainer"),
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
@@ -248,7 +248,7 @@ async def test_an_unlocked_backup_reports_no_lock():
     cog = _make_cog()
     interaction = _interaction()
 
-    with patch("services.backup_service.state", return_value=_backup_state(locked=False)):
+    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state(locked=False)):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
     assert "Locked: no" in _replied(interaction)
@@ -264,7 +264,7 @@ async def test_restoring_with_no_backup_is_refused():
     interaction = _interaction()
 
     with patch(
-        "services.backup_service.state", return_value=_backup_state(exists=False)
+        "leaguebot.core.services.backup_service.state", return_value=_backup_state(exists=False)
     ):
         await undecorate(_Cog.backup_restore)(cog, interaction)
 
@@ -309,7 +309,7 @@ async def test_removing_a_driver_names_them_and_their_team():
     interaction = _interaction()
 
     with patch(
-        "services.test_roster_service.remove_test_driver",
+        "leaguebot.core.services.test_roster_service.remove_test_driver",
         new=AsyncMock(return_value={"display_name": "Test Lewis", "team_name": "Alpha"}),
     ):
         await _remove(cog, interaction)
@@ -326,7 +326,7 @@ async def test_a_refusal_from_the_roster_service_reaches_the_maintainer():
     interaction = _interaction()
 
     with patch(
-        "services.test_roster_service.remove_test_driver",
+        "leaguebot.core.services.test_roster_service.remove_test_driver",
         new=AsyncMock(return_value="No test driver with that id."),
     ):
         await _remove(cog, interaction)
@@ -342,7 +342,7 @@ async def test_a_successful_removal_is_logged_with_the_id_as_well_as_the_name():
     interaction = _interaction()
 
     with patch(
-        "services.test_roster_service.remove_test_driver",
+        "leaguebot.core.services.test_roster_service.remove_test_driver",
         new=AsyncMock(return_value={"display_name": "Test Lewis", "team_name": "Alpha"}),
     ):
         await _remove(cog, interaction, user_id="4242")

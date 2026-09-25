@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 def _normalise(raw: str):
     """Call _normalise_lap_time without instantiating WizardService."""
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
     return WizardService._normalise_lap_time(raw)
 
 

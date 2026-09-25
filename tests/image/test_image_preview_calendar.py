@@ -17,13 +17,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     build_calendar_preview,
     resolve_context,
 )
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 6161
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -124,7 +124,7 @@ class TestCalendarPreview:
 
     async def test_the_rounds_are_drawn_in_their_configured_order(self, bot, db_path):
         """FR-016 — the order is the league's, not the order rows happen to come back in."""
-        from services.image_calendar_service import resolve_drawing
+        from leaguebot.image.services.image_calendar_service import resolve_drawing
 
         await _seed(
             db_path,
@@ -136,7 +136,7 @@ class TestCalendarPreview:
         )
         context = await resolve_context(bot, "Premier", require_rounds=True)
 
-        from services.calendar_post_service import tracks_by_name
+        from leaguebot.core.services.calendar_post_service import tracks_by_name
 
         rounds = await bot.season_service.get_division_rounds(context.division_id)
         drawing = resolve_drawing(
@@ -152,8 +152,8 @@ class TestCalendarPreview:
 
     async def test_a_division_of_one_round_draws_one_round(self, bot, db_path):
         """The crop falls at the league's own count, however short (SC-005)."""
-        from services.calendar_post_service import tracks_by_name
-        from services.image_calendar_service import resolve_drawing
+        from leaguebot.core.services.calendar_post_service import tracks_by_name
+        from leaguebot.image.services.image_calendar_service import resolve_drawing
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
         context = await resolve_context(bot, "Premier", require_rounds=True)
@@ -189,7 +189,7 @@ class TestItUsesTheLeaguesOwnDirectories:
 
     async def test_the_preview_builds_against_those_directories(self, bot, db_path):
         """The spec builder must actually receive them, not merely resolve them."""
-        import services.image_calendar_service as calendar_service
+        import leaguebot.image.services.image_calendar_service as calendar_service
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])
         await bot.image_config_service.set_field(

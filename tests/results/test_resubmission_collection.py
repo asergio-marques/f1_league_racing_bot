@@ -49,11 +49,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-import services.penalty_wizard as pw  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+import leaguebot.results.services.penalty_wizard as pw  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     ResubmissionCancelView,
     _resubmit_collection_task,
     enter_resubmit_flow,
@@ -185,7 +185,7 @@ async def _run(
 
     patches = {
         "validation": patch(
-            "services.result_submission_service._build_division_validation_data",
+            "leaguebot.results.services.result_submission_service._build_division_validation_data",
             new=AsyncMock(
                 return_value=validation
                 or ({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {"t3001": TEAM_ROLE}),
@@ -193,19 +193,19 @@ async def _run(
             ),
         ),
         "configs": patch(
-            "services.season_points_service.get_attached_config_names",
+            "leaguebot.results.services.season_points_service.get_attached_config_names",
             new=AsyncMock(return_value=list(configs)),
         ),
-        "select": patch("services.result_submission_service._ConfigSelectView", new=_FakeSelect),
+        "select": patch("leaguebot.results.services.result_submission_service._ConfigSelectView", new=_FakeSelect),
         "points": patch(
-            "services.result_submission_service._apply_points_in_tx",
+            "leaguebot.results.services.result_submission_service._apply_points_in_tx",
             new=AsyncMock(return_value=True),
         ),
         "penalty": patch(
-            "services.result_submission_service.enter_penalty_state", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
         ),
         "close": patch(
-            "services.result_submission_service.close_submission_channel", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
     }
     started = {k: p.start() for k, p in patches.items()}
@@ -515,7 +515,7 @@ async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
     await _seed_old_results(db_path)
 
     with patch(
-        "services.result_submission_service.replace_round_results",
+        "leaguebot.results.services.result_submission_service.replace_round_results",
         new=AsyncMock(side_effect=RuntimeError("disk")),
     ):
         stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
@@ -840,15 +840,15 @@ async def _press_resubmit_and_collect(bot, state):
     """Press Resubmit and wait for the collection it starts, stubbing only Discord and the
     division lookups the collection's own tests already cover."""
     with patch(
-        "services.result_submission_service._build_division_validation_data",
+        "leaguebot.results.services.result_submission_service._build_division_validation_data",
         new=AsyncMock(
             return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {"t3001": TEAM_ROLE})
         ),
     ), patch(
-        "services.season_points_service.get_attached_config_names",
+        "leaguebot.results.services.season_points_service.get_attached_config_names",
         new=AsyncMock(return_value=["Standard"]),
     ), patch(
-        "services.result_submission_service.enter_penalty_state", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
     ) as penalty:
         await enter_resubmit_flow(_pressed_resubmit(), state)
         task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{ROUND_ID}")

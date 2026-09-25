@@ -46,8 +46,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
 
 SERVER_ID = 12308
 SEASON_ID = 1
@@ -159,7 +159,7 @@ async def _refresh(db_path, guild, *, image_applicable: bool = False, image_erro
     service = PlacementService(db_path, bot=MagicMock())
     outcome = SimpleNamespace(applicable=image_applicable)
     with patch(
-        "services.image_lineup_post.try_post",
+        "leaguebot.image.services.image_lineup_post.try_post",
         new=AsyncMock(return_value=outcome, side_effect=image_error),
     ) as try_post:
         await service._refresh_lineup_post(guild, DIVISION_ID)

@@ -23,7 +23,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -117,7 +117,7 @@ def _bot(db_path: str, templates: dict[str, str]):
 
 
 def _service(db_path: str, templates: dict[str, str]):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     return PlacementService(db_path, bot=_bot(db_path, templates))
 
@@ -223,7 +223,7 @@ async def test_an_unknown_team_is_left_to_the_roster_to_report(tmp_path):
 
 
 async def test_no_bot_means_no_guard(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     path, divisions = await _seed(tmp_path)
 
@@ -234,7 +234,7 @@ async def test_no_bot_means_no_guard(tmp_path):
 
 
 async def _add(path, service, team, division="Alpha", name="Mock"):
-    from services.test_roster_service import add_test_driver
+    from leaguebot.core.services.test_roster_service import add_test_driver
 
     return await add_test_driver(
         driver_name=name,
@@ -292,8 +292,8 @@ async def test_the_command_refuses_it_in_placements(tmp_path):
     """
     from types import SimpleNamespace
 
-    from cogs.test_mode_cog import TestModeCog
-    from services.placement_service import PlacementService
+    from leaguebot.core.cogs.test_mode_cog import TestModeCog
+    from leaguebot.core.services.placement_service import PlacementService
     from tests.support.undecorate import undecorate
 
     path, _divisions = await _seed(tmp_path)
@@ -325,7 +325,7 @@ async def test_the_command_refuses_it_in_placements(tmp_path):
 
 def _roster(*rows: tuple[str, str], nationality: str | None = "British"):
     """ParsedDriver rows of (team, division), given IDs in the synthetic range."""
-    from utils.roster_import import SYNTHETIC_ID_BASE, ParsedDriver
+    from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, ParsedDriver
 
     return [
         ParsedDriver(
@@ -341,7 +341,7 @@ def _roster(*rows: tuple[str, str], nationality: str | None = "British"):
 
 
 async def _bulk(path, service, drivers):
-    from services.test_roster_service import add_test_drivers_in_bulk
+    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
 
     return await add_test_drivers_in_bulk(drivers, path, placement_service=service)
 

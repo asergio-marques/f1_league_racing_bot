@@ -3,7 +3,7 @@
 The opening one is posted when a season is approved, the final one when it completes.
 Both are the standings and attendance sheets a league already reads every round, under a
 different heading and with no message text — see
-``models.classification_occasion.ClassificationOccasion``.
+``leaguebot.core.models.classification_occasion.ClassificationOccasion``.
 
 What matters here is the orchestration: which sheets are posted for which division, and
 that one division's failure never stops the next. What the sheets *say* is covered by
@@ -19,9 +19,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.classification_occasion import ClassificationOccasion
-from services import season_classification_service as service
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.services import season_classification_service as service
 
 pytestmark = pytest.mark.asyncio
 
@@ -120,11 +120,11 @@ async def _seed(path, *, server_id=1, divisions=("Div A",)):
 def _patched(standings=None, attendance=None):
     return (
         patch(
-            "services.results_post_service.post_standings",
+            "leaguebot.results.services.results_post_service.post_standings",
             standings or AsyncMock(return_value=None),
         ),
         patch(
-            "services.attendance_service.post_attendance_sheet",
+            "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
             attendance or AsyncMock(return_value=None),
         ),
     )

@@ -33,8 +33,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     _repost_attendance_after_amendment,
 )
 
@@ -94,13 +94,13 @@ async def _run(db_path, *, bot=None, touched=(AMENDED_ROUND, 5, LATEST_ROUND),
         return outcome if outcome is not None else _outcome()
 
     with patch(
-        "services.attendance_service._recalculate_forward",
+        "leaguebot.attendance.services.attendance_service._recalculate_forward",
         new=AsyncMock(side_effect=_recalculate),
     ), patch(
-        "services.attendance_service.post_attendance_sheet",
+        "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
         new=AsyncMock(side_effect=_sheet),
     ), patch(
-        "services.attendance_service.enforce_attendance_sanctions",
+        "leaguebot.attendance.services.attendance_service.enforce_attendance_sanctions",
         new=AsyncMock(side_effect=_sanctions),
     ):
         faults = await _repost_attendance_after_amendment(

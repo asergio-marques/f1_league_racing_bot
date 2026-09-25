@@ -50,8 +50,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import bot as bot_module  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+import leaguebot.__main__ as bot_module  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 11808
 SEASON_ID = 1
@@ -146,11 +146,11 @@ def _config(phase_1_days=PHASE_1_DAYS, phase_2_days=PHASE_2_DAYS, phase_3_hours=
 async def _phases(stub, *, config=None):
     get_config = AsyncMock(return_value=config or _config())
     with patch(
-        "services.weather_config_service.get_weather_pipeline_config", new=get_config
-    ), patch("services.phase1_service.run_phase1", new=AsyncMock()) as p1, patch(
-        "services.phase2_service.run_phase2", new=AsyncMock()
+        "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config", new=get_config
+    ), patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()) as p1, patch(
+        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
     ) as p2, patch(
-        "services.phase3_service.run_phase3", new=AsyncMock()
+        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
     ) as p3:
         await bot_module._recover_missed_phases(stub)
     return p1, p2, p3, get_config
@@ -510,7 +510,7 @@ async def test_recovery_hands_the_bot_to_the_revert(tmp_path):
     stub = _stub_bot(db_path, guild=_amend_guild())
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=False),
     ) as revert:
         await bot_module._recover_orphaned_amend_channels(stub)
@@ -668,7 +668,7 @@ async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert:
         await bot_module._recover_orphaned_amend_channels(bot)
@@ -693,7 +693,7 @@ async def test_a_revert_that_fails_hands_the_round_to_the_sweep(tmp_path):
     bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(side_effect=RuntimeError("locked")),
     ):
         await bot_module._recover_orphaned_amend_channels(bot)
@@ -717,7 +717,7 @@ async def test_nothing_to_put_back_is_not_reported_as_a_revert(tmp_path):
     bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=False),
     ):
         await bot_module._recover_orphaned_amend_channels(bot)
@@ -738,7 +738,7 @@ async def test_an_amendment_row_outlives_a_channel_that_could_not_be_deleted(tmp
     amendment's stage prompts still live in it. The snapshot was released before the rebuild
     began, so the row left standing carries nothing a sweep could act on.
     """
-    from services.result_submission_service import close_submission_channel
+    from leaguebot.results.services.result_submission_service import close_submission_channel
 
     db_path = await _base_db(tmp_path, "close_unreachable")
     await _seed_amend(db_path)
@@ -760,7 +760,7 @@ async def test_a_channel_the_bot_may_not_delete_keeps_its_row_closed(tmp_path):
     """The approval of an amendment's last stage reaches here, the commonest way one ends. The
     row went before the delete was tried, so a channel the bot had lost the right to delete
     stood with nothing naming it; kept, closed, it holds nothing and recovery finds it."""
-    from services.result_submission_service import close_submission_channel
+    from leaguebot.results.services.result_submission_service import close_submission_channel
 
     db_path = await _base_db(tmp_path, "close_forbidden")
     await _seed_amend(db_path)
@@ -780,7 +780,7 @@ async def test_closing_one_channel_leaves_a_later_amendment_of_the_round_alone(t
     """Closed, the old row no longer holds the round, so a fresh amendment may replace it while
     the old channel's delete is still awaited. Matched on the round alone, finishing that close
     forgot the fresh amendment — snapshot, deadline and all."""
-    from services.result_submission_service import _close_amend_channel_record
+    from leaguebot.results.services.result_submission_service import _close_amend_channel_record
 
     db_path = await _base_db(tmp_path, "close_scoped")
     await _seed_amend(db_path)
@@ -806,7 +806,7 @@ async def test_closing_one_channel_leaves_a_later_amendment_of_the_round_alone(t
 
 
 async def test_the_amendment_row_goes_with_the_channel_it_names(tmp_path):
-    from services.result_submission_service import close_submission_channel
+    from leaguebot.results.services.result_submission_service import close_submission_channel
 
     db_path = await _base_db(tmp_path, "close_reachable")
     await _seed_amend(db_path)

@@ -20,10 +20,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.config_service import ConfigService
-from services.signup_module_service import SignupModuleService  # noqa: E402
-from services.wizard_service import WizardService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService
+from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
+from leaguebot.signup.services.wizard_service import WizardService  # noqa: E402
 
 SERVER_ID = 2439
 OLD, NEW = "6401", "6402"

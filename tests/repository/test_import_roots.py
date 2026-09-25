@@ -1,8 +1,8 @@
 """No module in `src/` imports another through a package named `src`.
 
-Issue #398. The bot runs as `python src/bot.py`, which puts `src/` itself on `sys.path` — never
+Issue #398. The bot runs as `python src/leaguebot/__main__.py`, which puts `src/` itself on `sys.path` — never
 the repository root — so `cogs`, `services`, `models` and the rest are top-level packages, and
-no package named `src` exists. `models/amendment_state.py` imported
+no package named `src` exists. `results/models/amendment_state.py` imported
 `from src.models.points_config import SessionType` all the same, and every `/results amend`
 command that read the amendment state raised `ModuleNotFoundError` under the virtualenv.
 
@@ -48,7 +48,7 @@ def test_the_scan_sees_an_import_through_src():
             "from src.models.points_config import SessionType",
             "import src.models.points_config",
             "from .src import thing",
-            "from models.points_config import SessionType",
+            "from leaguebot.results.models.points_config import SessionType",
         )
         for node in ast.parse(source).body
     ]

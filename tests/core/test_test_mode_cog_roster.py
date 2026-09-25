@@ -21,10 +21,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
-from cogs import test_mode_cog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
+from leaguebot.core.cogs import test_mode_cog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 6161

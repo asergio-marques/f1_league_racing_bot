@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from utils.asset_resolver import normalise
-from utils.country_data import NATIONALITY_COUNTRIES
-from utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.image.utils.country_data import NATIONALITY_COUNTRIES
+from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
 
 #: Recorded for a driver who stated no nationality. Not a country.
 NATIONALITY_OTHER = "Other"
@@ -33,7 +33,7 @@ def seeded_track_countries() -> set[str]:
     import sqlite3
     import tempfile
 
-    from db.database import run_migrations
+    from leaguebot.core.db.database import run_migrations
 
     with tempfile.TemporaryDirectory() as scratch:
         path = str(Path(scratch) / "seed.db")
@@ -172,21 +172,21 @@ def test_v4_circuits_sharing_a_country_share_one_slug():
 # --------------------------------------------------------------------------
 
 def test_helper_maps_a_nationality_to_its_country():
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert country_for_nationality("British") == "United Kingdom"
     assert country_for_nationality("Brazilian") == "Brazil"
 
 
 def test_helper_carries_other_through_unchanged():
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert country_for_nationality(NATIONALITY_OTHER) == NATIONALITY_OTHER
 
 
 def test_helper_treats_an_absent_nationality_as_no_country():
     """An absent datum seeks no asset; the caller's rules govern the field."""
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert country_for_nationality(None) is None
     assert country_for_nationality("") is None
@@ -194,7 +194,7 @@ def test_helper_treats_an_absent_nationality_as_no_country():
 
 
 def test_helper_strips_surrounding_whitespace():
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert country_for_nationality("  British  ") == "United Kingdom"
 
@@ -206,7 +206,7 @@ def test_helper_passes_an_unmapped_value_through_rather_than_raising():
     somehow does, the value reaches ordinary asset resolution and degrades to the
     class fallback with a notice, rather than killing the graphic mid-render.
     """
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert country_for_nationality("Atlantean") == "Atlantean"
 
@@ -230,7 +230,7 @@ def test_a_nationality_outside_un_membership_still_resolves(stated, country):
     a later pass over the map by membership does not quietly drop either: the rule is
     what a driver can state, not who sits in the General Assembly.
     """
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert country_for_nationality(stated) == country
     assert NATIONALITY_COUNTRIES[stated] == country
@@ -248,6 +248,6 @@ def test_the_wizard_accepts_every_form_of_palestinian(typed):
 
 def test_palestinian_resolves_one_flag_slug():
     """A driver's flag and a round's would share this file, as V-4 requires of any country."""
-    from utils.country_data import country_for_nationality
+    from leaguebot.image.utils.country_data import country_for_nationality
 
     assert normalise(country_for_nationality("Palestinian")) == "palestine"

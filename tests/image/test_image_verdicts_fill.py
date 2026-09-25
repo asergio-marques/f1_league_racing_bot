@@ -12,12 +12,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_verdict_service import (  # noqa: E402
+from leaguebot.image.services.image_verdict_service import (  # noqa: E402
     VerdictDrawing,
     VerdictKind,
     build_fill_spec,
 )
-from utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
 
 FULL_TEMPLATE = (
     b'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -186,7 +186,7 @@ def test_an_absent_nationality_removes_the_flag():
 
 def test_a_league_that_collects_no_nationality_removes_the_flag_quietly():
     """XIV.4's configured absence: nothing has degraded, so nothing is reported."""
-    from services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+    from leaguebot.image.services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 
     drawing = _penalty(driver_nationality=None, nationality_collected=False)
     spec = build_fill_spec(drawing, _root())
@@ -197,7 +197,7 @@ def test_a_league_that_collects_no_nationality_removes_the_flag_quietly():
 
 def test_the_switch_beats_a_nationality_the_driver_already_stated():
     """The switch is read before the value, so no driver keeps a flag the others lost."""
-    from services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+    from leaguebot.image.services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 
     drawing = _penalty(driver_nationality="British", nationality_collected=False)
     spec = build_fill_spec(drawing, _root())
@@ -208,7 +208,7 @@ def test_the_switch_beats_a_nationality_the_driver_already_stated():
 
 
 def test_a_driver_who_stated_none_removes_the_flag_loudly():
-    from services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
+    from leaguebot.image.services.image_verdict_service import suppressed_flag_fields  # noqa: PLC0415
 
     drawing = _penalty(driver_nationality=None, nationality_collected=True)
     spec = build_fill_spec(drawing, _root())
@@ -219,7 +219,7 @@ def test_a_driver_who_stated_none_removes_the_flag_loudly():
 
 def test_a_sanction_names_no_team_so_its_image_removal_is_quiet():
     """Nothing degraded: this kind of verdict has no team, and the graphic says so."""
-    from services.image_verdict_service import suppressed_team_fields  # noqa: PLC0415
+    from leaguebot.image.services.image_verdict_service import suppressed_team_fields  # noqa: PLC0415
 
     drawing = _sanction()
     spec = build_fill_spec(drawing, _root())

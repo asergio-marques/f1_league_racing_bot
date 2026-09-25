@@ -15,9 +15,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import cogs.image_cog as image_cog  # noqa: E402
-import utils.timezones as timezones  # noqa: E402
-from cogs.image_cog import ImageCog, clear_zone_cache  # noqa: E402
+import leaguebot.image.cogs.image_cog as image_cog  # noqa: E402
+import leaguebot.core.utils.timezones as timezones  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog, clear_zone_cache  # noqa: E402
 
 
 class _Interaction:

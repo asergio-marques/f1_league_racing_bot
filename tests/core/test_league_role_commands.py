@@ -50,11 +50,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.bot_cog import BotCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
-from services.signup_module_service import SignupModuleService  # noqa: E402
+from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
+from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 27601
@@ -467,7 +467,7 @@ async def test_a_server_not_yet_set_up_is_refused(tmp_path, run, column, change_
 def test_both_commands_are_a_league_manager_s_in_the_interaction_channel():
     """They repair nothing the guards read, so nothing exempts them from the channel rule —
     unlike the four `/bot` settings beside them."""
-    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_MANAGER, TIER_ATTRIBUTE
+    from leaguebot.core.utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_MANAGER, TIER_ATTRIBUTE
 
     for command in (BotCog.handle_base_role, BotCog.handle_driver_role):
         assert getattr(command.callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER

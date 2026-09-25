@@ -15,9 +15,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog  # noqa: E402
-from models.image_module import ValidityReport  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
+from leaguebot.image.models.image_module import ValidityReport  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
 
 
 def _interaction():
@@ -313,7 +313,7 @@ async def test_a_failed_import_is_logged_too():
 
 async def test_the_modals_can_be_constructed():
     """`async def` because apt's discord.py needs a running loop in `Modal.__init__`."""
-    from cogs.image_cog import TierPaletteModal, TierPaletteXmlModal
+    from leaguebot.image.cogs.image_cog import TierPaletteModal, TierPaletteXmlModal
 
     assert TierPaletteModal(MagicMock(), "Division 1") is not None
     assert TierPaletteXmlModal(MagicMock()) is not None
@@ -330,7 +330,7 @@ def test_both_new_commands_exist_and_the_group_still_fits():
 
 def test_the_attachment_size_is_capped():
     """A palette is a few hundred bytes per tier; anything larger is not one."""
-    from cogs.image_cog import MAX_PALETTE_IMPORT_BYTES
+    from leaguebot.image.cogs.image_cog import MAX_PALETTE_IMPORT_BYTES
 
     assert 0 < MAX_PALETTE_IMPORT_BYTES <= 1_000_000
     assert "MAX_PALETTE_IMPORT_BYTES" in __import__("inspect").getsource(

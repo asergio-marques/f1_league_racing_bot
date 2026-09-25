@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.retry_cog import RetryCog  # noqa: E402
+from leaguebot.core.cogs.retry_cog import RetryCog  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ def _retry_cog():
 
 def _pending(entries, error=None):
     return patch(
-        "cogs.retry_cog.get_all_pending",
+        "leaguebot.core.cogs.retry_cog.get_all_pending",
         new=AsyncMock(side_effect=error, return_value=None if error else entries),
     )
 
@@ -50,7 +50,7 @@ async def test_every_queued_message_is_retried():
     entries = [MagicMock(), MagicMock(), MagicMock()]
 
     with _pending(entries), patch(
-        "cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
+        "leaguebot.core.cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
     ) as attempt:
         await cog.retry_loop()
 
@@ -62,7 +62,7 @@ async def test_an_empty_queue_does_nothing():
     cog = _retry_cog()
 
     with _pending([]), patch(
-        "cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
+        "leaguebot.core.cogs.retry_cog.attempt_delivery", new=AsyncMock(return_value=None)
     ) as attempt:
         await cog.retry_loop()
 

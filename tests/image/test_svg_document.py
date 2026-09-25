@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.svg_document import (  # noqa: E402
     SvgNoCanvasError,
     SvgParseError,
     canvas_of,
@@ -393,7 +393,7 @@ def test_class_resolution_is_not_shared_between_stylesheets():
     """
     from lxml import etree
 
-    from utils.svg_document import SVG_NS
+    from leaguebot.image.utils.svg_document import SVG_NS
 
     root = _doc('<style>.a { fill: #111111 }</style><rect id="plate" class="a b"/>')
     element = FieldIndex(root).resolve("plate")

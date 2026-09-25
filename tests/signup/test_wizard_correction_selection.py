@@ -1,6 +1,6 @@
 """`select_correction_parameter` — sending a driver back to one question.
 
-Issue #208. `tests/unit/test_correction_parameter_timeout.py` covers the window *lapsing*;
+Issue #208. `tests/signup/test_correction_parameter_timeout.py` covers the window *lapsing*;
 choosing a parameter within it was unexecuted. This is the step that turns "something is wrong
 with your signup" into a specific question the driver can answer.
 
@@ -60,7 +60,7 @@ PARAMETERS = [
 
 
 def _wizard(**draft):
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
 
     return SignupWizardRecord(
         id=1,
@@ -83,7 +83,7 @@ def _wizard(**draft):
 
 @pytest.fixture
 def correction():
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     svc._correction_tasks = {}
@@ -142,7 +142,7 @@ async def _select(ctx, parameter: str, wizard=None):
 async def test_each_parameter_re_opens_its_own_step(correction, parameter, state):
     """Nine hand-written map entries. One pointing at the wrong step would send a driver
     back to a question the manager did not ask about."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard()
 
@@ -177,7 +177,7 @@ async def test_a_driver_with_no_wizard_is_left_alone(correction):
 
 
 async def test_the_driver_is_asked_to_correct_rather_than_to_sign_up_again(correction):
-    from models.driver_profile import DriverState
+    from leaguebot.core.models.driver_profile import DriverState
 
     await _select(correction, "platform")
 

@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import CATALOGUES, catalogue_for
-from services.image_validity_service import (
+from leaguebot.image.models.image_catalogues import CATALOGUES, catalogue_for
+from leaguebot.image.services.image_validity_service import (
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     LAYER_RESOLUTION,
@@ -38,8 +38,8 @@ SUFFIXES = (
 
 
 def _config():
-    from models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
-    from models.image_module import ImageConfig
+    from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
+    from leaguebot.image.models.image_module import ImageConfig
 
     return ImageConfig(
         module_enabled=True,
@@ -116,7 +116,7 @@ def test_layer_two_still_skips_a_type_with_no_catalogue():
     Every one of the fifteen catalogues is populated as of 043, so the condition is staged
     rather than found: what it proves must still hold for whichever type is specified next.
     """
-    from models.image_catalogues import FieldCatalogue
+    from leaguebot.image.models.image_catalogues import FieldCatalogue
 
     saved = dict(CATALOGUES)
     try:
@@ -176,8 +176,8 @@ def test_a_missing_cancellation_overlay_is_named(named):
 def test_the_packaged_calendar_veils_every_round_it_declares():
     from lxml import etree
 
-    from models.image_catalogues import catalogue_for
-    from utils.svg_document import FieldIndex
+    from leaguebot.image.models.image_catalogues import catalogue_for
+    from leaguebot.image.utils.svg_document import FieldIndex
 
     path = PROJECT_ROOT / "resources" / "defaults" / "templates" / "calendar_template.svg"
     root = etree.parse(str(path)).getroot()

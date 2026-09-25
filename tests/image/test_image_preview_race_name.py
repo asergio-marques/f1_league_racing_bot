@@ -20,12 +20,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import image_preview_service  # noqa: E402
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.image.services import image_preview_service  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     PreviewContext,
     _race_name,
 )
-from services.image_rsvp_service import MYSTERY_RACE_NAME  # noqa: E402
+from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -42,7 +42,7 @@ _REGISTRY = {
 @pytest.fixture(autouse=True)
 def _registry(monkeypatch):
     """The track registry the postings read, stubbed at its one source."""
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     async def _tracks_by_name(_db_path):
         return dict(_REGISTRY)

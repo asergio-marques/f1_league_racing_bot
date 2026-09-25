@@ -10,7 +10,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.math_utils import (
+from leaguebot.weather.utils.math_utils import (
     compute_rpc_beta,
     compute_ir,
     compute_im,
@@ -57,7 +57,7 @@ class TestComputeRpcBeta:
 
     def test_clamp_applied_via_monkeypatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Force betavariate to return 1.5 (out of range) — rpc must clamp to 1.0
-        import utils.math_utils as math_utils
+        import leaguebot.weather.utils.math_utils as math_utils
         monkeypatch.setattr(math_utils._random, "betavariate", lambda a, b: 1.5)
         raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
         assert raw_draw == 1.5
@@ -65,7 +65,7 @@ class TestComputeRpcBeta:
 
     def test_clamp_lower_bound_via_monkeypatch(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Force betavariate to return -0.1 — rpc must clamp to 0.0
-        import utils.math_utils as math_utils
+        import leaguebot.weather.utils.math_utils as math_utils
         monkeypatch.setattr(math_utils._random, "betavariate", lambda a, b: -0.1)
         raw_draw, rpc = compute_rpc_beta(0.30, 0.05)
         assert raw_draw == pytest.approx(-0.1)

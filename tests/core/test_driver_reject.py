@@ -14,9 +14,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.driver_cog import DriverCog  # noqa: E402
-from models.driver_profile import DriverState  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.cogs.driver_cog import DriverCog  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 22100

@@ -14,9 +14,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.signup_module import SignupRecord  # noqa: E402
-from services.signup_module_service import SignupModuleService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.signup.models.signup_module import SignupRecord  # noqa: E402
+from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
 
 SERVER_ID = 22050
 USER = "4242"
@@ -131,8 +131,8 @@ async def test_a_season_deleted_takes_its_signups_with_it(db_path):
 async def test_a_driver_leaving_keeps_their_signups_under_the_season(db_path):
     """Signups are keyed by the Discord account, and survive the driver whatever becomes of
     the profile — deleted at the season's end where they never raced."""
-    from models.driver_profile import DriverState
-    from services.driver_service import DriverService
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.core.services.driver_service import DriverService
 
     svc = SignupModuleService(db_path)
     await _season(db_path, 1)

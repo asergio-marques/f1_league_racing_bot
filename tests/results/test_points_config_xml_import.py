@@ -44,10 +44,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import cogs.results_cog as results_cog  # noqa: E402
-from cogs.results_cog import ResultsCog, XmlImportModal, _run_xml_import  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.points_config_service import create_config  # noqa: E402
+import leaguebot.results.cogs.results_cog as results_cog  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog, XmlImportModal, _run_xml_import  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.services.points_config_service import create_config  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 10108
@@ -313,7 +313,7 @@ async def test_a_database_failure_is_reported_rather_than_raised(tmp_path, monke
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("database is locked")
 
-    monkeypatch.setattr("services.points_config_service.xml_import_config", _boom)
+    monkeypatch.setattr("leaguebot.results.services.points_config_service.xml_import_config", _boom)
 
     await _import(db_path, interaction)
 
@@ -361,7 +361,7 @@ async def test_a_database_failure_is_audited(tmp_path, monkeypatch):
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("disk full")
 
-    monkeypatch.setattr("services.points_config_service.xml_import_config", _boom)
+    monkeypatch.setattr("leaguebot.results.services.points_config_service.xml_import_config", _boom)
 
     await _import(db_path, interaction)
 

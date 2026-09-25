@@ -50,13 +50,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import AddPenaltyModal, PenaltyReviewState  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import AddPenaltyModal, PenaltyReviewState  # noqa: E402
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 11208
@@ -190,9 +190,9 @@ async def _submit(
     interaction = _interaction()
 
     with patch(
-        "services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
     ), patch(
-        "services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ):
         await modal.on_submit(interaction)
     return interaction
@@ -366,9 +366,9 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     modal.justification_input._value = "j"
 
     with patch(
-        "services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
     ) as penalty_refresh, patch(
-        "services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ) as appeals_refresh:
         await modal.on_submit(_interaction())
 
@@ -570,7 +570,7 @@ async def test_either_account_finds_a_result_stood_under_the_old_one(tmp_path, t
 
 
 async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_path):
-    from services.penalty_wizard import _render_prompt_content
+    from leaguebot.results.services.penalty_wizard import _render_prompt_content
 
     db_path = await _make_db(tmp_path)
     await _driver_moved_on(db_path)

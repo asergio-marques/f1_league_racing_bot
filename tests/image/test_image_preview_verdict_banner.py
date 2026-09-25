@@ -20,12 +20,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     PreviewContext,
     build_verdict_banner_preview,
     build_verdict_preview,
 )
-from utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -50,7 +50,7 @@ TEMPLATE = (
 
 @pytest.fixture(autouse=True)
 def _registry(monkeypatch):
-    from services import calendar_post_service
+    from leaguebot.core.services import calendar_post_service
 
     async def _tracks_by_name(_db_path):
         return dict(_REGISTRY)
@@ -113,7 +113,7 @@ async def test_it_draws_on_a_server_with_no_driver_signed_up():
 
 
 async def test_a_mystery_round_keeps_the_phrase_and_drops_the_flag():
-    from services.image_rsvp_service import MYSTERY_RACE_NAME
+    from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME
 
     spec = await _spec(_context(_round(fmt="MYSTERY")))
     assert spec.text["race_name"] == MYSTERY_RACE_NAME

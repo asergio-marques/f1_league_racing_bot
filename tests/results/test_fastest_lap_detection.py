@@ -34,9 +34,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.points_config import PointsConfigFastestLap, SessionType  # noqa: E402
-from models.session_result import DriverSessionResult, OutcomeModifier  # noqa: E402
-from services.standings_service import (  # noqa: E402
+from leaguebot.results.models.points_config import PointsConfigFastestLap, SessionType  # noqa: E402
+from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier  # noqa: E402
+from leaguebot.results.services.standings_service import (  # noqa: E402
     compute_points_for_session,
     detect_fastest_lap,
 )

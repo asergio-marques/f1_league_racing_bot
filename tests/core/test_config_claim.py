@@ -16,9 +16,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.server_config import ServerConfig  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
 
 OLD_SERVER = 4242
 NEW_SERVER = 5353

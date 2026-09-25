@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_verdict_service import VerdictKind  # noqa: E402
+from leaguebot.image.services.image_verdict_service import VerdictKind  # noqa: E402
 
 SERVER_ID = 1001
 ROUND_ID = 77
@@ -78,7 +78,7 @@ async def _seed(db_path: str, drivers) -> None:
 
     *drivers* is an iterable of ``(user_id, signup_display_name, signup_username)``.
     """
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     await run_migrations(db_path)
 
@@ -113,7 +113,7 @@ async def _draw(
     driver_name="Alice Smith",
 ):
     """One verdict drawing, built by the real `build_drawing`."""
-    from services.image_verdict_post import build_drawing
+    from leaguebot.image.services.image_verdict_post import build_drawing
 
     return await build_drawing(
         _Bot(db_path),
@@ -298,7 +298,7 @@ async def test_an_unreadable_name_read_leaves_the_raw_id_and_still_draws(
     db_path = str(tmp_path / "test.db")
     await _seed(db_path, [(ALICE, "Alice Smith", None), (BOB, "Bob Jones", None)])
 
-    from services import image_results_post
+    from leaguebot.image.services import image_results_post
 
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("the database went away")
@@ -345,7 +345,7 @@ async def test_every_mention_is_resolved_in_one_read(tmp_path, monkeypatch):
         [(ALICE, "Alice Smith", None), (BOB, "Bob Jones", None), (CAROL, "Carol King", None)],
     )
 
-    from services import image_results_post
+    from leaguebot.image.services import image_results_post
 
     calls = []
     real = image_results_post._driver_names
@@ -375,7 +375,7 @@ async def test_text_mentioning_nobody_reads_no_names_at_all(tmp_path, monkeypatc
     db_path = str(tmp_path / "test.db")
     await _seed(db_path, [(ALICE, "Alice Smith", None)])
 
-    from services import image_results_post
+    from leaguebot.image.services import image_results_post
 
     calls = []
 
@@ -397,7 +397,7 @@ async def test_text_mentioning_nobody_reads_no_names_at_all(tmp_path, monkeypatc
 async def test_the_badge_is_found_by_the_shorthand_while_the_full_name_is_drawn(tmp_path):
     """A verdict names the team whose car was driven by its full name, and finds its badge by
     the shorthand — the divergence ``team_slug_source`` was kept for."""
-    from services.image_verdict_post import build_drawing
+    from leaguebot.image.services.image_verdict_post import build_drawing
 
     db_path = str(tmp_path / "test.db")
     await _seed(db_path, [(ALICE, "Alice Smith", None)])

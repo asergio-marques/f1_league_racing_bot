@@ -24,9 +24,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import RoundFormat  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 12508
 START = date(2026, 1, 1)
@@ -363,7 +363,7 @@ async def test_a_division_s_settings_stay_on_its_own_row(tmp_path):
 
 async def test_a_first_setup_command_begins_in_the_stage_it_is_given(tmp_path):
     """`/season setup` begins a season in Configuration (issue #220)."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     db_path = await _make_db(tmp_path)
     service = SeasonService(db_path)
@@ -376,7 +376,7 @@ async def test_a_first_setup_command_begins_in_the_stage_it_is_given(tmp_path):
 
 
 async def test_a_later_setup_command_ignores_the_initial_stage(tmp_path):
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     db_path = await _make_db(tmp_path)
     service = SeasonService(db_path)

@@ -28,8 +28,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.forecast_cleanup_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.weather.services.forecast_cleanup_service import (
     store_forecast_message,
     delete_forecast_message,
     run_post_race_cleanup,
@@ -222,7 +222,7 @@ class TestDeleteForecastMessageTestModeGuard:
 
         bot = _make_bot(db_path, test_mode_active=True)
         with patch(
-            "services.forecast_cleanup_service._discord_delete",
+            "leaguebot.weather.services.forecast_cleanup_service._discord_delete",
             new_callable=AsyncMock,
             return_value=True,
         ) as mock_discord_delete:
@@ -314,7 +314,7 @@ class TestFlushPendingDeletions:
 
         bot = _make_bot(db_path, test_mode_active=False)
         with patch(
-            "services.forecast_cleanup_service._discord_delete",
+            "leaguebot.weather.services.forecast_cleanup_service._discord_delete",
             new_callable=AsyncMock,
             return_value=True,
         ) as mock_discord_delete:
@@ -473,7 +473,7 @@ class TestPostPhaseMessageChain:
     @pytest.mark.asyncio
     async def test_a_text_message_is_superseded_by_a_graphic(self, tmp_path):
         """FR-046 — the occasion reads which message stands, never how it was drawn."""
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -501,7 +501,7 @@ class TestPostPhaseMessageChain:
     @pytest.mark.asyncio
     async def test_a_graphic_is_superseded_by_a_text_fallback(self, tmp_path):
         """The reverse: a phase that fell back to text supersedes one posted as a picture."""
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -527,7 +527,7 @@ class TestPostPhaseMessageChain:
     @pytest.mark.asyncio
     async def test_a_failed_posting_leaves_the_standing_forecast_alone(self, tmp_path):
         """Produce before destroy (FR-045). The window this rule exists to close."""
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -565,7 +565,7 @@ class TestPostPhaseMessageChain:
         """
         import inspect
 
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         source = inspect.getsource(post_phase_message)
         # One delete call, reached identically whether or not an attachment was posted.
@@ -601,7 +601,7 @@ class TestTheForecastGraphicIsDiscarded:
 
     @pytest.mark.asyncio
     async def test_it_is_gone_once_the_forecast_has_posted(self, tmp_path):
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -623,7 +623,7 @@ class TestTheForecastGraphicIsDiscarded:
         """The textual forecast goes to the retry queue; the picture goes nowhere."""
         import discord
 
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -647,7 +647,7 @@ class TestTheForecastGraphicIsDiscarded:
         """An abandonment path: the picture is built, and no send is ever attempted."""
         import discord
 
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)
@@ -671,7 +671,7 @@ class TestTheForecastGraphicIsDiscarded:
     @pytest.mark.asyncio
     async def test_it_is_gone_when_the_channel_is_not_a_text_channel(self, tmp_path):
         """The second abandonment path, and the same requirement."""
-        from services.forecast_cleanup_service import post_phase_message
+        from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
         db_path = await _make_db(str(tmp_path))
         await _seed_base(db_path)

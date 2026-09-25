@@ -55,7 +55,7 @@ def _template_file(tmp_path, *, rows: int):
 
 async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
     """A division of *drivers* drivers on ordinary teams and *reserves* in the reserve team."""
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "sheet_capacity.db")
     await run_migrations(db_path)
@@ -122,7 +122,7 @@ async def _seed(tmp_path, *, drivers: int, reserves: int = 0):
 
 
 def _service(db_path, template, *, toggle: bool = True):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -182,7 +182,7 @@ async def test_the_guard_takes_no_team_and_is_not_to_be_given_one(tmp_path):
     """Its signature is the decision: #140 gave the other two a team and left this one."""
     import inspect
 
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     parameters = inspect.signature(PlacementService._guard_sheet_capacity).parameters
     assert "team_name" not in parameters, (
@@ -223,7 +223,7 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
 
 
 async def test_no_bot_means_no_guard(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     await PlacementService(db_path)._guard_sheet_capacity(division_id)

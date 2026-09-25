@@ -73,7 +73,7 @@ async def _seed(
     the division like any other, but they are **not** entries of its classification, so the
     standings ceiling must not count them.
     """
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "capacity.db")
     await run_migrations(db_path)
@@ -161,7 +161,7 @@ def _report(path):
 
 
 async def test_an_assignment_past_the_drivers_template_rows_is_refused(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     template = _template_file(tmp_path, DRIVERS, rows=2)
@@ -177,7 +177,7 @@ async def test_an_assignment_past_the_drivers_template_rows_is_refused(tmp_path)
 
 
 async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     template = _template_file(tmp_path, DRIVERS, rows=5)
@@ -188,7 +188,7 @@ async def test_an_assignment_within_the_rows_is_allowed(tmp_path):
 
 async def test_a_change_seating_several_drivers_is_measured_whole(tmp_path):
     """#150: a test roster seats a division in one change, so its drivers are counted together."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=1)
     template = _template_file(tmp_path, DRIVERS, rows=3)
@@ -203,7 +203,7 @@ async def test_a_change_seating_several_drivers_is_measured_whole(tmp_path):
 
 async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
     """The ceiling exists because a graphic would drop a driver. No graphic, no ceiling."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     template = _template_file(tmp_path, DRIVERS, rows=2)
@@ -216,7 +216,7 @@ async def test_the_toggle_being_off_lets_every_assignment_through(tmp_path):
 
 async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
     """A fault in the check must not cost a league a placement (XIV.7)."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     bot = _bot(db_path, {})
@@ -229,7 +229,7 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
 
 
 async def test_no_bot_means_no_guard(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     await PlacementService(db_path)._guard_standings_capacity(division_id, ORDINARY)
@@ -245,7 +245,7 @@ async def test_a_seated_reserve_is_not_counted_against_the_standings_rows(tmp_pa
     so a reserve on the books occupies no row. Counting them here refused an ordinary
     placement one seat early for each one.
     """
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=1, reserves=2)
     template = _template_file(tmp_path, DRIVERS, rows=2)
@@ -256,7 +256,7 @@ async def test_a_seated_reserve_is_not_counted_against_the_standings_rows(tmp_pa
 
 async def test_the_rows_still_bound_the_classified_drivers(tmp_path):
     """Excluding reserves must not disarm the ceiling for the drivers who do hold a row."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2, reserves=2)
     template = _template_file(tmp_path, DRIVERS, rows=2)
@@ -270,7 +270,7 @@ async def test_the_rows_still_bound_the_classified_drivers(tmp_path):
 
 async def test_a_reserve_placement_is_not_measured_against_the_standings_rows(tmp_path):
     """Seating a reserve grows no classification, so a full template cannot refuse it."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     template = _template_file(tmp_path, DRIVERS, rows=2)
@@ -281,7 +281,7 @@ async def test_a_reserve_placement_is_not_measured_against_the_standings_rows(tm
 
 async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
     """assign_driver names a team that does not exist in its own words."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, drivers=2)
     template = _template_file(tmp_path, DRIVERS, rows=2)
@@ -294,7 +294,7 @@ async def test_an_unknown_team_is_left_to_the_check_that_reports_it(tmp_path):
 
 
 def _cog(bot):
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot

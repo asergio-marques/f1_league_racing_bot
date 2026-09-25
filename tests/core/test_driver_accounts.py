@@ -3,7 +3,7 @@
 `driver_accounts` lists a profile's accounts, the current one included, and is written by
 triggers on `driver_profiles` (migration 059) so that no path creating a profile can miss it.
 These tests pin the triggers — including that they refuse an account another driver already
-lists — and each helper in `services.driver_service` the rest of the bot resolves accounts
+lists — and each helper in `leaguebot.core.services.driver_service` the rest of the bot resolves accounts
 through.
 
 Everything runs against a real migrated database, since the triggers and the cascade are the
@@ -19,9 +19,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.driver_profile import DriverState  # noqa: E402
-from services.driver_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.services.driver_service import (  # noqa: E402
     DriverService,
     accounts_of,
     accounts_of_profile,
@@ -30,7 +30,7 @@ from services.driver_service import (  # noqa: E402
     current_account_of,
     resolve_driver_profile_id,
 )
-from services.season_lifecycle_service import delete_driver_profiles  # noqa: E402
+from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles  # noqa: E402
 
 SERVER_ID = 2430
 A, B, C = "1111", "2222", "3333"

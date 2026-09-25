@@ -1,7 +1,7 @@
 """The running version and when it was made: read from `VERSION` where GitHub filled it in,
 and from git otherwise.
 
-`src/utils/version.py` holds the reasoning (#258). What is pinned here:
+`src/leaguebot/core/utils/version.py` holds the reasoning (#258). What is pinned here:
 
 - **The two forms**, a release `v0.5.0` and a build `v0.4.0-230`, and nothing else; and the
   date as ISO 8601 with its offset, and nothing else.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from utils import version as v
+from leaguebot.core.utils import version as v
 
 ROOT = Path(__file__).resolve().parents[2]
 PLACEHOLDER = "$Format:%(describe:tags=true,match=v[0-9]*)$"

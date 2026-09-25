@@ -31,10 +31,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     AddPardonModal,
     ApprovalView,
     PenaltyReviewState,
@@ -230,8 +230,8 @@ async def test_an_amendments_pardons_close_with_its_reports(tmp_path, control):
     interaction.followup.send = AsyncMock()
 
     with patch(
-        "services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
-    ), patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+    ), patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
         if control == "AddPardonModal":
             await AddPardonModal(state).on_submit(interaction)
             replied = interaction.followup.send.await_args.args[0]
@@ -336,10 +336,10 @@ async def test_an_approval_message_no_longer_current_approves_nothing(tmp_path, 
     interaction.response.defer = AsyncMock()
 
     with patch(
-        "services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
     ), patch(
-        "services.result_submission_service.finalize_penalty_review", new=AsyncMock()
-    ) as finalise, patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+    ) as finalise, patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
         await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert "withdrawn" in interaction.response.send_message.await_args.args[0]

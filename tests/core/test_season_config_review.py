@@ -16,13 +16,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import (  # noqa: E402
     PendingConfig,
     SeasonCog,
     _ConfirmConfigurationView,
 )
-from models.season import InvalidStageTransition, SeasonStage  # noqa: E402
-from models.server_config import ServerConfig  # noqa: E402
+from leaguebot.core.models.season import InvalidStageTransition, SeasonStage  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 7
@@ -203,7 +203,7 @@ async def test_team_names_of_the_server_list_are_checked():
 
 
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
-    from db.database import run_migrations
+    from leaguebot.core.db.database import run_migrations
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
@@ -400,7 +400,7 @@ def _report_bot(**kwargs) -> MagicMock:
 
 
 async def _report(cog, interaction, monkeypatch):
-    import cogs.season_cog as season_cog
+    import leaguebot.core.cogs.season_cog as season_cog
 
     _RecordedView.made = []
     monkeypatch.setattr(season_cog, "_ConfirmConfigurationView", _RecordedView)
@@ -440,7 +440,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     and Half Points when it is enabled and at no other moment (decided 2026-09-23), and the
     review once promised them "on approval" while refusing in the same report for want of one.
     """
-    from db.database import run_migrations
+    from leaguebot.core.db.database import run_migrations
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
@@ -472,8 +472,8 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
 
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220)."""
-    import cogs.season_cog as season_cog
-    from services import weather_config_service
+    import leaguebot.core.cogs.season_cog as season_cog
+    from leaguebot.weather.services import weather_config_service
 
     bot = _report_bot(signup=True, results=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
@@ -542,7 +542,7 @@ async def test_the_followup_is_restored_after_the_report(monkeypatch):
     cog = _cog(_report_bot())
     interaction = _interaction()
 
-    import cogs.season_cog as season_cog
+    import leaguebot.core.cogs.season_cog as season_cog
 
     monkeypatch.setattr(season_cog, "_ConfirmConfigurationView", _RecordedView)
     original = AsyncMock(return_value=MagicMock())
@@ -557,8 +557,8 @@ async def test_the_followup_is_restored_after_the_report(monkeypatch):
 
 
 def _image_cog(*, converter=True, reports=None, reports_raise=False, colours=(), portrait=None):
-    import services.image_render_service as render
-    import services.image_validity_service as validity
+    import leaguebot.image.services.image_render_service as render
+    import leaguebot.image.services.image_validity_service as validity
 
     bot = _bot(images=True)
     if reports_raise:
@@ -625,7 +625,7 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass(monkeypatch)
 
 
 async def test_a_configuration_changed_since_the_review_is_not_confirmed(monkeypatch):
-    import services.season_fingerprint_service as fingerprints
+    import leaguebot.core.services.season_fingerprint_service as fingerprints
 
     view, cog = _view()
     view._fingerprint = MagicMock()
@@ -645,7 +645,7 @@ async def test_a_configuration_changed_since_the_review_is_not_confirmed(monkeyp
 
 
 async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(monkeypatch):
-    import services.season_fingerprint_service as fingerprints
+    import leaguebot.core.services.season_fingerprint_service as fingerprints
 
     view, cog = _view()
     view._fingerprint = MagicMock()

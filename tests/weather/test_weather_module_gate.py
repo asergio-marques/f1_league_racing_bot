@@ -24,9 +24,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import phase1_service, phase2_service, phase3_service  # noqa: E402
-from services.amendment_service import AmendmentService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.weather.services import phase1_service, phase2_service, phase3_service  # noqa: E402
+from leaguebot.core.services.amendment_service import AmendmentService  # noqa: E402
 
 SEEDED_TRACK = "Bahrain International Circuit"
 
@@ -136,7 +136,7 @@ async def test_phase_runner_produces_nothing_while_weather_is_disabled(runner, t
     bot = _make_bot(db_path, weather_enabled=False)
 
     with patch(
-        "services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
     ) as posted:
         await runner(1, bot)
 
@@ -154,9 +154,9 @@ async def test_phase_runner_runs_when_weather_is_enabled(tmp_path):
     bot = _make_bot(db_path, weather_enabled=True)
 
     with patch(
-        "services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
     ) as posted, patch(
-        "services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
+        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
     ):
         await phase1_service.run_phase1(1, bot)
 
@@ -191,11 +191,11 @@ async def test_amend_round_runs_no_overdue_phase_while_weather_is_disabled(tmp_p
     bot = _amend_bot(db_path, weather_enabled=False)
 
     with patch(
-        "services.phase1_service.run_phase1", new=AsyncMock()
+        "leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()
     ) as p1, patch(
-        "services.phase2_service.run_phase2", new=AsyncMock()
+        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
     ) as p2, patch(
-        "services.phase3_service.run_phase3", new=AsyncMock()
+        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
     ) as p3:
         await AmendmentService(db_path).amend_round(
             1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
@@ -232,11 +232,11 @@ async def test_amend_round_runs_overdue_phases_while_weather_is_enabled(tmp_path
     bot = _amend_bot(db_path, weather_enabled=True)
 
     with patch(
-        "services.phase1_service.run_phase1", new=AsyncMock()
+        "leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()
     ) as p1, patch(
-        "services.phase2_service.run_phase2", new=AsyncMock()
+        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
     ) as p2, patch(
-        "services.phase3_service.run_phase3", new=AsyncMock()
+        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
     ) as p3:
         await AmendmentService(db_path).amend_round(
             1, _make_actor(), [("track_name", "Silverstone Circuit")], bot
@@ -281,9 +281,9 @@ async def test_amend_round_posts_the_invalidation_notice_while_weather_is_enable
     await _set_weather(db_path, True)
     bot = _amend_bot(db_path, weather_enabled=True)
 
-    with patch("services.phase1_service.run_phase1", new=AsyncMock()), patch(
-        "services.phase2_service.run_phase2", new=AsyncMock()
-    ), patch("services.phase3_service.run_phase3", new=AsyncMock()):
+    with patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()), patch(
+        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
+    ), patch("leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()):
         await AmendmentService(db_path).amend_round(
             1, _make_actor(), [("scheduled_at", now + _NOTICE_DELAYED_TO)], bot, now=now
         )
@@ -306,9 +306,9 @@ async def test_amend_round_posts_no_notice_when_every_forecast_still_stands(tmp_
     await _set_weather(db_path, True)
     bot = _amend_bot(db_path, weather_enabled=True)
 
-    with patch("services.phase1_service.run_phase1", new=AsyncMock()), patch(
-        "services.phase2_service.run_phase2", new=AsyncMock()
-    ), patch("services.phase3_service.run_phase3", new=AsyncMock()):
+    with patch("leaguebot.weather.services.phase1_service.run_phase1", new=AsyncMock()), patch(
+        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
+    ), patch("leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()):
         await AmendmentService(db_path).amend_round(
             1, _make_actor(), [("scheduled_at", now + timedelta(hours=2))], bot, now=now
         )

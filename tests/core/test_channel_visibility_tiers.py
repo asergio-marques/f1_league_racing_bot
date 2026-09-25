@@ -24,8 +24,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.server_config import ServerConfig  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
 
 SERVER_ID = 4242
 MANAGER_ROLE = 222
@@ -86,7 +86,7 @@ async def _seed(tmp_path, *, admin_role_id: int | None = ADMIN_ROLE) -> str:
 
 
 async def _create_submission_channel(db_path, *, league_admin_role):
-    from services import result_submission_service as rss
+    from leaguebot.results.services import result_submission_service as rss
 
     guild = _guild()
     created: dict = {}
@@ -128,7 +128,7 @@ async def test_the_submission_channel_omits_an_admin_role_that_is_not_set(tmp_pa
 
 
 async def _create_wizard_channel(*, league_admin_role_id):
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     guild = _guild()
     created: dict = {}
@@ -171,7 +171,7 @@ async def test_the_wizard_channel_omits_an_admin_role_that_is_not_set():
     ids=["admin role set", "admin role unset"],
 )
 async def test_the_signup_channel_is_open_to_both_roles(admin_role_id, expected, tmp_path):
-    from cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.signup_cog import SignupCog
 
     guild = _guild()
     channel = MagicMock()

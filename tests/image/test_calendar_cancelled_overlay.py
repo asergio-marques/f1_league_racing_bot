@@ -18,10 +18,10 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_calendar_service import build_fill_spec, resolve_drawing
-from services.image_render_service import rasterise
-from utils.svg_document import canvas_of
-from utils.svg_fill import fill
+from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
+from leaguebot.image.services.image_render_service import rasterise
+from leaguebot.image.utils.svg_document import canvas_of
+from leaguebot.image.utils.svg_fill import fill
 
 DEFAULTS = Path(__file__).resolve().parents[2] / "resources" / "defaults"
 TEMPLATE = DEFAULTS / "templates" / "calendar_template.svg"

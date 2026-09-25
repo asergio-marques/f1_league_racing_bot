@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.clean_cog import MAX_DELETIONS, CleanCog  # noqa: E402
+from leaguebot.core.cogs.clean_cog import MAX_DELETIONS, CleanCog  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 BOT_USER = MagicMock(name="bot_user")

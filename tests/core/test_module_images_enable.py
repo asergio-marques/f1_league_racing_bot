@@ -36,8 +36,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.module_cog import ModuleCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 13008
 ACTOR_ID = 77
@@ -122,7 +122,7 @@ def _rasteriser(present: bool):
     where it would then never exercise the enable at all.
     """
     return patch(
-        "services.image_render_service.converter_available",
+        "leaguebot.image.services.image_render_service.converter_available",
         new=MagicMock(return_value=present),
     )
 
@@ -243,7 +243,7 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
     cog = _make_cog(db_path)
 
     with patch(
-        "services.image_render_service.converter_available",
+        "leaguebot.image.services.image_render_service.converter_available",
         new=MagicMock(return_value=True),
     ) as available:
         await cog._enable_images(_interaction())

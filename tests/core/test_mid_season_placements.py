@@ -16,12 +16,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
-from services.placement_service import PlacementService, PlacementsCommitted  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService, PlacementsCommitted  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
-from tests.unit.test_uncommitted_drivers_outside_attendance import (  # noqa: E402
+from tests.attendance.test_uncommitted_drivers_outside_attendance import (  # noqa: E402
     DIVISION_ID,
     SERVER_ID,
     db_path,  # noqa: F401 — the fixture
@@ -243,7 +243,7 @@ async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
 
 
 async def test_cancelling_discards_the_uncommitted_placements_and_frees_their_seats(db_path):
-    from services.season_service import SeasonService
+    from leaguebot.core.services.season_service import SeasonService
 
     assert await SeasonService(db_path).discard_uncommitted_placements(1) == 1
 
@@ -300,7 +300,7 @@ def _placement(uid: str, *, division_id: int = DIVISION_ID, team="Alpha", test_n
 
 
 async def _mid_season_report(cog, monkeypatch):
-    import cogs.season_cog as season_cog
+    import leaguebot.core.cogs.season_cog as season_cog
 
     _RecordedView.made = []
     monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
@@ -377,7 +377,7 @@ async def test_a_deleted_channel_withholds_the_mid_season_button(monkeypatch):
 
 async def test_the_channels_are_judged_upon_the_review_s_own_server(monkeypatch):
     cog = _report_cog(placements=[_placement("1002")])
-    import cogs.season_cog as season_cog
+    import leaguebot.core.cogs.season_cog as season_cog
 
     monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
     interaction = _interaction()
@@ -422,7 +422,7 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
 ):
     """Only a division holding a new driver has its lineup posted by confirming, so only its
     graphic is drawn here — with the new drivers in it, as it will be posted."""
-    import cogs.season_cog as season_cog
+    import leaguebot.core.cogs.season_cog as season_cog
 
     divisions = [
         SimpleNamespace(id=DIVISION_ID, name="Pro", status="ACTIVE"),
@@ -446,7 +446,7 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
 async def test_a_lineup_that_will_not_draw_withholds_the_mid_season_button(monkeypatch):
     """Confirming would post it, and a lineup that falls back to text is a fault the manager
     reading this is the one person able to fix."""
-    import cogs.season_cog as season_cog
+    import leaguebot.core.cogs.season_cog as season_cog
 
     cog = _report_cog(placements=[_placement("1002")])
     cog._prerender_mid_season_lineups = AsyncMock()
@@ -461,7 +461,7 @@ async def test_a_lineup_that_will_not_draw_withholds_the_mid_season_button(monke
 
 
 async def test_the_lineups_are_drawn_first_with_their_new_drivers(monkeypatch):
-    import services.image_lineup_post as post
+    import leaguebot.image.services.image_lineup_post as post
 
     cog = _report_cog(placements=[_placement("1002")])
     outcome = SimpleNamespace(png_path=None)
@@ -486,7 +486,7 @@ async def test_the_lineups_are_drawn_first_with_their_new_drivers(monkeypatch):
 
 
 async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(monkeypatch):
-    import services.image_lineup_post as post
+    import leaguebot.image.services.image_lineup_post as post
 
     cog = _report_cog(placements=[_placement("1002")])
     render = AsyncMock()
@@ -528,7 +528,7 @@ async def test_no_image_check_is_made_while_the_module_is_off():
 
 async def test_confirming_after_the_season_moved_on_still_reports_the_placements(db_path):
     """The placements are committed either way; only the stage move is skipped."""
-    from models.season import InvalidStageTransition
+    from leaguebot.core.models.season import InvalidStageTransition
 
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
@@ -592,7 +592,7 @@ def _fail_the_return_to_ongoing(cog, interaction, monkeypatch) -> None:
 
 
 def _fail_the_move_to_pending_completion(cog, interaction, monkeypatch) -> None:
-    import services.season_lifecycle_service as lifecycle
+    import leaguebot.core.services.season_lifecycle_service as lifecycle
 
     monkeypatch.setattr(
         lifecycle,
@@ -719,7 +719,7 @@ async def test_a_refused_confirmation_is_told_in_the_channel_instead(db_path):
 
 async def test_a_stumbled_confirmation_still_clears_its_review(db_path):
     """Driven through the button itself, over the real confirmation."""
-    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
 
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
@@ -761,7 +761,7 @@ ADMIN_ROLE = 444
 def _view():
     import discord  # noqa: F401 — the view is built on a running loop
 
-    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
 
     cog = MagicMock()
     cog._do_confirm_mid_season_placements = AsyncMock()
@@ -790,7 +790,7 @@ def _pressed_by(user_id: int):
 
 
 async def test_the_reviewer_confirms_the_mid_season_placements():
-    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
 
     view, cog = _view()
     interaction = _pressed_by(REVIEWER)
@@ -802,7 +802,7 @@ async def test_the_reviewer_confirms_the_mid_season_placements():
 
 
 async def test_another_league_manager_may_not_confirm_the_mid_season_placements():
-    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
 
     view, cog = _view()
     interaction = _pressed_by(99)
@@ -814,8 +814,8 @@ async def test_another_league_manager_may_not_confirm_the_mid_season_placements(
 
 
 async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(monkeypatch):
-    import services.season_fingerprint_service as fingerprints
-    from cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    import leaguebot.core.services.season_fingerprint_service as fingerprints
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
 
     view, cog = _view()
     view._fingerprint = MagicMock()

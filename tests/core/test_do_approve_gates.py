@@ -48,9 +48,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 3300
 SEASON_ID = 11
@@ -154,7 +154,7 @@ def _cog(db_path, **overrides):
     cog._get_pending = MagicMock(return_value=_pending())
     # The season is in Placements with every signup settled and every channel set; the
     # gates of issue #220 have tests of their own in test_placements_confirmation.py.
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     season_svc.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
@@ -279,13 +279,13 @@ def _images_on(cog, monkeypatch, *, converter=True, toggles=None, reports=None):
     cog.bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
     cog.bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
     monkeypatch.setattr(
-        "services.image_render_service.converter_available", lambda: converter
+        "leaguebot.image.services.image_render_service.converter_available", lambda: converter
     )
     return cog
 
 
 def _broken(template_key: str):
-    from models.image_module import ValidityReport
+    from leaguebot.image.models.image_module import ValidityReport
 
     return ValidityReport(
         template_key=template_key,
@@ -318,7 +318,7 @@ async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path, monkeyp
 async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(
     db_path, monkeypatch
 ):
-    from models.image_constants import TEMPLATE_LABELS
+    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
 
     cog = _images_on(
         _cog(db_path),
@@ -387,7 +387,7 @@ def _division(name: str = "Premier", div_id: int = 1):
 
 
 def _round_in(days_out: float, *, number: int = 1, div_id: int = 1):
-    from models.round import Round, RoundFormat
+    from leaguebot.core.models.round import Round, RoundFormat
 
     return Round(
         id=number,
@@ -401,7 +401,7 @@ def _round_in(days_out: float, *, number: int = 1, div_id: int = 1):
 
 def _attendance_config():
     """A real config object: the gate does arithmetic on these three numbers."""
-    from models.attendance import AttendanceConfig
+    from leaguebot.attendance.models.attendance import AttendanceConfig
 
     return AttendanceConfig(
         module_enabled=True,
@@ -610,7 +610,7 @@ async def test_a_future_season_still_approves_with_both_modules_off(db_path):
 
 async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
     """Refusing over one would leave a league unable to approve until they deleted it."""
-    from models.round import RoundStatus
+    from leaguebot.core.models.round import RoundStatus
 
     cancelled = _round_in(-90, number=1)
     cancelled.status = RoundStatus.CANCELLED.value
@@ -668,8 +668,8 @@ def _cog_with_results(db_path, **overrides):
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
     """Build a server-level config holding *points* and attach it to the season."""
-    from models.points_config import SessionType
-    from services import points_config_service, season_points_service
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services import points_config_service, season_points_service
 
     await points_config_service.create_config(db_path, config_name)
     for position, pts in points:
@@ -738,7 +738,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_pa
     (decided 2026-09-23, #409). The approval once attached them itself where a test season had
     none, overriding a manager who had detached both on purpose.
     """
-    from services import season_points_service
+    from leaguebot.results.services import season_points_service
 
     cog = _cog_with_results(db_path)
     cog.bot.config_service.get_server_config = AsyncMock(
@@ -781,7 +781,7 @@ async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
 async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
     """A re-approval is looked at from both sides; the manager reads one line, not two."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
-    from services import season_points_service
+    from leaguebot.results.services import season_points_service
 
     await season_points_service.snapshot_configs_to_season(db_path, SEASON_ID)
     cog = _cog_with_results(db_path)
@@ -918,7 +918,7 @@ async def _seed_round(db_path, *, days_out: float = 30):
 
 def _writing_sessions(cog, db_path, rnd):
     """Point *cog* at the seeded round, and let it write that round's sessions for real."""
-    from services.season_service import SeasonService
+    from leaguebot.core.services.season_service import SeasonService
 
     season_svc = cog.bot.season_service
     season_svc.get_divisions = AsyncMock(return_value=[_division(div_id=DIVISION_ID)])

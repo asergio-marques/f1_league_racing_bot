@@ -31,7 +31,7 @@ from discord.ext import commands as discord_commands
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.channel_guard import (  # noqa: E402
+from leaguebot.core.utils.channel_guard import (  # noqa: E402
     CHANNEL_EXEMPT_ATTRIBUTE,
     LEAGUE_ADMIN,
     LEAGUE_MANAGER,
@@ -117,11 +117,13 @@ def _walk(objects):
 
 def _every_command() -> dict[str, app_commands.Command]:
     """Every app command the bot declares, by its full name, off the cog classes."""
-    import cogs
+    import leaguebot
 
     found: dict[str, app_commands.Command] = {}
-    for module_info in pkgutil.iter_modules(cogs.__path__):
-        module = importlib.import_module(f"cogs.{module_info.name}")
+    for module_info in pkgutil.walk_packages(leaguebot.__path__, "leaguebot."):
+        if ".cogs." not in module_info.name:
+            continue
+        module = importlib.import_module(module_info.name)
         for attribute in dir(module):
             candidate = getattr(module, attribute)
             if (

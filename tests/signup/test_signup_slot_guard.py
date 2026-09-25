@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import SignupCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 5512
@@ -58,7 +58,7 @@ async def _seed(
                 (day, time_hhmm),
             )
         if stage is not None:
-            from models.season import SeasonStage, status_of_stage
+            from leaguebot.core.models.season import SeasonStage, status_of_stage
 
             status = status_of_stage(SeasonStage(stage)).value
             await db.execute(
@@ -77,8 +77,8 @@ async def _seed(
 
 
 def _cog(db_path):
-    from services.placement_service import PlacementService
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -120,7 +120,7 @@ async def _remove(cog, interaction, slot_id=1):
 
 
 async def _slot_labels(db_path):
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     return [s.display_label for s in await SignupModuleService(db_path).get_slots()]
 

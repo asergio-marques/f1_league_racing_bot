@@ -22,7 +22,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     STANDINGS_CONSTRUCTORS_CATALOGUE,
     STANDINGS_DRIVERS_CATALOGUE,
     CapacityError,
@@ -91,7 +91,7 @@ def _cars(rows: int, rounds: int, cars: int) -> list[str]:
 
 
 def _shipped(key: str):
-    from utils.svg_document import FieldIndex, load_svg
+    from leaguebot.image.utils.svg_document import FieldIndex, load_svg
 
     doc = load_svg(os.path.join(_TEMPLATE_DIR, f"{key}.svg"))
     root = doc.root if hasattr(doc, "root") else doc
@@ -210,7 +210,7 @@ def test_cars_are_counted_per_containing_row():
     root = _template(
         *_rows(2), *_headings(1), *_cars(2, 1, 2)
     )
-    from utils.svg_document import FieldIndex
+    from leaguebot.image.utils.svg_document import FieldIndex
 
     declared = set(FieldIndex(root).declared())
     car_nest = STANDINGS_CONSTRUCTORS_CATALOGUE.rows.nested.nested
@@ -307,7 +307,7 @@ def test_a_gap_in_the_rounds_is_fatal():
 
 
 def test_a_gap_in_the_cars_of_a_round_is_fatal():
-    from utils.svg_document import FieldIndex
+    from leaguebot.image.utils.svg_document import FieldIndex
 
     root = _template(
         "row_1_round_1_driver_1_name", "row_1_round_1_driver_3_name"
@@ -344,7 +344,7 @@ def test_counting_from_the_index_matches_counting_by_pattern(stem, minimum):
     it replaced for a per-row count — the same number, or the same refusal."""
     from dataclasses import replace
 
-    from models.image_catalogues import DeclaredNames
+    from leaguebot.image.models.image_catalogues import DeclaredNames
 
     nest = replace(STANDINGS_CONSTRUCTORS_CATALOGUE.rows.nested.nested, minimum=minimum)
 
@@ -360,7 +360,7 @@ def test_counting_from_the_index_matches_counting_by_pattern(stem, minimum):
 def test_the_index_answers_with_a_copy():
     """One index serves every count of an enumeration, so a caller changing the answer it was
     given must not change the next caller's."""
-    from models.image_catalogues import DeclaredNames
+    from leaguebot.image.models.image_catalogues import DeclaredNames
 
     index = DeclaredNames(_AWKWARD_NAMES)
     index.ordinals_after("row_1_round_1_driver_").clear()
@@ -373,7 +373,7 @@ def test_a_template_s_names_are_indexed_once_per_enumeration(monkeypatch):
     members, so the work grew with rows times names — quadratic in a file leagues are asked
     to enlarge. The names are indexed once and the index handed down; a `set(declared)`
     anywhere on the way down would silently bring the scan back, one per row."""
-    from models import image_catalogues
+    from leaguebot.image.models import image_catalogues
 
     built = []
     real_init = image_catalogues.DeclaredNames.__init__
@@ -564,7 +564,7 @@ def test_the_fastest_lap_of_a_grid_cell_is_not_the_one_a_race_result_draws():
     canonicalise onto it, `sibling_fields_declared` would call every standings template the
     wrong file for its slot the moment it declared one.
     """
-    from models.image_catalogues import _canonical
+    from leaguebot.image.models.image_catalogues import _canonical
 
     assert _canonical("row_7_fastest_lap") == "row_#_fastest_lap"
     assert (

@@ -37,7 +37,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import SignupCog  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9308

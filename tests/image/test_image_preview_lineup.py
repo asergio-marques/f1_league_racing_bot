@@ -16,13 +16,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     build_lineup_preview,
     resolve_context,
 )
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 7272
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -152,7 +152,7 @@ class TestASeatedDivision:
         assert context.fabricated_drivers is False
 
     async def test_the_resolved_drawing_names_the_division(self, bot, db_path):
-        from services.image_lineup_service import resolve_drawing
+        from leaguebot.image.services.image_lineup_service import resolve_drawing
 
         await _seed(db_path, seat_drivers=True)
         context = await resolve_context(
@@ -202,7 +202,7 @@ class TestAnUnseatedDivision:
                 assert seat.server_display_name
 
     async def test_the_drawing_shows_them_as_occupied_seats(self, bot, db_path):
-        from services.image_lineup_service import resolve_drawing
+        from leaguebot.image.services.image_lineup_service import resolve_drawing
 
         await _seed(db_path, seat_drivers=False)
         context = await resolve_context(
@@ -246,7 +246,7 @@ class TestItUsesTheLeaguesOwnDirectories:
         self, bot, db_path
     ):
         """FR-035, and the faults ride along so the reply can name them (FR-038)."""
-        import services.image_lineup_service as lineup_service
+        import leaguebot.image.services.image_lineup_service as lineup_service
 
         await _seed(db_path, seat_drivers=True)
         await bot.image_config_service.set_field(

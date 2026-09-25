@@ -30,9 +30,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.driver_profile import DriverState  # noqa: E402
-from models.signup_module import SignupRecord, SignupWizardRecord, WizardState  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState  # noqa: E402
 
 SERVER_ID = 5129
 DRIVER_ID = "700100"
@@ -80,7 +80,7 @@ async def _seed(tmp_path, *, state: str = "AWAITING_CORRECTION_PARAMETER") -> st
 
 
 async def _save_wizard(db_path: str, draft: dict) -> None:
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     svc = SignupModuleService(db_path)
     await svc.save_wizard(
@@ -117,9 +117,9 @@ async def _save_wizard(db_path: str, draft: dict) -> None:
 
 def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
     """A WizardService wired to real driver/signup services and a stubbed Discord."""
-    from services.driver_service import DriverService
-    from services.signup_module_service import SignupModuleService
-    from services.wizard_service import WizardService
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     svc._db_path = db_path
@@ -369,9 +369,9 @@ async def _open_the_window(db_path: str) -> None:
 
 
 def _close_cog(db_path: str):
-    from cogs.signup_cog import SignupCog
-    from services.driver_service import DriverService
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.cogs.signup_cog import SignupCog
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
@@ -388,7 +388,7 @@ def _close_cog(db_path: str):
 
 async def test_the_close_confirmation_counts_a_driver_awaiting_a_correction_parameter(tmp_path):
     """Parked alone, they used to let `/signup close` shut with no confirmation at all."""
-    from cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.signup_cog import SignupCog
     from tests.support.undecorate import undecorate
 
     db_path = await _seed(tmp_path)
@@ -417,7 +417,7 @@ async def test_a_close_leaves_a_driver_awaiting_a_correction_parameter_alone(tmp
     revert would rescue nobody the restart sweep does not already rescue (decided
     2026-09-15).
     """
-    from cogs.module_cog import execute_forced_close
+    from leaguebot.core.cogs.module_cog import execute_forced_close
 
     db_path = await _seed(tmp_path)
     await _open_the_window(db_path)

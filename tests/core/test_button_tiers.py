@@ -29,7 +29,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.server_config import ServerConfig  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
 
 SERVER_ID = 4242
 MANAGER_ROLE = 222
@@ -76,7 +76,7 @@ def _interaction(member: MagicMock) -> MagicMock:
 
 
 async def _press_config_select(member, config):
-    from services.result_submission_service import _ConfigSelectView
+    from leaguebot.results.services.result_submission_service import _ConfigSelectView
 
     view = _ConfigSelectView(["Standard", "Sprint"], config)
     interaction = _interaction(member)
@@ -108,7 +108,7 @@ async def test_the_points_configuration_select_refuses_when_it_cannot_read_the_c
 
 
 async def _may_review(member, config):
-    from cogs.admin_review_cog import _may_review_signup
+    from leaguebot.signup.cogs.admin_review_cog import _may_review_signup
 
     interaction = _interaction(member)
     interaction.client.config_service.get_server_config = AsyncMock(return_value=config)
@@ -126,7 +126,7 @@ async def test_the_driver_may_not_action_their_own_signup_review():
 
 
 async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
-    from cogs.admin_review_cog import _may_review_signup
+    from leaguebot.signup.cogs.admin_review_cog import _may_review_signup
 
     interaction = _interaction(_member(MANAGER_ROLE))
     interaction.client.config_service.get_server_config = AsyncMock(
@@ -140,7 +140,7 @@ async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
 
 
 async def _is_lm(member, config):
-    from services.penalty_wizard import _is_league_manager
+    from leaguebot.results.services.penalty_wizard import _is_league_manager
 
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=config)

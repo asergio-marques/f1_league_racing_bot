@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.svg_document import (  # noqa: E402
     SvgParseError,
     load_svg,
     parse_svg_bytes,
@@ -124,7 +124,7 @@ def test_a_directory_is_named_unreadable_without_consulting_the_parser(tmp_path:
     the verdict before `etree.parse` is what keeps the two hosts saying the same thing, so
     the test pins that the parser is never consulted rather than pinning the message twice.
     """
-    from utils import svg_document  # noqa: PLC0415
+    from leaguebot.image.utils import svg_document  # noqa: PLC0415
 
     directory = tmp_path / "calendar.svg"
     directory.mkdir()

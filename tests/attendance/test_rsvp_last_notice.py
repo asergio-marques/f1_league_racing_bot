@@ -1,6 +1,6 @@
 """`run_rsvp_last_notice` — the reminder ping, and who it names.
 
-Issue #208. `tests/unit/test_attendance_module_gate.py` covers this job's module gate and
+Issue #208. `tests/attendance/test_attendance_module_gate.py` covers this job's module gate and
 nothing else; the body was unexecuted. It is the bot's last word to a division before check-in
 closes, and it has two quite different shapes depending on whether anyone is still silent.
 
@@ -40,9 +40,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.attendance_service import AttendanceService  # noqa: E402
-from services.rsvp_service import run_rsvp_last_notice  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.attendance.services.rsvp_service import run_rsvp_last_notice  # noqa: E402
 
 SERVER_ID = 8608
 SEASON_ID = 1

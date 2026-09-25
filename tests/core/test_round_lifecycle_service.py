@@ -1,6 +1,6 @@
 """Deleting, renumbering and cancelling a round at the service layer.
 
-Issue #208, beneath `tests/unit/test_round_delete_cancel.py`, which covers the commands. These
+Issue #208, beneath `tests/core/test_round_delete_cancel.py`, which covers the commands. These
 are the service methods they call, and each carries a rule the command cannot express.
 
 **Deleting renumbers what is left, by date.** The numbers are positions in a calendar, not
@@ -36,9 +36,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import RoundStatus  # noqa: E402
-from services.season_service import SeasonImmutableError, SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import RoundStatus  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError, SeasonService  # noqa: E402
 
 SERVER_ID = 12808
 SEASON_ID = 1

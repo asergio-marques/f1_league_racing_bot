@@ -19,7 +19,7 @@ async def db_path(tmp_path):
     """A migrated database: the league's server_configs row, one season, and its divisions
     10 and 11. No attendance_config row, which is how a league that has never enabled the
     module stands."""
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "test.db")
     await run_migrations(path)
@@ -46,13 +46,13 @@ async def db_path(tmp_path):
 
 class TestIsAttendanceEnabledFalseByDefault:
     async def test_returns_false_when_no_row(self, db_path):
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         result = await svc.get_config()
         assert result is None
 
     async def test_module_enabled_false_after_get_or_create(self, db_path):
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         cfg = await svc.get_or_create_config()
         assert cfg.module_enabled is False
@@ -72,7 +72,7 @@ class TestDisableDeletesDivisionConfigs:
             )
             await db.commit()
 
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.delete_division_configs()
 
@@ -87,7 +87,7 @@ class TestDisableDeletesDivisionConfigs:
 
 class TestGetDivisionConfigNoneBeforeCreate:
     async def test_get_config_none_before_create(self, db_path):
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         result = await svc.get_division_config(10)
         assert result is None
@@ -95,7 +95,7 @@ class TestGetDivisionConfigNoneBeforeCreate:
 
 class TestSetRsvpChannel:
     async def test_set_rsvp_channel(self, db_path):
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.set_rsvp_channel(10, 999)
         cfg = await svc.get_division_config(10)
@@ -106,7 +106,7 @@ class TestSetRsvpChannel:
 
 class TestSetAttendanceChannel:
     async def test_set_attendance_channel(self, db_path):
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.set_attendance_channel(10, 888)
         cfg = await svc.get_division_config(10)
@@ -117,7 +117,7 @@ class TestSetAttendanceChannel:
 
 class TestSetChannelPreservesOtherChannel:
     async def test_set_channel_preserves_other_channel(self, db_path):
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.set_rsvp_channel(10, 111)
         await svc.set_attendance_channel(10, 222)
@@ -134,7 +134,7 @@ class TestSetChannelPreservesOtherChannel:
 
 class TestTimingInvariantValid:
     async def test_timing_invariant_valid(self):
-        from services.attendance_service import validate_timing_invariant
+        from leaguebot.attendance.services.attendance_service import validate_timing_invariant
         # notice_days=5, 5*24=120 > last_notice=24 > deadline=2 → valid
         result = validate_timing_invariant(5, 24, 2)
         assert result is None
@@ -142,7 +142,7 @@ class TestTimingInvariantValid:
 
 class TestTimingInvariantNoticeTooSmall:
     async def test_timing_invariant_notice_too_small(self):
-        from services.attendance_service import validate_timing_invariant
+        from leaguebot.attendance.services.attendance_service import validate_timing_invariant
         # 1*24=24, last_notice_hours=24 → 24 <= 24 → violation
         result = validate_timing_invariant(1, 24, 2)
         assert result is not None
@@ -151,7 +151,7 @@ class TestTimingInvariantNoticeTooSmall:
 
 class TestTimingInvariantDeadlineExceedsLast:
     async def test_timing_invariant_deadline_exceeds_last(self):
-        from services.attendance_service import validate_timing_invariant
+        from leaguebot.attendance.services.attendance_service import validate_timing_invariant
         # notice_days=5, 120>6, but last=6 <= deadline=6 → violation
         result = validate_timing_invariant(5, 6, 6)
         assert result is not None
@@ -160,7 +160,7 @@ class TestTimingInvariantDeadlineExceedsLast:
 
 class TestTimingInvariantLastZeroSentinelValid:
     async def test_timing_invariant_last_zero_sentinel_valid(self):
-        from services.attendance_service import validate_timing_invariant
+        from leaguebot.attendance.services.attendance_service import validate_timing_invariant
         # last_notice_hours=0 is sentinel (no last-notice ping); deadline check skipped
         result = validate_timing_invariant(5, 0, 2)
         assert result is None
@@ -168,7 +168,7 @@ class TestTimingInvariantLastZeroSentinelValid:
 
 class TestTimingInvariantLastEqualsDeadlineRejected:
     async def test_timing_invariant_last_equals_deadline_rejected(self):
-        from services.attendance_service import validate_timing_invariant
+        from leaguebot.attendance.services.attendance_service import validate_timing_invariant
         # notice_days=5 (120h), last=4, deadline=4 → last <= deadline → rejected
         result = validate_timing_invariant(5, 4, 4)
         assert result is not None
@@ -195,7 +195,7 @@ class TestConfigPenaltyFieldsUpdate:
             )
             await db.commit()
 
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.update_no_rsvp_penalty(3)
         await svc.update_absent_penalty(2)
@@ -218,7 +218,7 @@ class TestAutosackZeroStoresNull:
             )
             await db.commit()
 
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.update_autosack_threshold(None)
         cfg = await svc.get_config()
@@ -237,7 +237,7 @@ class TestAutoreserveZeroStoresNull:
             )
             await db.commit()
 
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         await svc.update_autoreserve_threshold(None)
         cfg = await svc.get_config()
@@ -270,7 +270,7 @@ async def _seed_attendance_season(
 
     Returns ``(db_path, season_id)``.
     """
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     path = str(tmp_path / "recalc_faults.db")
     await run_migrations(path)
@@ -341,7 +341,7 @@ def _plain_bot():
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_passes_a_healthy_division(tmp_path):
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -352,7 +352,7 @@ async def test_recalculation_faults_passes_a_healthy_division(tmp_path):
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_names_a_deleted_attendance_channel(tmp_path):
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -368,7 +368,7 @@ async def test_recalculation_faults_names_a_deleted_attendance_channel(tmp_path)
 @pytest.mark.asyncio
 async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
     """Sanctions are announced as verdicts, so that channel is part of the cascade."""
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -384,7 +384,7 @@ async def test_recalculation_faults_names_a_deleted_verdicts_channel(tmp_path):
 async def test_recalculation_faults_ignores_the_verdicts_channel_without_thresholds(tmp_path):
     """`enforce_attendance_sanctions` returns at once when both are unset, so a league
     using neither must not be refused for a channel it will never post to (#187)."""
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
         tmp_path, autosack=None, autoreserve=None
@@ -399,7 +399,7 @@ async def test_recalculation_faults_ignores_the_verdicts_channel_without_thresho
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_ignores_an_unconfigured_attendance_channel(tmp_path):
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
         tmp_path, attendance_channel_id=None, autosack=None, autoreserve=None
@@ -416,7 +416,7 @@ async def test_recalculation_faults_ignores_an_unconfigured_attendance_channel(t
 async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path):
     """The results half reports that already; saying it twice would have a manager
     repairing one thing from two lines."""
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(tmp_path)
 
@@ -425,7 +425,7 @@ async def test_recalculation_faults_says_nothing_about_an_absent_guild(tmp_path)
 
 @pytest.mark.asyncio
 async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_path):
-    from services.attendance_service import recalculation_faults
+    from leaguebot.attendance.services.attendance_service import recalculation_faults
 
     path, season_id = await _seed_attendance_season(
         tmp_path, autosack=None, autoreserve=None

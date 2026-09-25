@@ -24,11 +24,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from models.session_result import SessionResult  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.core.models.session_result import SessionResult  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     _build_division_validation_data,
     _row_dict_from_qualifying,
     _row_dict_from_race,
@@ -36,12 +36,12 @@ from services.result_submission_service import (  # noqa: E402
     save_session_result,
     validate_submission_block,
 )
-from services.standings_service import (  # noqa: E402
+from leaguebot.results.services.standings_service import (  # noqa: E402
     compute_and_persist_round,
     compute_team_standings,
     previous_standing_positions,
 )
-from services.team_service import TeamService  # noqa: E402
+from leaguebot.core.services.team_service import TeamService  # noqa: E402
 
 DIVISION_ID = 37
 OTHER_DIVISION_ID = 38
@@ -208,7 +208,7 @@ async def test_position_change_survives_a_role_change(tmp_path):
 async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
     """The first round, posted again after the change, still says Ferrari — never a mention
     of a role that may since have been deleted from the server."""
-    from services.results_post_service import _load_driver_rows, post_session_results
+    from leaguebot.results.services.results_post_service import _load_driver_rows, post_session_results
 
     db_path, _teams, (first, _second) = await _season_raced_across_a_role_change(tmp_path)
     rows = await _load_driver_rows(db_path, first, SessionType.FEATURE_RACE)
@@ -240,7 +240,7 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
 
 async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path):
     """The graphic finds the name and badge from the team, not by asking Discord about a role."""
-    from services.image_results_post import _team_names
+    from leaguebot.image.services.image_results_post import _team_names
 
     db_path, teams, _ = await _season_raced_across_a_role_change(tmp_path)
     guild = MagicMock()

@@ -21,7 +21,7 @@ Usage::
     country = NATIONALITY_COUNTRIES[nationality]   # KeyError -> module defect
 
 A missing entry is a defect of this module and is caught by the totality test in
-``tests/unit/test_country_data.py``, never by a fallback drawn at generation.
+``tests/image/test_country_data.py``, never by a fallback drawn at generation.
 """
 
 from __future__ import annotations

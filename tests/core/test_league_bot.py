@@ -1,9 +1,9 @@
-"""The bot's declared type: every attribute `bot.py` attaches, named on `LeagueBot`.
+"""The bot's declared type: every attribute `__main__.py` attaches, named on `LeagueBot`.
 
-Issue #228. `bot.py` hangs the services on the bot one assignment at a time, and discord.py's
+Issue #228. `__main__.py` hangs the services on the bot one assignment at a time, and discord.py's
 `commands.Bot` declares none of them, so every read of one was silenced for the type checker —
 and a silenced read is `Any`, through which nothing a service returns is ever checked.
-`LeagueBot` declares them; these tests keep the declaration and `bot.py` in step, which the
+`LeagueBot` declares them; these tests keep the declaration and `__main__.py` in step, which the
 checker can only do in one direction: it refuses an attachment nobody declared, but not a
 declaration nobody attaches, which would pass the check and fail at runtime.
 """
@@ -14,15 +14,15 @@ import inspect
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from bot import create_bot
-from utils.league_bot import LeagueBot, bot_of
+from leaguebot.__main__ import create_bot
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
-SRC = Path(__file__).resolve().parents[2] / "src"
+SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
 
 def _attached_in_bot_py() -> set[str]:
-    """Every `bot.<name> = …` in `bot.py`."""
-    tree = ast.parse((SRC / "bot.py").read_text(encoding="utf-8"))
+    """Every `bot.<name> = …` in `__main__.py`."""
+    tree = ast.parse((SRC / "__main__.py").read_text(encoding="utf-8"))
     return {
         target.attr
         for node in ast.walk(tree)
@@ -40,8 +40,8 @@ def _declared() -> set[str]:
 
 def test_every_attribute_bot_py_attaches_is_declared():
     attached = _attached_in_bot_py()
-    assert attached, "found no attachments in bot.py — the scan has stopped seeing them"
-    assert sorted(attached - _declared()) == [], "attached in bot.py but not declared"
+    assert attached, "found no attachments in __main__.py — the scan has stopped seeing them"
+    assert sorted(attached - _declared()) == [], "attached in __main__.py but not declared"
     assert sorted(_declared() - attached) == [], "declared on LeagueBot but never attached"
 
 
@@ -59,7 +59,7 @@ def test_the_wizard_has_its_bot_before_the_gateway_opens():
     `on_ready`, after the restart recovery, while the persistent views are routed from the
     moment the gateway opens — so a signup press in between found no bot and failed (#228).
     It is bound in `main` itself, before `bot.start`, and in no handler."""
-    tree = ast.parse((SRC / "bot.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC / "__main__.py").read_text(encoding="utf-8"))
     main = next(
         node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
     )

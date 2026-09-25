@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utils.svg_document import FieldIndex, canvas_of, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex, canvas_of, parse_svg_bytes  # noqa: E402
 
 SVG_OPEN = (
     '<svg xmlns="http://www.w3.org/2000/svg" '
@@ -176,9 +176,9 @@ def test_odd_names_resolve_to_nothing_rather_than_raising(name):
 # T043 / T044 / T045 / T046 — group removal, emptying, and the canvas
 # ══════════════════════════════════════════════════════════════════════════
 
-from models.image_catalogues import FieldCatalogue, RowSpec  # noqa: E402
-from utils.svg_fill import FillSpec, fill  # noqa: E402
-from utils.svg_document import parse_svg_bytes as _parse  # noqa: E402
+from leaguebot.image.models.image_catalogues import FieldCatalogue, RowSpec  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes as _parse  # noqa: E402
 
 FLAG_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"/>'
 

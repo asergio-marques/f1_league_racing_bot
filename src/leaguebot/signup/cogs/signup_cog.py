@@ -148,7 +148,7 @@ async def _resolve_view_context(
 #: ``APPROVED_STATES`` is deliberately not branched on: the ``else`` is what reads it, and
 #: naming the set here is how that ``else`` says which states it believes it is catching.
 #: It is **not** dead code — deleting it as unused takes the cover check in
-#: ``tests/unit/test_signup_button_driver_states.py`` with it, which is the only thing
+#: ``tests/core/test_signup_button_driver_states.py`` with it, which is the only thing
 #: standing between a new driver state and a silent, wrongly granted signup. That test pins
 #: both the cover and the disjointness.
 IN_PROGRESS_STATES = {

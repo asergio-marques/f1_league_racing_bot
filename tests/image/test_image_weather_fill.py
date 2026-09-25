@@ -14,7 +14,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_weather_service import (  # noqa: E402
+from leaguebot.image.services.image_weather_service import (  # noqa: E402
     WeatherDataError,
     build_fill_spec,
     resolve_drawing,

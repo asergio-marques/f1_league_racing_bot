@@ -26,8 +26,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import image_verdict_banner_post as banner  # noqa: E402
-from services import verdict_announcement_service as vas  # noqa: E402
+from leaguebot.image.services import image_verdict_banner_post as banner  # noqa: E402
+from leaguebot.results.services import verdict_announcement_service as vas  # noqa: E402
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -137,7 +137,7 @@ def flow(monkeypatch, tmp_path):
     def _discard(render, attachment=None):
         state["discarded"].append(getattr(render, "png", None))
 
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     monkeypatch.setattr(vas, "_get_announcement_context", _context)
     monkeypatch.setattr(vas, "_get_result_context", _result_context)
@@ -209,7 +209,7 @@ async def test_the_banner_message_carries_no_text_at_all(flow):
 
 async def test_the_attachment_is_named_for_the_round_it_heads():
     """The only handle a Discord search has, the message carrying no text."""
-    from utils.image_naming import stem_for_drawing
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
     drawing = banner.build_drawing(
         season_number=5, division_name="Pit Wall Premier", division_tier=1,
@@ -580,7 +580,7 @@ def test_both_enforcement_sites_hand_the_poster_on():
     """
     import inspect
 
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     source = inspect.getsource(attendance_service)
     blocks = source.split("post_autosanction_announcement(")[1:]
@@ -593,7 +593,7 @@ def test_a_penalty_approval_shares_one_poster_with_the_attendance_pipeline():
     """The whole point of `banner_for_round`: one header over one approval."""
     import inspect
 
-    from services import result_submission_service
+    from leaguebot.results.services import result_submission_service
 
     # The approval's body, once `finalize_penalty_review` has checked and claimed it (#402).
     source = inspect.getsource(result_submission_service._apply_approved_reports)

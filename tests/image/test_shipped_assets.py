@@ -29,7 +29,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     PACKAGED_ASSET_ASPECTS,
     ASSET_ASPECT_TOLERANCE,
     ASSET_CLASS_TO_COLUMN,
@@ -56,9 +56,9 @@ def _stretching_data() -> frozenset[str]:
     Composed from the two services' own tables rather than restated, so a mark added there
     without a shape of its own cannot quietly appear here as one held to 1:1.
     """
-    from models.image_constants import MARK_FALLBACK_ASSET_NAME
-    from services.image_attendance_service import MARK_DATA
-    from services.image_standings_service import HIGHLIGHT_DATA
+    from leaguebot.image.models.image_constants import MARK_FALLBACK_ASSET_NAME
+    from leaguebot.image.services.image_attendance_service import MARK_DATA
+    from leaguebot.image.services.image_standings_service import HIGHLIGHT_DATA
 
     return frozenset(
         [f"{datum}.svg" for datum in (*HIGHLIGHT_DATA, *MARK_DATA)]
@@ -149,7 +149,7 @@ def _png_size(data: bytes) -> tuple[int, int]:
 @pytest.mark.parametrize("name", ["other.svg", "mystery.svg", "fallback.svg"])
 def test_the_shipped_flags_rasterise_to_a_three_by_two_png(tmp_path, name):
     """The browser hides what the rasteriser exposes, so this asserts on real pixels."""
-    from services.image_render_service import find_converter
+    from leaguebot.image.services.image_render_service import find_converter
 
     source = PROJECT_ROOT / packaged_directory_for("flag") / name
     out = tmp_path / f"{name}.png"
@@ -180,7 +180,7 @@ def test_other_svg_actually_draws_something(tmp_path):
     Nothing here asserts *what* is drawn — only that the globe is not, say, entirely
     outside the viewBox, which no amount of reading the markup reliably catches.
     """
-    from services.image_render_service import find_converter
+    from leaguebot.image.services.image_render_service import find_converter
 
     source = PROJECT_ROOT / packaged_directory_for("flag") / "other.svg"
     out = tmp_path / "other.png"

@@ -48,8 +48,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.module_cog import ModuleCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 12208
 SIGNUP_CHANNEL = 700
@@ -186,7 +186,7 @@ def _replied(interaction) -> str:
 
 
 async def _disable(cog, interaction):
-    with patch("cogs.module_cog.execute_forced_close", new=AsyncMock()) as close:
+    with patch("leaguebot.core.cogs.module_cog.execute_forced_close", new=AsyncMock()) as close:
         await cog._disable_signup(interaction)
     return close
 
@@ -276,8 +276,8 @@ async def test_disabling_signup_keeps_both_roles(tmp_path):
     """They are the league's, not the module's (issue #276). Disabling signup deleted them
     with its configuration row, and a league that ran on without signups lost the base role
     another module reads and the driver role its season's end revokes."""
-    from services.config_service import ConfigService
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     db_path = await _make_db(tmp_path, name="disable_keeps_roles")
     async with get_connection(db_path) as db:
@@ -306,10 +306,10 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     """Only the channel goes (issue #127). The slots and the three question settings live in
     tables no key joins to the configuration row, so nothing but the rule keeps them: a
     disable that cleared them too would pass every other test here."""
-    from models.signup_module import SignupModuleConfig, SignupModuleSettings
-    from services.config_service import ConfigService
-    from services.module_service import ModuleService
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
+    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     db_path = await _make_db(tmp_path, name="disable_keeps_slots")
     cog = _make_cog(db_path)

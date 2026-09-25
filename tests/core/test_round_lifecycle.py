@@ -18,10 +18,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.points_config import SessionType
-from services.penalty_wizard import PenaltyReviewState
-from services.penalty_service import StagedPenalty
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+from leaguebot.results.services.penalty_service import StagedPenalty
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 
@@ -242,12 +242,12 @@ async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
 
     # Patch _rps functions to avoid complex Discord channel resolution
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import finalize_penalty_review
+        from leaguebot.results.services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, state)
 
     # the round must now be awaiting appeal verdicts
@@ -284,12 +284,12 @@ async def test_zero_corrections_advances_to_final(tmp_path):
     interaction = _make_interaction(guild)
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import finalize_appeals_review
+        from leaguebot.results.services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, state)
 
     # the results must now be final
@@ -329,12 +329,12 @@ async def test_a_penalty_review_cannot_reopen_a_round_that_has_ended(tmp_path):
     interaction = _make_interaction(_make_guild())
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import finalize_penalty_review
+        from leaguebot.results.services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, state)
 
     assert await _get_round_status(db_path, round_id) == "FINAL"
@@ -357,12 +357,12 @@ async def test_an_appeals_review_cannot_reopen_a_cancelled_round(tmp_path):
     interaction = _make_interaction(_make_guild())
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import finalize_appeals_review
+        from leaguebot.results.services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, state)
 
     assert await _get_round_status(db_path, round_id) == "CANCELLED"
@@ -407,19 +407,19 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
     assert await _division_status() == "ACTIVE"
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import finalize_appeals_review
+        from leaguebot.results.services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, state)
 
     assert await _get_round_status(db_path, round_id) == "FINAL"
     assert await _division_status() == "FINISHED"
 
     # and with its only division finished, the season is now completable
-    from services.season_service import SeasonService
+    from leaguebot.core.services.season_service import SeasonService
     assert await SeasonService(db_path).all_divisions_finished() is True
 
 
@@ -455,13 +455,13 @@ async def test_full_lifecycle_states(tmp_path):
     assert await _get_round_status(db_path, round_id) == "AWAITING_REPORT_VERDICTS"
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             finalize_penalty_review,
             finalize_appeals_review,
         )
@@ -517,15 +517,15 @@ async def test_penalty_records_inserted_when_staged(tmp_path):
     interaction = _make_interaction(guild)
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-        patch("services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
     ):
         bot.output_router = MagicMock()
         bot.output_router.post_log = AsyncMock()
 
-        from services.result_submission_service import finalize_penalty_review
+        from leaguebot.results.services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, state)
 
     # Check penalty_records was inserted
@@ -557,12 +557,12 @@ async def test_channel_not_closed_after_penalty_review(tmp_path):
     interaction = _make_interaction(guild)
 
     with (
-        patch("services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
+        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
+        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
     ):
-        from services.result_submission_service import finalize_penalty_review
+        from leaguebot.results.services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, state)
 
     # Should NOT be closed — appeals review still in progress
@@ -588,7 +588,7 @@ async def test_is_channel_in_penalty_review_false_after_final(tmp_path):
         )
         await db.commit()
 
-    from services.result_submission_service import is_channel_in_penalty_review
+    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
     assert not await is_channel_in_penalty_review(db_path, 777)
 
 
@@ -606,5 +606,5 @@ async def test_is_channel_in_penalty_review_true_at_post_race_penalty(tmp_path):
         )
         await db.commit()
 
-    from services.result_submission_service import is_channel_in_penalty_review
+    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
     assert await is_channel_in_penalty_review(db_path, 888)

@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.channel_guard import role_grant_refusal  # noqa: E402
+from leaguebot.core.utils.channel_guard import role_grant_refusal  # noqa: E402
 
 
 def _role(
@@ -110,7 +110,7 @@ def test_a_role_carrying_no_guild_is_judged_on_itself_alone():
     ],
 )
 async def test_a_team_command_refuses_a_role_the_bot_cannot_grant(command, arguments):
-    from cogs.team_cog import TeamCog
+    from leaguebot.core.cogs.team_cog import TeamCog
     from tests.support.undecorate import undecorate
 
     bot = MagicMock()
@@ -143,7 +143,7 @@ async def test_a_team_command_refuses_a_role_the_bot_cannot_grant(command, argum
 
 async def test_adding_a_team_refuses_a_role_the_bot_cannot_grant():
     """The form's own submission, which is where `/team add` does its work now (#381)."""
-    from cogs.team_cog import TeamCog
+    from leaguebot.core.cogs.team_cog import TeamCog
 
     bot = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)

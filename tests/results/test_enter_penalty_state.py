@@ -46,10 +46,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from models.round import ROUND_CANCELLABLE, RoundStatus  # noqa: E402
-from services.result_submission_service import enter_penalty_state  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus  # noqa: E402
+from leaguebot.results.services.result_submission_service import enter_penalty_state  # noqa: E402
 
 SERVER_ID = 11108
 SEASON_ID = 1
@@ -151,24 +151,24 @@ async def _enter(db_path, *, guild=None, sub_channel=None, posting_error=None, *
     sub_channel = sub_channel or _sub_channel()
 
     with patch(
-        "services.results_post_service.standings_display_names",
+        "leaguebot.results.services.results_post_service.standings_display_names",
         new=AsyncMock(return_value={}),
     ), patch(
-        "services.standings_service.compute_and_persist_round",
+        "leaguebot.results.services.standings_service.compute_and_persist_round",
         new=AsyncMock(side_effect=posting_error),
     ) as persist, patch(
-        "services.results_post_service.post_round_results", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_round_results", new=AsyncMock()
     ) as post_results, patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ) as post_standings, patch(
-        "services.standings_service.compute_driver_standings",
+        "leaguebot.results.services.standings_service.compute_driver_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.standings_service.compute_team_standings", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.standings_service.compute_team_standings", new=AsyncMock(return_value=[])
     ), patch(
-        "services.penalty_wizard.PenaltyReviewView", new=MagicMock()
+        "leaguebot.results.services.penalty_wizard.PenaltyReviewView", new=MagicMock()
     ) as view, patch(
-        "services.penalty_wizard._render_prompt_content",
+        "leaguebot.results.services.penalty_wizard._render_prompt_content",
         new=AsyncMock(return_value="review this"),
     ):
         await enter_penalty_state(
@@ -224,21 +224,21 @@ async def test_the_review_flag_is_set_before_any_posting(tmp_path):
         seen["flag"] = (await _channel_row(db_path))["in_penalty_review"]
 
     with patch(
-        "services.results_post_service.standings_display_names", new=AsyncMock(side_effect=_record)
+        "leaguebot.results.services.results_post_service.standings_display_names", new=AsyncMock(side_effect=_record)
     ), patch(
-        "services.standings_service.compute_and_persist_round", new=AsyncMock()
+        "leaguebot.results.services.standings_service.compute_and_persist_round", new=AsyncMock()
     ), patch(
-        "services.results_post_service.post_round_results", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_round_results", new=AsyncMock()
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ), patch(
-        "services.standings_service.compute_driver_standings", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.standings_service.compute_driver_standings", new=AsyncMock(return_value=[])
     ), patch(
-        "services.standings_service.compute_team_standings", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.standings_service.compute_team_standings", new=AsyncMock(return_value=[])
     ), patch(
-        "services.penalty_wizard.PenaltyReviewView", new=MagicMock()
+        "leaguebot.results.services.penalty_wizard.PenaltyReviewView", new=MagicMock()
     ), patch(
-        "services.penalty_wizard._render_prompt_content", new=AsyncMock(return_value="x")
+        "leaguebot.results.services.penalty_wizard._render_prompt_content", new=AsyncMock(return_value="x")
     ):
         await enter_penalty_state(
             _bot(db_path), _guild(), ROUND_ID, DIVISION_ID, _sub_channel()
@@ -431,7 +431,7 @@ async def test_a_round_that_does_not_exist_does_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="enter_noround")
     sub_channel = _sub_channel()
 
-    with patch("services.penalty_wizard.PenaltyReviewView", new=MagicMock()):
+    with patch("leaguebot.results.services.penalty_wizard.PenaltyReviewView", new=MagicMock()):
         await enter_penalty_state(
             _bot(db_path), _guild(), 9999, DIVISION_ID, sub_channel
         )

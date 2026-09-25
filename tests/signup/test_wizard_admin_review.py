@@ -1,7 +1,7 @@
 """Approving, rejecting and sending back a signup.
 
 Issue #208. These three are what a league manager actually does with a completed signup, and
-all three were unexecuted. `tests/unit/test_correction_parameter_timeout.py` covers what
+all three were unexecuted. `tests/signup/test_correction_parameter_timeout.py` covers what
 happens when a correction window *lapses*; nothing covered opening one, or the two decisions
 either side of it.
 
@@ -52,7 +52,7 @@ ACTOR_ID = 555
 
 
 def _wizard(**draft):
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
 
     return SignupWizardRecord(
         id=1,
@@ -82,7 +82,7 @@ def _record(lap_times: dict | None = None):
 @pytest.fixture
 def review():
     """A `WizardService` wired for the three review outcomes, with an ordered call log."""
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     svc._correction_tasks = {}

@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_render_service import (  # noqa: E402
+from leaguebot.image.services.image_render_service import (  # noqa: E402
     resolve_configured_directories,
     spec_builder_with_faults,
 )
@@ -120,8 +120,8 @@ class TestTheMessage:
         """A one-field template whose only field draws a flag, and no flag directory."""
         from lxml import etree
 
-        from models.image_catalogues import catalogue_for
-        from utils.svg_fill import FillSpec
+        from leaguebot.image.models.image_catalogues import catalogue_for
+        from leaguebot.image.utils.svg_fill import FillSpec
 
         root = etree.Element(f"{{{SVG_NS}}}svg")
         root.set("width", "100")
@@ -140,7 +140,7 @@ class TestTheMessage:
         return spec
 
     def test_a_rejected_directory_names_the_reason_not_a_missing_configuration(self):
-        from utils.svg_fill import fill
+        from leaguebot.image.utils.svg_fill import fill
 
         spec = self._spec_drawing_a_flag({"flag": "it escapes the project root"})
         result = fill(spec)
@@ -151,7 +151,7 @@ class TestTheMessage:
 
     def test_a_class_genuinely_never_configured_still_says_so(self):
         """The original wording survives for the case it was actually right about."""
-        from utils.svg_fill import fill
+        from leaguebot.image.utils.svg_fill import fill
 
         spec = self._spec_drawing_a_flag({})
         result = fill(spec)
@@ -160,12 +160,12 @@ class TestTheMessage:
 
     def test_a_spec_carries_no_faults_by_default(self):
         """An ordinary render must not gain a field it has to populate."""
-        from utils.svg_fill import FillSpec
+        from leaguebot.image.utils.svg_fill import FillSpec
 
         assert FillSpec(root=None).asset_directory_faults == {}
 
     def test_two_specs_do_not_share_their_faults(self):
-        from utils.svg_fill import FillSpec
+        from leaguebot.image.utils.svg_fill import FillSpec
 
         a, b = FillSpec(root=None), FillSpec(root=None)
         a.asset_directory_faults["flag"] = "rejected"

@@ -16,7 +16,7 @@ before any of that work, and that every reply thereafter goes to `followup` — 
 **`/round add-bulk` and `/round add-xml` are deliberately not in this list.** They open a
 modal, and `send_modal` must be an interaction's *first* response — a deferred interaction
 cannot open one. They defer inside the modal's `on_submit` instead, where the work
-actually happens, and `tests/unit/test_round_import_cog.py` pins that. Adding them here
+actually happens, and `tests/core/test_round_import_cog.py` pins that. Adding them here
 would be a plausible-looking change that breaks both commands.
 """
 from __future__ import annotations
@@ -26,10 +26,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
-from models.server_config import ServerConfig
-from models.round import RoundFormat
-from models.season import SeasonStage
+from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
+from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.season import SeasonStage
 
 
 CHANNEL = 111
@@ -144,7 +144,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
     monkeypatch.setattr(cog, "_snapshot_pending", _snapshot)
     monkeypatch.setattr(cog, "_calendar_round_overflow", _overflow)
     monkeypatch.setattr(
-        "services.track_service.resolve_track_name",
+        "leaguebot.core.services.track_service.resolve_track_name",
         AsyncMock(return_value="Hungaroring"),
     )
 
@@ -206,7 +206,7 @@ def test_no_setup_command_replies_through_response(command):
 
 async def test_season_setup_begins_the_season_in_configuration():
     """Issue #220: a season is set up in Configuration, before any division exists."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     cog = _cog(None)
     interaction = _interaction()

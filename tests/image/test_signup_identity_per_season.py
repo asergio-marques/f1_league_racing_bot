@@ -14,9 +14,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_results_post import _driver_names, _nationalities  # noqa: E402
-from services.image_verdict_post import _driver_nationality  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_results_post import _driver_names, _nationalities  # noqa: E402
+from leaguebot.image.services.image_verdict_post import _driver_nationality  # noqa: E402
 
 SERVER_ID = 22060
 USER = 5150

@@ -9,7 +9,7 @@ safeguard for the mistake, not the mechanism a league relies on.
 
 **The server is checked here, once, and nowhere after.** Every slash command passes through
 `LeagueCommandTree.interaction_check` before its body runs, and every event listener asks
-`is_foreign_guild` before it reads anything; `tests/unit/test_one_league_server.py` holds each
+`is_foreign_guild` before it reads anything; `tests/repository/test_one_league_server.py` holds each
 new listener to it. Past that point nothing in the bot scopes by
 server: the tables carry no `server_id`, the services take none, and a query reads the
 league's data because the database holds no other. A per-query scope that could never fail
@@ -19,7 +19,7 @@ would only suggest to a reader that it might (decided 2026-09-18, issue #244).
 view and modal in the bot derives from. The tree does not see them, and "the bot only posts in
 the league's channels" is not enough: the persistent views answer their custom ids on any
 message, so once a league has moved to another server, every button left on the old one would
-otherwise still act on the league's data. `tests/unit/test_one_league_server.py` holds that no
+otherwise still act on the league's data. `tests/repository/test_one_league_server.py` holds that no
 view or modal derives from discord.py's own classes directly.
 
 **Upon another server the bot stays, and refuses.** It does not leave: leaving would make an

@@ -46,8 +46,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from bot import _recover_missed_phases  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import _recover_missed_phases  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 12008
 SEASON_ID = 1
@@ -156,10 +156,10 @@ async def _recover(bot, *, config=None, reads: list | None = None):
             reads.append(db_path)
         return config or _config()
 
-    with patch("services.phase1_service.run_phase1", new=await _phase(1)), patch(
-        "services.phase2_service.run_phase2", new=await _phase(2)
-    ), patch("services.phase3_service.run_phase3", new=await _phase(3)), patch(
-        "services.weather_config_service.get_weather_pipeline_config",
+    with patch("leaguebot.weather.services.phase1_service.run_phase1", new=await _phase(1)), patch(
+        "leaguebot.weather.services.phase2_service.run_phase2", new=await _phase(2)
+    ), patch("leaguebot.weather.services.phase3_service.run_phase3", new=await _phase(3)), patch(
+        "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(side_effect=_get_config),
     ):
         await _recover_missed_phases(bot)

@@ -41,8 +41,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.calendar_post_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.calendar_post_service import (  # noqa: E402
     post_division_calendar,
     replace_calendar_message,
 )
@@ -162,17 +162,17 @@ async def _post(
     channel = channel if channel is not None else _channel()
     guild = guild if guild is not None else _guild(channel)
     with patch(
-        "services.calendar_post_service.image_calendar_wanted",
+        "leaguebot.core.services.calendar_post_service.image_calendar_wanted",
         new=AsyncMock(return_value=wanted),
     ), patch(
-        "services.calendar_post_service.render_calendar_image",
+        "leaguebot.core.services.calendar_post_service.render_calendar_image",
         new=AsyncMock(return_value=outcome or _outcome(), side_effect=render_error),
     ), patch(
-        "services.image_render_service.discard_render", new=MagicMock()
+        "leaguebot.image.services.image_render_service.discard_render", new=MagicMock()
     ) as discard, patch(
-        "services.image_render_service.discard_attachment", new=MagicMock()
+        "leaguebot.image.services.image_render_service.discard_attachment", new=MagicMock()
     ), patch(
-        "services.retry_service.enqueue", new=AsyncMock()
+        "leaguebot.core.services.retry_service.enqueue", new=AsyncMock()
     ) as enqueue:
         result = await post_division_calendar(
             _bot(db_path),
@@ -406,10 +406,10 @@ async def test_a_failing_retry_queue_does_not_raise(tmp_path):
     channel = _channel(send_fails=True)
 
     with patch(
-        "services.calendar_post_service.image_calendar_wanted",
+        "leaguebot.core.services.calendar_post_service.image_calendar_wanted",
         new=AsyncMock(return_value=False),
-    ), patch("services.image_render_service.discard_render", new=MagicMock()), patch(
-        "services.retry_service.enqueue", new=AsyncMock(side_effect=RuntimeError("no db"))
+    ), patch("leaguebot.image.services.image_render_service.discard_render", new=MagicMock()), patch(
+        "leaguebot.core.services.retry_service.enqueue", new=AsyncMock(side_effect=RuntimeError("no db"))
     ):
         result = await post_division_calendar(
             _bot(db_path), _guild(channel), _division(), [_round()], {}
@@ -538,7 +538,7 @@ async def test_the_attachment_is_released_before_the_caller_removes_the_file(tmp
     png.write_bytes(b"\x89PNG")
     channel = _channel()
 
-    with patch("services.image_render_service.discard_attachment") as discard:
+    with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
         await replace_calendar_message(
             _bot(db_path),
             channel,
@@ -559,7 +559,7 @@ async def test_the_attachment_is_released_even_when_the_post_fails(tmp_path):
     png.write_bytes(b"\x89PNG")
     channel = _channel(send_fails=True)
 
-    with patch("services.image_render_service.discard_attachment") as discard:
+    with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
         with pytest.raises(RuntimeError):
             await replace_calendar_message(
                 _bot(db_path),

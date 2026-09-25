@@ -1,6 +1,6 @@
 """What the bot puts right when it starts — the orphaned amendment channel sweep.
 
-Issue #208. `bot.py` was the worst-covered file in core at 26.7%. Most of it is `main()`, which
+Issue #208. `__main__.py` was the worst-covered file in core at 26.7%. Most of it is `main()`, which
 needs a real gateway connection and is out of scope for this suite (`CLAUDE.md`: no test may
 require a live bot). The recovery helpers beneath it are not — they take a bot and a database
 and put the world back the way it should be, and none was executed.
@@ -38,8 +38,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from bot import _recover_orphaned_amend_channels, _recover_portrait_refresh_job  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import _recover_orphaned_amend_channels, _recover_portrait_refresh_job  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 10108
 SEASON_ID = 1

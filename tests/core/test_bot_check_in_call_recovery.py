@@ -23,11 +23,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import bot as bot_module  # noqa: E402
-from bot import _recover_missed_check_in_calls  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import rsvp_service  # noqa: E402
-from services.attendance_service import AttendanceService  # noqa: E402
+import leaguebot.__main__ as bot_module  # noqa: E402
+from leaguebot.__main__ import _recover_missed_check_in_calls  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import rsvp_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -158,7 +158,7 @@ async def _posted(db_path: str, **kwargs) -> list[int]:
         asked.append(round_id)
 
     bot = _make_bot(db_path)
-    with patch("services.rsvp_service.run_rsvp_notice", new=AsyncMock(side_effect=_notice)):
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock(side_effect=_notice)):
         await _recover_missed_check_in_calls(bot, now=NOW, **kwargs)
     return asked
 
@@ -316,7 +316,7 @@ async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tm
     bot = _make_bot(db_path)
     notice = AsyncMock()
 
-    with patch("services.rsvp_service.run_rsvp_notice", new=notice):
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=notice):
         await _recover_missed_check_in_calls(bot, now=NOW)
 
     notice.assert_not_awaited()
@@ -329,7 +329,7 @@ async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
     db_path = await _make_db(tmp_path, until_round=timedelta(hours=1))
     bot = _make_bot(db_path)
 
-    with patch("services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
+    with patch("leaguebot.attendance.services.rsvp_service.run_rsvp_notice", new=AsyncMock()):
         await _recover_missed_check_in_calls(bot, now=NOW)
         await _recover_missed_check_in_calls(bot, now=NOW + timedelta(minutes=10))
 

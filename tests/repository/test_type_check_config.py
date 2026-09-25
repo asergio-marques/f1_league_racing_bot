@@ -31,7 +31,7 @@ def _config() -> configparser.ConfigParser:
 
 
 def test_the_check_reads_src_as_the_bot_imports_it():
-    """`src/`, named from `src/` itself — `cogs.season_cog`, never `src.cogs.season_cog` — and
+    """`src/`, named from `src/` itself — `leaguebot.core.cogs.season_cog`, never `src.cogs.season_cog` — and
     the libraries that ship no types through the stubs in `stubs/`."""
     main = _config()["mypy"]
     assert main.get("files") == "src"

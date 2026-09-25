@@ -24,9 +24,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Imported under another name: pytest tries to *collect* any class whose name
 # begins with "Test", and warns that it cannot because the cog takes arguments.
-from cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
-from cogs.test_mode_cog import _jobstore_path  # noqa: E402
-from services import backup_service as bs  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import _jobstore_path  # noqa: E402
+from leaguebot.core.services import backup_service as bs  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4400
@@ -143,7 +143,7 @@ def test_every_command_is_a_league_admins():
     decorator name. The names have already changed once, and a source grep reports a rename
     as a permission change while missing an actual one.
     """
-    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
+    from leaguebot.core.utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
 
     for command in (
         Cog.backup_save,
@@ -286,7 +286,7 @@ async def test_restore_of_an_unreadable_backup_is_refused(live):
 
 
 async def test_confirming_stages_the_restore_and_says_to_restart(live):
-    from cogs.test_mode_cog import _ConfirmRestoreView
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
@@ -300,7 +300,7 @@ async def test_confirming_stages_the_restore_and_says_to_restart(live):
 
 
 async def test_only_the_requester_may_confirm(live):
-    from cogs.test_mode_cog import _ConfirmRestoreView
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
@@ -315,7 +315,7 @@ async def test_only_the_requester_may_confirm(live):
 
 
 async def test_cancelling_changes_nothing(live):
-    from cogs.test_mode_cog import _ConfirmRestoreView
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())

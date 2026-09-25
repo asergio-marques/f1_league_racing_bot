@@ -40,7 +40,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import PreferredTeamsButtonView  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView  # noqa: E402
 
 SERVER_ID = 11208
 DRIVER_ID = "4242"

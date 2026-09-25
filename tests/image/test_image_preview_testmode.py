@@ -29,11 +29,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import test_roster_service  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_preview_service import resolve_context  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services import test_roster_service  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.services.image_preview_service import resolve_context  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 8484
 
@@ -293,6 +293,6 @@ class TestTestModeChangesNoReading:
         """
         import inspect
 
-        from services import image_preview_service
+        from leaguebot.image.services import image_preview_service
 
         assert "test_mode_active" not in inspect.getsource(image_preview_service)

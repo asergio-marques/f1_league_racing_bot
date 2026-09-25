@@ -42,8 +42,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.results_post_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.services.results_post_service import (  # noqa: E402
     STANDINGS_CONSTRUCTORS,
     STANDINGS_DRIVERS,
     repost_subsequent_standings,
@@ -128,19 +128,19 @@ async def _run(db_path, *, from_round: int = 1, guild=None, posted=None):
         return posted.get(round_id, {}).get(championship)
 
     with patch(
-        "services.results_post_service.recompute_standings_from_round", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.recompute_standings_from_round", new=AsyncMock()
     ) as recompute, patch(
-        "services.results_post_service._get_standings_message_id", new=_message_id
+        "leaguebot.results.services.results_post_service._get_standings_message_id", new=_message_id
     ), patch(
-        "services.results_post_service._clear_standings_messages", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._clear_standings_messages", new=AsyncMock()
     ) as clear, patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ) as post:
         await repost_subsequent_standings(
             db_path, DIVISION_ID, from_round, guild or _guild(), bot=MagicMock()
@@ -310,20 +310,20 @@ async def test_the_old_messages_are_cleared_before_the_new_ones_are_posted(tmp_p
         return 900 if round_id == 2 else None
 
     with patch(
-        "services.results_post_service.recompute_standings_from_round", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.recompute_standings_from_round", new=AsyncMock()
     ), patch(
-        "services.results_post_service._get_standings_message_id", new=_message_id
+        "leaguebot.results.services.results_post_service._get_standings_message_id", new=_message_id
     ), patch(
-        "services.results_post_service._clear_standings_messages",
+        "leaguebot.results.services.results_post_service._clear_standings_messages",
         new=AsyncMock(side_effect=lambda *a, **k: order.append("clear")),
     ), patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings",
+        "leaguebot.results.services.results_post_service.post_standings",
         new=AsyncMock(side_effect=lambda *a, **k: order.append("post")),
     ):
         await repost_subsequent_standings(
@@ -402,19 +402,19 @@ async def test_a_channel_deleted_partway_through_the_repost_is_refused_not_raise
         return posted.get(round_id, {}).get(championship)
 
     with patch(
-        "services.results_post_service.recompute_standings_from_round", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.recompute_standings_from_round", new=AsyncMock()
     ), patch(
-        "services.results_post_service._get_standings_message_id", new=_message_id
+        "leaguebot.results.services.results_post_service._get_standings_message_id", new=_message_id
     ), patch(
-        "services.results_post_service._clear_standings_messages", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._clear_standings_messages", new=AsyncMock()
     ), patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ) as post:
         faults = await repost_subsequent_standings(
             db_path, DIVISION_ID, 1, guild, bot=MagicMock()

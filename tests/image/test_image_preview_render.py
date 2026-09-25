@@ -20,10 +20,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_render_service import ImageRenderService  # noqa: E402
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.services.image_render_service import ImageRenderService  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     build_attendance_preview,
     build_calendar_preview,
     build_lineup_preview,
@@ -35,8 +35,8 @@ from services.image_preview_service import (  # noqa: E402
     build_weather_preview,
     resolve_context,
 )
-from services.image_validity_service import ImageValidityService  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.image.services.image_validity_service import ImageValidityService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 9494
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -252,7 +252,7 @@ async def test_every_preview_reaches_a_png(bot, league, kind, tmp_path):
 
 async def test_the_twelve_kinds_are_all_covered():
     """A kind added to the command surface without a raster check would slip through."""
-    from cogs.image_cog import ImageCog
+    from leaguebot.image.cogs.image_cog import ImageCog
 
     assert {c.name for c in ImageCog.test.commands} == set(KINDS)
 

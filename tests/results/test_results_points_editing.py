@@ -1,6 +1,6 @@
 """Editing a points table, and the warning a broken one earns.
 
-Issue #208, continuing `tests/unit/test_results_config_commands.py`. Where that file covered
+Issue #208, continuing `tests/results/test_results_config_commands.py`. Where that file covered
 creating and destroying a configuration, this one covers filling it in: the per-position points,
 the fastest-lap bonus and its eligibility limit, and attaching a configuration to a season.
 
@@ -37,18 +37,18 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.results_cog import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import (  # noqa: E402
     BLOCKS_AMENDMENT,
     BLOCKS_APPROVAL,
     ResultsCog,
     _ordering_notice,
 )
-from models.points_config import SessionType  # noqa: E402
-from services.points_config_service import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.points_config_service import (  # noqa: E402
     ConfigNotFoundError,
     InvalidSessionTypeError,
 )
-from services.season_points_service import SeasonNotInSetupError  # noqa: E402
+from leaguebot.results.services.season_points_service import SeasonNotInSetupError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 11308
@@ -170,7 +170,7 @@ def _points_service(**overrides):
     mocks.update(overrides)
     with ExitStack() as stack:
         for name, mock in mocks.items():
-            stack.enter_context(patch(f"services.points_config_service.{name}", new=mock))
+            stack.enter_context(patch(f"leaguebot.results.services.points_config_service.{name}", new=mock))
         yield mocks
 
 
@@ -180,7 +180,7 @@ def _season_service(**overrides):
     mocks.update(overrides)
     with ExitStack() as stack:
         for name, mock in mocks.items():
-            stack.enter_context(patch(f"services.season_points_service.{name}", new=mock))
+            stack.enter_context(patch(f"leaguebot.results.services.season_points_service.{name}", new=mock))
         yield mocks
 
 

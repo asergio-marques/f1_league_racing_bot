@@ -105,7 +105,7 @@ def test_internal_is_refused_when_src_changed():
 @pytest.mark.parametrize(
     "path",
     [
-        "src/bot.py",
+        "src/leaguebot/__main__.py",
         "resources/defaults/templates/calendar.svg",
         "docs/how-to/configuring-the-core-bot.md",
         "README.md",

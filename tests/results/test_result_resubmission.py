@@ -42,13 +42,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     ResubmissionCancelView,
     enter_resubmit_flow,
 )
@@ -178,7 +178,7 @@ async def _run(state, interaction):
     here is half of why issue #210 — a loop that raised on its first line — went unnoticed.
     """
     with patch(
-        "services.result_submission_service._resubmit_collection_task",
+        "leaguebot.results.services.result_submission_service._resubmit_collection_task",
         new=AsyncMock(return_value=None),
     ):
         await enter_resubmit_flow(interaction, state)
@@ -215,7 +215,7 @@ def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
 
 
 def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
-    from services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.penalty_wizard import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER_A, driver_profile_id=31, attendance_id=41,
@@ -484,7 +484,7 @@ async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path
     interaction = _interaction()
 
     with patch(
-        "services.result_submission_service._resubmit_collection_task", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service._resubmit_collection_task", new=AsyncMock()
     ) as task:
         await enter_resubmit_flow(interaction, state)
 

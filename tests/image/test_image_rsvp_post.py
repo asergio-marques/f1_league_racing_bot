@@ -22,8 +22,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import rsvp_service  # noqa: E402
-from services.image_rsvp_post import rsvp_enabled, try_attach  # noqa: E402
+from leaguebot.attendance.services import rsvp_service  # noqa: E402
+from leaguebot.image.services.image_rsvp_post import rsvp_enabled, try_attach  # noqa: E402
 
 _SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -156,7 +156,7 @@ def test_the_button_view_reaches_no_image_module():
 
 
 def test_the_generation_has_exactly_one_call_site_in_the_whole_module():
-    source = _SRC.joinpath("services", "rsvp_service.py").read_text(encoding="utf-8")
+    source = _SRC.joinpath("leaguebot", "attendance", "services", "rsvp_service.py").read_text(encoding="utf-8")
     assert source.count("try_attach(") == 1
     assert source.count("_checkin_attachment(") == 2  # its definition and its one call
 

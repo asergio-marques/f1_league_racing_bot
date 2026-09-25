@@ -35,9 +35,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.bot_cog import BotCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4242
@@ -305,7 +305,7 @@ async def test_a_lost_race_to_another_server_names_the_other_server(tmp_path):
 
 async def test_save_server_config_will_not_overwrite_an_existing_row(tmp_path):
     """The insert-only contract, at the layer that enforces it."""
-    from models.server_config import ServerConfig
+    from leaguebot.core.models.server_config import ServerConfig
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -326,7 +326,7 @@ async def test_save_server_config_will_not_overwrite_an_existing_row(tmp_path):
 
 async def test_save_server_config_will_not_claim_a_second_server(tmp_path):
     """Issue #244: one bot serves one league, and the first server set up is the league's."""
-    from models.server_config import ServerConfig
+    from leaguebot.core.models.server_config import ServerConfig
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -586,8 +586,8 @@ def test_no_core_command_is_bound_to_the_interaction_channel(attribute):
     is asserted rather than the number of decorators: counting them said the same thing only
     for as long as the guards came in pairs, and said nothing about which guards they were.
     """
-    from cogs.bot_cog import BotCog as Cog
-    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
+    from leaguebot.core.cogs.bot_cog import BotCog as Cog
+    from leaguebot.core.utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
 
     callback = getattr(Cog, attribute).callback
     assert getattr(callback, TIER_ATTRIBUTE) == LEAGUE_ADMIN
@@ -608,7 +608,7 @@ def test_bot_init_requires_the_league_admin_role():
     somebody noticed. Asking for it up front is what stops that, and making the parameter
     optional again would quietly undo it.
     """
-    from cogs.bot_cog import BotCog as Cog
+    from leaguebot.core.cogs.bot_cog import BotCog as Cog
 
     parameter = next(
         p for p in Cog.handle_bot_init.parameters if p.name == "league_admin_role"
@@ -617,7 +617,7 @@ def test_bot_init_requires_the_league_admin_role():
 
 
 async def test_save_server_config_persists_the_league_admin_role(tmp_path):
-    from models.server_config import ServerConfig
+    from leaguebot.core.models.server_config import ServerConfig
 
     db_path = await _make_db(tmp_path)
     service = ConfigService(db_path)
@@ -678,8 +678,8 @@ def _deferred(interaction: MagicMock) -> MagicMock:
 
 def test_bot_pack_is_a_league_admin_s_command_in_the_interaction_channel():
     """It releases the settings rather than repairing them, so it takes no setup exemption."""
-    from cogs.bot_cog import BotCog as Cog
-    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
+    from leaguebot.core.cogs.bot_cog import BotCog as Cog
+    from leaguebot.core.utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_ADMIN, TIER_ATTRIBUTE
 
     callback = Cog.handle_pack.callback
     assert getattr(callback, TIER_ATTRIBUTE) == LEAGUE_ADMIN
@@ -745,7 +745,7 @@ async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
 
 
 async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypatch):
-    from services import pack_service
+    from leaguebot.core.services import pack_service
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -809,7 +809,7 @@ async def _run(cog, interaction, confirm="CONFIRM"):
 
 
 def test_bot_factory_reset_is_the_server_owner_s_from_any_channel():
-    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, SERVER_OWNER, TIER_ATTRIBUTE
+    from leaguebot.core.utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, SERVER_OWNER, TIER_ATTRIBUTE
 
     callback = BotCog.handle_factory_reset.callback
     assert getattr(callback, TIER_ATTRIBUTE) == SERVER_OWNER
@@ -844,7 +844,7 @@ async def test_bot_factory_reset_without_the_word_changes_nothing(tmp_path):
 
 
 async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monkeypatch):
-    from services import backup_service, factory_reset_service
+    from leaguebot.core.services import backup_service, factory_reset_service
 
     def fail(*_args, **_kwargs):
         raise backup_service.BackupError("the disk is full")
@@ -899,7 +899,7 @@ async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_pat
 
 
 async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatch):
-    from services import factory_reset_service
+    from leaguebot.core.services import factory_reset_service
 
     async def broken(*_args, **_kwargs):
         raise RuntimeError("gateway lost")

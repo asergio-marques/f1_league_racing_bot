@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations  # noqa: E402
 
 
 class _Interaction:
@@ -91,7 +91,7 @@ async def test_a_database_failure_offers_no_choices_rather_than_breaking_the_com
 
 async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
     """The deadline applies here too — a late answer is worse than an empty one."""
-    import services.track_service as track_service
+    import leaguebot.core.services.track_service as track_service
 
     async def _hang(_db):
         await asyncio.sleep(30)

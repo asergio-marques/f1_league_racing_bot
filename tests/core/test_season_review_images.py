@@ -26,7 +26,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import _ReviewPoster  # noqa: E402
+from leaguebot.core.cogs.season_cog import _ReviewPoster  # noqa: E402
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
@@ -35,7 +35,7 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 
 
 def _cog(bot=None):
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot if bot is not None else MagicMock()
@@ -87,8 +87,8 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
 
 
 async def test_the_lineup_aspect_being_off_leaves_the_text_to_the_caller(monkeypatch):
-    from cogs.season_cog import REVIEW_IMAGE_TEXT
-    import services.image_lineup_post as lineup_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_TEXT
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=False))
     interaction = _interaction()
@@ -100,8 +100,8 @@ async def test_the_lineup_aspect_being_off_leaves_the_text_to_the_caller(monkeyp
 
 
 async def test_a_drawn_lineup_is_posted_and_the_caller_posts_no_text(monkeypatch, tmp_path):
-    from cogs.season_cog import REVIEW_IMAGE_DREW
-    import services.image_lineup_post as lineup_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_DREW
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     png = _png(tmp_path)
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
@@ -124,7 +124,7 @@ async def test_a_drawn_lineup_is_posted_and_the_caller_posts_no_text(monkeypatch
 async def test_a_lineup_drawn_here_obtains_missing_portraits_first(monkeypatch, tmp_path):
     """The review is judged on its drawing, so a driver seated since the last daily update
     is fetched before it is made, whichever trigger the league chose (#407)."""
-    import services.image_lineup_post as lineup_post
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     render = AsyncMock(return_value=_outcome(_png(tmp_path)))
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
@@ -137,8 +137,8 @@ async def test_a_lineup_drawn_here_obtains_missing_portraits_first(monkeypatch, 
 
 async def test_a_lineup_that_would_not_draw_reports_the_fault(monkeypatch):
     """The manager is told, and the caller is told to fall back to its text."""
-    from cogs.season_cog import REVIEW_IMAGE_FAULT
-    import services.image_lineup_post as lineup_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_FAULT
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
     monkeypatch.setattr(
@@ -165,8 +165,8 @@ async def test_a_lineup_that_would_not_draw_reports_the_fault(monkeypatch):
 
 
 async def test_the_calendar_aspect_being_off_leaves_the_text_to_the_caller(monkeypatch):
-    from cogs.season_cog import REVIEW_IMAGE_TEXT
-    import services.calendar_post_service as calendar_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_TEXT
+    import leaguebot.core.services.calendar_post_service as calendar_post
 
     monkeypatch.setattr(
         calendar_post, "image_calendar_wanted", AsyncMock(return_value=False)
@@ -182,8 +182,8 @@ async def test_the_calendar_aspect_being_off_leaves_the_text_to_the_caller(monke
 async def test_a_drawn_calendar_is_posted_and_the_caller_posts_no_text(
     monkeypatch, tmp_path
 ):
-    from cogs.season_cog import REVIEW_IMAGE_DREW
-    import services.calendar_post_service as calendar_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_DREW
+    import leaguebot.core.services.calendar_post_service as calendar_post
 
     png = _png(tmp_path)
     monkeypatch.setattr(
@@ -206,8 +206,8 @@ async def test_a_drawn_calendar_is_posted_and_the_caller_posts_no_text(
 
 
 async def test_a_calendar_that_would_not_draw_reports_the_fault(monkeypatch):
-    from cogs.season_cog import REVIEW_IMAGE_FAULT
-    import services.calendar_post_service as calendar_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_FAULT
+    import leaguebot.core.services.calendar_post_service as calendar_post
 
     monkeypatch.setattr(
         calendar_post, "image_calendar_wanted", AsyncMock(return_value=True)
@@ -238,7 +238,7 @@ async def test_a_calendar_that_would_not_draw_reports_the_fault(monkeypatch):
 def test_calendar_render_for_command_is_not_the_calendar_of_record():
     """It must post to no channel and write no message id — that is why it exists."""
     source = _function_source(
-        SRC / "services" / "calendar_post_service.py", "render_for_command", code_only=True
+        SRC / "leaguebot" / "core" / "services" / "calendar_post_service.py", "render_for_command", code_only=True
     )
     assert "calendar_message_id" not in source
     assert "replace_calendar_message" not in source
@@ -250,7 +250,7 @@ def test_calendar_render_for_command_is_not_the_calendar_of_record():
 
 def test_the_review_posts_a_graphic_instead_of_its_text_never_beside_it():
     """Reverses 038 FR-027: the section's text is sent only where no graphic was drawn."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
 
     for state_call, text_send in (
         ("_post_review_calendar_image", "join(cal_lines)"),
@@ -266,7 +266,7 @@ def test_the_review_posts_a_graphic_instead_of_its_text_never_beside_it():
 
 def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
     """A season approved on a broken template would post the fault to the league."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
 
     # A list of reasons rather than a flag: an undrawable graphic and a fault of the image
     # configuration — the portrait settings among them — both withhold the button, and they
@@ -322,7 +322,7 @@ def test_a_graphic_that_would_not_draw_withholds_the_approve_button():
 
 def test_the_roleless_team_warning_survives_the_graphic():
     """A review finding the picture cannot show must be posted either way."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
     block = source[source.index("_post_review_lineup_image"):]
     drew, _, textual = block.partition("if lineup_state == REVIEW_IMAGE_DREW:")
     assert "role_warning" in textual.split("else:")[0]
@@ -335,7 +335,7 @@ def test_the_calendar_date_faults_survive_the_graphic():
     which of them have gone by, so the finding has to be posted whichever form the calendar
     took. Posted only where there is one: a healthy division gets no extra message.
     """
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
     block = source[source.index("_post_review_calendar_image"):]
 
     assert "fault_lines = self._calendar_fault_lines(" in block
@@ -350,7 +350,7 @@ def test_the_calendar_date_faults_survive_the_graphic():
 
 def test_the_approval_windows_are_read_once_for_the_whole_season():
     """Not per division. Eight divisions must not pay eight times for two configs."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
 
     assert source.count("await self._approval_windows(") == 1
     setup, _, loop = source.partition("for div in db_divisions:")
@@ -380,8 +380,8 @@ async def test_every_graphic_is_drawn_before_any_division_block_is_posted(
     monkeypatch, tmp_path
 ):
     """The point of the change: the review stops dribbling out one render at a time."""
-    import services.calendar_post_service as cps
-    import services.image_lineup_post as lineup_post
+    import leaguebot.core.services.calendar_post_service as cps
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     drawn = []
 
@@ -417,8 +417,8 @@ async def test_every_graphic_is_drawn_before_any_division_block_is_posted(
 
 async def test_an_aspect_that_is_off_is_not_pre_rendered(monkeypatch, tmp_path):
     """A key left absent is what tells the posting helper to decide for itself."""
-    import services.calendar_post_service as cps
-    import services.image_lineup_post as lineup_post
+    import leaguebot.core.services.calendar_post_service as cps
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
     monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
@@ -435,8 +435,8 @@ async def test_an_aspect_that_is_off_is_not_pre_rendered(monkeypatch, tmp_path):
 
 
 async def test_both_aspects_off_draws_nothing_and_reads_no_tracks(monkeypatch):
-    import services.calendar_post_service as cps
-    import services.image_lineup_post as lineup_post
+    import leaguebot.core.services.calendar_post_service as cps
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     tracks = AsyncMock(return_value={})
     monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=False))
@@ -453,8 +453,8 @@ async def test_both_aspects_off_draws_nothing_and_reads_no_tracks(monkeypatch):
 
 async def test_a_pre_render_that_raises_leaves_the_key_absent(monkeypatch, tmp_path):
     """The posting helper draws it again, where the message to the manager already lives."""
-    import services.calendar_post_service as cps
-    import services.image_lineup_post as lineup_post
+    import leaguebot.core.services.calendar_post_service as cps
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=True))
     monkeypatch.setattr(cps, "tracks_by_name", AsyncMock(return_value={}))
@@ -476,7 +476,7 @@ async def test_a_pre_render_that_raises_leaves_the_key_absent(monkeypatch, tmp_p
 
 async def test_a_gate_that_raises_pre_renders_nothing(monkeypatch):
     """A review must survive a fault in the gates, as the calendar's own gate does."""
-    import services.calendar_post_service as cps
+    import leaguebot.core.services.calendar_post_service as cps
 
     monkeypatch.setattr(
         cps, "image_calendar_wanted", AsyncMock(side_effect=RuntimeError("db down"))
@@ -498,10 +498,10 @@ async def test_the_budget_stops_the_pre_render_rather_than_the_review(
     machine's memory rather than merely its time. The guard costs speed, never
     correctness — an absent key is exactly what an aspect being off already produces.
     """
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
-    import services.calendar_post_service as cps
-    import services.image_lineup_post as lineup_post
+    import leaguebot.core.services.calendar_post_service as cps
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     big = tmp_path / "big.png"
     big.write_bytes(b"\x00" * 4096)
@@ -529,8 +529,8 @@ async def test_the_budget_stops_the_pre_render_rather_than_the_review(
 async def test_a_prepared_graphic_is_posted_without_being_drawn_again(
     monkeypatch, tmp_path
 ):
-    from cogs.season_cog import REVIEW_IMAGE_DREW
-    import services.image_lineup_post as lineup_post
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_DREW
+    import leaguebot.image.services.image_lineup_post as lineup_post
 
     render = AsyncMock()
     monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
@@ -549,8 +549,8 @@ async def test_a_prepared_graphic_is_posted_without_being_drawn_again(
 async def test_a_prepared_calendar_is_posted_without_being_drawn_again(
     monkeypatch, tmp_path
 ):
-    from cogs.season_cog import REVIEW_IMAGE_DREW
-    import services.calendar_post_service as cps
+    from leaguebot.core.cogs.season_cog import REVIEW_IMAGE_DREW
+    import leaguebot.core.services.calendar_post_service as cps
 
     render = AsyncMock()
     monkeypatch.setattr(cps, "image_calendar_wanted", AsyncMock(return_value=True))
@@ -568,7 +568,7 @@ async def test_a_prepared_calendar_is_posted_without_being_drawn_again(
 
 def test_nothing_pre_rendered_survives_the_review():
     """A file held for posting and never posted must not be left on a tmpfs."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
 
     assert "_prerender_review_images" in source
     assert "finally:" in source
@@ -580,9 +580,9 @@ def test_nothing_pre_rendered_survives_the_review():
 
 
 def test_the_discard_removes_every_graphic_still_held(tmp_path, monkeypatch):
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
-    import services.image_render_service as render_service
+    import leaguebot.image.services.image_render_service as render_service
 
     removed = []
     monkeypatch.setattr(
@@ -601,7 +601,7 @@ def test_the_discard_removes_every_graphic_still_held(tmp_path, monkeypatch):
 
 def test_the_posting_loop_pops_what_it_posts():
     """What the discard finds is what was never sent, and only that."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
 
     assert 'prepared.pop((div.id, "calendar"), None)' in source
     assert 'prepared.pop((div.id, "lineup"), None)' in source
@@ -618,7 +618,7 @@ def test_the_posting_loop_pops_what_it_posts():
 
 def test_the_approval_draws_nothing_itself():
     """The render pass is gone, and must not creep back in."""
-    approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve", code_only=True)
+    approve = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve", code_only=True)
 
     for drawn in ("_undrawable_graphics", "render_for_command", "render_lineup"):
         assert drawn not in approve, f"{drawn} draws at approval; the review does that"
@@ -626,7 +626,7 @@ def test_the_approval_draws_nothing_itself():
 
 def test_approval_refuses_before_it_commits_anything():
     """The fingerprint stands where the render stood: ahead of everything committed."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
 
     gate_at = source.index("differs_from")
     assert source.index("_may_approve") < gate_at, (
@@ -639,7 +639,7 @@ def test_approval_refuses_before_it_commits_anything():
 
 def test_a_changed_season_approves_nothing():
     """The refusal returns rather than merely reporting."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "approve")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
 
     branch = source[source.index("if changed:") : source.index("await self._cog._do_approve")]
     assert "return" in branch
@@ -651,15 +651,15 @@ def test_a_changed_season_approves_nothing():
 
 def test_the_review_and_the_approval_read_the_same_evaluation():
     """Both must refuse on the same fault, or a manager can commit past the review."""
-    review = _function_source(SRC / "cogs" / "season_cog.py", "season_review")
-    approve = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+    review = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
+    approve = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
 
     assert "approval_blockers" in review
     # The review still withholds its button on a graphic that will not draw. The approval
     # no longer re-draws to find that out — it refuses unless the season still fingerprints
     # as the one the review described, which is the same evidence reached more cheaply.
     assert "differs_from" in _function_source(
-        SRC / "cogs" / "season_cog.py", "approve"
+        SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve"
     )
 
     # The image configuration blocks on both surfaces too, and through one helper so that
@@ -675,7 +675,7 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
 def _portrait_cog(**config):
     from unittest.mock import AsyncMock, MagicMock
     from types import SimpleNamespace
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     values = {
         "use_pfp": False,
@@ -768,7 +768,7 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
     refusal must stop the approval rather than report and carry on. Driven, not read, in
     `test_do_approve_gates.py`."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "_do_approve")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
 
     branch = source[source.index("if image_faults:"):]
     branch = branch[: branch.index("snapshot_configs_to_season")]
@@ -788,7 +788,7 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
 # and anyone who can read the channel can see the button they post.
 
 
-from cogs.season_cog import _ApproveView  # noqa: E402
+from leaguebot.core.cogs.season_cog import _ApproveView  # noqa: E402
 
 REVIEWER = 4242
 
@@ -797,7 +797,7 @@ ADMIN_ROLE = 444
 
 
 def _approve_view(reviewer_id: int = REVIEWER, *, admin_role: int | None = ADMIN_ROLE):
-    from models.server_config import ServerConfig
+    from leaguebot.core.models.server_config import ServerConfig
 
     cog = MagicMock()
     cog._do_approve = AsyncMock()
@@ -901,7 +901,7 @@ async def test_the_access_check_runs_before_the_fingerprint():
 
 async def test_the_view_stops_listening_on_the_window():
     """discord.py's own timeout is what fires the deletion, so it must be the window."""
-    from cogs.season_cog import APPROVAL_WINDOW_SECONDS
+    from leaguebot.core.cogs.season_cog import APPROVAL_WINDOW_SECONDS
 
     view, _cog = _approve_view()
 
@@ -953,7 +953,7 @@ async def test_a_prompt_already_gone_still_posts_the_notice():
 
 async def test_a_changed_season_expires_the_prompt_rather_than_leaving_it():
     """The report is stale either way, so the question must not stand."""
-    from services.season_fingerprint_service import SeasonFingerprint
+    from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
 
     view, cog, message = _bound_view()
     view._fingerprint = SeasonFingerprint({"season": "abc"})
@@ -962,7 +962,7 @@ async def test_a_changed_season_expires_the_prompt_rather_than_leaving_it():
     async def _changed(*_args, **_kwargs):
         return SeasonFingerprint({"season": "def"})
 
-    import services.season_fingerprint_service as _sfs
+    import leaguebot.core.services.season_fingerprint_service as _sfs
 
     original = _sfs.take_fingerprint
     _sfs.take_fingerprint = _changed
@@ -1080,7 +1080,7 @@ async def test_the_poster_passes_a_file_and_a_view_on():
 def test_nothing_in_a_review_sends_around_the_poster():
     """A message sent past the poster is not kept, and approving the review would leave it
     standing. Each review, and each helper it posts through, sends through the poster alone."""
-    tree = ast.parse((SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8"))
+    tree = ast.parse((SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8"))
     reviews = {
         "season_review",
         "_review_mid_season_placements",
@@ -1105,7 +1105,7 @@ def test_nothing_in_a_review_sends_around_the_poster():
 
 def test_the_prompt_is_public_and_says_who_may_answer():
     """Public so a reviewer who cannot approve can put the question to someone who can."""
-    source = _function_source(SRC / "cogs" / "season_cog.py", "_post_approval_prompt")
+    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_post_approval_prompt")
 
     assert "ephemeral=False" in source
     # A public send through the poster waits for the message and hands it back, so the
@@ -1137,8 +1137,8 @@ def test_a_league_manager_may_run_the_review():
     out of the source: the names have already changed once, and a test that greps for them
     reports a rename as a permission change.
     """
-    from cogs.season_cog import SeasonCog
-    from utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
 
     assert getattr(SeasonCog.season_review.callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER
 
@@ -1149,6 +1149,6 @@ def test_the_approve_command_is_withdrawn():
     A command that could be run without a review let a manager commit a season they had
     not looked at, which is the whole thing the window above exists to prevent.
     """
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     assert "approve" not in {c.name for c in SeasonCog.season.commands}

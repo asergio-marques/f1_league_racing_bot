@@ -13,10 +13,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.scheduler_service import SchedulerService
-from services.season_service import SeasonService
-from services.test_mode_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,

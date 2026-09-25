@@ -9,7 +9,7 @@ from __future__ import annotations
 import aiosqlite
 import pytest
 
-from db.database import sole_row
+from leaguebot.core.db.database import sole_row
 
 
 async def test_an_aggregate_returns_its_row(tmp_path):

@@ -13,8 +13,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from models.image_constants import FALLBACK_ASSET_NAME  # noqa: E402
-from utils.asset_resolver import (  # noqa: E402
+from leaguebot.image.models.image_constants import FALLBACK_ASSET_NAME  # noqa: E402
+from leaguebot.image.utils.asset_resolver import (  # noqa: E402
     AssetOutcome,
     filename_for,
     has_fallback,
@@ -91,7 +91,7 @@ def no_packaged_tier(tmp_path, monkeypatch):
     *fatal* outcome must therefore put the packaged tier out of view, or it will quietly
     be testing the third path instead of the fourth.
     """
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
     empty = tmp_path / "no_project_root"
     empty.mkdir()
@@ -291,9 +291,9 @@ def test_a_team_name_beginning_with_a_digit_resolves_to_a_valid_filename(flags):
 # T034 / T037 / T038 — resolution wired into the fill pipeline
 # ══════════════════════════════════════════════════════════════════════════
 
-from models.image_catalogues import FieldCatalogue  # noqa: E402
-from utils.svg_document import parse_svg_bytes  # noqa: E402
-from utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.models.image_catalogues import FieldCatalogue  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
 
 TEMPLATE = (
     '<svg xmlns="http://www.w3.org/2000/svg" '
@@ -431,7 +431,7 @@ def test_an_unknown_image_field_is_reported(flags):
 # An absolute Windows path is not a URI. Inkscape resolves it to nothing and draws a
 # broken-image icon — which a browser and a structural assertion both miss.
 
-from utils.svg_fill import _as_href  # noqa: E402
+from leaguebot.image.utils.svg_fill import _as_href  # noqa: E402
 
 
 def test_an_absolute_path_becomes_a_file_uri(tmp_path):
@@ -467,7 +467,7 @@ def test_a_relative_reference_is_anchored_to_the_project_root(monkeypatch, tmp_p
     is stored relative to it, and a template pointing at a file beside itself is pointing
     inside it, since that is where templates live.
     """
-    import utils.paths as paths
+    import leaguebot.core.utils.paths as paths
 
     monkeypatch.setattr(paths, "PROJECT_ROOT", tmp_path)
 
@@ -507,7 +507,7 @@ def test_a_file_uri_becomes_the_path_it_names(uri, expected):
     Windows-shaped URI, and delegating to `urllib.request.url2pathname` would have left
     the same hole, since it dispatches on the running platform.
     """
-    from utils.svg_fill import _path_from_file_uri
+    from leaguebot.image.utils.svg_fill import _path_from_file_uri
 
     assert _path_from_file_uri(uri).as_posix() == expected
 
@@ -518,7 +518,7 @@ def test_a_resolved_asset_round_trips_through_its_uri(tmp_path):
     The property the 31 failures actually violated: every asset was resolved correctly,
     turned into a URI correctly, and then not found again.
     """
-    from utils.svg_fill import _as_href, _path_from_file_uri
+    from leaguebot.image.utils.svg_fill import _as_href, _path_from_file_uri
 
     asset = tmp_path / "british.svg"
     asset.write_bytes(SVG)
@@ -536,7 +536,7 @@ def test_a_template_authored_link_to_a_missing_file_is_fatal(tmp_path):
     the module passes — it is not a field, so nothing resolves it, nothing empties it and
     nothing reports it — and the league gets a hole in the picture with no explanation.
     """
-    from utils.svg_fill import FillSpec, fill
+    from leaguebot.image.utils.svg_fill import FillSpec, fill
 
     root = parse_svg_bytes(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
@@ -556,7 +556,7 @@ def test_a_template_authored_relative_link_is_anchored_not_merely_checked():
     link the rasteriser then cannot follow, certifying the very fault it exists to catch.
     It must be rewritten absolute and left that way on the element.
     """
-    from utils.svg_fill import FillSpec, fill
+    from leaguebot.image.utils.svg_fill import FillSpec, fill
 
     root = parse_svg_bytes(
         b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
@@ -573,7 +573,7 @@ def test_a_template_authored_relative_link_is_anchored_not_merely_checked():
 
 def test_a_template_authored_link_that_resolves_is_not_reported(tmp_path):
     """The check must not cost a league a template that was always correct."""
-    from utils.svg_fill import FillSpec, fill
+    from leaguebot.image.utils.svg_fill import FillSpec, fill
 
     present = tmp_path / "badge.svg"
     present.write_bytes(SVG)
@@ -587,7 +587,7 @@ def test_a_template_authored_link_that_resolves_is_not_reported(tmp_path):
 
 def test_a_data_uri_is_never_checked_against_the_filesystem():
     """It carries its own bytes; there is no file to be missing."""
-    from utils.svg_fill import FillSpec, fill
+    from leaguebot.image.utils.svg_fill import FillSpec, fill
 
     root = parse_svg_bytes(
         b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
@@ -612,9 +612,9 @@ def test_a_relative_href_draws_exactly_what_a_missing_one_draws(tmp_path):
     """
     import subprocess
 
-    from models.image_constants import packaged_directory_for
-    from services.image_render_service import find_converter
-    from utils.paths import PROJECT_ROOT
+    from leaguebot.image.models.image_constants import packaged_directory_for
+    from leaguebot.image.services.image_render_service import find_converter
+    from leaguebot.core.utils.paths import PROJECT_ROOT
 
     asset = PROJECT_ROOT / packaged_directory_for("flag") / "other.svg"
     relative = asset.relative_to(PROJECT_ROOT).as_posix()
@@ -696,7 +696,7 @@ def test_every_asset_class_is_either_held_to_one_shape_or_allowed_to_stretch():
     keeps the loosening honest: a ninth class cannot fall out of the check by omission, only by
     someone writing down why it should.
     """
-    from models.image_constants import (
+    from leaguebot.image.models.image_constants import (
         ASSET_CLASS_DIRECTORIES,
         RATIO_CONSISTENT_ASSET_CLASSES,
         STRETCHABLE_ASSET_CLASSES,
@@ -733,7 +733,7 @@ def test_a_shapeless_class_may_still_not_stretch():
     `STRETCHABLE_ASSET_CLASSES`, and a shapeless class is outside it. A league's crest
     letterboxes into whatever box its template gives it; only which box is free.
     """
-    from models.image_constants import STRETCHABLE_ASSET_CLASSES
+    from leaguebot.image.models.image_constants import STRETCHABLE_ASSET_CLASSES
 
     for asset_class in SHAPELESS_ASSET_CLASSES:
         assert asset_class not in STRETCHABLE_ASSET_CLASSES, asset_class
@@ -746,7 +746,7 @@ def test_the_marker_class_is_the_one_left_unchecked():
     and the attendance marks, whose cells are 52 x 22, 52 x 18 and 36 x 24. The same fact
     that gives the class two fallbacks denies it one shape.
     """
-    from models.image_constants import (
+    from leaguebot.image.models.image_constants import (
         RATIO_CONSISTENT_ASSET_CLASSES,
         STRETCHABLE_ASSET_CLASSES,
     )
@@ -762,7 +762,7 @@ def test_our_own_artwork_records_a_shape_for_every_class():
     compares a slot with, so a class missing from it would ship unverified artwork and raise
     no notice for it either.
     """
-    from models.image_constants import ASSET_CLASS_DIRECTORIES, PACKAGED_ASSET_ASPECTS
+    from leaguebot.image.models.image_constants import ASSET_CLASS_DIRECTORIES, PACKAGED_ASSET_ASPECTS
 
     # A shapeless class is exempt, and for the same reason it is exempt from the check above:
     # what we ship for `division_logo` is a file with nothing drawn in it, which has no shape
@@ -780,7 +780,7 @@ def test_our_own_artwork_records_a_shape_for_every_class():
 
 def test_the_flag_artwork_is_three_by_two_and_the_track_artwork_square():
     """The two deliberately differ, and nothing requires two classes to agree."""
-    from models.image_constants import PACKAGED_ASSET_ASPECTS
+    from leaguebot.image.models.image_constants import PACKAGED_ASSET_ASPECTS
 
     assert PACKAGED_ASSET_ASPECTS["flag"] == pytest.approx(1.5)
     assert PACKAGED_ASSET_ASPECTS["track"] == pytest.approx(1.0)
@@ -788,7 +788,7 @@ def test_the_flag_artwork_is_three_by_two_and_the_track_artwork_square():
 
 
 def test_the_aspect_tolerance_admits_authoring_noise_and_catches_a_square_flag():
-    from models.image_constants import ASSET_ASPECT_TOLERANCE, PACKAGED_ASSET_ASPECTS
+    from leaguebot.image.models.image_constants import ASSET_ASPECT_TOLERANCE, PACKAGED_ASSET_ASPECTS
 
     flag = PACKAGED_ASSET_ASPECTS["flag"]
     authored = 120.00001 / 80          # what Inkscape actually writes
@@ -806,8 +806,8 @@ def test_the_position_change_data_are_the_standings_services_own():
     """Restated in `image_constants` to keep a model out of a service; held here so the two
     cannot drift. A direction added there and not here would be routed to the mark fallback
     and drawn stretched."""
-    from models.image_constants import POSITION_CHANGE_DATA
-    from services.standings_service import (
+    from leaguebot.image.models.image_constants import POSITION_CHANGE_DATA
+    from leaguebot.results.services.standings_service import (
         MOVEMENT_GAINED,
         MOVEMENT_LOST,
         MOVEMENT_UNCHANGED,
@@ -830,7 +830,7 @@ def test_the_position_change_data_are_the_standings_services_own():
     ],
 )
 def test_a_marker_datum_is_routed_to_the_fallback_of_its_own_shape(asset_class, slug, first):
-    from models.image_constants import fallback_names_for
+    from leaguebot.image.models.image_constants import fallback_names_for
 
     names = fallback_names_for(asset_class, slug)
     assert names[0] == first
@@ -841,7 +841,7 @@ def test_a_marker_datum_is_routed_to_the_fallback_of_its_own_shape(asset_class, 
 
 @pytest.mark.parametrize("asset_class", ["flag", "team", "track", "driver", "weather", "tyre"])
 def test_every_other_class_asks_for_the_generic_fallback_alone(asset_class):
-    from models.image_constants import fallback_names_for
+    from leaguebot.image.models.image_constants import fallback_names_for
 
     assert fallback_names_for(asset_class, "anything") == ("fallback.svg",)
 
@@ -855,7 +855,7 @@ def test_a_leagues_own_arrow_fallback_is_not_drawn_for_a_missing_mark(tmp_path):
     52 x 22 cell. Named per shape, the arrow's fallback is simply not a candidate for `p1`,
     which falls through to the packaged `race_p1.svg` as it should.
     """
-    from models.image_constants import fallback_names_for
+    from leaguebot.image.models.image_constants import fallback_names_for
 
     league, packaged = tmp_path / "league", tmp_path / "packaged"
     league.mkdir()
@@ -876,7 +876,7 @@ def test_a_leagues_own_arrow_fallback_is_not_drawn_for_a_missing_mark(tmp_path):
 
 def test_a_leagues_own_mark_fallback_still_beats_the_packaged_tier(tmp_path):
     """The precedence that was there before is unchanged for a fallback of the right shape."""
-    from models.image_constants import fallback_names_for
+    from leaguebot.image.models.image_constants import fallback_names_for
 
     league, packaged = tmp_path / "league", tmp_path / "packaged"
     league.mkdir()
@@ -896,7 +896,7 @@ def test_a_leagues_own_mark_fallback_still_beats_the_packaged_tier(tmp_path):
 
 
 def test_the_generic_fallback_answers_a_league_that_supplied_only_that(tmp_path):
-    from models.image_constants import fallback_names_for
+    from leaguebot.image.models.image_constants import fallback_names_for
 
     league = tmp_path / "league"
     league.mkdir()
@@ -911,7 +911,7 @@ def test_the_generic_fallback_answers_a_league_that_supplied_only_that(tmp_path)
 
 
 def test_the_specific_fallback_is_preferred_to_the_generic_one_in_the_same_folder(tmp_path):
-    from models.image_constants import fallback_names_for
+    from leaguebot.image.models.image_constants import fallback_names_for
 
     league = tmp_path / "league"
     league.mkdir()
@@ -936,7 +936,7 @@ def test_a_wrapped_portrait_resolves_as_an_ordinary_found_asset(tmp_path):
     `ASSET_EXTENSION` stays single-valued and this lookup stays one computed name and one
     existence test. If this ever fails, the wrapper has stopped being the right shape.
     """
-    from services.driver_portrait_service import portrait_path, wrap_png
+    from leaguebot.image.services.driver_portrait_service import portrait_path, wrap_png
 
     drivers = tmp_path / "drivers"
     drivers.mkdir()

@@ -13,8 +13,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.attendance_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.attendance_service import (
     record_attendance_from_results,
     record_attendance_from_results_full_recompute,
     distribute_attendance_points,
@@ -731,7 +731,7 @@ async def test_a_failed_propagation_leaves_no_attendance_points_behind(tmp_path,
     """
     from unittest.mock import AsyncMock
 
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
     assert await _awarded(db_file, round_ids[0]) is None
@@ -772,7 +772,7 @@ async def test_a_whole_recalculation_still_lands(tmp_path, monkeypatch):
     """The other half of the same rule: nothing was broken making it atomic."""
     from unittest.mock import AsyncMock
 
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 
@@ -804,7 +804,7 @@ async def test_distribute_attendance_points_still_commits_on_its_own(tmp_path):
 @pytest.mark.asyncio
 async def test_a_shared_connection_is_not_committed_by_the_callee(tmp_path):
     """A function handed a connection is one step of somebody else's transaction."""
-    from db.database import get_connection
+    from leaguebot.core.db.database import get_connection
 
     db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
 

@@ -17,14 +17,14 @@ from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utils.svg_document import (  # noqa: E402
+from leaguebot.image.utils.svg_document import (  # noqa: E402
     SVG_NS,
     FieldIndex,
     computed_style,
     parse_svg_bytes,
     stylesheet,
 )
-from utils.svg_palette import (  # noqa: E402
+from leaguebot.image.utils.svg_palette import (  # noqa: E402
     InvalidSlot,
     apply_palette,
     colour_slots,

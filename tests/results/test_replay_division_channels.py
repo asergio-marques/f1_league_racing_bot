@@ -28,7 +28,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.results_post_service import replay_division_channels  # noqa: E402
+from leaguebot.results.services.results_post_service import replay_division_channels  # noqa: E402
 
 DIVISION_ID = 91
 FROM_ROUND = 3
@@ -44,7 +44,7 @@ def _no_standing_banners():
     itself, inside this.
     """
     with patch(
-        "services.verdict_announcement_service.banners_from_round",
+        "leaguebot.results.services.verdict_announcement_service.banners_from_round",
         new=AsyncMock(return_value=[]),
     ):
         yield
@@ -78,13 +78,13 @@ async def _replay(
         return list(verdict_faults or [])
 
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(side_effect=_results),
     ), patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(side_effect=_standings),
     ), patch(
-        "services.verdict_announcement_service.republish_verdicts_from_round",
+        "leaguebot.results.services.verdict_announcement_service.republish_verdicts_from_round",
         new=AsyncMock(side_effect=_verdicts),
     ):
         outcome = await replay_division_channels(
@@ -191,13 +191,13 @@ async def test_the_attendance_sheet_lands_between_the_standings_and_the_verdicts
         return []
 
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(side_effect=_results),
     ), patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(side_effect=_standings),
     ), patch(
-        "services.verdict_announcement_service.republish_verdicts_from_round",
+        "leaguebot.results.services.verdict_announcement_service.republish_verdicts_from_round",
         new=AsyncMock(side_effect=_verdicts),
     ):
         await replay_division_channels(
@@ -258,16 +258,16 @@ async def test_a_banner_posted_by_the_attendance_step_is_not_taken_down(tmp_path
         return []
 
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(return_value="ok"),
     ), patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(return_value="ok"),
     ), patch(
-        "services.verdict_announcement_service.banners_from_round",
+        "leaguebot.results.services.verdict_announcement_service.banners_from_round",
         new=AsyncMock(side_effect=_banners),
     ), patch(
-        "services.verdict_announcement_service.republish_verdicts_from_round",
+        "leaguebot.results.services.verdict_announcement_service.republish_verdicts_from_round",
         new=AsyncMock(side_effect=_verdicts),
     ):
         await replay_division_channels(
@@ -291,16 +291,16 @@ async def test_the_rebuild_says_whether_the_verdicts_were_replaced():
         return "ok"
 
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(side_effect=_results),
     ), patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(side_effect=_standings),
     ), patch(
-        "services.verdict_announcement_service.banners_from_round",
+        "leaguebot.results.services.verdict_announcement_service.banners_from_round",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.verdict_announcement_service.republish_verdicts_from_round",
+        "leaguebot.results.services.verdict_announcement_service.republish_verdicts_from_round",
         new=AsyncMock(side_effect=RuntimeError("gateway closed")),
     ):
         outcome = await replay_division_channels(
@@ -320,16 +320,16 @@ async def _rebuilds_round_three(*_a, rebuilt=None, **_kw):
 async def test_a_rebuild_that_announced_its_verdicts_says_so():
     """The counterpart: the rounds the republish rebuilt are carried back to the caller."""
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(return_value="ok"),
     ), patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(return_value="ok"),
     ), patch(
-        "services.verdict_announcement_service.banners_from_round",
+        "leaguebot.results.services.verdict_announcement_service.banners_from_round",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.verdict_announcement_service.republish_verdicts_from_round",
+        "leaguebot.results.services.verdict_announcement_service.republish_verdicts_from_round",
         new=AsyncMock(side_effect=_rebuilds_round_three),
     ):
         outcome = await replay_division_channels(

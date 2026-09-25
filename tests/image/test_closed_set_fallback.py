@@ -25,14 +25,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     FALLBACK_ASSET_NAME,
     is_closed_set_datum,
 )
-from utils.asset_resolver import AssetOutcome, normalise, resolve_asset  # noqa: E402
-from utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
-from utils.svg_document import parse_svg_bytes  # noqa: E402
-from utils.svg_fill import FillSpec, fill  # noqa: E402
+from leaguebot.image.utils.asset_resolver import AssetOutcome, normalise, resolve_asset  # noqa: E402
+from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, fill  # noqa: E402
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"/>'
 
@@ -140,11 +140,11 @@ def real_packaged_project_root(monkeypatch):
     """Point the packaged-tier lookup at this repository's own `resources/`.
 
     `_packaged_directory` in `svg_fill.py` resolves `resources/defaults/<class>` against
-    `utils.paths.PROJECT_ROOT`. The repository's real root already carries every closed-set
+    `leaguebot.core.utils.paths.PROJECT_ROOT`. The repository's real root already carries every closed-set
     file; pinning it here just keeps the test from depending on the directory a runner
     happens to be launched from.
     """
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
     project_root = Path(__file__).resolve().parents[2]
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", project_root, raising=False)

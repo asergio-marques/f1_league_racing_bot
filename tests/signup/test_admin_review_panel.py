@@ -37,13 +37,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import cogs.admin_review_cog as arc  # noqa: E402
-from cogs.admin_review_cog import (  # noqa: E402
+import leaguebot.signup.cogs.admin_review_cog as arc  # noqa: E402
+from leaguebot.signup.cogs.admin_review_cog import (  # noqa: E402
     AdminReviewCog,
     AdminReviewView,
     _PENDING_REASONS,
 )
-from models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
 
 SERVER_ID = 10308
 DRIVER_ID = "4242"

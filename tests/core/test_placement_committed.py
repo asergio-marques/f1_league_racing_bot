@@ -15,9 +15,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
-from tests.unit.test_placement_assign import (  # noqa: E402
+from leaguebot.core.db.database import get_connection  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
+from tests.core.test_placement_assign import (  # noqa: E402
     DIVISION_ID,
     PROFILE_ID,
     SEASON_ID,
@@ -185,8 +185,8 @@ async def test_a_committed_placement_is_refused_where_only_uncommitted_ones_may_
 async def test_the_placement_commands_are_refused_outside_the_placing_stages(command, stage_name):
     from types import SimpleNamespace
 
-    from cogs.driver_cog import DriverCog
-    from models.season import SeasonStage
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from leaguebot.core.models.season import SeasonStage
     from tests.support.undecorate import undecorate
 
     cog = DriverCog.__new__(DriverCog)

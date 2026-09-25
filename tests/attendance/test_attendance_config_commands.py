@@ -31,9 +31,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.attendance_cog import AttendanceCog  # noqa: E402
-from models.attendance import AttendanceConfig  # noqa: E402
-from services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog  # noqa: E402
+from leaguebot.attendance.models.attendance import AttendanceConfig  # noqa: E402
+from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
 
 SERVER_ID = 9119
 

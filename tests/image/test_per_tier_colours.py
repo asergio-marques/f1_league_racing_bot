@@ -15,15 +15,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_config_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_config_service import (  # noqa: E402
     FLAG_COLUMNS,
     PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,
     ImageConfigService,
     UnknownConfigField,
 )
-from utils.svg_palette import InvalidSlot  # noqa: E402
+from leaguebot.image.utils.svg_palette import InvalidSlot  # noqa: E402
 
 @pytest.fixture
 async def db_path(tmp_path):

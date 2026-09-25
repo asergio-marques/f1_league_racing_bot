@@ -34,7 +34,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.results_post_service import (  # noqa: E402
+from leaguebot.results.services.results_post_service import (  # noqa: E402
     _MSG_MAX,
     _delete_posting,
     _ids_json,
@@ -359,7 +359,7 @@ async def test_a_message_it_cannot_fetch_is_returned():
 async def test_clearing_standings_counts_what_went_and_returns_what_stayed(monkeypatch):
     """Both championships are cleared; the one that went is counted, the one refused is
     returned, and both ids are forgotten either way as before."""
-    import services.results_post_service as rps
+    import leaguebot.results.services.results_post_service as rps
 
     postings = {
         rps.STANDINGS_DRIVERS: ANCHOR_ID,

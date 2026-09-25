@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import cogs.season_cog as season_cog  # noqa: E402
-from cogs.season_cog import (  # noqa: E402
+import leaguebot.core.cogs.season_cog as season_cog  # noqa: E402
+from leaguebot.core.cogs.season_cog import (  # noqa: E402
     BulkRoundModal,
     PendingConfig,
     PendingDivision,
@@ -190,7 +190,7 @@ async def test_a_twenty_round_import_snapshots_exactly_once(monkeypatch):
 
 
 def _round(day: int) -> dict:
-    from models.round import RoundFormat
+    from leaguebot.core.models.round import RoundFormat
 
     return {
         "round_number": day,

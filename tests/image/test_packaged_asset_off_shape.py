@@ -19,15 +19,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (
+from leaguebot.image.models.image_constants import (
     FALLBACK_ASSET_NAME,
     NOTICE_ASSET_FALLBACK_USED,
     NOTICE_PACKAGED_ASSET_OFF_SHAPE,
     PACKAGED_ASSET_ASPECTS,
     packaged_directory_for,
 )
-from utils.svg_document import parse_svg_bytes
-from utils.svg_fill import FillSpec, fill
+from leaguebot.image.utils.svg_document import parse_svg_bytes
+from leaguebot.image.utils.svg_fill import FillSpec, fill
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>'
 
@@ -43,7 +43,7 @@ def league_flags(tmp_path):
 @pytest.fixture()
 def packaged_flags(tmp_path, monkeypatch):
     """The packaged flag directory, carrying its `fallback.svg` as the module ships one."""
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
     root = tmp_path / "project"
     directory = root / packaged_directory_for("flag")
@@ -110,7 +110,7 @@ def test_a_slot_at_the_shape_we_ship_says_nothing(league_flags, packaged_flags):
 
 def test_the_leagues_own_file_is_never_reported(league_flags, packaged_flags):
     """Their own artwork is drawn at their own shape, which their templates agree with."""
-    from utils.asset_resolver import filename_for
+    from leaguebot.image.utils.asset_resolver import filename_for
 
     (league_flags / filename_for("Nonesuchland")).write_bytes(SVG)
     notices = _render(league_flags, width=120, height=60)

@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.placement_service import PlacementService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.placement_service import PlacementService  # noqa: E402
 
 SERVER_ID = 22090
 SEASON_ID = 1
@@ -216,8 +216,8 @@ async def test_a_move_into_a_full_team_is_refused_and_changes_nothing(db_path):
 
 @pytest.mark.parametrize("stage_name", ["PLACEMENTS", "PENDING_COMPLETION"])
 async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
-    from cogs.driver_cog import DriverCog
-    from models.season import SeasonStage
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from leaguebot.core.models.season import SeasonStage
     from tests.support.undecorate import undecorate
 
     cog = DriverCog.__new__(DriverCog)

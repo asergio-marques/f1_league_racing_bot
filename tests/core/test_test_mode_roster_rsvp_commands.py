@@ -37,8 +37,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.test_mode_cog import TestModeCog, _RsvpBulkSetModal  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog, _RsvpBulkSetModal  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12408
@@ -147,7 +147,7 @@ def _replied(interaction) -> str:
 
 async def _clear(cog, interaction, *, division="Pro", result=0):
     with patch(
-        "services.test_roster_service.clear_test_drivers",
+        "leaguebot.core.services.test_roster_service.clear_test_drivers",
         new=AsyncMock(return_value=result),
     ) as clear:
         await undecorate(TestModeCog.roster_clear)(cog, interaction, division)

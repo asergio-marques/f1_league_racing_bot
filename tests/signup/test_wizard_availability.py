@@ -37,7 +37,7 @@ class _Message:
 
 def _slots():
     """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
-    from models.signup_module import AvailabilitySlot
+    from leaguebot.signup.models.signup_module import AvailabilitySlot
 
     return [
         AvailabilitySlot(
@@ -59,8 +59,8 @@ def _slots():
 @pytest.fixture
 def wizard_and_service():
     """A WizardService with _advance_wizard stubbed, and a wizard record to drive."""
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
-    from services.wizard_service import WizardService
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     advanced: list[bool] = []
@@ -152,7 +152,7 @@ class TestAvailabilityRejection:
 
 
 def _record(slot_ids):
-    from models.signup_module import SignupRecord
+    from leaguebot.signup.models.signup_module import SignupRecord
 
     return SignupRecord(
         id=1,
@@ -174,7 +174,7 @@ def _record(slot_ids):
 
 class TestReviewPanel:
     def test_review_panel_labels_resolve_by_slot_id(self):
-        from services.wizard_service import WizardService
+        from leaguebot.signup.services.wizard_service import WizardService
 
         labels = {s.slot_id: s.display_label for s in _slots()}
         panel = WizardService._format_review_panel(_record(["Fri_21_00"]), labels)
@@ -182,7 +182,7 @@ class TestReviewPanel:
 
     def test_answer_for_a_removed_slot_named_not_printed(self):
         """A slot that no longer exists has no label; the storage form is not shown."""
-        from services.wizard_service import WizardService
+        from leaguebot.signup.services.wizard_service import WizardService
 
         labels = {s.slot_id: s.display_label for s in _slots() if s.day_of_week != 5}
         panel = WizardService._format_review_panel(_record(["Fri_21_00"]), labels)
@@ -190,13 +190,13 @@ class TestReviewPanel:
         assert "Fri_21_00" not in panel
 
     def test_no_labels_available_names_every_slot_unknown(self):
-        from services.wizard_service import WizardService
+        from leaguebot.signup.services.wizard_service import WizardService
 
         panel = WizardService._format_review_panel(_record(["Fri_21_00", "Mon_19_00"]))
         assert "**Availability:** Unknown slot, Unknown slot" in panel
 
     def test_no_availability_reads_none(self):
-        from services.wizard_service import WizardService
+        from leaguebot.signup.services.wizard_service import WizardService
 
         panel = WizardService._format_review_panel(_record([]), {})
         assert "**Availability:** None" in panel

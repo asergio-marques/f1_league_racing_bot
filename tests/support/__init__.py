@@ -2,7 +2,7 @@
 
 #: Each `/images test` kind -> the templates it renders.
 #:
-#: Lived in `models/image_constants.py` until 2026-08-18, when the withdrawn
+#: Lived in `image/models/image_constants.py` until 2026-08-18, when the withdrawn
 #: `/images test <kind>` command was replaced by eleven subcommands and nothing in `src/`
 #: read it any longer. It is still a convenient enumeration for tests that want every kind
 #: and its templates, so it is kept here rather than deleted.

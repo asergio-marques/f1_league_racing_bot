@@ -38,8 +38,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from models.season import Season, SeasonStage, SeasonStatus  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 13208
@@ -111,9 +111,9 @@ def _posting(*, problem=None, image=False, notices=()):
 
 async def _sync(cog, interaction, *, name="Pro", posting=None):
     with patch(
-        "services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
+        "leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
     ), patch(
-        "services.calendar_post_service.post_division_calendar",
+        "leaguebot.core.services.calendar_post_service.post_division_calendar",
         new=AsyncMock(return_value=posting or _posting()),
     ) as post:
         await undecorate(SeasonCog.division_calendar_sync)(cog, interaction, name)

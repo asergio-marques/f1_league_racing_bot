@@ -20,13 +20,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection  # noqa: E402
-from services import attendance_service  # noqa: E402
-from services.attendance_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import (  # noqa: E402
     cascade_attendance_from_round,
     distribute_attendance_points,
 )
-from tests.unit.test_attendance_tracking import _awarded, _make_two_round_db  # noqa: E402
+from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db  # noqa: E402
 
 
 async def _total(db_file: str, round_id: int):

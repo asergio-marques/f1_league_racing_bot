@@ -6,8 +6,8 @@ described a state no league could ever see. These tests pin the seven that survi
 """
 from __future__ import annotations
 
-from models.driver_profile import DriverState
-from services.driver_service import ALLOWED_TRANSITIONS
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
 
 
 def test_the_driver_has_seven_states_and_no_ban_among_them():

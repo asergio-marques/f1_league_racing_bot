@@ -2,7 +2,7 @@
 
 Issue #208. `wizard_service.py` was the largest single hole in the bot at 27.0%, and these
 handlers are its input boundary: the one place a driver's own words become the league's
-record. `tests/unit/test_wizard_availability.py` covers one of them (issue #126); the rest —
+record. `tests/signup/test_wizard_availability.py` covers one of them (issue #126); the rest —
 nationality, platform, platform ID, driver type, preferred teams, preferred teammate, lap
 times and notes — were unexecuted.
 
@@ -61,7 +61,7 @@ class _Message:
 
 
 def _slots():
-    from models.signup_module import AvailabilitySlot
+    from leaguebot.signup.models.signup_module import AvailabilitySlot
 
     return [
         AvailabilitySlot(
@@ -83,8 +83,8 @@ def wizard_and_service():
     the scheduler, output router or database the real one wires up, and registering the
     global singleton the constructor sets would leak between tests.
     """
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
-    from services.wizard_service import WizardService
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     advanced: list[bool] = []

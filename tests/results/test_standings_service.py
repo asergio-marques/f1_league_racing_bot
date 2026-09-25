@@ -8,10 +8,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import DriverSessionResult, OutcomeModifier
-from services.standings_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier
+from leaguebot.results.services.standings_service import (
     compute_driver_standings,
     compute_points_for_session,
     compute_team_standings,
@@ -679,7 +679,7 @@ async def test_classified_driver_ranks_above_dnf_at_same_position(db_path):
 # pin the arithmetic and, above all, the two cases where the record is absent entirely.
 # ---------------------------------------------------------------------------
 
-from services.standings_service import (  # noqa: E402
+from leaguebot.results.services.standings_service import (  # noqa: E402
     MOVEMENT_GAINED,
     MOVEMENT_LOST,
     MOVEMENT_UNCHANGED,
@@ -1315,7 +1315,7 @@ async def _stored_order(db_path, division_id, round_id) -> list[int]:
 @pytest.mark.asyncio
 async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
     """A full tie is stored in the order it is posted in, not by user id."""
-    from services.standings_service import compute_and_persist_round
+    from leaguebot.results.services.standings_service import compute_and_persist_round
 
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=94)
@@ -1331,7 +1331,7 @@ async def test_the_persisted_snapshot_is_ordered_on_the_names_given(db_path):
 @pytest.mark.asyncio
 async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path):
     """Nothing to resolve a name from leaves the tie to the ascending user id."""
-    from services.standings_service import compute_and_persist_round
+    from leaguebot.results.services.standings_service import compute_and_persist_round
 
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=95)
@@ -1347,7 +1347,7 @@ async def test_the_persisted_snapshot_falls_back_to_the_id_with_no_names(db_path
 @pytest.mark.asyncio
 async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_path):
     """One resolution covers the cascade, so no round of it reverts to the id."""
-    from services.standings_service import cascade_recompute_from_round
+    from leaguebot.results.services.standings_service import cascade_recompute_from_round
 
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db, server_id=96)
@@ -1364,7 +1364,7 @@ async def test_a_cascade_orders_every_round_it_rewrites_on_the_same_names(db_pat
 
 # ── A driver who changed account mid-season (issue #243) ─────────────────────────
 
-from services.standings_service import compute_and_persist_round  # noqa: E402
+from leaguebot.results.services.standings_service import compute_and_persist_round  # noqa: E402
 
 PAST, NOW = 5101, 5102
 
@@ -1528,7 +1528,7 @@ SPRINT = SessionType.SPRINT_RACE.value
 
 
 def _order(results, points, **overrides):
-    from services.standings_service import order_drivers, tally_feature_finishes
+    from leaguebot.results.services.standings_service import order_drivers, tally_feature_finishes
 
     finish_counts, first_finish_rounds = tally_feature_finishes(results)
     return order_drivers(
@@ -1582,7 +1582,7 @@ def test_participation_then_the_final_tiebreak_settle_what_the_countback_cannot(
 
 
 def test_teams_are_ordered_by_the_same_countback():
-    from services.standings_service import order_teams, tally_feature_finishes
+    from leaguebot.results.services.standings_service import order_teams, tally_feature_finishes
 
     finish_counts, first_finish_rounds = tally_feature_finishes(
         [(10, FEATURE, "CLASSIFIED", 4, 1), (20, FEATURE, "CLASSIFIED", 1, 2)]

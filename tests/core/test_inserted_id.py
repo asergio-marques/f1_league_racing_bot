@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import aiosqlite
 import pytest
 
-from db.database import inserted_id
+from leaguebot.core.db.database import inserted_id
 
 
 async def test_it_is_the_id_sqlite_gave_the_row(tmp_path):

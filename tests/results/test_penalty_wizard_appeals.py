@@ -1,6 +1,6 @@
 """The appeals review prompt, and keeping both prompts in step with what is staged.
 
-Issue #208, continuing `tests/unit/test_penalty_wizard_rendering.py`. The appeals review is the
+Issue #208, continuing `tests/results/test_penalty_wizard_rendering.py`. The appeals review is the
 second of the two review passes a round goes through: penalties first, then — once the
 post-race penalty results have been posted — appeals against them, and approving the appeals
 pass is what makes a round final.
@@ -39,9 +39,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
     _refresh_appeals_prompt,
     _render_appeals_prompt_content,
@@ -82,7 +82,7 @@ def _no_driver_changed_account(monkeypatch):
     The state points at no real database; the account map the prompt reads is the one query
     it makes, and naming by the current account is pinned in `test_add_penalty_modal.py`.
     """
-    import services.penalty_wizard as penalty_wizard
+    import leaguebot.results.services.penalty_wizard as penalty_wizard
 
     monkeypatch.setattr(
         penalty_wizard, "current_account_map_for_division", AsyncMock(return_value={})

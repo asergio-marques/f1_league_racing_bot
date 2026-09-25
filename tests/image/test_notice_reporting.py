@@ -24,8 +24,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_module import RenderNotice  # noqa: E402
-from services.image_render_service import (  # noqa: E402
+from leaguebot.image.models.image_module import RenderNotice  # noqa: E402
+from leaguebot.image.services.image_render_service import (  # noqa: E402
     ImageRenderService,
     grouped_notice_lines,
 )
@@ -180,7 +180,7 @@ async def test_a_log_failure_is_swallowed_and_reported_as_none():
 async def test_the_standings_path_posts_one_grouped_message():
     """It used to post one Discord message per notice, which a twenty-driver championship
     turned into twenty."""
-    from services.image_standings_post import report_notices
+    from leaguebot.image.services.image_standings_post import report_notices
 
     bot = _bot()
     notices = [

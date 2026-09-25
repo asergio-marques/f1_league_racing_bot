@@ -17,13 +17,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (  # noqa: E402
     CapacityError,
     catalogue_for,
     row_capacity_problem,
     sibling_fields_declared,
 )
-from services.image_attendance_service import (  # noqa: E402
+from leaguebot.image.services.image_attendance_service import (  # noqa: E402
     AttendanceDataError,
     DriverRecord,
     RoundHeading,

@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import bot as bot_module  # noqa: E402
+import leaguebot.__main__ as bot_module  # noqa: E402
 
 
 def test_the_installed_discord_py_meets_the_minimum():

@@ -47,9 +47,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     AddPardonModal,
     PenaltyReviewState,
     StagedPardon,
@@ -186,7 +186,7 @@ async def _submit(
     modal.driver_id_input._value = driver_id  # type: ignore[attr-defined]
     modal.pardon_type_input._value = pardon_type  # type: ignore[attr-defined]
     modal.justification_input._value = justification  # type: ignore[attr-defined]
-    with patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
         await modal.on_submit(interaction)
     return interaction, refresh
 
@@ -492,7 +492,7 @@ async def test_pardons_close_when_the_reports_are_approved(
     its pardons as its reports are approved, and its round moves on to appeals. An amendment's
     round is FINAL throughout, so its status closes nothing; its pardons close with its reports
     all the same (decided 2026-09-23), though it writes them only as its appeals are approved."""
-    from services.penalty_wizard import _review_moved_on
+    from leaguebot.results.services.penalty_wizard import _review_moved_on
 
     db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
     state = _state(db_path)

@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.retry_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.retry_service import (
     RETRY_WARN_THRESHOLD,
     enqueue,
     get_all_pending,

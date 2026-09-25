@@ -16,7 +16,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.message_builder import DISCORD_MESSAGE_LIMIT, paginate_fenced  # noqa: E402
+from leaguebot.weather.utils.message_builder import DISCORD_MESSAGE_LIMIT, paginate_fenced  # noqa: E402
 
 HEADER = "**Fake Driver Roster — Challenger**"
 FOOTER = (

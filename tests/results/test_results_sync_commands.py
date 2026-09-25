@@ -39,10 +39,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.results_cog import ResultsCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 11908
@@ -138,7 +138,7 @@ def _replied(interaction) -> str:
 
 async def _standings_sync(cog, interaction, *, division="Pro", status="ok"):
     with patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(return_value=status),
     ) as repost:
         await undecorate(ResultsCog.standings_sync)(cog, interaction, division)
@@ -147,7 +147,7 @@ async def _standings_sync(cog, interaction, *, division="Pro", status="ok"):
 
 async def _rounds_sync(cog, interaction, *, division="Pro", status="ok"):
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(return_value=status),
     ) as repost:
         await undecorate(ResultsCog.rounds_sync)(cog, interaction, division)
@@ -363,10 +363,10 @@ async def test_the_two_syncs_call_different_services(tmp_path):
     cog = _make_cog(db_path)
 
     with patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(return_value="ok"),
     ) as standings, patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(return_value="ok"),
     ) as rounds:
         await undecorate(ResultsCog.standings_sync)(cog, _interaction(), "Pro")

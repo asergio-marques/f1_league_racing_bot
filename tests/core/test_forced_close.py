@@ -36,9 +36,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.module_cog import execute_forced_close  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.cogs.module_cog import execute_forced_close  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
 
 SERVER_ID = 13308
 SIGNUP_CHANNEL = 700

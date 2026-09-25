@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_attendance_service import (  # noqa: E402
+from leaguebot.image.services.image_attendance_service import (  # noqa: E402
     LIMIT_LABEL_RESERVE,
     LIMIT_LABEL_SACK,
     MARK_ASSET_CLASS,
@@ -430,8 +430,8 @@ def test_every_mark_the_projection_can_emit_has_a_packaged_file():
     """
     from pathlib import Path
 
-    from models.image_constants import packaged_directory_for
-    from utils.paths import PROJECT_ROOT
+    from leaguebot.image.models.image_constants import packaged_directory_for
+    from leaguebot.core.utils.paths import PROJECT_ROOT
 
     packaged = Path(PROJECT_ROOT) / packaged_directory_for(MARK_ASSET_CLASS)
     for datum in MARK_DATA:

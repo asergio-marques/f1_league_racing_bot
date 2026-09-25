@@ -32,9 +32,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import rsvp_service  # noqa: E402
-from services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import rsvp_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
 
 SERVER_ID = 7714
 SEASON_ID = 1
@@ -327,7 +327,7 @@ async def test_distribution_writes_seats_while_attendance_is_enabled(tmp_path):
 
 
 async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_path):
-    from bot import _recover_rsvp_views_and_deadlines
+    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
 
     # A deadline already in the past, so the catch-up would fire were it not gated.
     db_path = await _make_db(
@@ -347,7 +347,7 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
 
 
 async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_path):
-    from bot import _recover_rsvp_views_and_deadlines
+    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
 
     db_path = await _make_db(
         tmp_path,
@@ -381,7 +381,7 @@ def _make_interaction(bot: MagicMock) -> MagicMock:
 
 
 async def test_a_button_press_records_nothing_while_attendance_is_disabled(tmp_path):
-    from cogs.attendance_cog import handle_rsvp_button
+    from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
 
     db_path = await _make_db(tmp_path, attendance_enabled=False)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)
@@ -415,7 +415,7 @@ async def test_test_mode_sets_no_check_in_status_while_attendance_is_disabled(tm
     Without a gate the command finds that row and writes check-in answers for a module the
     league has switched off — the same defect as the button, by a maintainer's route.
     """
-    from cogs.test_mode_cog import TestModeCog
+    from leaguebot.core.cogs.test_mode_cog import TestModeCog
 
     db_path = await _make_db(tmp_path, attendance_enabled=False)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)

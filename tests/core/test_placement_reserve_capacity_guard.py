@@ -65,7 +65,7 @@ def _template_file(tmp_path, *, reserve_slots: int, blocks: int = 2, seats: int 
 
 async def _seed(tmp_path, *, reserves: int, regulars: int = 0, teams: int = 2):
     """A division carrying *reserves* reserve drivers and *regulars* on ordinary teams."""
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "reserve_capacity.db")
     await run_migrations(db_path)
@@ -169,7 +169,7 @@ def _report(path):
 
 
 def _service(db_path, bot):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     return PlacementService(db_path, bot=bot)
 
@@ -269,7 +269,7 @@ async def test_the_guard_never_blocks_a_placement_for_its_own_reasons(tmp_path):
 
 
 async def test_no_bot_means_no_guard(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path, reserves=3)
     await PlacementService(db_path)._guard_reserve_capacity(

@@ -1,4 +1,4 @@
-"""Unit tests for utils.nationality_data.NATIONALITY_LOOKUP — T002."""
+"""Unit tests for leaguebot.image.utils.nationality_data.NATIONALITY_LOOKUP — T002."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
 
 
 class TestNationalityLookup:

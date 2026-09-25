@@ -41,14 +41,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     AmendmentWouldOrphanVerdictError,
     AmendedSession,
     amend_round_results,
 )
-from services.season_service import SeasonImmutableError  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 12908
@@ -139,7 +139,7 @@ def _no_standings_names():
     """The names a full tie is settled by are resolved through Discord, which these stub bots
     only pretend to reach; ordering by user id keeps the tests about the classification."""
     with patch(
-        "services.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
     ):
         yield
 
@@ -174,18 +174,18 @@ async def _amend(
     """
     bot = bot or _bot()
     with patch(
-        "services.result_submission_service._apply_points_from_config", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service._apply_points_from_config", new=AsyncMock()
     ) as apply_points, patch(
-        "services.results_post_service.repost_round_results",
+        "leaguebot.results.services.results_post_service.repost_round_results",
         new=AsyncMock(return_value=list(repost_faults or [])),
     ) as repost, patch(
-        "services.results_post_service.replay_division_channels",
+        "leaguebot.results.services.results_post_service.replay_division_channels",
         new=AsyncMock(return_value=[]),
     ) as replay, patch(
-        "services.result_submission_service._repost_attendance_after_amendment",
+        "leaguebot.results.services.result_submission_service._repost_attendance_after_amendment",
         new=AsyncMock(return_value=[]),
     ) as subsequent, patch(
-        "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
         await amend_round_results(
             db_path,
@@ -361,7 +361,7 @@ async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
     names = {101: "Alice"}
 
     with patch(
-        "services.results_post_service.standings_display_names",
+        "leaguebot.results.services.results_post_service.standings_display_names",
         new=AsyncMock(return_value=names),
     ):
         stubs = await _amend(db_path, [_race_row(101, 1)])
@@ -408,14 +408,14 @@ async def test_reverting_leaves_the_flag_matching_the_restored_results(tmp_path)
     Stage one no longer marks them, so there is nothing to take back — and the round is put
     back as it was, so the flag still says what its results say: driver 33 raced nothing.
     """
-    from services.result_submission_service import revert_abandoned_amendment
+    from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
 
     db_path = await _make_db(tmp_path, name="amend_former_reverted")
     await _open_amendment_record(db_path)
     await _amend(db_path, [_race_row(103, 1)])
     assert await _former(db_path, 33) == 0
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
     assert await _former(db_path, 33) == 0
@@ -428,13 +428,13 @@ async def test_reverting_restores_the_flag_of_a_driver_the_amendment_struck_out(
     amendment puts their result back, so they are a former driver again — whatever the flag
     happened to say while the amendment stood open.
     """
-    from services.result_submission_service import revert_abandoned_amendment
+    from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
 
     db_path = await _make_db(tmp_path, name="amend_former_restored")
     await _open_amendment_record(db_path)
     await _amend(db_path, [_race_row(103, 1)])  # driver 101/profile 31 is struck out
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
     assert await _former(db_path, 31) == 1
@@ -448,7 +448,7 @@ async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
     lives in `test_former_driver_marking.py`. Driver 33 is not in the reverted round's feature
     race, and is a former driver on the sprint alone.
     """
-    from services.result_submission_service import revert_abandoned_amendment
+    from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
 
     db_path = await _make_db(tmp_path, name="amend_former_kept")
     await _open_amendment_record(db_path)
@@ -466,7 +466,7 @@ async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
         )
         await db.commit()
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
     assert await _former(db_path, 33) == 1

@@ -18,7 +18,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_standings_service import (
+from leaguebot.image.services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
     CellValue,
@@ -34,7 +34,7 @@ from services.image_standings_service import (
     StandingsEntry,
     build_fill_spec,
 )
-from services.standings_service import MOVEMENT_GAINED, MOVEMENT_LOST, Movement
+from leaguebot.results.services.standings_service import MOVEMENT_GAINED, MOVEMENT_LOST, Movement
 
 SVG_NS = "http://www.w3.org/2000/svg"
 
@@ -415,7 +415,7 @@ def test_the_constructors_graphic_fills_no_flag_and_no_driver_name():
 
 def test_the_catalogue_travels_with_the_spec():
     """XIV.10: the fill pipeline and validity read the *same* object."""
-    from models.image_catalogues import catalogue_for
+    from leaguebot.image.models.image_catalogues import catalogue_for
 
     spec = build_fill_spec(_drawing([_entry(1)]), _template(2))
     assert spec.catalogue is catalogue_for(DRIVERS_TEMPLATE_KEY)
@@ -873,9 +873,9 @@ def test_every_datum_the_projection_can_emit_has_a_packaged_file():
     """A kind added in code without artwork would resolve to the fallback and draw a lie."""
     from pathlib import Path
 
-    from models.image_constants import packaged_directory_for
-    from services.image_standings_service import HIGHLIGHT_DATA
-    from utils.paths import PROJECT_ROOT
+    from leaguebot.image.models.image_constants import packaged_directory_for
+    from leaguebot.image.services.image_standings_service import HIGHLIGHT_DATA
+    from leaguebot.core.utils.paths import PROJECT_ROOT
 
     packaged = Path(PROJECT_ROOT) / packaged_directory_for("marker")
     missing = [d for d in HIGHLIGHT_DATA if not (packaged / f"{d}.svg").is_file()]
@@ -936,7 +936,7 @@ def test_a_boundary_sheet_names_no_race():
     Emptied quietly rather than reported: its absence is what the occasion determined, not
     a template shortcoming worth a notice on every posting.
     """
-    from models.classification_occasion import ClassificationOccasion
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
     for occasion in (
         ClassificationOccasion.SEASON_OPENING,

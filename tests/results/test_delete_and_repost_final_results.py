@@ -39,8 +39,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.results_post_service import delete_and_repost_final_results  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.services.results_post_service import delete_and_repost_final_results  # noqa: E402
 
 SERVER_ID = 11508
 SEASON_ID = 1
@@ -117,22 +117,22 @@ def _guild(*, missing: bool = False):
 async def _repost(db_path, *, guild=None, driver_rows=None):
     driver_rows = driver_rows if driver_rows is not None else []
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ) as delete, patch(
-        "services.results_post_service._load_driver_rows",
+        "leaguebot.results.services.results_post_service._load_driver_rows",
         new=AsyncMock(return_value=driver_rows),
     ), patch(
-        "services.results_post_service.post_session_results", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_session_results", new=AsyncMock()
     ) as post_results, patch(
-        "services.results_post_service._clear_standings_messages", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._clear_standings_messages", new=AsyncMock()
     ) as clear, patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ) as post_standings:
         await delete_and_repost_final_results(
             db_path, ROUND_ID, DIVISION_ID, guild or _guild(), LABEL
@@ -197,22 +197,22 @@ async def test_the_stale_message_id_is_cleared_before_reposting(tmp_path):
         seen["ids"] = await _message_ids(db_path)
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ), patch(
-        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(
-        "services.results_post_service.post_session_results",
+        "leaguebot.results.services.results_post_service.post_session_results",
         new=AsyncMock(side_effect=_record),
     ), patch(
-        "services.results_post_service._clear_standings_messages", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._clear_standings_messages", new=AsyncMock()
     ), patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ):
         await delete_and_repost_final_results(
             db_path, ROUND_ID, DIVISION_ID, _guild(), LABEL
@@ -373,7 +373,7 @@ async def test_a_round_that_does_not_exist_does_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="final_noround")
 
     with patch(
-        "services.results_post_service.post_session_results", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_session_results", new=AsyncMock()
     ) as post:
         await delete_and_repost_final_results(db_path, 9999, DIVISION_ID, _guild(), LABEL)
 

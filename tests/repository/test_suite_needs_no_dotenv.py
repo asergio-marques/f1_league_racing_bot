@@ -1,9 +1,9 @@
 """The suite must run on a host with no `.env` file.
 
-`src/bot.py` reads `BOT_TOKEN` at import time, after `load_dotenv()`. A development host has a
-gitignored `.env` that supplies one, which hides any test that depends on it; CI runners have no
-`.env`, and a test file importing `bot` at module level then fails at collection and aborts the
-whole run on both jobs. That shipped once: five test files passed on the Pi and broke CI.
+`src/leaguebot/__main__.py` reads `BOT_TOKEN` at import time, after `load_dotenv()`. A
+development host has a gitignored `.env` that supplies one, which hides any test that depends on
+it; CI runners have no `.env`, and a test file importing the entry point at module level then
+fails at collection and aborts the whole run on both jobs. That shipped once: five test files passed on the Pi and broke CI.
 
 `tests/conftest.py` gives the token a placeholder before collection. This test checks that the
 placeholder alone is enough, in a fresh interpreter where `.env` loading is disabled and no token
@@ -29,7 +29,7 @@ def test_bot_imports_with_no_dotenv_and_no_token_once_conftest_has_run():
         os.environ.pop("BOT_TOKEN", None)
         sys.path[:0] = [{str(REPO_ROOT / "src")!r}, {str(REPO_ROOT / "tests")!r}]
         import conftest                                      # the suite's collection-time setup
-        import bot                                           # must not raise KeyError
+        import leaguebot.__main__                            # must not raise KeyError
         print("imported")
         """
     )

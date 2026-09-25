@@ -1322,7 +1322,7 @@ async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     are the pre-flight checks of `results_post_service` and `attendance_service`, and a
     posting service may hand an occasion to the image module and act on what it returns but
     may not read the image module's configuration — the layering
-    ``tests/integration/test_image_module_flow.py`` holds with
+    ``tests/image/test_image_module_flow.py`` holds with
     ``test_no_source_module_posting_path_imports_the_render_service`` and
     ``test_only_wired_aspects_read_their_toggle``. Asking the image module a question is the
     shape those guards permit, and it is the shape ``standings_enabled`` is already called

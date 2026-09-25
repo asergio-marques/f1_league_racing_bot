@@ -16,12 +16,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.season_end_service import execute_season_end  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
-from services.signup_module_service import SignupModuleService  # noqa: E402
-from services.test_mode_service import count_live_real_drivers  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.season_end_service import execute_season_end  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
+from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
+from leaguebot.core.services.test_mode_service import count_live_real_drivers  # noqa: E402
 
 SERVER_ID = 22150
 
@@ -97,7 +97,7 @@ async def db_path(tmp_path):
 
 async def _complete(db_path):
     bot = _bot(db_path)
-    with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
+    with patch("leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
         await execute_season_end(1, bot)
     return bot
 
@@ -152,7 +152,7 @@ async def test_an_open_signup_window_is_closed(db_path):
         )
         await db.commit()
 
-    with patch("cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
+    with patch("leaguebot.core.cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
         await _complete(db_path)
 
     closed.assert_awaited_once()
@@ -161,7 +161,7 @@ async def test_an_open_signup_window_is_closed(db_path):
 async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db_path):
     """Each step of the end-of-season pass stands apart from the next."""
     with patch(
-        "services.test_mode_service.switch_test_mode_off",
+        "leaguebot.core.services.test_mode_service.switch_test_mode_off",
         new=AsyncMock(side_effect=RuntimeError("disk full")),
     ):
         await _complete(db_path)
@@ -180,7 +180,7 @@ async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path
         await db.commit()
 
     with patch(
-        "cogs.module_cog.execute_forced_close", new=AsyncMock(side_effect=RuntimeError("gone"))
+        "leaguebot.core.cogs.module_cog.execute_forced_close", new=AsyncMock(side_effect=RuntimeError("gone"))
     ):
         await _complete(db_path)
 
@@ -208,8 +208,8 @@ async def test_the_window_is_closed_before_the_driver_pass(db_path):
         order.append("driver pass")
         return {"reset": 0, "deleted": 0}
 
-    with patch("cogs.module_cog.execute_forced_close", new=closing), \
-            patch("services.season_lifecycle_service.run_driver_pass", new=passing):
+    with patch("leaguebot.core.cogs.module_cog.execute_forced_close", new=closing), \
+            patch("leaguebot.core.services.season_lifecycle_service.run_driver_pass", new=passing):
         await _complete(db_path)
 
     assert order == ["window", "driver pass"]
@@ -219,7 +219,7 @@ async def test_completing_deletes_the_saved_test_mode_backup(db_path):
     """Decided 2026-09-17: a season run to its end leaves a state nothing could restore."""
     from pathlib import Path
 
-    from services import backup_service
+    from leaguebot.core.services import backup_service
 
     jobstore = Path(db_path).with_name("scheduler.db")
     jobstore.write_bytes(b"")

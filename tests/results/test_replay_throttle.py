@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import results_post_service  # noqa: E402
+from leaguebot.results.services import results_post_service  # noqa: E402
 
 
 #: The interval the module declares, captured at import — before `conftest`'s autouse fixture

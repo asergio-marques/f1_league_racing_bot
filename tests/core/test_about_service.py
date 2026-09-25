@@ -1,6 +1,6 @@
 """The hub's About option: which bot this is, and which build of it is running (#258).
 
-`src/services/about_service.py` holds the reasoning. What is pinned here:
+`src/leaguebot/core/services/about_service.py` holds the reasoning. What is pinned here:
 
 - **The answer** names the bot, the version, when it was made and the repository; it says
   when the version is unknown, and leaves the date out when that is.
@@ -19,15 +19,15 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from services import about_service, hub_service
-from services.about_service import (
+from leaguebot.core.services import about_service, hub_service
+from leaguebot.core.services.about_service import (
     ABOUT_KEY,
     ABOUT_OPTION,
     REPOSITORY_URL,
     about_text,
     respond,
 )
-from utils import version
+from leaguebot.core.utils import version
 
 
 MADE = datetime(2026, 9, 22, 12, 20, 6, tzinfo=timezone(timedelta(hours=1)))
@@ -162,7 +162,7 @@ def test_the_bot_registers_about_before_the_hub_is_recovered():
     import ast
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[2] / "src" / "bot.py").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "__main__.py").read_text(encoding="utf-8")
     main = next(
         node for node in ast.parse(source).body
         if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
@@ -173,4 +173,4 @@ def test_the_bot_registers_about_before_the_hub_is_recovered():
         if isinstance(statement, ast.Import)
         for alias in statement.names
     ]
-    assert "services.about_service" in imported
+    assert "leaguebot.core.services.about_service" in imported

@@ -13,9 +13,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.season import SeasonStage, status_of_stage  # noqa: E402
-from services import season_lifecycle_service as lifecycle  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
+from leaguebot.core.services import season_lifecycle_service as lifecycle  # noqa: E402
 
 SERVER_ID = 22001
 
@@ -142,7 +142,7 @@ async def test_the_forced_close_moves_the_season_on(db_path):
     """Every close path runs through `execute_forced_close`, so it is where the move lives."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from cogs.module_cog import execute_forced_close
+    from leaguebot.core.cogs.module_cog import execute_forced_close
 
     await _season(db_path, SeasonStage.SIGNUPS)
     bot = MagicMock()
@@ -162,7 +162,7 @@ async def test_a_season_that_cannot_move_on_does_not_undo_the_close(db_path):
     """The window is shut either way; the season's move is logged and let go."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from cogs.module_cog import execute_forced_close
+    from leaguebot.core.cogs.module_cog import execute_forced_close
 
     await _season(db_path, SeasonStage.SIGNUPS)
     bot = MagicMock()
@@ -174,7 +174,7 @@ async def test_a_season_that_cannot_move_on_does_not_undo_the_close(db_path):
     bot.get_guild = MagicMock(return_value=None)
 
     with patch(
-        "services.season_lifecycle_service.advance_on_window_close",
+        "leaguebot.core.services.season_lifecycle_service.advance_on_window_close",
         new=AsyncMock(side_effect=RuntimeError("database is locked")),
     ):
         await execute_forced_close(bot, audit_action="SIGNUP_CLOSE")

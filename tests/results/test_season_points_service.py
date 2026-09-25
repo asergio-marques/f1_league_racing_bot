@@ -8,10 +8,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.points_config import SessionType
-from services import points_config_service, season_points_service
-from services.season_points_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.season_points_service import (
     SeasonNotInSetupError,
     attach_config,
     get_season_points_view,

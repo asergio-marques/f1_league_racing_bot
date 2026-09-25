@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 1
 
@@ -75,13 +75,13 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
 
 
 def _service(db_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     return PlacementService(db_path, bot=MagicMock())
 
 
 def _signup_service(db_path):
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     return SignupModuleService(db_path)
 
@@ -205,7 +205,7 @@ class TestExportRow:
 
     async def test_seed_ordering_by_total_lap_ms(self, tmp_path):
         """Lower total_lap_ms → lower seed (earlier in list → higher priority)."""
-        from services.placement_service import _fmt_ms  # type: ignore
+        from leaguebot.core.services.placement_service import _fmt_ms  # type: ignore
 
         db_path = await _seed(
             tmp_path,
@@ -282,7 +282,7 @@ class TestExportRow:
     "state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION"]
 )
 async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_path, state):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path = await _seed(
         tmp_path,
@@ -303,7 +303,7 @@ async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_
 
 
 async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path = await _seed(
         tmp_path,

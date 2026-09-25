@@ -66,7 +66,7 @@ def _split_content(text: str) -> list[str]:
 #: backoff, which is slower and far less predictable than simply going at a walking pace.
 #:
 #: A second is comfortably inside the limit and keeps a forty-message rebuild under a minute.
-#: Tests patch it to zero — see ``tests/unit/test_replay_throttle.py``.
+#: Tests patch it to zero — see ``tests/results/test_replay_throttle.py``.
 POSTING_THROTTLE_SECONDS: float = 1.0
 
 
@@ -1464,7 +1464,7 @@ async def _channel_faults_for_rows(
     # Asked of the image module rather than read out of its configuration here: a posting
     # service hands the image module an occasion and acts on what comes back, and does not
     # read its settings (#187, and the layering
-    # `tests/integration/test_image_module_flow.py` holds).
+    # `tests/image/test_image_module_flow.py` holds).
     from leaguebot.image.services.image_validity_service import aspect_attaches_files
 
     results_graphics = await aspect_attaches_files(bot, "results")

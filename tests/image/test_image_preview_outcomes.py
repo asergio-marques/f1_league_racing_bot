@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     build_attendance_preview,
     build_results_preview,
     build_rsvp_preview,
@@ -28,7 +28,7 @@ from services.image_preview_service import (  # noqa: E402
     build_weather_preview,
     resolve_context,
 )
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 8383
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -152,7 +152,7 @@ class TestRsvpPreview:
 
     async def test_a_sprint_round_names_four_sessions(self, bot, league):
         """The session list follows the round's own format, not a fabricated one."""
-        from services.image_rsvp_service import session_names
+        from leaguebot.image.services.image_rsvp_service import session_names
 
         context = await _context(bot, round_number=2)
 
@@ -160,7 +160,7 @@ class TestRsvpPreview:
         assert context.round.format.value == "SPRINT"
 
     async def test_a_two_session_round_names_two(self, bot, league):
-        from services.image_rsvp_service import session_names
+        from leaguebot.image.services.image_rsvp_service import session_names
 
         context = await _context(bot, round_number=1)
 
@@ -199,7 +199,7 @@ class TestResultsPreview:
 
     async def test_the_classification_is_over_the_leagues_own_drivers(self, bot, league):
         """The outcome is invented; who it happens to is not."""
-        from services.image_preview_data import fabricate_race_rows
+        from leaguebot.image.services.image_preview_data import fabricate_race_rows
 
         context = await _context(bot, round_number=1, require_teams=True)
         role_of = {team.name: i + 1 for i, team in enumerate(context.teams)}
@@ -240,7 +240,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -266,7 +266,7 @@ class TestStandingsPreview:
         """FR-022 — the calendar already holds the round, but nothing has run it yet."""
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=1, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -293,7 +293,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=3, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -326,7 +326,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -349,7 +349,7 @@ class TestStandingsPreview:
         """The same omission stood on both championships, so both are pinned."""
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -368,7 +368,7 @@ class TestStandingsPreview:
         """The column is one value read two ways, so the two must reconcile."""
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -391,7 +391,7 @@ class TestStandingsPreview:
         """#144 — the previous fixed ramp never produced a tie on a normal field."""
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -412,7 +412,7 @@ class TestStandingsPreview:
         """The same fabrication feeds the constructors table, so a third team draws its tie."""
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -443,7 +443,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -474,7 +474,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -499,7 +499,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -533,7 +533,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -602,7 +602,7 @@ class TestStandingsPreview:
         """
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(db_path) as db:
             season_id = (
@@ -758,7 +758,7 @@ class TestStandingsPreviewCountback:
     async def _drawn(self, bot, key, round_number):
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=round_number, require_teams=True)
         requests = await build_standings_preview(bot, context)
@@ -769,7 +769,7 @@ class TestStandingsPreviewCountback:
     async def test_the_level_drivers_stand_in_the_order_the_countback_gives(
         self, bot, league, db_path
     ):
-        from services.standings_service import order_drivers, tally_feature_finishes
+        from leaguebot.results.services.standings_service import order_drivers, tally_feature_finishes
 
         await _seed_full_grid(db_path, league)
         for round_number in (1, 2, 3, 4):
@@ -801,7 +801,7 @@ class TestStandingsPreviewCountback:
     async def test_the_level_teams_stand_in_the_order_the_countback_gives(
         self, bot, league, db_path
     ):
-        from services.standings_service import order_teams, tally_feature_finishes
+        from leaguebot.results.services.standings_service import order_teams, tally_feature_finishes
 
         await _seed_full_grid(db_path, league)
         for round_number in (1, 2, 3, 4):
@@ -842,7 +842,7 @@ class TestAttendancePreview:
 
     async def test_no_record_falls_after_the_round_named(self, bot, league):
         """FR-027 — a round yet to be run confers nothing, and its cells stay empty."""
-        from services.image_preview_data import fabricate_attendance_records
+        from leaguebot.image.services.image_preview_data import fabricate_attendance_records
 
         context = await _context(bot, round_number=2, require_teams=True)
 
@@ -859,12 +859,12 @@ class TestAttendancePreview:
         """
         from pathlib import Path
 
-        from services.image_attendance_service import (
+        from leaguebot.image.services.image_attendance_service import (
             MARK_ASSET_CLASS,
             MARK_NEAR,
             MARK_REACHED,
         )
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         context = await _context(bot, round_number=2, require_teams=True)
         requests = await build_attendance_preview(bot, context)
@@ -890,7 +890,7 @@ class TestAttendancePreview:
 
         from pathlib import Path
 
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         root_dir = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
         root = load_svg(root_dir / "attendance_template.svg")

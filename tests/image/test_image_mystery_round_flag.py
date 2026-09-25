@@ -22,7 +22,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 pytestmark = pytest.mark.asyncio
 
@@ -57,7 +57,7 @@ async def db_path(tmp_path):
 async def test_the_standings_headings_name_the_mystery_datum(db_path):
     from types import SimpleNamespace
 
-    from services.image_standings_post import _calendar
+    from leaguebot.image.services.image_standings_post import _calendar
 
     headings, ordinals = await _calendar(SimpleNamespace(db_path=db_path), 5)
 
@@ -73,7 +73,7 @@ async def test_the_mystery_heading_still_names_no_circuit(db_path):
     """The concealment is the point: only the flag is substituted, never the track."""
     from types import SimpleNamespace
 
-    from services.image_standings_post import _calendar
+    from leaguebot.image.services.image_standings_post import _calendar
 
     headings, _ = await _calendar(SimpleNamespace(db_path=db_path), 5)
     assert headings[1].track is None
@@ -81,7 +81,7 @@ async def test_the_mystery_heading_still_names_no_circuit(db_path):
 
 async def test_the_mystery_datum_is_the_calendar_service_s_literal():
     """One literal, in one place — the calendar has owned it since 037."""
-    from services.image_calendar_service import MYSTERY_COUNTRY, MYSTERY_DATUM
+    from leaguebot.image.services.image_calendar_service import MYSTERY_COUNTRY, MYSTERY_DATUM
 
     assert MYSTERY_DATUM == MYSTERY_COUNTRY == "Mystery"
 
@@ -92,8 +92,8 @@ async def test_the_mystery_flag_resolves_to_the_module_s_own_file(tmp_path):
     This is what makes substituting the datum sufficient — no league is asked to draw a
     mystery flag of its own, and one that has not still gets the right picture.
     """
-    from models.image_constants import is_closed_set_datum
-    from utils.asset_resolver import normalise, resolve_asset
+    from leaguebot.image.models.image_constants import is_closed_set_datum
+    from leaguebot.image.utils.asset_resolver import normalise, resolve_asset
 
     league = tmp_path / "flags"
     league.mkdir()
@@ -117,8 +117,8 @@ async def test_a_mystery_round_keeps_its_flag_through_the_fill(db_path):
 
     from lxml import etree
 
-    from services.image_standings_post import _calendar
-    from services.image_standings_service import (
+    from leaguebot.image.services.image_standings_post import _calendar
+    from leaguebot.image.services.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         StandingsDrawing,
         build_fill_spec,

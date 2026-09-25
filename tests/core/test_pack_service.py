@@ -15,10 +15,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
-from services.pack_service import KEPT_JOBS, PackRefused, pack  # noqa: E402
-from services.scheduler_service import PORTRAIT_REFRESH_JOB_ID  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
+from leaguebot.core.services.pack_service import KEPT_JOBS, PackRefused, pack  # noqa: E402
+from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID  # noqa: E402
 
 SERVER = 4242
 
@@ -243,7 +243,7 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     await _seed(db_path)
     cleared = []
     monkeypatch.setattr(
-        "services.pack_service.clear_in_memory_state", lambda bot: cleared.append(bot)
+        "leaguebot.core.services.pack_service.clear_in_memory_state", lambda bot: cleared.append(bot)
     )
     bot = object()
 

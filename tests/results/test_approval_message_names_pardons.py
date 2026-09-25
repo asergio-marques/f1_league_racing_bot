@@ -27,10 +27,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
     PenaltyReviewView,
     StagedPardon,
@@ -157,7 +157,7 @@ def _interaction() -> MagicMock:
 
 def _a_league_manager():
     return patch(
-        "services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
     )
 
 

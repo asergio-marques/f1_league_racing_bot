@@ -49,9 +49,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import attendance_service  # noqa: E402
-from services.attendance_service import enforce_attendance_sanctions  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import enforce_attendance_sanctions  # noqa: E402
 
 SERVER_ID = 8208
 SEASON_ID = 1
@@ -237,10 +237,10 @@ def announcer():
     empty list rather than ``None``: the run adds what comes back to its outcome.
     """
     with patch(
-        "services.verdict_announcement_service.post_autosanction_announcement",
+        "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
         new=AsyncMock(return_value=[]),
     ) as announce, patch(
-        "services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value="BANNER"),
     ) as banner:
         yield announce, banner
@@ -374,7 +374,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     unsanctioned with nothing reported. Two such drivers are past the threshold here, so a
     failure on the first leaves the second unsacked whichever is read first.
     """
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     second_profile = 103
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)

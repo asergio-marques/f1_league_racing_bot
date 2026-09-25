@@ -46,13 +46,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.results_cog import ResultsCog  # noqa: E402
-from models.points_config import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
+from leaguebot.results.models.points_config import (  # noqa: E402
     PointsConfigEntry,
     PointsConfigFastestLap,
     SessionType,
 )
-from services.points_config_service import ConfigNotFoundError  # noqa: E402
+from leaguebot.results.services.points_config_service import ConfigNotFoundError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12008
@@ -150,15 +150,15 @@ async def _view(
         return "formatted table"
 
     with patch(
-        "services.season_points_service.get_season_points_view",
+        "leaguebot.results.services.season_points_service.get_season_points_view",
         new=AsyncMock(return_value=season_view if season_view is not None else {}),
     ), patch(
-        "services.points_config_service.get_config_entries",
+        "leaguebot.results.services.points_config_service.get_config_entries",
         new=AsyncMock(
             return_value=store if store is not None else ([], []),
             side_effect=store_error,
         ),
-    ), patch("utils.results_formatter.format_config_view", new=_format):
+    ), patch("leaguebot.results.utils.results_formatter.format_config_view", new=_format):
         await undecorate(ResultsCog.config_view)(
             cog, interaction, _scope(scope), name, _choice(session)
         )
@@ -181,12 +181,12 @@ async def test_season_scope_reads_the_seasons_own_snapshot(status):
     interaction = _interaction()
 
     with patch(
-        "services.season_points_service.get_season_points_view",
+        "leaguebot.results.services.season_points_service.get_season_points_view",
         new=AsyncMock(return_value={"FEATURE_RACE": {"entries": [(1, 25)], "fl": None}}),
     ) as season_view, patch(
-        "services.points_config_service.get_config_entries", new=AsyncMock()
+        "leaguebot.results.services.points_config_service.get_config_entries", new=AsyncMock()
     ) as store, patch(
-        "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
+        "leaguebot.results.utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
         await undecorate(ResultsCog.config_view)(
             cog, interaction, _scope("SEASON"), CONFIG, None
@@ -208,12 +208,12 @@ async def test_server_scope_reads_the_server_store(status):
     interaction = _interaction()
 
     with patch(
-        "services.season_points_service.get_season_points_view", new=AsyncMock()
+        "leaguebot.results.services.season_points_service.get_season_points_view", new=AsyncMock()
     ) as season_view, patch(
-        "services.points_config_service.get_config_entries",
+        "leaguebot.results.services.points_config_service.get_config_entries",
         new=AsyncMock(return_value=([_entry(SessionType.FEATURE_RACE, 1, 25)], [])),
     ) as store, patch(
-        "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
+        "leaguebot.results.utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
         await undecorate(ResultsCog.config_view)(
             cog, interaction, _scope("SERVER"), CONFIG, None
@@ -229,10 +229,10 @@ async def test_server_scope_needs_no_season():
     interaction = _interaction()
 
     with patch(
-        "services.points_config_service.get_config_entries",
+        "leaguebot.results.services.points_config_service.get_config_entries",
         new=AsyncMock(return_value=([_entry(SessionType.FEATURE_RACE, 1, 25)], [])),
     ) as store, patch(
-        "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
+        "leaguebot.results.utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
         await undecorate(ResultsCog.config_view)(
             cog, interaction, _scope("SERVER"), CONFIG, None
@@ -456,10 +456,10 @@ async def test_a_session_filter_reaches_the_season_read():
     interaction = _interaction()
 
     with patch(
-        "services.season_points_service.get_season_points_view",
+        "leaguebot.results.services.season_points_service.get_season_points_view",
         new=AsyncMock(return_value={"FEATURE_RACE": {"entries": [(1, 25)], "fl": None}}),
     ) as season_view, patch(
-        "utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
+        "leaguebot.results.utils.results_formatter.format_config_view", new=MagicMock(return_value="x")
     ):
         await undecorate(ResultsCog.config_view)(
             cog, interaction, _scope("SEASON"), CONFIG, _choice(SessionType.FEATURE_RACE)

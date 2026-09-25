@@ -29,7 +29,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 5511
 SEASON_ID = 1
@@ -122,13 +122,13 @@ class _Phases:
 
 async def _recover(bot: MagicMock) -> _Phases:
     """Run the restart recovery with the three phase runners stubbed out."""
-    from bot import _recover_missed_phases
+    from leaguebot.__main__ import _recover_missed_phases
 
     phases = _Phases()
     with (
-        patch("services.phase1_service.run_phase1", phases.one),
-        patch("services.phase2_service.run_phase2", phases.two),
-        patch("services.phase3_service.run_phase3", phases.three),
+        patch("leaguebot.weather.services.phase1_service.run_phase1", phases.one),
+        patch("leaguebot.weather.services.phase2_service.run_phase2", phases.two),
+        patch("leaguebot.weather.services.phase3_service.run_phase3", phases.three),
     ):
         await _recover_missed_phases(bot)
     return phases

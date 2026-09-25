@@ -1,6 +1,6 @@
 """`DriverService` — re-keying a profile, the former-driver flag, and what a departure leaves.
 
-Issue #208. `tests/unit/test_driver_service_transitions.py` covers which transitions the state
+Issue #208. `tests/core/test_driver_service_transitions.py` covers which transitions the state
 machine allows. What it does not cover is what the allowed ones actually *do* to the database,
 nor `reassign_user_id` and `set_former_driver` at all.
 
@@ -34,9 +34,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.driver_profile import DriverState  # noqa: E402
-from services.driver_service import DriverService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.services.driver_service import DriverService  # noqa: E402
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 9108

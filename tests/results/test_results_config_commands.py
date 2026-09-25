@@ -37,8 +37,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView  # noqa: E402
-from services.points_config_service import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView  # noqa: E402
+from leaguebot.results.services.points_config_service import (  # noqa: E402
     ConfigAlreadyExistsError,
     ConfigNotFoundError,
 )
@@ -116,7 +116,7 @@ def _service(**overrides):
     with ExitStack() as stack:
         for name, mock in mocks.items():
             stack.enter_context(
-                patch(f"services.points_config_service.{name}", new=mock)
+                patch(f"leaguebot.results.services.points_config_service.{name}", new=mock)
             )
         yield mocks
 

@@ -33,8 +33,8 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.season_service import SeasonService, SeasonImmutableError  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService, SeasonImmutableError  # noqa: E402
 
 SERVER_ID = 7654
 ACTOR_ID = 999
@@ -395,7 +395,7 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
     from unittest.mock import AsyncMock, MagicMock, patch
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)
     # ``MagicMock`` with each awaited member named (issue #240). On a whole-bot
@@ -410,7 +410,7 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
     svc.refresh_division_status = AsyncMock(return_value=False)
     svc.all_divisions_finished = AsyncMock(return_value=all_done)
     svc.get_outstanding_rounds = AsyncMock(return_value=outstanding)
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     svc.get_stage = AsyncMock(return_value=SeasonStage.PENDING_COMPLETION)
 
@@ -425,8 +425,8 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
 
     # The archival itself belongs to season_end_service and has its own tests; stub it so this
     # exercises the gate and nothing beyond it.
-    with patch("services.season_end_service.execute_season_end", new=AsyncMock()) as archived, patch(
-        "services.result_submission_service.open_amendment_in_season",
+    with patch("leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock()) as archived, patch(
+        "leaguebot.results.services.result_submission_service.open_amendment_in_season",
         new=AsyncMock(return_value=None),
     ):
         await raw(cog, interaction)
@@ -513,7 +513,7 @@ async def _history(db_path):
 
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
     from unittest.mock import AsyncMock, MagicMock
-    from services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import _write_driver_history_entries
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -539,7 +539,7 @@ async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_pat
 async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) -> None:
     """Mock drivers are drivers, artificially injected — they are not filtered out."""
     from unittest.mock import MagicMock
-    from services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import _write_driver_history_entries
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
@@ -561,7 +561,7 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
 async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) -> None:
     """A cancelled season used to leave no trace in anybody's history at all."""
     from unittest.mock import MagicMock
-    from services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import _write_driver_history_entries
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -606,7 +606,7 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
     atomicity the sequence does not have — this is the test the migration comment names.
     """
     from unittest.mock import MagicMock
-    from services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import _write_driver_history_entries
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, rounds_per_division=1)
@@ -627,7 +627,7 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
 async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path) -> None:
     """The unique key includes the division, so two divisions in one season is not a duplicate."""
     from unittest.mock import MagicMock
-    from services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.season_end_service import _write_driver_history_entries
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _seed(db_path, divisions=("Div A", "Div B"), rounds_per_division=1)
@@ -671,7 +671,7 @@ async def _run_the_round_job(db_path, round_id, *, results_enabled):
     import contextlib
     from unittest.mock import AsyncMock, MagicMock
 
-    from services.result_submission_service import run_result_submission_job
+    from leaguebot.results.services.result_submission_service import run_result_submission_job
 
     bot = MagicMock()
     bot.db_path = db_path

@@ -16,7 +16,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (  # noqa: E402
     CATALOGUES,
     CapacityError,
     _canonical,
@@ -24,10 +24,10 @@ from models.image_catalogues import (  # noqa: E402
     sibling_fields_declared,
     sibling_keys,
 )
-from models.image_constants import ASPECT_TEMPLATES  # noqa: E402
-from models.session import MAX_SLOTS, SESSIONS_BY_FORMAT  # noqa: E402
-from models.round import RoundFormat  # noqa: E402
-from utils.svg_document import FieldIndex  # noqa: E402
+from leaguebot.image.models.image_constants import ASPECT_TEMPLATES  # noqa: E402
+from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex  # noqa: E402
 
 WEATHER_KEYS = (
     "weather_p1_template",
@@ -144,7 +144,7 @@ def test_the_mystery_notice_declares_four_fields_and_nothing_else():
     choice, made by declaring the slot in a template of their own, and a mystery notice is as
     much theirs to brand as any other. It does not make the notice a forecast.
     """
-    from models.image_catalogues import DIVISION_LOGO_ASSET, DIVISION_LOGO_FIELD
+    from leaguebot.image.models.image_catalogues import DIVISION_LOGO_ASSET, DIVISION_LOGO_FIELD
 
     cat = catalogue_for("weather_mystery_template")
     assert cat.mandatory == {"division_name", "round_number"}
@@ -379,7 +379,7 @@ def test_a_weather_template_is_not_a_sibling_of_another_module_s_type():
 @pytest.mark.parametrize("key", WEATHER_KEYS)
 def test_the_shipped_template_satisfies_its_catalogue(key):
     """Every default that ships must pass the check a league's own file would face."""
-    from models.image_constants import TEMPLATE_COLUMNS
+    from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS
 
     path = os.path.join(
         os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates",

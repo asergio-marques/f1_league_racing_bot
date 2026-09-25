@@ -17,14 +17,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.image_constants import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     ASPECTS,
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.module_service import ModuleService  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.core.services.module_service import ModuleService  # noqa: E402
 from tests.support import KIND_TEMPLATES  # noqa: E402
 
 SERVER_ID = 4242
@@ -407,7 +407,7 @@ def scratch_slot():
     not on the catalogue — so RICH_TEMPLATE's `justification` box is filled with fabricated
     prose and its wrapping is exercised for real.
     """
-    from models.image_catalogues import CATALOGUES, FieldCatalogue
+    from leaguebot.image.models.image_catalogues import CATALOGUES, FieldCatalogue
 
     saved = dict(CATALOGUES)
     CATALOGUES["verdicts_template"] = FieldCatalogue()
@@ -426,7 +426,7 @@ def template_dir(tmp_path):
 
 
 async def test_template_relocation(module_service, config_service, template_dir):
-    from services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.image_validity_service import evaluate_all_templates
 
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
@@ -455,10 +455,10 @@ async def test_season_review_and_config_view_agree(
     One template is broken and one aspect enabled, then the aspect section of each
     surface is compared line for line.
     """
-    import services.image_render_service as render_service
-    from cogs.image_cog import ImageCog
-    from cogs.season_cog import SeasonCog
-    from services.image_validity_service import ImageValidityService
+    import leaguebot.image.services.image_render_service as render_service
+    from leaguebot.image.cogs.image_cog import ImageCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
 
@@ -468,7 +468,7 @@ async def test_season_review_and_config_view_agree(
     await config_service.set_aspect("weather", True)
 
     monkeypatch.setattr(
-        "utils.paths.PROJECT_ROOT", template_dir, raising=False
+        "leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False
     )
 
     validity = ImageValidityService(config_service, module_service)
@@ -497,7 +497,7 @@ async def test_season_review_and_config_view_agree(
         marker-only filter swept those in and made the two surfaces look divergent when
         they are not.
         """
-        from models.image_constants import ASPECT_LABELS
+        from leaguebot.image.models.image_constants import ASPECT_LABELS
 
         labels = tuple(ASPECT_LABELS.values())
         kept = []
@@ -538,8 +538,8 @@ def test_the_review_names_every_configured_asset_directory():
     import asyncio
     import inspect
 
-    from models.image_constants import ASSET_LABELS
-    from cogs.season_cog import SeasonCog
+    from leaguebot.image.models.image_constants import ASSET_LABELS
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     source = inspect.getsource(SeasonCog._build_image_review_section)
 
@@ -559,7 +559,7 @@ def test_the_review_names_every_configured_asset_directory():
 
 def test_live_and_pending_aspects_partition_the_eight():
     """Every aspect is one or the other, and neither set is invented."""
-    from models.image_constants import LIVE_POSTING_ASPECTS, PENDING_POSTING_ASPECTS
+    from leaguebot.image.models.image_constants import LIVE_POSTING_ASPECTS, PENDING_POSTING_ASPECTS
 
     assert LIVE_POSTING_ASPECTS <= set(ASPECTS)
     assert set(PENDING_POSTING_ASPECTS) | set(LIVE_POSTING_ASPECTS) == set(ASPECTS)
@@ -572,8 +572,8 @@ def test_live_and_pending_aspects_partition_the_eight():
 
 def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
     """An aspect that posts must not tell a manager it does nothing (the 035 wording)."""
-    from cogs.image_cog import toggle_enabled_lines
-    from models.image_constants import ASPECT_LABELS, LIVE_POSTING_ASPECTS
+    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.models.image_constants import ASPECT_LABELS, LIVE_POSTING_ASPECTS
 
     for aspect in sorted(LIVE_POSTING_ASPECTS):
         lines = toggle_enabled_lines(aspect, ASPECT_LABELS[aspect], [])
@@ -584,8 +584,8 @@ def test_toggle_reply_for_a_live_aspect_makes_no_not_yet_claim():
 
 def test_toggle_reply_for_a_pending_aspect_says_so():
     """An aspect with no posting path still warns, or the manager thinks it broken."""
-    from cogs.image_cog import toggle_enabled_lines
-    from models.image_constants import ASPECT_LABELS, PENDING_POSTING_ASPECTS
+    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.models.image_constants import ASPECT_LABELS, PENDING_POSTING_ASPECTS
 
     for aspect in PENDING_POSTING_ASPECTS:
         lines = toggle_enabled_lines(aspect, ASPECT_LABELS[aspect], [])
@@ -596,7 +596,7 @@ def test_toggle_reply_for_a_pending_aspect_says_so():
 
 def test_toggle_reply_keeps_blocking_reasons():
     """The not-yet notice must not have displaced the invalid-configuration warning."""
-    from cogs.image_cog import toggle_enabled_lines
+    from leaguebot.image.cogs.image_cog import toggle_enabled_lines
 
     lines = toggle_enabled_lines("calendar", "Calendar", ["the template is missing"])
     text = "\n".join(lines)
@@ -608,14 +608,14 @@ async def test_aspect_section_footer_names_only_pending_aspects(
     module_service, config_service, monkeypatch
 ):
     """`/images config view` must not disclaim the seven aspects that do post."""
-    import services.image_render_service as render_service
-    from cogs.image_cog import ImageCog
-    from models.image_constants import (
+    import leaguebot.image.services.image_render_service as render_service
+    from leaguebot.image.cogs.image_cog import ImageCog
+    from leaguebot.image.models.image_constants import (
         ASPECT_LABELS,
         LIVE_POSTING_ASPECTS,
         PENDING_POSTING_ASPECTS,
     )
-    from services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
     await _enable(module_service, config_service)
@@ -690,14 +690,14 @@ RICH_TEMPLATE = (
 
 
 def _validity_service(config_service, module_service):
-    from services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     return ImageValidityService(config_service, module_service)
 
 
 def _render_service(config_service, module_service):
-    from services.image_render_service import ImageRenderService
-    from services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.image_render_service import ImageRenderService
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     return ImageRenderService(
         config_service, ImageValidityService(config_service, module_service)
@@ -712,7 +712,7 @@ async def test_render_without_season(
     """Every kind renders on a server with no season configured at all."""
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -770,9 +770,9 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
     because the coordinates in the markup were correct; only the rasterised output
     showed it. Hence this test looks at pixels.
     """
-    from services.image_render_service import rasterise
-    from utils.svg_document import parse_svg_bytes
-    from utils.svg_fill import FillSpec, fill
+    from leaguebot.image.services.image_render_service import rasterise
+    from leaguebot.image.utils.svg_document import parse_svg_bytes
+    from leaguebot.image.utils.svg_fill import FillSpec, fill
 
     from PIL import Image  # noqa: PLC0415
 
@@ -813,9 +813,9 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
     """SC-007: the reason is stated and nothing is rendered while the binary is missing."""
-    import services.image_render_service as render_module
+    import leaguebot.image.services.image_render_service as render_module
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -840,7 +840,7 @@ async def test_absent_converter_is_reported_and_no_render_attempted(
 
 
 async def test_absent_converter_message_names_the_binary_and_the_env_var():
-    from services.image_render_service import converter_absent_message
+    from leaguebot.image.services.image_render_service import converter_absent_message
 
     message = converter_absent_message()
     assert "Inkscape" in message
@@ -851,15 +851,15 @@ async def test_absent_converter_message_names_the_binary_and_the_env_var():
 async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     module_service, config_service, template_dir, monkeypatch
 ):
-    import services.image_render_service as render_module
-    from models.image_module import STATE_ENABLED_INVALID
-    from services.image_validity_service import (
+    import leaguebot.image.services.image_render_service as render_module
+    from leaguebot.image.models.image_module import STATE_ENABLED_INVALID
+    from leaguebot.image.services.image_validity_service import (
         PLAIN_NO_RASTERISER,
         PLAIN_REMEDY_ASK_OPERATOR,
         ImageValidityService,
     )
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     monkeypatch.setattr(render_module, "converter_available", lambda **_: False)
 
     await _enable(module_service, config_service)
@@ -889,7 +889,7 @@ async def test_render_raises_notices_without_failing(
     scratch_slot,
 ):
     """A substituted font and a truncated field are notices, not problems (XIV.4)."""
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
     (template_dir / "templates" / "verdicts_template.svg").write_bytes(RICH_TEMPLATE)
@@ -922,7 +922,7 @@ async def test_render_problem_yields_no_image(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
     """png_paths is empty whenever problem is set — never a partial image."""
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
     await config_service.set_field("calendar_template", "absent.svg")
@@ -951,7 +951,7 @@ async def test_render_is_off_the_event_loop(
 
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
     (template_dir / "templates" / "calendar_template.svg").write_bytes(RICH_TEMPLATE)
@@ -959,7 +959,7 @@ async def test_render_is_off_the_event_loop(
     main_thread = threading.get_ident()
     seen: list[int] = []
 
-    import services.image_render_service as render_module
+    import leaguebot.image.services.image_render_service as render_module
 
     original = render_module.rasterise
 
@@ -985,15 +985,15 @@ async def test_render_is_off_the_event_loop(
 
 
 def _image_cog(config_service, module_service):
-    from cogs.image_cog import ImageCog
-    from services.image_validity_service import ImageValidityService
+    from leaguebot.image.cogs.image_cog import ImageCog
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     class _Bot:
         pass
 
     from unittest.mock import AsyncMock
 
-    from services.image_render_service import ImageRenderService
+    from leaguebot.image.services.image_render_service import ImageRenderService
 
     bot = _Bot()
     bot.image_config_service = config_service
@@ -1044,7 +1044,7 @@ def _race_template(background_markup: str) -> bytes:
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -1063,7 +1063,7 @@ async def test_contrast_is_measured_against_the_declared_background(
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -1087,7 +1087,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
 async def test_contrast_unmeasurable_when_template_is_invalid(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
     await config_service.set_field("results_race_template", "gone.svg")
@@ -1102,7 +1102,7 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -1116,7 +1116,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     assert reading.ratio is None and reading.background is None
     assert "fastest_lap_background" in reading.problem
     # It must be reported as unmeasurable, not as a template validity failure.
-    from services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.image_validity_service import evaluate_all_templates
 
     config = await config_service.get_config()
     reports = evaluate_all_templates(config, root=template_dir)
@@ -1126,7 +1126,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -1152,7 +1152,7 @@ async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     `computed_style` reads only simple selectors, so "none the bot can read" is not quite
     "none", and FR-027 forbids guessing.
     """
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -1191,7 +1191,7 @@ class _Interaction:
 
 
 def _lines(reading) -> list[str]:
-    from cogs.image_cog import fastest_lap_contrast_lines
+    from leaguebot.image.cogs.image_cog import fastest_lap_contrast_lines
 
     return fastest_lap_contrast_lines(reading)
 
@@ -1223,7 +1223,7 @@ def _slotted_plate(authored: str) -> bytes:
 
 async def _per_tier(config_service, template_dir, monkeypatch, markup: bytes, palettes):
     """Configure per-tier colours on, *markup* as the race template, and *palettes*."""
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await config_service.set_field("template_directory", "templates")
     (template_dir / "templates" / "results_race_template.svg").write_bytes(markup)
     await config_service.set_flag("per_tier_colour_enabled", True)
@@ -1240,7 +1240,7 @@ async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     used to say 21:1 and warn of nothing, while Division 2 draws the plate in a grey
     against which the same white is below the threshold.
     """
-    from cogs.image_cog import ImageCog
+    from leaguebot.image.cogs.image_cog import ImageCog
     from tests.support.undecorate import undecorate
 
     await _enable(module_service, config_service)
@@ -1400,7 +1400,7 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     read the palette and look the slot up — and it would let the figure a league is told
     drift from the colour it is drawn in, which is what #165 was.
     """
-    from services.image_render_service import ImageRenderService
+    from leaguebot.image.services.image_render_service import ImageRenderService
 
     await _enable(module_service, config_service)
     await _seed_season(db_path, ["Division 1", "Division 2", "Division 3"])
@@ -1531,7 +1531,7 @@ async def test_contrast_says_it_is_the_same_for_every_division(
 
 
 def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
-    from cogs.image_cog import FastestLapContrast
+    from leaguebot.image.cogs.image_cog import FastestLapContrast
 
     reading = FastestLapContrast(
         ratio=4.478, background="#777777", divisions=("A", "B", "C")
@@ -1545,7 +1545,7 @@ def test_three_tiers_sharing_the_lowest_are_listed_as_a_sentence():
 
 def test_tiers_tied_on_different_colours_are_named_without_one():
     """Two plates can differ and still read at the same figure; neither colour is *the* one."""
-    from cogs.image_cog import FastestLapContrast
+    from leaguebot.image.cogs.image_cog import FastestLapContrast
 
     reading = FastestLapContrast(ratio=21.0, background=None, divisions=("A", "B"))
 
@@ -1590,7 +1590,7 @@ async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
 
 
 def test_unmeasured_tiers_with_different_reasons_share_one_line():
-    from cogs.image_cog import FastestLapContrast
+    from leaguebot.image.cogs.image_cog import FastestLapContrast
 
     reading = FastestLapContrast(
         ratio=21.0,
@@ -1626,7 +1626,7 @@ async def test_every_tier_unmeasurable_is_reported_once(
 
 
 def test_the_reply_warns_below_the_legibility_threshold():
-    from cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+    from leaguebot.image.cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(ratio=3.0, background="#777777"))
 
@@ -1635,7 +1635,7 @@ def test_the_reply_warns_below_the_legibility_threshold():
 
 
 def test_the_reply_says_why_nothing_was_measured():
-    from cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
+    from leaguebot.image.cogs.image_cog import FastestLapContrast, fastest_lap_contrast_lines
 
     lines = fastest_lap_contrast_lines(FastestLapContrast(problem="no plate."))
 
@@ -1646,9 +1646,9 @@ def test_the_reply_says_why_nothing_was_measured():
 
 
 async def test_asset_directory_independence(module_service, config_service, tmp_path, monkeypatch):
-    from services.image_validity_service import evaluate_directories
+    from leaguebot.image.services.image_validity_service import evaluate_directories
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
 
     # Give every asset directory a real folder.
@@ -1679,9 +1679,9 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
 async def test_asset_directory_escaping_root_is_reported(
     module_service, config_service, tmp_path, monkeypatch
 ):
-    from services.image_validity_service import evaluate_directories
+    from leaguebot.image.services.image_validity_service import evaluate_directories
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("flag_directory", "../../elsewhere")
 
@@ -1768,9 +1768,7 @@ async def test_no_source_module_posting_path_imports_the_render_service(
     ]
 
     for name in posting_services:
-        path = src / "services" / name
-        if not path.exists():
-            continue
+        (path,) = src.glob(f"leaguebot/*/services/{name}")
         text = path.read_text(encoding="utf-8")
         assert "image_render_service" not in text, f"{name} reaches the render service"
         assert "image_config_service" not in text, f"{name} reads image config"
@@ -1782,12 +1780,12 @@ async def test_no_source_module_posting_path_imports_the_render_service(
 async def test_aspect_enabled_while_source_module_disabled(
     module_service, config_service, template_dir, monkeypatch
 ):
-    import services.image_render_service as render_service
-    from models.image_module import STATE_ENABLED_INVALID
-    from services.image_validity_service import ImageValidityService
+    import leaguebot.image.services.image_render_service as render_service
+    from leaguebot.image.models.image_module import STATE_ENABLED_INVALID
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
 
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
@@ -1821,7 +1819,7 @@ async def test_toggle_state_survives_into_the_wiring_increment(
 async def test_every_template_is_independently_relocatable(
     module_service, config_service, template_dir
 ):
-    from services.image_validity_service import evaluate_all_templates
+    from leaguebot.image.services.image_validity_service import evaluate_all_templates
 
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
@@ -1846,15 +1844,15 @@ async def test_every_template_is_independently_relocatable(
 # returns the value that stood before the command. Before 036 the write happened first.
 # ══════════════════════════════════════════════════════════════════════════
 
-from models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
-from models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
-from models.image_module import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
+from leaguebot.image.models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
+from leaguebot.image.models.image_module import (  # noqa: E402
     PROBLEM_EXTENSION,
     PROBLEM_MISSING_MANDATORY_FIELD,
     PROBLEM_NOT_FOUND,
     PROBLEM_NOT_SVG,
 )
-from services.image_validity_service import check_template  # noqa: E402
+from leaguebot.image.services.image_validity_service import check_template  # noqa: E402
 
 _GOOD_SVG = VALID_SVG
 
@@ -1994,8 +1992,8 @@ async def test_rejection_of_one_template_leaves_the_others_alone(
 # 036 / T022 — season review reports, season approval blocks (FR-007 … FR-009)
 # ══════════════════════════════════════════════════════════════════════════
 
-from services.image_validity_service import check_all_templates as _check_all  # noqa: E402
-from services.image_validity_service import describe as _describe  # noqa: E402
+from leaguebot.image.services.image_validity_service import check_all_templates as _check_all  # noqa: E402
+from leaguebot.image.services.image_validity_service import describe as _describe  # noqa: E402
 
 
 async def _problem_lines(config_service, root, *, module_enabled=True):
@@ -2025,7 +2023,7 @@ async def test_two_broken_templates_are_named_individually(config_service, confi
 
     lines = await _problem_lines(config_service, configured)
 
-    from services.image_validity_service import PLAIN_FILE_MISSING, PLAIN_NOT_A_DRAWING
+    from leaguebot.image.services.image_validity_service import PLAIN_FILE_MISSING, PLAIN_NOT_A_DRAWING
 
     assert len(lines) == 2
     joined = " | ".join(lines)
@@ -2075,7 +2073,7 @@ async def test_missing_template_directory_reports_once_not_sixteen_times(
     config_service, configured
 ):
     """Existing 035 behaviour, retained: one shared reason, still one report each."""
-    from services.image_validity_service import PLAIN_DIRECTORY_MISSING
+    from leaguebot.image.services.image_validity_service import PLAIN_DIRECTORY_MISSING
 
     await config_service.set_field("template_directory", "no_such_dir")
 
@@ -2093,8 +2091,8 @@ async def test_missing_template_directory_reports_once_not_sixteen_times(
 # If both origins fall back to text, FR-030 is not implemented. That is the whole test.
 # ══════════════════════════════════════════════════════════════════════════
 
-from models.image_module import PostingOrigin  # noqa: E402
-from services.image_render_service import (  # noqa: E402
+from leaguebot.image.models.image_module import PostingOrigin  # noqa: E402
+from leaguebot.image.services.image_render_service import (  # noqa: E402
     POST_IMAGE,
     POST_TEXT_FALLBACK,
     REJECT_COMMAND,
@@ -2108,7 +2106,7 @@ def failing_render_service(db_path, config_service, module_service, monkeypatch)
     service = _render_service(config_service, module_service)
 
     async def always_fails(image_type, spec_builder, **kwargs):
-        from models.image_module import PROBLEM_NOT_FOUND, Problem, RenderOutcome
+        from leaguebot.image.models.image_module import PROBLEM_NOT_FOUND, Problem, RenderOutcome
 
         return RenderOutcome(
             problem=Problem(
@@ -2186,7 +2184,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
     # The rasteriser check runs first, so on a host without Inkscape it would answer
     # RASTERISER and the unknown-type branch under test would never be reached. The
     # test is about the reply to a caller defect, not about rasterising.
-    import services.image_render_service as render_service
+    import leaguebot.image.services.image_render_service as render_service
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
 
@@ -2211,7 +2209,7 @@ async def test_a_clean_render_posts_the_image(
 ):
     from tests.support.image_sample_data import build_spec
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
 
@@ -2232,7 +2230,7 @@ async def test_a_clean_render_posts_the_image(
 
 
 def test_notice_formatting_names_field_and_kind():
-    from models.image_module import RenderNotice
+    from leaguebot.image.models.image_module import RenderNotice
 
     text = ImageRenderService.format_notices(
         [
@@ -2288,12 +2286,12 @@ def _non_ephemeral_sends(path):
 
 def test_every_image_cog_reply_is_ephemeral():
     """The image module speaks to the caller, never to the room."""
-    assert _non_ephemeral_sends(_SRC / "cogs" / "image_cog.py") == []
+    assert _non_ephemeral_sends(_SRC / "leaguebot" / "image" / "cogs" / "image_cog.py") == []
 
 
 def test_the_render_service_writes_only_to_the_log_channel():
     """Its sole Discord sink is post_log; it holds no channel of its own (XIV.8)."""
-    source = (_SRC / "services" / "image_render_service.py").read_text(encoding="utf-8")
+    source = (_SRC / "leaguebot" / "image" / "services" / "image_render_service.py").read_text(encoding="utf-8")
 
     assert "post_log" in source
     for forbidden in ("post_forecast", "get_channel", "fetch_channel", "send_message"):
@@ -2309,7 +2307,7 @@ def test_the_season_approval_refusal_is_ephemeral():
     changed since. The lineup gate below is the image refusal that remains, and the rule
     it must keep is the one this test has always been about.
     """
-    source = (_SRC / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    source = (_SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
     marker = "the `lineup` image aspect is on but"
     assert marker in source
 
@@ -2328,10 +2326,10 @@ def test_no_lineup_module_branches_on_test_mode():
     """
     from pathlib import Path
 
-    src = Path(__file__).resolve().parents[2] / "src"
+    src = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
     for relative in (
-        "services/image_lineup_service.py",
-        "services/image_lineup_post.py",
+        "image/services/image_lineup_service.py",
+        "image/services/image_lineup_post.py",
     ):
         text = (src / relative).read_text(encoding="utf-8")
         assert "test_mode" not in text, relative
@@ -2342,7 +2340,7 @@ def test_the_lineup_draws_a_test_driver_through_the_name_chain():
     import sys as _sys
 
     _sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-    from services.image_lineup_service import resolve_driver_name
+    from leaguebot.image.services.image_lineup_service import resolve_driver_name
 
     # No Discord account and no signup record: the chain reaches the fourth link.
     assert (
@@ -2377,10 +2375,10 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     """One PNG per penalty, on a message carrying the driver mention and nothing besides."""
     from pathlib import Path
 
-    from services import verdict_announcement_service as vas
-    from services.image_verdict_service import VerdictKind
+    from leaguebot.results.services import verdict_announcement_service as vas
+    from leaguebot.image.services.image_verdict_service import VerdictKind
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_field("template_directory", "templates")
     await config_service.set_aspect("verdicts", True)
@@ -2453,10 +2451,10 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
     """The toggle decides how a posting is dressed, never whether it happens."""
-    from services import verdict_announcement_service as vas
-    from services.image_verdict_service import VerdictKind
+    from leaguebot.results.services import verdict_announcement_service as vas
+    from leaguebot.image.services.image_verdict_service import VerdictKind
 
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", template_dir, raising=False)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
     await _enable(module_service, config_service)
     await config_service.set_aspect("verdicts", False)
 

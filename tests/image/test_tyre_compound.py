@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.asset_resolver import normalise  # noqa: E402
-from utils.tyre_compound import (  # noqa: E402
+from leaguebot.image.utils.asset_resolver import normalise  # noqa: E402
+from leaguebot.image.utils.tyre_compound import (  # noqa: E402
     TYRE_COMPOUNDS,
     TYRE_COMPOUND_ALIASES,
     canonicalise_tyre,

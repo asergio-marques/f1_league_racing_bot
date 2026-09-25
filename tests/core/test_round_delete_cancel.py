@@ -38,12 +38,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from services.cancellation_notice_service import CancellationReport  # noqa: E402
-from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus  # noqa: E402
-from services.season_service import SeasonImmutableError  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.services.cancellation_notice_service import CancellationReport  # noqa: E402
+from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
 SERVER_ID = 10908
 SEASON_ID = 3
@@ -158,14 +158,14 @@ def _replied(interaction) -> str:
 def _setup_id(cog):
     """`_get_setup_season_id` is a module function, so it is patched rather than stubbed."""
     return patch(
-        "cogs.season_cog._get_setup_season_id",
+        "leaguebot.core.cogs.season_cog._get_setup_season_id",
         new=AsyncMock(return_value=cog._setup_season_id),
     )
 
 
 def _submission(open_: bool = False):
     return patch(
-        "services.result_submission_service.is_submission_open",
+        "leaguebot.results.services.result_submission_service.is_submission_open",
         new=AsyncMock(return_value=open_),
     )
 
@@ -186,7 +186,7 @@ async def _cancel(
     """
     announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
     with _submission(submission_open), patch(
-        "services.cancellation_notice_service.announce_cancellation", new=announce
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.round_cancel)(
             cog, interaction, division, number, confirm
@@ -425,7 +425,7 @@ async def test_the_jobs_go_before_the_round_is_recorded_cancelled():
 async def test_the_modules_are_told_the_round_is_off():
     """Each enabled module says what the cancellation means for it — never core, and never
     the forecast channel regardless of the weather module (#175)."""
-    from services import cancellation_notice_service as cns
+    from leaguebot.core.services import cancellation_notice_service as cns
 
     cog = _make_cog()
     interaction = _interaction()
@@ -452,7 +452,7 @@ async def test_the_announcement_follows_the_round_being_recorded_cancelled():
     )
     announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
     with _submission(False), patch(
-        "services.cancellation_notice_service.announce_cancellation", new=announce
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.round_cancel)(
             cog, _interaction(), "Division 1", 5, "CONFIRM"
@@ -464,7 +464,7 @@ async def test_the_check_in_audit_reaches_the_log():
     cog = _make_cog()
     announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Division 1"))
     with _submission(False), patch(
-        "services.cancellation_notice_service.announce_cancellation", new=announce
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.round_cancel)(
             cog, _interaction(), "Division 1", 5, "CONFIRM"
@@ -473,7 +473,7 @@ async def test_the_check_in_audit_reaches_the_log():
 
 
 async def test_what_could_not_be_told_is_named_to_the_admin():
-    from services.cancellation_notice_service import NoticeFailure
+    from leaguebot.core.services.cancellation_notice_service import NoticeFailure
 
     cog = _make_cog()
     interaction = _interaction()

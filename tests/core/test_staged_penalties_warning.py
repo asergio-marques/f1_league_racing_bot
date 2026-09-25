@@ -6,8 +6,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from bot import staged_penalties_warning  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import staged_penalties_warning  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 2435
 

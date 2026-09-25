@@ -49,7 +49,7 @@ DRIVER_ID = "7"
 
 
 def _wizard(state, *, tracks=(), nationality_required=False, lap_index=0, **draft):
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord
 
     return SignupWizardRecord(
         id=1,
@@ -73,7 +73,7 @@ def _wizard(state, *, tracks=(), nationality_required=False, lap_index=0, **draf
 @pytest.fixture
 def advancer():
     """A `WizardService` with everything but the advancement logic stubbed."""
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
 
@@ -122,7 +122,7 @@ async def _advance(ctx, wizard):
     ],
 )
 async def test_each_step_leads_to_the_next(advancer, current, expected):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(getattr(WizardState, current))
 
@@ -135,7 +135,7 @@ async def test_each_step_leads_to_the_next(advancer, current, expected):
 async def test_moving_on_saves_the_wizard_and_resets_the_timeout(advancer):
     """The wizard survives a restart, so the new state has to be persisted before the
     prompt goes out — not after, or a restart in between would ask the old question."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
 
@@ -153,7 +153,7 @@ async def test_moving_on_saves_the_wizard_and_resets_the_timeout(advancer):
 
 async def test_nationality_is_skipped_when_the_league_does_not_require_it(advancer):
     """It is the first step, so this decides where the wizard starts as well."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NATIONALITY, nationality_required=False)
 
@@ -163,7 +163,7 @@ async def test_nationality_is_skipped_when_the_league_does_not_require_it(advanc
 
 
 async def test_nationality_leads_to_platform_when_it_is_required(advancer):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NATIONALITY, nationality_required=True)
 
@@ -180,7 +180,7 @@ async def test_nationality_leads_to_platform_when_it_is_required(advancer):
 async def test_a_reserve_driver_is_not_asked_which_team_they_prefer(advancer):
     """A reserve is not placed in a team, so the answer could not be honoured. The skip
     turns on an answer given two steps earlier."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_DRIVER_TYPE, driver_type="Reserve Driver")
 
@@ -190,7 +190,7 @@ async def test_a_reserve_driver_is_not_asked_which_team_they_prefer(advancer):
 
 
 async def test_a_full_time_driver_is_asked_which_team_they_prefer(advancer):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_DRIVER_TYPE, driver_type="Full-Time Driver")
 
@@ -205,7 +205,7 @@ async def test_a_full_time_driver_is_asked_which_team_they_prefer(advancer):
 
 
 async def test_lap_times_are_skipped_when_the_league_selected_no_tracks(advancer):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMMATE, tracks=())
 
@@ -215,7 +215,7 @@ async def test_lap_times_are_skipped_when_the_league_selected_no_tracks(advancer
 
 
 async def test_lap_times_are_asked_for_when_tracks_are_selected(advancer):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMMATE, tracks=("1", "2"))
 
@@ -227,7 +227,7 @@ async def test_lap_times_are_asked_for_when_tracks_are_selected(advancer):
 async def test_the_wizard_stays_on_lap_time_while_tracks_remain(advancer):
     """The only step the wizard can stay on. The index has already been moved by the
     handler, so this is asking about the *next* track rather than repeating the last."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_LAP_TIME, tracks=("1", "2"), lap_index=1)
 
@@ -239,7 +239,7 @@ async def test_the_wizard_stays_on_lap_time_while_tracks_remain(advancer):
 
 
 async def test_the_last_track_moves_the_wizard_on(advancer):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_LAP_TIME, tracks=("1", "2"), lap_index=2)
 
@@ -256,7 +256,7 @@ async def test_the_last_track_moves_the_wizard_on(advancer):
 async def test_write_is_revoked_when_entering_a_button_only_step(advancer):
     """Platform is answered by a button, so typing is turned off to stop a driver
     answering in a form the wizard will not read."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NATIONALITY, nationality_required=True)
 
@@ -268,7 +268,7 @@ async def test_write_is_revoked_when_entering_a_button_only_step(advancer):
 async def test_write_is_restored_when_leaving_a_button_only_step(advancer):
     """The half that matters most. A driver left without write permission cannot answer
     the next typed question, and the wizard stalls until it times out."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
 
@@ -280,7 +280,7 @@ async def test_write_is_restored_when_leaving_a_button_only_step(advancer):
 async def test_a_driver_who_has_left_the_server_does_not_stop_the_advance(advancer):
     """`get_member` returns None for someone who has left. The permission call is skipped
     rather than raising inside the wizard."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     advancer.guild.get_member = MagicMock(return_value=None)
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
@@ -297,7 +297,7 @@ async def test_a_driver_who_has_left_the_server_does_not_stop_the_advance(advanc
 
 
 async def test_the_last_step_commits_the_signup(advancer):
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NOTES)
 
@@ -309,7 +309,7 @@ async def test_the_last_step_commits_the_signup(advancer):
 async def test_the_final_answers_are_saved_before_the_commit_reads_them(advancer):
     """`commit_wizard` reads the draft back out of the database rather than being handed
     it, so an unsaved last answer would be committed as though never given."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NOTES, notes="See you there")
 
@@ -326,7 +326,7 @@ async def test_the_final_answers_are_saved_before_the_commit_reads_them(advancer
 async def test_a_correction_commits_instead_of_resuming_the_sequence(advancer):
     """A driver amending one answer after review must not be asked every later question
     again."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM, _is_correction=True)
 
@@ -340,7 +340,7 @@ async def test_a_correction_commits_instead_of_resuming_the_sequence(advancer):
 async def test_the_correction_flag_is_consumed_rather_than_left_behind(advancer):
     """Popped, not read. Left in place it would make the *next* advance a correction too,
     and the driver would never reach the rest of the wizard."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM, _is_correction=True)
 

@@ -31,14 +31,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from lxml import etree  # noqa: E402
 
-from services.image_render_service import rasterise  # noqa: E402
-from utils.svg_document import (  # noqa: E402
+from leaguebot.image.services.image_render_service import rasterise  # noqa: E402
+from leaguebot.image.utils.svg_document import (  # noqa: E402
     FieldIndex,
     computed_style,
     parse_svg_bytes,
     stylesheet,
 )
-from utils.svg_palette import apply_palette  # noqa: E402
+from leaguebot.image.utils.svg_palette import apply_palette  # noqa: E402
 
 pytestmark = pytest.mark.rasteriser
 

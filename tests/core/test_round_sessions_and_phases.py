@@ -44,10 +44,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import RoundFormat  # noqa: E402
-from models.session import SESSIONS_BY_FORMAT, SessionType  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
+from leaguebot.core.models.session import SESSIONS_BY_FORMAT, SessionType  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 10408
 SEASON_ID = 1

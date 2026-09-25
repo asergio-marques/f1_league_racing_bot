@@ -16,10 +16,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_calendar_service import (  # noqa: E402
+from leaguebot.image.services.image_calendar_service import (  # noqa: E402
     MYSTERY_RACE_NAME as CALENDAR_MYSTERY_RACE_NAME,
 )
-from services.image_rsvp_service import (  # noqa: E402
+from leaguebot.image.services.image_rsvp_service import (  # noqa: E402
     MYSTERY_RACE_NAME as RSVP_MYSTERY_RACE_NAME,
 )
 
@@ -36,7 +36,7 @@ def test_the_calendar_names_the_grand_prix_in_full():
 
 def test_the_verdict_names_the_grand_prix_in_full():
     """The verdict holds the literal inline, so it is read out of the source."""
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     source = inspect.getsource(image_verdict_post)
     assert f'race_name = "{MYSTERY_GRAND_PRIX}"' in source
@@ -44,7 +44,7 @@ def test_the_verdict_names_the_grand_prix_in_full():
 
 
 def test_no_module_still_abbreviates_it():
-    from services import image_calendar_service, image_rsvp_service
+    from leaguebot.image.services import image_calendar_service, image_rsvp_service
 
     for module in (image_rsvp_service, image_calendar_service):
         assert "Mystery GP" not in inspect.getsource(module)

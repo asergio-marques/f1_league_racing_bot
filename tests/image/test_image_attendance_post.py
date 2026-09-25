@@ -21,8 +21,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 from pathlib import Path  # noqa: E402
 
-from services import attendance_service  # noqa: E402
-from services.image_attendance_post import (  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.image.services.image_attendance_post import (  # noqa: E402
     SheetRender,
     attendance_enabled,
 )
@@ -82,8 +82,8 @@ def test_the_sheet_resolves_the_folder_its_marks_are_drawn_from():
     sheet projects but never resolves draws nothing at all, silently, and no fixture would
     say so.
     """
-    from services import image_attendance_post
-    from services.image_attendance_service import MARK_ASSET_CLASS
+    from leaguebot.image.services import image_attendance_post
+    from leaguebot.image.services.image_attendance_service import MARK_ASSET_CLASS
 
     source = inspect.getsource(image_attendance_post.render_sheet)
     assert f'("{MARK_ASSET_CLASS}", "marker_directory")' in source
@@ -108,7 +108,7 @@ def test_the_image_path_has_no_send_site_of_its_own():
     half left deleting first would be the fallback — the path reached because something has
     already gone wrong.
     """
-    import services.image_attendance_post as post
+    import leaguebot.image.services.image_attendance_post as post
 
     source = inspect.getsource(post)
     assert "channel.send" not in source
@@ -206,11 +206,11 @@ def _rendered_sheet(tmp_path):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     from tests.support.image_sample_data import build_attendance_drawing
 
-    from services.image_attendance_service import build_fill_spec
-    from services.image_render_service import rasterise
-    from utils.paths import PROJECT_ROOT
-    from utils.svg_document import canvas_of
-    from utils.svg_fill import fill as fill_spec_onto
+    from leaguebot.image.services.image_attendance_service import build_fill_spec
+    from leaguebot.image.services.image_render_service import rasterise
+    from leaguebot.core.utils.paths import PROJECT_ROOT
+    from leaguebot.image.utils.svg_document import canvas_of
+    from leaguebot.image.utils.svg_fill import fill as fill_spec_onto
 
     class _Team:
         def __init__(self, name, reserve=False):
@@ -270,7 +270,7 @@ def test_the_two_marks_reach_the_raster_and_are_told_apart_by_hue(tmp_path):
     taken in the corners, well clear of the glyph — whose width depends on which font the
     host resolved.
     """
-    from utils.svg_document import FieldIndex
+    from leaguebot.image.utils.svg_document import FieldIndex
 
     from PIL import Image  # noqa: PLC0415
 

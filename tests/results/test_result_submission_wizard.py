@@ -49,9 +49,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import RoundFormat  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     get_sessions_for_format,
     run_result_submission_job,
 )
@@ -190,29 +190,29 @@ async def _run(
 
     patches = {
         "validation": patch(
-            "services.result_submission_service._build_division_validation_data",
+            "leaguebot.results.services.result_submission_service._build_division_validation_data",
             new=AsyncMock(return_value=({101, 102}, {TEAM_ROLE: TEAM_ROLE}, None, {101: TEAM_ROLE, 102: TEAM_ROLE}, set(), {}, {"t3001": TEAM_ROLE})),
         ),
         "create": patch(
-            "services.result_submission_service.create_submission_channel",
+            "leaguebot.results.services.result_submission_service.create_submission_channel",
             new=AsyncMock(return_value=sub, side_effect=create_error),
         ),
         "configs": patch(
-            "services.season_points_service.get_attached_config_names",
+            "leaguebot.results.services.season_points_service.get_attached_config_names",
             new=AsyncMock(return_value=list(configs)),
         ),
-        "select": patch("services.result_submission_service._ConfigSelectView", new=_FakeSelect),
+        "select": patch("leaguebot.results.services.result_submission_service._ConfigSelectView", new=_FakeSelect),
         "points": patch(
-            "services.result_submission_service._apply_points_from_config", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service._apply_points_from_config", new=AsyncMock()
         ),
         "penalty": patch(
-            "services.result_submission_service.enter_penalty_state", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
         ),
         "close": patch(
-            "services.result_submission_service.close_submission_channel", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
         "refresh": patch(
-            "services.season_service.SeasonService.refresh_division_status", new=AsyncMock()
+            "leaguebot.core.services.season_service.SeasonService.refresh_division_status", new=AsyncMock()
         ),
     }
     started = {k: p.start() for k, p in patches.items()}
@@ -297,7 +297,7 @@ async def test_a_round_that_does_not_exist_opens_nothing(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_noround")
     bot = _bot(db_path, [])
 
-    sub_patch = patch("services.result_submission_service.create_submission_channel", new=AsyncMock())
+    sub_patch = patch("leaguebot.results.services.result_submission_service.create_submission_channel", new=AsyncMock())
     with sub_patch as create:
         await run_result_submission_job(9999, bot)
 
@@ -338,10 +338,10 @@ async def test_failing_to_build_validation_data_opens_nothing(tmp_path):
     bot = _bot(db_path, [])
 
     with patch(
-        "services.result_submission_service._build_division_validation_data",
+        "leaguebot.results.services.result_submission_service._build_division_validation_data",
         new=AsyncMock(side_effect=RuntimeError("team service down")),
     ), patch(
-        "services.result_submission_service.create_submission_channel", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.create_submission_channel", new=AsyncMock()
     ) as create:
         await run_result_submission_job(ROUND_ID, bot)  # must not raise
 

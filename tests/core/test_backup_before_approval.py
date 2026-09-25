@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import (  # noqa: E402
     APPROVAL_WINDOW_SECONDS,
     SeasonCog,
     _ApproveView,
@@ -212,7 +212,7 @@ async def test_the_view_offers_three_answers():
 async def test_saving_takes_a_backup(tmp_path):
     import sqlite3
 
-    from services import backup_service
+    from leaguebot.core.services import backup_service
 
     live = tmp_path / "bot.db"
     connection = sqlite3.connect(str(live))

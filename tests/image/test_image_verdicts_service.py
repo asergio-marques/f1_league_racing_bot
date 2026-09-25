@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_verdict_service import (  # noqa: E402
+from leaguebot.image.services.image_verdict_service import (  # noqa: E402
     VerdictDrawing,
     VerdictKind,
     mention_ids,
@@ -87,7 +87,7 @@ def test_one_template_serves_all_three_kinds():
 
 def test_the_sanction_rendering_is_the_announcement_service_s():
     """XIV.7's one rendering: the graphic calls it and holds none of its own."""
-    from services import verdict_announcement_service  # noqa: PLC0415
+    from leaguebot.results.services import verdict_announcement_service  # noqa: PLC0415
 
     assert sanction_text.__module__ != verdict_announcement_service.__name__
     assert sanction_text("TIME_PENALTY", 5) == verdict_announcement_service.describe_penalty(

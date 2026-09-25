@@ -269,7 +269,7 @@ def test_the_two_grids_may_differ_in_chip_shape():
     and is passed over by the aspect check (Constitution XIV.6, v7.5.0). The exemption is the
     slot's: `marker` carries a 1:1 aspect for the position-change arrows it also draws.
     """
-    from models.image_constants import PACKAGED_ASSET_ASPECTS
+    from leaguebot.image.models.image_constants import PACKAGED_ASSET_ASPECTS
 
     assert PACKAGED_ASSET_ASPECTS["marker"] == pytest.approx(1.0)
 
@@ -303,8 +303,8 @@ def test_the_widest_cell_a_grid_can_carry_stays_inside_its_column(tmp_path):
     """
     from PIL import Image  # noqa: PLC0415
 
-    from services.image_render_service import rasterise
-    from services.image_standings_service import (
+    from leaguebot.image.services.image_render_service import rasterise
+    from leaguebot.image.services.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         CellValue,
         RoundCells,
@@ -313,8 +313,8 @@ def test_the_widest_cell_a_grid_can_carry_stays_inside_its_column(tmp_path):
         StandingsEntry,
         build_fill_spec,
     )
-    from utils.svg_document import canvas_of, load_svg
-    from utils.svg_fill import fill
+    from leaguebot.image.utils.svg_document import canvas_of, load_svg
+    from leaguebot.image.utils.svg_fill import fill
 
     widest = {
         suffix: CellValue(text="DSQ" if suffix.endswith("_race_result") else "DNS")

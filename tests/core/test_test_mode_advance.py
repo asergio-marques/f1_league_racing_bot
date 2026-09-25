@@ -39,9 +39,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 # Aliased on import: pytest tries to collect any module-level name starting with `Test`
 # as a test class, and warns that it cannot because the cog has an `__init__`.
-from cogs.test_mode_cog import TestModeCog as _Cog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import Round, RoundFormat  # noqa: E402
+from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import Round, RoundFormat  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12308
@@ -138,22 +138,22 @@ def _replied(interaction) -> str:
 async def _advance(cog, interaction, entry, **patches):
     """Run advance with the queue answering *entry* and every phase service stubbed."""
     defaults = {
-        "services.mystery_notice_service.run_mystery_notice": AsyncMock(return_value=None),
-        "services.phase1_service.run_phase1": AsyncMock(return_value=None),
-        "services.phase2_service.run_phase2": AsyncMock(return_value=None),
-        "services.phase3_service.run_phase3": AsyncMock(return_value=None),
-        "services.rsvp_service.run_rsvp_notice": AsyncMock(return_value=None),
-        "services.rsvp_service.run_rsvp_last_notice": AsyncMock(return_value=None),
-        "services.rsvp_service.run_rsvp_deadline": AsyncMock(return_value=None),
-        "services.rsvp_service.run_rsvp_cleanup": AsyncMock(return_value=None),
-        "services.forecast_cleanup_service.run_post_race_cleanup": AsyncMock(return_value=None),
-        "services.result_submission_service.is_submission_open": AsyncMock(
+        "leaguebot.weather.services.mystery_notice_service.run_mystery_notice": AsyncMock(return_value=None),
+        "leaguebot.weather.services.phase1_service.run_phase1": AsyncMock(return_value=None),
+        "leaguebot.weather.services.phase2_service.run_phase2": AsyncMock(return_value=None),
+        "leaguebot.weather.services.phase3_service.run_phase3": AsyncMock(return_value=None),
+        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(return_value=None),
+        "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice": AsyncMock(return_value=None),
+        "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline": AsyncMock(return_value=None),
+        "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup": AsyncMock(return_value=None),
+        "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup": AsyncMock(return_value=None),
+        "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
             return_value=False
         ),
-        "services.result_submission_service.run_result_submission_job": AsyncMock(
+        "leaguebot.results.services.result_submission_service.run_result_submission_job": AsyncMock(
             return_value=None
         ),
-        "services.test_mode_service.round_result_status": AsyncMock(
+        "leaguebot.core.services.test_mode_service.round_result_status": AsyncMock(
             return_value="AWAITING_RESULTS"
         ),
     }
@@ -168,7 +168,7 @@ async def _advance(cog, interaction, entry, **patches):
             mocks[target.rsplit(".", 1)[1]] = mock
         stack.enter_context(
             patch(
-                "cogs.test_mode_cog.get_next_pending_phase",
+                "leaguebot.core.cogs.test_mode_cog.get_next_pending_phase",
                 new=AsyncMock(return_value=entry),
             )
         )
@@ -292,7 +292,7 @@ async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
         interaction,
         _entry(0),
         **{
-            "services.mystery_notice_service.run_mystery_notice": AsyncMock(
+            "leaguebot.weather.services.mystery_notice_service.run_mystery_notice": AsyncMock(
                 side_effect=RuntimeError("API down")
             )
         },
@@ -314,7 +314,7 @@ async def test_a_failing_notice_is_not_marked_done(tmp_path):
         _interaction(),
         _entry(0),
         **{
-            "services.mystery_notice_service.run_mystery_notice": AsyncMock(
+            "leaguebot.weather.services.mystery_notice_service.run_mystery_notice": AsyncMock(
                 side_effect=RuntimeError("API down")
             )
         },
@@ -354,7 +354,7 @@ async def test_the_round_s_real_results_job_is_cancelled_before_the_wizard_opens
     `cancel_job` held that as correct (issue #139). Only this round's results job goes —
     another round's, and this round's forecasts, stay queued.
     """
-    from services.scheduler_service import SchedulerService
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
     cog = _make_cog(await _make_db(tmp_path))
     service = SchedulerService(str(tmp_path / "jobs.db"))
@@ -399,7 +399,7 @@ async def test_an_open_submission_blocks_the_next_advance(tmp_path):
         interaction,
         _entry(4),
         **{
-            "services.result_submission_service.is_submission_open": AsyncMock(
+            "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
                 return_value=True
             )
         },
@@ -418,10 +418,10 @@ async def test_a_round_awaiting_penalty_review_names_that_review(tmp_path):
         interaction,
         _entry(4),
         **{
-            "services.result_submission_service.is_submission_open": AsyncMock(
+            "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
                 return_value=True
             ),
-            "services.test_mode_service.round_result_status": AsyncMock(
+            "leaguebot.core.services.test_mode_service.round_result_status": AsyncMock(
                 return_value="AWAITING_REPORT_VERDICTS"
             ),
         },
@@ -441,10 +441,10 @@ async def test_a_round_awaiting_appeals_names_the_appeals_review(tmp_path):
         interaction,
         _entry(4),
         **{
-            "services.result_submission_service.is_submission_open": AsyncMock(
+            "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
                 return_value=True
             ),
-            "services.test_mode_service.round_result_status": AsyncMock(
+            "leaguebot.core.services.test_mode_service.round_result_status": AsyncMock(
                 return_value="AWAITING_APPEAL_VERDICTS"
             ),
         },
@@ -466,10 +466,10 @@ async def test_a_finalised_round_with_an_open_channel_says_so_differently(tmp_pa
         interaction,
         _entry(4),
         **{
-            "services.result_submission_service.is_submission_open": AsyncMock(
+            "leaguebot.results.services.result_submission_service.is_submission_open": AsyncMock(
                 return_value=True
             ),
-            "services.test_mode_service.round_result_status": AsyncMock(
+            "leaguebot.core.services.test_mode_service.round_result_status": AsyncMock(
                 return_value="FINAL"
             ),
         },
@@ -504,7 +504,7 @@ async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
         interaction,
         _entry(5),
         **{
-            "services.rsvp_service.run_rsvp_notice": AsyncMock(
+            "leaguebot.attendance.services.rsvp_service.run_rsvp_notice": AsyncMock(
                 side_effect=RuntimeError("no channel")
             )
         },
@@ -562,8 +562,8 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
 @pytest.mark.parametrize(
     "phase,runner,phrase",
     [
-        (6, "services.rsvp_service.run_rsvp_last_notice", "RSVP last-notice"),
-        (7, "services.rsvp_service.run_rsvp_deadline", "RSVP deadline"),
+        (6, "leaguebot.attendance.services.rsvp_service.run_rsvp_last_notice", "RSVP last-notice"),
+        (7, "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline", "RSVP deadline"),
     ],
 )
 async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, runner, phrase):
@@ -644,8 +644,8 @@ async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner,
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     target = {
-        "run_post_race_cleanup": "services.forecast_cleanup_service.run_post_race_cleanup",
-        "run_rsvp_cleanup": "services.rsvp_service.run_rsvp_cleanup",
+        "run_post_race_cleanup": "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup",
+        "run_rsvp_cleanup": "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup",
     }[runner]
 
     await _advance(
@@ -696,7 +696,7 @@ async def test_a_weather_phase_cancels_its_job_before_running(tmp_path):
         cog,
         _interaction(),
         _entry(2),
-        **{"services.phase2_service.run_phase2": AsyncMock(side_effect=lambda *_: order.append("run"))},
+        **{"leaguebot.weather.services.phase2_service.run_phase2": AsyncMock(side_effect=lambda *_: order.append("run"))},
     )
 
     assert order == ["cancel", "run"]
@@ -710,7 +710,7 @@ async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
         cog,
         interaction,
         _entry(1),
-        **{"services.phase1_service.run_phase1": AsyncMock(side_effect=RuntimeError("boom"))},
+        **{"leaguebot.weather.services.phase1_service.run_phase1": AsyncMock(side_effect=RuntimeError("boom"))},
     )
 
     replied = _replied(interaction)

@@ -41,10 +41,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import services.penalty_wizard as pw  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+import leaguebot.results.services.penalty_wizard as pw  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     ApprovalView,
     PenaltyReviewState,
     PenaltyReviewView,
@@ -146,7 +146,7 @@ def _current(monkeypatch):
 
 
 def _approval_step():
-    return patch("services.penalty_wizard._show_approval_step", new=AsyncMock(return_value=None))
+    return patch("leaguebot.results.services.penalty_wizard._show_approval_step", new=AsyncMock(return_value=None))
 
 
 async def _press(view, name: str, interaction):
@@ -324,7 +324,7 @@ async def test_approving_with_penalties_finalises_the_review():
     interaction = _interaction()
 
     with patch(
-        "services.result_submission_service.finalize_penalty_review",
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
         new=AsyncMock(return_value=None),
     ) as finalise:
         await _press(view, "approve_btn", interaction)
@@ -340,7 +340,7 @@ async def test_approving_with_nothing_staged_is_refused():
     interaction = _interaction()
 
     with patch(
-        "services.result_submission_service.finalize_penalty_review",
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
         new=AsyncMock(return_value=None),
     ) as finalise:
         await _press(view, "approve_btn", interaction)
@@ -368,7 +368,7 @@ async def test_resubmit_enters_the_resubmission_flow():
     interaction = _interaction()
 
     with patch(
-        "services.result_submission_service.enter_resubmit_flow",
+        "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
         new=AsyncMock(return_value=None),
     ) as resubmit:
         await _press(view, "resubmit_btn", interaction)
@@ -393,7 +393,7 @@ async def test_the_pardon_button_opens_the_pardon_modal():
 
 
 def _pardon(idx: int = 0):
-    from services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.penalty_wizard import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER + idx, driver_profile_id=31 + idx, attendance_id=41 + idx,
@@ -473,9 +473,9 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment):
     button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
     interaction = _interaction()
 
-    with patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
-        "services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
-    ), patch("services.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
+    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
+        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch("leaguebot.results.services.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
         await button.callback(interaction)
 
     assert [p.attendance_id for p in state.staged_pardons] == [42]
@@ -494,8 +494,8 @@ async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
     refresh = AsyncMock()
     moved_on = AsyncMock(return_value="❌ already been approved")
 
-    with patch("services.penalty_wizard._refresh_prompt", new=refresh), patch(
-        "services.penalty_wizard._review_moved_on", new=moved_on
+    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh), patch(
+        "leaguebot.results.services.penalty_wizard._review_moved_on", new=moved_on
     ):
         await button.callback(interaction)
 
@@ -507,7 +507,7 @@ async def test_a_pardon_cannot_be_removed_once_the_reports_are_approved():
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
-    from services.penalty_wizard import AppealsReviewView
+    from leaguebot.results.services.penalty_wizard import AppealsReviewView
 
     state = _state()
     state.staged_appeals = [_penalty(s) for s in range(1, 31)]
@@ -546,9 +546,9 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(
-        "services.penalty_wizard._refresh_prompt", new=refresh
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
     ), patch(
-        "services.result_submission_service.enter_resubmit_flow", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock()
     ) as resubmit:
         if control.startswith("pw_"):
             await next(c for c in view.children if c.custom_id == control).callback(interaction)
@@ -581,7 +581,7 @@ async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_cla
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(
-        "services.penalty_wizard._refresh_prompt", new=refresh
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
     ):
         await getattr(type(view), button)(view, interaction, MagicMock())
 

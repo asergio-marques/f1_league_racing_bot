@@ -44,10 +44,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.results_cog import ResultsCog  # noqa: E402
-from services.amendment_service import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
+from leaguebot.core.services.amendment_service import (  # noqa: E402
     AmendmentNotDeliverableError,
     NonMonotonicAmendmentError,
 )
@@ -149,22 +149,22 @@ async def _review(
     discord.ui.View.wait = _answer  # type: ignore[assignment]
     try:
         with patch(
-            "services.amendment_service.get_amendment_state",
+            "leaguebot.core.services.amendment_service.get_amendment_state",
             new=AsyncMock(return_value=state),
         ), patch(
-            "services.amendment_service.get_modification_store_diff",
+            "leaguebot.core.services.amendment_service.get_modification_store_diff",
             new=AsyncMock(return_value=diff),
         ), patch(
-            "services.amendment_service.validate_modification_ordering",
+            "leaguebot.core.services.amendment_service.validate_modification_ordering",
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
-            "services.amendment_service.approval_faults",
+            "leaguebot.core.services.amendment_service.approval_faults",
             new=AsyncMock(return_value=panel_faults or []),
         ) as faults, patch(
-            "services.amendment_service.approve_amendment",
+            "leaguebot.core.services.amendment_service.approve_amendment",
             new=AsyncMock(side_effect=approve_error, return_value=approve_result or []),
         ) as approve, patch(
-            "services.result_submission_service.open_amendment_in_season",
+            "leaguebot.results.services.result_submission_service.open_amendment_in_season",
             new=AsyncMock(side_effect=list(held)),
         ):
             await undecorate(ResultsCog.amend_review)(cog, interaction)

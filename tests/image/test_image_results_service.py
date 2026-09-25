@@ -13,13 +13,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.points_config import SessionType
-from models.session_result import (
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.session_result import (
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,
 )
-from services.image_results_service import (
+from leaguebot.image.services.image_results_service import (
     QUALIFYING_TEMPLATE_KEY,
     RACE_TEMPLATE_KEY,
     ResultsDataError,
@@ -170,7 +170,7 @@ def test_entries_are_ordinalled_from_one_in_classification_order():
 def test_a_team_with_no_name_is_drawn_as_unknown_never_as_a_role():
     """A result records the division's team, so this marks a fault; a role is not a name
     the graphic can fall back on (#375)."""
-    from utils.results_formatter import UNKNOWN_TEAM
+    from leaguebot.results.utils.results_formatter import UNKNOWN_TEAM
 
     drawing = _resolve([_qual(1, 10)], team_names={})
     assert drawing.entries[0].team_name == UNKNOWN_TEAM

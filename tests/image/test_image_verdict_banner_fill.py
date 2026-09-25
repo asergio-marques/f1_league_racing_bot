@@ -15,14 +15,14 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_verdict_banner_service import (  # noqa: E402
+from leaguebot.image.services.image_verdict_banner_service import (  # noqa: E402
     TEMPLATE_KEY,
     VerdictBannerDrawing,
     build_fill_spec,
     resolve_drawing,
 )
-from utils.svg_document import load_svg, parse_svg_bytes  # noqa: E402
-from utils.svg_fill import fill  # noqa: E402
+from leaguebot.image.utils.svg_document import load_svg, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_fill import fill  # noqa: E402
 
 SHIPPED = (
     Path(__file__).resolve().parents[2]

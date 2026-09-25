@@ -1,6 +1,6 @@
 """Switching the image, attendance and signup modules off.
 
-Issue #208, continuing `tests/unit/test_module_enable_disable.py`. Where that file covered the
+Issue #208, continuing `tests/core/test_module_enable_disable.py`. Where that file covered the
 dependency rules on the way *in*, this one covers what each module leaves behind on the way out
 — which differs per module, deliberately, and is the part a reader would be most tempted to
 make uniform.
@@ -37,9 +37,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.module_cog import ModuleCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
 
 SERVER_ID = 11408
 ACTOR_ID = 77

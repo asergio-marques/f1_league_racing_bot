@@ -36,8 +36,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.phase2_service import run_phase2  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.weather.services.phase2_service import run_phase2  # noqa: E402
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -175,11 +175,11 @@ def _run(db_path: str, *, drawn: str = "mixed"):
 
     async def _invoke():
         with patch(
-            "services.phase2_service.random.choice", return_value=drawn
+            "leaguebot.weather.services.phase2_service.random.choice", return_value=drawn
         ) as choice, patch(
-            "services.forecast_cleanup_service.post_phase_message", new=posted
+            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
         ), patch(
-            "services.image_weather_post.attach_forecast",
+            "leaguebot.image.services.image_weather_post.attach_forecast",
             new=AsyncMock(return_value=None),
         ):
             await run_phase2(ROUND_ID, bot)
@@ -340,11 +340,11 @@ async def test_phase_1_is_performed_first_when_it_has_not_been(tmp_path):
     bot = _make_bot(db_path)
 
     with patch("random.betavariate", return_value=0.2), patch(
-        "services.phase2_service.random.choice", return_value="mixed"
+        "leaguebot.weather.services.phase2_service.random.choice", return_value="mixed"
     ), patch(
-        "services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
     ), patch(
-        "services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
+        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
     ):
         await run_phase2(ROUND_ID, bot)
 

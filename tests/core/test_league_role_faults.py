@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.channel_guard import league_role_faults  # noqa: E402
+from leaguebot.core.utils.channel_guard import league_role_faults  # noqa: E402
 
 BASE = 501
 DRIVER = 502

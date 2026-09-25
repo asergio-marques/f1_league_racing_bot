@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 22120
 
@@ -53,7 +53,7 @@ async def test_an_entry_outlives_the_profile_it_belonged_to(db_path):
 
 
 async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(db_path):
-    from services.test_roster_service import _reattach_history
+    from leaguebot.core.services.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles WHERE id = 1")
@@ -68,7 +68,7 @@ async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(d
 
 
 async def test_history_held_by_a_living_profile_is_not_taken(db_path):
-    from services.test_roster_service import _reattach_history
+    from leaguebot.core.services.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
         await _reattach_history(db, "9000000000000000001", 99)
@@ -134,8 +134,8 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from types import SimpleNamespace
 
-    from services.driver_service import DriverService
-    from services.season_end_service import _write_driver_history_entries
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.season_end_service import _write_driver_history_entries
 
     await _seed_a_finished_season(db_path)
     await DriverService(db_path).reassign_user_id(

@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.image_config_service import ImageConfigService  # noqa: E402
-from services.image_preview_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.image_config_service import ImageConfigService  # noqa: E402
+from leaguebot.image.services.image_preview_service import (  # noqa: E402
     REASON_MYSTERY_ROUND,
     REASON_NO_DIVISION,
     REASON_NO_ROUND,
@@ -36,7 +36,7 @@ from services.image_preview_service import (  # noqa: E402
     resolve_asset_directories,
     resolve_context,
 )
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -553,7 +553,7 @@ class TestContextCarriesTheCalendar:
         a builder still querying by ``division_id`` would have found the three seeded
         rounds and drawn them happily.
         """
-        from services.image_calendar_service import CalendarDataError
+        from leaguebot.image.services.image_calendar_service import CalendarDataError
 
         context = await resolve_context(bot, "Division 1")
         assert len(context.rounds) == 3
@@ -598,7 +598,7 @@ class TestContextCarriesTheCalendar:
         """The only `get_division_rounds` call left is the one in `resolve_context`."""
         import inspect
 
-        from services import image_preview_service
+        from leaguebot.image.services import image_preview_service
 
         source = inspect.getsource(image_preview_service)
         assert source.count("get_division_rounds(") == 1
@@ -744,7 +744,7 @@ class TestRefusalsStillFireOnAPendingSeason:
 
 
 def test_a_round_drawn_preview_has_its_round():
-    from services.image_preview_service import PreviewContext
+    from leaguebot.image.services.image_preview_service import PreviewContext
 
     rnd = SimpleNamespace(round_number=3)
     context = PreviewContext(
@@ -756,7 +756,7 @@ def test_a_round_drawn_preview_has_its_round():
 def test_a_round_drawn_preview_reached_without_its_round_is_raised_by_name():
     """`resolve_context` refuses such a preview first; a builder reached around that refusal
     says so rather than failing on `None` further in."""
-    from services.image_preview_service import PreviewContext
+    from leaguebot.image.services.image_preview_service import PreviewContext
 
     context = PreviewContext(season_number=1, division_id=1, division_name="Pro", division_tier=1)
     with pytest.raises(RuntimeError, match="resolved without it"):

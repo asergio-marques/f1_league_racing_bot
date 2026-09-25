@@ -8,7 +8,7 @@ import discord
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from services.verdict_announcement_service import (
+from leaguebot.results.services.verdict_announcement_service import (
     describe_penalty,
     translate_penalty,
     post_penalty_announcements,
@@ -114,7 +114,7 @@ async def test_post_penalty_announcements_reports_when_no_channel_configured(tmp
     must have before its placements can be confirmed, so a round reaching a penalty verdict
     without one is an anomaly — and the penalty has already been applied.
     """
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -163,7 +163,7 @@ async def test_post_penalty_announcements_reports_when_no_channel_configured(tmp
 @pytest.mark.asyncio
 async def test_post_penalty_announcements_reports_when_channel_inaccessible(tmp_path):
     """A verdicts channel that has been deleted is named, with what went unannounced (#237)."""
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -225,7 +225,7 @@ async def test_post_appeal_announcements_empty_list_noop():
 #
 # These drive the `post_*` entry points with a real driver in the database, which nothing
 # did before: the older tests above stop at an unconfigured or inaccessible channel, and
-# tests/unit/test_image_verdicts_post.py calls `_send_verdict` with the name already
+# tests/image/test_image_verdicts_post.py calls `_send_verdict` with the name already
 # resolved. The path in between resolved every real driver to their raw user id.
 
 SERVER_ID = 1001
@@ -300,7 +300,7 @@ class _Bot:
 def capture_drawings(monkeypatch, tmp_path):
     """Capture what the verdict graphic is asked to draw, without a rasteriser.
 
-    Mirrors `stub_image_path` in tests/unit/test_image_verdicts_post.py; kept local so the
+    Mirrors `stub_image_path` in tests/image/test_image_verdicts_post.py; kept local so the
     image toggle can be switched off for the test that pins the textual announcement.
     """
     png = tmp_path / "verdict.png"
@@ -317,9 +317,9 @@ def capture_drawings(monkeypatch, tmp_path):
         The resolver below names every mention after the penalised driver, which the real
         `build_drawing` stopped doing in #142. That is harmless here — these tests assert on
         the fallback and on what was posted, never on a name — but do not read it as the
-        production rule. tests/unit/test_image_verdict_mentions.py holds that.
+        production rule. tests/image/test_image_verdict_mentions.py holds that.
         """
-        from services.image_verdict_service import VerdictDrawing, resolve_mentions
+        from leaguebot.image.services.image_verdict_service import VerdictDrawing, resolve_mentions
 
         state["built"].append(kwargs)
         return VerdictDrawing(
@@ -340,7 +340,7 @@ def capture_drawings(monkeypatch, tmp_path):
         )
 
     async def _render(_bot, drawing, **_kwargs):
-        from services.image_verdict_post import VerdictRender
+        from leaguebot.image.services.image_verdict_post import VerdictRender
 
         return VerdictRender(png=png, notices=[], problem=None)
 
@@ -350,7 +350,7 @@ def capture_drawings(monkeypatch, tmp_path):
     async def _team(_bot, _guild, **_kwargs):
         return "Red Bull"
 
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     monkeypatch.setattr(image_verdict_post, "verdicts_enabled", _enabled)
     monkeypatch.setattr(image_verdict_post, "build_drawing", _build)
@@ -363,7 +363,7 @@ def capture_drawings(monkeypatch, tmp_path):
 
 async def _seed_round(db_path: str) -> dict:
     """A season, a division with a verdicts channel, and one round with a race result."""
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     await run_migrations(db_path)
 
@@ -421,7 +421,7 @@ async def _seed_driver(
     test_display_name: str | None = None,
 ) -> None:
     """One driver profile, and the signup record the league holds for them where it does."""
-    from db.database import get_connection
+    from leaguebot.core.db.database import get_connection
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -518,8 +518,8 @@ async def test_penalty_verdict_resolves_the_mention_in_the_justification(
     )
 
     built = capture_drawings["built"][0]
-    from services.image_verdict_post import _mention_names
-    from services.image_verdict_service import resolve_mentions
+    from leaguebot.image.services.image_verdict_post import _mention_names
+    from leaguebot.image.services.image_verdict_service import resolve_mentions
 
     names = await _mention_names(
         bot,
@@ -630,7 +630,7 @@ async def test_autosanction_verdict_names_the_driver_not_their_id(
     tmp_path, capture_drawings
 ):
     """A sacking names the driver as a penalty does, and never by their user id (#141)."""
-    from services.verdict_announcement_service import post_autosanction_announcement
+    from leaguebot.results.services.verdict_announcement_service import post_autosanction_announcement
 
     db_path = str(tmp_path / "test.db")
     seeded = await _seed_round(db_path)
@@ -640,7 +640,7 @@ async def test_autosanction_verdict_names_the_driver_not_their_id(
     bot = _Bot(db_path, channel)
 
     with patch(
-        "services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
         return_value=AsyncMock(),
     ):
         await post_autosanction_announcement(
@@ -662,7 +662,7 @@ async def test_autosanction_verdict_names_the_driver_not_their_id(
 @pytest.mark.asyncio
 async def test_autosanction_message_still_carries_the_mention(tmp_path, capture_drawings):
     """With graphics off, the textual announcement is untouched: a mention, not a name."""
-    from services.verdict_announcement_service import post_autosanction_announcement
+    from leaguebot.results.services.verdict_announcement_service import post_autosanction_announcement
 
     capture_drawings["enabled"] = False
 
@@ -674,7 +674,7 @@ async def test_autosanction_message_still_carries_the_mention(tmp_path, capture_
     bot = _Bot(db_path, channel)
 
     with patch(
-        "services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
         return_value=AsyncMock(),
     ):
         await post_autosanction_announcement(
@@ -699,7 +699,7 @@ async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
     tmp_path, capture_drawings
 ):
     """E7 (issue #243): the result stands under DRIVER_ID, and the driver has moved on."""
-    from db.database import get_connection
+    from leaguebot.core.db.database import get_connection
 
     db_path = str(tmp_path / "test.db")
     seeded = await _seed_round(db_path)
@@ -832,7 +832,7 @@ async def test_an_unannounced_autosanction_says_it_was_still_applied(tmp_path):
     The distinction matters to the manager reading it: re-running the sanctions will not
     announce it, because the driver is no longer a candidate.
     """
-    from services.verdict_announcement_service import post_autosanction_announcement
+    from leaguebot.results.services.verdict_announcement_service import post_autosanction_announcement
 
     db_path = str(tmp_path / "autosanction.db")
     seeded = await _seed_round(db_path)
@@ -865,7 +865,7 @@ def test_the_repair_hint_says_a_verdict_cannot_be_announced_twice():
     and an earlier draft of this hint promised the opposite — which would have had a manager
     run the sync, read `Success`, and believe the driver had been told.
     """
-    from services.verdict_announcement_service import verdict_repair_hint
+    from leaguebot.results.services.verdict_announcement_service import verdict_repair_hint
 
     hint = verdict_repair_hint()
     assert "cannot announce a verdict a second time" in hint
@@ -887,7 +887,7 @@ async def test_the_repair_hint_is_defined_exactly_once(tmp_path):
     """
     import inspect
 
-    from services import verdict_announcement_service as module
+    from leaguebot.results.services import verdict_announcement_service as module
 
     source = inspect.getsource(module)
     assert source.count("def verdict_repair_hint") == 1
@@ -909,7 +909,7 @@ async def test_the_repair_hint_is_defined_exactly_once(tmp_path):
 
 
 async def _announcement_row(db_path: str, table: str) -> dict:
-    from db.database import get_connection
+    from leaguebot.core.db.database import get_connection
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -920,7 +920,7 @@ async def _announcement_row(db_path: str, table: str) -> dict:
 
 
 async def _insert_penalty(db_path: str, race_result_id: int, table: str = "penalty_records") -> int:
-    from db.database import get_connection
+    from leaguebot.core.db.database import get_connection
 
     async with get_connection(db_path) as db:
         if table == "penalty_records":
@@ -1057,8 +1057,9 @@ async def test_the_banner_records_the_message_it_was_posted_as(tmp_path):
     header standing over the empty space, then posted a fresh one below it."""
     import os
 
-    from db.database import get_connection, run_migrations
-    from services import image_verdict_banner_post, verdict_announcement_service as vas
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.image.services import image_verdict_banner_post
+    from leaguebot.results.services import verdict_announcement_service as vas
 
     db_path = os.path.join(str(tmp_path), "banner_record.db")
     await run_migrations(db_path)
@@ -1106,8 +1107,9 @@ async def test_a_batch_that_heads_itself_records_its_banner(tmp_path):
     """
     import os
 
-    from db.database import get_connection, run_migrations
-    from services import image_verdict_banner_post, verdict_announcement_service as vas
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.image.services import image_verdict_banner_post
+    from leaguebot.results.services import verdict_announcement_service as vas
 
     db_path = os.path.join(str(tmp_path), "banner_fallback.db")
     await run_migrations(db_path)
@@ -1141,13 +1143,13 @@ async def test_a_batch_that_heads_itself_records_its_banner(tmp_path):
 
 
 def test_a_round_label_names_the_round_as_a_league_numbers_it():
-    from services.verdict_announcement_service import _round_label
+    from leaguebot.results.services.verdict_announcement_service import _round_label
 
     assert _round_label(SimpleNamespace(round_number=3, division_name="Pro")) == "Round 3 (Pro)"
 
 
 def test_a_round_label_without_a_round_number_says_the_round():
-    from services.verdict_announcement_service import _round_label
+    from leaguebot.results.services.verdict_announcement_service import _round_label
 
     assert _round_label(SimpleNamespace()) == "The round"
     assert _round_label(SimpleNamespace(round_number="not a number")) == "The round"

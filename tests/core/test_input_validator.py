@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.input_validator import (  # noqa: E402
+from leaguebot.core.utils.input_validator import (  # noqa: E402
     DRAWN_NAME,
     NAME,
     SIGNUP_ANSWER,
@@ -463,8 +463,8 @@ def test_parse_time_is_strict(typed):
 @pytest.mark.parametrize("ms", [0, 999, 58_123, 83_456, 599_999, 3_723_456, 7_200_000])
 def test_parse_time_reads_every_stored_shape(ms):
     """Stored times are written by these, so the strict reader must read all they write."""
-    from services.penalty_service import _ms_to_delta, _ms_to_time
-    from utils.results_formatter import render_lap_time
+    from leaguebot.results.services.penalty_service import _ms_to_delta, _ms_to_time
+    from leaguebot.results.utils.results_formatter import render_lap_time
 
     assert parse_time(_ms_to_time(ms)) == ms
     assert parse_time(render_lap_time(ms)) == ms

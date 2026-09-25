@@ -8,8 +8,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.amendment_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.amendment_service import (
     AmendmentModifiedError,
     AmendmentNotActiveError,
     disable_amendment_mode,
@@ -159,7 +159,7 @@ async def test_amend_round_changes_the_field(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_round.db")
     await run_migrations(path)
@@ -234,7 +234,7 @@ async def test_amending_two_fields_amends_once(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_two.db")
     await run_migrations(path)
@@ -331,7 +331,7 @@ async def test_a_phase_that_would_still_have_run_is_kept(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_phases.db")
     await run_migrations(path)
@@ -426,7 +426,7 @@ async def test_amending_a_round_rearms_it_at_the_configured_horizons(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_horizons.db")
     await run_migrations(path)
@@ -551,7 +551,7 @@ async def test_amending_a_round_rearms_its_check_in(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import MagicMock
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_checkin.db")
     await run_migrations(path)
@@ -586,7 +586,7 @@ async def test_amending_a_round_arms_no_check_in_while_attendance_is_disabled(tm
     from datetime import datetime, timedelta, timezone
     from unittest.mock import MagicMock
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_no_checkin.db")
     await run_migrations(path)
@@ -622,7 +622,7 @@ async def test_amending_a_round_rearms_its_results_job_with_weather_off(tmp_path
     from datetime import datetime, timedelta, timezone
     from unittest.mock import MagicMock
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_results.db")
     await run_migrations(path)
@@ -652,7 +652,7 @@ async def test_the_results_job_is_not_armed_twice_when_weather_is_on(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import MagicMock
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_results_weather.db")
     await run_migrations(path)
@@ -688,7 +688,7 @@ async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_win
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_withdraw.db")
     await run_migrations(path)
@@ -702,8 +702,8 @@ async def test_a_standing_call_is_taken_down_when_the_round_moves_out_of_its_win
     _withdrawn = AsyncMock(return_value=True)
     _reposted = AsyncMock(return_value=None)
 
-    with patch("services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
-        "services.rsvp_service.repost_rsvp_call", _reposted
+    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
+        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", _reposted
     ):
         await AmendmentService(path).amend_round(
             1, actor, [("scheduled_at", now + timedelta(days=40))], bot, now=now
@@ -719,7 +719,7 @@ async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_pa
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_repost.db")
     await run_migrations(path)
@@ -734,8 +734,8 @@ async def test_a_standing_call_is_posted_again_when_its_window_has_passed(tmp_pa
     _withdrawn = AsyncMock(return_value=True)
     _reposted = AsyncMock(return_value=None)
 
-    with patch("services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
-        "services.rsvp_service.repost_rsvp_call", _reposted
+    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
+        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", _reposted
     ):
         await AmendmentService(path).amend_round(
             1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
@@ -755,7 +755,7 @@ async def test_a_closed_check_in_is_left_alone(tmp_path):
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_closed.db")
     await run_migrations(path)
@@ -770,8 +770,8 @@ async def test_a_closed_check_in_is_left_alone(tmp_path):
     _withdrawn = AsyncMock(return_value=True)
     _reposted = AsyncMock(return_value=None)
 
-    with patch("services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
-        "services.rsvp_service.repost_rsvp_call", _reposted
+    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", _withdrawn), patch(
+        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", _reposted
     ):
         await AmendmentService(path).amend_round(
             1, actor, [("track_name", "Silverstone Circuit")], bot, now=now
@@ -806,7 +806,7 @@ async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_cleared.db")
     await run_migrations(path)
@@ -826,8 +826,8 @@ async def test_reopening_a_check_in_clears_the_mark_of_one_taken_down(
         else ("track_name", "Silverstone Circuit")
     )
 
-    with patch("services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
-        "services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
+    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
+        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
     ):
         await AmendmentService(path).amend_round(1, actor, [change], bot, now=now)
 
@@ -864,7 +864,7 @@ async def test_reopening_a_check_in_forgets_the_distribution_of_the_call_it_repl
     from datetime import datetime, timedelta, timezone
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services.amendment_service import AmendmentService
+    from leaguebot.core.services.amendment_service import AmendmentService
 
     path = str(tmp_path / "amend_placements.db")
     await run_migrations(path)
@@ -896,8 +896,8 @@ async def test_reopening_a_check_in_forgets_the_distribution_of_the_call_it_repl
         else ("track_name", "Silverstone Circuit")
     )
 
-    with patch("services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
-        "services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
+    with patch("leaguebot.attendance.services.rsvp_service.withdraw_rsvp_call", AsyncMock(return_value=True)), patch(
+        "leaguebot.attendance.services.rsvp_service.repost_rsvp_call", AsyncMock(return_value=None)
     ):
         await AmendmentService(path).amend_round(1, actor, [change], bot, now=now)
 
@@ -1026,7 +1026,7 @@ async def test_approve_amendment_reposts_every_raced_round(db_path):
     ``try/except``, and the league's channels kept the old points for the rest of the
     season. No test called ``approve_amendment`` at all, which is why the suite passed.
     """
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1051,7 +1051,7 @@ async def test_approve_amendment_reposts_every_raced_round(db_path):
 @pytest.mark.asyncio
 async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
     """The cascade walks every non-cancelled round; only the raced ones are reposted (#130)."""
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1071,7 +1071,7 @@ async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
 @pytest.mark.asyncio
 async def test_approve_amendment_still_overwrites_the_points(db_path):
     """The rescore and the repost are one operation — calling it for real proves both."""
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1107,7 +1107,7 @@ async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
     amending the bonus would have seen the panel accept the change and the old bonus keep
     being awarded.
     """
-    from services.amendment_service import approve_amendment, modify_fl_bonus
+    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1143,7 +1143,7 @@ async def test_an_approved_amendment_empties_the_modification_store(db_path):
     mode would show the previous amendment's figures as though they were pending changes,
     and approving it would rewrite the season with them.
     """
-    from services.amendment_service import approve_amendment, modify_fl_bonus
+    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1211,7 +1211,7 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
     posted ``AMENDMENT_APPROVED | Success`` — then reposted nothing at all, because
     ``guild.get_channel`` answers None for a deleted channel and nothing raises.
     """
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1237,7 +1237,7 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
 async def test_a_refused_amendment_keeps_the_season_points(db_path):
     """The points are what the refusal exists to protect: after the DELETE nothing
     could put them back."""
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1262,7 +1262,7 @@ async def test_a_refused_amendment_keeps_the_season_points(db_path):
 @pytest.mark.asyncio
 async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
     """A manager repairs the channel and approves again; the work must still be there."""
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1291,7 +1291,7 @@ async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
 @pytest.mark.asyncio
 async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
     """Nothing happened, so the log must not say anything did (#187)."""
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1313,7 +1313,7 @@ async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
     """The issue's other reproduction path: Send Messages revoked on a live channel."""
     from unittest.mock import MagicMock
 
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1342,7 +1342,7 @@ async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
 @pytest.mark.asyncio
 async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
     """Today this overwrites the points and then silently reposts nothing at all (#187)."""
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1369,7 +1369,7 @@ async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
 @pytest.mark.asyncio
 async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path):
     """The guard against over-refusing: an unconfigured channel is ordinary (#187)."""
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1403,7 +1403,7 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
     """The approval recalculates attendance too, so its channels are part of the gate."""
     from unittest.mock import AsyncMock
 
-    from services.amendment_service import AmendmentNotDeliverableError, approve_amendment
+    from leaguebot.core.services.amendment_service import AmendmentNotDeliverableError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1433,7 +1433,7 @@ async def _approve_with_attendance(db_path, recalc):
     """Approve a sound amendment with attendance on, the recalculation replaced by *recalc*."""
     from unittest.mock import AsyncMock, patch
 
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1442,7 +1442,7 @@ async def _approve_with_attendance(db_path, recalc):
     bot = _bot_recording_reposts([])
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     with patch(
-        "services.attendance_service.recalculate_attendance_for_round", new=recalc
+        "leaguebot.attendance.services.attendance_service.recalculate_attendance_for_round", new=recalc
     ):
         failures = await approve_amendment(path, season_id, 99, bot)
     return failures, bot
@@ -1454,7 +1454,7 @@ async def test_approval_reports_sanctions_that_did_not_apply(db_path):
     log; the approval stands, and the failure comes back with the command that finishes it."""
     from unittest.mock import AsyncMock
 
-    from services.attendance_service import SanctionOutcome
+    from leaguebot.attendance.services.attendance_service import SanctionOutcome
 
     outcome = SanctionOutcome(failed=[("<@5> (Five)", "autosack", "discord down")])
     failures, _bot = await _approve_with_attendance(
@@ -1483,7 +1483,7 @@ async def test_a_recalculation_that_raises_is_reported_and_logged(db_path):
 async def test_a_clean_recalculation_reports_nothing(db_path):
     from unittest.mock import AsyncMock
 
-    from services.attendance_service import SanctionOutcome
+    from leaguebot.attendance.services.attendance_service import SanctionOutcome
 
     failures, _bot = await _approve_with_attendance(
         db_path, AsyncMock(return_value=SanctionOutcome())
@@ -1496,7 +1496,7 @@ async def test_a_clean_recalculation_reports_nothing(db_path):
 async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
     """A league without the attendance module must not be refused for a channel it has
     never configured — the same gate the cascade's own recalculation holds to."""
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1536,7 +1536,7 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     """
     from unittest.mock import AsyncMock
 
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1578,7 +1578,7 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
 async def test_the_ordering_refusal_still_comes_first(db_path):
     """A table out of order is refused as such, not as an undeliverable one — the two
     refusals name different repairs and must not be confused."""
-    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1633,7 +1633,7 @@ async def test_validate_modification_ordering_passes_a_table_running_down(db_pat
     await enable_amendment_mode(path, season_id)
     await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
 
-    from services.amendment_service import validate_modification_ordering
+    from leaguebot.core.services.amendment_service import validate_modification_ordering
 
     assert await validate_modification_ordering(path, season_id) == []
 
@@ -1645,7 +1645,7 @@ async def test_validate_modification_ordering_names_a_staged_inversion(db_path):
     await enable_amendment_mode(path, season_id)
     await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
 
-    from services.amendment_service import validate_modification_ordering
+    from leaguebot.core.services.amendment_service import validate_modification_ordering
 
     errors = await validate_modification_ordering(path, season_id)
 
@@ -1663,7 +1663,7 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(db_
     await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 1, 1)
     await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 2, 3)
 
-    from services.amendment_service import validate_modification_ordering
+    from leaguebot.core.services.amendment_service import validate_modification_ordering
 
     errors = await validate_modification_ordering(path, season_id)
 
@@ -1674,7 +1674,7 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(db_
 @pytest.mark.asyncio
 async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
     """The regression. Before the fix this amendment was applied without a word."""
-    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
 
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
@@ -1701,7 +1701,7 @@ async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_orderi
     entire, nothing changed. The panel is the surface that names **both**, which
     ``test_the_panel_names_both_faults_when_both_apply`` holds.
     """
-    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
 
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
@@ -1729,7 +1729,7 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
     This function's first act is to delete the season's points. A guard placed even one
     statement late would leave a running championship with no points table at all.
     """
-    from services.amendment_service import NonMonotonicAmendmentError, approve_amendment
+    from leaguebot.core.services.amendment_service import NonMonotonicAmendmentError, approve_amendment
 
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
@@ -1764,7 +1764,7 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
 @pytest.mark.asyncio
 async def test_a_well_ordered_amendment_still_applies(db_path):
     """The other half: a guard that refuses everything is no better than none at all."""
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
@@ -1780,7 +1780,7 @@ async def test_a_well_ordered_amendment_still_applies(db_path):
 @pytest.mark.asyncio
 async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_path):
     """Trailing zeros are the ordinary shape of a table, mid-season as at the start."""
-    from services.amendment_service import approve_amendment
+    from leaguebot.core.services.amendment_service import approve_amendment
 
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)

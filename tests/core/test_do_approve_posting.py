@@ -44,14 +44,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import (  # noqa: E402
+from leaguebot.core.cogs.season_cog import (  # noqa: E402
     PendingConfig,
     PendingDivision,
     SeasonCog,
     _ConfirmView,
 )
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import Round, RoundFormat  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import Round, RoundFormat  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 12608
@@ -171,7 +171,7 @@ def _cog(
     cog._get_pending = MagicMock(return_value=_pending())
     # In Placements, every signup settled and every channel set (issue #220; tested in
     # test_placements_confirmation.py).
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
@@ -250,13 +250,13 @@ async def _approve(
     """Run the approval with every posting service stubbed, returning the stubs."""
     posting = calendar_posting or SimpleNamespace(notices=[], problem=None)
     with patch(
-        "services.calendar_post_service.tracks_by_name",
+        "leaguebot.core.services.calendar_post_service.tracks_by_name",
         new=AsyncMock(return_value={}, side_effect=tracks_error),
     ), patch(
-        "services.calendar_post_service.post_division_calendar",
+        "leaguebot.core.services.calendar_post_service.post_division_calendar",
         new=AsyncMock(return_value=posting, side_effect=calendar_error),
     ) as calendar, patch(
-        "services.season_classification_service.post_opening_classifications",
+        "leaguebot.core.services.season_classification_service.post_opening_classifications",
         new=AsyncMock(return_value=[], side_effect=classification_error),
     ) as classification:
         await SeasonCog._do_approve(cog, interaction)
@@ -508,11 +508,11 @@ async def test_one_divisions_calendar_failure_does_not_stop_the_others(db_path):
         return SimpleNamespace(notices=[], problem=None)
 
     with patch(
-        "services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
+        "leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
     ), patch(
-        "services.calendar_post_service.post_division_calendar", new=AsyncMock(side_effect=_post)
+        "leaguebot.core.services.calendar_post_service.post_division_calendar", new=AsyncMock(side_effect=_post)
     ), patch(
-        "services.season_classification_service.post_opening_classifications",
+        "leaguebot.core.services.season_classification_service.post_opening_classifications",
         new=AsyncMock(return_value=[]),
     ):
         await SeasonCog._do_approve(cog, interaction)
@@ -1014,7 +1014,7 @@ async def test_a_stumbled_approval_still_clears_its_review(db_path):
     """What the manager met in #387, driven through the button itself. The approval stopped
     on a read, so the button's own clean-up never ran: the review stood, and expired five
     minutes later telling them to run it again for a season already under way."""
-    from cogs.season_cog import _ApproveView
+    from leaguebot.core.cogs.season_cog import _ApproveView
 
     cog = _cog(db_path)
     view = _ApproveView(cog, USER_ID)
@@ -1033,12 +1033,12 @@ async def test_a_stumbled_approval_still_clears_its_review(db_path):
     interaction = _interaction()
 
     with patch(
-        "services.calendar_post_service.tracks_by_name",
+        "leaguebot.core.services.calendar_post_service.tracks_by_name",
         new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
     ), patch(
-        "services.calendar_post_service.post_division_calendar", new=AsyncMock()
+        "leaguebot.core.services.calendar_post_service.post_division_calendar", new=AsyncMock()
     ), patch(
-        "services.season_classification_service.post_opening_classifications",
+        "leaguebot.core.services.season_classification_service.post_opening_classifications",
         new=AsyncMock(return_value=[]),
     ):
         await _ApproveView.approve(view, interaction, MagicMock())
@@ -1195,8 +1195,8 @@ async def _attach_points(db_path: str, config_name: str = "Standard") -> None:
     The results arm of the branch sits past the points gate, so without this the
     approval is refused before any scheduling is reached.
     """
-    from models.points_config import SessionType
-    from services import points_config_service, season_points_service
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services import points_config_service, season_points_service
 
     await points_config_service.create_config(db_path, config_name)
     for position, pts in ((1, 25), (2, 18)):

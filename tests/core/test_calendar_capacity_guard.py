@@ -36,8 +36,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 11908
 
@@ -81,10 +81,10 @@ def _capacity(value: int | None, *, load_error: Exception | None = None):
     catalogue.capacity = MagicMock(return_value=value)
     return (
         patch(
-            "utils.svg_document.load_svg",
+            "leaguebot.image.utils.svg_document.load_svg",
             new=MagicMock(side_effect=load_error, return_value=MagicMock()),
         ),
-        patch("models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)),
+        patch("leaguebot.image.models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)),
     )
 
 

@@ -31,7 +31,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 5150
 USER_ID = 9_100_000_000_000_001
@@ -105,7 +105,7 @@ class TestSignupRecordsJoin:
 
     async def test_nationalities_reads_a_seeded_driver(self, bot, db_path):
         """`_nationalities` is imported by the attendance and verdict paths too."""
-        from services.image_results_post import _nationalities
+        from leaguebot.image.services.image_results_post import _nationalities
 
         await _seed_driver(db_path, nationality="Dutch")
 
@@ -114,7 +114,7 @@ class TestSignupRecordsJoin:
     async def test_nationalities_yields_none_where_the_driver_stated_one_not(
         self, bot, db_path
     ):
-        from services.image_results_post import _nationalities
+        from leaguebot.image.services.image_results_post import _nationalities
 
         await _seed_driver(db_path, nationality=None)
 
@@ -122,7 +122,7 @@ class TestSignupRecordsJoin:
 
     async def test_nationalities_reads_a_mock_drivers_own(self, bot, db_path):
         """A mock driver has no signup record; its nationality is on its profile."""
-        from services.image_results_post import _nationalities
+        from leaguebot.image.services.image_results_post import _nationalities
 
         await _seed_test_driver(db_path, nationality="Brazilian")
 
@@ -131,7 +131,7 @@ class TestSignupRecordsJoin:
     async def test_nationalities_yields_none_for_a_mock_driver_given_none(
         self, bot, db_path
     ):
-        from services.image_results_post import _nationalities
+        from leaguebot.image.services.image_results_post import _nationalities
 
         await _seed_test_driver(db_path, nationality=None)
 
@@ -139,7 +139,7 @@ class TestSignupRecordsJoin:
 
     async def test_the_verdict_lookup_reads_both_kinds_of_driver(self, db_path):
         """The fourth site, which joined the phantom column until this was written."""
-        from services.image_verdict_post import _driver_nationality
+        from leaguebot.image.services.image_verdict_post import _driver_nationality
 
         await _seed_driver(db_path, nationality="Dutch")
         await _seed_test_driver(db_path, nationality="Italian")
@@ -148,13 +148,13 @@ class TestSignupRecordsJoin:
         assert await _driver_nationality(db_path, TEST_USER_ID) == "Italian"
 
     async def test_the_verdict_lookup_yields_none_for_an_unknown_driver(self, db_path):
-        from services.image_verdict_post import _driver_nationality
+        from leaguebot.image.services.image_verdict_post import _driver_nationality
 
         assert await _driver_nationality(db_path, USER_ID) is None
 
     async def test_driver_names_reads_a_seeded_driver(self, bot, db_path):
         """The second corrected site, in the results path."""
-        from services.image_results_post import _driver_names
+        from leaguebot.image.services.image_results_post import _driver_names
 
         await _seed_driver(db_path, name="Ada Lovelace")
 
@@ -237,7 +237,7 @@ class TestNationalityCollected:
     """The switch lives in `signup_module_settings`; `signup_config` never existed."""
 
     async def test_a_league_that_switched_collection_off_is_observed(self, db_path):
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -250,7 +250,7 @@ class TestNationalityCollected:
         assert await _nationality_collected(db_path) is False
 
     async def test_a_league_that_collects_is_observed(self, db_path):
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -264,13 +264,13 @@ class TestNationalityCollected:
 
     async def test_a_league_with_no_row_collects(self, db_path):
         """The documented default, and what a league without the signup module gets."""
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         assert await _nationality_collected(db_path) is True
 
     async def test_an_unreadable_switch_collects(self, db_path):
         """A broken reader is not a reason to fail a render."""
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         assert await _nationality_collected("no/such/database.db") is True
 
@@ -297,21 +297,21 @@ class TestTheTestModeSwitchStandsIn:
             await db.commit()
 
     async def test_the_test_mode_switch_wins_while_test_mode_is_on(self, db_path):
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
 
         assert await _nationality_collected(db_path) is False
 
     async def test_it_wins_in_the_other_direction_too(self, db_path):
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         await self._set(db_path, test_mode=1, test_nationality=1, signup=0)
 
         assert await _nationality_collected(db_path) is True
 
     async def test_the_signup_switch_governs_outside_test_mode(self, db_path):
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         await self._set(db_path, test_mode=0, test_nationality=0, signup=1)
 
@@ -319,7 +319,7 @@ class TestTheTestModeSwitchStandsIn:
 
     async def test_the_switch_defaults_on_for_a_server_already_configured(self, db_path):
         """Migration 042 fills the existing rows in place, so no wipe is needed."""
-        from services.image_results_post import _nationality_collected
+        from leaguebot.image.services.image_results_post import _nationality_collected
 
         async with get_connection(db_path) as db:
             await db.execute(
@@ -332,7 +332,7 @@ class TestTheTestModeSwitchStandsIn:
 
     async def test_the_preview_reads_it_through_the_same_reader(self, bot, db_path):
         """The preview's copy is a shim, not a second implementation."""
-        from services.image_preview_service import _nationality_collected as preview_read
+        from leaguebot.image.services.image_preview_service import _nationality_collected as preview_read
 
         await self._set(db_path, test_mode=1, test_nationality=0, signup=1)
 

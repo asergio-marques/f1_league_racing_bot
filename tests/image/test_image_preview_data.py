@@ -16,7 +16,7 @@ class TestVerdictTextConstants:
     """FR-032 — the wrapping of a steward's prose is the verdict graphic's whole difficulty."""
 
     def test_every_constant_carries_text(self):
-        from services import image_preview_data as data
+        from leaguebot.image.services import image_preview_data as data
 
         for name in (
             "LONG_DRIVER_NAME",
@@ -32,25 +32,25 @@ class TestVerdictTextConstants:
 
     def test_the_lengths_ascend(self):
         """Short < full < over. Each case must actually be the case it stands for."""
-        from services import image_preview_data as data
+        from leaguebot.image.services import image_preview_data as data
 
         assert len(data.VERDICT_TEXT_SHORT) < len(data.VERDICT_TEXT_FULL)
         assert len(data.VERDICT_TEXT_FULL) < len(data.VERDICT_TEXT_OVER)
 
     def test_the_huge_text_exceeds_the_full_text_by_an_order_of_magnitude(self):
         """FR-032 — the floor, the cut and the notice are only reachable well past the box."""
-        from services import image_preview_data as data
+        from leaguebot.image.services import image_preview_data as data
 
         assert len(data.VERDICT_TEXT_HUGE) > len(data.VERDICT_TEXT_FULL) * 10
 
     def test_the_huge_text_keeps_the_stewards_paragraph_breaks(self):
         """The graphic keeps them as the message does; a single run would not exercise that."""
-        from services import image_preview_data as data
+        from leaguebot.image.services import image_preview_data as data
 
         assert "\n\n" in data.VERDICT_TEXT_HUGE
 
     def test_the_five_text_cases_are_distinct_and_ordered(self):
-        from services import image_preview_data as data
+        from leaguebot.image.services import image_preview_data as data
 
         assert len(data.VERDICT_TEXT_CASES) == 5
         assert len(set(data.VERDICT_TEXT_CASES)) == 5
@@ -58,7 +58,7 @@ class TestVerdictTextConstants:
 
     def test_the_long_driver_name_is_long_enough_to_bound_a_field(self):
         """A name no league controls the length of. Thirty characters is already awkward."""
-        from services import image_preview_data as data
+        from leaguebot.image.services import image_preview_data as data
 
         assert len(data.LONG_DRIVER_NAME) > 30
 
@@ -86,7 +86,7 @@ class TestStandingsScatter:
         ]
 
     def test_every_driver_appears_exactly_once_in_every_round(self):
-        from services.image_preview_data import _scattered
+        from leaguebot.image.services.image_preview_data import _scattered
 
         drivers = self._drivers(20)
         for ordinal in range(1, 13):
@@ -94,7 +94,7 @@ class TestStandingsScatter:
             assert sorted(d.key for d in order) == [d.key for d in drivers]
 
     def test_two_rounds_classify_the_field_differently(self):
-        from services.image_preview_data import _scattered
+        from leaguebot.image.services.image_preview_data import _scattered
 
         drivers = self._drivers(20)
         orders = {
@@ -109,7 +109,7 @@ class TestStandingsScatter:
         The grid is read as a picture, and a constant stride draws diagonal bands rather
         than a scatter.
         """
-        from services.image_preview_data import _scattered
+        from leaguebot.image.services.image_preview_data import _scattered
 
         drivers = self._drivers(20)
         places = [
@@ -121,14 +121,14 @@ class TestStandingsScatter:
 
     def test_the_same_round_is_classified_the_same_way_twice(self):
         """Derived, never random — two renders of one round must be comparable."""
-        from services.image_preview_data import _scattered
+        from leaguebot.image.services.image_preview_data import _scattered
 
         drivers = self._drivers(20)
         first = [d.key for d in _scattered(drivers, 4, 1)]
         assert first == [d.key for d in _scattered(drivers, 4, 1)]
 
     def test_a_field_too_small_to_permute_is_handed_back_unchanged(self):
-        from services.image_preview_data import _scattered
+        from leaguebot.image.services.image_preview_data import _scattered
 
         for count in (0, 1, 2):
             drivers = self._drivers(count)
@@ -136,7 +136,7 @@ class TestStandingsScatter:
 
     def test_the_fastest_lap_does_not_fall_in_the_same_place_every_round(self):
         """Pinned to one position it would only ever be seen over the same chip."""
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(20)
         results = fabricate_standings_round_results(
@@ -158,7 +158,7 @@ class TestStandingsScatter:
 
     def test_a_single_classification_keeps_the_second_place_it_always_had(self):
         """The results preview draws one race and needs no variation; it is untouched."""
-        from services.image_preview_data import fabricate_race_rows
+        from leaguebot.image.services.image_preview_data import fabricate_race_rows
 
         rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
         holder = [row for row in rows if row.fastest_lap_bonus]
@@ -166,8 +166,8 @@ class TestStandingsScatter:
 
     def test_a_qualifying_field_large_enough_carries_a_disqualification(self):
         """#144 — DNF and DNS were fabricated already; DSQ was the one literal never drawn."""
-        from models.session_result import OutcomeModifier
-        from services.image_preview_data import fabricate_qualifying_rows
+        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows
 
         rows = fabricate_qualifying_rows(self._drivers(20), {"Team": 900}, {})
         assert any(row.outcome is OutcomeModifier.DSQ for row in rows)
@@ -179,8 +179,8 @@ class TestStandingsScatter:
         )
 
     def test_a_race_field_large_enough_carries_a_disqualification(self):
-        from models.session_result import OutcomeModifier
-        from services.image_preview_data import fabricate_race_rows
+        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.image.services.image_preview_data import fabricate_race_rows
 
         rows = fabricate_race_rows(self._drivers(20), {"Team": 900}, {})
         dsq = [row for row in rows if row.outcome is OutcomeModifier.DSQ]
@@ -199,8 +199,8 @@ class TestStandingsScatter:
         checks needing a division, so it is stated here rather than called. A DSQ placed
         ahead of the lapped car and the DNF first shipped exactly that refusal (#144).
         """
-        from models.session_result import OutcomeModifier
-        from services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
+        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
 
         def race_category(row) -> int:
             if row.outcome is OutcomeModifier.DSQ:
@@ -231,8 +231,8 @@ class TestStandingsScatter:
 
     def test_a_small_field_is_not_forced_to_carry_a_disqualification(self):
         """The spec's own qualifier: none of the cases are fabricated into existence."""
-        from models.session_result import OutcomeModifier
-        from services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
+        from leaguebot.core.models.session_result import OutcomeModifier
+        from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows, fabricate_race_rows
 
         for count in (2, 3, 4):
             qualifying = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
@@ -251,14 +251,14 @@ class TestStandingsTotals:
     """
 
     def test_second_and_third_are_level_on_points(self):
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         for count in (3, 4, 10, 20):
             totals = fabricate_standings_totals(count, leader=120)
             assert totals[1] == totals[2]
 
     def test_the_leader_stands_clear_of_the_tie(self):
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         for count in (3, 4, 10, 20):
             totals = fabricate_standings_totals(count, leader=120)
@@ -266,7 +266,7 @@ class TestStandingsTotals:
 
     def test_no_two_entries_are_level_but_the_placed_pair(self):
         """The #144 regression: a fixed clamp put a whole block of the field level on zero."""
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         for count in range(2, 31):
             totals = fabricate_standings_totals(count, leader=120)
@@ -279,7 +279,7 @@ class TestStandingsTotals:
             assert level_pairs <= {(1, 2)}
 
     def test_the_last_entry_holds_no_points(self):
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         for count in (2, 4, 5, 10, 20):
             totals = fabricate_standings_totals(count, leader=120)
@@ -287,20 +287,20 @@ class TestStandingsTotals:
 
     def test_a_field_of_three_keeps_the_tie_off_nought(self):
         """A tie *on* nought is the accidental case #144 reported, not the deliberate one."""
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         totals = fabricate_standings_totals(3, leader=120)
         assert totals[1] == totals[2] != 0
 
     def test_the_totals_never_rise_down_the_table(self):
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         for count in range(1, 31):
             totals = fabricate_standings_totals(count, leader=120)
             assert totals == sorted(totals, reverse=True)
 
     def test_a_field_of_one_and_an_empty_field(self):
-        from services.image_preview_data import fabricate_standings_totals
+        from leaguebot.image.services.image_preview_data import fabricate_standings_totals
 
         assert fabricate_standings_totals(1, leader=120) == [120]
         assert fabricate_standings_totals(0, leader=120) == []
@@ -317,8 +317,8 @@ class TestStandingsPreviousPositions:
     """
 
     def test_one_entry_gained_one_lost_one_held_position(self):
-        from services.image_preview_data import fabricate_standings_previous_positions
-        from services.standings_service import (
+        from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
+        from leaguebot.results.services.standings_service import (
             MOVEMENT_GAINED,
             MOVEMENT_LOST,
             MOVEMENT_UNCHANGED,
@@ -335,8 +335,8 @@ class TestStandingsPreviousPositions:
         assert directions == {MOVEMENT_GAINED, MOVEMENT_LOST, MOVEMENT_UNCHANGED}
 
     def test_no_entry_is_left_without_a_movement(self):
-        from services.image_preview_data import fabricate_standings_previous_positions
-        from services.standings_service import derive_movement
+        from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
+        from leaguebot.results.services.standings_service import derive_movement
 
         keys = [10, 20, 30, 40]
         previous = fabricate_standings_previous_positions(keys)
@@ -347,8 +347,8 @@ class TestStandingsPreviousPositions:
         assert all(movement is not None for movement in movements.values())
 
     def test_a_field_too_small_to_swap_holds_every_entry_unchanged(self):
-        from services.image_preview_data import fabricate_standings_previous_positions
-        from services.standings_service import MOVEMENT_UNCHANGED, derive_movement
+        from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
+        from leaguebot.results.services.standings_service import MOVEMENT_UNCHANGED, derive_movement
 
         for count in (0, 1, 2):
             keys = list(range(10, 10 + count))
@@ -364,8 +364,8 @@ class TestStandingsPreviousPositions:
 
     def test_a_newcomer_has_no_previous_position_to_have_moved_from(self):
         """The spec's "a driver whom the standings of the preceding round do not hold"."""
-        from services.image_preview_data import fabricate_standings_previous_positions
-        from services.standings_service import derive_movement
+        from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
+        from leaguebot.results.services.standings_service import derive_movement
 
         keys = [10, 20, 30, 40, 50]
         previous = fabricate_standings_previous_positions(keys, newcomers=frozenset({50}))
@@ -377,7 +377,7 @@ class TestStandingsPreviousPositions:
         assert all(movements[key] is not None for key in (10, 20, 30, 40))
 
     def test_the_same_field_produces_the_same_previous_positions_twice(self):
-        from services.image_preview_data import fabricate_standings_previous_positions
+        from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
 
         keys = [10, 20, 30, 40, 50]
         assert fabricate_standings_previous_positions(
@@ -421,7 +421,7 @@ class TestStandingsSubstitution:
         return drivers
 
     def test_the_absent_regular_is_not_scattered_into_the_substitution_round(self):
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(
             [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
@@ -440,7 +440,7 @@ class TestStandingsSubstitution:
         assert absent.key not in keys_in_round
 
     def test_a_different_teams_car_is_left_with_nobody_in_it(self):
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(
             [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
@@ -459,7 +459,7 @@ class TestStandingsSubstitution:
         assert undriven.key not in keys_in_round
 
     def test_the_reserve_is_credited_to_the_absent_drivers_team_not_the_undriven_ones(self):
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(
             [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
@@ -482,7 +482,7 @@ class TestStandingsSubstitution:
 
     def test_a_round_before_or_after_the_substitution_is_untouched(self):
         """Confined to one round — both dropped drivers are back in every other one."""
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(
             [("Redline", 2), ("Bluewave", 2), ("Greenfield", 1), ("Reserve", 1)]
@@ -508,7 +508,7 @@ class TestStandingsSubstitution:
         assert {row.team_instance_id for row in reserve_rows} == {reserve_team_id}
 
     def test_no_reserve_leaves_every_driver_in_place(self):
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers([("Redline", 2), ("Bluewave", 2)])
 
@@ -523,7 +523,7 @@ class TestStandingsSubstitution:
 
     def test_a_field_too_small_carries_no_substitution(self):
         """The spec's own qualifier: nothing is fabricated into existence to reach a case."""
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers([("Redline", 1), ("Reserve", 1)])
         reserve = drivers[-1]
@@ -542,7 +542,7 @@ class TestStandingsSubstitution:
         """The commonest division there is. Its two last regulars are teammates, and taking
         the pair of them skipped the substitution on it altogether.
         """
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(
             [("Redline", 2), ("Bluewave", 2), ("Greenfield", 2), ("Reserve", 1)]
@@ -571,8 +571,8 @@ class TestStandingsSubstitution:
         the scatter it never arose on a field of five teams or fewer, where every finisher
         is in the points.
         """
-        from services.image_preview_data import fabricate_standings_round_results
-        from services.image_standings_service import highlight_for
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_standings_service import highlight_for
 
         for team_count in range(3, 12):
             layout = [(f"Team {n}", 2) for n in range(team_count)] + [("Reserve", 1)]
@@ -598,7 +598,7 @@ class TestStandingsSubstitution:
 
     def test_the_team_short_of_a_car_scores_as_usual_in_every_other_round(self):
         """Confined to the one round, like the rest of the substitution."""
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers(
             [("Redline", 2), ("Bluewave", 2), ("Greenfield", 2), ("Reserve", 1)]
@@ -622,7 +622,7 @@ class TestStandingsSubstitution:
 
     def test_only_one_regular_team_carries_no_substitution(self):
         """Both roles would fall on the same team, which the "different team" guard refuses."""
-        from services.image_preview_data import fabricate_standings_round_results
+        from leaguebot.image.services.image_preview_data import fabricate_standings_round_results
 
         drivers = self._drivers([("Redline", 2), ("Reserve", 1)])
         reserve = drivers[-1]
@@ -662,12 +662,12 @@ class TestAttendanceFabrication:
 
     @staticmethod
     def _marks(records, limit):
-        from services.image_attendance_service import mark_for
+        from leaguebot.image.services.image_attendance_service import mark_for
 
         return {mark_for(record.total, limit) for record in records}
 
     def _sheet(self, driver_count: int, round_count: int):
-        from services.image_preview_data import (
+        from leaguebot.image.services.image_preview_data import (
             fabricate_attendance_limit,
             fabricate_attendance_records,
         )
@@ -680,7 +680,7 @@ class TestAttendanceFabrication:
         return records, limit
 
     def test_both_marks_and_an_unmarked_row_appear_together(self):
-        from services.image_attendance_service import MARK_NEAR, MARK_REACHED
+        from leaguebot.image.services.image_attendance_service import MARK_NEAR, MARK_REACHED
 
         records, limit = self._sheet(20, 12)
 
@@ -688,7 +688,7 @@ class TestAttendanceFabrication:
 
     def test_the_marks_survive_a_field_of_four_and_a_single_round_run(self):
         """A preview is asked for at round one as often as at round twelve."""
-        from services.image_attendance_service import MARK_NEAR, MARK_REACHED
+        from leaguebot.image.services.image_attendance_service import MARK_NEAR, MARK_REACHED
 
         for driver_count, round_count in ((4, 1), (4, 2), (20, 1), (20, 2), (20, 24)):
             records, limit = self._sheet(driver_count, round_count)
@@ -711,7 +711,7 @@ class TestAttendanceFabrication:
             )
 
     def test_no_round_confers_more_than_a_round_can(self):
-        from services.image_preview_data import MAX_ROUND_PENALTY
+        from leaguebot.image.services.image_preview_data import MAX_ROUND_PENALTY
 
         records, _limit = self._sheet(20, 12)
         values = {
@@ -722,7 +722,7 @@ class TestAttendanceFabrication:
 
     def test_the_sanctioned_driver_has_reached_the_limit(self):
         """The annotation and the mark answer to the same number and must agree."""
-        from services.image_attendance_service import MARK_REACHED, mark_for
+        from leaguebot.image.services.image_attendance_service import MARK_REACHED, mark_for
 
         records, limit = self._sheet(20, 12)
 
@@ -737,7 +737,7 @@ class TestAttendanceFabrication:
 
     def test_the_limit_falls_to_what_the_rounds_run_can_confer(self):
         """Ten points over one round run would leave every row unmarked."""
-        from services.image_preview_data import (
+        from leaguebot.image.services.image_preview_data import (
             MAX_ROUND_PENALTY,
             NOMINAL_ATTENDANCE_LIMIT,
             fabricate_attendance_limit,
@@ -776,7 +776,7 @@ class TestFabricatedTyreCompounds:
         ]
 
     def _tyres(self, count: int):
-        from services.image_preview_data import fabricate_qualifying_rows
+        from leaguebot.image.services.image_preview_data import fabricate_qualifying_rows
 
         rows = fabricate_qualifying_rows(self._drivers(count), {"Team": 900}, {})
         return [row.tyre for row in rows]
@@ -787,7 +787,7 @@ class TestFabricatedTyreCompounds:
         Dealt in turn rather than keyed on the position, which would skip whichever
         compounds no position happened to land on.
         """
-        from utils.tyre_compound import TYRE_COMPOUNDS
+        from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
 
         assert set(self._tyres(6)) == {None, *TYRE_COMPOUNDS}
 
@@ -802,7 +802,7 @@ class TestFabricatedTyreCompounds:
     def test_every_compound_dealt_is_one_the_vocabulary_admits(self):
         """A fabricated value outside the set would draw the placeholder in a preview and
         so misreport the template a manager is judging."""
-        from utils.tyre_compound import TYRE_COMPOUNDS
+        from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
 
         assert {t for t in self._tyres(20) if t is not None} <= set(TYRE_COMPOUNDS)
 

@@ -20,10 +20,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection  # noqa: E402
-from services import attendance_service  # noqa: E402
-from services.attendance_service import SanctionOutcome, sync_attendance  # noqa: E402
-from tests.unit.test_attendance_sanctions import (  # noqa: E402
+from leaguebot.core.db.database import get_connection  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import SanctionOutcome, sync_attendance  # noqa: E402
+from tests.attendance.test_attendance_sanctions import (  # noqa: E402
     DIVISION_ID,
     FULL_TIME_PROFILE,
     ROUND_ID,
@@ -32,7 +32,7 @@ from tests.unit.test_attendance_sanctions import (  # noqa: E402
     _make_db,
     _seed_totals,
 )
-from tests.unit.test_attendance_tracking import _awarded, _make_two_round_db  # noqa: E402
+from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db  # noqa: E402
 
 
 async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:
@@ -128,7 +128,7 @@ async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
 async def test_a_second_sync_applies_nothing_twice(tmp_path):
     """The recovery is to run it again, so running it again must be harmless: the driver
     sacked by the first run is not attempted by the second, and nothing is announced."""
-    from services.placement_service import PlacementService
+    from leaguebot.core.services.placement_service import PlacementService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _add_rounds(db_path, {})
@@ -153,13 +153,13 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     ), patch.object(
         attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
     ), patch(
-        "services.verdict_announcement_service.post_autosanction_announcement",
+        "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
         # Returns the sanctions it could not announce (#237). `None` is not merely
         # inert here: the run does `posting_faults += <return>`, which raises inside
         # the per-driver try and is recorded as a bogus failed sanction.
         new=AsyncMock(return_value=[]),
     ) as announce, patch(
-        "services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value=None),
     ):
         first = await _sync(bot, db_path)
@@ -203,10 +203,10 @@ async def test_sync_is_one_transaction(tmp_path, monkeypatch):
 
 from types import SimpleNamespace  # noqa: E402
 
-from cogs.attendance_cog import AttendanceCog  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
-from utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  # noqa: E402
+from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE  # noqa: E402
 
 
 def _cog(db_path: str, *, stage=SeasonStage.ONGOING) -> AttendanceCog:
@@ -235,9 +235,9 @@ def _interaction() -> MagicMock:
 async def _invoke(cog, interaction, *, division="division 1", round=1,
                   faults=(), outcome=None):
     with patch(
-        "cogs.attendance_cog.recalculation_faults", new=AsyncMock(return_value=list(faults))
+        "leaguebot.attendance.cogs.attendance_cog.recalculation_faults", new=AsyncMock(return_value=list(faults))
     ), patch(
-        "cogs.attendance_cog.sync_attendance",
+        "leaguebot.attendance.cogs.attendance_cog.sync_attendance",
         new=AsyncMock(return_value=outcome or SanctionOutcome()),
     ) as synced:
         await undecorate(AttendanceCog.sync)(cog, interaction, division, round)

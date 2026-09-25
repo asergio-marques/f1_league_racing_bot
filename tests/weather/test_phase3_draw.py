@@ -42,9 +42,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.session import MAX_SLOTS, SessionType  # noqa: E402
-from services.phase3_service import run_phase3  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.session import MAX_SLOTS, SessionType  # noqa: E402
+from leaguebot.weather.services.phase3_service import run_phase3  # noqa: E402
 
 SERVER_ID = 1
 ROUND_ID = 1
@@ -198,14 +198,14 @@ def _run(db_path: str, *, pick: str = "max"):
 
     async def _invoke():
         with patch(
-            "services.phase3_service.random.randint",
+            "leaguebot.weather.services.phase3_service.random.randint",
             side_effect=lambda lo, hi: hi if pick == "max" else lo,
         ) as randint, patch(
-            "services.phase3_service.draw_weighted", side_effect=_draw
+            "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_draw
         ), patch(
-            "services.forecast_cleanup_service.post_phase_message", new=posted
+            "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=posted
         ), patch(
-            "services.image_weather_post.attach_forecast",
+            "leaguebot.image.services.image_weather_post.attach_forecast",
             new=AsyncMock(return_value=None),
         ):
             await run_phase3(ROUND_ID, bot)
@@ -432,14 +432,14 @@ async def test_phase_2_is_performed_first_when_it_has_not_been(tmp_path):
     await _seed(db_path, sessions=[("FULL_RACE", None)], phase2_done=0)
     bot = _make_bot(db_path)
 
-    with patch("services.phase2_service.random.choice", return_value="rain"), patch(
-        "services.phase3_service.random.randint", side_effect=lambda lo, hi: hi
+    with patch("leaguebot.weather.services.phase2_service.random.choice", return_value="rain"), patch(
+        "leaguebot.weather.services.phase3_service.random.randint", side_effect=lambda lo, hi: hi
     ), patch(
-        "services.phase3_service.draw_weighted", side_effect=_highest
+        "leaguebot.weather.services.phase3_service.draw_weighted", side_effect=_highest
     ), patch(
-        "services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
+        "leaguebot.weather.services.forecast_cleanup_service.post_phase_message", new=AsyncMock()
     ), patch(
-        "services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
+        "leaguebot.image.services.image_weather_post.attach_forecast", new=AsyncMock(return_value=None)
     ):
         await run_phase3(ROUND_ID, bot)
 

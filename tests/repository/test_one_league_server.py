@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from bot import create_bot  # noqa: E402
-from utils.league_server import (  # noqa: E402
+from leaguebot.__main__ import create_bot  # noqa: E402
+from leaguebot.core.utils.league_server import (  # noqa: E402
     REFUSAL,
     UNCLAIMED_REFUSAL,
     LeagueCommandTree,
@@ -184,7 +184,7 @@ async def test_a_modal_submitted_in_another_server_is_refused():
 async def test_the_sign_up_button_left_on_an_old_server_is_refused():
     """The case that matters: a persistent view registered once at start-up, pressed on a
     server the league has left."""
-    from cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.cogs.signup_cog import SignupButtonView
 
     interaction = _pressed_on(ELSEWHERE, LEAGUE)
 
@@ -232,7 +232,7 @@ async def test_a_modal_submitted_while_no_server_is_claimed_is_refused():
 
 
 async def test_the_sign_up_button_left_behind_by_a_pack_is_refused():
-    from cogs.signup_cog import SignupButtonView
+    from leaguebot.signup.cogs.signup_cog import SignupButtonView
 
     interaction = _pressed_on(ELSEWHERE, None)
 
@@ -255,7 +255,7 @@ _DISCORD_UI_BASES = ("View", "Modal", "LayoutView", "BaseView", "DynamicItem")
 
 
 def _src_trees():
-    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "src", "leaguebot")
     for path in sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True)):
         with open(path, encoding="utf-8") as fh:
             yield os.path.relpath(path, src).replace(os.sep, "/"), ast.parse(fh.read())
@@ -270,7 +270,7 @@ def test_every_view_and_modal_derives_from_the_league_s_own():
     """
     direct = []
     for path, tree in _src_trees():
-        if path == "utils/league_server.py":
+        if path == "core/utils/league_server.py":
             continue
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
@@ -284,11 +284,11 @@ def test_every_view_and_modal_derives_from_the_league_s_own():
 
 #: Event handlers that do not ask whether the server is the league's, and why.
 _LISTENERS_NOT_ABOUT_A_SERVER = {
-    ("bot.py", "on_ready"): "starts the bot, before any server is in question",
-    ("bot.py", "on_disconnect"): "reports a lost connection to the host, whichever server",
-    ("bot.py", "_warn_if_serving_several"): (
+    ("__main__.py", "on_ready"): "starts the bot, before any server is in question",
+    ("__main__.py", "on_disconnect"): "reports a lost connection to the host, whichever server",
+    ("__main__.py", "_warn_if_serving_several"): (
         "warns the host of every server the bot sits in, the league's included, by design "
-        "(utils/league_server.py, 'Upon another server the bot stays, and refuses')"
+        "(core/utils/league_server.py, 'Upon another server the bot stays, and refuses')"
     ),
 }
 
@@ -345,7 +345,7 @@ def _guild(guild_id: int, name: str):
 def test_the_host_is_warned_when_the_bot_sits_in_two_servers(caplog):
     bot = SimpleNamespace(guilds=[_guild(ELSEWHERE, "Test"), _guild(LEAGUE, "League")])
 
-    with caplog.at_level(logging.WARNING, logger="utils.league_server"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.core.utils.league_server"):
         warn_if_serving_several(bot)
 
     [record] = caplog.records
@@ -358,7 +358,7 @@ def test_the_host_is_warned_when_the_bot_sits_in_two_servers(caplog):
 def test_one_server_raises_no_warning(caplog):
     bot = SimpleNamespace(guilds=[_guild(LEAGUE, "League")])
 
-    with caplog.at_level(logging.WARNING, logger="utils.league_server"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.core.utils.league_server"):
         warn_if_serving_several(bot)
 
     assert caplog.records == []
@@ -366,7 +366,7 @@ def test_one_server_raises_no_warning(caplog):
 
 @pytest.mark.parametrize("event", ["on_ready", "on_guild_join"])
 async def test_the_host_is_warned_at_start_up_and_on_joining_a_server(event, monkeypatch):
-    import bot as bot_module
+    import leaguebot.__main__ as bot_module
 
     warned = MagicMock()
     monkeypatch.setattr(bot_module, "warn_if_serving_several", warned)
@@ -401,7 +401,7 @@ def _message_elsewhere():
 
 
 async def test_the_reason_listener_ignores_another_server():
-    from cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
+    from leaguebot.signup.cogs.admin_review_cog import _PENDING_REASONS, AdminReviewCog
 
     bot = _listener_bot()
     _PENDING_REASONS[(70, 7)] = {"action": "reject"}
@@ -413,7 +413,7 @@ async def test_the_reason_listener_ignores_another_server():
 
 
 async def test_the_wizard_listener_ignores_another_server():
-    from cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.signup_cog import SignupCog
 
     cog = SignupCog.__new__(SignupCog)
     cog.bot = _listener_bot()
@@ -424,7 +424,7 @@ async def test_the_wizard_listener_ignores_another_server():
 
 
 async def test_a_member_leaving_another_server_is_nothing_to_the_league():
-    from cogs.signup_cog import SignupCog
+    from leaguebot.signup.cogs.signup_cog import SignupCog
 
     cog = SignupCog.__new__(SignupCog)
     cog.bot = _listener_bot()
@@ -439,8 +439,8 @@ async def test_a_member_leaving_another_server_is_nothing_to_the_league():
 
 
 async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
-    from cogs.season_cog import SeasonCog
-    from services import result_submission_service
+    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.results.services import result_submission_service
 
     asked = AsyncMock(return_value=True)
     monkeypatch.setattr(result_submission_service, "is_channel_in_penalty_review", asked)
@@ -520,7 +520,7 @@ async def test_a_callback_select_is_answered_through_its_handler():
 def test_no_item_has_its_callback_assigned():
     """A runtime-built button or menu takes its handler when it is made, which the type
     check can follow; an assignment to `.callback` it cannot."""
-    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "src", "leaguebot")
     offenders = sorted(
         f"{os.path.relpath(path, src)}:{number}"
         for path in glob.glob(os.path.join(src, "**", "*.py"), recursive=True)

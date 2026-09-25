@@ -33,8 +33,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-SRC = Path(__file__).resolve().parents[2] / "src"
-MODULE = "services/result_submission_service.py"
+SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
+MODULE = "results/services/result_submission_service.py"
 
 
 def _function(relative: str, name: str) -> ast.AST:
@@ -218,7 +218,7 @@ def test_the_revert_publishes_nothing_either():
 
 def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     """Defaulting to False is what keeps every existing caller a first pass."""
-    from services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
     state = PenaltyReviewState(
         round_id=1, division_id=1, submission_channel_id=1,

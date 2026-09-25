@@ -1,7 +1,7 @@
 """`/signup open` and `/signup close` — the window a league's drivers sign up through.
 
-Issue #208. `tests/unit/test_signup_close_time_group.py` covers the auto-close timer and the
-refusal it causes; `tests/unit/test_signup_slot_guard.py` covers changing slots mid-signup.
+Issue #208. `tests/signup/test_signup_close_time_group.py` covers the auto-close timer and the
+refusal it causes; `tests/signup/test_signup_slot_guard.py` covers changing slots mid-signup.
 What neither covers is opening the window at all, or closing it while drivers are part-way
 through — the two commands themselves.
 
@@ -43,10 +43,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import ConfirmCloseView, SignupCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
-from services.signup_module_service import SignupModuleService  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import ConfirmCloseView, SignupCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
+from leaguebot.signup.services.signup_module_service import SignupModuleService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9008
@@ -391,7 +391,7 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
 
 async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
     """Issue #220: the window belongs to the season, and opening it moves the season on."""
-    from services.season_lifecycle_service import live_season_stage
+    from leaguebot.core.services.season_lifecycle_service import live_season_stage
 
     db_path = await _seed(tmp_path)
 
@@ -401,7 +401,7 @@ async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
 
 
 async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
-    from services.season_lifecycle_service import live_season_stage
+    from leaguebot.core.services.season_lifecycle_service import live_season_stage
 
     db_path = await _seed(tmp_path, stage="ONGOING")
 
@@ -585,7 +585,7 @@ async def test_an_empty_window_closes_without_asking(tmp_path):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
         await _close(cog, interaction)
 
     forced.assert_awaited_once()
@@ -608,7 +608,7 @@ async def test_every_in_progress_state_forces_a_confirmation(tmp_path, state):
     cog = _cog(db_path)
     interaction = _interaction()
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
         await _close(cog, interaction)
 
     forced.assert_not_awaited()
@@ -628,7 +628,7 @@ async def test_the_confirmation_counts_and_names_the_drivers(tmp_path):
     max_.display_name = "Max"
     interaction = _interaction(members={7000: lewis, 7001: max_})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
@@ -653,7 +653,7 @@ async def test_the_confirmation_counts_only_the_drivers_the_close_will_return(tm
     )
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
@@ -669,7 +669,7 @@ async def test_a_close_with_only_drivers_in_review_says_nobody_loses_their_signu
     )
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()) as forced:
         await _close(_cog(db_path), interaction)
 
     forced.assert_not_awaited()
@@ -704,7 +704,7 @@ async def test_each_driver_is_listed_with_their_signup_channel(tmp_path):
     await _give_signup_channel(db_path, "7001", 880002)
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
@@ -728,7 +728,7 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
         await db.commit()
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
@@ -740,8 +740,8 @@ async def test_a_driver_with_no_signup_channel_is_listed_by_name_alone(tmp_path)
 def test_every_state_the_close_returns_is_one_the_confirmation_lists():
     """A state added to the close alone would drop drivers the confirmation never named, and
     one of them parked alone would let the close through with no confirmation at all."""
-    from cogs.module_cog import RETURNED_BY_CLOSE
-    from cogs.signup_cog import IN_PROGRESS_STATES
+    from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
+    from leaguebot.signup.cogs.signup_cog import IN_PROGRESS_STATES
 
     assert RETURNED_BY_CLOSE <= IN_PROGRESS_STATES
 
@@ -754,7 +754,7 @@ async def test_a_driver_who_has_left_is_listed_by_id(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     assert "7000" in _replied(interaction)
@@ -770,7 +770,7 @@ async def test_a_long_list_of_drivers_is_truncated(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     replied = _replied(interaction)
@@ -787,7 +787,7 @@ async def test_each_list_is_truncated_on_its_own(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     returned, kept = _replied(interaction).split("keep their place")
@@ -804,7 +804,7 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
     )
     interaction = _interaction(members={})
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock()):
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock()):
         await _close(_cog(db_path), interaction)
 
     assert "Not Signed Up" in _replied(interaction)
@@ -819,7 +819,7 @@ async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     interaction = _interaction()
     view = ConfirmCloseView(cog.bot)
 
-    with patch("cogs.signup_cog.execute_forced_close", new=AsyncMock(return_value=2)) as forced:
+    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock(return_value=2)) as forced:
         await view.confirm.callback(interaction)
 
     forced.assert_awaited_once()

@@ -21,12 +21,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.results_cog import ResultsCog, _ordering_notice  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services import points_config_service  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog, _ordering_notice  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services import points_config_service  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -282,7 +282,7 @@ async def test_config_session_on_a_missing_config_reports_only_that(db_path):
 
 async def _submit_bulk(db_path, text: str):
     """Build and submit the bulk modal. Async because discord.py 2.5.0 wants a loop."""
-    from cogs.results_cog import BulkConfigSessionModal
+    from leaguebot.results.cogs.results_cog import BulkConfigSessionModal
 
     modal = BulkConfigSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = text
@@ -347,7 +347,7 @@ async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(db_path):
 @pytest.fixture
 async def season(db_path):
     """A season in amendment mode, holding 25 for a win and 18 for second."""
-    from services.amendment_service import enable_amendment_mode
+    from leaguebot.core.services.amendment_service import enable_amendment_mode
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -420,7 +420,7 @@ async def test_amend_session_says_nothing_extra_about_a_clean_change(db_path, se
 
 @pytest.mark.asyncio
 async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_path, season):
-    from cogs.results_cog import BulkAmendSessionModal
+    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal
 
     modal = BulkAmendSessionModal("100%", _FEATURE_RACE, db_path)
     modal.entries._value = "1, 10\n2, 25"
@@ -440,7 +440,7 @@ async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_pat
 @pytest.mark.asyncio
 async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path, season):
     """A manager deciding whether to approve should see the fault while deciding."""
-    from services.amendment_service import modify_session_points
+    from leaguebot.core.services.amendment_service import modify_session_points
 
     await modify_session_points(db_path, season, "100%", "FEATURE_RACE", 2, 30)
     cog = _cog_with_season(db_path, season)
@@ -474,7 +474,7 @@ async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_not
     db_path, season
 ):
     """The guard is asked again at the press — the panel has no timeout."""
-    from services.amendment_service import modify_session_points
+    from leaguebot.core.services.amendment_service import modify_session_points
 
     await modify_session_points(db_path, season, "100%", "FEATURE_RACE", 2, 30)
     cog = _cog_with_season(db_path, season)

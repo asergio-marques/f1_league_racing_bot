@@ -14,9 +14,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import backup_service, factory_reset_service  # noqa: E402
-from services.factory_reset_service import take_backup  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services import backup_service, factory_reset_service  # noqa: E402
+from leaguebot.core.services.factory_reset_service import take_backup  # noqa: E402
 
 NOW = datetime(2026, 9, 19, 10, 15, 0, tzinfo=timezone.utc)
 
@@ -234,7 +234,7 @@ async def test_the_wipe_leaves_exactly_a_fresh_install(db_path, tmp_path):
 async def test_the_wipe_frees_the_claim(db_path):
     from unittest.mock import MagicMock
 
-    from services.config_service import ConfigService
+    from leaguebot.core.services.config_service import ConfigService
 
     await factory_reset_service.wipe(db_path, MagicMock())
 

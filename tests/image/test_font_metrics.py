@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.font_metrics import (  # noqa: E402
+from leaguebot.image.utils.font_metrics import (  # noqa: E402
     ResolvedFont,
     font_index,
     measure,
@@ -185,7 +185,7 @@ def _a_family_with_two_weights():
     host whose first two-weight family is Liberation Mono would fail where another passes,
     which is precisely how this went unnoticed until it ran on a Raspberry Pi.
     """
-    from utils.font_metrics import face_index  # noqa: PLC0415
+    from leaguebot.image.utils.font_metrics import face_index  # noqa: PLC0415
 
     for (family, italic), faces in sorted(face_index().items()):
         if italic:
@@ -215,7 +215,7 @@ def test_a_bold_declaration_resolves_to_a_heavier_face_than_a_regular_one():
 
 def test_the_regular_face_chosen_is_the_nearest_to_400_not_the_first_alphabetically():
     """DejaVuSans-ExtraLight sorts before DejaVuSans and is materially narrower."""
-    from utils.font_metrics import face_index  # noqa: PLC0415
+    from leaguebot.image.utils.font_metrics import face_index  # noqa: PLC0415
 
     for (family, italic), faces in sorted(face_index().items()):
         if italic or len(faces) < 2:
@@ -244,7 +244,7 @@ def test_measurement_errs_narrow_against_what_the_rasteriser_draws():
     import tempfile  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
 
-    from services.image_render_service import find_converter  # noqa: PLC0415
+    from leaguebot.image.services.image_render_service import find_converter  # noqa: PLC0415
 
     executable = find_converter()
 
@@ -328,8 +328,8 @@ def test_measurement_errs_narrow_however_the_family_was_declared(where, template
 
     from lxml import etree  # noqa: PLC0415
 
-    from services.image_render_service import find_converter  # noqa: PLC0415
-    from utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
+    from leaguebot.image.services.image_render_service import find_converter  # noqa: PLC0415
+    from leaguebot.image.utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
 
     executable = find_converter()
 
@@ -383,7 +383,7 @@ def test_a_condensed_face_never_stands_in_for_its_normal_sibling():
     Found by rendering a verdict to PNG and watching its justification run off the canvas,
     which is the whole reason XIV.14 requires the check be made against the raster.
     """
-    from utils.font_metrics import face_index  # noqa: PLC0415
+    from leaguebot.image.utils.font_metrics import face_index  # noqa: PLC0415
 
     for (family, italic), faces in face_index().items():
         if italic:

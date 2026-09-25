@@ -18,8 +18,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import attendance_service, image_attendance_post, image_rsvp_post  # noqa: E402
-from services.image_attendance_service import (  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.image.services import image_attendance_post, image_rsvp_post  # noqa: E402
+from leaguebot.image.services.image_attendance_service import (  # noqa: E402
     DriverRecord,
     RoundHeading,
     build_fill_spec,

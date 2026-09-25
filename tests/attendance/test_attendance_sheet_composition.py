@@ -17,8 +17,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.attendance_service import _sheet_rows, enforce_attendance_sanctions  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services.attendance_service import _sheet_rows, enforce_attendance_sanctions  # noqa: E402
 
 SERVER_ID = 22170
 PRO, AM = 1, 2
@@ -169,10 +169,10 @@ async def _enforce(db_path, *, sack=None, post=None):
     bot.placement_service.sack_driver = sack or AsyncMock()
     bot.placement_service._refresh_lineup_post = AsyncMock()
 
-    with patch("services.attendance_service.post_attendance_sheet",
+    with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
                new=post or AsyncMock()) as posted, \
-            patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
-            patch("services.verdict_announcement_service.post_autosanction_announcement",
+            patch("leaguebot.results.services.verdict_announcement_service.banner_for_round", return_value=None), \
+            patch("leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
                   # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
                   # than extending it, which leaves SanctionOutcome.complete false
                   # for every run in this file. It must return a list (#237).
@@ -238,9 +238,9 @@ async def test_autosack_reposts_every_division(db_path):
     bot.placement_service.sack_driver = AsyncMock()
     bot.placement_service._refresh_lineup_post = AsyncMock()
 
-    with patch("services.attendance_service.post_attendance_sheet", new=AsyncMock()) as posted, \
-            patch("services.verdict_announcement_service.banner_for_round", return_value=None), \
-            patch("services.verdict_announcement_service.post_autosanction_announcement",
+    with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet", new=AsyncMock()) as posted, \
+            patch("leaguebot.results.services.verdict_announcement_service.banner_for_round", return_value=None), \
+            patch("leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
                   # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
                   # than extending it, which leaves SanctionOutcome.complete false
                   # for every run in this file. It must return a list (#237).

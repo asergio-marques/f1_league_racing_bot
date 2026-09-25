@@ -41,11 +41,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 13508
@@ -222,27 +222,27 @@ async def _amend(
     }
     patches = [
         patch(
-            "services.result_submission_service._build_division_validation_data",
+            "leaguebot.results.services.result_submission_service._build_division_validation_data",
             new=AsyncMock(return_value=({101, 102}, {3001: 3001}, None, {101: 3001}, set(), {}, {})),
         ),
         patch(
-            "services.result_submission_service.other_active_team_assignments",
+            "leaguebot.results.services.result_submission_service.other_active_team_assignments",
             new=stubs["assignments"],
         ),
         patch(
-            "services.result_submission_service.extract_fl_override",
+            "leaguebot.results.services.result_submission_service.extract_fl_override",
             new=MagicMock(side_effect=lambda lines: (fl_override, lines)),
         ),
         patch(
-            "services.result_submission_service.validate_submission_block",
+            "leaguebot.results.services.result_submission_service.validate_submission_block",
             new=stubs["validate"],
         ),
         patch(
-            "services.season_points_service.get_season_config_names",
+            "leaguebot.results.services.season_points_service.get_season_config_names",
             new=AsyncMock(return_value=list(config_names)),
         ),
         patch(
-            "services.result_submission_service.amend_round_results", new=stubs["amend"]
+            "leaguebot.results.services.result_submission_service.amend_round_results", new=stubs["amend"]
         ),
     ]
     if timeout:
@@ -251,7 +251,7 @@ async def _amend(
 
         patches.append(patch("asyncio.wait", new=_no_one_came))
     if sessions is not None:
-        from cogs.season_cog import _AmendSessionsView
+        from leaguebot.core.cogs.season_cog import _AmendSessionsView
 
         async def _choose_them(view):
             view.selected = [st.value for st in sessions]
@@ -615,7 +615,7 @@ async def test_a_channel_that_will_not_delete_does_not_fail_a_cancellation(tmp_p
 
     # Kept, closed, rather than forgotten (#345): it holds nothing, and restart recovery
     # deletes the channel it names.
-    from services.result_submission_service import open_amendment_in_division
+    from leaguebot.results.services.result_submission_service import open_amendment_in_division
 
     assert await _amend_rows(db_path) == 1
     assert await open_amendment_in_division(db_path, DIVISION_ID) is None
@@ -631,7 +631,7 @@ async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path):
     """
     import inspect
 
-    from services.result_submission_service import validate_submission_block
+    from leaguebot.results.services.result_submission_service import validate_submission_block
 
     assert "amend_format" not in inspect.signature(validate_submission_block).parameters
 
@@ -690,7 +690,7 @@ async def test_cancelling_after_the_first_stage_puts_the_round_back(tmp_path):
     press.followup = MagicMock()
     press.followup.send = AsyncMock()
     with patch(
-        "services.result_submission_service.cancel_amendment",
+        "leaguebot.results.services.result_submission_service.cancel_amendment",
         new=AsyncMock(return_value=True),
     ) as cancel:
         await type(view).cancel_btn(view, press, MagicMock())
@@ -714,7 +714,7 @@ async def test_cancelling_too_late_says_so(tmp_path):
     press.followup = MagicMock()
     press.followup.send = AsyncMock()
     with patch(
-        "services.result_submission_service.cancel_amendment",
+        "leaguebot.results.services.result_submission_service.cancel_amendment",
         new=AsyncMock(return_value=False),
     ):
         await type(view).cancel_btn(view, press, MagicMock())
@@ -731,7 +731,7 @@ async def test_a_failed_write_puts_back_what_it_had_written_before_tidying_up(tm
     cog = _make_cog(db_path)
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert:
         await _amend(cog, interaction, amend_error=RuntimeError("locked"))
@@ -746,7 +746,7 @@ async def test_a_failed_revert_keeps_the_snapshot(tmp_path):
     interaction = _interaction(_amend_channel(), message=_message())
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(side_effect=RuntimeError("still locked")),
     ):
         await _amend(_make_cog(db_path), interaction, amend_error=RuntimeError("locked"))
@@ -762,10 +762,10 @@ async def test_a_report_stage_that_cannot_open_undoes_the_amendment(tmp_path):
     interaction = _interaction(_amend_channel(), message=_message())
 
     with patch(
-        "services.result_submission_service.run_amendment_review_stages",
+        "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
         new=AsyncMock(side_effect=RuntimeError("no channel")),
     ), patch(
-        "services.result_submission_service.cancel_amendment",
+        "leaguebot.results.services.result_submission_service.cancel_amendment",
         new=AsyncMock(return_value=True),
     ) as cancel:
         await _amend(_make_cog(db_path), interaction)
@@ -799,7 +799,7 @@ async def test_cancelling_while_the_paste_is_being_written_is_refused_not_swallo
         pressed["view"] = view
 
     with patch(
-        "services.result_submission_service.cancel_amendment", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.cancel_amendment", new=AsyncMock()
     ) as cancel:
         await _amend(_make_cog(db_path), interaction, amend_error=_press_during_the_write)
 
@@ -1207,7 +1207,7 @@ async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
 async def test_a_channel_that_cannot_be_deleted_keeps_its_record_closed(tmp_path):
     """Closed rather than forgotten: it holds nothing, and restart recovery still finds the
     channel by it."""
-    from services.result_submission_service import open_amendment_in_division
+    from leaguebot.results.services.result_submission_service import open_amendment_in_division
 
     db_path = await _make_db(tmp_path, name="amend_fault_undeletable")
     channel = _amend_channel()
@@ -1248,7 +1248,7 @@ async def test_a_rejected_paste_whose_channel_cannot_be_deleted_keeps_its_row_cl
     """Every ending before stage one goes through the same close as the others: the row was
     forgotten before the delete was tried, and a channel the bot could not delete stood with
     nothing naming it."""
-    from services.result_submission_service import open_amendment_in_division
+    from leaguebot.results.services.result_submission_service import open_amendment_in_division
 
     db_path = await _make_db(tmp_path, name="amend_reject_undeletable")
     channel = _amend_channel()

@@ -19,9 +19,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.test_roster_service import add_test_drivers_in_bulk  # noqa: E402
-from utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk  # noqa: E402
+from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv  # noqa: E402
 
 SERVER_ID = 7700
 

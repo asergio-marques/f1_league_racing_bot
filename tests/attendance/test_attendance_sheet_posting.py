@@ -23,9 +23,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import attendance_service  # noqa: E402
-from services.attendance_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import attendance_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import (  # noqa: E402
     derive_checkin_deadline,
     post_attendance_sheet,
 )
@@ -294,7 +294,7 @@ async def test_a_previous_sheet_already_gone_is_passed_over_silently(sheet_db, c
     channel = _ChannelWhosePriorSheetIsGone(journal)
     guild = _FakeGuild(channel, {111: "Ayrton"})
 
-    with caplog.at_level("WARNING", logger="services.attendance_service"):
+    with caplog.at_level("WARNING", logger="leaguebot.attendance.services.attendance_service"):
         await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
 
     assert journal == ["send:5001", "fetch:4242"]
@@ -383,7 +383,7 @@ async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monk
     hour later is a picture of a division that has moved on. The text is composed at the moment
     it is finally sent.
     """
-    from services import retry_service
+    from leaguebot.core.services import retry_service
 
     enqueued: list[dict] = []
 
@@ -411,7 +411,7 @@ async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monk
 async def test_a_queue_failure_never_masks_the_original_posting_failure(
     sheet_db, monkeypatch
 ):
-    from services import retry_service
+    from leaguebot.core.services import retry_service
 
     async def _boom(*args, **kwargs):
         raise RuntimeError("queue is down")
@@ -613,11 +613,11 @@ async def test_the_sheet_graphic_is_gone_when_the_send_fails(
 #
 # The opening sheet takes the division's one live slot, so round one replaces it in the
 # ordinary way. The final sheet does not: it stands beside the last round's, which is the
-# one deliberate exception to the one-sheet rule. See `models.classification_occasion`.
+# one deliberate exception to the one-sheet rule. See `leaguebot.core.models.classification_occasion`.
 
 
 def _occasion(name):
-    from models.classification_occasion import ClassificationOccasion
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
     return getattr(ClassificationOccasion, name)
 
@@ -675,7 +675,7 @@ async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
 @pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
 async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_name, monkeypatch):
     """The phrase is drawn on the sheet, so a heading above it would say it twice."""
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])
@@ -695,7 +695,7 @@ async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_nam
 
 @pytest.mark.asyncio
 async def test_an_ordinary_graphic_still_carries_its_heading(sheet_db, monkeypatch):
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     await _config(sheet_db, prior=None)
     channel = _FakeChannel([])

@@ -20,10 +20,10 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS
-from models.image_catalogues import row_crop_fields
-from utils.svg_document import length
-from utils.svg_fill import FillSpec, _path_rule, _translate_y, _translate_y_of, fill
+from leaguebot.image.models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS
+from leaguebot.image.models.image_catalogues import row_crop_fields
+from leaguebot.image.utils.svg_document import length
+from leaguebot.image.utils.svg_fill import FillSpec, _path_rule, _translate_y, _translate_y_of, fill
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 
@@ -515,8 +515,8 @@ LINEUP_PITCH = 68
 
 def _lineup(teams: int, *, reserves: bool):
     """The shipped lineup, filled for *teams* teams, as the projection fills it."""
-    from models.image_catalogues import row_crop_fields
-    from utils.svg_document import FieldIndex
+    from leaguebot.image.models.image_catalogues import row_crop_fields
+    from leaguebot.image.utils.svg_document import FieldIndex
 
     root = etree.parse(str(TEMPLATES / LINEUP)).getroot()
     declared = FieldIndex(root).declared()

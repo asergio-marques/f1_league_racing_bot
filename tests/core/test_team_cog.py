@@ -45,7 +45,7 @@ def _make_interaction(guild_id: int = 1) -> MagicMock:
 
 
 def _make_season(season_number: int = 3, season_id: int = 1, stage=None) -> MagicMock:
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
     season = MagicMock()
     season.id = season_id
     season.season_number = season_number
@@ -62,7 +62,7 @@ def _make_bot(
     teams_with_roles: list | None = None,
     live_season=None,
 ) -> MagicMock:
-    from services.team_service import TeamReference, TeamService
+    from leaguebot.core.services.team_service import TeamReference, TeamService
 
     bot = MagicMock()
     # Held to the service's real methods, so a stub cannot outlive the method it stands for.
@@ -109,7 +109,7 @@ def _team_service_calls(bot) -> set[str]:
 
 class TestTeamAdd:
     async def test_with_role_no_season_success(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot(setup_season=None)
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -128,8 +128,8 @@ class TestTeamAdd:
         assert kwargs.get("ephemeral") is True
 
     async def test_in_configuration_changes_the_server_list(self):
-        from cogs.team_cog import TeamCog
-        from models.season import SeasonStage
+        from leaguebot.core.cogs.team_cog import TeamCog
+        from leaguebot.core.models.season import SeasonStage
         season = _make_season(stage=SeasonStage.CONFIGURATION)
         bot = _make_bot(live_season=season)
         cog = TeamCog(bot)
@@ -147,8 +147,8 @@ class TestTeamAdd:
 
     @pytest.mark.parametrize("stage_name", ["WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING"])
     async def test_refused_once_the_configuration_is_confirmed(self, stage_name):
-        from cogs.team_cog import TeamCog
-        from models.season import SeasonStage
+        from leaguebot.core.cogs.team_cog import TeamCog
+        from leaguebot.core.models.season import SeasonStage
         season = _make_season(season_number=3, stage=SeasonStage(stage_name))
         bot = _make_bot(live_season=season)
         cog = TeamCog(bot)
@@ -166,7 +166,7 @@ class TestTeamAdd:
         assert "Season 3" in content
 
     async def test_duplicate_name_returns_error(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot(add_default_team_side_effect=ValueError('A default team named "Alpine" already exists.'))
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -187,7 +187,7 @@ class TestTeamAdd:
 
 class TestTeamRemove:
     async def test_no_season_removes_from_server_only(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot(setup_season=None)
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -202,7 +202,7 @@ class TestTeamRemove:
         assert "✅" in content
 
     async def test_refused_once_the_configuration_is_confirmed(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         season = _make_season(season_number=3)
         bot = _make_bot(live_season=season)
         cog = TeamCog(bot)
@@ -217,7 +217,7 @@ class TestTeamRemove:
         assert "⛔" in content
 
     async def test_not_found_returns_error(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot(remove_default_team_side_effect=ValueError('No default team named "Ghost" found.'))
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -236,7 +236,7 @@ class TestTeamRemove:
 
 class TestTeamList:
     async def test_no_teams_returns_empty_state(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot(teams_with_roles=[], setup_season=None)
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -249,7 +249,7 @@ class TestTeamList:
         assert "No teams" in content
 
     async def test_teams_no_season_shows_server_list(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         teams = [
             {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": 111},
             {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
@@ -268,7 +268,7 @@ class TestTeamList:
         assert "⚠️" not in content
 
     async def test_setup_season_matching_shows_unified_header(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         teams = [
             {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
             {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
@@ -290,7 +290,7 @@ class TestTeamList:
         assert "⚠️" not in content
 
     async def test_setup_season_divergent_shows_warning(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         teams = [
             {"name": "Ferrari", "full_name": "Ferrari Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
             {"name": "Alpine", "full_name": "Alpine Racing", "max_seats": 2, "is_reserve": False, "role_id": None},
@@ -321,7 +321,7 @@ class TestTeamList:
 
 class TestTeamReserveRole:
     async def test_set_role_calls_set_config(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot()
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -340,7 +340,7 @@ class TestTeamReserveRole:
         assert "<@&999>" in content
 
     async def test_clear_role_calls_delete_config(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot()
         cog = TeamCog(bot)
         interaction = _make_interaction()
@@ -356,7 +356,7 @@ class TestTeamReserveRole:
         assert "cleared" in content
 
     async def test_the_drivers_seated_in_reserve_follow_its_new_role(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot(teams_with_roles=[
             {"name": "Reserve", "full_name": "Reserve Racing", "max_seats": 0, "is_reserve": True, "role_id": 555},
         ])
@@ -386,7 +386,7 @@ class TestOneRolePerTeam:
         return _make_role(role_id)
 
     async def test_a_team_is_not_added_under_a_role_another_team_holds(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot()
         bot.placement_service.team_holding_role = AsyncMock(return_value="Ferrari")
         cog = TeamCog(bot)
@@ -404,7 +404,7 @@ class TestOneRolePerTeam:
     async def test_a_role_taken_at_the_last_moment_takes_the_new_team_away_again(self):
         """The check and the write are separate, so the write refuses too; the team it
         would have left behind without a role is removed."""
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot()
         bot.placement_service.set_team_role_config = AsyncMock(
             side_effect=ValueError('<@&111> is already the role of "Ferrari".')
@@ -420,7 +420,7 @@ class TestOneRolePerTeam:
         assert interaction.response.send_message.call_args.args[0].startswith("⛔")
 
     async def test_the_reserve_is_not_given_a_role_another_team_holds(self):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot()
         bot.placement_service.set_team_role_config = AsyncMock(
             side_effect=ValueError('<@&111> is already the role of "Ferrari".')
@@ -462,7 +462,7 @@ class TestTeamLineupDiscardsItsPictures:
         return division
 
     def _cog_and_bot(self, divisions):
-        from cogs.team_cog import TeamCog
+        from leaguebot.core.cogs.team_cog import TeamCog
 
         bot = _make_bot()
         bot.season_service.get_confirmed_season = AsyncMock(return_value=_make_season())
@@ -472,7 +472,7 @@ class TestTeamLineupDiscardsItsPictures:
     async def test_a_rejection_part_way_through_leaves_no_picture_behind(
         self, tmp_path, monkeypatch
     ):
-        from services import image_lineup_post
+        from leaguebot.image.services import image_lineup_post
 
         divisions = [self._division(1, 1), self._division(2, 2)]
         drawn = self._artifact(tmp_path, 1)
@@ -508,7 +508,7 @@ class TestTeamLineupDiscardsItsPictures:
     async def test_the_pictures_are_gone_once_the_batch_has_posted(
         self, tmp_path, monkeypatch
     ):
-        from services import image_lineup_post
+        from leaguebot.image.services import image_lineup_post
 
         divisions = [self._division(1, 1), self._division(2, 2)]
         pngs = [self._artifact(tmp_path, 1), self._artifact(tmp_path, 2)]

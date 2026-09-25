@@ -25,8 +25,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     _RETIRED_SANCTION_COLUMNS,
     validate_submission_block,
 )

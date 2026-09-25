@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.season_lifecycle_service import run_driver_pass  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.season_lifecycle_service import run_driver_pass  # noqa: E402
 
 SERVER_ID = 22130
 
@@ -243,7 +243,7 @@ async def test_a_role_discord_will_not_take_back_does_not_stop_the_pass(db_path)
 
 async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatch):
     """Constitution VIII: no code path sets a driver's state directly."""
-    import services.driver_service as driver_service
+    import leaguebot.core.services.driver_service as driver_service
 
     seen = []
     real = driver_service.write_transition
@@ -292,7 +292,7 @@ async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
 
 @pytest.fixture
 def portraits(tmp_path, monkeypatch):
-    from services import image_render_service
+    from leaguebot.image.services import image_render_service
 
     directory = tmp_path / "drivers"
     directory.mkdir()
@@ -379,7 +379,7 @@ async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     db_path, portraits, monkeypatch
 ):
     """The row taken without its file would disown the bot's own portrait for good."""
-    from services import image_render_service
+    from leaguebot.image.services import image_render_service
 
     await _obtained(db_path, portraits, "1002")
     monkeypatch.setattr(
@@ -400,7 +400,7 @@ async def test_portraits_are_discarded_only_once_the_deletion_has_committed(
 ):
     """A deletion that fails must leave every portrait where it was, so the discarding waits
     for the commit. The remover reads the database as another connection would."""
-    from services import driver_portrait_service
+    from leaguebot.image.services import driver_portrait_service
 
     seen = []
 
@@ -422,7 +422,7 @@ async def test_portraits_are_discarded_only_once_the_deletion_has_committed(
 async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
     db_path, portraits, monkeypatch
 ):
-    from services import driver_portrait_service
+    from leaguebot.image.services import driver_portrait_service
 
     monkeypatch.setattr(
         driver_portrait_service,

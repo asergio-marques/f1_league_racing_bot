@@ -1,6 +1,6 @@
 """`/team lineup` and `/team reserve-role`.
 
-Issue #208. `tests/unit/test_team_cog.py` covers adding, removing and renaming teams; the
+Issue #208. `tests/core/test_team_cog.py` covers adding, removing and renaming teams; the
 lineup listing and the reserve-role mapping were unexecuted.
 
 **`/team lineup` has two quite different outputs and the choice between them is a league
@@ -36,9 +36,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.team_cog import TeamCog  # noqa: E402
+from leaguebot.core.cogs.team_cog import TeamCog  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9208
@@ -141,7 +141,7 @@ async def _lineup(cog, interaction, *, division=None, public=False):
 
 def _no_graphic():
     """The image module switched off, so the command takes its textual path."""
-    return patch("services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=False))
+    return patch("leaguebot.image.services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=False))
 
 
 # ---------------------------------------------------------------------------
@@ -280,9 +280,9 @@ async def test_asking_publicly_sends_publicly(tmp_path):
 
 def _graphic(outcome):
     return (
-        patch("services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=True)),
+        patch("leaguebot.image.services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=True)),
         patch(
-            "services.image_lineup_post.render_for_command",
+            "leaguebot.image.services.image_lineup_post.render_for_command",
             new=AsyncMock(return_value=outcome),
         ),
     )
@@ -326,12 +326,12 @@ async def test_a_rejection_discards_the_files_already_drawn(tmp_path):
     interaction = _interaction()
 
     with patch(
-        "services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=True)
+        "leaguebot.image.services.image_lineup_post.lineup_enabled", new=AsyncMock(return_value=True)
     ), patch(
-        "services.image_lineup_post.render_for_command",
+        "leaguebot.image.services.image_lineup_post.render_for_command",
         new=AsyncMock(side_effect=outcomes),
     ), patch(
-        "services.image_render_service.discard_attachment",
+        "leaguebot.image.services.image_render_service.discard_attachment",
         new=lambda *files: discarded.extend(files),
     ):
         await _lineup(cog, interaction)
@@ -348,7 +348,7 @@ async def test_a_drawn_lineup_is_sent_as_files(tmp_path):
     interaction = _interaction()
 
     with enabled, render, patch(
-        "services.image_render_service.discard_attachment", new=lambda *f: None
+        "leaguebot.image.services.image_render_service.discard_attachment", new=lambda *f: None
     ):
         await _lineup(cog, interaction)
 

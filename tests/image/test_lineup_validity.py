@@ -24,8 +24,8 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import LINEUP_CATALOGUE, CapacityError
-from services.image_validity_service import (
+from leaguebot.image.models.image_catalogues import LINEUP_CATALOGUE, CapacityError
+from leaguebot.image.services.image_validity_service import (
     LAYER_CATALOGUE,
     CatalogueLayer,
 )

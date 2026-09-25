@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.driver_portrait_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.services.driver_portrait_service import (  # noqa: E402
     has_own_avatar,
     portrait_path,
     refresh_portraits,
@@ -102,7 +102,7 @@ def test_the_wrapper_takes_the_shape_it_is_given():
     [(1.0, (128, 128)), (0.75, (96, 128)), (1.5, (128, 85)), (2.0, (128, 64))],
 )
 def test_the_longest_side_is_always_the_portrait_size(aspect, expected):
-    from services.driver_portrait_service import wrap_size
+    from leaguebot.image.services.driver_portrait_service import wrap_size
 
     assert wrap_size(aspect) == expected
     assert max(wrap_size(aspect)) == 128
@@ -112,7 +112,7 @@ def test_the_longest_side_is_always_the_portrait_size(aspect, expected):
 def test_a_nonsensical_shape_falls_back_to_square_rather_than_to_nothing(aspect):
     """A zero-width document is one the rasteriser rejects outright, which would cost the
     render rather than the portrait. Every failure in this module lands on 1:1 instead."""
-    from services.driver_portrait_service import wrap_size
+    from leaguebot.image.services.driver_portrait_service import wrap_size
 
     assert wrap_size(aspect) == (128, 128)
 
@@ -135,7 +135,7 @@ def test_the_portrait_is_centre_cropped_rather_than_letterboxed():
 
 
 def test_the_recorded_key_carries_the_shape_as_well_as_the_avatar():
-    from services.driver_portrait_service import portrait_key
+    from leaguebot.image.services.driver_portrait_service import portrait_key
 
     assert portrait_key("abc123", 1.0) == "abc123@1.0000"
     assert portrait_key("abc123", 0.75) == "abc123@0.7500"
@@ -149,14 +149,14 @@ def test_re_shaping_the_template_makes_an_unchanged_avatar_stale():
     kept the same picture. There is no migration for this: an old row simply carries no `@`,
     matches neither, and is refreshed once.
     """
-    from services.driver_portrait_service import portrait_key
+    from leaguebot.image.services.driver_portrait_service import portrait_key
 
     assert portrait_key("abc123", 1.0) != portrait_key("abc123", 0.75)
     assert portrait_key("abc123", 1.0) != "abc123"
 
 
 def test_the_portrait_is_named_as_the_resolver_would_look_for_it():
-    from utils.asset_resolver import filename_for
+    from leaguebot.image.utils.asset_resolver import filename_for
 
     assert portrait_path("/tmp/x", "12345").name == filename_for("12345") == "12345.svg"
 
@@ -252,7 +252,7 @@ async def test_a_generated_avatar_does_not_remove_a_file_the_league_supplied(db_
 
 async def test_removing_a_portrait_takes_the_file_and_the_row(db_path, directory):
     """What `/driver reassign` does with the account a driver has left (issue #222)."""
-    from services.driver_portrait_service import remove_portrait
+    from leaguebot.image.services.driver_portrait_service import remove_portrait
 
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
 
@@ -264,7 +264,7 @@ async def test_removing_a_portrait_takes_the_file_and_the_row(db_path, directory
 async def test_removing_a_portrait_leaves_the_league_s_own_artwork_alone(db_path, directory):
     """A file with no row was placed by the league, and the bot never overwrites one (the
     service's module docstring). Removing it on a re-key would delete a deliberate choice."""
-    from services.driver_portrait_service import remove_portrait
+    from leaguebot.image.services.driver_portrait_service import remove_portrait
 
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
 
@@ -274,7 +274,7 @@ async def test_removing_a_portrait_leaves_the_league_s_own_artwork_alone(db_path
 
 async def test_removing_a_portrait_whose_file_has_gone_still_takes_the_row(db_path, directory):
     """The row is the ownership register; left behind it would claim a file that is not there."""
-    from services.driver_portrait_service import remove_portrait
+    from leaguebot.image.services.driver_portrait_service import remove_portrait
 
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     (directory / "7.svg").unlink()
@@ -284,7 +284,7 @@ async def test_removing_a_portrait_whose_file_has_gone_still_takes_the_row(db_pa
 
 
 async def test_removing_one_driver_s_portrait_leaves_the_rest(db_path, directory):
-    from services.driver_portrait_service import remove_portrait
+    from leaguebot.image.services.driver_portrait_service import remove_portrait
 
     await refresh_portraits(
         db_path, [_member(7, "abc"), _member(8, "def")], directory, now=NOW
@@ -301,7 +301,7 @@ async def test_the_new_account_is_fetched_fresh_once_the_old_portrait_has_gone(
 ):
     """Nothing of the portrait is carried by a re-key: the new account has a picture of its
     own, and the next refresh obtains it."""
-    from services.driver_portrait_service import remove_portrait
+    from leaguebot.image.services.driver_portrait_service import remove_portrait
 
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     await remove_portrait(db_path, "7", directory)
@@ -334,7 +334,7 @@ async def test_a_missing_file_is_refetched_even_where_the_hash_matches(db_path, 
 
 
 def _bot_with_portraits(db_path, directory, monkeypatch, *, config=True):
-    from services import image_render_service
+    from leaguebot.image.services import image_render_service
 
     monkeypatch.setattr(
         image_render_service,
@@ -352,7 +352,7 @@ def _bot_with_portraits(db_path, directory, monkeypatch, *, config=True):
 async def test_discarding_takes_the_portrait_of_every_account_named(
     db_path, directory, monkeypatch
 ):
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     await refresh_portraits(
         db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory, now=NOW
@@ -366,7 +366,7 @@ async def test_discarding_takes_the_portrait_of_every_account_named(
 
 
 async def test_discarding_leaves_the_league_s_own_artwork_alone(db_path, directory, monkeypatch):
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
@@ -380,8 +380,8 @@ async def test_discarding_removes_nothing_where_no_directory_resolves(
 ):
     """A row taken without its file would disown a portrait the bot wrote, after which the
     bot would refuse to overwrite its own leftover for good. Both are left alone instead."""
-    from services import image_render_service
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services import image_render_service
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
@@ -399,7 +399,7 @@ async def test_discarding_removes_nothing_where_no_directory_resolves(
 async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
     db_path, directory, monkeypatch
 ):
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     bot = _bot_with_portraits(db_path, directory, monkeypatch, config=False)
@@ -411,7 +411,7 @@ async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
 
 async def test_discarding_no_account_reads_no_configuration(db_path, directory, monkeypatch):
     """The driver pass calls this every season, most often with nobody deleted."""
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
@@ -422,7 +422,7 @@ async def test_discarding_no_account_reads_no_configuration(db_path, directory, 
 async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_nothing(
     db_path, directory, monkeypatch
 ):
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
@@ -435,8 +435,8 @@ async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_n
 async def test_one_portrait_that_cannot_be_removed_does_not_keep_the_rest(
     db_path, directory, monkeypatch
 ):
-    from services import driver_portrait_service
-    from services.driver_portrait_service import discard_portraits
+    from leaguebot.image.services import driver_portrait_service
+    from leaguebot.image.services.driver_portrait_service import discard_portraits
 
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
     remover = AsyncMock(side_effect=[PermissionError("read-only"), True])
@@ -527,7 +527,7 @@ def _config(**overrides):
 
 async def _gate(monkeypatch, config, directory, members=None, *, obtain_missing=False):
     """Run refresh_before_render with refresh_portraits captured rather than performed."""
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     calls = []
 
@@ -586,7 +586,7 @@ async def test_a_failure_beneath_the_gate_never_reaches_the_render(monkeypatch, 
     """The lineup render would refuse a drawing over a raise from here, and at the
     placements review a refused drawing withholds the approve button — which obtaining a
     portrait must never do."""
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     monkeypatch.setattr(
         m, "refresh_portraits", AsyncMock(side_effect=OSError("disk gone"))
@@ -639,7 +639,7 @@ async def _season_db(tmp_path, *, uids=("11", "22"), test_uid="99", status="ACTI
 
 
 async def test_assigned_driver_ids_skips_test_drivers_and_sorts(tmp_path):
-    from services.driver_portrait_service import assigned_driver_ids
+    from leaguebot.image.services.driver_portrait_service import assigned_driver_ids
 
     path = await _season_db(tmp_path, uids=("22", "11"))
 
@@ -648,7 +648,7 @@ async def test_assigned_driver_ids_skips_test_drivers_and_sorts(tmp_path):
 
 
 async def test_assigned_driver_ids_ignores_a_season_that_is_not_active(tmp_path):
-    from services.driver_portrait_service import assigned_driver_ids
+    from leaguebot.image.services.driver_portrait_service import assigned_driver_ids
 
     path = await _season_db(tmp_path, status="COMPLETED")
 
@@ -672,12 +672,12 @@ def _daily_bot(db_path, directory, **config_overrides):
 
 
 async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatch):
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
 
     written = await m.run_daily_refresh(_daily_bot(path, directory), now=NOW)
 
@@ -686,12 +686,12 @@ async def test_the_daily_refresh_writes_every_seated_driver(tmp_path, monkeypatc
 
 
 async def test_the_daily_refresh_stands_aside_when_not_asked_for(tmp_path, monkeypatch):
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
 
     assert await m.run_daily_refresh(
         _daily_bot(path, directory, pfp_daily=False), now=NOW
@@ -703,7 +703,7 @@ async def test_the_daily_refresh_stands_aside_when_not_asked_for(tmp_path, monke
 
 
 async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job(tmp_path):
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     bot = MagicMock()
     bot.db_path = str(tmp_path / "missing.db")
@@ -714,12 +714,12 @@ async def test_the_daily_refresh_swallows_a_failure_rather_than_stopping_the_job
 
 
 async def test_the_daily_refresh_stands_aside_where_the_guild_is_unreachable(tmp_path, monkeypatch):
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     directory = tmp_path / "drivers"
     directory.mkdir()
     path = await _season_db(tmp_path)
-    monkeypatch.setattr("utils.paths.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", tmp_path)
     bot = _daily_bot(path, directory)
     bot.get_guild.return_value = None
 
@@ -737,7 +737,7 @@ def _lineup(tmp_path, monkeypatch, *slots):
     this the helper would return 1.0 for every case by being refused, and each test below
     would pass without exercising anything.
     """
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
     directory = tmp_path / "templates"
@@ -757,7 +757,7 @@ def _lineup(tmp_path, monkeypatch, *slots):
 
 
 def test_the_shape_is_read_from_the_lineup_template(tmp_path, monkeypatch):
-    from services.driver_portrait_service import portrait_aspect
+    from leaguebot.image.services.driver_portrait_service import portrait_aspect
 
     square = _lineup(tmp_path, monkeypatch, (120, 120), (120, 120))
     assert portrait_aspect(square) == pytest.approx(1.0)
@@ -771,7 +771,7 @@ def test_the_majority_shape_wins_where_a_lineup_disagrees_with_itself(
 ):
     """Such a template is refused by Layer 2 anyway; this only decides what is used until
     someone fixes it, and the answer must not be a crash."""
-    from services.driver_portrait_service import portrait_aspect
+    from leaguebot.image.services.driver_portrait_service import portrait_aspect
 
     config = _lineup(tmp_path, monkeypatch, (90, 120), (90, 120), (120, 120))
     assert portrait_aspect(config) == pytest.approx(0.75)
@@ -788,15 +788,15 @@ def test_the_majority_shape_wins_where_a_lineup_disagrees_with_itself(
 def test_an_unreadable_lineup_assumes_a_square_portrait(config):
     """Every failure lands on 1:1 — what the bot shipped with, and what a league that has
     re-shaped nothing is already using. A portrait never fails a render."""
-    from services.driver_portrait_service import portrait_aspect
+    from leaguebot.image.services.driver_portrait_service import portrait_aspect
 
     assert portrait_aspect(config) == pytest.approx(1.0)
 
 
 def test_a_lineup_that_will_not_parse_assumes_a_square_portrait(tmp_path, monkeypatch):
-    import utils.paths as paths_module
+    import leaguebot.core.utils.paths as paths_module
 
-    from services.driver_portrait_service import portrait_aspect
+    from leaguebot.image.services.driver_portrait_service import portrait_aspect
 
     monkeypatch.setattr(paths_module, "PROJECT_ROOT", tmp_path, raising=False)
     directory = tmp_path / "templates"
@@ -812,7 +812,7 @@ def test_a_lineup_that_will_not_parse_assumes_a_square_portrait(tmp_path, monkey
 def test_a_lineup_declaring_no_portrait_slot_assumes_a_square_portrait(
     tmp_path, monkeypatch
 ):
-    from services.driver_portrait_service import portrait_aspect
+    from leaguebot.image.services.driver_portrait_service import portrait_aspect
 
     assert portrait_aspect(_lineup(tmp_path, monkeypatch)) == pytest.approx(1.0)
 
@@ -821,7 +821,7 @@ def test_the_shipped_lineup_still_draws_square_portraits():
     """What the packaged artwork is authored at, so nothing moves for an untouched league."""
     from pathlib import Path
 
-    from services.driver_portrait_service import portrait_aspect
+    from leaguebot.image.services.driver_portrait_service import portrait_aspect
 
     root = Path(__file__).resolve().parents[2]
     config = SimpleNamespace(
@@ -854,7 +854,7 @@ def test_inkscape_draws_a_wrapped_portrait_referenced_as_an_external_file(tmp_pa
     """
     import subprocess
 
-    from services.image_render_service import find_converter
+    from leaguebot.image.services.image_render_service import find_converter
 
     # A red square, so a drawn portrait is unmistakably different from a blank one.
     red_png = base64.b64decode(
@@ -922,7 +922,7 @@ def test_a_non_square_portrait_is_cropped_to_its_centre_and_stays_inside_its_box
     import subprocess
     import zlib
 
-    from services.image_render_service import find_converter
+    from leaguebot.image.services.image_render_service import find_converter
 
     def _png(*pixels: tuple[int, int, int]) -> bytes:
         """A 1-row PNG of *pixels*, built here so the test carries no image dependency."""
@@ -1001,9 +1001,9 @@ def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
     """
     import subprocess
 
-    from services.image_render_service import find_converter
-    from utils.svg_fill import FillSpec, fill
-    from utils.svg_document import parse_svg_bytes
+    from leaguebot.image.services.image_render_service import find_converter
+    from leaguebot.image.utils.svg_fill import FillSpec, fill
+    from leaguebot.image.utils.svg_document import parse_svg_bytes
 
     drivers = tmp_path / "drivers"
     drivers.mkdir()
@@ -1056,7 +1056,7 @@ def test_a_wrapped_portrait_survives_the_whole_fill_and_render_path(tmp_path):
 async def test_the_review_obtains_a_missing_portrait_where_only_daily_updates_are_asked_for(
     db_path, directory
 ):
-    from services import driver_portrait_service as m
+    from leaguebot.image.services import driver_portrait_service as m
 
     bot = MagicMock()
     bot.db_path = db_path

@@ -32,8 +32,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import bot as bot_module  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+import leaguebot.__main__ as bot_module  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -114,9 +114,9 @@ async def _recover(
         check_ins.append(round_id)
 
     with patch(
-        "services.forecast_cleanup_service.run_post_race_cleanup",
+        "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup",
         new=AsyncMock(side_effect=_forecast),
-    ), patch("services.rsvp_service.run_rsvp_cleanup", new=AsyncMock(side_effect=_check_in)):
+    ), patch("leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup", new=AsyncMock(side_effect=_check_in)):
         await bot_module._recover_missed_cleanups(bot)
     return forecasts, check_ins
 

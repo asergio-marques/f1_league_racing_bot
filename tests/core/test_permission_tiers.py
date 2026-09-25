@@ -31,8 +31,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.server_config import ServerConfig  # noqa: E402
-from utils.channel_guard import (  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
+from leaguebot.core.utils.channel_guard import (  # noqa: E402
     CHANNEL_EXEMPT_ATTRIBUTE,
     LEAGUE_ADMIN,
     LEAGUE_MANAGER,
@@ -356,7 +356,7 @@ def test_a_command_annotation_resolves_against_this_module():
     """A guard's wrapper carries this module's globals, and discord.py reads them.
 
     `functools.wraps` copies a function's identity but not its namespace, so
-    `wrapper.__globals__` is `utils.channel_guard`'s. Cogs run under
+    `wrapper.__globals__` is `leaguebot.core.utils.channel_guard`'s. Cogs run under
     `from __future__ import annotations`, so a parameter annotated
     `app_commands.Range[int, 1, 10]` arrives at discord.py as a string and
     `_extract_parameters_from_callback` resolves it against `callback.__globals__` — here.
@@ -368,7 +368,7 @@ def test_a_command_annotation_resolves_against_this_module():
 
     `/clean-bot` is the live example: `count: app_commands.Range[int, 1, 10]`.
     """
-    from cogs.clean_cog import CleanCog
+    from leaguebot.core.cogs.clean_cog import CleanCog
 
     callback = CleanCog.clean_bot.callback
     assert "app_commands" in callback.__globals__

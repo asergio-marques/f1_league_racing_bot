@@ -11,7 +11,7 @@ FR-024 (amended 2026-03-04):
 import re
 
 import pytest
-from utils.message_builder import format_slots_for_forecast, format_slots_for_log
+from leaguebot.weather.utils.message_builder import format_slots_for_forecast, format_slots_for_log
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,7 @@ class TestFormatSlotsForLog:
 # around it until this increment lifted them out.
 # ---------------------------------------------------------------------------
 
-from utils.message_builder import (  # noqa: E402
+from leaguebot.weather.utils.message_builder import (  # noqa: E402
     PHASE_DESCRIPTIONS,
     format_rain_probability,
     format_session_weather_type,
@@ -289,7 +289,7 @@ class TestAForecastNamesNoHorizon:
 
     def test_the_message_and_the_graphic_name_the_phase_alike(self):
         """One constant serves both, so a fork cannot open between them (XIV.7)."""
-        from services.image_weather_service import (
+        from leaguebot.image.services.image_weather_service import (
             PHASE_DESCRIPTIONS as graphic_descriptions,
         )
 

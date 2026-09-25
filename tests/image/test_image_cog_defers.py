@@ -31,7 +31,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 #: The commands that read a template from disk before they can answer.
@@ -166,7 +166,7 @@ async def _toggle(cog, aspect="verdicts"):
     """
     from discord import app_commands
 
-    from cogs.image_cog import ImageCog
+    from leaguebot.image.cogs.image_cog import ImageCog
 
     body = undecorate(ImageCog.config_toggle)
     choice = app_commands.Choice(name=aspect, value=aspect)

@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog, PortraitTimeConfirm, PortraitTimeModal  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog, PortraitTimeConfirm, PortraitTimeModal  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 4242

@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.round import RoundFormat  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
 
 
 @pytest.mark.parametrize(

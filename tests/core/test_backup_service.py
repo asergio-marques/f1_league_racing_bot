@@ -19,7 +19,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import backup_service as bs  # noqa: E402
+from leaguebot.core.services import backup_service as bs  # noqa: E402
 
 
 def _database(path: Path, *, wal: bool = True, rows: int = 3) -> None:
@@ -407,7 +407,7 @@ def test_a_real_migrated_database_survives_the_round_trip(tmp_path):
     import asyncio
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-    from db.database import run_migrations
+    from leaguebot.core.db.database import run_migrations
 
     live = tmp_path / "bot.db"
     jobs = tmp_path / "scheduler.db"

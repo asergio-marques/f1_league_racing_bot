@@ -26,9 +26,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog  # noqa: E402
-from models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS  # noqa: E402
-from utils.paths import PathContainmentError  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
+from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS  # noqa: E402
+from leaguebot.core.utils.paths import PathContainmentError  # noqa: E402
 
 
 def _interaction(guild_id: int = 1):
@@ -50,7 +50,7 @@ def _cog(monkeypatch, *, resolved: Path | None = None, contained=True):
     cog._reply = AsyncMock()
     cog._log = AsyncMock()
 
-    import utils.paths as paths
+    import leaguebot.core.utils.paths as paths
 
     if contained:
         monkeypatch.setattr(
@@ -62,7 +62,7 @@ def _cog(monkeypatch, *, resolved: Path | None = None, contained=True):
 
         monkeypatch.setattr(paths, "resolve_within_project_root", _refuse)
 
-    import cogs.image_cog as cog_module
+    import leaguebot.image.cogs.image_cog as cog_module
 
     monkeypatch.setattr(cog_module, "relative_to_root", lambda r: "resources/league/mine")
     return cog

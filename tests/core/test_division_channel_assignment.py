@@ -39,9 +39,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.channel_registry_service import ChannelUse  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.channel_registry_service import ChannelUse  # noqa: E402
 
 SERVER_ID = 9708
 SEASON_ID = 1
@@ -149,13 +149,13 @@ async def _audit(db_path: str) -> list[dict]:
 
 def _free(monkeypatch):
     """No channel is in use anywhere."""
-    import services.channel_registry_service as crs
+    import leaguebot.core.services.channel_registry_service as crs
 
     monkeypatch.setattr(crs, "find_channel_use", AsyncMock(return_value=None))
 
 
 def _in_use(monkeypatch, use: ChannelUse):
-    import services.channel_registry_service as crs
+    import leaguebot.core.services.channel_registry_service as crs
 
     monkeypatch.setattr(crs, "find_channel_use", AsyncMock(return_value=use))
 

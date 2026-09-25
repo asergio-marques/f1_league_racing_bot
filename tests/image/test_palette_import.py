@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utils.palette_import import (  # noqa: E402
+from leaguebot.image.utils.palette_import import (  # noqa: E402
     PaletteXmlError,
     parse_palette_lines,
     parse_palette_xml,

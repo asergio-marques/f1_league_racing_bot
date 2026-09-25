@@ -23,10 +23,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services import points_config_service, season_points_service  # noqa: E402
-from services.test_roster_service import ensure_test_configs  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services import points_config_service, season_points_service  # noqa: E402
+from leaguebot.core.services.test_roster_service import ensure_test_configs  # noqa: E402
 
 SERVER_ID = 9310
 
@@ -204,7 +204,7 @@ async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     and removable like any other, and deleting them would be discarding a league
     manager's own configuration. `/results config remove` is the way to be rid of them.
     """
-    from services.test_roster_service import clear_all_test_drivers
+    from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 
     await ensure_test_configs(season_id, db_path)
 

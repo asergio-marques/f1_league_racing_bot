@@ -25,9 +25,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
     _claim_amendment,
     cancel_amendment,
@@ -173,7 +173,7 @@ async def test_the_classification_is_put_back(tmp_path):
     await _overwrite_the_classification(db_path)
     assert await _drivers(db_path) == [(102, 1)]
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         assert await revert_abandoned_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -186,7 +186,7 @@ async def test_the_standings_are_recomputed_rather_than_restored(tmp_path):
     await _overwrite_the_classification(db_path)
 
     with patch(
-        "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
@@ -203,9 +203,9 @@ async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     names = {101: "Alice", 102: "Bob"}
 
     with patch(
-        "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade, patch(
-        "services.results_post_service.standings_display_names",
+        "leaguebot.results.services.results_post_service.standings_display_names",
         new=AsyncMock(return_value=names),
     ):
         await revert_abandoned_amendment(db_path, ROUND_ID, _bot(db_path))
@@ -220,9 +220,9 @@ async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_runnin
     await _overwrite_the_classification(db_path)
 
     with patch(
-        "services.standings_service.cascade_recompute_from_round", new=AsyncMock()
+        "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade, patch(
-        "services.results_post_service.standings_display_names",
+        "leaguebot.results.services.results_post_service.standings_display_names",
         new=AsyncMock(side_effect=RuntimeError("gateway")),
     ):
         await revert_abandoned_amendment(db_path, ROUND_ID, _bot(db_path))
@@ -271,7 +271,7 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
         )
         await db.commit()
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
     assert await _pardons(db_path) == before
@@ -282,7 +282,7 @@ async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     db_path = await _db(tmp_path, "revert_clears")
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
     assert (await _snapshot_row(db_path))["pre_amendment_state"] is None
@@ -309,7 +309,7 @@ async def test_an_expired_amendment_is_reverted(tmp_path):
         seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
     )
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         assert await sweep_expired_amendments(_bot(db_path), now=later) == 1
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -335,7 +335,7 @@ async def test_the_revert_is_announced(tmp_path):
         seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
     )
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await sweep_expired_amendments(bot, now=later)
 
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
@@ -365,13 +365,13 @@ def test_the_sweep_is_scheduled_as_a_standing_job():
     """
     import inspect
 
-    from services import scheduler_service
+    from leaguebot.core.services import scheduler_service
 
     source = inspect.getsource(scheduler_service)
     assert "def schedule_amendment_sweep" in source
     assert "IntervalTrigger" in source
 
-    import bot as bot_module
+    import leaguebot.__main__ as bot_module
 
     startup = inspect.getsource(bot_module)
     assert "schedule_amendment_sweep()" in startup
@@ -383,7 +383,7 @@ def test_the_sweep_runs_often_enough_to_honour_the_deadline():
     Not exactly at the deadline — a round nobody is working on can wait a few minutes — but the
     interval has to be the smaller of the two or the timeout means nothing.
     """
-    from services.scheduler_service import AMENDMENT_SWEEP_MINUTES
+    from leaguebot.core.services.scheduler_service import AMENDMENT_SWEEP_MINUTES
 
     assert AMENDMENT_SWEEP_MINUTES * 60 < AMENDMENT_STAGE_TIMEOUT_SECONDS
 
@@ -395,7 +395,7 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """
     import inspect
 
-    from services import scheduler_service
+    from leaguebot.core.services import scheduler_service
 
     job = inspect.getsource(scheduler_service._amendment_sweep_job)
     assert "add_job" not in job
@@ -415,7 +415,7 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     naive = datetime.now() + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
     assert naive.tzinfo is None
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         assert await sweep_expired_amendments(_bot(db_path), now=naive) == 1
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -451,7 +451,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
         await db.commit()
     await _overwrite_the_classification(db_path)
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await revert_abandoned_amendment(db_path, ROUND_ID)
 
     async with get_connection(db_path) as db:
@@ -510,9 +510,9 @@ async def test_the_sweep_deletes_the_channel_of_what_it_reverted(tmp_path):
     guild = MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
             patch(
-                "services.result_submission_service.league_guild",
+                "leaguebot.results.services.result_submission_service.league_guild",
                 new=AsyncMock(return_value=guild),
             ):
         await sweep_expired_amendments(_bot(db_path), now=later)
@@ -531,7 +531,7 @@ async def test_a_sweep_whose_revert_fails_tries_again_next_time(tmp_path):
     )
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(side_effect=RuntimeError("locked")),
     ):
         assert await sweep_expired_amendments(_bot(db_path), now=later) == 0
@@ -564,9 +564,9 @@ def _deletable_channel(error=None):
 
 
 async def _cancel(db_path, bot, guild):
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()), \
             patch(
-                "services.result_submission_service.league_guild",
+                "leaguebot.results.services.result_submission_service.league_guild",
                 new=AsyncMock(return_value=guild),
             ):
         return await cancel_amendment(bot, ROUND_ID, cancelled_by=77)
@@ -594,7 +594,7 @@ async def test_a_channel_not_deleted_keeps_its_record_closed(tmp_path, reach):
     """#345: the record used to go first, so a channel out of cache — or one the bot may no
     longer delete — stood for good with nothing naming it. Kept, closed, it holds nothing, and
     restart recovery deletes the channel by it."""
-    from services.result_submission_service import open_amendment_in_division
+    from leaguebot.results.services.result_submission_service import open_amendment_in_division
 
     db_path = await _db(tmp_path, f"cancel_kept_{reach.split()[0]}")
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
@@ -663,7 +663,7 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
         await db.execute("UPDATE qualifying_session_results SET best_lap = '1:25.000'")
         await db.commit()
 
-    with patch("services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         assert await revert_abandoned_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -686,7 +686,7 @@ async def test_the_sweep_hands_the_bot_to_the_revert(tmp_path):
     later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert:
         await sweep_expired_amendments(bot, now=later)
@@ -700,7 +700,7 @@ async def test_cancel_hands_the_bot_to_the_revert(tmp_path):
     bot = _bot(db_path)
 
     with patch(
-        "services.result_submission_service.revert_abandoned_amendment",
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
         new=AsyncMock(return_value=True),
     ) as revert:
         await _cancel(db_path, bot, _guild_holding(_deletable_channel()))

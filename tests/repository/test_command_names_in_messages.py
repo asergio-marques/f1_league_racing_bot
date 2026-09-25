@@ -65,12 +65,14 @@ def _walk(command, registered: set[str], leaves: set[str]) -> None:
 def _registered_commands() -> tuple[set[str], set[str]]:
     """Every name the bot answers to, and the subset that takes arguments rather than
     subcommands."""
-    import cogs
+    import leaguebot
 
     registered: set[str] = set()
     leaves: set[str] = set()
-    for module_info in pkgutil.iter_modules(cogs.__path__):
-        module = importlib.import_module(f"cogs.{module_info.name}")
+    for module_info in pkgutil.walk_packages(leaguebot.__path__, "leaguebot."):
+        if ".cogs." not in module_info.name:
+            continue
+        module = importlib.import_module(module_info.name)
         for attribute in dir(module):
             candidate = getattr(module, attribute)
             if (

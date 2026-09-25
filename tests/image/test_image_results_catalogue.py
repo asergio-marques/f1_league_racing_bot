@@ -17,7 +17,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     CATALOGUES,
     RESULTS_QUALIFYING_CATALOGUE,
     RESULTS_RACE_CATALOGUE,

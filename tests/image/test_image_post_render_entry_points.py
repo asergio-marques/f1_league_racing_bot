@@ -55,7 +55,7 @@ def _bot_with_decision(tmp_path):
     the drawing never has to be a real one, and the only code that runs is the render body
     under test.
     """
-    from services.image_render_service import POST_IMAGE, PostingDecision
+    from leaguebot.image.services.image_render_service import POST_IMAGE, PostingDecision
 
     png = tmp_path / "drawn.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
@@ -71,7 +71,7 @@ def _bot_with_decision(tmp_path):
 
 def _capture_image_type(monkeypatch):
     """Record the ``image_type`` each render body labels its directory resolution with."""
-    from services import image_render_service
+    from leaguebot.image.services import image_render_service
 
     seen: dict[str, object] = {}
     real = image_render_service.resolve_configured_directories
@@ -94,8 +94,8 @@ async def test_the_results_render_body_runs_and_labels_itself_with_its_template(
     tmp_path, monkeypatch
 ):
     """``render_png`` referred to ``template_key``, a local of ``try_post``, not of itself."""
-    from models.image_module import PostingOrigin
-    from services import image_results_post
+    from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.services import image_results_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -132,8 +132,8 @@ async def test_the_results_render_body_labels_qualifying_as_qualifying(
     tmp_path, monkeypatch
 ):
     """The label follows the drawing, so the two results templates cannot be confused."""
-    from models.image_module import PostingOrigin
-    from services import image_results_post
+    from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.services import image_results_post
 
     bot, _png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -159,8 +159,8 @@ async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
     tmp_path, monkeypatch
 ):
     """``render_png`` referred to ``LINEUP_TEMPLATE_KEY``, which was defined nowhere."""
-    from models.image_module import PostingOrigin
-    from services import image_lineup_post
+    from leaguebot.image.models.image_module import PostingOrigin
+    from leaguebot.image.services import image_lineup_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -194,7 +194,7 @@ async def test_the_lineup_render_body_runs_and_labels_itself_with_its_template(
 
 
 async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from services import image_attendance_post
+    from leaguebot.image.services import image_attendance_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -209,7 +209,7 @@ async def test_the_attendance_render_body_runs_and_labels_itself(tmp_path, monke
 
 
 async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -224,7 +224,7 @@ async def test_the_verdict_render_body_runs_and_labels_itself(tmp_path, monkeypa
 
 
 async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from services import image_weather_post
+    from leaguebot.image.services import image_weather_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -248,7 +248,7 @@ async def test_the_weather_render_body_runs_and_labels_itself(tmp_path, monkeypa
 
 
 async def test_the_rsvp_render_body_runs_and_labels_itself(tmp_path, monkeypatch):
-    from services import image_rsvp_post
+    from leaguebot.image.services import image_rsvp_post
 
     bot, png = _bot_with_decision(tmp_path)
     seen = _capture_image_type(monkeypatch)
@@ -289,7 +289,7 @@ async def test_no_render_body_resolves_directories_under_the_default_label():
     import ast
     from pathlib import Path as _Path
 
-    root = _Path(__file__).resolve().parents[2] / "src" / "services"
+    root = _Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "image" / "services"
     offenders = []
     for path in sorted(root.glob("image_*_post.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))

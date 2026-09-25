@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
-from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from services.image_standings_service import (
+from leaguebot.core.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
+from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.image.services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
     HIGHLIGHT_P1,
@@ -30,7 +30,7 @@ from services.image_standings_service import (
     highlight_for,
     resolve_drawing,
 )
-from services.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
+from leaguebot.results.services.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
 
 
 def _driver(user_id: int, position: int, points: int, *, participant: bool = True):
@@ -340,7 +340,7 @@ def test_the_recorded_position_is_carried_not_the_drawing_order():
 
 def test_the_position_matches_what_the_textual_standings_print():
     """The two renderings compared directly, on the same snapshots."""
-    from utils.results_formatter import format_driver_standings
+    from leaguebot.results.utils.results_formatter import format_driver_standings
 
     snapshots = [
         _driver(1, 1, 50),
@@ -365,7 +365,7 @@ def test_the_position_matches_what_the_textual_standings_print():
 
 
 def test_with_the_toggle_on_the_two_still_agree():
-    from utils.results_formatter import format_driver_standings
+    from leaguebot.results.utils.results_formatter import format_driver_standings
 
     snapshots = [_driver(1, 1, 50), _driver(9, 2, 30, participant=True)]
     names = {1: "A", 9: "R"}
@@ -589,7 +589,7 @@ def test_a_constructors_car_carries_the_same_highlight_as_the_drivers_cell():
 
 
 def test_each_occasion_composes_its_own_heading():
-    from models.classification_occasion import ClassificationOccasion
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
     assert (
         _drivers_drawing(occasion=ClassificationOccasion.SEASON_OPENING).classification_label
@@ -604,7 +604,7 @@ def test_each_occasion_composes_its_own_heading():
 
 def test_the_constructors_sheet_composes_the_same_phrase():
     """The two championships of one division must not describe the same moment apart."""
-    from models.classification_occasion import ClassificationOccasion
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
     for occasion in ClassificationOccasion:
         assert (
@@ -619,14 +619,14 @@ def test_the_opening_sheet_names_no_results_phase():
     `result_status` is otherwise mandatory and would have said `Final Results` above a
     classification in which nothing whatever had been decided.
     """
-    from models.classification_occasion import ClassificationOccasion
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
     drawing = _drivers_drawing(occasion=ClassificationOccasion.SEASON_OPENING)
     assert drawing.result_status_label == ""
 
 
 def test_the_final_sheet_keeps_the_last_round_s_phase():
-    from models.classification_occasion import ClassificationOccasion
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
 
     drawing = _drivers_drawing(occasion=ClassificationOccasion.SEASON_FINAL)
     assert drawing.result_status_label == "Final Results"

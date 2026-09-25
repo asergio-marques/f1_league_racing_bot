@@ -19,8 +19,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services import rsvp_service  # noqa: E402
-from services.rsvp_service import _report_call_failure  # noqa: E402
+from leaguebot.attendance.services import rsvp_service  # noqa: E402
+from leaguebot.attendance.services.rsvp_service import _report_call_failure  # noqa: E402
 
 
 def _bot():
@@ -139,7 +139,7 @@ def test_the_command_the_note_names_is_a_real_one():
     import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
-    from cogs.attendance_cog import AttendanceCog
+    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 
     assert "post-check-in" in {c.name for c in AttendanceCog.attendance.commands}
 

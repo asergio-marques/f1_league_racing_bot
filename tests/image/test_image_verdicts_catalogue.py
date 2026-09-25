@@ -17,14 +17,14 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (  # noqa: E402
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CATALOGUES,
     catalogue_for,
     sibling_fields_declared,
 )
-from utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
 
 KEY = "verdicts_template"
 
@@ -154,7 +154,7 @@ def test_the_shipped_template_declares_no_sibling_field():
 
 def test_the_shipped_template_declares_two_wrapped_fields_with_leading():
     """description and justification wrap; a wrapped field with no leading is fatal."""
-    from utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
+    from leaguebot.image.utils.svg_document import computed_style, stylesheet  # noqa: PLC0415
 
     root = _shipped_root()
     rules = stylesheet(root)

@@ -23,8 +23,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_render_service import ImageRenderService  # noqa: E402
-from utils.svg_document import parse_svg_bytes  # noqa: E402
+from leaguebot.image.services.image_render_service import ImageRenderService  # noqa: E402
+from leaguebot.image.utils.svg_document import parse_svg_bytes  # noqa: E402
 
 TEMPLATE = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
@@ -34,16 +34,16 @@ TEMPLATE = (
 
 #: Every module that renders, and the attribute it must pass as the tier.
 CALL_SITES = {
-    "services/calendar_post_service.py": "drawing.division_name",
-    "services/image_attendance_post.py": "drawing.division_name",
-    "services/image_lineup_post.py": "drawing.division_name",
-    "services/image_results_post.py": "drawing.division_name",
-    "services/image_rsvp_post.py": "drawing.division_name",
-    "services/image_standings_post.py": "drawing.division_name",
-    "services/image_verdict_post.py": "drawing.division_name",
-    "services/image_verdict_banner_post.py": "drawing.division_name",
-    "services/image_weather_post.py": "drawing.division_name",
-    "cogs/image_cog.py": "context.division_name",
+    "core/services/calendar_post_service.py": "drawing.division_name",
+    "image/services/image_attendance_post.py": "drawing.division_name",
+    "image/services/image_lineup_post.py": "drawing.division_name",
+    "image/services/image_results_post.py": "drawing.division_name",
+    "image/services/image_rsvp_post.py": "drawing.division_name",
+    "image/services/image_standings_post.py": "drawing.division_name",
+    "image/services/image_verdict_post.py": "drawing.division_name",
+    "image/services/image_verdict_banner_post.py": "drawing.division_name",
+    "image/services/image_weather_post.py": "drawing.division_name",
+    "image/cogs/image_cog.py": "context.division_name",
 }
 
 
@@ -120,7 +120,7 @@ async def test_a_broken_palette_read_is_swallowed(tmp_path, monkeypatch):
 @pytest.mark.parametrize("path,expected", sorted(CALL_SITES.items()), ids=sorted(CALL_SITES))
 def test_every_render_call_site_names_the_division(path, expected):
     source = (
-        __import__("pathlib").Path(__file__).resolve().parents[2] / "src" / path
+        __import__("pathlib").Path(__file__).resolve().parents[2] / "src" / "leaguebot" / path
     ).read_text(encoding="utf-8")
     assert f"division_name={expected}," in source
 
@@ -136,7 +136,7 @@ def test_no_posting_path_was_missed():
     """A new posting path added without a tier is caught here rather than in production."""
     import pathlib
 
-    src = pathlib.Path(__file__).resolve().parents[2] / "src"
+    src = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
     callers = {
         str(p.relative_to(src)).replace(os.sep, "/")
         for p in src.rglob("*.py")

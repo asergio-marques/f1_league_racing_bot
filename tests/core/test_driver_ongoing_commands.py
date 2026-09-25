@@ -22,9 +22,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.driver_cog import DriverCog  # noqa: E402
-from models.driver_profile import DriverState  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.cogs.driver_cog import DriverCog  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverState  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 from tests.support.teams import resolves_as_typed  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
@@ -161,7 +161,7 @@ async def test_a_refusal_the_service_raises_is_relayed_and_nothing_is_logged():
 
 async def test_a_move_names_the_team_in_the_division_moved_into():
     """The team is resolved by its shorthand in the division the driver goes to (#381)."""
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     cog = _cog()
     cog.bot.team_service.resolve_division_team = AsyncMock(
@@ -175,7 +175,7 @@ async def test_a_move_names_the_team_in_the_division_moved_into():
 
 
 async def test_a_move_into_a_team_the_division_does_not_have_is_refused():
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     cog = _cog()
     cog.bot.team_service.resolve_division_team = AsyncMock(

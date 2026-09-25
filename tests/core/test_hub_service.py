@@ -1,7 +1,7 @@
 """The hub's panel: the options modules register, and what a press on one does (issue #279).
 
 **The hub service names no option.** A module registers one, saying when it is offered and
-what a press does; core's one, About, is registered by `services/about_service.py` (#258) and
+what a press does; core's one, About, is registered by `core/services/about_service.py` (#258) and
 tested there. A panel offering nothing says so. The tests register their own options against a
 registry emptied for each.
 
@@ -23,10 +23,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import hub_service  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
-from services.hub_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services import hub_service  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.services.hub_service import (  # noqa: E402
     CUSTOM_ID_PREFIX,
     HubOption,
     HubPanelView,
@@ -39,7 +39,7 @@ from services.hub_service import (  # noqa: E402
     registered_options,
     render_panel,
 )
-from utils.league_server import LeagueView  # noqa: E402
+from leaguebot.core.utils.league_server import LeagueView  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -78,7 +78,7 @@ def _interaction(client=None):
 
 def test_the_hub_service_registers_no_option_itself():
     """The service names no option. Core's one, About (#258), is registered by
-    `services/about_service.py`; every other is a module's. The fixture above clears the
+    `core/services/about_service.py`; every other is a module's. The fixture above clears the
     registry, so this sees what `hub_service` alone would hold."""
     assert registered_options() == []
 

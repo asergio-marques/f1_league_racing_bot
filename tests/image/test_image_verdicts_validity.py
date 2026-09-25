@@ -17,12 +17,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from models.image_module import ImageConfig  # noqa: E402
-from services.image_validity_service import (  # noqa: E402
+from leaguebot.image.models.image_module import ImageConfig  # noqa: E402
+from leaguebot.image.services.image_validity_service import (  # noqa: E402
     LAYER_BOUNDS,
     LAYER_CATALOGUE,
     TemplateContext,
@@ -278,8 +278,8 @@ def test_the_bounds_check_reads_no_data_so_it_refuses_at_configuration(tmp_path,
 
 
 def test_season_review_names_the_verdicts_template_individually(tmp_path, templates):
-    from models.image_module import PROBLEM_MISSING_MANDATORY_FIELD
-    from services.image_validity_service import (
+    from leaguebot.image.models.image_module import PROBLEM_MISSING_MANDATORY_FIELD
+    from leaguebot.image.services.image_validity_service import (
         PLAIN_MISSING_FIELD,
         check_all_templates,
         describe,

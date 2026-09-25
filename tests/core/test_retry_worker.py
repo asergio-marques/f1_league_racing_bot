@@ -19,15 +19,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.retry_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.retry_service import (
     RETRY_WARN_THRESHOLD,
     attempt_delivery,
     enqueue,
     get_all_pending,
     mark_failed,
 )
-from utils.output_router import OutputRouter
+from leaguebot.core.utils.output_router import OutputRouter
 
 
 # ---------------------------------------------------------------------------
@@ -161,7 +161,7 @@ class TestAttemptDeliverySuccess:
         mock_channel = _make_text_channel_mock()
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("services.retry_service._safe_post_log"):
+        with patch("leaguebot.core.services.retry_service._safe_post_log"):
             result = await attempt_delivery(entry, bot)
         assert result is True
 
@@ -175,7 +175,7 @@ class TestAttemptDeliverySuccess:
         mock_channel = _make_text_channel_mock()
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("services.retry_service._safe_post_log"):
+        with patch("leaguebot.core.services.retry_service._safe_post_log"):
             await attempt_delivery(entry, bot)
         assert await _row_count(db_path) == 0
 
@@ -189,7 +189,7 @@ class TestAttemptDeliverySuccess:
         mock_channel = _make_text_channel_mock()
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("services.retry_service._safe_post_log"):
+        with patch("leaguebot.core.services.retry_service._safe_post_log"):
             await attempt_delivery(entry, bot)
         mock_channel.send.assert_called_once_with("hello world")
 
@@ -298,7 +298,7 @@ class TestRetryWarningThreshold:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("services.retry_service._safe_post_log") as mock_safe_log:
+        with patch("leaguebot.core.services.retry_service._safe_post_log") as mock_safe_log:
             await attempt_delivery(entry_at_threshold, bot)
 
         assert mock_safe_log.call_count >= 1
@@ -320,7 +320,7 @@ class TestRetryWarningThreshold:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("services.retry_service._safe_post_log") as mock_safe_log:
+        with patch("leaguebot.core.services.retry_service._safe_post_log") as mock_safe_log:
             await attempt_delivery(entry, bot)
 
         mock_safe_log.assert_not_called()

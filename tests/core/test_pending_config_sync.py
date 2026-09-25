@@ -19,10 +19,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.round import RoundFormat  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.round import RoundFormat  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 START = date(2026, 1, 1)
 BASE = datetime(2026, 3, 1, 18, 0, tzinfo=timezone.utc)
@@ -463,7 +463,7 @@ async def test_a_setup_command_seeds_teams_only_for_a_division_without_them(db_p
     """Re-seeding every division on every command re-created teams that already existed."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+    from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
 
     async def seed(division_id):
         async with get_connection(db_path) as db:

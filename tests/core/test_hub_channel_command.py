@@ -26,10 +26,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.bot_cog import BotCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import hub_service  # noqa: E402
-from services.config_service import ConfigService  # noqa: E402
+from leaguebot.core.cogs.bot_cog import BotCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services import hub_service  # noqa: E402
+from leaguebot.core.services.config_service import ConfigService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 27902
@@ -260,7 +260,7 @@ async def test_an_old_hub_channel_deleted_from_the_server_is_stepped_over(db_pat
 
 def test_the_command_is_a_league_manager_s_in_the_interaction_channel():
     """Like every other channel command; it repairs nothing the guards read."""
-    from utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_MANAGER, TIER_ATTRIBUTE
+    from leaguebot.core.utils.channel_guard import CHANNEL_EXEMPT_ATTRIBUTE, LEAGUE_MANAGER, TIER_ATTRIBUTE
 
     callback = BotCog.handle_hub_channel.callback
     assert getattr(callback, TIER_ATTRIBUTE) == LEAGUE_MANAGER

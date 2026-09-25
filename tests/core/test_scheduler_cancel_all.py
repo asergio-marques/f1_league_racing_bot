@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.scheduler_service import (  # noqa: E402
+from leaguebot.core.services.scheduler_service import (  # noqa: E402
     PORTRAIT_REFRESH_JOB_ID,
     SIGNUP_CLOSE_JOB_ID,
     SchedulerService,

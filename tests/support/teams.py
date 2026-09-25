@@ -34,7 +34,7 @@ def resolves_as_typed() -> AsyncMock:
     exactly as it did when it took the name as typed. Naming a team is tested against the real
     resolver in ``test_team_reference.py``.
     """
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     async def _resolve(division_id, text):
         return TeamReference(team={"id": 0, "name": text, "full_name": text, "role_id": None})

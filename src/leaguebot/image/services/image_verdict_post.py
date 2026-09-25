@@ -205,7 +205,7 @@ async def _mention_names(
     driver had collided with themselves: right as text, wrong as a picture, and confidently
     wrong once #141 made the substituted name a real one.
 
-    Three things it holds to, each pinned in tests/unit/test_image_verdict_mentions.py:
+    Three things it holds to, each pinned in tests/image/test_image_verdict_mentions.py:
 
     * **The penalised driver keeps the name on the driver line.** Seeded here rather than read,
       so a mention of them beneath their own name never draws a second rendering of it.

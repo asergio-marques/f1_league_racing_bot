@@ -28,7 +28,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -45,7 +45,7 @@ ALL_PREFIXES = WEATHER_PREFIXES + RESULTS_PREFIXES + ATTENDANCE_PREFIXES
 
 def _make_scheduler(db_path: str):
     """A SchedulerService over *db_path* with a mock APScheduler in place of a real one."""
-    from services.scheduler_service import SchedulerService
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
     svc = SchedulerService.__new__(SchedulerService)
     svc._db_path = db_path
@@ -245,7 +245,7 @@ async def test_cancel_round_with_a_filter_spares_other_rounds(tmp_path):
     db_path = os.path.join(str(tmp_path), "test.db")
     await _seed(db_path)
     svc = _make_scheduler(db_path)
-    from services.scheduler_service import _WEATHER_JOB_PREFIXES
+    from leaguebot.core.services.scheduler_service import _WEATHER_JOB_PREFIXES
 
     svc._scheduler.get_jobs.return_value = (
         _round_jobs(11, season=1, tier=1, rnum=1)

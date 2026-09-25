@@ -1,4 +1,4 @@
-"""Restating a colour in another hue: the LCH conversion in `utils.colour`.
+"""Restating a colour in another hue: the LCH conversion in `leaguebot.image.utils.colour`.
 
 Two rules are under test and both were settled by rendering rather than by argument, so they
 are pinned here against being "simplified" back to the versions that looked reasonable and were
@@ -25,7 +25,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from utils.colour import from_lch, restate_in_hue, to_lch  # noqa: E402
+from leaguebot.image.utils.colour import from_lch, restate_in_hue, to_lch  # noqa: E402
 
 #: The shipped league palette, as the drawings declare it.
 PALETTE = {

@@ -1,6 +1,6 @@
 """`CorrectionParameterView` — the nine buttons that choose which answer to send back.
 
-Issue #208, completing `tests/unit/test_admin_review_panel.py`. When a manager presses **Request
+Issue #208, completing `tests/signup/test_admin_review_panel.py`. When a manager presses **Request
 Changes** and types a reason, this panel is what they see next: one button per question the
 wizard asks, so the driver is sent back to exactly one of them.
 
@@ -35,8 +35,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import cogs.admin_review_cog as arc  # noqa: E402
-from cogs.admin_review_cog import CorrectionParameterView  # noqa: E402
+import leaguebot.signup.cogs.admin_review_cog as arc  # noqa: E402
+from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView  # noqa: E402
 
 SERVER_ID = 10608
 DRIVER_ID = "4242"

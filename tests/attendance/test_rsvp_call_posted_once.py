@@ -17,9 +17,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from db.database import get_connection, run_migrations
-from services import rsvp_service
-from services.attendance_service import AttendanceService
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import rsvp_service
+from leaguebot.attendance.services.attendance_service import AttendanceService
 
 SEASON_ID = 1
 DIVISION_ID = 11

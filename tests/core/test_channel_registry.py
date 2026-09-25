@@ -26,8 +26,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.channel_registry_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.channel_registry_service import (  # noqa: E402
     SETTING_LABELS,
     ChannelUse,
     as_text_channel,
@@ -307,7 +307,7 @@ def test_every_command_that_sets_a_channel_takes_a_text_channel():
     """
     offenders = sorted(
         f"{path.relative_to(SRC).as_posix()}:{arg.lineno} {arg.arg}: {ast.unparse(arg.annotation)}"
-        for path in (SRC / "cogs").glob("*.py")
+        for path in sorted(SRC.glob("leaguebot/*/cogs/*.py"))
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         for arg in node.args.args + node.args.kwonlyargs

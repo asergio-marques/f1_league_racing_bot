@@ -24,8 +24,8 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.round import Round, RoundFormat, RoundStatus  # noqa: E402
-from services.approval_window_service import (  # noqa: E402
+from leaguebot.core.models.round import Round, RoundFormat, RoundStatus  # noqa: E402
+from leaguebot.core.services.approval_window_service import (  # noqa: E402
     AttendanceWindows,
     WeatherWindows,
     calendar_faults,
@@ -455,7 +455,7 @@ def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
 
 
 def _lines_for(rounds, *, attendance=None, weather=None):
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = SeasonCog.__new__(SeasonCog)
     return cog._calendar_fault_lines(
@@ -506,7 +506,7 @@ def test_a_window_alone_yields_the_window_line_alone():
 
 
 def test_no_fault_at_all_is_no_lines():
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     assert SeasonCog.__new__(SeasonCog)._calendar_fault_lines(None) == []
 

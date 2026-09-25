@@ -29,9 +29,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs import signup_cog  # noqa: E402
-from models.driver_profile import DriverProfile, DriverState  # noqa: E402
-from models.server_config import ServerConfig  # noqa: E402
+from leaguebot.signup.cogs import signup_cog  # noqa: E402
+from leaguebot.core.models.driver_profile import DriverProfile, DriverState  # noqa: E402
+from leaguebot.core.models.server_config import ServerConfig  # noqa: E402
 
 SERVER_ID = 4242
 USER_ID = "77"

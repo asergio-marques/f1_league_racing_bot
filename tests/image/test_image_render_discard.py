@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from services.image_render_service import (
+from leaguebot.image.services.image_render_service import (
     MAX_ATTACHMENT_BYTES,
     RasterisationError,
     _is_render_artifact,
@@ -180,7 +180,7 @@ def test_rasterise_removes_partial_output_when_the_converter_fails(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
-        "services.image_render_service.find_converter", lambda: "inkscape"
+        "leaguebot.image.services.image_render_service.find_converter", lambda: "inkscape"
     )
     directory = tmp_path / "f1bot_render_fail"
     directory.mkdir()
@@ -197,7 +197,7 @@ def test_rasterise_removes_partial_output_when_the_converter_fails(
 def test_rasterise_removes_an_oversize_render_it_refuses(tmp_path, monkeypatch):
     """The largest single file the bot can produce, and it is refused after writing."""
     monkeypatch.setattr(
-        "services.image_render_service.find_converter", lambda: "inkscape"
+        "leaguebot.image.services.image_render_service.find_converter", lambda: "inkscape"
     )
     directory = tmp_path / "f1bot_render_big"
     directory.mkdir()
@@ -213,7 +213,7 @@ def test_rasterise_removes_an_oversize_render_it_refuses(tmp_path, monkeypatch):
 def test_rasterise_keeps_the_png_it_succeeds_with(tmp_path, monkeypatch):
     """The discards must not reach the ordinary path — the caller still needs the file."""
     monkeypatch.setattr(
-        "services.image_render_service.find_converter", lambda: "inkscape"
+        "leaguebot.image.services.image_render_service.find_converter", lambda: "inkscape"
     )
     directory = tmp_path / "f1bot_render_ok"
     directory.mkdir()

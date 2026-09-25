@@ -34,9 +34,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from services.cancellation_notice_service import CancellationReport  # noqa: E402
-from services.season_service import SeasonImmutableError  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.services.cancellation_notice_service import CancellationReport  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 10808
@@ -59,7 +59,7 @@ def _division(div_id: int, name: str, status: str = "ACTIVE", channel: int | Non
 def _end_of_season_pass():
     """The shared pass has tests of its own (test_season_completion_pass.py)."""
     with patch(
-        "services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
+        "leaguebot.core.services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
     ) as mocked:
         yield mocked
 
@@ -68,14 +68,14 @@ def _end_of_season_pass():
 def _open_amendment():
     """No round is being amended unless a test says so; the database path here is a placeholder."""
     with patch(
-        "services.result_submission_service.open_amendment_in_season",
+        "leaguebot.results.services.result_submission_service.open_amendment_in_season",
         new=AsyncMock(return_value=None),
     ) as mocked:
         yield mocked
 
 
 def _ongoing():
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     return SimpleNamespace(id=SEASON_ID, season_number=3, stage=SeasonStage.ONGOING)
 
@@ -106,7 +106,7 @@ def _make_cog(
     bot.season_service.refresh_division_status = AsyncMock(return_value=True)
     bot.season_service.all_divisions_finished = AsyncMock(return_value=all_finished)
     # The stage has tests of its own (test_pending_completion.py); here it never stands in the way.
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     bot.season_service.wind_down_ongoing = AsyncMock(return_value=False)
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PENDING_COMPLETION)
@@ -183,11 +183,11 @@ def _season_end(order=None, history_error=None):
 
     return (
         patch(
-            "services.season_end_service._write_driver_history_entries",
+            "leaguebot.core.services.season_end_service._write_driver_history_entries",
             new=AsyncMock(side_effect=_history),
         ),
         patch(
-            "services.season_end_service._revoke_season_roles",
+            "leaguebot.core.services.season_end_service._revoke_season_roles",
             new=AsyncMock(return_value=None),
         ),
     )
@@ -199,7 +199,7 @@ async def _cancel(cog, interaction, confirm: str = "CONFIRM", failures=()):
     What each module says is `cancellation_notice_service`'s and is tested there (#175).
     """
     announce = AsyncMock(return_value=CancellationReport(failures=list(failures)))
-    with patch("services.cancellation_notice_service.announce_cancellation", new=announce):
+    with patch("leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce):
         await undecorate(SeasonCog.season_cancel)(cog, interaction, confirm)
     return announce
 
@@ -240,7 +240,7 @@ async def test_cancelling_with_no_active_season_is_refused():
 async def test_cancelling_a_season_pending_completion_is_refused():
     """Issue #220: cancelled only while ongoing — a season that has run its course is
     completed instead."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     cog = _make_cog(
         season=SimpleNamespace(id=SEASON_ID, season_number=3, stage=SeasonStage.PENDING_COMPLETION)
@@ -317,7 +317,7 @@ async def test_a_failed_history_write_leaves_the_season_standing():
 async def test_every_division_still_running_is_told_by_its_modules():
     """Each enabled module says so in its own channel — never core, and never the forecast
     channel regardless of the weather module (#175)."""
-    from services import cancellation_notice_service as cns
+    from leaguebot.core.services import cancellation_notice_service as cns
 
     cog = _make_cog(
         divisions=[
@@ -388,12 +388,12 @@ async def test_the_modules_are_told_after_the_history_and_before_the_roles_go():
     announce = AsyncMock(side_effect=lambda *a, **kw: order.append("announce") or CancellationReport())
     history, _ = _season_end(order=order)
     roles = patch(
-        "services.season_end_service._revoke_season_roles",
+        "leaguebot.core.services.season_end_service._revoke_season_roles",
         new=AsyncMock(side_effect=lambda *a, **kw: order.append("roles")),
     )
 
     with history, roles, patch(
-        "services.cancellation_notice_service.announce_cancellation", new=announce
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
 
@@ -410,7 +410,7 @@ async def test_a_failed_history_write_tells_nobody():
     announce = AsyncMock(return_value=CancellationReport())
 
     with history, roles, pytest.raises(RuntimeError), patch(
-        "services.cancellation_notice_service.announce_cancellation", new=announce
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
 
@@ -424,7 +424,7 @@ async def test_the_check_in_audit_reaches_the_log():
     announce = AsyncMock(return_value=CancellationReport(audit="\n  check-in, Division 1"))
 
     with history, roles, patch(
-        "services.cancellation_notice_service.announce_cancellation", new=announce
+        "leaguebot.core.services.cancellation_notice_service.announce_cancellation", new=announce
     ):
         await undecorate(SeasonCog.season_cancel)(cog, _interaction(), "CONFIRM")
 
@@ -432,7 +432,7 @@ async def test_the_check_in_audit_reaches_the_log():
 
 
 async def test_what_could_not_be_told_is_named_to_the_admin():
-    from services.cancellation_notice_service import NoticeFailure
+    from leaguebot.core.services.cancellation_notice_service import NoticeFailure
 
     cog = _make_cog()
     interaction = _interaction()
@@ -498,7 +498,7 @@ async def test_division_statuses_are_refreshed_before_the_gate():
     cog = _make_cog(divisions=[_division(11, "Division 1", status="ACTIVE")])
 
     with patch(
-        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
     ):
         await _complete(cog, _interaction())
 
@@ -510,7 +510,7 @@ async def test_a_finished_division_is_not_refreshed():
     cog = _make_cog(divisions=[_division(11, "Division 1", status="FINISHED")])
 
     with patch(
-        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
     ):
         await _complete(cog, _interaction())
 
@@ -591,7 +591,7 @@ async def test_a_season_with_everything_finished_is_completed():
     interaction = _interaction()
 
     with patch(
-        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
     ) as execute:
         await _complete(cog, interaction)
 
@@ -611,7 +611,7 @@ async def test_completing_waits_while_a_round_is_being_amended(_open_amendment):
     interaction = _interaction()
 
     with patch(
-        "services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
     ) as execute:
         await _complete(cog, interaction)
 

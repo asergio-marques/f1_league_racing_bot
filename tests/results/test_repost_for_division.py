@@ -44,8 +44,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.results_post_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.services.results_post_service import (  # noqa: E402
     repost_results_for_division,
     repost_standings_for_division,
 )
@@ -135,12 +135,12 @@ def _guild(*, missing: bool = False):
 async def _results(db_path, *, guild=None, driver_rows=None):
     driver_rows = driver_rows if driver_rows is not None else []
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ) as delete, patch(
-        "services.results_post_service._load_driver_rows",
+        "leaguebot.results.services.results_post_service._load_driver_rows",
         new=AsyncMock(return_value=driver_rows),
     ), patch(
-        "services.results_post_service.post_session_results", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_session_results", new=AsyncMock()
     ) as post:
         status = await repost_results_for_division(
             db_path, DIVISION_ID, guild or _guild(), bot=MagicMock()
@@ -150,16 +150,16 @@ async def _results(db_path, *, guild=None, driver_rows=None):
 
 async def _standings(db_path, *, guild=None):
     with patch(
-        "services.results_post_service._forget_standings_messages",
+        "leaguebot.results.services.results_post_service._forget_standings_messages",
         new=AsyncMock(return_value=[]),
     ) as clear, patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock()
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock()
     ) as post:
         status = await repost_standings_for_division(
             db_path, DIVISION_ID, guild or _guild(), bot=MagicMock()
@@ -268,11 +268,11 @@ async def test_the_stale_message_id_is_cleared_before_reposting(tmp_path):
         seen["ids"] = await _message_ids(db_path)
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ), patch(
-        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(
-        "services.results_post_service.post_session_results",
+        "leaguebot.results.services.results_post_service.post_session_results",
         new=AsyncMock(side_effect=_record),
     ):
         await repost_results_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
@@ -568,11 +568,11 @@ async def _results_recording_order(db_path, *, guild=None, fail_on_post: int | N
         events.append(("delete", anchor))
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ), patch(
-        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(
-        "services.results_post_service.post_session_results",
+        "leaguebot.results.services.results_post_service.post_session_results",
         new=AsyncMock(side_effect=_post),
     ):
         try:
@@ -674,11 +674,11 @@ async def test_the_stored_id_is_cleared_before_its_replacement_is_posted(tmp_pat
         return 9001
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ), patch(
-        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(
-        "services.results_post_service.post_session_results",
+        "leaguebot.results.services.results_post_service.post_session_results",
         new=AsyncMock(side_effect=_post),
     ):
         await repost_results_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
@@ -702,15 +702,15 @@ async def _standings_recording_order(db_path, *, fail_on_post: int | None = None
         events.append(("delete", anchor))
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ), patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
     ):
         try:
             status = await repost_standings_for_division(
@@ -794,15 +794,15 @@ async def test_the_standings_id_is_cleared_before_its_replacement_is_posted(tmp_
             seen.append((await cursor.fetchone())["standings_message_id"])
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock()
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock()
     ), patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
     ):
         await repost_standings_for_division(
             db_path, DIVISION_ID, _guild(), bot=MagicMock()
@@ -858,11 +858,11 @@ async def test_a_failed_results_rebuild_takes_its_replacements_down_and_restores
         deleted.append((anchor, ids))
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ), patch(
-        "services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
+        "leaguebot.results.services.results_post_service._load_driver_rows", new=AsyncMock(return_value=[])
     ), patch(
-        "services.results_post_service.post_session_results",
+        "leaguebot.results.services.results_post_service.post_session_results",
         new=AsyncMock(side_effect=_post),
     ), pytest.raises(RuntimeError):
         await repost_results_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
@@ -888,7 +888,7 @@ async def test_a_failed_standings_rebuild_takes_its_replacements_down_and_restor
         posts += 1
         if posts == 2:
             raise RuntimeError("Discord said no")
-        from services.results_post_service import _set_standings_message_id
+        from leaguebot.results.services.results_post_service import _set_standings_message_id
 
         await _set_standings_message_id(
             db_path, division_id, round_id, 9000 + posts, message_ids=f"[{9000 + posts}]"
@@ -898,15 +898,15 @@ async def test_a_failed_standings_rebuild_takes_its_replacements_down_and_restor
         deleted.append((anchor, ids))
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ), patch(
-        "services.results_post_service.driver_standings_for_display",
+        "leaguebot.results.services.results_post_service.driver_standings_for_display",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.standings_service.compute_team_standings",
+        "leaguebot.results.services.results_post_service.standings_service.compute_team_standings",
         new=AsyncMock(return_value=[]),
     ), patch(
-        "services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
+        "leaguebot.results.services.results_post_service.post_standings", new=AsyncMock(side_effect=_post)
     ), pytest.raises(RuntimeError):
         await repost_standings_for_division(db_path, DIVISION_ID, _guild(), bot=MagicMock())
 
@@ -932,7 +932,7 @@ async def test_a_rounds_standings_message_is_found_after_its_leader_changes(tmp_
     deleted it and the league was left reading two standings for one round. Which row carries
     the id is an implementation detail — the round has one posting either way.
     """
-    from services.results_post_service import (
+    from leaguebot.results.services.results_post_service import (
         _get_standings_message_id,
         _get_standings_message_ids,
         _set_standings_message_id,
@@ -963,7 +963,7 @@ async def test_a_rounds_standings_message_is_found_after_its_leader_changes(tmp_
 
 async def test_only_one_row_of_a_round_names_its_standings_posting(tmp_path):
     """Or a superseded id left on a row that is no longer top would be read as the current one."""
-    from services.results_post_service import _set_standings_message_id
+    from leaguebot.results.services.results_post_service import _set_standings_message_id
 
     db_path = await _make_db(tmp_path, name="std_one_row")
     async with get_connection(db_path) as db:
@@ -999,8 +999,8 @@ async def test_a_standings_table_that_shrinks_drops_the_chunks_it_no_longer_fill
     one, the anchor is edited and the others have to go — and once the stored list is rewritten
     as a single message, nothing could reach them again now that the adjacency walk is retired.
     """
-    from models.standings_snapshot import DriverStandingsSnapshot
-    from services.results_post_service import post_standings, _set_standings_message_id
+    from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot
+    from leaguebot.results.services.results_post_service import post_standings, _set_standings_message_id
 
     db_path = await _make_db(tmp_path, name="std_shrink")
     async with get_connection(db_path) as db:
@@ -1025,7 +1025,7 @@ async def test_a_standings_table_that_shrinks_drops_the_chunks_it_no_longer_fill
     channel.send = AsyncMock(return_value=MagicMock(id=7009))
 
     with patch(
-        "services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
+        "leaguebot.results.services.results_post_service._delete_posting", new=AsyncMock(side_effect=_delete)
     ):
         await post_standings(
             db_path=db_path,

@@ -34,8 +34,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.driver_cog import DriverCog  # noqa: E402
-from services.season_service import SeasonImmutableError  # noqa: E402
+from leaguebot.core.cogs.driver_cog import DriverCog  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.teams import resolves_as_typed  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
@@ -64,7 +64,7 @@ def _season(status: str = "ACTIVE", stage: str = "PLACEMENTS") -> SimpleNamespac
     `/driver reassign` is limited to the same two placement stages (issue #224), which is why
     the tests below hand it one of these rather than relying on `_make_cog`'s seasonless
     default. Its own stage gate is pinned in `test_reassign_stage_gate.py`."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     return SimpleNamespace(
         id=SEASON_ID, status=SimpleNamespace(value=status), stage=SeasonStage(stage)
@@ -167,7 +167,7 @@ async def _unassign(cog, interaction, *, division: str = "Division 1"):
 
 async def _sack(cog, interaction):
     """Sack, with the season ongoing — the only stage a sack is available in (issue #220)."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     season = cog.bot.season_service.get_confirmed_season.return_value
     if season is not None:
@@ -263,7 +263,7 @@ async def test_a_refused_reassignment_is_reported_not_raised(tmp_path):
 
 def _with_portraits(cog, directory, monkeypatch, *, remover=None):
     """Point *cog* at a configured driver directory and return the remover it will call."""
-    from services import driver_portrait_service, image_render_service
+    from leaguebot.image.services import driver_portrait_service, image_render_service
 
     cog.bot.db_path = "db.sqlite"
     cog.bot.image_config_service = MagicMock()
@@ -300,7 +300,7 @@ async def test_reassign_leaves_the_portrait_where_no_directory_resolves(
 ):
     """A row taken without its file would disown a portrait the bot wrote, after which the
     bot would never overwrite its own leftover. Both are left alone instead."""
-    from services import image_render_service
+    from leaguebot.image.services import image_render_service
 
     directory = tmp_path / "drivers"
     directory.mkdir()
@@ -433,7 +433,7 @@ async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
 async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path):
     """A team is typed by its shorthand (#381), resolved in the division before anything is
     written; the placement is made under the shorthand as the team holds it."""
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     cog = _make_cog(season=_season())
     cog.bot.team_service.resolve_division_team = AsyncMock(
@@ -448,7 +448,7 @@ async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path)
 
 
 async def test_assign_refuses_a_team_the_division_does_not_have(tmp_path):
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     cog = _make_cog(season=_season())
     cog.bot.team_service.resolve_division_team = AsyncMock(

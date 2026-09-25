@@ -1,6 +1,6 @@
 """The named sets of round states, and the rules each of them encodes.
 
-Three frozensets in `models/round.py` carry rules that several modules read rather than
+Three frozensets in `core/models/round.py` carry rules that several modules read rather than
 restate: which states hold a round open, which allow it to be cancelled, and which only the
 results module can move it out of. Each is pinned here because the cost of getting one wrong
 is not a failing test somewhere else — it is a season that cannot be completed.
@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.round import (  # noqa: E402
+from leaguebot.core.models.round import (  # noqa: E402
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
     ROUND_TERMINAL,

@@ -15,7 +15,7 @@ import pytest_asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection, run_migrations
 
 
 def _remove_database(db_path: str) -> None:
@@ -114,7 +114,7 @@ async def test_a_database_from_before_the_baseline_is_refused_untouched(tmp_path
     """#254. A database the 61-file chain built records `001_initial.sql` and the rest;
     applying the baseline over it would fail part-way. It is refused before anything is
     written, the journal mode included, and names what it found."""
-    from db.database import DatabasePredatesBaselineError
+    from leaguebot.core.db.database import DatabasePredatesBaselineError
 
     db_path = str(tmp_path / "old.db")
     db = sqlite3.connect(db_path)
@@ -144,7 +144,7 @@ async def test_a_database_from_before_the_baseline_is_refused_untouched(tmp_path
 def test_the_baseline_is_the_only_migration() -> None:
     """#254 squashed the chain into one file. Until go-live a schema change edits it; from
     go-live on this test is updated to admit each new, numbered migration after it."""
-    from db import database
+    from leaguebot.core.db import database
 
     files = sorted(
         f for f in os.listdir(database._MIGRATIONS_DIR)
@@ -262,7 +262,7 @@ async def test_migrations_survive_a_database_that_cannot_take_wal(caplog) -> Non
     An in-memory database reports `memory` and can never be WAL. That is not a reason to
     fail startup — the bot works without the contention relief, just more slowly.
     """
-    with caplog.at_level(logging.WARNING, logger="db.database"):
+    with caplog.at_level(logging.WARNING, logger="leaguebot.core.db.database"):
         await run_migrations(":memory:")  # must not raise
 
     assert any(

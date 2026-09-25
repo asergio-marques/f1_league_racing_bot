@@ -22,13 +22,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.result_submission_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.result_submission_service import (  # noqa: E402
     CollectedSession,
     replace_round_results,
 )
-from services.season_service import SeasonImmutableError  # noqa: E402
+from leaguebot.core.services.season_service import SeasonImmutableError  # noqa: E402
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 SERVER_ID = 14210
@@ -209,7 +209,7 @@ async def test_a_failure_part_way_keeps_the_old_results(tmp_path):
     db_path = await _make_db(tmp_path, name="replace_partway")
     scoring = AsyncMock(side_effect=[True, RuntimeError("disk")])
 
-    with patch("services.result_submission_service._apply_points_in_tx", new=scoring):
+    with patch("leaguebot.results.services.result_submission_service._apply_points_in_tx", new=scoring):
         with pytest.raises(RuntimeError):
             await replace_round_results(
                 db_path, ROUND_ID, DIVISION_ID, SEASON_ID, _collected()

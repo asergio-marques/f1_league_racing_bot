@@ -25,12 +25,12 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.image_lineup_service import build_fill_spec, resolve_drawing  # noqa: E402
-from services.image_render_service import (  # noqa: E402
+from leaguebot.image.services.image_lineup_service import build_fill_spec, resolve_drawing  # noqa: E402
+from leaguebot.image.services.image_render_service import (  # noqa: E402
     _removed_field_ids,
     _verify_against_data,
 )
-from utils.svg_document import FieldIndex  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex  # noqa: E402
 
 LINEUP_TEMPLATE = os.path.join(
     os.path.dirname(__file__), "..", "..", "resources", "defaults", "templates", "lineup_template.svg"

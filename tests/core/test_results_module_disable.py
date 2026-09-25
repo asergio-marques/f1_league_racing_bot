@@ -39,12 +39,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.module_cog import (  # noqa: E402
+from leaguebot.core.cogs.module_cog import (  # noqa: E402
     ModuleCog,
     _ConfirmDisableResultsView,
     _results_disable_warning,
 )
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 12408
 ACTOR_ID = 77
@@ -201,7 +201,7 @@ def _purge(rounds: int = 0, *, on_call=None, left_standing=()):
                 "messages": rounds * 3, "verdicts": rounds * 5,
                 "left_standing": list(left_standing)}
 
-    return patch("services.results_purge_service.purge_season_results", new=AsyncMock(side_effect=_run))
+    return patch("leaguebot.results.services.results_purge_service.purge_season_results", new=AsyncMock(side_effect=_run))
 
 
 async def _flag(db_path: str) -> int | None:

@@ -22,7 +22,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-SRC = Path(__file__).resolve().parents[2] / "src"
+SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
 
 # ── Reading the source ────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ def _calls_within(node: ast.AST) -> set[str]:
 def test_the_review_pre_render_is_wrapped():
     """The pre-render is the whole batch — the posting loop after it runs at message
     speed, and wrapping that instead would show the notice for the wrong stretch."""
-    node = _function("cogs/season_cog.py", "season_review")
+    node = _function("core/cogs/season_cog.py", "season_review")
     blocks = _notices(node)
 
     assert len(blocks) == 1, "expected exactly one notice in /season placements-review"
@@ -79,7 +79,7 @@ def test_the_review_pre_render_is_wrapped():
 
 
 def test_the_review_posting_loop_is_not_wrapped():
-    node = _function("cogs/season_cog.py", "season_review")
+    node = _function("core/cogs/season_cog.py", "season_review")
     inside = _calls_within(_notices(node)[0])
 
     assert "_discard_prepared_review_images" not in inside, (
@@ -92,7 +92,7 @@ def test_the_review_posting_loop_is_not_wrapped():
 
 def test_the_approve_lineup_and_calendar_posting_is_wrapped():
     """Both draw inside their own loops, so one notice covers the pair."""
-    node = _function("cogs/season_cog.py", "_do_approve")
+    node = _function("core/cogs/season_cog.py", "_do_approve")
     blocks = _notices(node)
 
     assert len(blocks) == 1, "expected exactly one notice in _do_approve"
@@ -104,7 +104,7 @@ def test_the_approve_lineup_and_calendar_posting_is_wrapped():
 def test_the_approve_notice_goes_to_the_interaction_channel():
     """The approve button is ephemeral, so the channel the review was read in is the
     only home it has."""
-    node = _function("cogs/season_cog.py", "_do_approve")
+    node = _function("core/cogs/season_cog.py", "_do_approve")
     call = _notices(node)[0].items[0].context_expr
 
     target = call.args[0]
@@ -115,7 +115,7 @@ def test_the_approve_notice_goes_to_the_interaction_channel():
 
 
 def test_the_penalty_batch_is_wrapped():
-    node = _function("services/result_submission_service.py", "_apply_approved_reports")
+    node = _function("results/services/result_submission_service.py", "_apply_approved_reports")
     blocks = _notices(node)
 
     assert len(blocks) == 1
@@ -131,7 +131,7 @@ def test_the_penalty_batch_is_wrapped():
 
 
 def test_the_appeals_batch_is_wrapped():
-    node = _function("services/result_submission_service.py", "finalize_appeals_review")
+    node = _function("results/services/result_submission_service.py", "finalize_appeals_review")
     blocks = _notices(node)
 
     assert len(blocks) == 1
@@ -145,7 +145,7 @@ def test_the_appeals_notice_closes_before_the_channel_is_deleted():
     """The ordering rule. `close_submission_channel` deletes the channel the notice sits
     in; inside the block, the delete would race it and be swallowed as a `NotFound`,
     leaving the notice visible until Discord caught up."""
-    node = _function("services/result_submission_service.py", "finalize_appeals_review")
+    node = _function("results/services/result_submission_service.py", "finalize_appeals_review")
     block = _notices(node)[0]
 
     assert "close_submission_channel" not in _calls_within(block), (
@@ -167,7 +167,7 @@ def test_both_results_flow_notices_target_the_submission_channel():
     """Not the results, standings or verdicts channels the graphics land in: the person
     waiting is the steward who pressed the button, and they are in here."""
     for name in ("_apply_approved_reports", "finalize_appeals_review"):
-        node = _function("services/result_submission_service.py", name)
+        node = _function("results/services/result_submission_service.py", name)
         call = _notices(node)[0].items[0].context_expr
         assert isinstance(call.args[0], ast.Name), name
         assert call.args[0].id == "_notice_channel", name
@@ -179,10 +179,10 @@ def test_both_results_flow_notices_target_the_submission_channel():
 @pytest.mark.parametrize(
     "relative,function",
     [
-        ("cogs/season_cog.py", "season_review"),
-        ("cogs/season_cog.py", "_do_approve"),
-        ("services/result_submission_service.py", "_apply_approved_reports"),
-        ("services/result_submission_service.py", "finalize_appeals_review"),
+        ("core/cogs/season_cog.py", "season_review"),
+        ("core/cogs/season_cog.py", "_do_approve"),
+        ("results/services/result_submission_service.py", "_apply_approved_reports"),
+        ("results/services/result_submission_service.py", "finalize_appeals_review"),
     ],
 )
 def test_every_notice_carries_plain_text_for_a_league(relative, function):

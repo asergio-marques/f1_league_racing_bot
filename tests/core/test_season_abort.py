@@ -15,10 +15,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import PendingConfig, SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.season import SeasonStage  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.cogs.season_cog import PendingConfig, SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 22160
@@ -54,7 +54,7 @@ async def test_a_season_is_aborted_before_its_placements_are_confirmed(stage):
     cog = _cog(stage)
 
     with patch(
-        "services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
+        "leaguebot.core.services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
     ) as the_pass:
         await undecorate(SeasonCog.season_abort)(cog, _interaction(), "CONFIRM")
 
@@ -125,7 +125,7 @@ async def test_an_abort_goes_ahead_when_the_close_timer_cannot_be_cancelled():
     )
 
     with patch(
-        "services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
+        "leaguebot.core.services.season_end_service.end_of_season_pass", new=AsyncMock(return_value={})
     ) as the_pass:
         await undecorate(SeasonCog.season_abort)(cog, _interaction(), "CONFIRM")
 
@@ -138,8 +138,8 @@ async def test_aborting_keeps_the_saved_test_mode_backup(tmp_path):
     to (decided 2026-09-17); only completing, and the toggle, delete it."""
     from pathlib import Path
 
-    from services import backup_service
-    from services.season_end_service import end_of_season_pass
+    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.season_end_service import end_of_season_pass
 
     db_path = str(tmp_path / "abort_backup.db")
     await run_migrations(db_path)
@@ -158,7 +158,7 @@ async def test_aborting_keeps_the_saved_test_mode_backup(tmp_path):
     bot.signup_module_service.get_config = AsyncMock(return_value=None)
     bot.scheduler_service._jobstore_path = str(jobstore)
 
-    with patch("services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
+    with patch("leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
         await end_of_season_pass(bot, None)
 
     assert backup_service.backup_path(db_path).read_bytes() == b"saved"

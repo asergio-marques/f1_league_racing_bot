@@ -6,7 +6,7 @@ setting and run the whole season-points amendment there. Several of those comman
 *the most recent season whatever its status*, so they reached a **completed or cancelled**
 season as well — an archive the specification says shall never change.
 
-`tests/unit/test_pending_completion.py` covers the *transition* into the stage and says
+`tests/core/test_pending_completion.py` covers the *transition* into the stage and says
 nothing about what is refused once a season is in it, which is why the suite passed. This file
 is the other half: one table over every command the rule touches, exercised in four seasons.
 
@@ -31,11 +31,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.results_cog import ResultsCog  # noqa: E402
-from cogs.season_cog import SeasonCog  # noqa: E402
-from cogs.team_cog import TeamCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.season import SeasonStage, status_of_stage  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.cogs.team_cog import TeamCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.models.season import SeasonStage, status_of_stage  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 22400
@@ -112,7 +112,7 @@ def _bot(db_path: str, stage: SeasonStage | None):
         ]
     )
     # A team is named by its shorthand (#381); the resolver has tests of its own.
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     bot.team_service.resolve_server_team = AsyncMock(
         return_value=TeamReference(
@@ -181,9 +181,9 @@ async def _team_reserve_role(bot, interaction):
 
 async def _calendar_sync(bot, interaction):
     cog = _cog(SeasonCog, bot)
-    with patch("services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
+    with patch("leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
             patch(
-                "services.calendar_post_service.post_division_calendar",
+                "leaguebot.core.services.calendar_post_service.post_division_calendar",
                 new=AsyncMock(return_value=SimpleNamespace(
                     problem=None, notices=[], posted_as_image=False
                 )),
@@ -197,7 +197,7 @@ async def _reserves_toggle(bot, interaction):
 
 async def _standings_sync(bot, interaction):
     with patch(
-        "services.results_post_service.repost_standings_for_division",
+        "leaguebot.results.services.results_post_service.repost_standings_for_division",
         new=AsyncMock(return_value="ok"),
     ):
         await undecorate(ResultsCog.standings_sync)(_cog(ResultsCog, bot), interaction, "Pro")
@@ -205,7 +205,7 @@ async def _standings_sync(bot, interaction):
 
 async def _rounds_sync(bot, interaction):
     with patch(
-        "services.results_post_service.repost_results_for_division",
+        "leaguebot.results.services.results_post_service.repost_results_for_division",
         new=AsyncMock(return_value="ok"),
     ):
         await undecorate(ResultsCog.rounds_sync)(_cog(ResultsCog, bot), interaction, "Pro")
@@ -374,7 +374,7 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     channel = MagicMock(id=808, mention="<#808>", name="standings")
 
     with patch(
-        "services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
+        "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
         await cog._set_division_channel(interaction, "Pro", channel, "standings")
 

@@ -8,8 +8,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.points_config import SessionType
-from services.penalty_service import StagedPenalty, validate_penalty_input
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 
@@ -311,8 +311,8 @@ def test_negative_penalty_cumulative_second_reduction_rejected():
 
 async def test_apply_negative_penalty_reorders(tmp_path):
     """Driver with a -10s penalty moves above a driver with no penalty."""
-    from db.database import get_connection, run_migrations
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -386,8 +386,8 @@ async def test_apply_negative_penalty_reorders(tmp_path):
 
 async def test_apply_negative_penalty_reorders_move_up(tmp_path):
     """P2 driver with -15s total adjusted time moves to P1 if beats P1."""
-    from db.database import get_connection, run_migrations
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -460,8 +460,8 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
 
 async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
     """Two drivers with identical post-penalty times keep their original order."""
-    from db.database import get_connection, run_migrations
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -537,11 +537,11 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
 
 async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     """AC7: DSQ on fastest-lap holder forfeits the bonus; no other driver gains it."""
-    from db.database import get_connection, run_migrations
-    from services.penalty_service import apply_penalties
-    from services.standings_service import compute_points_for_session
-    from models.points_config import PointsConfigEntry, PointsConfigFastestLap
-    from models.session_result import DriverSessionResult, OutcomeModifier
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.penalty_service import apply_penalties
+    from leaguebot.results.services.standings_service import compute_points_for_session
+    from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap
+    from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -644,7 +644,7 @@ async def _seed_one_session(tmp_path, session_type: str) -> tuple[str, int, int,
     a league pastes produces that, but it is the one state in which re-sorting a session is
     visible — so it is what shows that no further action does not re-sort at all.
     """
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     db_path = str(tmp_path / "nfa.db")
     await run_migrations(db_path)
@@ -704,8 +704,8 @@ def _nfa(session_type: SessionType) -> StagedPenalty:
 
 @pytest.mark.parametrize("phase", ["PENALTY", "APPEAL"])
 async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_path, phase):
-    from db.database import get_connection
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
     columns = (
@@ -732,8 +732,8 @@ async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_pa
 
 
 async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(tmp_path):
-    from db.database import get_connection
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(
         tmp_path, "FEATURE_QUALIFYING"
@@ -760,8 +760,8 @@ async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(
 async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     """It alters nothing, but it is still a decision, and the round's verdicts are read from
     the record — its announcement and an amendment's replay both need it there."""
-    from db.database import get_connection
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
 
@@ -791,8 +791,8 @@ async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
 async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tmp_path):
     """The guard is on sessions only no further action touches. A real sanction in the same
     session re-sorts it as it always has."""
-    from db.database import get_connection
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
     staged = [
@@ -838,8 +838,8 @@ async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
     """
     from unittest.mock import AsyncMock, MagicMock
 
-    from db.database import get_connection, run_migrations
-    from services.penalty_service import apply_penalties
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     path = str(tmp_path / "penalty_repost.db")
     await run_migrations(path)
@@ -925,7 +925,7 @@ async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
 async def _seed_for_penalty_log(tmp_path):
     """A division with one round to apply a penalty to. Returns ``(db_path, division_id,
     round_id)``."""
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "penalty_log.db")
     await run_migrations(path)
@@ -977,15 +977,15 @@ async def test_apply_penalties_reports_an_unreachable_guild(tmp_path):
     """
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services import results_post_service as rps
-    from services.penalty_service import apply_penalties
+    from leaguebot.results.services import results_post_service as rps
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
 
     bot = MagicMock()
     bot.output_router.post_log = AsyncMock()
 
-    with patch("utils.league_server.league_guild", new=AsyncMock(return_value=None)), \
+    with patch("leaguebot.core.utils.league_server.league_guild", new=AsyncMock(return_value=None)), \
             patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
         await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
 
@@ -999,8 +999,8 @@ async def test_apply_penalties_reports_what_the_repost_could_not_post(tmp_path):
     """The repost's return used to be thrown away by this caller."""
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services import results_post_service as rps
-    from services.penalty_service import apply_penalties
+    from leaguebot.results.services import results_post_service as rps
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
 
@@ -1008,7 +1008,7 @@ async def test_apply_penalties_reports_what_the_repost_could_not_post(tmp_path):
     bot.output_router.post_log = AsyncMock()
     fault = "**Alpha** — the standings channel <#502> no longer exists."
 
-    with patch("utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
+    with patch("leaguebot.core.utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
             patch.object(rps, "recompute_standings_from_round", new=AsyncMock()), \
             patch.object(rps, "repost_round_results", new=AsyncMock(return_value=[fault])):
         await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
@@ -1026,8 +1026,8 @@ async def test_apply_penalties_logs_success_only_after_the_repost(tmp_path):
     """
     from unittest.mock import AsyncMock, MagicMock, patch
 
-    from services import results_post_service as rps
-    from services.penalty_service import apply_penalties
+    from leaguebot.results.services import results_post_service as rps
+    from leaguebot.results.services.penalty_service import apply_penalties
 
     path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
 
@@ -1040,7 +1040,7 @@ async def test_apply_penalties_logs_success_only_after_the_repost(tmp_path):
         order.append("repost")
         return []
 
-    with patch("utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
+    with patch("leaguebot.core.utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
             patch.object(rps, "recompute_standings_from_round", new=AsyncMock()), \
             patch.object(rps, "repost_round_results", new=_repost):
         await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)

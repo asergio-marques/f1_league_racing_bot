@@ -17,9 +17,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 4400
 USER_ID = 88
@@ -241,7 +241,7 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
 
 
 def _view(cog, amendments):
-    from cogs.season_cog import _ConfirmView
+    from leaguebot.core.cogs.season_cog import _ConfirmView
 
     return _ConfirmView(
         cog=cog, interaction_user_id=USER_ID, round_id=1, amendments=amendments

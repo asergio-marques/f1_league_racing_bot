@@ -13,10 +13,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.points_config import SessionType
-from services.penalty_service import StagedPenalty, apply_penalties
-from services.result_submission_service import is_channel_in_penalty_review
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.penalty_service import StagedPenalty, apply_penalties
+from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 
@@ -352,7 +352,7 @@ async def test_test_mode_advance_blocked_until_results_are_final(tmp_path):
     await run_migrations(db_path)
     _, division_id, round_id = await _bootstrap(db_path)
 
-    from services.test_mode_service import round_result_status
+    from leaguebot.core.services.test_mode_service import round_result_status
 
     assert await round_result_status(db_path, round_id) == "NOT_RUN"
 

@@ -38,7 +38,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
 
 SERVER_ID = 13108
 
@@ -108,13 +108,13 @@ def _answering(answer: str | None):
         async def wait(self):
             return None
 
-    return patch("cogs.season_cog._BackupBeforeApprovalView", new=_View)
+    return patch("leaguebot.core.cogs.season_cog._BackupBeforeApprovalView", new=_View)
 
 
 async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answer=None):
     deadline = datetime.now(timezone.utc) + timedelta(minutes=minutes_left)
     with patch(
-        "services.backup_service.state", return_value=state or _backup_state()
+        "leaguebot.core.services.backup_service.state", return_value=state or _backup_state()
     ), _answering(answer):
         return await cog._offer_backup_before_approving(interaction, deadline)
 
@@ -199,8 +199,8 @@ async def test_the_question_inherits_what_is_left_of_the_review():
             return None
 
     deadline = datetime.now(timezone.utc) + timedelta(minutes=2)
-    with patch("services.backup_service.state", return_value=_backup_state()), patch(
-        "cogs.season_cog._BackupBeforeApprovalView", new=_View
+    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state()), patch(
+        "leaguebot.core.cogs.season_cog._BackupBeforeApprovalView", new=_View
     ):
         await cog._offer_backup_before_approving(interaction, deadline)
 
@@ -341,7 +341,7 @@ def _button_interaction():
 
 
 async def _view(cog=None, *, scheduler=None):
-    from cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
 
     cog = cog or _make_cog()
     cog.bot.scheduler_service = scheduler
@@ -358,7 +358,7 @@ async def test_saving_takes_a_backup_and_continues():
     view = await _view()
     interaction = _button_interaction()
 
-    with patch("services.backup_service.save") as save:
+    with patch("leaguebot.core.services.backup_service.save") as save:
         await _press(view, "save", interaction)
 
     save.assert_called_once()
@@ -370,7 +370,7 @@ async def test_a_saved_backup_names_how_to_restore_it():
     view = await _view()
     interaction = _button_interaction()
 
-    with patch("services.backup_service.save"):
+    with patch("leaguebot.core.services.backup_service.save"):
         await _press(view, "save", interaction)
 
     assert "/test-mode backup restore" in str(interaction.followup.send.await_args.args[0])
@@ -384,7 +384,7 @@ async def test_the_scheduler_is_paused_for_the_copy():
     scheduler._scheduler.running = True
     view = await _view(scheduler=scheduler)
 
-    with patch("services.backup_service.save") as save:
+    with patch("leaguebot.core.services.backup_service.save") as save:
         save.side_effect = lambda *a, **k: scheduler._scheduler.pause.assert_called_once()
         await _press(view, "save", _button_interaction())
 
@@ -399,9 +399,9 @@ async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     scheduler._scheduler.running = True
     view = await _view(scheduler=scheduler)
 
-    from services import backup_service
+    from leaguebot.core.services import backup_service
 
-    with patch("services.backup_service.save", side_effect=backup_service.BackupError("nope")):
+    with patch("leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("nope")):
         await _press(view, "save", _button_interaction())
 
     scheduler._scheduler.resume.assert_called_once()
@@ -414,7 +414,7 @@ async def test_a_scheduler_that_was_not_running_is_not_resumed():
     scheduler._scheduler.running = False
     view = await _view(scheduler=scheduler)
 
-    with patch("services.backup_service.save"):
+    with patch("leaguebot.core.services.backup_service.save"):
         await _press(view, "save", _button_interaction())
 
     scheduler._scheduler.pause.assert_not_called()
@@ -428,10 +428,10 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
     view = await _view()
     interaction = _button_interaction()
 
-    from services import backup_service
+    from leaguebot.core.services import backup_service
 
     with patch(
-        "services.backup_service.save", side_effect=backup_service.BackupError("no room")
+        "leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("no room")
     ):
         await _press(view, "save", interaction)
 
@@ -445,7 +445,7 @@ async def test_an_unexpected_failure_also_still_approves():
     view = await _view()
     interaction = _button_interaction()
 
-    with patch("services.backup_service.save", side_effect=OSError("truncated")):
+    with patch("leaguebot.core.services.backup_service.save", side_effect=OSError("truncated")):
         await _press(view, "save", interaction)
 
     assert view.answer == "skip"
@@ -457,7 +457,7 @@ async def test_an_unexpected_failure_also_still_approves():
 async def test_approving_without_saving_asks_for_no_backup():
     view = await _view()
 
-    with patch("services.backup_service.save") as save:
+    with patch("leaguebot.core.services.backup_service.save") as save:
         await _press(view, "skip", _button_interaction())
 
     save.assert_not_called()
@@ -482,7 +482,7 @@ async def test_every_button_stops_the_view(name):
     """A view left running holds the approval open past the answer it already has."""
     view = await _view()
 
-    with patch("services.backup_service.save"):
+    with patch("leaguebot.core.services.backup_service.save"):
         await _press(view, name, _button_interaction())
 
     assert view.is_finished()

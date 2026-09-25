@@ -43,9 +43,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     AppealsReviewView,
     ApprovalView,
     PenaltyReviewState,
@@ -176,7 +176,7 @@ def _press(view, name, interaction):
 
 def _manager(is_manager: bool = True):
     return patch(
-        "services.penalty_wizard._is_league_manager",
+        "leaguebot.results.services.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=is_manager),
     )
 
@@ -185,13 +185,13 @@ def _finalisers():
     """Patch both terminal calls and the two prompt refreshers."""
     return (
         patch(
-            "services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
         ),
         patch(
-            "services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
         ),
-        patch("services.penalty_wizard._refresh_prompt", new=AsyncMock()),
-        patch("services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()),
+        patch("leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()),
     )
 
 
@@ -276,7 +276,7 @@ async def test_only_a_league_manager_may_remove_a_correction(tmp_path):
     interaction = _interaction()
 
     with _manager(False), patch(
-        "services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(0)(interaction)
 
@@ -301,7 +301,7 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     interaction = _interaction()
 
     with _manager(), patch(
-        "services.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
     ) as refresh:
         await _press(view, "make_changes_btn", interaction)
 
@@ -315,7 +315,7 @@ async def test_approving_finalises_the_review(tmp_path):
     view = ApprovalView(state=_state(db_path))
 
     with _manager(), patch(
-        "services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "approve_btn", _interaction())
 
@@ -330,7 +330,7 @@ async def test_an_archived_season_cannot_be_approved_into(tmp_path):
     interaction = _interaction()
 
     with _manager(), patch(
-        "services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "approve_btn", interaction)
 
@@ -348,7 +348,7 @@ async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     view = ApprovalView(state=state)
 
     with _manager(), patch(
-        "services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "approve_btn", _interaction())
 
@@ -387,7 +387,7 @@ async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     interaction = _interaction()
 
     with _manager(), patch(
-        "services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh:
         await view._make_remove_cb(0)(interaction)
 
@@ -404,7 +404,7 @@ async def test_removing_a_correction_says_which_one_went(tmp_path):
     interaction = _interaction()
 
     with _manager(), patch(
-        "services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(0)(interaction)
 
@@ -420,7 +420,7 @@ async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     interaction = _interaction()
 
     with _manager(), patch(
-        "services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(3)(interaction)
 
@@ -448,7 +448,7 @@ async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     view = AppealsReviewView(state=_state(db_path))
 
     with _manager(), patch(
-        "services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "no_changes_btn", _interaction())
 
@@ -463,7 +463,7 @@ async def test_confirming_with_corrections_staged_asks_first(tmp_path):
     interaction = _interaction()
 
     with _manager(), patch(
-        "services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "no_changes_btn", interaction)
 
@@ -496,7 +496,7 @@ async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     view = _AppealsConfirmClearView(state=state)
 
     with _manager(), patch(
-        "services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "confirm_btn", _interaction())
 
@@ -512,7 +512,7 @@ async def test_going_back_keeps_the_corrections(tmp_path):
     view = _AppealsConfirmClearView(state=state)
 
     with patch(
-        "services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "cancel_btn", _interaction())
 
@@ -526,7 +526,7 @@ async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
     view = _AppealsConfirmClearView(state=state)
 
     with _manager(False), patch(
-        "services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
         await _press(view, "confirm_btn", _interaction())
 

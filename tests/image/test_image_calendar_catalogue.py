@@ -19,7 +19,7 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_FIELD,
     CALENDAR_CATALOGUE,
     CATALOGUES,
@@ -92,7 +92,7 @@ def test_every_catalogue_is_now_populated():
     """The calendar (037), the lineup (038), the two results types (039), the two standings
     types (040), the two attendance types (041), the six weather types (042) and the verdict
     (043) are all specified. No type is checked to Layer 1 alone any more."""
-    from models.image_constants import TEMPLATE_COLUMNS
+    from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS
 
     populated = {key for key, cat in CATALOGUES.items() if not cat.is_empty}
     assert populated == set(TEMPLATE_COLUMNS)

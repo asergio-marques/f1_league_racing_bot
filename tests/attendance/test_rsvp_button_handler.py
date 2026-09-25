@@ -1,6 +1,6 @@
 """`handle_rsvp_button` — what happens when a driver presses a check-in button.
 
-Issue #208. `tests/unit/test_attendance_module_gate.py` covers exactly one branch of this
+Issue #208. `tests/attendance/test_attendance_module_gate.py` covers exactly one branch of this
 handler, the module gate at its head (issue #114). Everything after that gate — who is allowed
 to answer, when an answer locks, and what an answer does — was unexecuted.
 
@@ -50,9 +50,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.attendance_cog import handle_rsvp_button  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
 
 SERVER_ID = 8508
 SEASON_ID = 1
@@ -640,7 +640,7 @@ async def test_the_call_is_edited_in_place_when_an_answer_changes(tmp_path):
     interaction.client.get_channel = MagicMock(return_value=channel)
 
     with patch(
-        "services.rsvp_service._rebuild_embed_for_round",
+        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
         new=AsyncMock(return_value=MagicMock()),
     ):
         await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")

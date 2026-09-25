@@ -6,7 +6,7 @@ longer holds — a season setup resumed after a factory reset, a signup correcti
 into a wizard that has gone. So both commands call `clear_in_memory_state`, and it names
 every such store.
 
-**The list is complete by test, not by care.** `tests/unit/test_in_memory_state.py` finds
+**The list is complete by test, not by care.** `tests/core/test_in_memory_state.py` finds
 every mutable store a module or an instance of `src/` sets up empty, and fails on one that is
 neither cleared here nor named in its own exemptions with the reason it holds no league
 state. A cache added later cannot slip past unnoticed.

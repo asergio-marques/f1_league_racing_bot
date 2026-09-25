@@ -17,12 +17,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     ASSET_DIRECTORIES,
     TEMPLATE_COLUMNS,
 )
-from models.image_module import ImageConfig  # noqa: E402
-from services.image_validity_service import (  # noqa: E402
+from leaguebot.image.models.image_module import ImageConfig  # noqa: E402
+from leaguebot.image.services.image_validity_service import (  # noqa: E402
     LAYER_CATALOGUE,
     CatalogueLayer,
     TemplateContext,
@@ -177,7 +177,7 @@ def test_the_reason_names_the_collection_the_count_and_the_requirement():
     """It is the entirety of what a league manager is told, so it must carry all three."""
     from lxml import etree
 
-    from models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
 
     with pytest.raises(CapacityError) as exc:
         catalogue_for("weather_p3_sprint_template").capacity(etree.fromstring(_p3(4, 1)))
@@ -263,7 +263,7 @@ def test_a_short_template_is_reported_at_the_evaluation_every_moment_uses(
 
 
 def test_season_review_names_which_of_the_six_is_at_fault(templates, tmp_path):
-    from models.image_constants import TEMPLATE_LABELS
+    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
 
     (templates / TEMPLATE_COLUMNS["weather_p3_sprint_template"]).write_bytes(_p3(4, 2))
     reports = evaluate_all_templates(_config(), root=tmp_path)
@@ -312,8 +312,8 @@ def test_one_short_template_leaves_the_other_five_valid(templates, tmp_path):
 def test_the_naming_command_refuses_a_template_below_its_floor(
     templates, tmp_path, key, body, monkeypatch
 ):
-    from services import image_validity_service
-    from services.image_validity_service import check_template
+    from leaguebot.image.services import image_validity_service
+    from leaguebot.image.services.image_validity_service import check_template
 
     (templates / TEMPLATE_COLUMNS[key]).write_bytes(body)
     monkeypatch.setattr(
@@ -335,8 +335,8 @@ def test_the_naming_command_refuses_a_template_below_its_floor(
 def test_the_naming_command_accepts_a_template_above_its_floor(
     templates, tmp_path, key, body, monkeypatch
 ):
-    from services import image_validity_service
-    from services.image_validity_service import check_template
+    from leaguebot.image.services import image_validity_service
+    from leaguebot.image.services.image_validity_service import check_template
 
     (templates / TEMPLATE_COLUMNS[key]).write_bytes(body)
     monkeypatch.setattr(
@@ -356,7 +356,7 @@ def test_nothing_is_written_before_the_check_passes():
     """
     import inspect
 
-    from cogs.image_cog import ImageCog
+    from leaguebot.image.cogs.image_cog import ImageCog
 
     source = inspect.getsource(ImageCog._set_template_filename)
     check = source.index("check_template(proposed, column)")

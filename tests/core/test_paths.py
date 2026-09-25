@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from utils.paths import (
+from leaguebot.core.utils.paths import (
     PathContainmentError,
     relative_to_root,
     resolve_within_project_root,
@@ -101,15 +101,15 @@ from pathlib import Path as _Path  # noqa: E402
 
 _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "src"))
 
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     ASSET_CLASS_TO_COLUMN,
     ASSET_DIRECTORIES,
     FALLBACK_ASSET_NAME,
     TEMPLATE_COLUMNS,
     packaged_directory_for,
 )
-from utils.asset_resolver import normalise  # noqa: E402
-from utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
+from leaguebot.image.utils.asset_resolver import normalise  # noqa: E402
+from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 
 PROJECT_ROOT = _Path(__file__).resolve().parents[2]
 
@@ -144,7 +144,7 @@ def test_every_packaged_asset_directory_exists_and_carries_a_fallback():
     Asking `fallback_names_for` rather than testing the literal filename is what makes this
     hold for a class that answers its data with more than one.
     """
-    from models.image_constants import POSITION_CHANGE_DATA, fallback_names_for
+    from leaguebot.image.models.image_constants import POSITION_CHANGE_DATA, fallback_names_for
 
     probes = {
         "marker": sorted(POSITION_CHANGE_DATA) + ["race_p1", "attendance_limit_near"]

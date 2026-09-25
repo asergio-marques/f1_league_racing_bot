@@ -51,8 +51,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import bot as bot_module  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+import leaguebot.__main__ as bot_module  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 11708
 SEASON_ID = 1
@@ -176,18 +176,18 @@ async def _recover(stub):
     """Run recovery with everything it reaches into stubbed."""
     state = MagicMock()
     with patch(
-        "services.result_submission_service._build_penalty_review_state",
+        "leaguebot.results.services.result_submission_service._build_penalty_review_state",
         new=AsyncMock(return_value=state),
     ), patch(
-        "services.result_submission_service.enter_penalty_state", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
     ) as enter, patch(
-        "services.result_submission_service.run_result_submission_job", new=AsyncMock()
+        "leaguebot.results.services.result_submission_service.run_result_submission_job", new=AsyncMock()
     ) as rerun, patch(
-        "services.penalty_wizard.AppealsReviewView", new=MagicMock()
+        "leaguebot.results.services.penalty_wizard.AppealsReviewView", new=MagicMock()
     ) as appeals_view, patch(
-        "services.penalty_wizard._render_appeals_prompt_content",
+        "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content",
         new=AsyncMock(return_value="appeals prompt"),
-    ), patch("bot.asyncio.create_task", new=MagicMock()) as create_task:
+    ), patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()) as create_task:
         await bot_module._recover_orphaned_submission_channels(stub)
     return {
         "enter": enter,
@@ -570,11 +570,11 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     stub = _bot(db_path, channel=_channel())
 
     with patch(
-        "services.result_submission_service.enter_penalty_state",
+        "leaguebot.results.services.result_submission_service.enter_penalty_state",
         new=AsyncMock(side_effect=RuntimeError("Discord is down")),
     ), patch(
-        "services.penalty_wizard.AppealsReviewView", new=MagicMock()
-    ), patch("bot.asyncio.create_task", new=MagicMock()):
+        "leaguebot.results.services.penalty_wizard.AppealsReviewView", new=MagicMock()
+    ), patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()):
         await bot_module._recover_orphaned_submission_channels(stub)  # must not raise
 
 
@@ -658,9 +658,9 @@ async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
     stub = _bot(db_path, channel=_channel())
 
     with patch(
-        "services.result_submission_service._build_penalty_review_state",
+        "leaguebot.results.services.result_submission_service._build_penalty_review_state",
         new=AsyncMock(side_effect=RuntimeError("no state")),
-    ), patch("bot.asyncio.create_task", new=MagicMock()):
+    ), patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()):
         await bot_module._recover_orphaned_submission_channels(stub)  # must not raise
 
 

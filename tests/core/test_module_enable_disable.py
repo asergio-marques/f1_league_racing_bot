@@ -34,8 +34,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.module_cog import ModuleCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.module_cog import ModuleCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 9608
@@ -378,8 +378,8 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     """Constitution X.6: re-enabling a module starts fresh. A league that set its own
     windows, penalties and thresholds finds the packaged ones after turning the module off
     and on again, through the commands themselves."""
-    from services.attendance_service import AttendanceService
-    from services.module_service import ModuleService
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.core.services.module_service import ModuleService
 
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, results_enabled=True)

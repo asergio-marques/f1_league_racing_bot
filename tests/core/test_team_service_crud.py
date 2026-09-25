@@ -1,6 +1,6 @@
 """`TeamService` — the server's team list, and the division teams seeded from it.
 
-Issue #208. `tests/unit/test_team_name_validation.py` covers `validate_team_name`, the module
+Issue #208. `tests/core/test_team_name_validation.py` covers `validate_team_name`, the module
 function; `TeamService` itself — the class every `/team` command reaches — was almost entirely
 unexecuted, 125 of its 177 statements. Teams are the thing seats hang off, so a fault here
 reaches the lineup graphic, the signup wizard's team preferences and the reserve distribution
@@ -38,8 +38,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.team_service import TeamService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.team_service import TeamService  # noqa: E402
 
 SERVER_ID = 8708
 SEASON_ID = 1

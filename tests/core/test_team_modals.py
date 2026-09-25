@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.team_service import FULL_NAME_MAX, SHORTHAND_MAX  # noqa: E402
+from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX  # noqa: E402
 
 
 def _role(role_id: int = 111) -> MagicMock:
@@ -31,7 +31,7 @@ def _role(role_id: int = 111) -> MagicMock:
 
 
 def _cog() -> MagicMock:
-    from cogs.team_cog import TeamCog
+    from leaguebot.core.cogs.team_cog import TeamCog
 
     bot = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
@@ -60,7 +60,7 @@ def _interaction() -> MagicMock:
 
 
 async def test_the_command_opens_the_form_and_writes_nothing_itself():
-    from cogs.team_cog import TeamCog, _TeamAddModal
+    from leaguebot.core.cogs.team_cog import TeamCog, _TeamAddModal
     from tests.support.undecorate import undecorate
 
     cog = _cog()
@@ -75,7 +75,7 @@ async def test_the_command_opens_the_form_and_writes_nothing_itself():
 
 async def test_the_form_bounds_both_names_as_they_are_typed():
     """Sixteen characters and sixty-four, which Discord itself enforces in the field."""
-    from cogs.team_cog import _TeamAddModal
+    from leaguebot.core.cogs.team_cog import _TeamAddModal
 
     modal = _TeamAddModal(_cog())
 
@@ -85,7 +85,7 @@ async def test_the_form_bounds_both_names_as_they_are_typed():
 
 
 async def test_submitting_the_form_records_all_three_and_says_so():
-    from cogs.team_cog import _TeamAddModal
+    from leaguebot.core.cogs.team_cog import _TeamAddModal
 
     cog = _cog()
     modal = _TeamAddModal(cog)
@@ -107,8 +107,8 @@ async def test_submitting_the_form_records_all_three_and_says_so():
 
 async def test_a_form_submitted_after_the_list_was_fixed_writes_nothing():
     """The season moved on while the form stood open, so the submission is refused whole."""
-    from cogs.team_cog import _TeamAddModal
-    from models.season import SeasonStage
+    from leaguebot.core.cogs.team_cog import _TeamAddModal
+    from leaguebot.core.models.season import SeasonStage
 
     cog = _cog()
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(
@@ -133,8 +133,8 @@ TEAM = {"name": "RBR", "full_name": "Oracle Red Bull Racing", "is_reserve": Fals
 
 
 def _modify_cog(*, team=None, list_open=True, season=None):
-    from cogs.team_cog import TeamCog
-    from services.team_service import TeamReference
+    from leaguebot.core.cogs.team_cog import TeamCog
+    from leaguebot.core.services.team_service import TeamReference
 
     cog = _cog()
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
@@ -153,7 +153,7 @@ def _modify_cog(*, team=None, list_open=True, season=None):
 
 
 async def _submit(cog, *, shorthand=None, full_name=None, role=None, names_offered=True):
-    from cogs.team_cog import _TeamModifyModal
+    from leaguebot.core.cogs.team_cog import _TeamModifyModal
 
     modal = _TeamModifyModal(cog, team=dict(TEAM), names_offered=names_offered)
     if modal.shorthand is not None:
@@ -166,7 +166,7 @@ async def _submit(cog, *, shorthand=None, full_name=None, role=None, names_offer
 
 
 async def test_the_form_opens_pre_filled_with_every_field_that_may_change():
-    from cogs.team_cog import TeamCog, _TeamModifyModal
+    from leaguebot.core.cogs.team_cog import TeamCog, _TeamModifyModal
     from tests.support.undecorate import undecorate
 
     cog = _modify_cog()
@@ -182,8 +182,8 @@ async def test_the_form_opens_pre_filled_with_every_field_that_may_change():
 
 
 async def test_the_form_offers_only_the_role_once_the_team_list_is_fixed():
-    from cogs.team_cog import TeamCog
-    from models.season import SeasonStage
+    from leaguebot.core.cogs.team_cog import TeamCog
+    from leaguebot.core.models.season import SeasonStage
     from tests.support.undecorate import undecorate
 
     cog = _modify_cog(season=MagicMock(season_number=3, stage=SeasonStage.ONGOING))
@@ -197,7 +197,7 @@ async def test_the_form_offers_only_the_role_once_the_team_list_is_fixed():
 
 
 async def test_the_reserve_team_is_sent_to_its_own_command():
-    from cogs.team_cog import TeamCog
+    from leaguebot.core.cogs.team_cog import TeamCog
     from tests.support.undecorate import undecorate
 
     cog = _modify_cog(team={**TEAM, "name": "Reserve", "full_name": "Reserve", "is_reserve": True})
@@ -243,7 +243,7 @@ async def test_changing_the_role_moves_the_drivers_seated_in_the_team():
 
 async def test_a_name_changed_after_the_list_was_fixed_refuses_the_whole_submission():
     """The window closed while the form stood open: nothing is written, not even the role."""
-    from models.season import SeasonStage
+    from leaguebot.core.models.season import SeasonStage
 
     cog = _modify_cog(season=MagicMock(season_number=3, stage=SeasonStage.ONGOING))
 
@@ -268,7 +268,7 @@ async def test_a_role_another_team_holds_writes_nothing():
 
 
 async def test_a_team_removed_while_the_form_stood_open_is_reported():
-    from services.team_service import TeamReference
+    from leaguebot.core.services.team_service import TeamReference
 
     cog = _modify_cog()
     cog.bot.team_service.resolve_server_team = AsyncMock(

@@ -17,8 +17,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog  # noqa: E402
-from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS  # noqa: E402
 
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ class _Interaction:
 
 def _context(**overrides):
     """A resolved preview context, as `resolve_context` would return one."""
-    from services.image_preview_service import PreviewContext
+    from leaguebot.image.services.image_preview_service import PreviewContext
 
     values = dict(
         season_number=1,
@@ -109,7 +109,7 @@ class TestTheGroup:
         """The ceiling check is worthless if it does not look at the group that grew."""
         import inspect
 
-        from cogs import image_cog
+        from leaguebot.image.cogs import image_cog
 
         source = inspect.getsource(image_cog._verify_discord_group_limits)
         assert "ImageCog.test" in source
@@ -305,7 +305,7 @@ class TestTheReply:
 
     async def test_a_rejected_directory_is_named_with_its_value_and_reason(self, cog):
         """FR-037, FR-038 — the manager is told which value was refused, and why."""
-        from services.image_preview_service import DirectoryFault
+        from leaguebot.image.services.image_preview_service import DirectoryFault
 
         interaction = _Interaction()
 
@@ -343,7 +343,7 @@ class TestTheReply:
 
     async def test_the_reply_stays_within_discords_message_limit(self, cog):
         """A division of many drivers must not push the reply past what Discord accepts."""
-        from services.image_preview_service import DirectoryFault
+        from leaguebot.image.services.image_preview_service import DirectoryFault
 
         interaction = _Interaction()
 
@@ -482,7 +482,7 @@ class TestAutocompleteFollowsTheDrawnSeason:
 
         Which season counts as previewable — approved first, pending approval otherwise —
         is decided inside `get_previewable_divisions`, and is covered against a real
-        database in `tests/unit/test_season_previewable_lookup.py`.
+        database in `tests/core/test_season_previewable_lookup.py`.
         """
         cog.bot = SimpleNamespace(
             season_service=SimpleNamespace(
@@ -522,7 +522,7 @@ class TestBothParametersAreRequired:
                 assert parameter.required, f"{command.name}.{parameter.name}"
 
     def test_every_round_scoped_command_still_offers_a_round(self):
-        from models.image_constants import PREVIEW_KINDS
+        from leaguebot.image.models.image_constants import PREVIEW_KINDS
 
         for command in ImageCog.test.commands:
             names = {p.name for p in command.parameters}
@@ -645,7 +645,7 @@ class TestTheNoticeBlock:
 
     @staticmethod
     def _notice(detail, field_id=None, kind="ASSET_FALLBACK_USED"):
-        from models.image_module import RenderNotice
+        from leaguebot.image.models.image_module import RenderNotice
 
         return RenderNotice(
             image_type="standings_drivers",

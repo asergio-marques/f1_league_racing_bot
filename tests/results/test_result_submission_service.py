@@ -8,10 +8,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.points_config import SessionType
-from models.round import RoundFormat
-from models.session_result import OutcomeModifier
-from services.result_submission_service import (
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.session_result import OutcomeModifier
+from leaguebot.results.services.result_submission_service import (
     ParsedQualifyingRow,
     ParsedRaceRow,
     _format_time_ms,
@@ -22,7 +22,7 @@ from services.result_submission_service import (
     get_sessions_for_format,
     validate_submission_block,
 )
-from utils.tyre_compound import TYRE_COMPOUNDS
+from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
 from tests.support.teams import seed_team_instances  # noqa: E402
 
 
@@ -621,7 +621,7 @@ async def test_submission_channel_not_closed_after_final_session(monkeypatch):
     all-cancelled early-exit path. We verify that enter_penalty_state is the final
     call after all session loops and that it appears after any early-exit returns."""
     import inspect
-    from services.result_submission_service import run_result_submission_job
+    from leaguebot.results.services.result_submission_service import run_result_submission_job
 
     source = inspect.getsource(run_result_submission_job)
     final_block = source[source.rfind("# 9+10"):]
@@ -634,8 +634,8 @@ async def test_submission_channel_not_closed_after_final_session(monkeypatch):
 
 async def test_penalty_state_entered_after_final_session(tmp_path):
     """is_channel_in_penalty_review returns True once in_penalty_review=1 is set in the DB."""
-    from db.database import get_connection, run_migrations
-    from services.result_submission_service import is_channel_in_penalty_review
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -670,8 +670,8 @@ async def test_penalty_state_entered_after_final_session(tmp_path):
 
 async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
     """is_channel_in_penalty_review returns False when in_penalty_review=0."""
-    from db.database import get_connection, run_migrations
-    from services.result_submission_service import is_channel_in_penalty_review
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -972,8 +972,8 @@ async def _seed_round(db) -> int:
 
 async def test_other_active_team_assignments_reads_other_active_sessions_only(tmp_path):
     """Excludes the queried session type and any non-ACTIVE session (FR-065)."""
-    from db.database import get_connection, run_migrations
-    from services.result_submission_service import other_active_team_assignments
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.result_submission_service import other_active_team_assignments
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -1020,8 +1020,8 @@ async def test_other_active_team_assignments_reads_other_active_sessions_only(tm
 
 
 async def test_other_active_team_assignments_excludes_the_session_being_validated(tmp_path):
-    from db.database import get_connection, run_migrations
-    from services.result_submission_service import other_active_team_assignments
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.result_submission_service import other_active_team_assignments
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -1057,8 +1057,8 @@ async def test_other_active_team_assignments_excludes_the_session_being_validate
 async def test_other_active_team_assignments_leaves_out_the_sessions_an_amendment_replaces(tmp_path):
     """Their recorded rows are about to go, and must not be held against their own correction
     (#345) — the sessions an amendment is not touching still count."""
-    from db.database import get_connection, run_migrations
-    from services.result_submission_service import other_active_team_assignments
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.result_submission_service import other_active_team_assignments
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)

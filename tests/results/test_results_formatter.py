@@ -8,9 +8,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
-from models.standings_snapshot import DriverStandingsSnapshot
-from utils.results_formatter import (
+from leaguebot.core.models.session_result import OutcomeModifier, QualifyingSessionResult, RaceSessionResult
+from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot
+from leaguebot.results.utils.results_formatter import (
     NOT_APPLICABLE,
     _collapse_trailing_zeros,
     build_qualifying_rows,

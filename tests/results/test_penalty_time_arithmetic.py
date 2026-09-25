@@ -37,7 +37,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.penalty_service import (  # noqa: E402
+from leaguebot.results.services.penalty_service import (  # noqa: E402
     _apply_time_penalty,
     _delta_to_ms,
     _ms_to_delta,

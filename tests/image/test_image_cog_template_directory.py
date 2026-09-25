@@ -36,10 +36,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog  # noqa: E402
-from models.image_constants import ASPECTS  # noqa: E402
-from services.image_validity_service import Problem  # noqa: E402
-from utils.paths import PathContainmentError  # noqa: E402
+from leaguebot.image.cogs.image_cog import ImageCog  # noqa: E402
+from leaguebot.image.models.image_constants import ASPECTS  # noqa: E402
+from leaguebot.image.services.image_validity_service import Problem  # noqa: E402
+from leaguebot.core.utils.paths import PathContainmentError  # noqa: E402
 
 
 def _interaction(guild_id: int = 1):
@@ -68,7 +68,7 @@ def _cog(monkeypatch, *, problems=None, contained=True):
     cog._log = AsyncMock()
     cog._reject_directory = AsyncMock()
 
-    import utils.paths as paths
+    import leaguebot.core.utils.paths as paths
 
     if contained:
         monkeypatch.setattr(
@@ -84,7 +84,7 @@ def _cog(monkeypatch, *, problems=None, contained=True):
 
     monkeypatch.setattr(paths, "relative_to_root", lambda resolved: "resources/mine")
 
-    import services.image_validity_service as validity
+    import leaguebot.image.services.image_validity_service as validity
 
     monkeypatch.setattr(
         validity,
@@ -158,7 +158,7 @@ async def test_a_path_escaping_the_project_root_is_refused_before_any_parsing(
 
     cog = _cog(monkeypatch, contained=False)
 
-    import services.image_validity_service as validity
+    import leaguebot.image.services.image_validity_service as validity
 
     monkeypatch.setattr(
         validity,

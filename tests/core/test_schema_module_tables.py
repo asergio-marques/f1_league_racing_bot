@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 @pytest.mark.asyncio
 async def test_the_signup_module_tables_exist() -> None:
     """The schema holds the signup module's tables."""
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -49,7 +49,7 @@ async def test_the_signup_module_tables_exist() -> None:
 @pytest.mark.asyncio
 async def test_forecast_channel_id_is_nullable() -> None:
     """divisions.forecast_channel_id must accept NULL."""
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -90,7 +90,7 @@ async def test_forecast_channel_id_is_nullable() -> None:
 @pytest.mark.asyncio
 async def test_module_flag_columns_default_to_zero() -> None:
     """server_configs must have weather_module_enabled and signup_module_enabled defaulting to 0."""
-    from db.database import run_migrations, get_connection
+    from leaguebot.core.db.database import run_migrations, get_connection
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name

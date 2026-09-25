@@ -57,7 +57,7 @@ FULL_DRAFT = {
 
 
 def _wizard(draft: dict | None = None):
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
 
     return SignupWizardRecord(
         id=1,
@@ -79,7 +79,7 @@ def _wizard(draft: dict | None = None):
 
 @pytest.fixture
 def committer():
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     saved: list = []
@@ -174,7 +174,7 @@ async def test_an_unanswered_question_arrives_as_its_empty_form(committer):
 
 
 async def test_a_committed_signup_awaits_admin_approval(committer):
-    from models.driver_profile import DriverState
+    from leaguebot.core.models.driver_profile import DriverState
 
     await _commit(committer)
 
@@ -201,7 +201,7 @@ async def test_a_driver_with_no_wizard_commits_nothing(committer):
 async def test_the_wizard_is_parked_and_its_draft_cleared(committer):
     """Left populated, a later advance would commit the same answers again and the league
     would see two signups for one driver."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard()
     committer.signup_svc.get_wizard = AsyncMock(return_value=wizard)
@@ -283,7 +283,7 @@ async def test_a_first_submission_is_logged_as_submitted(committer):
 async def test_a_correction_is_logged_as_a_correction(committer):
     """How a manager tells "this driver has just signed up" from "this driver has fixed
     the thing I asked about"."""
-    from models.driver_profile import DriverState
+    from leaguebot.core.models.driver_profile import DriverState
 
     committer.driver_service.get_profile = AsyncMock(
         return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
@@ -297,7 +297,7 @@ async def test_a_correction_is_logged_as_a_correction(committer):
 async def test_a_correction_amends_the_signup_it_was_asked_of(committer):
     """Issue #220: signups are kept, never overwritten, so a correction must name the record
     it amends or it would be stored as a second signup."""
-    from models.driver_profile import DriverState
+    from leaguebot.core.models.driver_profile import DriverState
 
     committer.driver_service.get_profile = AsyncMock(
         return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
@@ -317,7 +317,7 @@ async def test_a_first_submission_is_a_new_signup(committer):
 async def test_the_prior_state_is_read_before_anything_is_written(committer):
     """Read after the transition it would always say `PENDING_ADMIN_APPROVAL`, and every
     submission would log as a first one."""
-    from models.driver_profile import DriverState
+    from leaguebot.core.models.driver_profile import DriverState
 
     committer.driver_service.get_profile = AsyncMock(
         return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
@@ -346,7 +346,7 @@ def test_every_send_of_the_review_panel_restricts_mentions():
     import inspect
     import re
 
-    from services import wizard_service
+    from leaguebot.signup.services import wizard_service
 
     source = inspect.getsource(wizard_service)
     sends = re.findall(r"view=AdminReviewView\([^)]*\),[^\n]*\n\s*([a-z_]+)=", source)

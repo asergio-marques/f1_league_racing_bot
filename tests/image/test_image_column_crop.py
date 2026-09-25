@@ -24,10 +24,10 @@ from lxml import etree
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import column_crop_fields  # noqa: E402
-from models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS  # noqa: E402
-from utils.svg_document import length  # noqa: E402
-from utils.svg_fill import FillSpec, _left_edge, _path_rule_x, fill  # noqa: E402
+from leaguebot.image.models.image_catalogues import column_crop_fields  # noqa: E402
+from leaguebot.image.models.image_constants import NOTICE_CROP_POINT_OFF_CANVAS  # noqa: E402
+from leaguebot.image.utils.svg_document import length  # noqa: E402
+from leaguebot.image.utils.svg_fill import FillSpec, _left_edge, _path_rule_x, fill  # noqa: E402
 
 TEMPLATES = Path(__file__).resolve().parents[2] / "resources" / "defaults" / "templates"
 SVG = "http://www.w3.org/2000/svg"

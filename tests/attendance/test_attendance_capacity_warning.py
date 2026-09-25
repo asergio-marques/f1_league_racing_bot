@@ -37,9 +37,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
-from models.image_catalogues import CapacityError  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.image.models.image_catalogues import CapacityError  # noqa: E402
 
 SERVER_ID = 13108
 SEASON_ID = 1
@@ -111,8 +111,8 @@ async def _warn(cog, *, columns=24, sessions=4, error=None):
     catalogue = MagicMock()
     catalogue.column_capacity = MagicMock(return_value=columns, side_effect=error)
     catalogue.capacity = MagicMock(return_value=sessions, side_effect=error)
-    with patch("utils.svg_document.load_svg", new=MagicMock()), patch(
-        "models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)
+    with patch("leaguebot.image.utils.svg_document.load_svg", new=MagicMock()), patch(
+        "leaguebot.image.models.image_catalogues.catalogue_for", new=MagicMock(return_value=catalogue)
     ):
         return await cog._attendance_capacity_warning(SEASON_ID)
 

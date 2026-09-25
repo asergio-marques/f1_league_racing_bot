@@ -12,10 +12,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.attendance_service import _seat_team_keys, _seat_team_names  # noqa: E402
-from services.standings_service import opening_team_standings  # noqa: E402
-from services.team_service import (  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services.attendance_service import _seat_team_keys, _seat_team_names  # noqa: E402
+from leaguebot.results.services.standings_service import opening_team_standings  # noqa: E402
+from leaguebot.core.services.team_service import (  # noqa: E402
     team_artwork_keys_for_instances,
     team_names_for_instances,
 )

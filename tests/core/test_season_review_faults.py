@@ -34,7 +34,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
 
 SERVER_ID = 11808
 
@@ -93,7 +93,7 @@ def _make_cog(
 
 def _weather(cog):
     return patch(
-        "services.weather_config_service.get_weather_pipeline_config",
+        "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(return_value=cog._weather_config),
     )
 

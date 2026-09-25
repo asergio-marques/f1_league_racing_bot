@@ -31,7 +31,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.results_formatter import (  # noqa: E402
+from leaguebot.results.utils.results_formatter import (  # noqa: E402
     format_config_view,
     format_gap_to_leader,
     format_team_standings,

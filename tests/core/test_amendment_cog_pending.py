@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
-from models.round import RoundFormat
+from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
+from leaguebot.core.models.round import RoundFormat
 from tests.support.undecorate import undecorate  # noqa: E402
 
 
@@ -92,7 +92,7 @@ async def test_pending_amend_track_change() -> None:
     mock_cm.__aenter__ = AsyncMock(return_value=mock_db)
     mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("cogs.season_cog.get_connection", return_value=mock_cm):
+    with patch("leaguebot.core.cogs.season_cog.get_connection", return_value=mock_cm):
         await undecorate(cog.round_amend)(cog, interaction,
             division_name="Pro",
             round_number=1,

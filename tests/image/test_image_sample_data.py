@@ -120,7 +120,7 @@ VERDICT_TEMPLATE = (
 
 
 def _verdict_root():
-    from utils.svg_document import parse_svg_bytes
+    from leaguebot.image.utils.svg_document import parse_svg_bytes
 
     return parse_svg_bytes(VERDICT_TEMPLATE)
 
@@ -147,7 +147,7 @@ def test_seven_verdict_cases_are_drawn_from_the_one_template():
 
 
 def test_the_cases_cover_all_three_kinds_both_signs_and_no_further_action():
-    from services.image_verdict_service import VerdictKind
+    from leaguebot.image.services.image_verdict_service import VerdictKind
 
     drawings = _all_verdict_drawings()
 
@@ -242,7 +242,7 @@ def test_build_spec_empties_the_session_and_team_for_a_sanction():
 # `/images test <kind>` command — its `_SAMPLE_VARIANTS` table and the source text of its
 # `needs_tracks` / `needs_teams` guards. That command is replaced by the eleven previews of
 # feature 045, whose refusals are covered against the resolution path itself in
-# `tests/unit/test_image_preview_service.py` rather than by reading the cog's source.
+# `tests/image/test_image_preview_service.py` rather than by reading the cog's source.
 #
 # The track guard has no successor: a preview is drawn against a real round, which names a
 # real circuit, so "the server's track list is empty" is no longer a state a preview can be
@@ -258,7 +258,7 @@ def test_every_sample_nationality_maps_to_a_country():
     would silently draw the flag directory's fallback on every test render.
     """
     from tests.support.image_sample_data import SAMPLE_LINEUP_NATIONALITIES
-    from utils.country_data import NATIONALITY_COUNTRIES, country_for_nationality
+    from leaguebot.image.utils.country_data import NATIONALITY_COUNTRIES, country_for_nationality
 
     for nationality in SAMPLE_LINEUP_NATIONALITIES:
         assert nationality in NATIONALITY_COUNTRIES, (
@@ -277,7 +277,7 @@ def test_the_calendar_sample_draws_a_cancelled_round():
     the one no render of theirs ever shows."""
     from lxml import etree
 
-    from services.image_calendar_service import build_fill_spec
+    from leaguebot.image.services.image_calendar_service import build_fill_spec
     from tests.support.image_sample_data import build_calendar_drawing
 
     from pathlib import Path

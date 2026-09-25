@@ -33,13 +33,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 # The results pipeline's session types, not the weather module's — `penalty_service`
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
-from models.points_config import SessionType  # noqa: E402
-from services.penalty_service import StagedPenalty  # noqa: E402
-from services.penalty_wizard import (  # noqa: E402
+from leaguebot.results.models.points_config import SessionType  # noqa: E402
+from leaguebot.results.services.penalty_service import StagedPenalty  # noqa: E402
+from leaguebot.results.services.penalty_wizard import (  # noqa: E402
     PenaltyReviewState,
     StagedPardon,
     _is_league_manager,
@@ -128,7 +128,7 @@ async def test_a_league_admin_may_drive_the_review(monkeypatch):
     """Issue #116, on the button-driven half. The gate asks `is_league_manager`, and the
     higher tier carries the lower — so an admin passes without also holding the
     interaction role. Asking for that role alone refused all thirteen buttons."""
-    import services.penalty_wizard as pw
+    import leaguebot.results.services.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     interaction = _interaction()
@@ -137,7 +137,7 @@ async def test_a_league_admin_may_drive_the_review(monkeypatch):
 
 
 async def test_an_ordinary_member_may_not(monkeypatch):
-    import services.penalty_wizard as pw
+    import leaguebot.results.services.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     interaction = _interaction()
@@ -161,7 +161,7 @@ async def test_an_unconfigured_server_refuses_rather_than_assuming():
 
 
 async def test_a_refused_actor_is_told_why(monkeypatch):
-    import services.penalty_wizard as pw
+    import leaguebot.results.services.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     interaction = _interaction()
@@ -171,7 +171,7 @@ async def test_a_refused_actor_is_told_why(monkeypatch):
 
 
 async def test_a_permitted_actor_is_not_interrupted(monkeypatch):
-    import services.penalty_wizard as pw
+    import leaguebot.results.services.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     interaction = _interaction()
@@ -436,7 +436,7 @@ async def test_a_pardon_is_numbered_for_removal(tmp_path, amendment):
 async def test_an_amendments_appeal_stage_does_not_claim_anything_was_posted(tmp_path):
     """The first pass's line — "Post-Race Penalty Results have been posted" — is false during an
     amendment, which publishes nothing until this stage is approved."""
-    from services.penalty_wizard import _render_appeals_prompt_content
+    from leaguebot.results.services.penalty_wizard import _render_appeals_prompt_content
 
     db_path = await _make_db(tmp_path)
     state = _state_for(db_path)

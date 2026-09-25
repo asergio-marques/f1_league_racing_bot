@@ -23,8 +23,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.signup_cog import SignupCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.signup.cogs.signup_cog import SignupCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from tests.support.undecorate import undecorate  # noqa: E402
 
 SERVER_ID = 7731
@@ -75,7 +75,7 @@ async def _seed(tmp_path, *, signups_open: bool = True, close_at: str | None = N
 
 
 def _cog(db_path):
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -118,7 +118,7 @@ async def _close(cog, interaction):
 
 
 async def _close_at(db_path) -> str | None:
-    from services.signup_module_service import SignupModuleService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     cfg = await SignupModuleService(db_path).get_config()
     return cfg.close_at
@@ -178,7 +178,7 @@ class TestTheCloseRefusal:
 
     async def test_cancel_unblocks_a_manual_close(self, tmp_path, monkeypatch):
         """The whole point of the fix: after a cancel, closing by hand actually closes."""
-        from cogs import signup_cog
+        from leaguebot.signup.cogs import signup_cog
 
         forced_close = AsyncMock()
         monkeypatch.setattr(signup_cog, "execute_forced_close", forced_close)
@@ -211,7 +211,7 @@ class TestCancel:
 
     async def test_it_leaves_signups_open(self, tmp_path):
         """The window survives the cancel — only the timer goes."""
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         db_path = await _seed(tmp_path, close_at=ARMED)
 
@@ -378,7 +378,7 @@ class TestOneRuleForTheCloseTime:
         ],
     )
     async def test_open_and_add_refuse_the_same_input_the_same_way(self, bad, expected):
-        from cogs import signup_cog
+        from leaguebot.signup.cogs import signup_cog
 
         iso, error = signup_cog._parse_close_time(bad, now=NOW)
 
@@ -386,7 +386,7 @@ class TestOneRuleForTheCloseTime:
         assert expected in error
 
     async def test_a_naive_time_is_read_as_utc(self):
-        from cogs import signup_cog
+        from leaguebot.signup.cogs import signup_cog
 
         iso, error = signup_cog._parse_close_time("2026-06-08T20:00:00", now=NOW)
 
@@ -395,7 +395,7 @@ class TestOneRuleForTheCloseTime:
 
     async def test_open_routes_through_the_shared_parser(self, monkeypatch, tmp_path):
         """Not just the same rule by coincidence — the same function."""
-        from cogs import signup_cog
+        from leaguebot.signup.cogs import signup_cog
 
         calls: list[str] = []
 

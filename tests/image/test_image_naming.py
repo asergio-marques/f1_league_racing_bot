@@ -1,4 +1,4 @@
-"""What a generated image is called — `utils.image_naming`.
+"""What a generated image is called — `leaguebot.image.utils.image_naming`.
 
 The rule it exists to keep in one place: the picture is named for what it is **of**, not
 for the template that drew it. A manager collecting a season's graphics could not otherwise
@@ -14,8 +14,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import TEMPLATE_COLUMNS
-from utils.image_naming import (
+from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS
+from leaguebot.image.utils.image_naming import (
     IMAGE_SUBJECTS,
     image_filename_stem,
     stem_for_drawing,
@@ -178,8 +178,8 @@ async def test_the_render_service_names_the_png_from_the_stem(tmp_path, monkeypa
     and leave the one site that passes no filename at all — the verdict announcement —
     showing a league the raw template key.
     """
-    import services.image_render_service as render_service
-    from utils.svg_fill import FillSpec
+    import leaguebot.image.services.image_render_service as render_service
+    from leaguebot.image.utils.svg_fill import FillSpec
     from lxml import etree
 
     monkeypatch.setattr(render_service, "converter_available", lambda *a, **k: True)
@@ -215,8 +215,8 @@ async def test_the_render_service_names_the_png_from_the_stem(tmp_path, monkeypa
 @pytest.mark.asyncio
 async def test_no_stem_still_falls_back_to_the_template_key(tmp_path, monkeypatch):
     """A caller that names nothing must still get a file, as it always did."""
-    import services.image_render_service as render_service
-    from utils.svg_fill import FillSpec
+    import leaguebot.image.services.image_render_service as render_service
+    from leaguebot.image.utils.svg_fill import FillSpec
 
     monkeypatch.setattr(render_service, "converter_available", lambda *a, **k: True)
     monkeypatch.setattr(

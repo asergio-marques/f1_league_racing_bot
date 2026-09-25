@@ -29,8 +29,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import DATE_FORMATS, TIME_FORMATS  # noqa: E402
-from utils.date_formatting import (  # noqa: E402
+from leaguebot.image.models.image_constants import DATE_FORMATS, TIME_FORMATS  # noqa: E402
+from leaguebot.core.utils.date_formatting import (  # noqa: E402
     DEFAULT_DATE_FORMAT,
     format_date,
     format_date_and_time,
@@ -182,8 +182,8 @@ def test_the_calendar_and_the_check_in_call_format_identically():
     A format added to the table had to be correct in two functions to be correct at all,
     which is one more place to drift than is useful.
     """
-    from services.image_calendar_service import _format_moment as calendar_moment
-    from services.image_rsvp_service import format_moment as rsvp_moment
+    from leaguebot.image.services.image_calendar_service import _format_moment as calendar_moment
+    from leaguebot.image.services.image_rsvp_service import format_moment as rsvp_moment
 
     for token in DATE_FORMATS:
         assert calendar_moment(SUNDAY, token, "24H", "Europe/Lisbon") == rsvp_moment(

@@ -25,7 +25,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 4242
 
@@ -129,8 +129,8 @@ async def test_every_reader_of_the_season_resolves_the_same_row(db_path):
     disagree, and both are ordered so they would still agree on a database that predates
     the constraint.
     """
-    from services.season_service import SeasonService
-    from services.test_roster_service import _get_active_season_id
+    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.test_roster_service import _get_active_season_id
 
     season_id = await _add_season(db_path, "SETUP", 1)
 

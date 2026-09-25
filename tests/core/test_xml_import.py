@@ -8,15 +8,15 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.points_config import SessionType
-from services.points_config_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.points_config_service import (
     ConfigNotFoundError,
     create_config,
     get_config_entries,
     xml_import_config,
 )
-from utils.xml_import import (
+from leaguebot.core.utils.xml_import import (
     XmlImportError,
     XmlImportPayload,
     parse_xml_payload,
@@ -400,7 +400,7 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     await create_config(db_path, config_name="Test")
 
     # Seed Sprint Race via a separate import
-    from services.points_config_service import set_session_points
+    from leaguebot.results.services.points_config_service import set_session_points
 
     await set_session_points(db_path, "Test", SessionType.SPRINT_RACE, 1, 8)
     await set_session_points(db_path, "Test", SessionType.SPRINT_RACE, 2, 7)
@@ -424,7 +424,7 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
 @pytest.mark.asyncio
 async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     """When FL limit not in payload, existing fl_position_limit in DB is preserved."""
-    from services.points_config_service import set_fl_bonus, set_fl_position_limit
+    from leaguebot.results.services.points_config_service import set_fl_bonus, set_fl_position_limit
 
     await create_config(db_path, config_name="Test")
     await set_fl_bonus(db_path, "Test", SessionType.FEATURE_RACE, 1)

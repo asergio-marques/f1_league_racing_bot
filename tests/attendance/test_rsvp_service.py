@@ -23,8 +23,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from services.rsvp_service import run_reserve_distribution
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services.rsvp_service import run_reserve_distribution
 
 
 # ---------------------------------------------------------------------------
@@ -655,7 +655,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_bulk_insert_and_get(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.bulk_insert_attendance_rows(
@@ -669,7 +669,7 @@ class TestAttendanceServiceCrud:
     async def test_bulk_insert_idempotent(self, tmp_path):
         """INSERT OR IGNORE: calling twice should not raise or duplicate."""
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.bulk_insert_attendance_rows(1, 10, [100, 200])
@@ -680,7 +680,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_upsert_sets_accepted_at_for_accepted(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.bulk_insert_attendance_rows(1, 10, [100])
@@ -693,7 +693,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_upsert_clears_accepted_at_for_declined(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.bulk_insert_attendance_rows(1, 10, [100])
@@ -711,7 +711,7 @@ class TestAttendanceServiceCrud:
         was posted. A driver placed into the division afterwards answers a call with no row of
         their own, and this used to be two bare UPDATEs that discarded the answer in silence."""
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED")
@@ -726,7 +726,7 @@ class TestAttendanceServiceCrud:
         case of it — the reserve distribution orders by that column and a row born with a
         timestamp it never earned would jump the queue."""
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.upsert_rsvp_status(1, 10, 100, "DECLINED")
@@ -741,7 +741,7 @@ class TestAttendanceServiceCrud:
         driver the truth instead of assuming, which is the half of issue #209 that let a
         success message stand over a write that changed nothing."""
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         assert await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED") is True   # inserted
@@ -750,7 +750,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_get_attendance_row_for_driver_returns_none_when_missing(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         row = await svc.get_attendance_row_for_driver(99, 10, 999)
         assert row is None
@@ -758,7 +758,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_insert_and_get_embed_message(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.insert_embed_message(1, 10, "999000111", "555000222")
@@ -771,7 +771,7 @@ class TestAttendanceServiceCrud:
     async def test_insert_embed_message_upserts(self, tmp_path):
         """Re-inserting same (round, division) should update message_id, not raise."""
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.insert_embed_message(1, 10, "first_msg", "111")
@@ -783,7 +783,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_get_embed_message_returns_none_when_missing(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
         em = await svc.get_embed_message(round_id=99, division_id=10)
         assert em is None
@@ -791,7 +791,7 @@ class TestAttendanceServiceCrud:
     @pytest.mark.asyncio
     async def test_get_all_embed_messages(self, tmp_path):
         db_path = await _make_attendance_db(tmp_path)
-        from services.attendance_service import AttendanceService
+        from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
         await svc.insert_embed_message(1, 10, "msg_a", "ch1")

@@ -14,10 +14,10 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import run_migrations  # noqa: E402
-from models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS  # noqa: E402
-from models.image_module import ImageConfig  # noqa: E402
-from services.image_config_service import (  # noqa: E402
+from leaguebot.core.db.database import run_migrations  # noqa: E402
+from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS  # noqa: E402
+from leaguebot.image.models.image_module import ImageConfig  # noqa: E402
+from leaguebot.image.services.image_config_service import (  # noqa: E402
     PFP_FLAG_COLUMNS,
     SETTABLE_COLUMNS,
     ImageConfigService,
@@ -145,16 +145,16 @@ async def test_toggling_one_aspect_leaves_the_others_alone(service):
 
 import dataclasses as _dc  # noqa: E402
 
-from models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
-from models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
-from models.image_module import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
+from leaguebot.image.models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
+from leaguebot.image.models.image_module import (  # noqa: E402
     PROBLEM_EXTENSION,
     PROBLEM_MISSING_MANDATORY_FIELD,
     PROBLEM_NOT_FOUND,
     PROBLEM_NOT_SVG,
     ImageConfig as _ImageConfig,
 )
-from services.image_validity_service import (  # noqa: E402
+from leaguebot.image.services.image_validity_service import (  # noqa: E402
     check_all_templates,
     check_filename,
     check_template,

@@ -20,13 +20,13 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_module import (  # noqa: E402
+from leaguebot.image.models.image_module import (  # noqa: E402
     STATE_DISABLED,
     STATE_ENABLED,
     STATE_ENABLED_INVALID,
     ValidityReport,
 )
-from services.image_validity_service import (  # noqa: E402
+from leaguebot.image.services.image_validity_service import (  # noqa: E402
     build_aspect_statuses,
     colour_shortfall,
 )
@@ -172,7 +172,7 @@ async def test_nothing_is_demanded_while_the_feature_is_off():
     config_service.get_all_tier_colours = AsyncMock()
     config_service.season_division_names = AsyncMock()
 
-    from services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     service = ImageValidityService(config_service, MagicMock())
     assert await service.colour_shortfall({CALENDAR: _report(slots={"accent"})}) == {}
@@ -188,7 +188,7 @@ async def test_the_shortfall_is_computed_once_the_feature_is_on():
     config_service.get_all_tier_colours = AsyncMock(return_value={})
     config_service.season_division_names = AsyncMock(return_value=["Division 1"])
 
-    from services.image_validity_service import ImageValidityService
+    from leaguebot.image.services.image_validity_service import ImageValidityService
 
     service = ImageValidityService(config_service, MagicMock())
     shortfall = await service.colour_shortfall({CALENDAR: _report(slots={"accent"})})
@@ -230,7 +230,7 @@ def test_the_aspect_toggle_passes_the_shortfall_through():
     """
     import inspect
 
-    from cogs.image_cog import ImageCog
+    from leaguebot.image.cogs.image_cog import ImageCog
 
     assert "colour_shortfall=" in inspect.getsource(
         ImageCog._aspect_blocking_reasons_if_enabled
@@ -244,7 +244,7 @@ def test_the_aspect_toggle_passes_the_shortfall_through():
 
 async def test_the_approval_gate_flattens_the_same_shortfall():
     """The confirmation of placements reads `colour_shortfall`, not a rule of its own."""
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = MagicMock(spec=SeasonCog)
     cog.bot = MagicMock()
@@ -256,7 +256,7 @@ async def test_the_approval_gate_flattens_the_same_shortfall():
 
 
 async def test_the_approval_gate_is_silent_when_nothing_is_short():
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = MagicMock(spec=SeasonCog)
     cog.bot = MagicMock()
@@ -266,7 +266,7 @@ async def test_the_approval_gate_is_silent_when_nothing_is_short():
 
 async def test_a_reader_fault_never_refuses_a_season():
     """The rule of `_team_name_problems`: a check that cannot answer must not block."""
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     cog = MagicMock(spec=SeasonCog)
     cog.bot = MagicMock()
@@ -284,7 +284,7 @@ def test_approval_is_gated_on_it():
     """
     import inspect
 
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
     faults = inspect.getsource(SeasonCog._image_configuration_faults)
     approve = inspect.getsource(SeasonCog._do_approve)

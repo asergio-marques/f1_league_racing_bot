@@ -26,9 +26,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services import rsvp_service  # noqa: E402
-from services.attendance_service import AttendanceService  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.attendance.services import rsvp_service  # noqa: E402
+from leaguebot.attendance.services.attendance_service import AttendanceService  # noqa: E402
 
 #: The moment every round is placed relative to.
 NOW = datetime(2026, 10, 5, 18, 0, tzinfo=timezone.utc)

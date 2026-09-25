@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.scheduler_service import (
+from leaguebot.core.services.scheduler_service import (
     SchedulerService,
     default_jobstore_path,
     prepare_jobstore,
@@ -197,7 +197,7 @@ async def test_naming_a_new_time_re_arms_rather_than_duplicating(workspace):
     """Started, because a stopped scheduler queues `add_job` and applies
     `replace_existing` only when it flushes -- so a stopped one shows two pending jobs
     under one id and would pass this test for the wrong reason."""
-    from services import scheduler_service as m
+    from leaguebot.core.services import scheduler_service as m
 
     _db_path, build = workspace
     service = build()
@@ -226,7 +226,7 @@ def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
 
 
 async def test_the_job_delegates_to_the_registered_callback(workspace):
-    from services import scheduler_service as m
+    from leaguebot.core.services import scheduler_service as m
 
     _db_path, build = workspace
     service = build()
@@ -246,7 +246,7 @@ async def test_the_job_delegates_to_the_registered_callback(workspace):
 
 
 async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
-    from services import scheduler_service as m
+    from leaguebot.core.services import scheduler_service as m
 
     _db_path, build = workspace
     service = build()
@@ -265,7 +265,7 @@ async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
 def _round_at(round_id: int, round_number: int):
     from datetime import datetime, timezone
 
-    from models.round import Round, RoundFormat
+    from leaguebot.core.models.round import Round, RoundFormat
 
     return Round(
         id=round_id,
@@ -289,7 +289,7 @@ def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     """
     from unittest.mock import MagicMock
 
-    from services.scheduler_service import SchedulerService
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
     svc = SchedulerService.__new__(SchedulerService)
     svc._phase_callbacks = {}
@@ -322,7 +322,7 @@ def test_a_job_id_written_before_the_round_id_existed_still_reports_its_module()
     would fail to parse the jobs already written without one — and weather's disable would stop
     filtering and take results and the check-in down with it, which is issue #117 over again.
     """
-    from services.scheduler_service import _JOB_SUFFIX_RE
+    from leaguebot.core.services.scheduler_service import _JOB_SUFFIX_RE
 
     for job_id, prefix in (
         ("weather_p1_s1_d1_r4", "weather_p1"),          # written before the id was added

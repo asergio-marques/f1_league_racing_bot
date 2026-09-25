@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 async def db_path(tmp_path):
     """The real schema, migrated. It was once built by hand here, and drifted from the
     migrations the moment signups came to belong to a season (issue #220)."""
-    from db.database import get_connection, run_migrations
+    from leaguebot.core.db.database import get_connection, run_migrations
 
     path = str(tmp_path / "signup_test.db")
     await run_migrations(path)
@@ -41,20 +41,20 @@ class TestSlotIdFormat:
     """The durable slot identity is "Mon_19_00" — see AvailabilitySlot's docstring."""
 
     def test_slot_id_format(self):
-        from models.signup_module import AvailabilitySlot
+        from leaguebot.signup.models.signup_module import AvailabilitySlot
         assert AvailabilitySlot.make_slot_id(1, "19:00") == "Mon_19_00"
         assert AvailabilitySlot.make_slot_id(5, "21:30") == "Fri_21_30"
         assert AvailabilitySlot.make_slot_id(7, "09:05") == "Sun_09_05"
 
     def test_slot_id_covers_every_weekday(self):
-        from models.signup_module import AvailabilitySlot
+        from leaguebot.signup.models.signup_module import AvailabilitySlot
         assert [AvailabilitySlot.make_slot_id(d, "12:00") for d in range(1, 8)] == [
             "Mon_12_00", "Tue_12_00", "Wed_12_00", "Thu_12_00",
             "Fri_12_00", "Sat_12_00", "Sun_12_00",
         ]
 
     async def test_get_slots_populates_slot_id(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(5, "21:00")
         slots = await svc.get_slots()
@@ -63,7 +63,7 @@ class TestSlotIdFormat:
 
 class TestSlotAdd:
     async def test_add_happy_path(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(1, "14:30")
         slots = await svc.get_slots()
@@ -73,7 +73,7 @@ class TestSlotAdd:
         assert slots[0].slot_sequence_id == 1
 
     async def test_add_duplicate_raises(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(1, "14:30")
         with pytest.raises(ValueError, match="already exists"):
@@ -82,7 +82,7 @@ class TestSlotAdd:
 
 class TestSlotRemove:
     async def test_remove_happy_path(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(2, "10:00")
         result = await svc.remove_slot_by_rank(1)
@@ -91,13 +91,13 @@ class TestSlotRemove:
         assert slots == []
 
     async def test_remove_out_of_range_returns_false(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         result = await svc.remove_slot_by_rank(99)
         assert result is False
 
     async def test_no_slots_returns_false(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         result = await svc.remove_slot_by_rank(1)
         assert result is False
@@ -105,7 +105,7 @@ class TestSlotRemove:
 
 class TestChronologicalRanking:
     async def test_slots_ordered_by_day_then_time(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         # Add out of order
         await svc.add_slot(3, "19:00")   # Wed 19:00
@@ -122,7 +122,7 @@ class TestChronologicalRanking:
 
     async def test_slot_ids_chronological_when_added_out_of_order(self, db_path):
         """Wednesday added first, then Monday → Monday gets #1, Wednesday gets #2."""
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(3, "18:00")   # Wed 18:00 added first
         await svc.add_slot(1, "17:00")   # Mon 17:00 added second
@@ -137,7 +137,7 @@ class TestChronologicalRanking:
         must not move with it is a driver's recorded availability — see
         ``TestDurableSlotIdentity``.
         """
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(1, "14:30")   # Mon 14:30 → seq 1
         await svc.add_slot(1, "20:00")   # Mon 20:00 → seq 2
@@ -162,7 +162,7 @@ class TestDurableSlotIdentity:
 
     async def _friday_league(self, db_path):
         """Mon 19:00 (#1), Wed 20:00 (#2), Fri 21:00 (#3) — the issue's worked example."""
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.add_slot(1, "19:00")
         await svc.add_slot(3, "20:00")
@@ -221,10 +221,10 @@ class TestSnapshotStoresTheDurableIdentity:
     """
 
     async def _saved_snapshot(self, db_path, slots):
-        from models.signup_module import (
+        from leaguebot.signup.models.signup_module import (
             ConfigSnapshot, SignupWizardRecord, WizardState,
         )
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         svc = SignupModuleService(db_path)
         await svc.save_wizard(SignupWizardRecord(
@@ -247,8 +247,8 @@ class TestSnapshotStoresTheDurableIdentity:
     async def test_no_display_ordinal_is_persisted(self, db_path):
         import json
 
-        from db.database import get_connection
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.core.db.database import get_connection
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
@@ -267,7 +267,7 @@ class TestSnapshotStoresTheDurableIdentity:
         assert all("slot_sequence_id" not in s for s in stored["slots"])
 
     async def test_display_ordinals_rebuilt_on_read(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
@@ -282,7 +282,7 @@ class TestSnapshotStoresTheDurableIdentity:
 
     async def test_ordinals_rebuilt_chronologically_however_stored(self, db_path):
         """Order in the stored JSON must not decide the numbers a driver was shown."""
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         svc = SignupModuleService(db_path)
         for day, time_hhmm in ((1, "19:00"), (3, "20:00"), (5, "21:00")):
@@ -299,8 +299,8 @@ class TestSnapshotStoresTheDurableIdentity:
         """An in-flight wizard from before this change carries no slot_id — derive it."""
         import json
 
-        from db.database import get_connection
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.core.db.database import get_connection
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
 
         legacy = {
             "nationality_required": False,
@@ -335,8 +335,8 @@ class TestSnapshotStoresTheDurableIdentity:
 class TestWindowState:
     async def _make_config(self, db_path):
         """Helper: insert a signup_module_config row for server 1."""
-        from services.signup_module_service import SignupModuleService
-        from models.signup_module import SignupModuleConfig
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
+        from leaguebot.signup.models.signup_module import SignupModuleConfig
         svc = SignupModuleService(db_path)
         cfg = SignupModuleConfig(
             signup_channel_id=100,
@@ -371,7 +371,7 @@ class TestWindowState:
 
 
 def _make_record(user_id: str = "u1") -> "SignupRecord":
-    from models.signup_module import SignupRecord
+    from leaguebot.signup.models.signup_module import SignupRecord
     return SignupRecord(
         id=0,
         discord_user_id=user_id,
@@ -394,7 +394,7 @@ class TestSignupRecordCRUD:
     """T053: SignupRecord save/get/clear lifecycle."""
 
     async def test_save_and_get_roundtrip(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         rec = _make_record()
         await svc.save_record(rec)
@@ -406,13 +406,13 @@ class TestSignupRecordCRUD:
         assert fetched.lap_times == {"01": "1:23.456"}
 
     async def test_get_missing_returns_none(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         assert await svc.get_record("ghost") is None
 
     async def test_a_second_signup_is_kept_beside_the_first(self, db_path):
         """Records are never overwritten (issue #220): the latest is what a review reads."""
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_record(_make_record())
         second = _make_record()
@@ -422,7 +422,7 @@ class TestSignupRecordCRUD:
         fetched = await svc.get_record("u1")
         assert fetched is not None
         assert fetched.platform == "PSN"
-        from db.database import get_connection
+        from leaguebot.core.db.database import get_connection
         async with get_connection(db_path) as db:
             cursor = await db.execute(
                 "SELECT COUNT(*) AS n FROM signup_records WHERE discord_user_id = 'u1'"
@@ -431,7 +431,7 @@ class TestSignupRecordCRUD:
 
     async def test_saving_a_stored_record_updates_it_in_place(self, db_path):
         """A correction amends the signup it was asked of."""
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         record_id = await svc.save_record(_make_record())
         stored = await svc.get_record("u1")
@@ -449,7 +449,7 @@ class TestSignupRecordCRUD:
 
 
 def _make_wizard(user_id: str = "w1") -> "SignupWizardRecord":
-    from models.signup_module import SignupWizardRecord, WizardState
+    from leaguebot.signup.models.signup_module import SignupWizardRecord, WizardState
     return SignupWizardRecord(
         id=0,
         discord_user_id=user_id,
@@ -466,8 +466,8 @@ class TestSignupWizardRecordCRUD:
     """T053: SignupWizardRecord save/get/delete/get_by_channel lifecycle."""
 
     async def test_save_and_get_roundtrip(self, db_path):
-        from services.signup_module_service import SignupModuleService
-        from models.signup_module import WizardState
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
+        from leaguebot.signup.models.signup_module import WizardState
         svc = SignupModuleService(db_path)
         wizard = _make_wizard()
         await svc.save_wizard(wizard)
@@ -478,12 +478,12 @@ class TestSignupWizardRecordCRUD:
         assert fetched.signup_channel_id == 777
 
     async def test_get_missing_returns_none(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         assert await svc.get_wizard("ghost") is None
 
     async def test_get_by_channel(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard())
         fetched = await svc.get_wizard_by_channel(777)
@@ -491,21 +491,21 @@ class TestSignupWizardRecordCRUD:
         assert fetched.discord_user_id == "w1"
 
     async def test_get_by_channel_wrong_channel_returns_none(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard())
         assert await svc.get_wizard_by_channel(9999) is None
 
     async def test_delete_wizard(self, db_path):
-        from services.signup_module_service import SignupModuleService
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard())
         await svc.delete_wizard("w1")
         assert await svc.get_wizard("w1") is None
 
     async def test_get_all_active_wizards_excludes_unengaged(self, db_path):
-        from services.signup_module_service import SignupModuleService
-        from models.signup_module import SignupWizardRecord, WizardState
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
+        from leaguebot.signup.models.signup_module import SignupWizardRecord, WizardState
         svc = SignupModuleService(db_path)
         await svc.save_wizard(_make_wizard(user_id="active1"))
         inactive = SignupWizardRecord(
@@ -532,8 +532,8 @@ class TestConfigSnapshotIsolation:
 
     async def test_snapshot_isolated_from_config_changes(self, db_path):
         """Changing live settings does not affect an already-saved snapshot."""
-        from services.signup_module_service import SignupModuleService
-        from models.signup_module import (
+        from leaguebot.signup.services.signup_module_service import SignupModuleService
+        from leaguebot.signup.models.signup_module import (
             SignupModuleSettings, ConfigSnapshot, AvailabilitySlot,
             WizardState, SignupWizardRecord,
         )

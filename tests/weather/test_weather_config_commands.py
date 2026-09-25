@@ -40,10 +40,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.weather_cog import WeatherCog  # noqa: E402
-from models.season import Season, SeasonStatus  # noqa: E402
-from models.weather_config import WeatherPipelineConfig  # noqa: E402
-from services.season_service import SeasonService  # noqa: E402
+from leaguebot.weather.cogs.weather_cog import WeatherCog  # noqa: E402
+from leaguebot.core.models.season import Season, SeasonStatus  # noqa: E402
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig  # noqa: E402
+from leaguebot.core.services.season_service import SeasonService  # noqa: E402
 
 SERVER_ID = 7161
 DB_PATH = "/nonexistent/weather.db"  # never opened: every service call is patched
@@ -141,7 +141,7 @@ def _patched_setters(return_value=None):
         yield {
             name: stack.enter_context(
                 patch(
-                    f"services.weather_config_service.{name}",
+                    f"leaguebot.weather.services.weather_config_service.{name}",
                     new=AsyncMock(return_value=value),
                 )
             )
@@ -366,7 +366,7 @@ async def _invoke_view(cog: WeatherCog, interaction) -> None:
 def _patched_read(config: WeatherPipelineConfig):
     """Patch the service's reader. The cog imports it inside the body, as it does the setters."""
     return patch(
-        "services.weather_config_service.get_weather_pipeline_config",
+        "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(return_value=config),
     )
 

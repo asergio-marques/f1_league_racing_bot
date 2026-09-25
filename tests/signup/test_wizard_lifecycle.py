@@ -55,7 +55,7 @@ CHANNEL_ID = 99
 
 
 def _wizard(state=None, *, channel_id: int | None = CHANNEL_ID, last_activity: str | None = None):
-    from models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
+    from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
 
     return SignupWizardRecord(
         id=1,
@@ -77,7 +77,7 @@ def _wizard(state=None, *, channel_id: int | None = CHANNEL_ID, last_activity: s
 
 @pytest.fixture
 def lifecycle():
-    from services.wizard_service import WizardService
+    from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
     svc._correction_tasks = {}
@@ -231,8 +231,8 @@ async def test_a_driver_part_way_through_the_questions_is_cleaned_up(lifecycle):
 async def test_a_driver_waiting_on_a_manager_is_cleaned_up_too(lifecycle):
     """Their wizard is UNENGAGED, so the wizard state says nothing — the *driver* state is
     where the open signup lives. This is the half easily missed."""
-    from models.driver_profile import DriverState
-    from models.signup_module import WizardState
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.signup.models.signup_module import WizardState
 
     lifecycle.signup_svc.get_wizard = AsyncMock(
         return_value=_wizard(WizardState.UNENGAGED)
@@ -247,8 +247,8 @@ async def test_a_driver_waiting_on_a_manager_is_cleaned_up_too(lifecycle):
 
 
 async def test_a_driver_awaiting_a_correction_parameter_is_cleaned_up(lifecycle):
-    from models.driver_profile import DriverState
-    from models.signup_module import WizardState
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.signup.models.signup_module import WizardState
 
     lifecycle.signup_svc.get_wizard = AsyncMock(
         return_value=_wizard(WizardState.UNENGAGED)
@@ -267,7 +267,7 @@ async def test_a_driver_awaiting_a_correction_parameter_is_cleaned_up(lifecycle)
 async def test_a_member_who_was_never_signing_up_is_left_alone(lifecycle):
     """Most people leaving a server have no signup at all. Transitioning them would write
     a driver state for somebody who never had one."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     lifecycle.signup_svc.get_wizard = AsyncMock(
         return_value=_wizard(WizardState.UNENGAGED)
@@ -283,8 +283,8 @@ async def test_a_member_who_was_never_signing_up_is_left_alone(lifecycle):
 async def test_an_approved_driver_leaving_is_left_alone(lifecycle):
     """An UNASSIGNED driver has finished signing up; there is no wizard to clean up and
     their record is the league's to keep."""
-    from models.driver_profile import DriverState
-    from models.signup_module import WizardState
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.signup.models.signup_module import WizardState
 
     lifecycle.signup_svc.get_wizard = AsyncMock(
         return_value=_wizard(WizardState.UNENGAGED)
@@ -411,7 +411,7 @@ async def test_a_wizard_with_no_recorded_activity_expires_at_once(lifecycle):
 async def test_a_parked_wizard_is_not_re_armed(lifecycle):
     """An UNENGAGED wizard belongs to a driver waiting on a manager, who cannot be timed
     out for the manager's delay."""
-    from models.signup_module import WizardState
+    from leaguebot.signup.models.signup_module import WizardState
 
     last = datetime.now(timezone.utc) - timedelta(hours=1)
     lifecycle.signup_svc.get_all_active_wizards_all_servers = AsyncMock(

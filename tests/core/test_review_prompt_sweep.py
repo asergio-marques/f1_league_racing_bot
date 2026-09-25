@@ -21,10 +21,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-# `bot.py` reads the token at import time and raises without it; `tests/conftest.py` gives it
+# `__main__.py` reads the token at import time and raises without it; `tests/conftest.py` gives it
 # a placeholder before collection, so every file importing `bot` can do so at module level.
-from bot import _recover_expired_review_prompts  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.__main__ import _recover_expired_review_prompts  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 SERVER_ID = 6501
 CHANNEL_ID = 700

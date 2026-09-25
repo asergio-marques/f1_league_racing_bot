@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from services.team_service import validate_full_name, validate_team_name
+from leaguebot.core.services.team_service import validate_full_name, validate_team_name
 
 
 # ── Rule 1: non-empty, trimmed and normalised ─────────────────────────────
@@ -107,7 +107,7 @@ DEFAULT_TEAMS = [
 def test_every_shipped_default_team_name_passes():
     """No existing server is broken by this rule, so no migration is owed."""
     seen: dict[str, str] = {}
-    from utils.asset_resolver import normalise
+    from leaguebot.image.utils.asset_resolver import normalise
 
     for name in DEFAULT_TEAMS:
         assert validate_team_name(name, seen) is None, name
@@ -115,7 +115,7 @@ def test_every_shipped_default_team_name_passes():
 
 
 def test_the_shipped_defaults_normalise_uniquely():
-    from utils.asset_resolver import normalise
+    from leaguebot.image.utils.asset_resolver import normalise
 
     keys = [normalise(name) for name in DEFAULT_TEAMS]
     assert len(set(keys)) == len(keys)
@@ -135,7 +135,7 @@ def test_the_shipped_defaults_normalise_uniquely():
     ],
 )
 def test_reasonable_names_are_accepted_and_key_as_expected(name, key):
-    from utils.asset_resolver import normalise
+    from leaguebot.image.utils.asset_resolver import normalise
 
     assert validate_team_name(name) is None
     assert normalise(name) == key
@@ -143,7 +143,7 @@ def test_reasonable_names_are_accepted_and_key_as_expected(name, key):
 
 def test_the_key_and_the_asset_filename_come_from_one_rule():
     """Constitution XIV.13, v4.3.0 — one datum, one spelling in id and filename alike."""
-    from utils.asset_resolver import filename_for, normalise
+    from leaguebot.image.utils.asset_resolver import filename_for, normalise
 
     assert normalise("Red Bull") == "red_bull"
     assert filename_for("Red Bull") == "red_bull.svg"
@@ -164,8 +164,8 @@ from unittest.mock import MagicMock as _MagicMock  # noqa: E402
 
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.season_cog import SeasonCog  # noqa: E402
-from db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 
 
 async def _seed(path, server_teams, division_teams):

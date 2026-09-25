@@ -23,11 +23,11 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_catalogues import (  # noqa: E402
+from leaguebot.image.models.image_catalogues import (  # noqa: E402
     DIVISION_LOGO_FIELD,
     catalogue_for,
 )
-from models.image_constants import (  # noqa: E402
+from leaguebot.image.models.image_constants import (  # noqa: E402
     ASPECTS,
     ASPECT_LABELS,
     ASPECT_SOURCE_MODULE,
@@ -39,8 +39,8 @@ from models.image_constants import (  # noqa: E402
     TEMPLATE_LABELS,
     TEST_KIND_TEMPLATES,
 )
-from utils.image_naming import IMAGE_SUBJECTS, subject_for_template  # noqa: E402
-from utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
+from leaguebot.image.utils.image_naming import IMAGE_SUBJECTS, subject_for_template  # noqa: E402
+from leaguebot.image.utils.svg_document import FieldIndex, parse_svg_bytes  # noqa: E402
 
 KEY = "verdict_banner_template"
 ASPECT = "verdict_banner"

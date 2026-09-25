@@ -24,7 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from cogs.image_cog import ImageCog
+from leaguebot.image.cogs.image_cog import ImageCog
 
 
 def _interaction(guild_id: int = 1):
@@ -47,7 +47,7 @@ def _cog(monkeypatch, *, problem=None):
     cog._reply = AsyncMock()
     cog._log = AsyncMock()
 
-    import services.image_validity_service as validity
+    import leaguebot.image.services.image_validity_service as validity
 
     monkeypatch.setattr(validity, "check_template", lambda proposed, column: problem)
     return cog

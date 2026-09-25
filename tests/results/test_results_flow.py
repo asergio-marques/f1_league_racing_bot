@@ -13,11 +13,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations
-from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import OutcomeModifier
-from services.result_submission_service import save_session_result
-from services.standings_service import (
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.session_result import OutcomeModifier
+from leaguebot.results.services.result_submission_service import save_session_result
+from leaguebot.results.services.standings_service import (
     compute_driver_standings,
     compute_points_for_session,
     persist_snapshots,

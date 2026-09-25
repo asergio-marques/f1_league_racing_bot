@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from utils.autocomplete import team_autocomplete, team_choices  # noqa: E402
+from leaguebot.core.utils.autocomplete import team_autocomplete, team_choices  # noqa: E402
 
 TEAMS = [
     {"name": "MCL", "full_name": "McLaren Formula 1 Team", "is_reserve": False},
@@ -65,9 +65,9 @@ async def test_the_offer_is_read_from_the_server_s_list():
 @pytest.mark.parametrize(
     "command,parameter",
     [
-        ("cogs.driver_cog:DriverCog.assign", "team"),
-        ("cogs.driver_cog:DriverCog.move", "team"),
-        ("cogs.test_mode_cog:TestModeCog.roster_add", "team_name"),
+        ("leaguebot.core.cogs.driver_cog:DriverCog.assign", "team"),
+        ("leaguebot.core.cogs.driver_cog:DriverCog.move", "team"),
+        ("leaguebot.core.cogs.test_mode_cog:TestModeCog.roster_add", "team_name"),
     ],
 )
 def test_every_command_taking_a_team_offers_the_shorthands(command, parameter):

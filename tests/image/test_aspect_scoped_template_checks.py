@@ -25,8 +25,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS  # noqa: E402
-from services.image_validity_service import (  # noqa: E402
+from leaguebot.image.models.image_constants import ASPECTS, ASPECT_TEMPLATES, TEMPLATE_COLUMNS  # noqa: E402
+from leaguebot.image.services.image_validity_service import (  # noqa: E402
     aspect_attaches_files,
     blocking_template_problems,
     check_all_templates,
@@ -73,7 +73,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
     Built under the project root, because the directory check refuses a path outside it
     and would report fifteen faults rather than the one under test.
     """
-    from services.image_validity_service import evaluate_all_templates  # noqa: F401
+    from leaguebot.image.services.image_validity_service import evaluate_all_templates  # noqa: F401
 
     root = os.path.join(os.path.dirname(__file__), "..", "..")
     folder = os.path.join(root, "resources", "_test_templates_missing_verdicts")
@@ -84,7 +84,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
             continue
         shutil.copy(os.path.join(DEFAULT_TEMPLATES, name), folder)
 
-    from models.image_module import ImageConfig
+    from leaguebot.image.models.image_module import ImageConfig
     import dataclasses
 
     fields = {f.name for f in dataclasses.fields(ImageConfig)}
@@ -93,7 +93,7 @@ def config_missing_verdicts(tmp_path, monkeypatch):
     for column, default in TEMPLATE_COLUMNS.items():
         if column in fields:
             values[column] = default
-    from models.image_constants import ASSET_DIRECTORIES
+    from leaguebot.image.models.image_constants import ASSET_DIRECTORIES
 
     for column, (_, default_dir, _packaged) in ASSET_DIRECTORIES.items():
         if column in fields:

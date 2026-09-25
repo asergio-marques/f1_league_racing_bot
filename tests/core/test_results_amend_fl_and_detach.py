@@ -27,11 +27,11 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from models.season import SeasonStage  # noqa: E402
+from leaguebot.core.models.season import SeasonStage  # noqa: E402
 
-from cogs.results_cog import ResultsCog  # noqa: E402
-from services.amendment_service import AmendmentNotActiveError  # noqa: E402
-from services.season_points_service import (  # noqa: E402
+from leaguebot.results.cogs.results_cog import ResultsCog  # noqa: E402
+from leaguebot.core.services.amendment_service import AmendmentNotActiveError  # noqa: E402
+from leaguebot.results.services.season_points_service import (  # noqa: E402
     ConfigNotAttachedError,
     SeasonNotInSetupError,
 )
@@ -97,7 +97,7 @@ def _session():
 
 async def _detach(cog, interaction, *, error=None):
     with patch(
-        "services.season_points_service.detach_config", new=AsyncMock(side_effect=error)
+        "leaguebot.results.services.season_points_service.detach_config", new=AsyncMock(side_effect=error)
     ) as detach:
         await undecorate(ResultsCog.config_detach)(cog, interaction, "Standard")
     return detach
@@ -105,8 +105,8 @@ async def _detach(cog, interaction, *, error=None):
 
 async def _fl(cog, interaction, *, command="amend_fl", value=2, error=None):
     target = {
-        "amend_fl": "services.amendment_service.modify_fl_bonus",
-        "amend_fl_plimit": "services.amendment_service.modify_fl_position_limit",
+        "amend_fl": "leaguebot.core.services.amendment_service.modify_fl_bonus",
+        "amend_fl_plimit": "leaguebot.core.services.amendment_service.modify_fl_position_limit",
     }[command]
     with patch(target, new=AsyncMock(side_effect=error)) as modify:
         await undecorate(getattr(ResultsCog, command))(

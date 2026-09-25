@@ -37,8 +37,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-import services.scheduler_service as scheduler_module  # noqa: E402
-from services.scheduler_service import SchedulerService  # noqa: E402
+import leaguebot.core.services.scheduler_service as scheduler_module  # noqa: E402
+from leaguebot.core.services.scheduler_service import SchedulerService  # noqa: E402
 
 
 

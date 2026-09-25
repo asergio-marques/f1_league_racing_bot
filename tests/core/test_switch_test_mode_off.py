@@ -14,9 +14,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from db.database import get_connection, run_migrations  # noqa: E402
-from services.test_mode_service import switch_test_mode_off  # noqa: E402
-from services.test_roster_service import clear_all_test_drivers  # noqa: E402
+from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.test_mode_service import switch_test_mode_off  # noqa: E402
+from leaguebot.core.services.test_roster_service import clear_all_test_drivers  # noqa: E402
 
 SERVER_ID = 22140
 
@@ -121,7 +121,7 @@ async def test_their_history_is_kept_by_identifier(db_path):
 async def test_switching_off_clears_the_flag_and_the_drivers(db_path):
     bot = SimpleNamespace(db_path=db_path)
     with patch(
-        "services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()
+        "leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()
     ) as flushed:
         assert await switch_test_mode_off(bot) == 2
 
@@ -147,7 +147,7 @@ async def test_a_flush_that_fails_still_switches_test_mode_off(db_path):
     """A stale forecast is not worth staying in test mode for."""
     bot = SimpleNamespace(db_path=db_path)
     with patch(
-        "services.forecast_cleanup_service.flush_pending_deletions",
+        "leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions",
         new=AsyncMock(side_effect=RuntimeError("channel gone")),
     ):
         assert await switch_test_mode_off(bot) == 2
@@ -156,7 +156,7 @@ async def test_a_flush_that_fails_still_switches_test_mode_off(db_path):
 
 
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
-    from services.test_roster_service import _delete_test_drivers_in_division
+    from leaguebot.core.services.test_roster_service import _delete_test_drivers_in_division
 
     assert await _delete_test_drivers_in_division(1, db_path) == 1
 
