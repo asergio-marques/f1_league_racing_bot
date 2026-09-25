@@ -357,9 +357,9 @@ written, and goes stale without anyone noticing.
 The bot is mostly driven by the clock: weather phases, check-in calls and deadlines, results
 channels opening, clean-ups. It also has to carry on correctly after it has been stopped. The whole
 bot does this in the shape `steward_module.md` §3 designs for stewarding: the database holds the
-moment work is due, a job only wakes the bot, no job is dropped for being late, and one sweep at
-start-up works through what was missed, in order, before the scheduler runs. §3's heartbeat and
-downtime extension stay stewarding's own.
+moment work is due, a job only wakes the bot, the scheduler drops no job for being late, and one
+sweep at start-up works through what was missed, in order, before the scheduler runs. §3's heartbeat
+and downtime extension stay stewarding's own.
 
 *Rejected:* using this shape for stewarding only, which leaves the bot with three different ways
 of recovering: the entry point's own steps, the results module's "results posted" flag, and
@@ -376,12 +376,13 @@ convenience: if it were lost, the bot could rebuild every job from the database.
 **Each kind of job's handler decides what happens if it is missed.** When the bot was down at the
 moment a job was due, the handler its module provides for that kind of job (below) decides what
 becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks.
-The handler records a skip on the event's row, the row being its own module's, as a change on the
-queue like any other, so the late job, or the change it asks for, finds nothing due. Every job is
-armed with no limit on how late it may run (`misfire_grace_time=None`), so the scheduler never drops
-one on its own and its default never decides. What each kind does when missed is a rule a league
-notices, so it belongs to the specifications (the core specification's "When the bot stops", and the
-stewarding specification's [STW-RST-001] to [STW-RST-003]).
+The handler records a skip on its own module's record of the event (its own table, or its own
+columns on a core table), as a change on the queue like any other, so the late job, or the change it
+asks for, finds nothing due. Every job is armed with no limit on how late it may run
+(`misfire_grace_time=None`), so the scheduler never drops one on its own and its default never
+decides. What each kind does when missed is a rule a league notices, so it belongs to the
+specifications (the core specification's "When the bot stops", and the stewarding specification's
+[STW-RST-001] to [STW-RST-003]).
 
 *Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
 sweep to apply, which puts a module's rule in core.
@@ -424,14 +425,14 @@ does not stop the rest.
 up, which of its events came due, puts them all in the order they fell due, and hands each to the
 handler its module provides for that kind of job, one at a time: each handler finishes before the
 next is called, and none runs beside another. Before any of them, it calls whoever signed up for the
-bot starting, one at a time as well, so a module's start step is in place before its missed events
-are handled. A handler asks for its change on the queue; what an earlier event changed is seen by a
-later one's change when the queue runs it, not by the later one's handler. It holds no module's
-logic. The builder signs each handler up with its kind of job, together with the kind's own way of
-telling which of its events came due, as it registers the kind with the scheduler service; that is
-the hook core offers for a timed event falling due. The handler holds its module's logic, what
-becomes of a missed event included; core holds none of it. Each module writes the handler for every
-kind of timed job it has, and the entry point holds none of it.
+bot starting, one at a time as well, so a module's start step's change is queued, and carried out,
+ahead of any change its missed events ask for. A handler asks for its change on the queue; what an
+earlier event changed is seen by a later one's change when the queue runs it, not by the later one's
+handler. The sweep holds no module's logic. The builder signs each handler up with its kind of job,
+together with the kind's own way of telling which of its events came due, as it registers the kind
+with the scheduler service; that is the hook core offers for a timed event falling due. The handler
+holds its module's logic, what becomes of a missed event included; core holds none of it. Each
+module writes the handler for every kind of timed job it has, and the entry point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
