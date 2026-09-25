@@ -602,7 +602,7 @@ KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
 
 def test_nothing_reaches_past_the_scheduler_service():
     """Jobs are made, found and removed only through `SchedulerService` (architecture.md, "Timed
-    work and restarts"), so its conventions (job names, missed-run rules) hold for every job."""
+    work and restarts"), so its conventions (job names, no lateness limit) hold for every job."""
     _check(
         "nothing reaches past the scheduler service",
         _scheduler_reached_around(),
@@ -610,7 +610,7 @@ def test_nothing_reaches_past_the_scheduler_service():
     )
 
 
-# ── 7. Every job says what happens if it is missed ──────────────────────────────────────────
+# ── 7. No job is armed with a lateness limit ────────────────────────────────────────────────
 
 
 def _has_no_lateness_limit(call: ast.Call) -> bool:
@@ -622,7 +622,7 @@ def _has_no_lateness_limit(call: ast.Call) -> bool:
     )
 
 
-def _jobs_without_a_missed_run_rule() -> Counter[tuple[str, str]]:
+def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in _nodes():
         if (isinstance(node, ast.Call) and _call_name(node) == "add_job"
@@ -631,7 +631,7 @@ def _jobs_without_a_missed_run_rule() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE: dict[tuple[str, str], tuple[int, str]] = {
+KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "SchedulerService.schedule_amendment_sweep"): (1, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (4, PASS["core"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["core"]),
@@ -643,15 +643,15 @@ KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 
-def test_every_job_says_what_happens_if_it_is_missed():
+def test_no_job_is_armed_with_a_lateness_limit():
     """Each `add_job` passes `misfire_grace_time=None` (architecture.md, "Timed work and
     restarts"). What becomes of a job due while the bot was down is decided by its kind's handler,
     which the start-up sweep hands it to, so the scheduler must never drop a late job on its own,
     which its default grace, or any number here, would do."""
     _check(
-        "every job says what happens if it is missed",
-        _jobs_without_a_missed_run_rule(),
-        KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE,
+        "no job is armed with a lateness limit",
+        _jobs_with_a_lateness_limit(),
+        KNOWN_JOBS_WITH_A_LATENESS_LIMIT,
     )
 
 
