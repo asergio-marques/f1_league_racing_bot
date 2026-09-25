@@ -19,6 +19,15 @@ times.
 issue and opening the pull request. Its Phases 4 and 7 are followed as written and are not
 restated here.
 
+**#282 is done, and `docs/design/architecture.md` is its record.** Its six candidates are
+settled there, each with what it rejected, and [`python-practices.md`](python-practices.md)
+notes each settlement beside the practice it answers. Do not ask them again. A later change to
+the architecture, made on any branch, is reviewed as Phase 9 below reviews the file: yourself
+first, then a fresh `design-verifier` (job 2) that judges the change against `architecture.md`,
+the decisions made in the session that changed it, and `python-practices.md`, and runs again if
+the fixes were more than wording. A whole re-review of the bot runs Phases 2 and 3 against the
+file as it stands.
+
 ## What is automated, and what is not
 
 The survey, the review and the verification run through the **`review-architecture`
@@ -118,8 +127,9 @@ through `AskUserQuestion`:
 - **Ask up to four questions per call**, and ask follow-ups in later calls.
 - **Ask only what is genuinely the user's to decide.** A finding with a conventional answer
   is decided by you, and the plan says so.
-- **A tooling choice is always the user's.** That covers import-linter against an `ast` test,
-  ruff, and `pyproject.toml`, each with its cost ([practices §11](python-practices.md#11-tooling-for-the-record)).
+- **A tooling choice is always the user's.** import-linter and `pyproject.toml` are settled;
+  ruff and a lockfile remain the user's, each with its cost
+  ([practices §11](python-practices.md#11-tooling-for-the-record)).
 
 An answer is a project decision from the moment it is given. It is an engineering decision, so
 its home is `architecture.md`, never a wip-spec (CLAUDE.md, decided 2026-08-27). Keep the
@@ -173,7 +183,8 @@ Work in the order the plan committed to, at its commit points.
 
 - **Run tests one session at a time, behind the lock:**
   `flock -w 3600 /tmp/f1-pytest.lock .venv/bin/python -m pytest tests/ -q`, for subsets and
-  full runs alike. Run `.venv/bin/mypy` before any commit that touches `src/`.
+  full runs alike, with `PYTHONPATH=src` in front in a worktree (CLAUDE.md, Testing). Run
+  `.venv/bin/mypy` before any commit that touches `src/`.
 - **Stage every path by name**, from `git status --porcelain`.
 - **Write enforcement tests the way the suite's rule-pinning tests are written.** Model them
   on `tests/repository/test_migration_steps.py` and `test_coverage_scope.py`: a module docstring
@@ -201,8 +212,10 @@ ratchet lists (never into `architecture.md`), and commit.
 
 Review `architecture.md` yourself first, against the seven checks in
 `.claude/agents/design-verifier.md`. Then give it to a **fresh** `design-verifier` agent (job 2)
-through the `Agent` tool, in the foreground. Fix what it confirms, and run it again if the
-fixes were more than wording. Tell the user what it found.
+through the `Agent` tool, in the foreground, and tell it to read this skill and
+`python-practices.md` and to judge against them as well as against the file's own rules. Fix
+what it confirms, and run it again if the fixes were more than wording. Tell the user what it
+found.
 
 ## Phase 10 — Close out
 
