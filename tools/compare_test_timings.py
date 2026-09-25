@@ -51,7 +51,7 @@ def read_times(path: Path) -> dict[str, float]:
 
 
 def test_file(key: str) -> str:
-    """`tests.unit.test_x.TestClass::test_y` -> `tests/unit/test_x.py`."""
+    """`tests.core.test_x.TestClass::test_y` -> `tests/core/test_x.py`."""
     parts = key.split("::", 1)[0].split(".")
     for index, part in enumerate(parts):
         if part.startswith("test_"):
