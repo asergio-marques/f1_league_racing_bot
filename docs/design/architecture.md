@@ -226,14 +226,15 @@ audit record, which is how some settings came to have none.
   way when the state was saved is not resumed.
 - **Posts are remembered.** A posting step sends the post, then saves its message id with the step's
   mark. Where the post replaces an earlier message, deleting that message is a step of its own,
-  after it, so the new post stands before the old one goes (Constitution XIV rule 8). Two windows
-  remain. If the bot stops after a post is sent but before its id is saved, the step runs again
-  after the restart and sends a second copy, and the first copy is left behind. And the old and new
-  messages stand together between a post and the deletion after it: until the change finishes on
-  restart, if the bot stops in between, or for as long as the deletion waits on a retry. The design
-  accepts both, and Constitution XIV rule 8 ("at most one such message stands at any moment") is
-  amended with the queue to allow them. Scanning the channel to spot such a copy is not done:
-  `steward_module.md` §7 rejects scanning a channel as guesswork, and that reasoning carries over.
+  after it, reading the old message's id, which the posting step saved beside the new one, so the
+  new post stands before the old one goes (Constitution XIV rule 8). Two windows remain. If the bot
+  stops after a post is sent but before its id is saved, the step runs again after the restart and
+  sends a second copy, and the first copy is left behind. And the old and new messages stand
+  together between a post and the deletion after it: until the change finishes on restart, if the
+  bot stops in between, or for as long as the deletion waits on a retry. The design accepts both,
+  and Constitution XIV rule 8 ("at most one such message stands at any moment") is amended with the
+  queue to allow them. Scanning the channel to spot such a copy is not done: `steward_module.md` §7
+  rejects scanning a channel as guesswork, and that reasoning carries over.
 - **A step that fails because of Discord is retried, without holding up the queue.** It is retried
   with growing waits, up to a fixed ceiling, by running the owning module's post again, as text
   where it would have been a picture (Constitution XIV, rule 8). While it waits, it steps aside: a
@@ -243,13 +244,15 @@ audit record, which is how some settings came to have none.
   is tried again at once, as `steward_module.md` §4 has the channel-setting commands resume a
   waiting close; a repair made in Discord, such as restoring the bot's permission, is found at the
   next try. And a change that makes the waiting step's work no longer due, such as cancelling its
-  round or turning its module off, runs, and the waiting change is checked again after it and
-  dropped. A step that keeps failing is reported to the log channel, as the core specification's
-  "When the bot stops" requires of a failed post, in the form the owning specification asks for (for
-  a republication, the results specification's "A republication that does not land shall be
-  reported", with the commands that finish the job), and it is still retried. Discord answering that
-  a message is already gone is no failure: a step that deletes it is done, and one that edits it is
-  done too, with a line in the log channel saying the message was gone.
+  round or turning its module off, runs, and the waiting change is checked again after it: its steps
+  whose work is no longer due are dropped and the rest go ahead, since switching a module off stops
+  that module's work and no other's (the core specification's "Modules"). A step that keeps failing
+  is reported to the log channel, as the core specification's "When the bot stops" requires of a
+  failed post, in the form the owning specification asks for (for a republication, the results
+  specification's "A republication that does not land shall be reported", with the commands that
+  finish the job), and it is still retried. Discord answering that a message is already gone is no
+  failure: a step that deletes it is done, and one that edits it is done too, with a line in the log
+  channel saying the message was gone.
 
   *Rejected:* stopping a change at its first failed step.
 - **A step that fails for any other reason is a fault.** The change stops there and goes to the
