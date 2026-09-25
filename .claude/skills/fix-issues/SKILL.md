@@ -199,7 +199,8 @@ git worktree add .claude/worktrees/fix-<N> <approved-branch-name>
 The analysis agent's own worktree is gone by now: an isolated worktree its agent left unchanged is
 removed as soon as the agent stops. This one takes up the branch `gh issue develop` created, as a
 local branch tracking it, and leaves the user's `HEAD` alone. Its absolute path is the `worktree`
-handed to the workflow.
+handed to the workflow, and `git -C <worktree> rev-parse HEAD`, taken now, before anything is
+committed, is the `base`: never `git merge-base` from the main checkout, whose `HEAD` is the user's.
 
 ## Stage 4 — Build: through the workflow, one test run at a time
 
@@ -254,7 +255,8 @@ solved problem for a slower one on a disk that is already near full.
 
 **An image-module issue cannot be finished in a worktree.** `resources/league/` holds the league's
 own artwork — around 1,400 files — and all but nine `.gitkeep` files are gitignored, so a fresh
-worktree has the empty skeleton. CI has no artwork either and the suite is green there, so an
+worktree has the empty skeleton. The build's suite includes the `rasteriser` tests wherever Inkscape
+is installed, and in a worktree they run on that skeleton. CI has no artwork either and the suite is green there, so an
 ordinary run in a worktree is sound, given `PYTHONPATH=src` so that it tests the worktree's own code
 rather than the checkout the shared virtualenv was installed from (CLAUDE.md, Testing). A `-m rasteriser` run is not: it would pass without ever
 touching the assets whose rendering it claims to check. Run the rasteriser marker by hand in the main
