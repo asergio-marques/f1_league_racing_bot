@@ -294,3 +294,68 @@ with foreign keys switched off, and the keys are checked before it commits. This
 own procedure for changing a table ("Making Other Kinds Of Table Schema Changes", in its ALTER
 TABLE documentation). With the keys switched on, rebuilding a table would silently delete every
 row that points at it. The rules for the schema baseline itself are CLAUDE.md's.
+
+---
+
+## Timed work and restarts
+
+The bot is mostly driven by the clock: weather phases, check-in calls and deadlines, results
+channels opening, clean-ups. It also has to carry on correctly after it has been stopped. The
+whole bot does this the way `steward_module.md` §3 and §4 already design it for stewarding
+(decision 12).
+
+**The database says when something is due.** A timed event is a row with the moment it is
+due. The scheduled job (APScheduler) only wakes the bot at that moment. The code it runs reads
+the row again and acts only if the row still says the work is due. A job that fires after its
+work was changed or cancelled then does nothing. The job store becomes a convenience: if it
+were lost, the bot could rebuild every job from the database.
+
+**Each kind of job says what happens if it is missed.** When the bot was down at the moment a
+job was due, the job either runs late or is skipped. That choice is written where the job is
+registered, for each kind of job, and not left to the scheduler's default. Which choice is
+right is a rule a league notices, so it belongs to the core specification ("When the bot
+stops"). The code only has to state it in one place.
+
+**Jobs are made only through the scheduler service.** Nothing else touches APScheduler
+directly. A round's job is named from the round and the event, so arming it again replaces the
+old one instead of adding a second (#426). One function works out when each of a round's events
+falls, and one function arms them. Every path that arms a round (a season approved, a round
+amended, test mode) uses those two, so the timings cannot drift apart between copies again.
+
+**Start-up runs once, in one function.** discord.py can report the bot as "ready" more than
+once in a single run, after a network drop, so start-up work does not belong in the handler
+for that event. Start-up:
+
+1. reads the settings (the token, the database path), in `main` rather than on import;
+2. applies the migrations, before connecting to Discord;
+3. builds the services with the one builder;
+4. runs the start-up sweep once, when Discord first connects;
+5. only then lets scheduled jobs run.
+
+Tests can then run the whole start-up in order, instead of checking its order by searching the
+source code.
+
+**One sweep picks up what was missed or left half-done.** It walks everything that came due
+while the bot was down, in the order it would have happened, and applies each kind's missed-job
+choice. It also finishes work that was saved but not completed (below). Each step is kept
+separate, so one step failing is reported and does not stop the rest.
+
+**Work still owed after a save is saved with it.** A command often saves a change and then
+posts about it. Approving a season, for example, saves the season and then posts its lineups,
+calendar and sheets. If the bot stops between the two, nothing records that the posts are
+still owed, and they are silently lost. So the save also records what is still to do, as a
+stage on the row it belongs to, and the sweep finishes it after a restart. Whether finished
+work is posted late or reported to the log channel for a league manager is again the core
+specification's choice.
+
+Because the bot remembers each message it posts, finishing a post twice replaces it rather
+than posting a duplicate. The one gap left: if the bot stops after sending a one-off notice but
+before recording that it did, the notice is sent again. Scanning the channel to spot that was
+rejected as guesswork in `steward_module.md` §7, and the same reasoning holds here.
+
+**Background work is started through one helper** that keeps hold of it. Python only keeps a
+weak hold on a task nobody stores, so such a task can vanish part-way, and its failure goes
+unseen.
+
+**The time is always passed in.** A service that needs the current time takes a `now`
+argument, and every time inside the bot is in UTC. Tests fix `now`, as CLAUDE.md requires.
