@@ -66,10 +66,11 @@ hooks without importing a module.
 - **A cog** turns a command, button or form into a call to one service, and replies. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
-  large, its workflows move into services before it is split. A module's commands sit under its
-  own top-level group, never under one of core's: `/results channel`, not `/division
-  results-channel`. discord.py binds a subcommand only to the cog that declares its group
-  (`steward_module.md` §5), so a module's command under core's group would have to be core's code.
+  large, its workflows move into services before it is split. A module's commands sit under its own
+  top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`,
+  and a module's tools for test mode are `/images test`, not `/test-mode images`. discord.py binds a
+  subcommand only to the cog that declares its group (`steward_module.md` §5), so a module's command
+  under core's group would have to be core's code.
 
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module attaching its own commands to
