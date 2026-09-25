@@ -22,11 +22,12 @@ end, and one run's accumulated scratch reached 817 MB and filled the tmpfs befor
 The template scratch below is the one thing pytest does not own, so `pytest_sessionstart`
 sweeps it to the same schedule.
 
-**`BOT_TOKEN` is given a placeholder before any test module is collected.** `src/leaguebot/__main__.py` reads
-it with `os.environ["BOT_TOKEN"]` at import time, after `load_dotenv()`, so importing the module
-to reach one of its recovery sweeps raises without it. A development host has a gitignored `.env`
-that supplies a real one and hides the problem; a CI runner has neither, and every test file
-importing `bot` at module level then fails at collection, which aborts the whole run. It is set
+**`BOT_TOKEN` is given a placeholder before any test module is collected.** The entry point,
+`src/leaguebot/__main__.py`, reads it with `os.environ["BOT_TOKEN"]` at import time, after
+`load_dotenv()`, so importing the module to reach one of its recovery sweeps raises without it. A
+development host has a gitignored `.env` that supplies a real one and hides the problem; a CI runner
+has neither, and every test file importing the entry point at module level then fails at
+collection, which aborts the whole run. It is set
 here, once, rather than in the test files, because a per-file default only helps files collected
 after it — which is how the suite passed locally and failed on both runners. `setdefault`, so a
 real token in the environment is left alone; nothing in the suite connects to Discord with it.
@@ -55,7 +56,8 @@ def _refuse_another_checkouts_bot() -> None:
     A worktree sharing that virtualenv would run every test against the other checkout's code,
     and pass on code that is not its own. The remedy is to put this checkout's `src/` first, as
     `PYTHONPATH=src`, which Python reads before the install. `test_import_roots.py` holds the same
-    thing as a test; this stops the thousands of others from running first.
+    thing as a test; this stops the thousands of others from running first. It runs from
+    `pytest_configure`, where stopping the run prints its reason alone.
     """
     import leaguebot
 
@@ -69,7 +71,8 @@ def _refuse_another_checkouts_bot() -> None:
         )
 
 
-_refuse_another_checkouts_bot()
+def pytest_configure(config):
+    _refuse_another_checkouts_bot()
 
 
 _TEMPLATE_PREFIX = "f1-schema-"
