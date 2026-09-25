@@ -142,7 +142,6 @@ ignore_imports =
     leaguebot.core.utils.input_validator -> leaguebot.image.utils.nationality_data
     # #283: results:
     leaguebot.core.cogs.module_cog -> leaguebot.results.services.results_purge_service
-    leaguebot.core.cogs.season_cog -> leaguebot.results.models.points_config
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.result_submission_service
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     leaguebot.core.cogs.test_mode_cog -> leaguebot.results.services.result_submission_service
@@ -175,6 +174,8 @@ ignore_imports =
     leaguebot.core.services.amendment_service -> leaguebot.weather.utils.message_builder
     leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
     leaguebot.core.services.test_mode_service -> leaguebot.weather.services.forecast_cleanup_service
+    # #462: `/round results amend`, a results command written in core's cog, to move to results.
+    leaguebot.core.cogs.season_cog -> leaguebot.results.models.points_config
     # #284: the points amendment in the amendment service is results' code, to move there.
     leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
     leaguebot.core.services.amendment_service -> leaguebot.results.models.amendment_state

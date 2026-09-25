@@ -51,6 +51,8 @@ TRACEBACKS = "#442"
 BACKGROUND_FAILURES = "#453"
 #: The handlers for each kind of post, which move core's own posts onto them.
 HANDLERS = "#441"
+#: Each module's commands, moved out of core's command groups into the module's own.
+COMMAND_GROUPS = "#462"
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -1092,7 +1094,7 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["results"]),
+    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, COMMAND_GROUPS),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "AmendmentService.amend_round"): (6, PASS["core"]),
     ("core/services/amendment_service.py", "approve_amendment"): (7, PASS["results"]),
