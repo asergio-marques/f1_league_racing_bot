@@ -82,11 +82,12 @@ the folder the bot is started in.
 `pip install -e .` once in the virtualenv, and start the bot with `python -m leaguebot` rather
 than `python src/bot.py`, changing a service's start command to match. Timed work saved by an
 earlier version cannot be carried over, because each job names the code it runs by where that code
-used to be. Upgrade with no season running, and delete the scheduler's job store (`scheduler.db`
-beside `DB_PATH`, or the file `SCHEDULER_DB_PATH` names) before the first start: the bot re-arms
-its standing jobs, such as a signup's close time and the daily portrait refresh, as it starts. A
-job store left in place holds jobs the bot can no longer run, and one of them can stop the start
-from finishing.
+used to be. Upgrade with no signups open and no season racing, and delete the scheduler's job store
+(`scheduler.db` beside `DB_PATH`, or the file `SCHEDULER_DB_PATH` names) before the first start:
+the bot re-arms its standing jobs, such as a signup's close time and the daily portrait refresh, as
+it starts. A job store left in place holds jobs the bot can no longer run, and one of them can stop
+the start from finishing. For the same reason, do not restore a backup saved before v0.5.0: it
+brings the old job store back with it.
 
 On first run the bot creates **two** database files and applies all schema migrations
 automatically:
