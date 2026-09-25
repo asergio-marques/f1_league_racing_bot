@@ -565,7 +565,7 @@ def static_tier(state):
     """Tier a team by its RSVP and seat state alone.
 
     Transcribed from _static_tier in run_reserve_distribution
-    (src/services/rsvp_service.py), which is itself the priority list in the
+    (src/leaguebot/attendance/services/rsvp_service.py), which is itself the priority list in the
     "Distribution of reserves" section of the attendance module specification. Tier 5 is
     absent by design: it is not a state a team is in, it is where a team is demoted to
     once it has received a reserve.
@@ -587,7 +587,7 @@ def static_tier(state):
 def distribute_reserves(team_states, accepted_reserve_ids):
     """Place accepted reserves into teams, returning ({driver_id: team}, [standby ids]).
 
-    A port of run_reserve_distribution in src/services/rsvp_service.py: the same tiers,
+    A port of run_reserve_distribution in src/leaguebot/attendance/services/rsvp_service.py: the same tiers,
     the same demotion to tier 5 once a team holds a reserve so that no team takes a
     second while another still needs its first, and the same re-sort before every single
     placement. What the bot reads from the database is counted off the roster here

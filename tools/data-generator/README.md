@@ -136,7 +136,7 @@ A missing or empty `names.txt` stops the run before it asks you anything, so you
 part-way through a set of answers when it fails.
 
 **Every driver gets a nationality, and there is no file to keep for it.** The pool is
-imported from the bot's own `src/utils/nationality_data.py` — all 195 nationalities it
+imported from the bot's own `src/leaguebot/image/utils/nationality_data.py` — all 195 nationalities it
 accepts — because a nationality the bot rejects would make the whole command fail, and a
 list kept beside `names.txt` would drift from the bot's the first time one was added there.
 This is the one script in the family that imports from `src/` rather than porting the rule;
@@ -312,7 +312,7 @@ answered. Divisions must therefore have been through the check-in generator firs
 that has not is refused at the question rather than generated as an empty round.
 
 **Reserves are placed in teams the way the bot places them.** The distribution is a port of
-`run_reserve_distribution` in `src/services/rsvp_service.py` — the same six priority tiers,
+`run_reserve_distribution` in `src/leaguebot/attendance/services/rsvp_service.py` — the same six priority tiers,
 the same demotion once a team holds a reserve so that no team takes a second while another
 still needs its first, and the same re-sort before every placement. Two things differ, both
 because this runs offline: there are no constructors' standings to break a tie with, so the
@@ -386,7 +386,7 @@ drivers, so there is nothing for it to agree with the roster about. It reads the
 in two places, and both are the same argument the roster generator makes for importing
 nationalities: a value the bot rejects would make the whole import fail.
 
-- **The circuits come from the bot's own migration**, `src/db/migrations/029_track_data_expansion.sql`,
+- **The circuits come from the bot's own migration**, `src/leaguebot/core/db/migrations/029_track_data_expansion.sql`,
   parsed out of its seed statement. They live in SQL rather than a module and reading
   `track_service` would mean opening a database, which nothing here does — so the statement is
   parsed. The generator emits the **numeric id** in `<track>`, which side-steps the accented
