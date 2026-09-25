@@ -44,7 +44,9 @@ leaguebot/
 
 Each folder holds that part's **cogs** (its commands, and the buttons and forms they post), its
 **services** (its rules and its database code) and its **models** (plain data). Which module owns
-a file is then plain from where it sits. The tests follow the same folders.
+a file is then plain from where it sits. The tests follow the same folders, one for core and one
+for each module under `tests/`, beside `tests/repository/` for the checks on the repository itself:
+these rules, its configuration and its tools.
 
 Inside each folder, each kind of code has a folder of its own: `cogs/`, `services/`, `models/`,
 and `utils/` for the part's helpers, with `db/` in core for the database code. What kind of code a
@@ -148,8 +150,8 @@ code in core. *Rejected:* registering a module object for each module, more mach
 handful of modules need.
 
 Each module still checks its own on/off switch where its own work starts.
-`tests/unit/test_attendance_module_gate.py` pins that for attendance. A hook does not replace the
-switch. It only means core no longer needs to know the module is there.
+`tests/attendance/test_attendance_module_gate.py` pins that for attendance. A hook does not replace
+the switch. It only means core no longer needs to know the module is there.
 
 The image module is used by the others to draw their posts, and a module that finds it turned off
 posts text instead, as the image module specification's "Configuration" section (the
@@ -291,14 +293,15 @@ of a save holds up every other save in the bot for as long as Discord takes to a
 connection that tried to write would be kept waiting by the first until it gave up and failed.
 Save first, then post, then record what was posted in a save of its own.
 
-**Each table is written by one module.** Every statement that changes a table lives in the
-module that owns it, and other modules ask that module to make the change. Each module's design
-file lists its tables. Where a module keeps its own columns on a core table (weather on rounds,
-sessions and a division's forecast channel, attendance on rounds, and the weather and signup on/off
-flags on the settings row), that module's design file names those columns as an exception. The other
-modules keep their on/off flag in their own settings table. A round's status is core's, though
-results moves it through the stages of a round's results: results asks core's service to set it, so
-a round can still be cancelled while results is switched off.
+**Each table is written by one module.** Every statement that changes a table lives in the module
+that owns it, and other modules ask that module to make the change. Each module's design file lists
+its tables, and the check of this rule holds the owner of every table (see "How the rules are
+checked"), failing on a table added without one. Where a module keeps its own columns on a core
+table (weather on rounds, sessions and a division's forecast channel, attendance on rounds, and the
+weather and signup on/off flags on the settings row), that module's design file names those columns
+as an exception. The other modules keep their on/off flag in their own settings table. A round's
+status is core's, though results moves it through the stages of a round's results: results asks
+core's service to set it, so a round can still be cancelled while results is switched off.
 
 *Rejected:* moving each module's columns off core's tables now, which touches every reader of those
 columns before go-live for a cleaner line of ownership.
@@ -309,7 +312,7 @@ columns before go-live for a cleaner line of ownership.
   live season) goes in the schema, as a key or a unique index.
 - A fixed list of values lives in its Python enum. It is repeated as a CHECK in the schema only
   where the list is not expected to grow, and a test ties the two together, in
-  `tests/unit/test_schema_rules.py`, which already ties the image defaults to their Python
+  `tests/core/test_schema_rules.py`, which already ties the image defaults to their Python
   constants.
 - A trigger only keeps tables of one module in step, fills in a value a new row left out, or
   refuses a row that contradicts itself (as the season's stage triggers do).
@@ -441,7 +444,7 @@ The code that makes a post still builds its own text, pictures and buttons, and 
 it is handed back. The handler does the sending: it applies who the post may mention, hands back the
 message id, deletes or edits a message when asked, and says whether a failure was Discord's.
 Retrying is the change queue's, except for log lines. The log line's handler is today's router,
-`utils/output_router.py`.
+`core/utils/output_router.py`.
 
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.
@@ -483,7 +486,7 @@ as its specification asks; a failure always is. A command that asks for a change
 - **Changes**, from whatever starting point, are reported by the queue: the outcome to whoever asked
   while their reply can still be updated, and otherwise to the log channel (see "How a change is
   carried out"), and to the log channel as the change's specification asks.
-- **Commands, buttons and forms** go through `report_failure` (`utils/interaction_errors.py`),
+- **Commands, buttons and forms** go through `report_failure` (`core/utils/interaction_errors.py`),
   called by the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes. What the member
   and the log channel are told is the core specification's "When a command fails".
 - **Scheduled jobs and repeating loops** go through one job runner.
@@ -494,7 +497,7 @@ as its specification asks; a failure always is. A command that asks for a change
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps
 aside for any command or cog that has its own error handler (`LeagueCommandTree.on_error` in
-`utils/league_server.py`), so one added handler would quietly switch `report_failure` off for
+`core/utils/league_server.py`), so one added handler would quietly switch `report_failure` off for
 everything it covers.
 
 *Rejected:* a `LeagueCog` base class. It would hold two lines of code, and an error handler added
@@ -519,12 +522,12 @@ it expects by name, and only to turn them into a refusal the member can act on.
 
 ## One bot, one league, one server
 
-The bot serves one league on one Discord server. `utils/league_server.py` explains how, in its
+The bot serves one league on one Discord server. `core/utils/league_server.py` explains how, in its
 docstring. In short: the server is checked once, where a command, button, form or event first
 arrives, and nowhere after. Below that, nothing in the bot is told which server it is on. The tables
 carry no server id except the one settings row, and the services take none, because the database
-only ever holds the one league. `tests/unit/test_one_league_server.py` and
-`test_no_server_id_is_left_outside_server_configs` in `tests/unit/test_schema_rules.py` hold this
+only ever holds the one league. `tests/repository/test_one_league_server.py` and
+`test_no_server_id_is_left_outside_server_configs` in `tests/core/test_schema_rules.py` hold this
 in place.
 
 The `!sync` command, which only the bot's owner may use, is the one command that skips the
@@ -538,10 +541,10 @@ These rules bind every module but are written down elsewhere. They are linked he
 they cannot drift apart. The paths are today's, and move with the code:
 
 - **The base classes** for commands, buttons and forms: `LeagueCommandTree`, `LeagueView` and
-  `LeagueModal`, in `utils/league_server.py`. `tests/unit/test_one_league_server.py` checks that
-  no view or form derives from discord.py's own classes directly.
+  `LeagueModal`, in `core/utils/league_server.py`. `tests/repository/test_one_league_server.py`
+  checks that no view or form derives from discord.py's own classes directly.
 - **The failure path for commands, buttons and forms**: `report_failure`, in
-  `utils/interaction_errors.py`.
+  `core/utils/interaction_errors.py`.
 - **The coverage floor for each module, and the single schema baseline until go-live**: CLAUDE.md,
   under "Testing". The detail is in the CI workflow and the `run_migrations` docstring.
 - **The type check**: CLAUDE.md and `mypy.ini`.
@@ -560,26 +563,24 @@ declared contracts. *Rejected:* adopting ruff now, which adds a second way of ch
 some of the same things, and, with its formatter, a commit touching nearly every file. It may come
 later on its own.
 
-- **`.importlinter`**, run by `tests/unit/test_import_contracts.py`, checks which code may import
-  which.
-- **`tests/unit/test_architecture_rules.py`** checks the rest: database code outside services,
+- **`.importlinter`**, run by `tests/repository/test_import_contracts.py`, checks which code may
+  import which: the rules for each kind of code, that core uses no module, that a module uses
+  another only where the dependency table allows, and that nothing imports the entry point.
+- **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
   awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
   service, jobs armed with a lateness limit, private names used across modules, a new place naming
-  the log channel (the check lists the six allowed, with their reasons), and posting outside the
-  handlers.
-- **`tests/unit/test_one_league_server.py`**, **`test_schema_rules.py`** and
-  **`test_import_roots.py`** check the one-league rule, the schema's own rules, and that nothing
-  imports the bot through a package named `src`.
+  the log channel (the check lists the six allowed, with their reasons), posting outside the
+  handlers, and a table written by a module that does not own it.
+- **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
+  **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules,
+  and that the bot is imported from one place: the installed package, never through `src`.
 
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".
 
-Not every rule has its check yet. The rules between modules (core uses no module; a module uses
-another only where the dependency table allows; each table has one writer) are checked, beyond
-private names, once the code is grouped by module, since a module is then a folder a check can see.
-Once the queue exists, a further check holds that nothing writes to the database outside a queued
-change, apart from the queue's own records (a change put on it, dropped, or waiting on a retry), the
-migrations run at start-up and the retry queue for log lines. The rules about how things are built
-(the hooks, the one builder, start-up, the sweep) cannot be checked by reading the code until they
-exist.
+Not every rule has its check yet. Once the queue exists, a further check holds that nothing writes
+to the database outside a queued change, apart from the queue's own records (a change put on it,
+dropped, or waiting on a retry), the migrations run at start-up and the retry queue for log lines.
+The rules about how things are built (the hooks, the one builder, start-up, the sweep) cannot be
+checked by reading the code until they exist.

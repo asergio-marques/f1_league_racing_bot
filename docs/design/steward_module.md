@@ -182,13 +182,13 @@ grace, unlike every other job in the service: [STW-RST-001] requires what came d
 be carried out on start, and the service's 300-second default would discard a deliberation close
 that fell in a six-hour outage.
 
-**Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once
-and concurrently, which is not "in the order it would have happened" [STW-RST-001]. So the sweep
-runs before the scheduler starts: it reads the module's own rows, applies the downtime extension,
-then walks what is still due in ascending order of its moment and re-arms the rest. It is also
-where a cycle close waiting for a repaired channel is tried again [STW-RST-004].
-`_recover_rsvp_views_and_deadlines` in `bot.py` is the precedent, down to containing each failure
-so that a start-up cannot be taken down by one unreadable row.
+**Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once and
+concurrently, which is not "in the order it would have happened" [STW-RST-001]. So the sweep runs
+before the scheduler starts: it reads the module's own rows, applies the downtime extension, then
+walks what is still due in ascending order of its moment and re-arms the rest. It is also where a
+cycle close waiting for a repaired channel is tried again [STW-RST-004].
+`_recover_rsvp_views_and_deadlines` in `__main__.py` is the precedent, down to containing each
+failure so that a start-up cannot be taken down by one unreadable row.
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
@@ -277,19 +277,20 @@ which owns `/division`; `module enable steward` to `module_cog`; `images templat
 `licence` value of `images config toggle` [STW-SHT-017, STW-SHT-018] to `image_cog`; the three
 test-mode commands [STW-TST-002, STW-TST-003, STW-TST-005] to `test_mode_cog`.
 
-Two guards, not one. `utils.channel_guard` has `league_admin_only` and `league_manager_only`;
-levels 3 and 4 [STW-MOD-018] need `head_steward_only` and `steward_only` beside them, checking the
-team list rather than a role [STW-TEM-002] and checking the steward command channel rather than the
-interaction channel [STW-CHN-012]. They belong in `channel_guard` with the other two, whose module
-docstring is where the "two tiers" statement it corrects also lives.
+Two guards, not one. `leaguebot.core.utils.channel_guard` has `league_admin_only` and
+`league_manager_only`; levels 3 and 4 [STW-MOD-018] need `head_steward_only` and `steward_only`
+beside them, checking the team list rather than a role [STW-TEM-002] and checking the steward
+command channel rather than the interaction channel [STW-CHN-012]. They belong in `channel_guard`
+with the other two, whose module docstring is where the "two tiers" statement it corrects also
+lives.
 
 ---
 
 ## 6. Views, forms and custom ids
 
-Everything derives from `LeagueView` and `LeagueModal`; `tests/unit/test_one_league_server.py` will
-fail otherwise, and a persistent view answering its custom id on a server the league has left is
-what those bases exist to refuse.
+Everything derives from `LeagueView` and `LeagueModal`; `tests/repository/test_one_league_server.py`
+will fail otherwise, and a persistent view answering its custom id on a server the league has left
+is what those bases exist to refuse.
 
 **`stw:<control>:<ticket row id>`, colon-separated, integer key.** The unique ticket ID is for
 people and runs to 21 characters (`S12_D3_R22_001_APPEAL`); the row id is short and never changes.
@@ -382,11 +383,11 @@ fetches that message and reads its attachments.
 ## 8. The schema change
 
 The bot is not live, so every table and column above is added to
-`src/db/migrations/001_baseline.sql` rather than to a new migration, as issue #254 settled. Each is added by the issue
-that first needs it, not in one block up front: S01 the licence and sanction tables, S02 the config
-row, S03 the channels and `steward_messages`, S04 the team, S06 the outcomes, S08 the auto-rules,
-S10 the tickets, S11 the ballots and verdicts, S12 the cycles, S16 the close record, S36 the
-downtime record.
+`src/leaguebot/core/db/migrations/001_baseline.sql` rather than to a new migration, as issue #254
+settled. Each is added by the issue that first needs it, not in one block up front: S01 the licence
+and sanction tables, S02 the config row, S03 the channels and `steward_messages`, S04 the team, S06
+the outcomes, S08 the auto-rules, S10 the tickets, S11 the ballots and verdicts, S12 the cycles, S16
+the close record, S36 the downtime record.
 
 The cost is that a developer's existing database has to be recreated at each such issue —
 `run_migrations` will not re-apply a baseline it has already recorded, and refuses a database
