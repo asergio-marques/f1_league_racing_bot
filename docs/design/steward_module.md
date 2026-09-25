@@ -191,10 +191,11 @@ closed ticket's channel deletion and a timed ban's expiry, and its way of tellin
 events came due reads the due moments of each that have passed. Its handlers move only the windows
 [STW-RST-003]. The handler holds this module's logic. Handed an event, by the sweep or by the
 scheduler, it puts one change on the queue, whose steps first apply any downtime not yet applied,
-reading the downtime record that the start step's change, queued ahead of it, has written; then act
-on the event if its row still says it is due, and otherwise re-arm it at its moved moment. So a
-window that merely contained the outage, with no boundary falling inside it, moves when its own end
-falls due. A cycle close waiting for a repaired channel is the change queue's (§4).
+reading the module's downtime record, written at start by the start step's change, queued ahead of
+it, and after a gateway cut by the change `on_resumed` asks for; then act on the event if its row
+still says it is due, and otherwise re-arm it at its moved moment. So a window that merely contained
+the outage, with no boundary falling inside it, moves when its own end falls due. A cycle close
+waiting for a repaired channel is the change queue's (§4).
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
