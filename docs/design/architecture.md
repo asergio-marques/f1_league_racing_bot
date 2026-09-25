@@ -103,7 +103,7 @@ hooks without importing a module.
   module; the one exception to both is the bot's type, which names every service for the type
   checker (below). The log line's handler is a service in core, not a helper.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
-- **A model** is plain data. It uses no Discord and no database.
+- **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in core** opens connections and applies migrations, and imports nothing else
   of the bot's.
 - **The entry point** builds the services, wires them together and starts the bot. It holds no
