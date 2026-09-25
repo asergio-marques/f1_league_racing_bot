@@ -42,13 +42,11 @@ Every practice names its primary source. Cite that source in a finding, not this
   hides the cycle from the interpreter but not from the design: it is still an upward
   dependency and is counted as one. *Source:* PEP 544 (Protocols).
 - **Enforce the rule mechanically, as a fitness function.** A written layering rule decays.
-  One enforced by the build does not. There are two current ways to enforce it, and the
-  choice between them is the user's:
-  - `import-linter` contracts (`layers`, `forbidden`, `independence`) run in CI. The cost is a
-    new pinned dependency and a CI step. *Source:* import-linter documentation.
-  - An `ast` test in the suite. This repo already pins rules that way:
-    `tests/repository/test_coverage_scope.py`, `test_migration_steps.py`,
-    `test_type_check_config.py`.
+  One enforced by the build does not. *Source:* import-linter documentation. **Settled here:**
+  `import-linter` contracts in `.importlinter`, run by `tests/repository/test_import_contracts.py`
+  within the suite, for which code may import which, and `ast` checks in
+  `tests/repository/test_architecture_rules.py` for the rest (architecture.md, "How the rules
+  are checked").
 - **Introduce the rule onto code that breaks it as a ratchet.** List each existing breach in
   the check, naming the issue that will remove it. The test fails on any new breach, and also on any
   listed breach that has since gone, so the list can only shrink. This is how each module
@@ -57,23 +55,32 @@ Every practice names its primary source. Cite that source in a finding, not this
 ## 2. Modules, packages and boundaries
 
 - **Package by feature first, by layer second.** Ownership then becomes a property of the
-  tree rather than of a build script. For example `services/results/`, or `results/` holding
-  its own `services`, `cogs` and `models`. *Source:* cosmicpython appendix B, "A
-  Template Project Structure"; the "package by feature" argument generally.
+  tree rather than of a build script. *Source:* cosmicpython appendix B, "A Template Project
+  Structure"; the "package by feature" argument generally. **Settled here:** a folder per module
+  under `leaguebot/`, and inside each a folder per kind of code (`cogs/`, `services/`,
+  `models/`, `utils/`, and `db/` in core); a file's module is the folder it sits in
+  (architecture.md, "How the code is laid out").
 - **Each package has a small public surface and hides its internals.** Other modules import
   from the package, not from its internal modules. `__all__` or re-exports in `__init__.py`
   declare the surface. A leading underscore marks a private module. An `independence` or
   `forbidden` contract (or an `ast` test) pins it. *Source:* PEP 8, "Public and internal
-  interfaces".
+  interfaces". **Settled here:** a name with a leading underscore is used only inside its own
+  module, and what a module offers the others is public, with a docstring saying what it
+  promises (architecture.md, "How modules and core fit together").
 - **Modules depend on core and never the reverse.** Module-to-module dependencies are
   declared, acyclic, and agree with the dependency rules in each module's wip-spec. A cycle
   between two modules means they are one module, or share a concept that belongs in core.
+  **Settled here:** core reaches a module only through hooks the builder signs the module up
+  to; a module uses another only as the dependency table allows, and any module may use image
+  (architecture.md, "How modules and core fit together").
 - **Use one top-level package with a unique name**, run with `python -m <package>`. Generic
   top-level names (`utils`, `models`, `services`, `db`, `cogs`) share one namespace with every
   installed distribution. Running a file with its directory on `sys.path` is what makes
   those bare names importable, and it is the source of #398's failure class. *Source:*
   Python Packaging User Guide, "src layout vs flat layout"; PEP 621 for `pyproject.toml`
-  metadata. A move to `pyproject.toml` must take CLAUDE.md's `.coveragerc` rule into account.
+  metadata. **Settled here:** `leaguebot`, installed editable through `pyproject.toml` and
+  started with `python -m leaguebot`. `pyproject.toml` holds the packaging alone; coverage keeps
+  `.coveragerc`, as CLAUDE.md sets out.
 - **Size is a signal, never a target.** Split a file where responsibilities that change for
   different reasons meet, never at a line count. A module thousands of lines long, a service
   imported from twenty files, or one file importing thirty are places to look. They are not
@@ -94,19 +101,24 @@ Every practice names its primary source. Cite that source in a finding, not this
 
   The trade-off to weigh: attributes on the bot are what discord.py's own examples do, but
   they couple every service to the bot object. A container can be built in a test without a
-  bot at all.
+  bot at all. **Settled here:** typed attributes on `LeagueBot`, every service built by one
+  builder; the container was rejected, since the services still need the bot for Discord
+  (architecture.md, "How the code is laid out").
 - **Passing the bot, or the container, into a service is the service-locator anti-pattern.**
   A service that receives `bot` and fishes other services out of it hides what it depends
   on. It also cannot be constructed without the whole graph. A service names the services it
-  needs.
+  needs. **Settled here:** a service that needs Discord is given the bot for that and nothing
+  more, and is handed the other services it needs (architecture.md, "How the code is laid
+  out").
 - **Configuration is read once, at start-up, into a typed settings object**, and is passed in
-  from there. Nothing reads `os.environ` at import. `src/leaguebot/__main__.py` reading `BOT_TOKEN` at import
-  is why `tests/conftest.py` has to plant a placeholder.
-- **A base class earns its place by holding behaviour its subclasses share.** In discord.py,
-  `commands.Cog` subclasses share typed service access and the error path. The existing
+  from there. Nothing reads `os.environ` at import. `src/leaguebot/__main__.py` reading
+  `BOT_TOKEN` at import is why `tests/conftest.py` has to plant a placeholder.
+- **A base class earns its place by holding behaviour its subclasses share.** The
   `LeagueView`, `LeagueModal` and `LeagueCommandTree` bases are the precedent. Use
   `@typing.override` (PEP 698, 3.12) on every overriding method so a renamed base method
-  fails the type check.
+  fails the type check. **Settled here:** no `LeagueCog` base; it would hold two lines, and an
+  error handler added to it would switch off the one failure path for every command
+  (architecture.md, "Errors and failures").
 
 ## 4. Data access
 
@@ -116,7 +128,10 @@ Every practice names its primary source. Cite that source in a finding, not this
   not pay. Confining SQL to services is the principle. Repositories are one way to hold it.
 - **Every table has one owning module that writes it.** Other modules read it through the
   owner's service, or through a read model the owner publishes. A table written by two
-  modules has two sets of invariants and no single keeper.
+  modules has two sets of invariants and no single keeper. **Settled here:** a module's own
+  columns on a core table are that module's alone, and core does not set them either;
+  `tests/repository/test_architecture_rules.py` holds every table's owner and those columns
+  (architecture.md, "The database").
 - **Keep transactions short, and never `await` a network call inside an open write
   transaction.** SQLite has one writer, so a Discord round-trip inside a transaction holds
   the whole bot's write lock for its duration (#155). Commit first, post second, and record
@@ -160,8 +175,10 @@ Every practice names its primary source. Cite that source in a finding, not this
   and the event, so re-registering replaces the job rather than duplicating it, and running a
   job twice does no harm (#426, #429).
 - **A run missed while the bot was down is either caught up or skipped by an explicit
-  rule.** That rule is written where the job is registered, never left to the scheduler's
-  default misfire behaviour.
+  rule,** never left to the scheduler's default misfire behaviour. **Settled here:** core's one
+  start-up sweep only hands each missed run, in order, to the handler its module provides for
+  that kind of job, and the handler decides what becomes of it (architecture.md, "Timed work
+  and restarts").
 - **Inject the clock.** Services take `now`. The house already does this, and CLAUDE.md
   requires tests to pin it. Datetimes are timezone-aware and UTC inside the bot
   (`datetime.now(UTC)`, 3.11 alias), and `zoneinfo` is used only for display. *Source:*
@@ -171,7 +188,10 @@ Every practice names its primary source. Cite that source in a finding, not this
 
 - **One gateway for writing to channels.** Retries, rate-limit handling, the log-channel
   copy and the failure record live in that gateway, not in each caller. *Source:* ports and
-  adapters (cosmicpython ch. 3 "Coupling and Abstractions").
+  adapters (cosmicpython ch. 3 "Coupling and Abstractions"). **Settled here otherwise:** one
+  small handler for each kind of post (log line, standing post, notice, bot-owned channel),
+  one gateway having been rejected as needing every module's rules (architecture.md, "Posting
+  to Discord").
 - **A post that might later be edited or deleted returns its message identity, and the
   caller persists it.** A `.send()` whose result is thrown away is a message nothing can
   find again, which is #189's class. `tools/architecture_survey.py` counts them.
@@ -217,13 +237,16 @@ CLAUDE.md holds the type-check rules. Beyond them:
 - **A service is testable without Discord.** If its test needs a fake bot, the service
   depends on too much.
 - **Tests mirror the package tree** once services are grouped, so a module's tests are found
-  where its code is.
+  where its code is. **Settled here:** `tests/<module>/`, beside `tests/repository/` for the
+  repository's own checks and `tests/support/` for shared helpers (architecture.md, "How the
+  code is laid out").
 
 ## 11. Tooling, for the record
 
 These are current practice, but each is a new dependency and a CI change. A design pass
 raises one as a candidate, with its cost, for the user to decide. It never introduces one on
-its own.
+its own. **Settled so far:** import-linter and `pyproject.toml` are adopted (above); ruff was
+declined for now (architecture.md, "How the rules are checked"); a lockfile is undecided.
 
 - **ruff** for linting and formatting. It replaces flake8, isort and black, and its
   `C901`/`PLR0912`/`PLR0915` complexity rules, `BLE001`, `ASYNC`, `DTZ`, `RUF006` and
