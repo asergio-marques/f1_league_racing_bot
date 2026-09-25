@@ -19,14 +19,14 @@ times.
 issue and opening the pull request. Its Phases 4 and 7 are followed as written and are not
 restated here.
 
-**#282 is done, and `docs/design/architecture.md` is its record.** Its six candidates are
-settled there, each with what it rejected, and [`python-practices.md`](python-practices.md)
-notes each settlement beside the practice it answers. Do not ask them again. A later change to
-the architecture, made on any branch, is reviewed as Phase 9 below reviews the file: yourself
-first, then a fresh `design-verifier` (job 2) that judges the change against `architecture.md`,
-the decisions made in the session that changed it, and `python-practices.md`, and runs again if
-the fixes were more than wording. A whole re-review of the bot runs Phases 2 and 3 against the
-file as it stands.
+**#282 is done, and `docs/design/architecture.md` is its record.** Its six candidates are settled
+there, each with what it rejected where it rejected one, and
+[`python-practices.md`](python-practices.md) notes each settlement beside the practice it answers.
+Do not ask them again. A later change to the architecture, made on any branch, is reviewed as Phase
+9 below reviews the file: yourself first, then a fresh `design-verifier` (job 2) that judges the
+change against `architecture.md`, the decisions made in the session that changed it, and
+`python-practices.md`, and runs again if the fixes were more than wording. A whole re-review of the
+bot runs Phases 2 and 3 against the file as it stands. Neither runs Phase 1, which is #282's own.
 
 ## What is automated, and what is not
 
