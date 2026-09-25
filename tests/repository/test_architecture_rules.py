@@ -976,14 +976,31 @@ def _columns_of_other_modules(table: str, module: str) -> frozenset[str]:
     )
 
 
+#: The column list of an `INSERT`, right after its table's name.
+_INSERTED = re.compile(r"\A\s*\((?P<columns>[^)]*)\)")
+
+
+def _columns_inserted(insert_tail: str) -> set[str] | None:
+    """The columns an `INSERT` sets, from the text after its table name; None where it names
+    none, and so sets every column in turn."""
+    match = _INSERTED.match(insert_tail)
+    if match is None:
+        return None
+    columns = {column.strip() for column in match.group("columns").split(",")}
+    if not all(re.fullmatch(r"[a-z_][a-z0-9_]*", column) for column in columns):
+        return None
+    return columns
+
+
 def _writes_refused(sql: str, module: str) -> list[tuple[str, bool]]:
     """Every write in *sql* that *module* may not make, one entry per statement, as ``(table,
     whether the columns it sets could not be read)``.
 
-    A table's owner creates and deletes its rows whatever columns they carry. An `UPDATE` of a
-    core table that holds a module's own columns is weighed by the columns it sets: the module
-    may set its own columns and no others, and the owner every column but those. Where the
-    columns cannot be read, as when one is spliced in at run time, it is refused.
+    A table's owner creates and deletes its rows. On a core table that holds a module's own
+    columns, a write is weighed by the columns it sets: the module may set its own columns in an
+    `UPDATE` and no others, and the owner every column but those, whether it updates a row or
+    creates one. Where the columns cannot be read, as when one is spliced in at run time or an
+    `INSERT` names none, it is refused.
     """
     refused = []
     for match in _WRITES.finditer(sql):
@@ -1004,6 +1021,12 @@ def _writes_refused(sql: str, module: str) -> list[tuple[str, bool]]:
                 refused.append((table, False))
         elif owner != module:
             refused.append((table, False))
+        elif others and not match.group("verb").startswith("DELETE"):
+            columns = _columns_inserted(sql[match.end():])
+            if columns is None:
+                refused.append((table, True))
+            elif columns & others:
+                refused.append((table, False))
     return refused
 
 
@@ -1113,17 +1136,22 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/pack_service.py", "pack"): (6, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
     ("core/services/season_lifecycle_service.py", "delete_driver_profiles"): (2, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.add_division"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.add_round"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_division"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_round"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.delete_season"): (15, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.duplicate_division"): (2, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_forecast_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.update_round_field"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.update_session_phase2"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.update_session_phase3"): (1, PASS["core"]),
+    ("core/services/season_service.py", "_sync_division_rounds"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
@@ -1193,7 +1221,12 @@ def test_the_scan_keeps_a_module_s_own_columns_to_that_module():
     ) == ["server_configs"]
     assert _tables_written("UPDATE rounds SET checkin_cleared = 1", "weather") == ["rounds"]
     assert _writes_refused("UPDATE rounds SET ", "core") == [("rounds", True)]
-    assert _tables_written("INSERT INTO rounds (id, phase1_done) VALUES (1, 0)", "core") == []
+    assert _tables_written(
+        "INSERT INTO rounds (id, phase1_done) VALUES (1, 0)", "core"
+    ) == ["rounds"]
+    assert _tables_written("INSERT INTO rounds (id, status) VALUES (1, ?)", "core") == []
+    assert _writes_refused("INSERT INTO divisions VALUES (?, ?)", "core") == [("divisions", True)]
+    assert _tables_written("DELETE FROM rounds WHERE id = ?", "core") == []
     assert _tables_written("UPDATE seasons SET status = ?", "core") == []
 
 
