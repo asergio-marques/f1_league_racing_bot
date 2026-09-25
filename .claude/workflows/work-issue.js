@@ -36,7 +36,7 @@ const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
 }
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, previous, rulings, kind ("fix" or "design-pass") and maxRounds.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass") and maxRounds.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -308,7 +308,10 @@ if (stage === 'check') {
     ...(design ? design.questions : []),
     ...triaged.escalations,
   ]
-  log(`Questions for the owner: ${questions.length}. Breaches the plan would add: ${architecture ? architecture.breachesAdded.length : '?'}.`)
+  // Every spec rule the plan does not simply follow is the owner's to settle; the calling session
+  // makes sure each one reaches them as a question.
+  const specRulesToSettle = product ? product.specRules.filter(r => r.status !== 'follows') : []
+  log(`Questions for the owner: ${questions.length}. Spec rules to settle: ${specRulesToSettle.length}. Breaches the plan would add: ${architecture ? architecture.breachesAdded.length : '?'}.`)
   return {
     stage,
     issue,
@@ -317,6 +320,7 @@ if (stage === 'check') {
     design,
     product,
     questions,
+    specRulesToSettle,
     citations: [...(product ? product.citations : []), ...triaged.answers],
     planChanges: [...(architecture ? architecture.planChanges : []), ...triaged.findings.map(f => f.fix)],
     failed,
@@ -337,7 +341,8 @@ const previous = ARGS.previous || null
 if (previous && previous.stage !== stage) throw new Error(`previous is a ${previous.stage} result, and this run is the ${stage} stage.`)
 const offset = previous ? previous.lastRound : 0
 const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f }]))
-const citations = previous ? [...previous.citations] : []
+// Rules cited in an earlier stage, such as the tests stage's for the build, arrive in `citations`.
+const citations = previous ? [...previous.citations] : [...(ARGS.citations || [])]
 const commits = previous ? [...previous.commits] : []
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
@@ -376,6 +381,7 @@ const BUILDER_RULES = `The rules of the work:
 - Commit at the plan's commit points, one change per commit. Stage every path by name, from git -C ${worktree} status --porcelain; never git add -A, git add . or git commit -a. Give each commit a one-line subject in lower case and the past tense, as the branch's history does, with no trailer of any kind.
 - Move or rename a file with git mv, in a commit apart from any change to its content.
 - Every change to production code carries its tests (CLAUDE.md, "Testing"). Before each commit, run the tests that cover what you changed, as below; before each commit that touches src/, run ${BIN}/mypy from ${worktree}. Do not run the whole suite: the round's tester does.
+- Where the owner's decisions call for a change to a wip-spec, the README or a guide, that change is owed by this work: in the build, make it in a commit of its own, in the document's own voice.
 - Never push, never touch GitHub, never file anything, and never pip install into the shared virtualenv.
 - Where the plan, the owner's decisions and the rules cited to you do not settle something, return it as a question rather than guess: kind "business" for anything about what the bot does, what a league sees or what a spec says, and "engineering" for the rest. Carry on with whatever it does not block, and set blocked only where nothing is left that you can do.
 - Finish with everything committed, new files included: git -C ${worktree} status --porcelain --untracked-files=all prints nothing.

@@ -77,7 +77,9 @@ Check the branch against:
   `async def`. No test relies on the host (the first item an index yields, installed fonts, `.env`).
   The `rasteriser` marker is used only where the test really rasterises. In the tests stage, each new
   test is marked `xfail(strict=True)` with a reason naming the issue, and the tester's `--runxfail`
-  output shows it failing for the reason the plan gives, not for a typo or a missing import.
+  output shows it failing for the reason the plan gives. An `ImportError` or `AttributeError` for
+  code the plan has not written yet is that reason, since such a test imports it inside its body;
+  a `NameError` from a typo, a missing fixture or a syntax error is not.
 - **CLAUDE.md's other rules** that a diff can break: British English in identifiers and prose, no
   `# type: ignore` in `src/`, a `cast` only where true by construction, `VERSION` untouched, no
   schema change outside the baseline before go-live.
@@ -90,7 +92,8 @@ For each engineering question the builder raised, **cite** the written rule that
 **escalate** it to the owner with the options and your recommendation. Never settle one from your
 own preference. Pass business questions on untouched.
 
-Where the round changed a file under `docs/design/`, name it, so a design verifier can review it.
+Name every file under `docs/design/` the branch changes since its base, so that a design verifier
+reviews it.
 
 ## What is material
 
