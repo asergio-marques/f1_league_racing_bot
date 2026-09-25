@@ -360,16 +360,16 @@ const WHERE = `Work only in the checkout at ${worktree}, on branch ${branch}. Fi
 const BRANCH_READ = `The branch is checked out at ${worktree}, on ${branch}, and its work starts at ${base}: read git -C ${worktree} log ${base}..HEAD, git -C ${worktree} diff ${base}...HEAD, and the files under ${worktree}.`
 const NO_PYTEST = `Never run pytest: ${stage === 'build' ? 'the suite is running beside you, and a second session corrupts it' : 'the tester has run what is needed'}.`
 
-const RUN_PYTEST = `How to run pytest here: always from ${worktree}, behind the test lock, with the pinned interpreter, so that the run tests this checkout's code:
-
-    cd ${worktree} && flock -w 480 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q
-
-Give every such Bash call a timeout of 600000 ms. Another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes, so flock gives up waiting after eight: where it exits 1 before pytest has printed anything, the lock is still held, and you run the same line again. A run that may itself outlast ten minutes (the full suite always does on this host) is started detached instead, and waited on through its process:
+// One way to run pytest for every agent, short runs included: detached, behind the lock, and
+// waited on through its process. A foreground run can outlast the ten-minute cap on one shell
+// call, waiting for the lock or running, and a call cut off mid-run leaves the lock held by a
+// pytest nobody reads.
+const RUN_PYTEST = `How to run pytest here, for a handful of tests and the whole suite alike: always from ${worktree}, behind the test lock, with the pinned interpreter, so that the run tests this checkout's code. Start it detached, and wait on it through its process:
 
     cd ${worktree} && rm -f LOG LOG.exit && nohup bash -c 'flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
     timeout 540 tail --pid=<that pid> -f /dev/null; cat LOG.exit 2>/dev/null || echo still running
 
-repeating the second line, each call with a timeout of 600000 ms, until the exit code appears. Never wait with sleep, pgrep or pkill; never read an exit code through a pipe such as | tail; never start a second pytest session while one of yours runs; and never edit a file while a run you started is going.`
+where LOG is a file under /tmp named for the run. Repeat the second line, each Bash call with a timeout of 600000 ms, until the exit code appears: another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes. Then read LOG. Never wait with sleep, pgrep or pkill; never read an exit code through a pipe such as | tail; never start a second pytest session while one of yours runs; and never edit a file while a run you started is going.`
 
 const BUILDER_RULES = `The rules of the work:
 - Stay inside the approved plan. A separate defect you notice goes in separateDefects[], as a draft for the owner; it is not fixed here.
@@ -633,6 +633,7 @@ const upheldQuestion = f => ({
 })
 
 const testsProblems = t => {
+  if (t === undefined) return ['no failing test is written yet']
   if (!t) return ['the tester returned nothing']
   const problems = []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
@@ -645,8 +646,13 @@ const testsProblems = t => {
   return [...problems, ...t.otherFailures]
 }
 
+// A builder with no test written yet has nothing for the tester to run: an empty list of targets
+// would be the whole suite.
 const reviewTests = async (k, built, questions) => {
-  const test = await agent(testsTesterPrompt(k, built.tests), { label: `tests:r${k}:tester`, phase: 'Review', effort: 'low', schema: TESTS_CHECK_SCHEMA })
+  const test = built.tests.length
+    ? await agent(testsTesterPrompt(k, built.tests), { label: `tests:r${k}:tester`, phase: 'Review', effort: 'low', schema: TESTS_CHECK_SCHEMA })
+    : undefined
+  if (test === undefined) log(`Round ${k}: no failing test is written yet, so the tester is not sent out.`)
   const [issueResult, productResult] = await parallel([
     () => agent(issuePrompt(k, questions.engineering, test), { label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, test), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
@@ -672,7 +678,9 @@ const suiteProblems = t => {
 const reviewBuild = async (k, built, questions) => {
   const quiet = built.blocked && !built.commits.length
   if (quiet) log(`Round ${k}: the builder is blocked and made no commit, so the suite is not run.`)
-  const [issueAndDesign, code, product, test] = await parallel([
+  // The tester goes first: the suite is the longest wait, and the Pi runs two agents at once.
+  const [test, issueAndDesign, code, product] = await parallel([
+    () => quiet ? Promise.resolve(undefined) : agent(buildTesterPrompt(k), { label: `build:r${k}:tester`, phase: 'Review', effort: 'low', schema: SUITE_SCHEMA }),
     () => agent(issuePrompt(k, questions.engineering, null), { label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
       .then(async issueResult => {
         for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
@@ -682,7 +690,6 @@ const reviewBuild = async (k, built, questions) => {
       }),
     () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, null), { label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
-    () => quiet ? Promise.resolve(undefined) : agent(buildTesterPrompt(k), { label: `build:r${k}:tester`, phase: 'Review', effort: 'low', schema: SUITE_SCHEMA }),
   ])
   const green = !!test && !test.environmentProblem && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0
   return {
