@@ -14,8 +14,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-#: Repository root — three levels up from src/utils/paths.py.
-PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
+#: Repository root — five levels up from src/leaguebot/core/utils/paths.py.
+PROJECT_ROOT: Path = Path(__file__).resolve().parents[4]
 
 
 class PathContainmentError(ValueError):

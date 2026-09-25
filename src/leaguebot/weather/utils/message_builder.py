@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from models.division import Division
-    from models.round import Round
+    from leaguebot.core.models.division import Division
+    from leaguebot.core.models.round import Round
 
 
 def discord_ts(dt: datetime, fmt: str = "F") -> str:

@@ -22,10 +22,10 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from db.database import get_connection
+from leaguebot.core.db.database import get_connection
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -287,7 +287,7 @@ async def post_phase_message(
 
     if attachment is None:
         # The textual path, unchanged: the router chunks it and owns its own retry.
-        from utils.output_router import ForecastChannel
+        from leaguebot.core.utils.output_router import ForecastChannel
 
         msg = await bot.output_router.post_forecast(
             ForecastChannel(channel_id), text, enqueue_on_failure=True
@@ -296,7 +296,7 @@ async def post_phase_message(
         # One `finally` around the whole graphic branch. Two of its three exits abandon the
         # picture *before* the send — an unfetchable channel and one that is not a text
         # channel — and those are the paths a per-send cleanup would miss.
-        from services.image_render_service import discard_attachment
+        from leaguebot.image.services.image_render_service import discard_attachment
 
         try:
             channel = bot.get_channel(channel_id)
@@ -325,7 +325,7 @@ async def post_phase_message(
                     phase_number, division_id, exc,
                 )
                 try:
-                    from services import retry_service
+                    from leaguebot.core.services import retry_service
 
                     await retry_service.enqueue(
                         db_path,

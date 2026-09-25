@@ -17,7 +17,7 @@ Inverting it by rule gets ``British`` wrong (its last key is ``northern ireland`
 
 Usage::
 
-    from utils.country_data import NATIONALITY_COUNTRIES
+    from leaguebot.image.utils.country_data import NATIONALITY_COUNTRIES
     country = NATIONALITY_COUNTRIES[nationality]   # KeyError -> module defect
 
 A missing entry is a defect of this module and is caught by the totality test in

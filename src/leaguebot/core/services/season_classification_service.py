@@ -4,7 +4,7 @@ A division's standings and its attendance record are posted after every round. T
 adds the two occasions that bracket those: the **opening** classification, posted once when
 the season is approved, and the **final** one, posted once when it completes. Both are the
 same two sheets a league already reads every round, differing only in the phrase they carry —
-see :class:`models.classification_occasion.ClassificationOccasion`, which is where that phrase
+see :class:`leaguebot.core.models.classification_occasion.ClassificationOccasion`, which is where that phrase
 and the behaviour around it live.
 
 **Neither posting carries message text.** The phrase naming the occasion is drawn on the
@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import logging
 
-from models.classification_occasion import ClassificationOccasion
-from utils.league_bot import LeagueBot
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -41,10 +41,10 @@ async def post_opening_classifications(
     every posting resolves is keyed by a round. Every cell in that grid is empty, which is
     exactly what an opening sheet should show.
     """
-    from services import standings_service
-    from services.attendance_service import post_attendance_sheet
-    from services.image_results_post import _driver_names
-    from services.results_post_service import _get_show_reserves, post_standings
+    from leaguebot.results.services import standings_service
+    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
+    from leaguebot.image.services.image_results_post import _driver_names
+    from leaguebot.results.services.results_post_service import _get_show_reserves, post_standings
 
     problems: list[str] = []
     if bot is None or guild is None:
@@ -129,10 +129,10 @@ async def post_final_classifications(bot: LeagueBot, guild, db_path: str, season
     recomputed into something the round's own posting would disagree with. A division that
     ran no round at all is skipped: there is no classification to publish.
     """
-    from db.database import get_connection
-    from services import standings_service
-    from services.attendance_service import post_attendance_sheet
-    from services.results_post_service import (
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services import standings_service
+    from leaguebot.attendance.services.attendance_service import post_attendance_sheet
+    from leaguebot.results.services.results_post_service import (
         _get_show_reserves,
         driver_standings_for_display,
         post_standings,

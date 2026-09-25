@@ -9,7 +9,7 @@ Two steps, deliberately separate, as 037's calendar service is:
    leave, which column groups leave, and which single row is recoloured.
 
 **This module renders nothing.** Every value the graphic and the textual table both draw is
-produced by ``utils.results_formatter``'s row builders and merely *placed* here — that is
+produced by ``leaguebot.results.utils.results_formatter``'s row builders and merely *placed* here — that is
 Constitution XIV.7 as amended at v4.4.0, and it is why no lap time, gap, interval, lap count
 or penalty is formatted anywhere below. See
 specs/039-results-image-generation/contracts/shared-rendering.md.
@@ -21,15 +21,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
     catalogue_for,
     row_crop_fields,
 )
-from models.points_config import SessionType
-from utils.results_formatter import (
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.utils.results_formatter import (
     NOT_APPLICABLE,
     UNKNOWN_TEAM,
     build_qualifying_rows,
@@ -37,9 +37,9 @@ from utils.results_formatter import (
     fastest_lap_holder,
     format_session_label,
 )
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
-from utils.country_data import country_for_nationality
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
+from leaguebot.image.utils.country_data import country_for_nationality
 
 log = logging.getLogger(__name__)
 

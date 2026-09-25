@@ -14,10 +14,10 @@ import logging
 import discord
 from discord.ext import commands
 
-from models.driver_profile import DriverState
-from utils.channel_guard import is_league_manager
-from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.core.utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
 
 log = logging.getLogger(__name__)
 

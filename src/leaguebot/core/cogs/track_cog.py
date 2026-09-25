@@ -8,10 +8,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from db.database import get_connection
-import services.track_service as track_service
-from utils.channel_guard import league_manager_only
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+import leaguebot.core.services.track_service as track_service
+from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

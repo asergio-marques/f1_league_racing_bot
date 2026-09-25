@@ -26,8 +26,8 @@ and applies them in one of two modes:
   nobody to refuse.
 
 **Formats** are the values an input parses rather than publishes, each defined once below. A time
-of day and a colour had a single home before this module and keep it: ``utils.time_parsing`` and
-``utils.colour``.
+of day and a colour had a single home before this module and keep it: ``leaguebot.core.utils.time_parsing`` and
+``leaguebot.image.utils.colour``.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
-from utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
 
 
 class Rule(Enum):

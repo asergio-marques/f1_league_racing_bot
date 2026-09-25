@@ -7,7 +7,7 @@ This module is kept as an empty stub to avoid import errors.
 from __future__ import annotations
 
 from discord.ext import commands
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 
 class AmendmentCog(commands.Cog):

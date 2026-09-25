@@ -5,7 +5,7 @@ database, so jobs survive restarts. A job whose moment passed while the bot was 
 on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, every job's
 misfire grace). Later than that, APScheduler skips it with a warning in the host's log, and
 whatever should be caught up after a longer stop is caught up by the start-up recovery in
-`bot.py`. Each kind of job is to state its own rule where it is registered
+`__main__.py`. Each kind of job is to state its own rule where it is registered
 (`docs/design/architecture.md`, "Timed work and restarts").
 
 The separation is deliberate and is not tidiness. `SQLAlchemyJobStore` is synchronous, and
@@ -32,8 +32,8 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from db.database import get_connection
-from models.round import Round, RoundFormat
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import Round, RoundFormat
 
 if TYPE_CHECKING:
     pass
@@ -402,7 +402,7 @@ class SchedulerService:
         phase2_cb: Callable,
         phase3_cb: Callable,
     ) -> None:
-        """Register async callables for each phase. Called from bot.py on_ready."""
+        """Register async callables for each phase. Called from __main__.py on_ready."""
         self._phase_callbacks[1] = phase1_cb
         self._phase_callbacks[2] = phase2_cb
         self._phase_callbacks[3] = phase3_cb
@@ -411,7 +411,7 @@ class SchedulerService:
         """Register the async callable invoked when a Mystery round notice fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._mystery_notice_callback = callback
 
@@ -419,7 +419,7 @@ class SchedulerService:
         """Register the async callable invoked 24 h after a round start.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._forecast_cleanup_callback = callback
 
@@ -427,7 +427,7 @@ class SchedulerService:
         """Register the async callable invoked at round start time for result submission.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._result_submission_callback = callback
 
@@ -435,7 +435,7 @@ class SchedulerService:
         """Register the async callable invoked when an RSVP notice job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._rsvp_notice_callback = callback
 
@@ -443,7 +443,7 @@ class SchedulerService:
         """Register the async callable invoked when an RSVP last-notice job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._rsvp_last_notice_callback = callback
 
@@ -451,7 +451,7 @@ class SchedulerService:
         """Register the async callable invoked when an RSVP deadline job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._rsvp_deadline_callback = callback
 
@@ -459,7 +459,7 @@ class SchedulerService:
         """Register the async callable invoked when a round's check-in cleanup job fires.
 
         The callable must accept ``(round_id: int)``.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._rsvp_cleanup_callback = callback
 
@@ -984,7 +984,7 @@ class SchedulerService:
     def register_amendment_sweep_callback(self, callback: Callable) -> None:
         """Register the async callable the standing amendment sweep invokes (#345).
 
-        Injected from `bot.py` after startup, as the other callbacks here are, so the scheduler
+        Injected from `__main__.py` after startup, as the other callbacks here are, so the scheduler
         keeps no reference to the bot and this module stays importable on its own.
         """
         self._amendment_sweep_callback = callback
@@ -1023,7 +1023,7 @@ class SchedulerService:
         """Register the async callable invoked when the signup close timer fires.
 
         The callable takes no arguments.
-        Called from bot.py on_ready after the scheduler is started.
+        Called from __main__.py on_ready after the scheduler is started.
         """
         self._signup_close_callback = callback
 

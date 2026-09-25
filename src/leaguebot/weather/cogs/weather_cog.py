@@ -12,8 +12,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.channel_guard import league_manager_only
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class WeatherCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        from services.weather_config_service import set_phase_1_days
+        from leaguebot.weather.services.weather_config_service import set_phase_1_days
         result = await set_phase_1_days(self.bot.db_path, days)
 
         if isinstance(result, str):
@@ -118,7 +118,7 @@ class WeatherCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        from services.weather_config_service import set_phase_2_days
+        from leaguebot.weather.services.weather_config_service import set_phase_2_days
         result = await set_phase_2_days(self.bot.db_path, days)
 
         if isinstance(result, str):
@@ -158,7 +158,7 @@ class WeatherCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        from services.weather_config_service import set_phase_3_hours
+        from leaguebot.weather.services.weather_config_service import set_phase_3_hours
         result = await set_phase_3_hours(self.bot.db_path, hours)
 
         if isinstance(result, str):
@@ -198,7 +198,7 @@ class WeatherCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        from services.weather_config_service import (
+        from leaguebot.weather.services.weather_config_service import (
             describe_deadlines,
             get_weather_pipeline_config,
         )

@@ -44,9 +44,9 @@ from pathlib import Path
 
 import discord
 
-from db.database import get_connection
-from utils.asset_resolver import filename_for
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.image.utils.asset_resolver import filename_for
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -144,9 +144,9 @@ def portrait_aspect(config) -> float:
     manager can act on. Reporting it twice, from here, in worse terms, would help nobody.
     """
     try:
-        from services.image_validity_service import class_aspect_of
-        from utils.paths import resolve_within_project_root
-        from utils.svg_document import load_svg
+        from leaguebot.image.services.image_validity_service import class_aspect_of
+        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.image.utils.svg_document import load_svg
 
         filename = getattr(config, "lineup_template", None)
         directory = getattr(config, "template_directory", None)
@@ -288,7 +288,7 @@ async def discard_portraits(bot: LeagueBot, user_ids: Iterable[str]) -> int:
         config = await bot.image_config_service.get_config()
         if config is None:
             return 0
-        from services.image_render_service import resolve_configured_directories
+        from leaguebot.image.services.image_render_service import resolve_configured_directories
 
         directories, _faults = resolve_configured_directories(
             config,
@@ -355,14 +355,14 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
         if not getattr(config, "pfp_daily", False):
             return 0
 
-        from utils.league_server import league_guild
+        from leaguebot.core.utils.league_server import league_guild
 
         guild = await league_guild(bot)
         if guild is None:
             log.warning("driver portraits: the league's server is not reachable")
             return 0
 
-        from services.image_render_service import resolve_configured_directories
+        from leaguebot.image.services.image_render_service import resolve_configured_directories
 
         directories, _faults = resolve_configured_directories(
             config,
@@ -448,7 +448,7 @@ async def refresh_before_render(
             return 0
 
         if directory is _UNSET:
-            from services.image_render_service import resolve_configured_directories
+            from leaguebot.image.services.image_render_service import resolve_configured_directories
 
             directories, _faults = resolve_configured_directories(
                 config,

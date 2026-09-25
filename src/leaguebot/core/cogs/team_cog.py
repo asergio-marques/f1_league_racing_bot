@@ -9,13 +9,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.season import SeasonStage
-from services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
-from utils.asset_resolver import normalise
-from utils.autocomplete import bounded_autocomplete, team_autocomplete
-from utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal
-from utils.league_bot import LeagueBot
-from utils.league_server import LeagueModal
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
+from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import LeagueModal
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class TeamCog(commands.Cog):
 
         Returns True where the command was refused, having answered the interaction.
         """
-        from models.season import SeasonStage
+        from leaguebot.core.models.season import SeasonStage
 
         season = await self.bot.season_service.get_setup_or_active_season(
 
@@ -508,10 +508,10 @@ class TeamCog(commands.Cog):
         # the lineup of record: nothing is written to `lineup_message_id` and the lineup
         # channel is untouched (FR-028). A fatal error rejects rather than falling back —
         # the caller is the one person able to fix the template (Constitution XIV.7).
-        from services.image_lineup_post import lineup_enabled, render_for_command
+        from leaguebot.image.services.image_lineup_post import lineup_enabled, render_for_command
 
         if await lineup_enabled(self.bot):
-            from services.image_render_service import discard_attachment
+            from leaguebot.image.services.image_render_service import discard_attachment
 
             files: list[discord.File] = []
             notices: list = []
@@ -539,7 +539,7 @@ class TeamCog(commands.Cog):
                 if files:
                     text = "\n".join(f"**{div.name}**" for div in all_divisions)
                     if notices:
-                        from services.image_render_service import ImageRenderService
+                        from leaguebot.image.services.image_render_service import ImageRenderService
 
                         await ImageRenderService.report_notices(
                             self.bot, notices

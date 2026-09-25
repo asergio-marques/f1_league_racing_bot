@@ -6,17 +6,17 @@ from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from db.database import get_connection, inserted_id
-from models.points_config import (
+from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.results.models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
     PointsConfigStore,
     SessionType,
 )
-from utils.points_ordering import ordering_violations
+from leaguebot.results.utils.points_ordering import ordering_violations
 
 if TYPE_CHECKING:
-    from utils.xml_import import XmlImportPayload
+    from leaguebot.core.utils.xml_import import XmlImportPayload
 
 log = logging.getLogger(__name__)
 

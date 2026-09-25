@@ -20,7 +20,7 @@ from pathlib import Path
 
 from dataclasses import dataclass, field as dataclass_field
 
-from models.image_module import (
+from leaguebot.image.models.image_module import (
     PROBLEM_NOT_SVG,
     PROBLEM_RASTERISER,
     PROBLEM_UNKNOWN_IMAGE_TYPE,
@@ -30,7 +30,7 @@ from models.image_module import (
     RenderNotice,
     RenderOutcome,
 )
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 #: What a caller should do with the result of ``render_for_posting``.
 POST_IMAGE = "POST_IMAGE"
@@ -140,7 +140,7 @@ def resolve_configured_directories(
     is a failure this class in particular could not report: an unresolvable class is reported,
     but a league would have to notice the absence themselves.
     """
-    from utils.paths import resolve_within_project_root
+    from leaguebot.core.utils.paths import resolve_within_project_root
 
     directories: dict[str, Path] = {}
     faults: dict[str, str] = {}
@@ -411,11 +411,11 @@ def _kind_for_layer(failed_layer: int | None) -> str:
     Keeps a render's problem distinguishable in the same terms the configuration command
     and the season gate use, rather than flattening every invalid template to one kind.
     """
-    from models.image_module import (
+    from leaguebot.image.models.image_module import (
         PROBLEM_MISSING_MANDATORY_FIELD,
         PROBLEM_NOT_FOUND,
     )
-    from services.image_validity_service import LAYER_CATALOGUE
+    from leaguebot.image.services.image_validity_service import LAYER_CATALOGUE
 
     if failed_layer == LAYER_CATALOGUE:
         return PROBLEM_MISSING_MANDATORY_FIELD
@@ -435,7 +435,7 @@ def _removed_field_ids(index, removed) -> set[str]:
     ``inkscape:label`` only where the node is a layer. Sweeping in the labels Inkscape
     writes on ordinary shapes would let an unrelated field escape the sweep.
     """
-    from utils.svg_document import INKSCAPE_NS
+    from leaguebot.image.utils.svg_document import INKSCAPE_NS
 
     label_attr = f"{{{INKSCAPE_NS}}}label"
     groupmode_attr = f"{{{INKSCAPE_NS}}}groupmode"
@@ -468,12 +468,12 @@ def _verify_against_data(root, spec, image_type: str) -> Problem | None:
     All three pass vacuously while the image type's catalogue is empty, which is every
     type in this increment. Populating one catalogue switches all three on for that type.
     """
-    from models.image_catalogues import CapacityError, catalogue_for
-    from models.image_module import (
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.image.models.image_module import (
         PROBLEM_CAPACITY_EXCEEDED,
         PROBLEM_MISSING_MANDATORY_FIELD,
     )
-    from utils.svg_document import FieldIndex
+    from leaguebot.image.utils.svg_document import FieldIndex
 
     catalogue = catalogue_for(image_type)
     if catalogue.is_empty:
@@ -626,7 +626,7 @@ class ImageRenderService:
         the plate. A second way of resolving a tier's colours would let the figure a
         league is told drift from the colour it is drawn in, which is the defect #165 was.
         """
-        from utils.svg_palette import apply_palette
+        from leaguebot.image.utils.svg_palette import apply_palette
 
         config = await self._config_service.get_config()
         if config is None or not getattr(config, "per_tier_colour_enabled", False):
@@ -657,14 +657,14 @@ class ImageRenderService:
         `test_every_render_call_site_names_the_division` exists.
 
         *filename_stem* names the PNG on disk, and through it the attachment a league
-        receives — see :mod:`utils.image_naming`. It defaults to *image_type*, which is the
+        receives — see :mod:`leaguebot.image.utils.image_naming`. It defaults to *image_type*, which is the
         template's own key and says nothing about what was drawn; a posting path that knows
         the season, division and round passes a stem built from them. The **directory** is
         what keeps concurrent renders apart and what ``discard_render`` recognises as the
         bot's own, so the stem is free to be anything a filesystem will take.
         """
-        from utils.svg_document import SvgError, load_svg
-        from utils.svg_fill import fill
+        from leaguebot.image.utils.svg_document import SvgError, load_svg
+        from leaguebot.image.utils.svg_fill import fill
 
         if not converter_available():
             return RenderOutcome(

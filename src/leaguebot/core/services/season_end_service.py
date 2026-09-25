@@ -23,13 +23,13 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from db.database import get_connection
-from utils.league_server import league_guild
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     import discord
-    from utils.league_bot import LeagueBot
-    from models.season import Season
+    from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.core.models.season import Season
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ async def execute_season_end(season_id: int, bot: "LeagueBot") -> None:
     #    archival — the season completes either way, and a picture is not what the completion
     #    is for (XIV.7).
     if guild is not None:
-        from services import season_classification_service as classification
+        from leaguebot.core.services import season_classification_service as classification
 
         try:
             problems = await classification.post_final_classifications(
@@ -138,13 +138,13 @@ async def end_of_season_pass(
     leaves a state nothing could restore, where an abandoned one leaves the state a maintainer
     goes back to.
     """
-    from services.season_lifecycle_service import run_driver_pass
-    from services.test_mode_service import switch_test_mode_off
+    from leaguebot.core.services.season_lifecycle_service import run_driver_pass
+    from leaguebot.core.services.test_mode_service import switch_test_mode_off
 
     try:
         signup_cfg = await bot.signup_module_service.get_config()
         if signup_cfg is not None and signup_cfg.signups_open:
-            from cogs.module_cog import execute_forced_close
+            from leaguebot.core.cogs.module_cog import execute_forced_close
 
             await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
     except Exception:  # noqa: BLE001

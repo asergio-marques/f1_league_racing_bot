@@ -13,20 +13,20 @@ from pathlib import Path
 
 import discord
 
-from db.database import get_connection
-from services.channel_registry_service import missing_channel_fault
-from services.channel_registry_service import as_text_channel
-from services.driver_service import current_account_map_for_division
-from models.points_config import SessionType
-from services import image_verdict_post
-from services.image_verdict_service import VerdictKind
-from utils import results_formatter
-from utils.input_validator import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.channel_registry_service import missing_channel_fault
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.driver_service import current_account_map_for_division
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.image.services import image_verdict_post
+from leaguebot.image.services.image_verdict_service import VerdictKind
+from leaguebot.results.utils import results_formatter
+from leaguebot.core.utils.input_validator import (
     is_disqualification,
     is_no_further_action,
     parse_penalty_seconds,
 )
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ def _for_message(value: str) -> str:
 #: Who a verdict may notify: the people it mentions, and never a group (#204).
 #:
 #: The form refuses a role mention, ``@everyone`` or ``@here`` in a steward's text
-#: (``utils.input_validator.STEWARD_TEXT``), but the form is not the only way text reaches
+#: (``leaguebot.core.utils.input_validator.STEWARD_TEXT``), but the form is not the only way text reaches
 #: this channel: an amendment reposts every verdict a round carries from what was stored
 #: (#345). So the send withholds the notification as well. The text is still posted as written
 #: — a role still reads as its name — and a driver it mentions is still told.
@@ -137,10 +137,10 @@ async def _graphic_name(
     *fallback_display_name* stands in where the read fails: a name is not worth a lost
     announcement, so an unreadable one leaves the behaviour exactly as it was before.
     """
-    from services.image_lineup_service import resolve_driver_name
+    from leaguebot.image.services.image_lineup_service import resolve_driver_name
 
     try:
-        from services.image_results_post import _driver_names
+        from leaguebot.image.services.image_results_post import _driver_names
 
         names = await _driver_names(bot, guild, [int(discord_user_id)])
     except Exception as exc:  # noqa: BLE001 — a name is not worth a failed announcement
@@ -269,7 +269,7 @@ def _banner_once(bot: LeagueBot, channel, ctx: dict):
             return None
         posted = True  # set before the attempt: one try per batch, whatever it returns
         try:
-            from services import image_verdict_banner_post
+            from leaguebot.image.services import image_verdict_banner_post
 
             drawing = image_verdict_banner_post.build_drawing(
                 season_number=ctx.get("season_number"),
@@ -606,7 +606,7 @@ async def _send_verdict(
     Called only after the review has been finalised or the sanction enforced. A graphic is
     downstream of every state change it depicts and is never a precondition of one.
     """
-    from services import image_verdict_post
+    from leaguebot.image.services import image_verdict_post
 
     render = None
     if await image_verdict_post.verdicts_enabled(bot):
@@ -1168,7 +1168,7 @@ async def post_autosanction_announcement(
 
 def _parse_chunk_ids(raw):
     """The stored chunk list of an announcement, via the one parser that reads them."""
-    from services.results_post_service import _parse_ids
+    from leaguebot.results.services.results_post_service import _parse_ids
 
     return _parse_ids(raw)
 
@@ -1201,7 +1201,7 @@ async def _records_for_round(db_path: str, round_id: int, table: str) -> list[di
     record, none of which ``penalty_records`` and ``appeal_records`` carry together — the
     driver comes from the result row the verdict points at.
     """
-    from services.verdict_records import select_verdicts
+    from leaguebot.results.services.verdict_records import select_verdicts
 
     async with get_connection(db_path) as db:
         rows = await select_verdicts(
@@ -1297,7 +1297,7 @@ async def republish_verdicts_from_round(
     # Kept by round, because a round's old announcements come down only where that round's
     # replacements actually went up (#345).
     superseded: dict[int, list[tuple[int | None, int, list[int] | None, int]]] = {}
-    from services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     async with get_connection(db_path) as db:
         for rnd in rounds:
@@ -1327,7 +1327,7 @@ async def republish_verdicts_from_round(
                     )
 
     # ── Produce ───────────────────────────────────────────────────────────
-    from services.penalty_service import reports_only
+    from leaguebot.results.services.penalty_service import reports_only
 
     #: The banners of the rounds this replay actually re-announced.
     replaced: list[tuple[str, int]] = []
@@ -1396,7 +1396,7 @@ async def republish_verdicts_from_round(
             )
 
     # ── Then destroy ──────────────────────────────────────────────────────
-    from services.results_post_service import _delete_posting
+    from leaguebot.results.services.results_post_service import _delete_posting
 
     for round_id in rebuilt:
         for verdict_channel_id, anchor, chunk_ids, driver_user_id in superseded.get(round_id, []):

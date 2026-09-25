@@ -6,7 +6,7 @@ eight weathers a forecast can draw. A league did not choose them — the game of
 no sixth — so the module ships an icon for each under `resources/defaults/tyres/`, and a
 league that has drawn none still gets five correct pictures rather than five placeholders.
 
-**Why this lives in `utils/` and not in `models/image_constants.py`.** The compound is a
+**Why this lives in `utils/` and not in `image/models/image_constants.py`.** The compound is a
 results datum that an image happens to draw, not a fact about image assets, and
 `image_constants` deliberately does not restate the vocabulary of any closed class: it
 asserts closure at the level of the *class*, leaving each vocabulary with the module that
@@ -23,7 +23,7 @@ punctuation variants can fall out of step with the first.
 """
 from __future__ import annotations
 
-from utils.asset_resolver import normalise
+from leaguebot.image.utils.asset_resolver import normalise
 
 #: The five compounds, in the order the game offers them and every message lists them.
 TYRE_COMPOUNDS: tuple[str, ...] = ("Soft", "Medium", "Hard", "Intermediate", "Wet")

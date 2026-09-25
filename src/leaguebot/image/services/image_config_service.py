@@ -11,9 +11,9 @@ import dataclasses
 from typing import Any
 import logging
 
-from db.database import get_connection
-from models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
-from models.image_module import ImageConfig
+from leaguebot.core.db.database import get_connection
+from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
+from leaguebot.image.models.image_module import ImageConfig
 
 log = logging.getLogger(__name__)
 
@@ -203,8 +203,8 @@ class ImageConfigService:
         assume its caller checked. *colour* is expected to have been through
         ``normalise_hex`` already and is stored as given.
         """
-        from utils.asset_resolver import normalise
-        from utils.svg_palette import normalise_slot
+        from leaguebot.image.utils.asset_resolver import normalise
+        from leaguebot.image.utils.svg_palette import normalise_slot
 
         key = normalise(division_name or "")
         if not key:
@@ -233,8 +233,8 @@ class ImageConfigService:
         One transaction, so a bulk set is all-or-nothing at the database even though the
         import above it decides atomicity per division.
         """
-        from utils.asset_resolver import normalise
-        from utils.svg_palette import normalise_slot
+        from leaguebot.image.utils.asset_resolver import normalise
+        from leaguebot.image.utils.svg_palette import normalise_slot
 
         key = normalise(division_name or "")
         if not key:
@@ -259,7 +259,7 @@ class ImageConfigService:
 
     async def get_tier_palette(self, division_name: str) -> dict[str, str]:
         """Every slot this tier has a colour for. The render path's only reader."""
-        from utils.asset_resolver import normalise
+        from leaguebot.image.utils.asset_resolver import normalise
 
         key = normalise(division_name or "")
         if not key:

@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 import discord
 
-from db.database import get_connection, inserted_id
-from models.signup_module import (
+from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
     SignupModuleConfig,
@@ -730,7 +730,7 @@ class SignupModuleService:
 
     @staticmethod
     def _row_to_wizard_record(row) -> SignupWizardRecord:
-        from models.signup_module import ConfigSnapshot, AvailabilitySlot
+        from leaguebot.signup.models.signup_module import ConfigSnapshot, AvailabilitySlot
         snapshot: ConfigSnapshot | None = None
         if row["config_snapshot_json"]:
             d = json.loads(row["config_snapshot_json"])

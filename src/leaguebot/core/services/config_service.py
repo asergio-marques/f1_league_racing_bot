@@ -14,8 +14,8 @@ import logging
 
 import discord
 
-from db.database import get_connection
-from models.server_config import ServerConfig
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.server_config import ServerConfig
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class ConfigService:
     async def get_league_server_id(self) -> int | None:
         """The league's server: the one that holds the configuration row, or None.
 
-        `/bot init` claims it and `/bot pack` frees it; see `utils.league_server`, which asks
+        `/bot init` claims it and `/bot pack` frees it; see `leaguebot.core.utils.league_server`, which asks
         this before every command.
         """
         async with get_connection(self._db_path) as db:

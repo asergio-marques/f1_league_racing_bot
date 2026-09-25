@@ -27,10 +27,10 @@ from pathlib import Path
 
 import discord
 
-from db.database import get_connection
-from models.image_module import PostingOrigin
-from services.image_lineup_service import resolve_driver_name
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.image.models.image_module import PostingOrigin
+from leaguebot.image.services.image_lineup_service import resolve_driver_name
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ async def _team_names(bot: LeagueBot, guild, division_id: int, team_ids: list[in
     deleted, has no bearing on the rounds recorded under it. *guild* and *division_id* are
     kept for the callers' symmetry with the driver lookups beside this one.
     """
-    from services.team_service import team_names_for_instances
+    from leaguebot.core.services.team_service import team_names_for_instances
 
     return await team_names_for_instances(bot.db_path, team_ids)
 
@@ -252,7 +252,7 @@ async def _team_keys(bot: LeagueBot, team_ids: list[int]) -> dict[int, str]:
     Apart from the name drawn (#381): a team is drawn by its full name, and its badge file is
     named after its shorthand.
     """
-    from services.team_service import team_artwork_keys_for_instances
+    from leaguebot.core.services.team_service import team_artwork_keys_for_instances
 
     return await team_artwork_keys_for_instances(bot.db_path, team_ids)
 
@@ -274,7 +274,7 @@ async def build_drawing(
     dsq_phase_map=None,
 ):
     """Resolve one session into a ResultsDrawing, or raise ResultsDataError."""
-    from services.image_results_service import resolve_drawing
+    from leaguebot.image.services.image_results_service import resolve_drawing
 
     user_ids = [row.driver_user_id for row in driver_rows]
     team_ids = [row.team_instance_id for row in driver_rows]
@@ -310,8 +310,8 @@ async def build_drawing(
 
 async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     """Render one session's results. Returns the render service's PostingDecision."""
-    from services.image_results_service import build_fill_spec
-    from services.image_render_service import (
+    from leaguebot.image.services.image_results_service import build_fill_spec
+    from leaguebot.image.services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -327,7 +327,7 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
         image_type=drawing.template_key,
     )
 
-    from utils.image_naming import stem_for_drawing
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
     # One template draws four sessions, so the *session's* own label names the file:
     # `feature_qualifying_results` rather than the template's `qualifying_results`,
@@ -380,7 +380,7 @@ async def try_post(
         return ResultsPostOutcome()
 
     try:
-        from services.image_results_service import template_key_for
+        from leaguebot.image.services.image_results_service import template_key_for
 
         template_key = template_key_for(session_result.session_type)
     except Exception as exc:  # noqa: BLE001
@@ -436,7 +436,7 @@ async def try_post(
             )
         return ResultsPostOutcome()
 
-    from services.image_render_service import discard_attachment
+    from leaguebot.image.services.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
     # Discarded through the attachment rather than the path: the file object holds the
@@ -464,7 +464,7 @@ async def try_post(
     # before I take any of them down". The in-memory `session_result` still carries the id it
     # was loaded with, so reading that instead destroyed the originals during the produce pass
     # and left a failure part-way with nothing to put back.
-    from services.results_post_service import _delete_posting, _parse_ids
+    from leaguebot.results.services.results_post_service import _delete_posting, _parse_ids
 
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
@@ -529,7 +529,7 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     if not notices:
         return
     try:
-        from services.image_render_service import ImageRenderService
+        from leaguebot.image.services.image_render_service import ImageRenderService
 
         await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001

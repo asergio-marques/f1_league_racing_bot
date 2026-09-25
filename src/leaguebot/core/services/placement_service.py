@@ -9,14 +9,14 @@ from datetime import datetime, timezone
 
 import discord
 
-from db.database import get_connection, sole_row
-from models.driver_profile import DriverProfile, DriverState
-from services.channel_registry_service import as_text_channel
-from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
-from models.signup_module import AvailabilitySlot
-from models.team import TeamRoleConfig
-from utils.input_validator import parse_time
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.models.driver_profile import DriverProfile, DriverState
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
+from leaguebot.signup.models.signup_module import AvailabilitySlot
+from leaguebot.core.models.team import TeamRoleConfig
+from leaguebot.core.utils.input_validator import parse_time
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -299,7 +299,7 @@ class PlacementService:
         created by test mode holds no roles and is left alone. Returns how many drivers were
         reached.
         """
-        from services.season_lifecycle_service import uncommitted_seat_excluded
+        from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
         if guild is None or old_role_id == new_role_id:
             return 0
@@ -718,9 +718,9 @@ class PlacementService:
         if bot is None:
             return
         try:
-            from models.image_catalogues import reserve_capacity_problem
-            from services.image_lineup_post import lineup_enabled
-            from utils.svg_document import load_svg
+            from leaguebot.image.models.image_catalogues import reserve_capacity_problem
+            from leaguebot.image.services.image_lineup_post import lineup_enabled
+            from leaguebot.image.utils.svg_document import load_svg
 
             # Not a reserve placement, or no such team — `assign_driver` reports a team
             # that does not exist in its own words, and this guard stays quiet.
@@ -787,9 +787,9 @@ class PlacementService:
         if bot is None:
             return
         try:
-            from models.image_catalogues import row_capacity_problem
-            from services.image_attendance_post import attendance_enabled
-            from utils.svg_document import load_svg
+            from leaguebot.image.models.image_catalogues import row_capacity_problem
+            from leaguebot.image.services.image_attendance_post import attendance_enabled
+            from leaguebot.image.utils.svg_document import load_svg
 
             if not await attendance_enabled(bot):
                 return
@@ -853,10 +853,10 @@ class PlacementService:
         if bot is None:
             return
         try:
-            from models.image_catalogues import row_capacity_problem
-            from services.image_standings_post import standings_enabled
-            from services.image_standings_service import DRIVERS_TEMPLATE_KEY
-            from utils.svg_document import load_svg
+            from leaguebot.image.models.image_catalogues import row_capacity_problem
+            from leaguebot.image.services.image_standings_post import standings_enabled
+            from leaguebot.image.services.image_standings_service import DRIVERS_TEMPLATE_KEY
+            from leaguebot.image.utils.svg_document import load_svg
 
             # A reserve placement adds no entry to the classification, and no such team —
             # `assign_driver` reports a team that does not exist in its own words.
@@ -941,8 +941,8 @@ class PlacementService:
         Never raises for its own reasons: a fault in this check must not block a
         placement, only a genuine over-capacity may.
         """
-        from models.image_catalogues import declared_capacities
-        from services.module_service import ModuleService
+        from leaguebot.image.models.image_catalogues import declared_capacities
+        from leaguebot.core.services.module_service import ModuleService
 
         # The reserve block is guarded separately: it counts reserve drivers, not every
         # seated driver, and its capacity comes from the template rather than from here.
@@ -984,7 +984,7 @@ class PlacementService:
             return
 
         template_key = min(capacities, key=lambda key: capacities[key])
-        from models.image_constants import TEMPLATE_LABELS
+        from leaguebot.image.models.image_constants import TEMPLATE_LABELS
 
         label = TEMPLATE_LABELS.get(template_key, template_key)
         raise ValueError(
@@ -1985,7 +1985,7 @@ class PlacementService:
         owner = bot if bot is not None else getattr(self, "_bot", None)
         if owner is not None:
             try:
-                from services.image_lineup_post import try_post
+                from leaguebot.image.services.image_lineup_post import try_post
 
                 outcome = await try_post(owner, guild, division_id)
                 if outcome.applicable:

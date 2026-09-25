@@ -46,6 +46,14 @@ Each folder holds that part's **cogs** (its commands, and the buttons and forms 
 **services** (its rules and its database code) and its **models** (plain data). Which module owns
 a file is then plain from where it sits. The tests follow the same folders.
 
+Inside each folder, each kind of code has a folder of its own: `cogs/`, `services/`, `models/`,
+and `utils/` for the part's helpers, with `db/` in core for the database code. What kind of code a
+file holds is then plain from where it sits as well, so a rule about one kind (no service imports
+a cog) is written once for every module, and the checks tell a service from a cog by its folder.
+
+*Rejected:* a module's files side by side in its folder, where a file's kind is known only from
+its name, and several files are named for neither.
+
 *Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which
 spreads one module over four folders. *Rejected:* grouping only the services. *Rejected:* staying
 flat with a list of which file belongs where, which is the arrangement that misfiled core's
@@ -91,7 +99,7 @@ hooks without importing a module.
   (formatting, parsing, time) use no service at all. Neither imports a service, and core uses no
   module; the one exception to both is the bot's type, which names every service for the type
   checker (below). The log line's handler is a service in core, not a helper.
-- **A module's own helpers** sit in its folder beside its services, under the same rules.
+- **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database.
 - **The database code in core** opens connections and applies migrations, and imports nothing else
   of the bot's.

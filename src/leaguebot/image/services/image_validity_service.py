@@ -26,12 +26,12 @@ from typing import Protocol, runtime_checkable
 
 from lxml import etree
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     CapacityError,
     catalogue_for,
     sibling_fields_declared,
 )
-from models.image_constants import (
+from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASPECT_SOURCE_MODULE,
     ASPECT_TEMPLATES,
@@ -44,7 +44,7 @@ from models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from models.image_module import (
+from leaguebot.image.models.image_module import (
     PROBLEM_EXTENSION,
     PROBLEM_ASPECT_DISAGREEMENT,
     PROBLEM_MISSING_MANDATORY_FIELD,
@@ -59,16 +59,16 @@ from models.image_module import (
     Problem,
     ValidityReport,
 )
-from utils.league_bot import LeagueBot
-from utils.paths import PathContainmentError, resolve_within_project_root
-from utils.svg_document import (
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.paths import PathContainmentError, resolve_within_project_root
+from leaguebot.image.utils.svg_document import (
     FieldIndex,
     SvgNoCanvasError,
     SvgParseError,
     canvas_of,
     load_svg,
 )
-from utils.svg_palette import colour_slots
+from leaguebot.image.utils.svg_palette import colour_slots
 
 log = logging.getLogger(__name__)
 
@@ -397,7 +397,7 @@ def _box_of(element) -> tuple[float, float, float, float] | None:
     offers. None where nothing under it declares a box at all, a veil drawn as paths among
     them: it is then not measured rather than refused.
     """
-    from utils.svg_document import length
+    from leaguebot.image.utils.svg_document import length
 
     best: tuple[float, float, float, float] | None = None
     for node in element.iter():
@@ -424,7 +424,7 @@ def _document_positions(root) -> dict[str, int]:
     A **layer** is addressed by its ``inkscape:label`` exactly as `FieldIndex` addresses one,
     so a template drawn in Inkscape with its overlay as a layer is read here too.
     """
-    from utils.svg_document import INKSCAPE_NS
+    from leaguebot.image.utils.svg_document import INKSCAPE_NS
 
     label_attr = f"{{{INKSCAPE_NS}}}label"
     groupmode_attr = f"{{{INKSCAPE_NS}}}groupmode"
@@ -446,7 +446,7 @@ def _within(node, name: str) -> bool:
     `_document_positions` keys by name: identity between two proxies of one node is not
     something to lean on.
     """
-    from utils.svg_document import INKSCAPE_NS
+    from leaguebot.image.utils.svg_document import INKSCAPE_NS
 
     label_attr = f"{{{INKSCAPE_NS}}}label"
     parent = node.getparent()
@@ -473,7 +473,7 @@ def calendar_overlay_faults_of(root, template_key: str) -> list[str]:
     if template_key != _CALENDAR_KEY:
         return []
 
-    from utils.svg_fill import _element_x, _element_y
+    from leaguebot.image.utils.svg_fill import _element_x, _element_y
 
     catalogue = catalogue_for(template_key)
     try:
@@ -628,8 +628,8 @@ class CatalogueLayer:
             # Name the file the manager has actually supplied. The sibling relation now spans
             # a whole source module (XIV.3, v4.6.0), so a fixed phrase would tell an
             # attendance manager their sheet belongs to "the other kind of results template".
-            from models.image_catalogues import sibling_owners
-            from models.image_constants import TEMPLATE_LABELS
+            from leaguebot.image.models.image_catalogues import sibling_owners
+            from leaguebot.image.models.image_constants import TEMPLATE_LABELS
 
             owners = sibling_owners(ctx.template_key, foreign)
             if owners:
@@ -729,8 +729,8 @@ class BoundsLayer:
         return not catalogue_for(template_key).is_empty
 
     def check(self, ctx: TemplateContext) -> LayerResult:
-        from utils.svg_document import computed_style, length, stylesheet
-        from utils.svg_fill import (
+        from leaguebot.image.utils.svg_document import computed_style, length, stylesheet
+        from leaguebot.image.utils.svg_fill import (
             _MAX_LINES_INVALID,
             _descend,
             _font_size,
@@ -1442,7 +1442,7 @@ def colour_shortfall(
     colour, and reporting a shortfall against an empty season would block a configuration
     nobody could complete.
     """
-    from utils.asset_resolver import normalise
+    from leaguebot.image.utils.asset_resolver import normalise
 
     if not division_names:
         return {}
@@ -1530,7 +1530,7 @@ class ImageValidityService:
         return disabled
 
     async def aspect_statuses(self) -> list[AspectStatus]:
-        from services.image_render_service import converter_available
+        from leaguebot.image.services.image_render_service import converter_available
 
         reports = await self.template_reports()
         toggles = await self._config_service.get_toggles()

@@ -292,7 +292,7 @@ TEST_KIND_TEMPLATES: dict[str, tuple[str, ...]] = {
 #: Windows and runs on Debian, and the suite must pass on both, so neither is used:
 #: ``%-d`` raises ``ValueError: Invalid format string`` on Windows.
 #:
-#: See ``utils.date_formatting.format_date``, the only place either token or any of
+#: See ``leaguebot.core.utils.date_formatting.format_date``, the only place either token or any of
 #: these patterns is read.
 DATE_FORMATS: dict[str, tuple[str, str]] = {
     "DDD_DD_MON_YYYY": ("%a %d %b %Y", "Sun 14 Jun 2026"),
@@ -398,7 +398,7 @@ def is_closed_set_datum(asset_class: str, slug: str) -> bool:
     the class is also what keeps those three vocabularies from being restated here where
     they would drift from the modules that define them: the position-change data in
     `standings_service`, the weathers in `math_utils`, the five compounds in
-    `utils.tyre_compound`. `flag` and `track` name countries and circuits a league chose,
+    `leaguebot.image.utils.tyre_compound`. `flag` and `track` name countries and circuits a league chose,
     and reserve two names within that, so there the datum settles it: asserting the whole
     class would hand a league our file for a country it simply had not drawn yet.
 

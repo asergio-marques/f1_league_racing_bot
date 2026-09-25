@@ -17,10 +17,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.season_cog import SeasonCog
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def clear_in_memory_state(bot: LeagueBot) -> None:
         season_cog.clear_pending()
 
     # A reason being awaited from an admin, keyed by the channel it is awaited in.
-    from cogs import admin_review_cog
+    from leaguebot.signup.cogs import admin_review_cog
 
     admin_review_cog._PENDING_REASONS.clear()
 

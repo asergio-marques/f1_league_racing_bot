@@ -12,13 +12,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from services.channel_registry_service import as_text_channel
-from db.database import get_connection
-from models.driver_profile import DriverState
-from utils.channel_guard import league_admin_only
-from utils.league_bot import LeagueBot
-from utils.league_server import LeagueView, league_guild
-from utils.output_router import _chunk_message
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.utils.channel_guard import league_admin_only
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import LeagueView, league_guild
+from leaguebot.core.utils.output_router import _chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
     svc = bot.scheduler_service
     for row in rows:
         uid = row["discord_user_id"]
-        from services.wizard_service import channel_delete_job_id, inactivity_job_id
+        from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
         for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
             try:
@@ -138,7 +138,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
     # 4b. Move the season on (issue #220). Every close reaches here — the command, the
     #     close timer and the restart sweep — so every close moves the season alike. A
     #     failure is logged and never undoes the close: the window is shut either way.
-    from services.season_lifecycle_service import advance_on_window_close
+    from leaguebot.core.services.season_lifecycle_service import advance_on_window_close
 
     try:
         await advance_on_window_close(bot.db_path)
@@ -345,7 +345,7 @@ class ModuleCog(commands.Cog):
         or not the module offers anything — the hub asks each option, not each module. A
         panel that cannot be refreshed is logged and never fails the toggle behind it.
         """
-        from services.hub_service import refresh_panel
+        from leaguebot.core.services.hub_service import refresh_panel
 
         try:
             fault = await refresh_panel(self.bot)
@@ -373,7 +373,7 @@ class ModuleCog(commands.Cog):
         Checked here, before the module's own handler, so every module answers alike. Returns
         True where the command was refused, having answered the interaction.
         """
-        from services.season_lifecycle_service import (
+        from leaguebot.core.services.season_lifecycle_service import (
             modules_frozen_for_completion,
             configuration_fixed,
         )
@@ -615,7 +615,7 @@ class ModuleCog(commands.Cog):
             )
             await db.commit()
 
-        from services.results_purge_service import purge_season_results
+        from leaguebot.results.services.results_purge_service import purge_season_results
 
         try:
             purged = await purge_season_results(self.bot.db_path, self.bot)
@@ -793,7 +793,7 @@ class ModuleCog(commands.Cog):
     async def _enable_images(
         self, interaction: discord.Interaction
     ) -> None:
-        from services.image_render_service import (
+        from leaguebot.image.services.image_render_service import (
             converter_absent_message,
             converter_available,
         )
@@ -934,7 +934,7 @@ class ModuleCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         # Upsert a bare config row — its channel NULL. The league's roles are core's (#276).
-        from models.signup_module import SignupModuleConfig
+        from leaguebot.signup.models.signup_module import SignupModuleConfig
         new_cfg = SignupModuleConfig(
             signup_channel_id=None,
             signups_open=False,
@@ -1027,7 +1027,7 @@ class ModuleCog(commands.Cog):
             active_wizards = await self.bot.signup_module_service.get_all_active_wizards()
             scheduler = self.bot.scheduler_service._scheduler
             for wiz in active_wizards:
-                from services.wizard_service import channel_delete_job_id, inactivity_job_id
+                from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
                 for job_id in (
                     inactivity_job_id(wiz.discord_user_id),

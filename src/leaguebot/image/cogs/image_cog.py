@@ -19,9 +19,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
-from utils.autocomplete import bounded_autocomplete
-from models.image_constants import (
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
     ASPECTS,
     ASSET_LABELS,
@@ -31,18 +31,18 @@ from models.image_constants import (
     TEMPLATE_COMMAND_NAMES,
     TEMPLATE_LABELS,
 )
-from models.image_module import STATE_DISABLED, STATE_ENABLED
-from services.image_config_service import pfp_change_refusal
-from utils.channel_guard import league_manager_only
-from utils.league_bot import LeagueBot
-from utils.paths import PathContainmentError, relative_to_root
-from utils.time_parsing import parse_time_of_day
-from utils.timezones import clear_zone_cache, is_known_zone, zone_names
-from utils.league_server import LeagueModal, LeagueView
+from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
+from leaguebot.image.services.image_config_service import pfp_change_refusal
+from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
+from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.core.utils.timezones import clear_zone_cache, is_known_zone, zone_names
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
-#: The memoised zone list, which now lives in `utils/timezones.py` so that the round
+#: The memoised zone list, which now lives in `core/utils/timezones.py` so that the round
 #: importer can validate a zone without importing this cog — and Discord with it. Kept
 #: under its old name here because the autocomplete below and its tests both reach for it,
 #: and the move is not a change to either. `clear_zone_cache` is re-exported above for the
@@ -117,7 +117,7 @@ def _listed(names: tuple[str, ...]) -> str:
 
 
 def _no_plate_problem() -> str:
-    from models.image_constants import FASTEST_LAP_BACKGROUND_ID
+    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
 
     return (
         f"the race results template declares no `{FASTEST_LAP_BACKGROUND_ID}` "
@@ -132,9 +132,9 @@ def _plate_fill(root) -> tuple[str | None, str | None]:
     (FR-026a), and its fill read through `computed_style`, so a colour set by a stylesheet
     rule, an inline style or a presentation attribute is read as the drawing would take it.
     """
-    from models.image_constants import FASTEST_LAP_BACKGROUND_ID
-    from utils.colour import coerce_css_colour
-    from utils.svg_document import FieldIndex, computed_style, stylesheet
+    from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
+    from leaguebot.image.utils.colour import coerce_css_colour
+    from leaguebot.image.utils.svg_document import FieldIndex, computed_style, stylesheet
 
     element = FieldIndex(root).resolve(FASTEST_LAP_BACKGROUND_ID)
     if element is None:
@@ -163,7 +163,7 @@ def fastest_lap_contrast_lines(reading: FastestLapContrast) -> list[str]:
 
     Kept apart from the command so what a manager reads can be asserted without a gateway.
     """
-    from utils.colour import CONTRAST_AA_NORMAL, meets_aa_normal
+    from leaguebot.image.utils.colour import CONTRAST_AA_NORMAL, meets_aa_normal
 
     if reading.ratio is None:
         return [f"ℹ️ Contrast could not be measured: {reading.problem}"]
@@ -417,7 +417,7 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        from utils.paths import resolve_within_project_root
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         try:
             resolved = resolve_within_project_root(value)
@@ -465,7 +465,7 @@ class ImageCog(commands.Cog):
         file, and able to fix it. Nothing is written until every check passes, so a
         rejection leaves the stored value exactly as it stood.
         """
-        from services.image_validity_service import check_template
+        from leaguebot.image.services.image_validity_service import check_template
 
         # Validation parses the named SVG from disk, which outruns Discord's three-second
         # window on a slow host as readily as the sixteen-template sweep does.
@@ -693,8 +693,8 @@ class ImageCog(commands.Cog):
         files, and able to fix it — rather than letting it surface as a render failure at
         the next scheduled post, when nobody is looking.
         """
-        from services.image_validity_service import blocking_template_problems
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_validity_service import blocking_template_problems
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         if not await self._guard_module_enabled(interaction):
             return
@@ -775,7 +775,7 @@ class ImageCog(commands.Cog):
         Logged like an accepted change: a refused configuration is as much a part of the
         audit trail as a stored one (Principle V).
         """
-        from services.image_validity_service import describe
+        from leaguebot.image.services.image_validity_service import describe
 
         lines = [
             f"❌ **{label}** was **not** changed — {reason}",
@@ -1105,8 +1105,8 @@ class ImageCog(commands.Cog):
         The toggle is therefore overridden for this one question, which is what lets the
         command refuse *before* storing rather than storing and then complaining.
         """
-        from services.image_render_service import converter_available
-        from services.image_validity_service import build_aspect_statuses
+        from leaguebot.image.services.image_render_service import converter_available
+        from leaguebot.image.services.image_validity_service import build_aspect_statuses
 
         toggles = dict(await self._config_service.get_toggles())
         toggles[aspect] = True
@@ -1150,7 +1150,7 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        from utils.colour import InvalidColour, normalise_hex
+        from leaguebot.image.utils.colour import InvalidColour, normalise_hex
 
         # 1. Reject a malformed value, leaving the stored colour untouched (FR-025).
         try:
@@ -1264,8 +1264,8 @@ class ImageCog(commands.Cog):
         if not await self._guard_module_enabled(interaction):
             return
 
-        from utils.colour import InvalidColour, normalise_hex
-        from utils.svg_palette import InvalidSlot, normalise_slot
+        from leaguebot.image.utils.colour import InvalidColour, normalise_hex
+        from leaguebot.image.utils.svg_palette import InvalidSlot, normalise_slot
 
         # Both rejections store nothing and name the input that was wrong: a manager who
         # mistyped a slot and one who mistyped a colour are looking for different things.
@@ -1328,7 +1328,7 @@ class ImageCog(commands.Cog):
         atomicity, and a tier drawn in four of its ten colours looks deliberate — which is
         worse than one that is plainly unconfigured.
         """
-        from utils.palette_import import parse_palette_lines
+        from leaguebot.image.utils.palette_import import parse_palette_lines
 
         colours, problems = parse_palette_lines(text)
         if problems:
@@ -1397,7 +1397,7 @@ class ImageCog(commands.Cog):
         it. Past that, each division stands or falls alone, so one mistyped tier does not
         cost a league the other four.
         """
-        from utils.palette_import import PaletteXmlError, parse_palette_xml
+        from leaguebot.image.utils.palette_import import PaletteXmlError, parse_palette_xml
 
         try:
             blocks, problems = parse_palette_xml(text)
@@ -1465,9 +1465,9 @@ class ImageCog(commands.Cog):
         The plate's absence is an unmeasurable contrast, not a template validity failure:
         Layer 1 cannot establish that the element exists (FR-026a).
         """
-        from models.image_constants import FASTEST_LAP_BACKGROUND_ID
-        from utils.colour import contrast_ratio
-        from utils.svg_document import FieldIndex, SvgError, load_svg
+        from leaguebot.image.models.image_constants import FASTEST_LAP_BACKGROUND_ID
+        from leaguebot.image.utils.colour import contrast_ratio
+        from leaguebot.image.utils.svg_document import FieldIndex, SvgError, load_svg
 
         reports = await self._validity_service.template_reports()
         report = reports.get("results_race_template")
@@ -1679,12 +1679,12 @@ class ImageCog(commands.Cog):
         `/season placements-review` renders the aspect section from the same `AspectStatus` list, so
         the two surfaces cannot drift (FR-033).
         """
-        from services.image_render_service import (
+        from leaguebot.image.services.image_render_service import (
             CONVERTER_NAME,
             converter_absent_message,
             converter_available,
         )
-        from services.image_validity_service import (
+        from leaguebot.image.services.image_validity_service import (
             ImageValidityService,
             plain_directory_reason,
             plain_directory_remedy,
@@ -1875,8 +1875,8 @@ class ImageCog(commands.Cog):
         carry — are read from `PREVIEW_KINDS` off it. One table, read in one place, rather
         than three rules restated at twelve call sites.
         """
-        from services.image_preview_service import PreviewRefused, resolve_context
-        from services.image_render_service import (
+        from leaguebot.image.services.image_preview_service import PreviewRefused, resolve_context
+        from leaguebot.image.services.image_render_service import (
             converter_absent_message,
             converter_available,
         )
@@ -1917,7 +1917,7 @@ class ImageCog(commands.Cog):
         # A preview is named exactly as a posting is, and for the same reason: a manager
         # running several of them collects several files, and `standings_drivers.png`
         # twice over says nothing about which division or round each drew.
-        from utils.image_naming import image_filename_stem, subject_for_template
+        from leaguebot.image.utils.image_naming import image_filename_stem, subject_for_template
 
         round_number = (
             getattr(context.round, "round_number", None) if context.round else None
@@ -1956,7 +1956,7 @@ class ImageCog(commands.Cog):
     async def test_calendar(
         self, interaction: discord.Interaction, division: str
     ) -> None:
-        from services.image_preview_service import build_calendar_preview
+        from leaguebot.image.services.image_preview_service import build_calendar_preview
 
         async def _build(context):
             return await build_calendar_preview(self.bot, context)
@@ -1980,7 +1980,7 @@ class ImageCog(commands.Cog):
     async def test_lineup(
         self, interaction: discord.Interaction, division: str
     ) -> None:
-        from services.image_preview_service import build_lineup_preview
+        from leaguebot.image.services.image_preview_service import build_lineup_preview
 
         async def _build(context):
             return await build_lineup_preview(self.bot, context)
@@ -2008,7 +2008,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_results_preview
+        from leaguebot.image.services.image_preview_service import build_results_preview
 
         async def _build(context):
             return await build_results_preview(self.bot, context)
@@ -2037,7 +2037,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_standings_preview
+        from leaguebot.image.services.image_preview_service import build_standings_preview
 
         async def _build(context):
             return await build_standings_preview(self.bot, context)
@@ -2066,7 +2066,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_attendance_preview
+        from leaguebot.image.services.image_preview_service import build_attendance_preview
 
         async def _build(context):
             return await build_attendance_preview(self.bot, context)
@@ -2095,7 +2095,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_rsvp_preview
+        from leaguebot.image.services.image_preview_service import build_rsvp_preview
 
         async def _build(context):
             return await build_rsvp_preview(self.bot, context)
@@ -2124,7 +2124,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_verdict_preview
+        from leaguebot.image.services.image_preview_service import build_verdict_preview
 
         async def _build(context):
             return await build_verdict_preview(self.bot, context)
@@ -2153,7 +2153,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_verdict_banner_preview
+        from leaguebot.image.services.image_preview_service import build_verdict_banner_preview
 
         async def _build(context):
             return await build_verdict_banner_preview(self.bot, context)
@@ -2182,7 +2182,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=1)
@@ -2211,7 +2211,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=2)
@@ -2240,7 +2240,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=3)
@@ -2269,7 +2269,7 @@ class ImageCog(commands.Cog):
         division: str,
         round: int,
     ) -> None:
-        from services.image_preview_service import build_weather_preview
+        from leaguebot.image.services.image_preview_service import build_weather_preview
 
         async def _build(context):
             return await build_weather_preview(self.bot, context, phase=0)
@@ -2308,7 +2308,7 @@ class ImageCog(commands.Cog):
         pictures were produced, which assets fell back to a placeholder and why, and
         whether the drivers drawn were their own or invented.
         """
-        from services.image_render_service import ImageRenderService
+        from leaguebot.image.services.image_render_service import ImageRenderService
 
         files: list[discord.File] = []
         header = f"**Preview — {title}** for `{context.division_name}`"
@@ -2385,7 +2385,7 @@ class ImageCog(commands.Cog):
             # Logged first, so the reply can point at what was written. A log-channel
             # failure returns None and simply costs the link — it must never cost the
             # preview, which is the thing actually asked for.
-            from services.image_render_service import grouped_notice_lines
+            from leaguebot.image.services.image_render_service import grouped_notice_lines
 
             logged = await ImageRenderService.report_notices(
                 self.bot, all_notices
@@ -2403,7 +2403,7 @@ class ImageCog(commands.Cog):
         # A preview puts nothing in a league's channel, but it renders through the same
         # pipeline and leaves the same files behind. An evening of template-checking would
         # otherwise litter the host exactly as a season of posting does.
-        from services.image_render_service import discard_attachment
+        from leaguebot.image.services.image_render_service import discard_attachment
 
         try:
             await interaction.followup.send(

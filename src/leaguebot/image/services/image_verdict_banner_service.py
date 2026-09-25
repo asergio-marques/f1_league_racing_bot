@@ -25,13 +25,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     catalogue_for,
 )
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
 
 TEMPLATE_KEY = "verdict_banner_template"
 

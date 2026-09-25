@@ -5,7 +5,7 @@ Title-Case nationality adjective stored in signup_records.nationality.
 "other" (any case) is the universal fallback → stored as "Other".
 
 Usage::
-    from utils.nationality_data import NATIONALITY_LOOKUP
+    from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
     canonical = NATIONALITY_LOOKUP.get(raw.strip().lower())  # None → invalid
 """
 

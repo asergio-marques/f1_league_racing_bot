@@ -4,7 +4,7 @@ It is **not** the way every post leaves the bot. A graphic, an embed, a message 
 buttons, and every post the bot later replaces in place are sent by the module that makes
 them, so a forecast drawn as a graphic, a calendar or a results table never passes through
 here. Which channels exist, and what each may carry, is Constitution Principle VII and
-`services/channel_registry_service.py`.
+`core/services/channel_registry_service.py`.
 
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
 names without notifying, a record longer than one message is split, both are sent with
@@ -23,14 +23,14 @@ from typing import TYPE_CHECKING, Optional, Protocol
 
 import discord
 
-from utils.input_validator import ROLE_MENTION, USER_MENTION
+from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 
 #: Every mention a log line can carry, wrapped whole as code so it names without notifying.
 #: Built from the shared forms (#362), so ``<@!123>`` is wrapped as ``<@123>`` is.
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 class ForecastTarget(Protocol):
     """What `OutputRouter.post_forecast` reads of a division: where its forecasts go.
 
-    A `models.division.Division` is one. So is the stand-in a caller holding only the channel
+    A `leaguebot.core.models.division.Division` is one. So is the stand-in a caller holding only the channel
     id builds, which is why this names the one attribute rather than asking for a whole
     division (#228).
     """
@@ -208,7 +208,7 @@ class OutputRouter:
         """
         if self._retry_db_path and wanted:
             try:
-                from services.retry_service import enqueue
+                from leaguebot.core.services.retry_service import enqueue
                 await enqueue(self._retry_db_path, channel_id, content, failure_reason)
             except Exception as exc:
                 log.error("_enqueue_if_configured: failed to enqueue: %s", exc)

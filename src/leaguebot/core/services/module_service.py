@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from db.database import get_connection
+from leaguebot.core.db.database import get_connection
 
 log = logging.getLogger(__name__)
 

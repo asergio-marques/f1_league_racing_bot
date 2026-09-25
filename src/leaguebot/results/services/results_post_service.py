@@ -8,29 +8,29 @@ from typing import NamedTuple
 
 import discord
 
-from db.database import get_connection
-from services.channel_registry_service import as_text_channel
-from services.driver_service import current_account_map_for_division
-from models.classification_occasion import ClassificationOccasion
-from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.season import SeasonStage
-from models.session_result import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.driver_service import current_account_map_for_division
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,
     SessionResult,
 )
-from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from services import standings_service
-from services.channel_registry_service import (
+from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.results.services import standings_service
+from leaguebot.core.services.channel_registry_service import (
     SETTING_LABELS,
     missing_channel_fault,
     unpostable_channel_fault,
 )
-from services.team_service import team_names_for_instances
-from utils import results_formatter
-from utils.league_bot import LeagueBot
+from leaguebot.core.services.team_service import team_names_for_instances
+from leaguebot.results.utils import results_formatter
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -262,7 +262,7 @@ async def driver_standings_for_display(
     if bot is None or guild is None or not snaps:
         return snaps
 
-    from services.image_results_post import _driver_names
+    from leaguebot.image.services.image_results_post import _driver_names
 
     names = await _driver_names(
         bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
@@ -308,7 +308,7 @@ async def standings_display_names(
     if not snaps:
         return None
 
-    from services.image_results_post import _driver_names
+    from leaguebot.image.services.image_results_post import _driver_names
 
     return await _driver_names(
         bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
@@ -514,7 +514,7 @@ async def post_session_results(
     # ── The image path (039) ──────────────────────────────────────────────
     if bot is not None:
         try:
-            from services.image_results_post import try_post
+            from leaguebot.image.services.image_results_post import try_post
 
             outcome = await try_post(
                 bot,
@@ -677,7 +677,7 @@ async def post_standings(
     cancelled = occasion.names_a_round and await _round_is_cancelled(db_path, round_id)
     if bot is not None and not cancelled:
         try:
-            from services.image_standings_post import try_post
+            from leaguebot.image.services.image_standings_post import try_post
 
             outcome = await try_post(
                 bot,
@@ -1071,7 +1071,7 @@ async def _set_standings_message_id(
 
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
-    from services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -1193,8 +1193,8 @@ async def post_round_results(
     bot: LeagueBot | None = None,
 ) -> None:
     """Post results for all non-cancelled sessions of a round in session order."""
-    from services.result_submission_service import SESSION_ORDER_SPRINT, SESSION_ORDER_NORMAL
-    from models.round import RoundFormat
+    from leaguebot.results.services.result_submission_service import SESSION_ORDER_SPRINT, SESSION_ORDER_NORMAL
+    from leaguebot.core.models.round import RoundFormat
 
     # Load round context (round_number, track_name, format) for message headers
     async with get_connection(db_path) as db:
@@ -1286,7 +1286,7 @@ def _bot_member(guild: "discord.Guild", bot: LeagueBot | None):
     ``AttributeError`` rather than returning ``None`` — an exception thrown out of a
     pre-flight check whose whole purpose is to refuse cleanly, which is the one thing it
     must not do. ``signup_cog`` already takes this guarded form before it does permission
-    arithmetic (``src/cogs/signup_cog.py:870``), and it is the form this check follows.
+    arithmetic (``src/leaguebot/signup/cogs/signup_cog.py:870``), and it is the form this check follows.
 
     Resolving it is not optional: without a member there is no permission arithmetic to do,
     and both callers treat ``None`` as a fault rather than as leave to assume.
@@ -1465,7 +1465,7 @@ async def _channel_faults_for_rows(
     # service hands the image module an occasion and acts on what comes back, and does not
     # read its settings (#187, and the layering
     # `tests/integration/test_image_module_flow.py` holds).
-    from services.image_validity_service import aspect_attaches_files
+    from leaguebot.image.services.image_validity_service import aspect_attaches_files
 
     results_graphics = await aspect_attaches_files(bot, "results")
     standings_graphics = await aspect_attaches_files(bot, "standings")
@@ -2106,7 +2106,7 @@ async def delete_and_repost_final_results(
     bot_member = _bot_member(guild, bot)
     results_graphics = standings_graphics = False
     if bot_member is not None:
-        from services.image_validity_service import aspect_attaches_files
+        from leaguebot.image.services.image_validity_service import aspect_attaches_files
 
         results_graphics = await aspect_attaches_files(bot, "results")
         standings_graphics = await aspect_attaches_files(bot, "standings")
@@ -2257,7 +2257,7 @@ async def repost_subsequent_standings(
     bot_member = _bot_member(guild, bot)
     standings_graphics = False
     if bot_member is not None:
-        from services.image_validity_service import aspect_attaches_files
+        from leaguebot.image.services.image_validity_service import aspect_attaches_files
 
         standings_graphics = await aspect_attaches_files(bot, "standings")
 
@@ -2356,7 +2356,7 @@ async def _is_sprint_round(db_path: str, round_id: int) -> bool:
 
 def _sr_from_row(sr_row) -> "SessionResult":
     """Construct a :class:`SessionResult` from a DB row dict."""
-    from models.session_result import SessionResult
+    from leaguebot.core.models.session_result import SessionResult
     return SessionResult(
         id=sr_row["id"],
         round_id=sr_row["round_id"],
@@ -2430,7 +2430,7 @@ async def replay_division_channels(
     # it deleted, leaving those sanctions headerless.
     superseded_banners: list | None = None
     if bot is not None and verdict_state_factory is not None:
-        from services.verdict_announcement_service import banners_from_round
+        from leaguebot.results.services.verdict_announcement_service import banners_from_round
 
         try:
             superseded_banners = await banners_from_round(
@@ -2497,7 +2497,7 @@ async def replay_division_channels(
             faults.append(f"the attendance sheet could not be reposted: {exc}")
 
     if bot is not None and verdict_state_factory is not None:
-        from services.verdict_announcement_service import republish_verdicts_from_round
+        from leaguebot.results.services.verdict_announcement_service import republish_verdicts_from_round
 
         try:
             faults.extend(

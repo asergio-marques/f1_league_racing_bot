@@ -24,7 +24,7 @@ from typing import cast
 
 import discord
 
-from db.database import get_connection
+from leaguebot.core.db.database import get_connection
 
 __all__ = [
     "ChannelUse",

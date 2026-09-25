@@ -30,13 +30,13 @@ the subject
     session's own label.
 
 Pure: no database, no Discord, no filesystem. The slug rule is
-:func:`utils.asset_resolver.normalise` — the module's one rule for turning a league's own
+:func:`leaguebot.image.utils.asset_resolver.normalise` — the module's one rule for turning a league's own
 value into a filename, so a division called "Élite Ünlimited" cannot produce a name a
 filesystem or Discord will not take.
 """
 from __future__ import annotations
 
-from utils.asset_resolver import normalise
+from leaguebot.image.utils.asset_resolver import normalise
 
 #: Template key -> what a picture drawn from it is *of*.
 #:

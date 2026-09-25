@@ -6,7 +6,7 @@ share every field but the columns of their rows, and each is its own catalogue e
 
 **What this module does not do.** It performs no arithmetic over points or positions. The gap
 to the leader, the previous position and the position change are derived in
-``services.standings_service.derive_movement`` and arrive here finished — XIV.7 as amended at
+``leaguebot.results.services.standings_service.derive_movement`` and arrive here finished — XIV.7 as amended at
 v4.5.0 admits them as a derived *presentation* on the condition that the derivation lives with
 the data, so the textual path can adopt the columns by calling it rather than growing a second
 implementation. A subtraction appearing in this file would break that contract silently.
@@ -23,8 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Mapping, Sequence
 
-from models.classification_occasion import ClassificationOccasion
-from models.image_catalogues import (
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
@@ -33,14 +33,14 @@ from models.image_catalogues import (
     column_crop_fields,
     row_crop_fields,
 )
-from models.points_config import SessionType
-from utils import results_formatter
-from utils.svg_document import FieldIndex, stylesheet
-from utils.svg_fill import FillSpec
-from utils.country_data import country_for_nationality
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.utils import results_formatter
+from leaguebot.image.utils.svg_document import FieldIndex, stylesheet
+from leaguebot.image.utils.svg_fill import FillSpec
+from leaguebot.image.utils.country_data import country_for_nationality
 
 if TYPE_CHECKING:
-    from services.standings_service import Movement
+    from leaguebot.results.services.standings_service import Movement
 
 DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"
@@ -172,7 +172,7 @@ def highlight_for(row) -> tuple[str | None, bool]:
     ``QualifyingSessionResult`` carries no such field, which is also why a qualifying cell
     can never hold the overlay.
     """
-    from models.session_result import OutcomeModifier
+    from leaguebot.core.models.session_result import OutcomeModifier
 
     classified = getattr(row, "outcome", None) is OutcomeModifier.CLASSIFIED
 
@@ -264,7 +264,7 @@ class StandingsDrawing:
     #: has run and there is no phase to stand between.
     result_status_label: str
     #: Whether this sheet is about a round, and so has a grand prix to name beneath its
-    #: title. False at both season boundaries — see `models.classification_occasion`.
+    #: title. False at both season boundaries — see `leaguebot.core.models.classification_occasion`.
     names_a_race: bool = True
     division_tier: str | None = None
     season_number: str | None = None

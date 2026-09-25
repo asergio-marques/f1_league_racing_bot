@@ -29,15 +29,15 @@ from pathlib import Path
 from typing import Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
     catalogue_for,
 )
-from utils.date_formatting import format_date_and_time
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
+from leaguebot.core.utils.date_formatting import format_date_and_time
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
 
 log = logging.getLogger(__name__)
 

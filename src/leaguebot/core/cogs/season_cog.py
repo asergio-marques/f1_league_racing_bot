@@ -37,29 +37,30 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
-from models.division import Division
-from models.round import Round as RoundModel
-from models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
-from models.season import SeasonStage
-from services import cancellation_notice_service, season_points_service
-import services.track_service as track_service
-from services.season_service import SeasonImmutableError, validate_division_name
-from utils.autocomplete import bounded_autocomplete
-from utils.batch_notice import batch_notice
-from utils.input_validator import parse_datetime
-from utils.channel_guard import (
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
+from leaguebot.core.models.division import Division
+from leaguebot.core.models.round import Round as RoundModel
+from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services import cancellation_notice_service
+from leaguebot.results.services import season_points_service
+import leaguebot.core.services.track_service as track_service
+from leaguebot.core.services.season_service import SeasonImmutableError, validate_division_name
+from leaguebot.core.utils.autocomplete import bounded_autocomplete
+from leaguebot.core.utils.batch_notice import batch_notice
+from leaguebot.core.utils.input_validator import parse_datetime
+from leaguebot.core.utils.channel_guard import (
     is_league_admin,
     is_league_manager,
     league_admin_only,
     league_manager_only,
     league_role_faults,
 )
-from utils.league_bot import LeagueBot, bot_of
-from utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
-from utils.league_server import CallbackButton, CallbackSelect, LeagueModal, LeagueView, guild_of, is_foreign_guild
-from utils.output_router import _chunk_message
-from utils.round_import import (
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
+from leaguebot.core.utils.league_server import CallbackButton, CallbackSelect, LeagueModal, LeagueView, guild_of, is_foreign_guild
+from leaguebot.core.utils.output_router import _chunk_message
+from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
     ParsedRound,
     parse_bulk_round_lines,
@@ -67,7 +68,7 @@ from utils.round_import import (
 )
 
 if TYPE_CHECKING:
-    from services.season_fingerprint_service import SeasonFingerprint
+    from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
 
 log = logging.getLogger(__name__)
 
@@ -880,9 +881,9 @@ class SeasonCog(commands.Cog):
         Only a season in SETUP reaches here, so an already-approved season is never
         re-validated and no team is renamed or removed by this rule's introduction.
         """
-        from db.database import get_connection
-        from services.team_service import validate_team_name
-        from utils.asset_resolver import normalise
+        from leaguebot.core.db.database import get_connection
+        from leaguebot.core.services.team_service import validate_team_name
+        from leaguebot.image.utils.asset_resolver import normalise
 
         problems: list[str] = []
         try:
@@ -972,13 +973,13 @@ class SeasonCog(commands.Cog):
         three-state contract and the message to the manager already live. Reporting a fault
         twice, from two places, would be the only thing this could add.
         """
-        from services.calendar_post_service import (
+        from leaguebot.core.services.calendar_post_service import (
             image_calendar_wanted,
             tracks_by_name,
         )
-        from services.calendar_post_service import render_for_command as render_calendar
-        from services.image_lineup_post import lineup_enabled
-        from services.image_lineup_post import render_for_command as render_lineup
+        from leaguebot.core.services.calendar_post_service import render_for_command as render_calendar
+        from leaguebot.image.services.image_lineup_post import lineup_enabled
+        from leaguebot.image.services.image_lineup_post import render_for_command as render_lineup
 
         prepared: dict = {}
         held = 0
@@ -1059,7 +1060,7 @@ class SeasonCog(commands.Cog):
         drawn and never sent — a division the loop never reached, or all of them where it
         raised. On a tmpfs that is memory, and nothing else will ever look at these files.
         """
-        from services.image_render_service import discard_render
+        from leaguebot.image.services.image_render_service import discard_render
 
         for outcome in prepared.values():
             discard_render(getattr(outcome, "png_path", None))
@@ -1093,8 +1094,8 @@ class SeasonCog(commands.Cog):
         try:
             import discord as _discord
 
-            from services.image_lineup_post import lineup_enabled, render_for_command
-            from services.image_render_service import discard_attachment, discard_render
+            from leaguebot.image.services.image_lineup_post import lineup_enabled, render_for_command
+            from leaguebot.image.services.image_render_service import discard_attachment, discard_render
 
             if not await lineup_enabled(self.bot):
                 return REVIEW_IMAGE_TEXT
@@ -1172,12 +1173,12 @@ class SeasonCog(commands.Cog):
         try:
             import discord as _discord
 
-            from services.calendar_post_service import (
+            from leaguebot.core.services.calendar_post_service import (
                 image_calendar_wanted,
                 render_for_command,
                 tracks_by_name,
             )
-            from services.image_render_service import discard_attachment, discard_render
+            from leaguebot.image.services.image_render_service import discard_attachment, discard_render
 
             if not await image_calendar_wanted(self.bot):
                 return REVIEW_IMAGE_TEXT
@@ -1248,8 +1249,8 @@ class SeasonCog(commands.Cog):
                 # manager nothing new.
                 return []
 
-            from models.image_catalogues import catalogue_for
-            from utils.svg_document import FieldIndex, load_svg
+            from leaguebot.image.models.image_catalogues import catalogue_for
+            from leaguebot.image.utils.svg_document import FieldIndex, load_svg
 
             root = load_svg(report.resolved_path)
             catalogue = catalogue_for("lineup_template")
@@ -1305,7 +1306,7 @@ class SeasonCog(commands.Cog):
         **drivers**. A calendar's collection is **rounds**, so the two guard different
         commands and must not be merged (research.md § R3).
         """
-        from models.image_catalogues import catalogue_for
+        from leaguebot.image.models.image_catalogues import catalogue_for
 
         try:
             if not await self.bot.module_service.is_images_enabled():
@@ -1320,7 +1321,7 @@ class SeasonCog(commands.Cog):
             if report is None or not report.valid or report.resolved_path is None:
                 return None
 
-            from utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg
 
             capacity = catalogue_for("calendar_template").capacity(
                 load_svg(report.resolved_path)
@@ -1349,7 +1350,7 @@ class SeasonCog(commands.Cog):
         drawn is decided later, and the same divergence is fatal at that moment. Reporting
         it here as a failure would refuse a season that may well draw perfectly.
         """
-        from models.image_catalogues import CapacityError, catalogue_for
+        from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
 
         try:
             config = await self.bot.image_config_service.get_config()
@@ -1363,7 +1364,7 @@ class SeasonCog(commands.Cog):
             if report is None or not report.valid or report.resolved_path is None:
                 return []  # already named by the template problems list
 
-            from utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg
 
             capacity = catalogue_for("calendar_template").capacity(
                 load_svg(report.resolved_path)
@@ -1412,11 +1413,11 @@ class SeasonCog(commands.Cog):
         overflow them — a driver assignment — which is the earlier moment XIV.12 requires, and
         where the change can still be left unapplied.
         """
-        from models.image_catalogues import CapacityError, catalogue_for
+        from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
 
         lines: list[str] = []
         try:
-            from utils.svg_document import load_svg
+            from leaguebot.image.utils.svg_document import load_svg
 
             reports = await self.bot.image_validity_service.template_reports()
 
@@ -1510,13 +1511,13 @@ class SeasonCog(commands.Cog):
         the only place the constructors ceiling can be caught at all: seating a driver adds
         no team.
         """
-        from models.image_catalogues import CapacityError, catalogue_for
-        from models.image_constants import TEMPLATE_LABELS
-        from services.image_standings_service import (
+        from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+        from leaguebot.image.models.image_constants import TEMPLATE_LABELS
+        from leaguebot.image.services.image_standings_service import (
             CONSTRUCTORS_TEMPLATE_KEY,
             DRIVERS_TEMPLATE_KEY,
         )
-        from utils.svg_document import load_svg
+        from leaguebot.image.utils.svg_document import load_svg
 
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
@@ -1586,13 +1587,13 @@ class SeasonCog(commands.Cog):
         detail is summarised rather than repeated in full — a season review is already
         long, and `/images config view` is where the sixteen lines belong.
         """
-        from models.image_constants import ASPECT_LABELS
-        from models.image_module import STATE_DISABLED, STATE_ENABLED
-        from services.image_render_service import (
+        from leaguebot.image.models.image_constants import ASPECT_LABELS
+        from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
+        from leaguebot.image.services.image_render_service import (
             CONVERTER_NAME,
             converter_available,
         )
-        from services.image_validity_service import (
+        from leaguebot.image.services.image_validity_service import (
             ImageValidityService,
             plain_reason,
             plain_remedy,
@@ -1638,8 +1639,8 @@ class SeasonCog(commands.Cog):
         # fault a manager will meet the moment they switch that aspect on, and finding it
         # then — after the season is running — is worse than reading it here.
         if invalid:
-            from models.image_constants import TEMPLATE_LABELS as _LABELS
-            from services.image_validity_service import templates_of_enabled_aspects
+            from leaguebot.image.models.image_constants import TEMPLATE_LABELS as _LABELS
+            from leaguebot.image.services.image_validity_service import templates_of_enabled_aspects
 
             drawn = templates_of_enabled_aspects(
                 await self.bot.image_config_service.get_toggles()
@@ -1673,7 +1674,7 @@ class SeasonCog(commands.Cog):
         # Summarised, as the templates above are: the path and whether it resolves. The
         # fault and its remedy belong to `/images config view`, which has room for them.
         if config is not None and directories:
-            from models.image_constants import ASSET_LABELS
+            from leaguebot.image.models.image_constants import ASSET_LABELS
 
             lines.append("  Asset directories:")
             for column, report in directories.items():
@@ -1704,7 +1705,7 @@ class SeasonCog(commands.Cog):
         Read by `/season placements-review` and by the confirmation of placements alike, so the two cannot disagree
         about whether a season may be approved.
         """
-        from services.image_config_service import portrait_configuration_fault
+        from leaguebot.image.services.image_config_service import portrait_configuration_fault
 
         try:
             if not await self.bot.module_service.is_images_enabled():
@@ -1722,7 +1723,7 @@ class SeasonCog(commands.Cog):
         deciding whether the season is configured, and "the bot is not obtaining portraits"
         is an answer to that rather than an absence of one.
         """
-        from services.image_config_service import portrait_configuration_fault
+        from leaguebot.image.services.image_config_service import portrait_configuration_fault
 
         try:
             config = await self.bot.image_config_service.get_config()
@@ -1757,7 +1758,7 @@ class SeasonCog(commands.Cog):
         and a league with eight of them would otherwise pay eight times over for two configs
         that cannot have changed in between.
         """
-        from services.approval_window_service import AttendanceWindows, WeatherWindows
+        from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 
         attendance = None
         if await self.bot.module_service.is_attendance_enabled():
@@ -1770,7 +1771,7 @@ class SeasonCog(commands.Cog):
 
         weather = None
         if await self.bot.module_service.is_weather_enabled():
-            from services.weather_config_service import get_weather_pipeline_config
+            from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
             _wx = await get_weather_pipeline_config(self.bot.db_path)
             weather = WeatherWindows(
@@ -2178,7 +2179,7 @@ class SeasonCog(commands.Cog):
                     # by. Posted either way, on the roleless-team warning's reasoning below:
                     # it is a review *finding*, and the form the calendar took does not
                     # change whether the manager needs it.
-                    from services.approval_window_service import calendar_faults
+                    from leaguebot.core.services.approval_window_service import calendar_faults
 
                     fault_lines = self._calendar_fault_lines(
                         calendar_faults(
@@ -2519,8 +2520,8 @@ class SeasonCog(commands.Cog):
         withholds its button on either, and the confirmation refuses on either, from this one
         reading — mid-season as at the first confirmation.
         """
-        from services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
-        from services.season_lifecycle_service import UNSETTLED_STATES
+        from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
+        from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 
         placeholders = ",".join("?" for _ in UNSETTLED_STATES)
         async with get_connection(self.bot.db_path) as db:
@@ -2700,8 +2701,8 @@ class SeasonCog(commands.Cog):
         failed is left for the posting helper to draw and report, and the batch announces
         itself. Nothing is drawn, nor announced, where the lineup graphic is not wanted.
         """
-        from services.image_lineup_post import lineup_enabled
-        from services.image_lineup_post import render_for_command as render_lineup
+        from leaguebot.image.services.image_lineup_post import lineup_enabled
+        from leaguebot.image.services.image_lineup_post import render_for_command as render_lineup
 
         if not divisions or not await lineup_enabled(self.bot):
             return
@@ -2734,7 +2735,7 @@ class SeasonCog(commands.Cog):
         named in the reply and the log line, with its repair. A season not moved on to Pending completion is only
         logged: `/season complete` moves it there itself.
         """
-        from models.season import InvalidStageTransition
+        from leaguebot.core.models.season import InvalidStageTransition
 
         await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_confirmed_season()
@@ -2794,7 +2795,7 @@ class SeasonCog(commands.Cog):
             )
         else:
             returned = True
-            from services.season_lifecycle_service import advance_to_pending_completion
+            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
 
             # Rounds may have finished every division while the new drivers were placed.
             try:
@@ -2929,7 +2930,7 @@ class SeasonCog(commands.Cog):
 
     async def _weather_review_lines(self) -> list[str]:
         """The weather deadlines, as both reviews report them."""
-        from services.weather_config_service import (
+        from leaguebot.weather.services.weather_config_service import (
             describe_deadlines,
             get_weather_pipeline_config,
         )
@@ -3041,9 +3042,9 @@ class SeasonCog(commands.Cog):
         portrait readers stand aside on a failure of theirs, as their docstrings say. The
         caller decides whether the module is enabled; this assumes it is.
         """
-        from models.image_constants import TEMPLATE_LABELS
-        from services.image_render_service import CONVERTER_NAME, converter_available
-        from services.image_validity_service import (
+        from leaguebot.image.models.image_constants import TEMPLATE_LABELS
+        from leaguebot.image.services.image_render_service import CONVERTER_NAME, converter_available
+        from leaguebot.image.services.image_validity_service import (
             plain_reason,
             templates_of_enabled_aspects,
         )
@@ -3186,7 +3187,7 @@ class SeasonCog(commands.Cog):
         To Waiting where the signup module is enabled, or to Placements where it is not or
         the season runs in test mode, test mode never opening a signup window.
         """
-        from models.season import InvalidStageTransition
+        from leaguebot.core.models.season import InvalidStageTransition
 
         cfg = self._get_pending()
         if cfg is None or not cfg.season_id:
@@ -3325,7 +3326,7 @@ class SeasonCog(commands.Cog):
 
         # Cancelled only while ongoing (issue #220): a season pending completion has run its
         # course and is completed instead.
-        from models.season import ONGOING_STAGES
+        from leaguebot.core.models.season import ONGOING_STAGES
 
         if season.stage not in ONGOING_STAGES:
             await interaction.response.send_message(
@@ -3339,7 +3340,7 @@ class SeasonCog(commands.Cog):
         # every driver's history from the standings, which hold an open amendment's corrections
         # before they are approved — and the history is never rewritten. Refused before anything
         # else runs, so that a refusal leaves the season exactly as it was.
-        from services.result_submission_service import open_amendment_in_season
+        from leaguebot.results.services.result_submission_service import open_amendment_in_season
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:
@@ -3385,7 +3386,7 @@ class SeasonCog(commands.Cog):
         # that it earns no history entry and holds no seat (issue #220).
         await self.bot.season_service.discard_uncommitted_placements(season.id)
 
-        from services.season_end_service import (
+        from leaguebot.core.services.season_end_service import (
             _revoke_season_roles,
             _write_driver_history_entries,
             end_of_season_pass,
@@ -3484,7 +3485,7 @@ class SeasonCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        from services.season_end_service import end_of_season_pass
+        from leaguebot.core.services.season_end_service import end_of_season_pass
 
         try:
             self.bot.scheduler_service.cancel_signup_close_timer()
@@ -3527,7 +3528,7 @@ class SeasonCog(commands.Cog):
         # each division's final classification from the database, which holds an open
         # amendment's corrections before they are approved. Refused before anything else runs,
         # so that a refusal leaves the season exactly as it was.
-        from services.result_submission_service import open_amendment_in_season
+        from leaguebot.results.services.result_submission_service import open_amendment_in_season
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:
@@ -3596,7 +3597,7 @@ class SeasonCog(commands.Cog):
 
         if not deferred:
             await interaction.response.defer(ephemeral=True)
-        from services.season_end_service import execute_season_end
+        from leaguebot.core.services.season_end_service import execute_season_end
         await execute_season_end(season.id, self.bot)
         await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
         await self.bot.output_router.post_log(
@@ -4095,7 +4096,7 @@ class SeasonCog(commands.Cog):
             return
 
         season = await self.bot.season_service.get_confirmed_season()
-        from models.season import ONGOING_STAGES
+        from leaguebot.core.models.season import ONGOING_STAGES
 
         # Available only while the season is ongoing (issue #220).
         if season is None or season.stage not in ONGOING_STAGES:
@@ -4198,7 +4199,7 @@ class SeasonCog(commands.Cog):
         in its own words — it is not a collision with something else, and reporting it as
         one would send a manager looking for a conflict that does not exist.
         """
-        from services.channel_registry_service import (
+        from leaguebot.core.services.channel_registry_service import (
             ChannelUse,
             find_channel_use,
             refusal,
@@ -4782,8 +4783,8 @@ class SeasonCog(commands.Cog):
         gets reported, so the value goes through untouched and the fault is logged beside
         it. Pinned by `test_a_season_with_no_number_still_draws_and_is_logged`.
         """
-        from services import calendar_post_service as _calendar
-        from utils.season_gate import season_for_command
+        from leaguebot.core.services import calendar_post_service as _calendar
+        from leaguebot.core.utils.season_gate import season_for_command
 
         await interaction.response.defer(ephemeral=True)
 
@@ -4990,7 +4991,7 @@ class SeasonCog(commands.Cog):
         await self._snapshot_pending(cfg)
 
         assigned_number = new_round["round_number"]
-        from models.round import Round as RoundModel
+        from leaguebot.core.models.round import Round as RoundModel
         round_models = [
             RoundModel(
                 id=0,
@@ -5196,7 +5197,7 @@ class SeasonCog(commands.Cog):
 
             await self._snapshot_pending(pending_cfg)
 
-            from models.round import Round as RoundModel
+            from leaguebot.core.models.round import Round as RoundModel
             round_models = [
                 RoundModel(
                     id=0,
@@ -5418,7 +5419,7 @@ class SeasonCog(commands.Cog):
             return
 
         season = await self.bot.season_service.get_confirmed_season()
-        from models.season import ONGOING_STAGES
+        from leaguebot.core.models.season import ONGOING_STAGES
 
         # Available only while the season is ongoing (issue #220).
         if season is None or season.stage not in ONGOING_STAGES:
@@ -5480,7 +5481,7 @@ class SeasonCog(commands.Cog):
 
         # A submission channel standing open is a separate matter: the round may still be
         # cancellable, but the wizard would be writing into it as it went (FR-020).
-        from services.result_submission_service import is_submission_open
+        from leaguebot.results.services.result_submission_service import is_submission_open
         if await is_submission_open(self.bot.db_path, rnd.id):
             await interaction.response.send_message(
                 f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
@@ -5602,7 +5603,7 @@ class SeasonCog(commands.Cog):
 
         As every amendment's channel goes: see `_close_amend_channel_record`.
         """
-        from services.result_submission_service import _close_amend_channel_record
+        from leaguebot.results.services.result_submission_service import _close_amend_channel_record
 
         # Its one caller lets an amendment go only once its record is in.
         assert opened.round_id is not None
@@ -5649,8 +5650,8 @@ class SeasonCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from models.points_config import SessionType
-        from db.database import get_connection
+        from leaguebot.results.models.points_config import SessionType
+        from leaguebot.core.db.database import get_connection
 
         # --- Resolve division and round ---
         # The live season, not the most recent one (issue #224). This read
@@ -5663,7 +5664,7 @@ class SeasonCog(commands.Cog):
         # of the three things still open there (decided 2026-09-20) — a season's last chance
         # to correct its record before `/season complete` draws the final classification off
         # it — so the whole of a live season is the right set, not the default.
-        from utils.season_gate import LIVE_STAGES, season_for_command
+        from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
 
         season = await season_for_command(
             interaction, self.bot.season_service, "round results amend", stages=LIVE_STAGES
@@ -5761,7 +5762,7 @@ class SeasonCog(commands.Cog):
         # first — and left published if it were then cancelled or lapsed, its revert posting
         # nothing. Two amendments of one round would also rewrite the round's pardons over each
         # other, and the second would take the first one's snapshot with it.
-        from services.result_submission_service import open_amendment_in_division
+        from leaguebot.results.services.result_submission_service import open_amendment_in_division
 
         _open = await open_amendment_in_division(self.bot.db_path, div.id)
         async with get_connection(self.bot.db_path) as _odb:
@@ -5950,7 +5951,7 @@ class SeasonCog(commands.Cog):
                     await bi.response.send_message(
                         "Cancelling — putting the round back as it was.", ephemeral=True
                     )
-                    from services.result_submission_service import cancel_amendment
+                    from leaguebot.results.services.result_submission_service import cancel_amendment
 
                     try:
                         undone = await cancel_amendment(
@@ -5995,12 +5996,12 @@ class SeasonCog(commands.Cog):
         )
 
         # --- Collect new results ---
-        from services.result_submission_service import split_validation, validate_submission_block
-        from services.result_submission_service import _build_division_validation_data
-        from services.result_submission_service import other_active_team_assignments
-        from services.result_submission_service import current_accounts, extract_current_fl_override
-        from services.result_submission_service import AmendedSession
-        from services.season_points_service import get_season_config_names
+        from leaguebot.results.services.result_submission_service import split_validation, validate_submission_block
+        from leaguebot.results.services.result_submission_service import _build_division_validation_data
+        from leaguebot.results.services.result_submission_service import other_active_team_assignments
+        from leaguebot.results.services.result_submission_service import current_accounts, extract_current_fl_override
+        from leaguebot.results.services.result_submission_service import AmendedSession
+        from leaguebot.results.services.season_points_service import get_season_config_names
 
         (
             driver_ids, team_of_role, reserve_role_id, driver_team_map, reserve_driver_ids,
@@ -6012,7 +6013,7 @@ class SeasonCog(commands.Cog):
             # The button goes with the channel: nothing is left listening for a press that
             # could only answer for an amendment that has ended.
             cancel_view.stop()
-            from services.result_submission_service import _close_amend_channel_record
+            from leaguebot.results.services.result_submission_service import _close_amend_channel_record
 
             await _close_amend_channel_record(
                 self.bot.db_path, rnd.id, amend_channel.id, amend_channel,
@@ -6158,7 +6159,7 @@ class SeasonCog(commands.Cog):
             elif existing_config_name and existing_config_name in config_names:
                 config_name = existing_config_name
             else:
-                from services.result_submission_service import _ConfigSelectView
+                from leaguebot.results.services.result_submission_service import _ConfigSelectView
                 cfg_view = _ConfigSelectView(config_names, server_cfg)
                 await amend_channel.send(
                     f"Select the points configuration for {_label(st)}:", view=cfg_view
@@ -6196,7 +6197,7 @@ class SeasonCog(commands.Cog):
                 )
             )
 
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             AmendmentWouldOrphanVerdictError,
             amend_round_results,
         )
@@ -6240,7 +6241,7 @@ class SeasonCog(commands.Cog):
             # classifications are written in one transaction, but the points and the standings
             # after it are not; a failure there left the round half-amended, and deleting the
             # channel's record took the snapshot that could undo it.
-            from services.result_submission_service import revert_abandoned_amendment
+            from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
 
             try:
                 await revert_abandoned_amendment(self.bot.db_path, rnd.id, self.bot)
@@ -6272,7 +6273,7 @@ class SeasonCog(commands.Cog):
         # The channel therefore stays open, and is not deleted here. It is torn down when the
         # appeals stage is approved, by the same `close_submission_channel` a first pass
         # reaches, or by the cancel button, the sweep, or restart recovery.
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             cancel_amendment,
             run_amendment_review_stages,
         )
@@ -6453,7 +6454,7 @@ class SeasonCog(commands.Cog):
             )
             return False
 
-        from services import backup_service
+        from leaguebot.core.services import backup_service
 
         state = backup_service.state(self.bot.db_path)
         standing = (
@@ -6700,7 +6701,7 @@ class SeasonCog(commands.Cog):
         # elsewhere — it seeds points configurations so a test season passes that
         # requirement — but a test season that loses its check-ins misreports attendance
         # exactly as a real one does, and is a worse thing to be testing against.
-        from services.approval_window_service import calendar_faults
+        from leaguebot.core.services.approval_window_service import calendar_faults
 
         _att_windows, _wx_windows = await self._approval_windows()
         _now = datetime.now(timezone.utc)
@@ -6852,7 +6853,7 @@ class SeasonCog(commands.Cog):
         }
         if weather_enabled:
             # schedule_round creates weather phase jobs AND the results job together
-            from services.weather_config_service import get_weather_pipeline_config
+            from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
             _wcfg = await get_weather_pipeline_config(self.bot.db_path)
             self.bot.scheduler_service.schedule_all_rounds(
                 all_rounds,
@@ -7000,7 +7001,7 @@ class SeasonCog(commands.Cog):
             # mean a malformed row, and is logged and drawn as "SEASON 0" rather than
             # normalised to None, which would hide the fault the same way.
             if _guild is not None:
-                from services import calendar_post_service as _calendar
+                from leaguebot.core.services import calendar_post_service as _calendar
 
                 _calendar_notices: list[str] = []
                 _calendar_problems: list[str] = []
@@ -7087,7 +7088,7 @@ class SeasonCog(commands.Cog):
             # off or a template will not draw (XIV.7). A failure here never fails the
             # approval — the season is already ACTIVE by this point.
             if _guild is not None:
-                from services import season_classification_service as _classification
+                from leaguebot.core.services import season_classification_service as _classification
 
                 try:
                     _opening_problems = await _classification.post_opening_classifications(
@@ -7166,7 +7167,7 @@ class SeasonCog(commands.Cog):
             return
         if await is_foreign_guild(self.bot, message.guild.id):
             return
-        from services.result_submission_service import is_channel_in_penalty_review
+        from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
 
         if await is_channel_in_penalty_review(self.bot.db_path, message.channel.id):
             try:
@@ -7221,7 +7222,7 @@ class _BackupBeforeApprovalView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        from services import backup_service
+        from leaguebot.core.services import backup_service
 
         scheduler = getattr(self._cog.bot, "scheduler_service", None)
         paused = False
@@ -7330,7 +7331,7 @@ class _ApproveView(LeagueView):
         Called after the report is built, not before: the fingerprint has to describe
         what the manager actually read.
         """
-        from services.season_fingerprint_service import take_fingerprint
+        from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
         self._season_id = season_id
         self._fingerprint = await take_fingerprint(self._cog.bot, season_id)
@@ -7459,7 +7460,7 @@ class _ApproveView(LeagueView):
         # unlikely; this makes one detectable — and it is what lets the approval trust the
         # review's own render rather than drawing everything a second time.
         if self._fingerprint is not None and self._season_id is not None:
-            from services.season_fingerprint_service import take_fingerprint
+            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
             current = await take_fingerprint(
                 self._cog.bot, self._season_id
@@ -7528,9 +7529,9 @@ async def _judge_round_amendment(
     A module that is switched off passes no windows and so has nothing refused on its account —
     a league without attendance has no check-in to lose.
     """
-    from services.amendment_rules_service import judge_amendment
-    from services.approval_window_service import AttendanceWindows, WeatherWindows
-    from services.weather_config_service import get_weather_pipeline_config
+    from leaguebot.core.services.amendment_rules_service import judge_amendment
+    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
     attendance = None
     if await bot.module_service.is_attendance_enabled():
@@ -7578,7 +7579,7 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
             return
 
         if self._fingerprint is not None and self._season_id is not None:
-            from services.season_fingerprint_service import take_fingerprint
+            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
             current = await take_fingerprint(
                 self._cog.bot, self._season_id
@@ -7625,7 +7626,7 @@ class _ConfirmConfigurationView(_ApproveView):
             return
 
         if self._fingerprint is not None and self._season_id is not None:
-            from services.season_fingerprint_service import take_fingerprint
+            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
             current = await take_fingerprint(
                 self._cog.bot, self._season_id

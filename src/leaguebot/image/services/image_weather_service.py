@@ -28,21 +28,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
     catalogue_for,
 )
-from utils.message_builder import (
+from leaguebot.weather.utils.message_builder import (
     PHASE_DESCRIPTIONS,
     format_rain_probability,
     format_session_weather_type,
     format_slot_sequence,
     session_type_label,
 )
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ MYSTERY_TEMPLATE_KEY = "weather_mystery_template"
 
 # The description of the phase the graphic stands for is ``PHASE_DESCRIPTIONS``, imported
 # above and re-exported here. No weather graphic draws a phase *number* (FR-011, FR-022).
-# It moved to ``utils.message_builder`` with issue #112, which made it the textual forecast's
+# It moved to ``leaguebot.weather.utils.message_builder`` with issue #112, which made it the textual forecast's
 # heading as well as the graphic's corner: a graphic and the message it stands in for cannot
 # disagree about what a phase is called, for the same reason the rain probability and the slot
 # sequence are rendered there (Constitution XIV.7).

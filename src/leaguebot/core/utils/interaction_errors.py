@@ -25,7 +25,7 @@ run inside each command's body and answer the member themselves, rather than rai
 `app_commands.CheckFailure`, so everything that arrives here is a real fault.
 
 Autocomplete does not reach this either. `CommandTree._call` logs an autocomplete failure
-and returns before any `on_error` runs; see `utils/log_filters.py`.
+and returns before any `on_error` runs; see `core/utils/log_filters.py`.
 """
 
 from __future__ import annotations

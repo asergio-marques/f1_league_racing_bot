@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -77,10 +77,10 @@ async def try_attach(
     try:
         import discord
 
-        from models.image_module import PostingOrigin
-        from services.attendance_service import derive_checkin_deadline
-        from services.image_rsvp_service import build_fill_spec, resolve_drawing
-        from services.image_render_service import (
+        from leaguebot.image.models.image_module import PostingOrigin
+        from leaguebot.attendance.services.attendance_service import derive_checkin_deadline
+        from leaguebot.image.services.image_rsvp_service import build_fill_spec, resolve_drawing
+        from leaguebot.image.services.image_render_service import (
             resolve_configured_directories,
             spec_builder_with_faults,
         )
@@ -121,7 +121,7 @@ async def try_attach(
             image_type=RSVP_TEMPLATE_KEY,
         )
 
-        from utils.image_naming import stem_for_drawing
+        from leaguebot.image.utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
             RSVP_TEMPLATE_KEY,
@@ -160,18 +160,18 @@ def discard_attachment(attachment) -> None:
     through the render service — the boundary
     ``test_no_source_module_posting_path_imports_the_render_service`` exists to hold.
     """
-    from services.image_render_service import discard_attachment as _discard
+    from leaguebot.image.services.image_render_service import discard_attachment as _discard
 
     _discard(attachment)
 
 
 async def _report(bot: LeagueBot, what: str, detail: str) -> None:
-    from services.image_results_post import report
+    from leaguebot.image.services.image_results_post import report
 
     await report(bot, what, detail)
 
 
 async def _report_notices(bot: LeagueBot, what: str, notices) -> None:
-    from services.image_results_post import report_notices
+    from leaguebot.image.services.image_results_post import report_notices
 
     await report_notices(bot, what, notices)

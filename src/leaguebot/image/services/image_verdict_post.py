@@ -25,10 +25,10 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from db.database import get_connection
-from models.image_module import PostingOrigin
-from services.image_verdict_service import VerdictDrawing, VerdictKind
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.image.models.image_module import PostingOrigin
+from leaguebot.image.services.image_verdict_service import VerdictDrawing, VerdictKind
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ async def _driver_nationality(
     The driver is found by any account they have held, as a verdict names the account the
     result was recorded under, which may be one they have since left (issue #243).
     """
-    from services.image_results_post import SIGNUP_FOR_SEASON_SQL
+    from leaguebot.image.services.image_results_post import SIGNUP_FOR_SEASON_SQL
 
     try:
         async with get_connection(db_path) as db:
@@ -167,7 +167,7 @@ async def team_name_for_entry(
     if team_id is None:
         return None
     try:
-        from services.image_results_post import _team_names
+        from leaguebot.image.services.image_results_post import _team_names
 
         names = await _team_names(bot, guild, division_id, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
@@ -181,7 +181,7 @@ async def team_key_for_entry(bot: LeagueBot, *, team_id: int | None) -> str | No
     if team_id is None:
         return None
     try:
-        from services.image_results_post import _team_keys
+        from leaguebot.image.services.image_results_post import _team_keys
 
         keys = await _team_keys(bot, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
@@ -215,7 +215,7 @@ async def _mention_names(
       reader can look up beats the wrong person's name. This is also what an unreadable lookup
       degrades to: a name is not worth a lost verdict, as `_graphic_name` already has it.
     """
-    from services.image_verdict_service import mention_ids
+    from leaguebot.image.services.image_verdict_service import mention_ids
 
     names: dict[str, str] = {}
     if driver_name and str(driver_name).strip():
@@ -226,7 +226,7 @@ async def _mention_names(
         return names
 
     try:
-        from services.image_results_post import _driver_names
+        from leaguebot.image.services.image_results_post import _driver_names
 
         resolved = await _driver_names(bot, guild, [int(user_id) for user_id in wanted])
     except Exception as exc:  # noqa: BLE001 — a name is not worth a failed render
@@ -270,7 +270,7 @@ async def build_drawing(
     defaulted: a caller that forgets it should say so at the call site and not by quietly
     naming drivers worse.
     """
-    from services.image_verdict_service import resolve_mentions
+    from leaguebot.image.services.image_verdict_service import resolve_mentions
 
     context = await _round_context(db_path, round_id)
     nationality = await _driver_nationality(db_path, driver_discord_id, round_id)
@@ -278,7 +278,7 @@ async def build_drawing(
     # Whether the league collects nationality at all. A league that switched it off draws no
     # flag and is told nothing (XIV.4's configured absence); one that collects it and holds
     # none for this driver has an ordinary emptied optional field, and is told.
-    from services.image_results_post import _nationality_collected
+    from leaguebot.image.services.image_results_post import _nationality_collected
 
     collected = await _nationality_collected(db_path)
 
@@ -326,8 +326,8 @@ async def render_verdict(
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> VerdictRender:
     """Render *drawing* to a PNG, or report why the textual announcement should stand."""
-    from services.image_verdict_service import build_fill_spec
-    from services.image_render_service import (
+    from leaguebot.image.services.image_verdict_service import build_fill_spec
+    from leaguebot.image.services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -343,7 +343,7 @@ async def render_verdict(
             image_type=VERDICTS_TEMPLATE_KEY,
         )
 
-        from utils.image_naming import stem_for_drawing
+        from leaguebot.image.utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
             VERDICTS_TEMPLATE_KEY,
@@ -388,7 +388,7 @@ def discard(render, attachment=None) -> None:
     afterwards regardless, for the case where the render succeeded and the attachment was
     never built.
     """
-    from services.image_render_service import discard_attachment, discard_render
+    from leaguebot.image.services.image_render_service import discard_attachment, discard_render
 
     if attachment is not None:
         discard_attachment(attachment)
@@ -416,13 +416,13 @@ def describe(
 
 async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a verdicts channel."""
-    from services.image_results_post import report as _report
+    from leaguebot.image.services.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
 async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4)."""
-    from services.image_results_post import report_notices as _report_notices
+    from leaguebot.image.services.image_results_post import report_notices as _report_notices
 
     await _report_notices(bot, what, notices)

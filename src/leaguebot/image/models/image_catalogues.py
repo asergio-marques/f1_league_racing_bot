@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Iterable, Mapping
 
-from models.image_constants import TEMPLATE_COLUMNS
+from leaguebot.image.models.image_constants import TEMPLATE_COLUMNS
 
 
 class CapacityError(Exception):
@@ -199,7 +199,7 @@ class RowSpec:
         of XIV.12's third capacity. The same :class:`CapacityError` carries it, so it refuses
         at all three verification moments through the path the other two faults already take.
         """
-        from utils.svg_document import FieldIndex
+        from leaguebot.image.utils.svg_document import FieldIndex
 
         pattern = re.compile(rf"^{re.escape(self.prefix)}_(\d+)(?:_.*)?$")
         ordinals: set[int] = set()
@@ -270,7 +270,7 @@ class RowSpec:
         if self.nested is None or root is None:
             return set()
 
-        from utils.svg_document import FieldIndex
+        from leaguebot.image.utils.svg_document import FieldIndex
 
         # Indexed once for every member below, rather than scanned once per member (#164).
         declared = DeclaredNames(FieldIndex(root).declared())
@@ -317,7 +317,7 @@ class RowSpec:
         if self.nested is None or root is None or not self.nested.valueless_fields:
             return ids
 
-        from utils.svg_document import FieldIndex
+        from leaguebot.image.utils.svg_document import FieldIndex
 
         declared = DeclaredNames(FieldIndex(root).declared())
         for index in range(1, capacity + 1):
@@ -629,7 +629,7 @@ class FieldCatalogue:
 
     @staticmethod
     def _declared(root) -> set[str]:
-        from utils.svg_document import FieldIndex
+        from leaguebot.image.utils.svg_document import FieldIndex
 
         return set(FieldIndex(root).declared())
 
@@ -871,7 +871,7 @@ def _with_division_logo(catalogue: FieldCatalogue) -> FieldCatalogue:
 
 
 #: are *values*, and a catalogue classifies fields. They live with the resolution, in
-#: ``services/image_calendar_service.py``.
+#: ``image/services/image_calendar_service.py``.
 CALENDAR_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name"}),
     optional=frozenset({"season_number", "division_tier"}),
@@ -944,7 +944,7 @@ FOOTER_GROUP_FIELD = "footer_group"
 #:
 #: The reserve team's display name ("Reserve") and the driver-name resolution chain are
 #: **values**, not fields, and live with the resolution in
-#: ``services/image_lineup_service.py``. See
+#: ``image/services/image_lineup_service.py``. See
 #: specs/038-lineup-image-generation/contracts/lineup-catalogue.md.
 LINEUP_CATALOGUE = _with_division_logo(FieldCatalogue(
     mandatory=frozenset({"division_name"}),
@@ -1112,7 +1112,7 @@ RESULTS_RACE_CATALOGUE = _with_division_logo(FieldCatalogue(
 #: three occasions — approved, after each round, completed — and they differ only in this
 #: phrase. It is one addressable field rather than the word ``ROUND`` drawn as chrome beside a
 #: numeral, because chrome carries no id and so could only ever say the middle of the three.
-#: See :class:`models.classification_occasion.ClassificationOccasion`, which composes it.
+#: See :class:`leaguebot.core.models.classification_occasion.ClassificationOccasion`, which composes it.
 _STANDINGS_MANDATORY = frozenset(
     {"division_name", "classification_label", "result_status"}
 )
@@ -1500,8 +1500,8 @@ def _weather_floors(formats: tuple[str, ...]) -> tuple[int, int]:
     Derived from the weather module's own constants at import, never written as literals — a
     figure copied here would be a second thing to keep true (FR-015).
     """
-    from models.round import RoundFormat
-    from models.session import MAX_SLOTS, SESSIONS_BY_FORMAT
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT
 
     sessions = 0
     slots = 0
@@ -1803,7 +1803,7 @@ def sibling_keys(template_key: str) -> list[str]:
     constitution explicitly denies: a calendar template declaring a lineup's field states
     nothing about a calendar.
     """
-    from models.image_constants import ASPECT_SOURCE_MODULE, ASPECT_TEMPLATES
+    from leaguebot.image.models.image_constants import ASPECT_SOURCE_MODULE, ASPECT_TEMPLATES
 
     aspect_of = {key: aspect for aspect, keys in ASPECT_TEMPLATES.items() for key in keys}
     own_aspect = aspect_of.get(template_key)

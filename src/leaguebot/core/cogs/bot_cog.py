@@ -20,11 +20,11 @@ repair nothing the guards read. Confirming a season's configuration fixes both u
 season ends.
 
 `/bot hub-channel` sets the hub (issue #279): the one channel every member may use, holding the
-panel `services.hub_service` keeps. It is a league manager's, like every other channel command.
+panel `leaguebot.core.services.hub_service` keeps. It is a league manager's, like every other channel command.
 
 `/bot pack` is a league admin's command and is given in the interaction channel like any
 other: it releases the settings rather than repairing them. `/bot factory-reset` is the server
-owner's alone, from any channel; see `utils.channel_guard.server_owner_only`.
+owner's alone, from any channel; see `leaguebot.core.utils.channel_guard.server_owner_only`.
 """
 
 from __future__ import annotations
@@ -38,10 +38,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from db.database import get_connection
-from models.server_config import ServerConfig
-from services import backup_service, factory_reset_service, pack_service
-from utils.channel_guard import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.core.services import backup_service, factory_reset_service, pack_service
+from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
     league_admin_only,
@@ -49,8 +49,8 @@ from utils.channel_guard import (
     role_grant_refusal,
     server_owner_only,
 )
-from utils.league_bot import LeagueBot
-from utils.league_server import guild_of
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import guild_of
 
 log = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ class BotCog(commands.Cog):
             "log_channel_id": "log",
         }.get(column)
         if _setting is not None:
-            from services.channel_registry_service import (
+            from leaguebot.core.services.channel_registry_service import (
                 ChannelUse,
                 find_channel_use,
                 refusal,
@@ -379,7 +379,7 @@ class BotCog(commands.Cog):
         grants it: it knows its drivers, and the reply tells the league its other members need
         the role by hand.
         """
-        from services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         config = await self.bot.config_service.get_server_config()
@@ -565,8 +565,8 @@ class BotCog(commands.Cog):
         reply and the log rather than undoing the setting: the channel is the right one, and
         the repair is in Discord's settings.
         """
-        from services import hub_service
-        from services.channel_registry_service import ChannelUse, find_channel_use, refusal
+        from leaguebot.core.services import hub_service
+        from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
 
         use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
@@ -731,7 +731,7 @@ class BotCog(commands.Cog):
         self, interaction: discord.Interaction, confirm: str
     ) -> None:
         """Back up, wipe, and clean Discord — in that order, and never the second without the
-        first. See `services.factory_reset_service`.
+        first. See `leaguebot.core.services.factory_reset_service`.
 
         Only the server the command is given in is cleaned. A bot that was packed and not
         yet claimed may still hold the ids of another server's channels, and the owner of
@@ -839,7 +839,7 @@ async def _reapply_hub_permissions(bot: LeagueBot) -> None:
     Logged where it fails, and never failing the role command that asked for it: the role is
     set either way, and the hub is repaired in Discord.
     """
-    from services.hub_service import reapply_hub_permissions
+    from leaguebot.core.services.hub_service import reapply_hub_permissions
 
     try:
         fault = await reapply_hub_permissions(bot)

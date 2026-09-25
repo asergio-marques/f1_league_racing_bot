@@ -24,9 +24,9 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from db.database import get_connection
-from models.round import RoundStatus
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ async def tracks_by_name(db_path: str) -> dict:
     """
     from types import SimpleNamespace
 
-    from services.track_service import get_all_tracks
+    from leaguebot.core.services.track_service import get_all_tracks
 
     async with get_connection(db_path) as db:
         rows = await get_all_tracks(db)
@@ -129,8 +129,8 @@ async def render_calendar_image(
     output_dir: Path | None = None,
 ):
     """Render one division's calendar. Returns a RenderOutcome."""
-    from services.image_calendar_service import build_fill_spec, resolve_drawing
-    from services.image_render_service import (
+    from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
+    from leaguebot.image.services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -161,7 +161,7 @@ async def render_calendar_image(
         image_type=TEMPLATE_KEY,
     )
 
-    from utils.image_naming import stem_for_drawing
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
     outcome = await bot.image_render_service.render(
         TEMPLATE_KEY,
@@ -183,7 +183,7 @@ async def render_calendar_image(
     # maps could go missing from a calendar with not one word said about it anywhere a
     # manager looks.
     if outcome.notices:
-        from services.image_render_service import ImageRenderService
+        from leaguebot.image.services.image_render_service import ImageRenderService
 
         await ImageRenderService.report_notices(
             bot, outcome.notices, subject=f"calendar — {division.name}"
@@ -297,7 +297,7 @@ async def replace_calendar_message(
         # Closed here, where the attachment is, so the file's handle is released before
         # the caller's `finally` removes it. The caller still discards the path, which is
         # what covers a picture that never reached a send at all.
-        from services.image_render_service import discard_attachment
+        from leaguebot.image.services.image_render_service import discard_attachment
 
         attachment = discord.File(str(image_path), filename=image_path.name)
         try:
@@ -352,7 +352,7 @@ async def post_division_calendar(
         result.problem = "no calendar channel is configured for this division"
         return result
 
-    from services.image_render_service import discard_render
+    from leaguebot.image.services.image_render_service import discard_render
 
     # A graphic carries no heading. The picture draws the division's own name and says
     # what it is, so a line of message text above it repeats the picture rather than
@@ -403,7 +403,7 @@ async def post_division_calendar(
             log.exception("calendar: posting failed for division %s", division.id)
             # A Discord fault rather than a generation fault: the *textual* calendar is
             # what is enqueued for retry (FR-020).
-            from services import retry_service
+            from leaguebot.core.services import retry_service
 
             try:
                 await retry_service.enqueue(

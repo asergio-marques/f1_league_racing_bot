@@ -7,13 +7,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.season import ONGOING_STAGES, SeasonStage
-from utils.autocomplete import bounded_autocomplete, team_autocomplete
-from utils.channel_guard import league_admin_only, league_manager_only
-from utils.input_validator import parse_user_id
-from utils.league_bot import LeagueBot
-from utils.league_server import guild_of
-from services.season_service import SeasonImmutableError
+from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
+from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
+from leaguebot.core.utils.input_validator import parse_user_id
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import guild_of
+from leaguebot.core.services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ class DriverCog(commands.Cog):
         who changes account between seasons is re-keyed once the next season reaches
         placements, which is the moment they would be placed anyway.
         """
-        from utils.season_gate import PLACEMENT_STAGES, season_for_command
+        from leaguebot.core.utils.season_gate import PLACEMENT_STAGES, season_for_command
 
         # Checked before the parameters, so that a manager running it in the wrong stage is
         # told the rule rather than told they mis-typed a snowflake.
@@ -198,7 +198,7 @@ class DriverCog(commands.Cog):
         # After the reply, so that reading the image configuration and touching the league's
         # directory can never eat into Discord's three seconds. The replaced account is drawn
         # by nothing now, so the portrait obtained for it goes (issue #222).
-        from services.driver_portrait_service import discard_portraits
+        from leaguebot.image.services.driver_portrait_service import discard_portraits
 
         await discard_portraits(self.bot, [replaced])
         await self.bot.output_router.post_log(
@@ -614,7 +614,7 @@ class DriverCog(commands.Cog):
         drivers of a window are settled. The driver returns to Not Signed Up and loses the
         driver role; their signup is kept with the season.
         """
-        from models.driver_profile import DriverState
+        from leaguebot.core.models.driver_profile import DriverState
 
         await interaction.response.defer(ephemeral=True)
         current = await self._current_member(interaction, user)

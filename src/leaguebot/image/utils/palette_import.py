@@ -22,8 +22,8 @@ from dataclasses import dataclass
 
 from lxml import etree
 
-from utils.colour import InvalidColour, normalise_hex
-from utils.svg_palette import InvalidSlot, normalise_slot
+from leaguebot.image.utils.colour import InvalidColour, normalise_hex
+from leaguebot.image.utils.svg_palette import InvalidSlot, normalise_slot
 
 __all__ = [
     "PaletteBlock",
@@ -33,7 +33,7 @@ __all__ = [
 ]
 
 #: Entities off and the network unreachable: this parses a file a league uploaded.
-#: Same settings as `utils.xml_import`, and for the same reason.
+#: Same settings as `leaguebot.core.utils.xml_import`, and for the same reason.
 _XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
 
 #: What may sit between a slot and its colour in a pasted line. A league pastes what the

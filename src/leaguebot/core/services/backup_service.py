@@ -35,7 +35,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -356,6 +356,6 @@ def jobstore_path_of(bot: LeagueBot) -> str:
     path = getattr(scheduler, "_jobstore_path", None)
     if path:
         return str(path)
-    from services.scheduler_service import default_jobstore_path
+    from leaguebot.core.services.scheduler_service import default_jobstore_path
 
     return str(default_jobstore_path(bot.db_path))

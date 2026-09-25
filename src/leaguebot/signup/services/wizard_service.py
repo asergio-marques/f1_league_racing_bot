@@ -19,18 +19,18 @@ from typing import TYPE_CHECKING, Any
 import discord
 from apscheduler.triggers.date import DateTrigger
 
-from services.channel_registry_service import as_text_channel
-from db.database import get_connection
-from models.driver_profile import DriverState
-from models.signup_module import SignupRecord, SignupWizardRecord, WizardState
-from utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
-from utils.results_formatter import render_lap_time
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
+from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
+from leaguebot.results.utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
-    from services.scheduler_service import SchedulerService
-    from utils.output_router import OutputRouter
+    from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.utils.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class WizardService:
 
     Dependency wiring:
     - ``set_bot(bot)`` gives this service access to Discord guild objects, driver_service
-      and signup_module_service. ``bot.py`` calls it as soon as the service is built, before
+      and signup_module_service. ``__main__.py`` calls it as soon as the service is built, before
       the gateway opens: a press on a signup button can arrive while ``on_ready`` is still
       recovering, and must find the bot already bound (#228).
     """
@@ -134,7 +134,7 @@ class WizardService:
 
     async def _get_track_name_map(self) -> dict[str, str]:
         """Return {str(id): name} for all tracks from the database."""
-        from services import track_service
+        from leaguebot.core.services import track_service
         async with get_connection(self._db_path) as db:
             return await track_service.get_track_name_map(db)
 
@@ -160,7 +160,7 @@ class WizardService:
     async def _get_guild(self) -> discord.Guild | None:
         """The league's server, the one a wizard's channel lives in."""
         assert self._bot is not None, "WizardService.set_bot() not called"
-        from utils.league_server import league_guild
+        from leaguebot.core.utils.league_server import league_guild
 
         return await league_guild(self._bot)
 
@@ -593,7 +593,7 @@ class WizardService:
         if wizard.signup_channel_id:
             channel = guild.get_channel(wizard.signup_channel_id)
             if channel and isinstance(channel, discord.TextChannel):
-                from cogs.admin_review_cog import AdminReviewView
+                from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
                 track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_id: s.display_label
@@ -783,7 +783,7 @@ class WizardService:
         if isinstance(channel, discord.TextChannel):
             driver_member = guild.get_member(int(discord_user_id))
             mention = driver_member.mention if driver_member else f"<@{discord_user_id}>"
-            from cogs.admin_review_cog import CorrectionParameterView
+            from leaguebot.signup.cogs.admin_review_cog import CorrectionParameterView
             await channel.send(
                 f"{mention} **{actor.display_name}** has requested a correction.\n"
                 "Please select the parameter to correct (5-minute window):",
@@ -1255,7 +1255,7 @@ class WizardService:
         team_names: list[str] | None = None,
     ) -> discord.ui.View:
         """Return the appropriate view for the given wizard state."""
-        from cogs.signup_cog import (  # lazy import — avoid circular
+        from leaguebot.signup.cogs.signup_cog import (  # lazy import — avoid circular
             WithdrawButtonView,
             PlatformButtonView,
             DriverTypeButtonView,
@@ -1365,7 +1365,7 @@ class WizardService:
             f"**Step 6 — {ordinal} Preferred Team** *(so far: {picks_str})*\n"
             f"Select your {ordinal} preferred team, or press **No Preference** to finish."
         )
-        from cogs.signup_cog import PreferredTeamsButtonView  # lazy import
+        from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView  # lazy import
         await channel.send(
             prompt,
             view=PreferredTeamsButtonView(
@@ -1808,7 +1808,7 @@ class WizardService:
             if isinstance(channel, discord.TextChannel):
                 record = await self._signup_svc.get_record(discord_user_id)
                 if record is not None:
-                    from cogs.admin_review_cog import AdminReviewView
+                    from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
                     track_map = await self._get_track_name_map()
                     slot_labels = {
                         s.slot_id: s.display_label
@@ -1885,7 +1885,7 @@ class WizardService:
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
-                from cogs.admin_review_cog import AdminReviewView
+                from leaguebot.signup.cogs.admin_review_cog import AdminReviewView
                 track_map = await self._get_track_name_map()
                 slot_labels = {
                     s.slot_id: s.display_label

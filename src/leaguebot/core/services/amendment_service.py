@@ -13,12 +13,12 @@ from typing import Any
 
 import discord
 
-from db.database import get_connection
-from models.round import RoundFormat
-from services.season_service import SeasonImmutableError
-from utils.league_bot import LeagueBot
-from utils.points_ordering import ordering_message, ordering_violations
-from utils.league_server import league_guild
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
+from leaguebot.core.utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
@@ -143,10 +143,10 @@ class AmendmentService:
         #
         # Read the league's own horizons rather than the packaged 5/2/2, so that the answer here
         # and the windows the phases are actually judged at cannot disagree about a round.
-        from models.round import Round as _Round
-        from services.amendment_rules_service import judge_amendment
-        from services.approval_window_service import AttendanceWindows, WeatherWindows
-        from services.weather_config_service import get_weather_pipeline_config
+        from leaguebot.core.models.round import Round as _Round
+        from leaguebot.core.services.amendment_rules_service import judge_amendment
+        from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
 
         # Read before the verdict, because the verdict is what decides the fate of the round's
         # check-in as well as its forecasts. The config is only fetched where the module is on:
@@ -254,7 +254,7 @@ class AmendmentService:
             await db.commit()
 
         # 5. Cancel + re-schedule
-        from services.season_service import SeasonService
+        from leaguebot.core.services.season_service import SeasonService
         season_svc = SeasonService(self._db_path)
         updated_round = await season_svc.get_round(round_id)
         if updated_round is None:
@@ -280,7 +280,7 @@ class AmendmentService:
         # immediately re-run below.
         _weather_on = await bot.module_service.is_weather_enabled()
         if _weather_on:
-            from models.round import RoundFormat as _RoundFormat
+            from leaguebot.core.models.round import RoundFormat as _RoundFormat
             if updated_round.format != _RoundFormat.MYSTERY or now < p1_horizon:
                 # The league's own horizons, the same ones the verdict above was measured
                 # against. Left to its defaults `schedule_round` arms at the packaged 5 / 2 / 2,
@@ -348,7 +348,7 @@ class AmendmentService:
             #   * The deadline has passed under the new moment too — nothing is posted and
             #     nothing is taken down. The check-in is closed, the reserves are distributed
             #     against it, and reopening it would unsettle a grid already told who is racing.
-            from services.rsvp_service import repost_rsvp_call, withdraw_rsvp_call
+            from leaguebot.attendance.services.rsvp_service import repost_rsvp_call, withdraw_rsvp_call
 
             _division_id = row["division_id"]
             if not _verdict.check_in_stays_closed:
@@ -379,7 +379,7 @@ class AmendmentService:
         # A phase that still stands keeps its message, which is what leaves the division holding
         # the latest forecast that survives the amendment rather than an empty channel.
         if any_phase_done and _withdrawn:
-            from services.forecast_cleanup_service import delete_forecast_message
+            from leaguebot.weather.services.forecast_cleanup_service import delete_forecast_message
             division_id: int = row["division_id"]
             for phase_num in _withdrawn:
                 await delete_forecast_message(round_id, division_id, phase_num, bot)
@@ -395,8 +395,8 @@ class AmendmentService:
             [n for n in _withdrawn if row[f"phase{n}_done"]]
         )
         if _forecast_withdrawn:
-            from utils.message_builder import invalidation_message
-            from utils.output_router import ForecastChannel
+            from leaguebot.weather.utils.message_builder import invalidation_message
+            from leaguebot.core.utils.output_router import ForecastChannel
 
             amended_track = next(
                 (str(db_value) for f, _, db_value in applied if f == "track_name"),
@@ -425,9 +425,9 @@ class AmendmentService:
         )
 
         # 7. Re-run missed phases (non-MYSTERY only, and only with weather on)
-        from services.phase1_service import run_phase1
-        from services.phase2_service import run_phase2
-        from services.phase3_service import run_phase3
+        from leaguebot.weather.services.phase1_service import run_phase1
+        from leaguebot.weather.services.phase2_service import run_phase2
+        from leaguebot.weather.services.phase3_service import run_phase3
 
         # A phase is run here only where its horizon has passed under the round's new moment
         # *and* it was never performed — the round having been brought forward past a horizon it
@@ -520,7 +520,7 @@ async def modification_ordering_warnings(
     """Return how one staged session's table now reads out of order, if it does.
 
     The modification store's answer to
-    :func:`services.points_config_service.ordering_warnings`, and given on the same
+    :func:`leaguebot.results.services.points_config_service.ordering_warnings`, and given on the same
     terms: a staged edit that breaks the ordering **warns and still applies**. A manager
     restructuring a table mid-season moves through the same transient states as one
     building it in the first place, and the refusal waits for
@@ -545,7 +545,7 @@ async def modification_ordering_warnings(
 
 async def get_amendment_state(db_path: str, season_id: int):
     """Return SeasonAmendmentState or None if no record exists."""
-    from models.amendment_state import SeasonAmendmentState
+    from leaguebot.results.models.amendment_state import SeasonAmendmentState
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT season_id, amendment_active, modified_flag FROM season_amendment_state WHERE season_id = ?",
@@ -803,7 +803,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     needs and the attendance module knows what its recalculation needs; this function only
     composes them, and reaches into neither's configuration itself.
     """
-    from services import results_post_service
+    from leaguebot.results.services import results_post_service
 
     if not await _season_exists(db_path, season_id):
         return ["The season could not be read, so nothing was changed."]
@@ -822,7 +822,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     except Exception:  # noqa: BLE001 — never refuse an amendment on this reader
         log.exception("approval_faults: could not read the attendance module's state")
     if attendance_on:
-        from services import attendance_service
+        from leaguebot.attendance.services import attendance_service
 
         faults += await attendance_service.recalculation_faults(
             db_path, season_id, guild, bot
@@ -926,7 +926,7 @@ async def approve_amendment(
         await db.commit()
 
     # Cascade-recompute all divisions
-    from services import results_post_service
+    from leaguebot.results.services import results_post_service
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id FROM divisions WHERE season_id = ?", (season_id,)
@@ -977,7 +977,7 @@ async def approve_amendment(
 
         # T018: Attendance recalculation (033-attendance-tracking).
         if guild and set_up and await bot.module_service.is_attendance_enabled():
-            from services.attendance_service import recalculate_attendance_for_round
+            from leaguebot.attendance.services.attendance_service import recalculate_attendance_for_round
 
             # Find the most recently finalized round per division to recalculate.
             async with get_connection(db_path) as db:
@@ -993,7 +993,7 @@ async def approve_amendment(
                 latest_row = await cursor.fetchone()
 
             if latest_row is not None:
-                from services.attendance_service import sync_hint
+                from leaguebot.attendance.services.attendance_service import sync_hint
 
                 try:
                     outcome = await recalculate_attendance_for_round(

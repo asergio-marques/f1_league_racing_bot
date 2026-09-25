@@ -28,22 +28,22 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from services.channel_registry_service import as_text_channel
-from services.test_mode_service import (
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.test_mode_service import (
     toggle_test_mode,
     toggle_test_mode_nationality,
     count_live_real_drivers,
     get_next_pending_phase,
     build_review_summary,
 )
-from models.season import SeasonStage
-from services import backup_service
-from utils.autocomplete import bounded_autocomplete, team_autocomplete
-from utils.channel_guard import league_admin_only
-from utils.input_validator import parse_user_id
-from utils.league_bot import LeagueBot
-from utils.message_builder import paginate_fenced
-from utils.league_server import LeagueModal, LeagueView
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services import backup_service
+from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.channel_guard import league_admin_only
+from leaguebot.core.utils.input_validator import parse_user_id
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.weather.utils.message_builder import paginate_fenced
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class TestModeCog(commands.Cog):
         # the configuration fixes it, and the season's end switches it off. That is also what
         # retired the two refusals this command used to make: no signup window is open in
         # Configuration, and no season in Configuration has raced a fake driver.
-        from services.season_lifecycle_service import live_season_stage
+        from leaguebot.core.services.season_lifecycle_service import live_season_stage
 
         live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] is not SeasonStage.CONFIGURATION:
@@ -119,8 +119,8 @@ class TestModeCog(commands.Cog):
         if new_state:
             # Auto-seed default point configs for the current season (SETUP or ACTIVE)
             await interaction.response.defer(ephemeral=True)
-            from db.database import get_connection
-            from services.test_roster_service import ensure_test_configs
+            from leaguebot.core.db.database import get_connection
+            from leaguebot.core.services.test_roster_service import ensure_test_configs
 
             async with get_connection(self.bot.db_path) as db:
                 season_cursor = await db.execute(
@@ -154,9 +154,9 @@ class TestModeCog(commands.Cog):
         else:
             # Defer so the flush (multiple Discord API calls) has time to complete
             await interaction.response.defer(ephemeral=True)
-            from services.forecast_cleanup_service import flush_pending_deletions
+            from leaguebot.weather.services.forecast_cleanup_service import flush_pending_deletions
             await flush_pending_deletions(self.bot)
-            from services.test_roster_service import clear_all_test_drivers
+            from leaguebot.core.services.test_roster_service import clear_all_test_drivers
             removed = await clear_all_test_drivers(self.bot.db_path)
             if removed:
                 log.info(
@@ -271,9 +271,9 @@ class TestModeCog(commands.Cog):
             return
 
         # Dispatch to the appropriate phase service
-        from services.phase1_service import run_phase1
-        from services.phase2_service import run_phase2
-        from services.phase3_service import run_phase3
+        from leaguebot.weather.services.phase1_service import run_phase1
+        from leaguebot.weather.services.phase2_service import run_phase2
+        from leaguebot.weather.services.phase3_service import run_phase3
 
         phase_number = entry["phase_number"]
 
@@ -288,8 +288,8 @@ class TestModeCog(commands.Cog):
 
         # ── Mystery round notice (phase_number=0) ──────────────────────────────
         if phase_number == 0:
-            from services.mystery_notice_service import run_mystery_notice
-            from db.database import get_connection
+            from leaguebot.weather.services.mystery_notice_service import run_mystery_notice
+            from leaguebot.core.db.database import get_connection
             try:
                 await run_mystery_notice(entry["round_id"], self.bot)
             except Exception:
@@ -329,11 +329,11 @@ class TestModeCog(commands.Cog):
         # ── Result submission (phase_number=4) ───────────────────────────────────
         if phase_number == 4:
             import asyncio
-            from services.result_submission_service import (
+            from leaguebot.results.services.result_submission_service import (
                 run_result_submission_job,
                 is_submission_open,
             )
-            from services.test_mode_service import round_result_status
+            from leaguebot.core.services.test_mode_service import round_result_status
 
             # Guard: if a submission channel is already open, the admin must complete
             # that submission before advancing to the next round.
@@ -384,7 +384,7 @@ class TestModeCog(commands.Cog):
 
         # ── RSVP notice (phase_number=5) ─────────────────────────────────────────
         if phase_number == 5:
-            from services.rsvp_service import run_rsvp_notice
+            from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
             if entry["job_id"] is not None:
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
@@ -417,7 +417,7 @@ class TestModeCog(commands.Cog):
 
         # ── RSVP last-notice (phase_number=6) ────────────────────────────────────
         if phase_number == 6:
-            from services.rsvp_service import run_rsvp_last_notice
+            from leaguebot.attendance.services.rsvp_service import run_rsvp_last_notice
             if entry["job_id"] is not None:
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
@@ -448,7 +448,7 @@ class TestModeCog(commands.Cog):
 
         # ── RSVP deadline (phase_number=7) ────────────────────────────────────────
         if phase_number == 7:
-            from services.rsvp_service import run_rsvp_deadline
+            from leaguebot.attendance.services.rsvp_service import run_rsvp_deadline
             if entry["job_id"] is not None:
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
@@ -480,8 +480,8 @@ class TestModeCog(commands.Cog):
 
         # ── The cleanups a day after the round (phase_number=8 and 9, #425) ─────
         if phase_number in (8, 9):
-            from services.forecast_cleanup_service import run_post_race_cleanup
-            from services.rsvp_service import run_rsvp_cleanup
+            from leaguebot.weather.services.forecast_cleanup_service import run_post_race_cleanup
+            from leaguebot.attendance.services.rsvp_service import run_rsvp_cleanup
 
             if phase_number == 8:
                 prefix, what, cleanup = "cleanup", "forecast cleanup", run_post_race_cleanup
@@ -677,7 +677,7 @@ class TestModeCog(commands.Cog):
         which is where real drivers are placed too: test mode replicates the live flow rather
         than inventing one. Listing the roster is left free.
         """
-        from services.season_lifecycle_service import live_season_stage
+        from leaguebot.core.services.season_lifecycle_service import live_season_stage
 
         live = await live_season_stage(self.bot.db_path)
         if live is not None and live[1] is SeasonStage.PLACEMENTS:
@@ -915,7 +915,7 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        from services.test_roster_service import add_test_driver
+        from leaguebot.core.services.test_roster_service import add_test_driver
 
         result = await add_test_driver(
             driver_name=driver_name,
@@ -1014,7 +1014,7 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        from services.test_roster_service import remove_test_driver
+        from leaguebot.core.services.test_roster_service import remove_test_driver
 
         result = await remove_test_driver(
             discord_user_id=discord_uid,
@@ -1064,7 +1064,7 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        from services.test_roster_service import list_test_drivers
+        from leaguebot.core.services.test_roster_service import list_test_drivers
 
         result = await list_test_drivers(
             division_name=division,
@@ -1125,7 +1125,7 @@ class TestModeCog(commands.Cog):
         if await self._refuse_roster_change_outside_placements(interaction):
             return
 
-        from services.test_roster_service import clear_test_drivers
+        from leaguebot.core.services.test_roster_service import clear_test_drivers
 
         result = await clear_test_drivers(
             division_name=division,
@@ -1199,11 +1199,11 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        from db.database import get_connection as _gc
+        from leaguebot.core.db.database import get_connection as _gc
 
         # Validate the division is of a season being raced — one of the three ongoing stages,
         # a check-in belonging to nothing else (issue #220) — and has an active RSVP embed.
-        from models.season import ONGOING_STAGES
+        from leaguebot.core.models.season import ONGOING_STAGES
 
         ongoing = [stage.value for stage in ONGOING_STAGES]
         async with _gc(self.bot.db_path) as db:
@@ -1304,8 +1304,8 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        from db.database import get_connection as _gc
-        from services.rsvp_service import _rebuild_embed_for_round, RsvpView
+        from leaguebot.core.db.database import get_connection as _gc
+        from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
 
         applied: list[str] = []
         errors: list[str] = []
@@ -1421,8 +1421,8 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         self._cog = cog
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        from services.test_roster_service import add_test_drivers_in_bulk
-        from utils.roster_import import divisions_named, parse_roster_csv
+        from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
+        from leaguebot.core.utils.roster_import import divisions_named, parse_roster_csv
 
         await interaction.response.defer(ephemeral=True)
 

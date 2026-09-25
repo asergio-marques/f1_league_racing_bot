@@ -56,7 +56,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from models.round import Round, RoundStatus
+from leaguebot.core.models.round import Round, RoundStatus
 
 
 @dataclass(frozen=True)

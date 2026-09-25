@@ -18,14 +18,14 @@ from __future__ import annotations
 import logging
 from typing import TypedDict
 
-from db.database import get_connection, inserted_id, sole_row
-from models.points_config import SessionType
-from services.team_service import (
+from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.services.team_service import (
     division_team_references,
     resolve_division_team,
     resolve_team_reference,
 )
-from utils.input_validator import NAME, parse_nationality
+from leaguebot.core.utils.input_validator import NAME, parse_nationality
 
 log = logging.getLogger(__name__)
 
@@ -283,7 +283,7 @@ async def add_test_drivers_in_bulk(
 ) -> tuple[int, list[str]]:
     """Seat a whole roster at once, or seat none of it.
 
-    *drivers* are `utils.roster_import.ParsedDriver` rows, already checked for the things
+    *drivers* are `leaguebot.core.utils.roster_import.ParsedDriver` rows, already checked for the things
     a file can be wrong about on its own. What is checked here is what needs the database:
     the division exists, the team exists within it, the team has a free seat, the
     nationality is one the bot accepts, and no driver already holds the ID the file names.
@@ -297,7 +297,7 @@ async def add_test_drivers_in_bulk(
     **The IDs the file names are the IDs written.** `add_test_driver` allocates
     `MAX(existing) + 1`, which lines up with the generator's own numbering only on a clean
     season; the sibling scripts key on those IDs absolutely, so here the file is
-    authoritative. See `utils/roster_import.py`.
+    authoritative. See `core/utils/roster_import.py`.
 
     **A division that already holds drivers is refused**, rather than appended to. The CSV
     describes a whole grid, and importing it twice — or over a roster seated by hand —
@@ -309,7 +309,7 @@ async def add_test_drivers_in_bulk(
     (#150). The cog always passes it; left None, as tests of the seating alone do, the check
     is skipped.
     """
-    from utils.roster_import import divisions_named
+    from leaguebot.core.utils.roster_import import divisions_named
 
     if not drivers:
         return 0, ["There were no drivers to add."]
@@ -587,7 +587,7 @@ async def remove_test_driver(
     Returns a dict with keys ``display_name`` and ``team_name`` on success,
     or an error string if the profile doesn't exist or is not a test driver.
     """
-    from services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -627,7 +627,7 @@ async def clear_all_test_drivers(db_path: str) -> int:
 
     Returns the count removed.
     """
-    from services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -641,7 +641,7 @@ async def clear_all_test_drivers(db_path: str) -> int:
 
 async def _delete_test_drivers_in_division(division_id: int, db_path: str) -> int:
     """Delete every fake driver seated in *division_id*, keeping their history."""
-    from services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

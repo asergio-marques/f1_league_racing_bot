@@ -17,7 +17,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Sequence
 
-from models.image_constants import FALLBACK_ASSET_NAME
+from leaguebot.image.models.image_constants import FALLBACK_ASSET_NAME
 
 #: Every asset is SVG. There is no fallback to another extension: resolution is
 #: deterministic, and guessing at `.png` would make a missing file look like a present one.

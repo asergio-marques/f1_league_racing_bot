@@ -23,7 +23,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from models.image_constants import DATE_FORMATS, TIME_FORMATS
+from leaguebot.image.models.image_constants import DATE_FORMATS, TIME_FORMATS
 
 #: What an unset or unrecognised setting falls back to. The weekday-carrying format is the
 #: default because a season run on the same weekday every second week makes the weekday

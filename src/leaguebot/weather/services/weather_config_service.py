@@ -9,8 +9,8 @@ Ordering invariant (enforced before every write):
 """
 from __future__ import annotations
 
-from db.database import get_connection
-from models.weather_config import WeatherPipelineConfig
+from leaguebot.core.db.database import get_connection
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 
 _DEFAULTS = WeatherPipelineConfig()  # default field values only
 

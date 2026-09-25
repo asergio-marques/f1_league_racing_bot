@@ -27,8 +27,8 @@ from datetime import datetime
 
 import discord
 
-from services.hub_service import HubOption, register_option
-from utils.league_bot import bot_of
+from leaguebot.core.services.hub_service import HubOption, register_option
+from leaguebot.core.utils.league_bot import bot_of
 
 PROJECT_NAME = "F1 League Racing Bot"
 REPOSITORY_URL = "https://github.com/asergio-marques/f1_league_racing_bot"

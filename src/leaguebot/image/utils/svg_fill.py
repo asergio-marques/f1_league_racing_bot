@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from lxml import etree
 
-from models.image_constants import (
+from leaguebot.image.models.image_constants import (
     ASSET_ASPECT_TOLERANCE,
     BLANK_FALLBACK_ASSET_CLASSES,
     NOTICE_ASSET_FALLBACK_USED,
@@ -35,10 +35,10 @@ from models.image_constants import (
     fallback_names_for,
     is_closed_set_datum,
 )
-from models.image_module import FillResult, RenderNotice
-from utils.asset_resolver import ASSET_EXTENSION, normalise, resolve_asset
-from utils.font_metrics import ResolvedFont, measure, resolve_family
-from utils.svg_document import (
+from leaguebot.image.models.image_module import FillResult, RenderNotice
+from leaguebot.image.utils.asset_resolver import ASSET_EXTENSION, normalise, resolve_asset
+from leaguebot.image.utils.font_metrics import ResolvedFont, measure, resolve_family
+from leaguebot.image.utils.svg_document import (
     SVG_NS,
     XLINK_NS,
     FieldIndex,
@@ -50,7 +50,7 @@ from utils.svg_document import (
 )
 
 if TYPE_CHECKING:
-    from models.image_catalogues import FieldCatalogue
+    from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 log = logging.getLogger(__name__)
 
@@ -194,8 +194,8 @@ def _packaged_directory(asset_class: str) -> Path | None:
     directory simply leaves the tier empty and the miss falls through to fatal, which is
     what a single-tier resolution would have done anyway.
     """
-    import utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
-    from models.image_constants import packaged_directory_for
+    import leaguebot.core.utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
+    from leaguebot.image.models.image_constants import packaged_directory_for
 
     relative = packaged_directory_for(asset_class)
     if relative is None:
@@ -898,7 +898,7 @@ def _as_href(value: str) -> str:
     if _URI_SCHEME_RE.match(text) and not re.match(r"^[a-zA-Z]:[\\/]", text):
         return text  # data:, file:, http: … already a URI
 
-    import utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
+    import leaguebot.core.utils.paths as paths  # read as an attribute: tests patch PROJECT_ROOT
 
     candidate = Path(text)
     if not candidate.is_absolute():
@@ -1044,7 +1044,7 @@ def _restyle(element: etree._Element, updates: dict[str, str | None]) -> None:
     """Merge *updates* into the element's inline ``style`` (XIV.2).
 
     Kept as a name here because the recolour operation reads better for it; the merge
-    itself lives in :func:`utils.svg_document.merge_style`, beside the style resolution it
+    itself lives in :func:`leaguebot.image.utils.svg_document.merge_style`, beside the style resolution it
     is the counterpart of, because the palette injection needs the same behaviour.
     """
     merge_style(element, updates)

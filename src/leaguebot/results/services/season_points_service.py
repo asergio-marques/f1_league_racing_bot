@@ -6,10 +6,10 @@ from itertools import groupby
 
 import aiosqlite
 
-from db.database import get_connection
-from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from services import points_config_service
-from utils.points_ordering import ordering_message, ordering_violations
+from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.results.services import points_config_service
+from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 log = logging.getLogger(__name__)
 

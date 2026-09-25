@@ -33,7 +33,7 @@ while no server is claimed; see `LeagueView`.
 
 **The same three classes are where a failure is answered.** A command, button or form that
 raises is reported to its member, the log channel and the host's log by
-`utils.interaction_errors.report_failure`, which each class's `on_error` calls (issue #156).
+`leaguebot.core.utils.interaction_errors.report_failure`, which each class's `on_error` calls (issue #156).
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ from collections.abc import Awaitable, Callable
 import discord
 from discord import app_commands
 
-from utils.interaction_errors import describe, describe_form, report_failure
-from utils.league_bot import LeagueBot, bot_of
+from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
 log = logging.getLogger(__name__)
 

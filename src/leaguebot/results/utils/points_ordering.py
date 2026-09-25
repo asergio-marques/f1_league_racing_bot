@@ -9,7 +9,7 @@ It lives in ``utils`` rather than in either service that needs it:
 ``season_points_service`` already imports ``points_config_service``, so a helper in
 either of them would have to be imported backwards by the other.
 
-``utils.xml_import.validate_payload`` states the same rule in its own words and is
+``leaguebot.core.utils.xml_import.validate_payload`` states the same rule in its own words and is
 deliberately left alone — its messages are part of the import's contract and it has
 its own tests. Two statements of one rule is one more than is comfortable; a third
 would have been the point it started to drift.

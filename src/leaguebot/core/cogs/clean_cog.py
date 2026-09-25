@@ -18,8 +18,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from utils.channel_guard import league_admin_only
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.channel_guard import league_admin_only
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

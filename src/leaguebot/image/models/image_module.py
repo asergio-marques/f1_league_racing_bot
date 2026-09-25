@@ -65,7 +65,7 @@ class ImageConfig:
     # Presentation preferences
     time_zone: str
     time_format: str          # '12H' | '24H'
-    date_format: str          # token; see models.image_constants.DATE_FORMATS
+    date_format: str          # token; see leaguebot.image.models.image_constants.DATE_FORMATS
     fastest_lap_colour: str   # '#RRGGBB'
 
     # Per-tier template colours (051). Off by default; nothing the bot ships declares a

@@ -23,8 +23,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from models.image_module import PostingOrigin
-from utils.league_bot import LeagueBot
+from leaguebot.image.models.image_module import PostingOrigin
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -84,8 +84,8 @@ async def build_drawing_for_round(bot: LeagueBot, round_id: int, phase: int):
     """
     import json
 
-    from db.database import get_connection
-    from services.image_weather_service import resolve_drawing
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.image.services.image_weather_service import resolve_drawing
 
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
@@ -170,8 +170,8 @@ async def render_forecast(
     origin: PostingOrigin = PostingOrigin.SCHEDULED,
 ) -> ForecastRender:
     """Render *drawing* to a PNG, or report why the textual forecast should stand instead."""
-    from services.image_weather_service import build_fill_spec
-    from services.image_render_service import (
+    from leaguebot.image.services.image_weather_service import build_fill_spec
+    from leaguebot.image.services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -187,7 +187,7 @@ async def render_forecast(
             image_type=drawing.template_key,
         )
 
-        from utils.image_naming import stem_for_drawing
+        from leaguebot.image.utils.image_naming import stem_for_drawing
 
         decision = await bot.image_render_service.render_for_posting(
             drawing.template_key,
@@ -232,14 +232,14 @@ def describe(*, division_name: str, round_number, phase: int, season_number=None
 
 async def report(bot: LeagueBot, what: str, detail: str) -> None:
     """Report a fault to the server's logging channel, never to a forecast channel."""
-    from services.image_results_post import report as _report
+    from leaguebot.image.services.image_results_post import report as _report
 
     await _report(bot, what, detail)
 
 
 async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     """Report non-fatal degradations to the logging channel (XIV.4, FR-059)."""
-    from services.image_results_post import report_notices as _report_notices
+    from leaguebot.image.services.image_results_post import report_notices as _report_notices
 
     await _report_notices(bot, what, notices)
 
@@ -257,7 +257,7 @@ async def attach_forecast(bot: LeagueBot, round_id: int, phase: int):
     """
     import discord
 
-    from services.image_weather_service import weather_template_key
+    from leaguebot.image.services.image_weather_service import weather_template_key
 
     try:
         drawing = await build_drawing_for_round(bot, round_id, phase)

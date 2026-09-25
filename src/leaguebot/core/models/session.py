@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
-from models.round import RoundFormat
+from leaguebot.core.models.round import RoundFormat
 
 class SessionType(str, Enum):
     SHORT_QUALIFYING = "SHORT_QUALIFYING"

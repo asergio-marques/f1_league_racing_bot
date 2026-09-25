@@ -9,7 +9,7 @@ Two callers make that matter. The time-zone autocomplete runs on *every keystrok
 the XML round importer validates a zone for every round in the payload. Both would pay the
 walk repeatedly without this.
 
-Lifted out of `cogs/image_cog.py`, where it began, so that a parser can validate a zone
+Lifted out of `image/cogs/image_cog.py`, where it began, so that a parser can validate a zone
 without importing a cog — and with it, Discord — into the test import graph.
 """
 
@@ -29,7 +29,7 @@ def zone_names() -> tuple[tuple[str, str], ...]:
     not lowercase ~600 strings per keystroke.
 
     Memoised for the life of the process, in the same spirit as the font index in
-    `utils/font_metrics.py`. This is not the caching layer the constitution cautions about
+    `image/utils/font_metrics.py`. This is not the caching layer the constitution cautions about
     at "Performance & Storage Considerations" — that concerns league data at scale, whereas
     the zone list is a static enumeration shipped by the operating system.
     """

@@ -18,7 +18,7 @@ audit entry shares it too (issue #383): every pack that takes effect is recorded
 refused one records nothing.
 
 The Discord side is left as it is: the old server keeps the bot's messages and buttons, which
-refuse from then on (see `utils.league_server.LeagueView`). Pack touches only the database.
+refuse from then on (see `leaguebot.core.utils.league_server.LeagueView`). Pack touches only the database.
 """
 
 from __future__ import annotations
@@ -29,15 +29,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from db.database import get_connection
-from models.season import SeasonStage
-from services.config_service import RELEASE_CLAIM_SQL
-from services.in_memory_state import clear_in_memory_state
-from services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
+from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
+from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from services.scheduler_service import SchedulerService
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)
 

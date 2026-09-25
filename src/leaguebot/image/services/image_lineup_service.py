@@ -22,18 +22,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     RESERVE_KEY,
     catalogue_for,
     row_crop_fields,
 )
-from utils.asset_resolver import normalise
-from utils.country_data import country_for_nationality
-from utils.input_validator import DRAWN_NAME
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
+from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.image.utils.country_data import country_for_nationality
+from leaguebot.core.utils.input_validator import DRAWN_NAME
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
 
 log = logging.getLogger(__name__)
 

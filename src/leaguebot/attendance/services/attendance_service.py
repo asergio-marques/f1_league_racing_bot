@@ -11,17 +11,17 @@ from typing import TYPE_CHECKING
 import aiosqlite
 import discord
 
-from services.channel_registry_service import as_text_channel
-from db.database import get_connection
-from models.attendance import (
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.db.database import get_connection
+from leaguebot.attendance.models.attendance import (
     AttendanceConfig,
     AttendanceDivisionConfig,
     AttendancePardon,
     DriverRoundAttendance,
     RsvpEmbedMessage,
 )
-from models.classification_occasion import ClassificationOccasion
-from utils.league_bot import LeagueBot
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.utils.league_bot import LeagueBot
 
 
 @asynccontextmanager
@@ -921,7 +921,7 @@ async def post_attendance_sheet(
         and round_row["status"] == "CANCELLED"
     ):
         # A season-boundary sheet is about the season and not about a round, so no round's
-        # cancellation bears on it (see `models.classification_occasion`).
+        # cancellation bears on it (see `leaguebot.core.models.classification_occasion`).
         log.info("post_attendance_sheet: skipping cancelled round %s", round_id)
         return
 
@@ -1049,7 +1049,7 @@ async def post_attendance_sheet(
         # picture of a division that has moved on; the text is composed when it is finally
         # sent. Nothing has been deleted at this point, so the previous sheet still stands.
         try:
-            from services import retry_service
+            from leaguebot.core.services import retry_service
 
             await retry_service.enqueue(
                 db_path,
@@ -1063,7 +1063,7 @@ async def post_attendance_sheet(
     finally:
         # Posted or not, the picture has done all it will ever do: the retry queue carries
         # the textual sheet and never the image, so nothing reads this file again.
-        from services.image_render_service import discard_attachment
+        from leaguebot.image.services.image_render_service import discard_attachment
 
         discard_attachment(attachment)
 
@@ -1108,7 +1108,7 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
     recorded for the driver in this division is the evidence. Each driver's total is the one
     recorded at their latest scored round up to this one, and nought where none is.
     """
-    from services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     cursor = await db.execute(
         f"""
@@ -1158,7 +1158,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     round does — seated, non-reserve — and carries the team name besides, which is what the
     opening order is taken on.
     """
-    from services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     cursor = await db.execute(
         f"""
@@ -1212,18 +1212,18 @@ async def _sheet_attachment(
         return None
 
     try:
-        from services.image_attendance_post import (
+        from leaguebot.image.services.image_attendance_post import (
             attendance_enabled,
             render_sheet,
             report,
             report_notices,
         )
-        from services.image_attendance_service import DriverRecord, resolve_drawing
+        from leaguebot.image.services.image_attendance_service import DriverRecord, resolve_drawing
 
         if not await attendance_enabled(bot):
             return None
 
-        from services.image_results_post import (
+        from leaguebot.image.services.image_results_post import (
             _driver_names,
             _nationalities,
             _nationality_collected,
@@ -1331,9 +1331,9 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
     A missing cell and a stored zero are the same picture and the same meaning: the round
     counted nothing against that driver. Nothing here distinguishes the six ways that happens.
     """
-    from services.calendar_post_service import tracks_by_name
-    from services.image_attendance_service import RoundHeading
-    from services.image_calendar_service import MYSTERY_DATUM
+    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.image.services.image_attendance_service import RoundHeading
+    from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
 
     headings: list = []
     cells: dict[int, dict[int, int | None]] = {}
@@ -1563,8 +1563,8 @@ async def enforce_attendance_sanctions(
         )
         driver_rows = await cursor.fetchall()
 
-    from services.placement_service import PlacementService
-    from services import verdict_announcement_service as _vas
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.results.services import verdict_announcement_service as _vas
     if head is None:
         head = _vas.banner_for_round(bot, db_path, round_id)
     placement: PlacementService = bot.placement_service
@@ -1987,8 +1987,8 @@ async def recalculation_faults(
     autoreserve thresholds are unset, so a league using neither must not be refused for a
     channel it will never post to.
     """
-    from services.image_validity_service import aspect_attaches_files
-    from services.results_post_service import _bot_member, _channel_fault
+    from leaguebot.image.services.image_validity_service import aspect_attaches_files
+    from leaguebot.results.services.results_post_service import _bot_member, _channel_fault
 
     if guild is None:
         # The results half already reports an absent guild; saying it twice would have a

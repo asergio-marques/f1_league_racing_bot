@@ -4,8 +4,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from db.database import get_connection, inserted_id
-from models.driver_profile import DriverProfile, DriverState
+from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 
 log = logging.getLogger(__name__)
 

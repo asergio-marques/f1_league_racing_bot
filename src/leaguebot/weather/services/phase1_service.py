@@ -1,7 +1,7 @@
 """Phase 1 service — Rain probability announcement, at the league's phase 1 horizon.
 
 The horizon is configured (``weather_pipeline_config.phase_1_days``, five days by default)
-and is no fixed T−5: see ``PHASE_DESCRIPTIONS`` in ``utils.message_builder`` for what naming
+and is no fixed T−5: see ``PHASE_DESCRIPTIONS`` in ``leaguebot.weather.utils.message_builder`` for what naming
 one as fixed cost a league, in issue #112.
 
 Draws Rpc from the per-track Beta distribution (mu, sigma), persists PhaseResult,
@@ -15,12 +15,12 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from db.database import get_connection
-from utils.math_utils import compute_rpc_beta
-from utils.message_builder import phase1_message, phase_log_message
+from leaguebot.core.db.database import get_connection
+from leaguebot.weather.utils.math_utils import compute_rpc_beta
+from leaguebot.weather.utils.message_builder import phase1_message, phase_log_message
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -134,8 +134,8 @@ async def run_phase1(round_id: int, bot: "LeagueBot") -> None:
     # The graphic, where the league draws one. Reached only now — after the draw, after the
     # persistence — so that it can gate nothing (XIV.7). A failure leaves ``attachment`` None
     # and the textual forecast below is posted exactly as it always was.
-    from services.forecast_cleanup_service import post_phase_message
-    from services.image_weather_post import attach_forecast
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+    from leaguebot.image.services.image_weather_post import attach_forecast
 
     attachment = await attach_forecast(bot, round_id, 1)
 

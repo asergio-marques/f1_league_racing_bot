@@ -10,10 +10,10 @@ from datetime import datetime, timezone
 
 import aiosqlite
 
-from db.database import get_connection, inserted_id
-from models.team import DefaultTeam, TeamInstance
-from utils.asset_resolver import normalise
-from utils.input_validator import NAME, parse_role_mention, parse_user_mention
+from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.team import DefaultTeam, TeamInstance
+from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse_user_mention
 
 log = logging.getLogger(__name__)
 
@@ -490,7 +490,7 @@ class TeamService:
         (FR-009). The **server's** default team list is a separate thing and stays sorted
         by name: it is a configuration listing and no ordinal is read from it.
         """
-        from services.season_lifecycle_service import uncommitted_seat_excluded
+        from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
         async with get_connection(self._db_path) as db:
             instance_rows = await (

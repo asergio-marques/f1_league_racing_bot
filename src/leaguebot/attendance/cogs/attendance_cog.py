@@ -8,19 +8,19 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from db.database import get_connection
-from models.round import RoundStatus
-from models.season import ONGOING_STAGES
-from services.attendance_service import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.season import ONGOING_STAGES
+from leaguebot.attendance.services.attendance_service import (
     recalculation_faults,
     sync_attendance,
     validate_timing_invariant,
 )
-from services.channel_registry_service import as_text_channel
-from services.season_lifecycle_service import uncommitted_seat_excluded
-from utils.channel_guard import league_manager_only
-from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import guild_of
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.core.utils.league_server import guild_of
 
 log = logging.getLogger(__name__)
 
@@ -448,7 +448,7 @@ class AttendanceCog(commands.Cog):
         # recalculation reads the results, which hold an open amendment's corrections before
         # they are approved, and publishes the sheet and applies the sanctions it finds —
         # neither of which a cancelled or lapsed amendment then takes back.
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             amendment_wait_text,
             open_amendment_in_division,
         )
@@ -670,7 +670,7 @@ class AttendanceCog(commands.Cog):
             )
             return
 
-        from services.rsvp_service import run_rsvp_notice
+        from leaguebot.attendance.services.rsvp_service import run_rsvp_notice
 
         await run_rsvp_notice(round_id, self.bot)
 
@@ -773,7 +773,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
 
     # Look up driver profile by Discord user ID (FR-011). Any account the driver has held
     # answers for them, a past one as well as the current (issue #243).
-    from services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.driver_service import resolve_driver_profile_id
 
     async with get_connection(bot.db_path) as db:
         resolved_profile_id = await resolve_driver_profile_id(discord_user_id, db)
@@ -953,7 +953,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         return
 
     # Rebuild and edit embed in-place (FR-010 / FR-012)
-    from services.rsvp_service import _rebuild_embed_for_round, RsvpView
+    from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
     embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
     if embed_row is not None:
         channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))

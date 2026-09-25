@@ -28,11 +28,11 @@ from pathlib import Path
 
 import discord
 
-from db.database import get_connection, run_migrations
-from services import backup_service
-from services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
-from services.in_memory_state import clear_in_memory_state
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services import backup_service
+from leaguebot.core.services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
+from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

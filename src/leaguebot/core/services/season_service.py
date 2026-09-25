@@ -7,9 +7,9 @@ from datetime import date, datetime
 
 import aiosqlite
 
-from db.database import get_connection, inserted_id, sole_row
-from models.division import Division
-from models.round import (
+from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.models.division import Division
+from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
     ROUND_RACED_AWAITING_VERDICTS,
@@ -18,7 +18,7 @@ from models.round import (
     RoundFormat,
     RoundStatus,
 )
-from models.season import (
+from leaguebot.core.models.season import (
     ALLOWED_STAGE_TRANSITIONS,
     InvalidStageTransition,
     Season,
@@ -26,9 +26,9 @@ from models.season import (
     SeasonStatus,
     status_of_stage,
 )
-from models.session import Session, SessionType, SESSIONS_BY_FORMAT
-from utils.input_validator import NAME
-from utils.league_bot import LeagueBot
+from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
+from leaguebot.core.utils.input_validator import NAME
+from leaguebot.core.utils.league_bot import LeagueBot
 
 #: Rendered from the model's sets so the queries below cannot drift from the rule they
 #: encode. Interpolated rather than bound because they are our own enum values and the
@@ -547,7 +547,7 @@ class SeasonService:
 
     async def advance_to_pending_completion(self, season_id: int) -> bool:
         """Move *season_id* to Pending completion where every division is done (issue #220)."""
-        from services.season_lifecycle_service import advance_to_pending_completion
+        from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
 
         return await advance_to_pending_completion(self._db_path, season_id)
 
@@ -556,9 +556,9 @@ class SeasonService:
 
         Its signup window closed, its pending placements turned down, and on to Pending
         completion. A wrapper, so that a command reaches it through the service it already
-        holds; see :func:`services.season_lifecycle_service.wind_down_ongoing`.
+        holds; see :func:`leaguebot.core.services.season_lifecycle_service.wind_down_ongoing`.
         """
-        from services.season_lifecycle_service import wind_down_ongoing
+        from leaguebot.core.services.season_lifecycle_service import wind_down_ongoing
 
         return await wind_down_ongoing(bot)
 
@@ -608,7 +608,7 @@ class SeasonService:
 
         # A division finishing may be the last one its season waited on (issue #220).
         if moved and season_row is not None:
-            from services.season_lifecycle_service import advance_to_pending_completion
+            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
 
             await advance_to_pending_completion(self._db_path, season_row["season_id"])
         return moved
@@ -657,7 +657,7 @@ class SeasonService:
             )
             rows = [dict(r) for r in await cursor.fetchall()]
 
-            from services.result_submission_service import (
+            from leaguebot.results.services.result_submission_service import (
                 recompute_former_drivers_for_round,
             )
 
@@ -736,7 +736,7 @@ class SeasonService:
         Returns the ids closed, for the caller to report and for the tests to assert on.
         """
         from datetime import timezone
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             recompute_former_drivers_for_round,
         )
 
@@ -951,7 +951,7 @@ class SeasonService:
                 # The season's fake (test-mode) drivers go with it, by the deletion test mode
                 # itself takes: it lets go of every row holding them, in this season or any
                 # other, and keeps their history (issue #268).
-                from services.season_lifecycle_service import delete_driver_profiles
+                from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
                 cursor = await db.execute(
                     f"""
@@ -1333,7 +1333,7 @@ class SeasonService:
 
         # Cancelling the last division still running leaves the season pending completion.
         if season_row is not None:
-            from services.season_lifecycle_service import advance_to_pending_completion
+            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
 
             await advance_to_pending_completion(self._db_path, season_row["season_id"])
 

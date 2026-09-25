@@ -28,9 +28,9 @@ import logging
 
 import discord
 
-from db.database import get_connection, sole_row
-from utils.league_bot import LeagueBot
-from utils.league_server import league_guild
+from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ async def _delete_posted_results(
     ``_clear_standings_messages`` is what knows that the image flow posts two championships
     where the textual flow posts one.
     """
-    from services.results_post_service import (
+    from leaguebot.results.services.results_post_service import (
         _clear_standings_messages,
         _delete_posting,
         _parse_ids,
@@ -227,14 +227,14 @@ async def _delete_posted_verdicts(
     a ban that itself survives the module being disabled (STW-MOD-006), are that module's to
     settle when it is built; neither is decided here.
     """
-    from services.results_post_service import _delete_posting
-    from services.verdict_announcement_service import (
+    from leaguebot.results.services.results_post_service import _delete_posting
+    from leaguebot.results.services.verdict_announcement_service import (
         _banners_heading_sanctions,
         _banners_of,
         _forget_banners,
         _parse_chunk_ids,
     )
-    from services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     deleted = 0
     left_standing: list[str] = []
@@ -314,7 +314,7 @@ async def _close_open_submissions(db_path: str, rounds: list[dict], guild) -> in
     A round part-way through its submission has a live channel with a view in it. Left
     standing, the league would go on entering results into a module that is switched off.
     """
-    from services.result_submission_service import close_submission_channel
+    from leaguebot.results.services.result_submission_service import close_submission_channel
 
     closed = 0
     for row in rounds:

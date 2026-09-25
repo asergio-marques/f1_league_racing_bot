@@ -24,15 +24,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from models.points_config import SessionType
-from models.session_result import (
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,
 )
-from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from utils.input_validator import parse_time
+from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.core.utils.input_validator import parse_time
 
 _SESSION_LABELS: dict[SessionType, str] = {
     SessionType.SPRINT_QUALIFYING: "Sprint Qualifying",

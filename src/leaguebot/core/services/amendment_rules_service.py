@@ -45,8 +45,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
-from services.approval_window_service import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
+from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})

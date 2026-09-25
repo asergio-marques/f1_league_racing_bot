@@ -18,12 +18,12 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from db.database import get_connection
-from models.pending_message import PendingMessage
-from utils.message_builder import discord_ts
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.pending_message import PendingMessage
+from leaguebot.weather.utils.message_builder import discord_ts
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     The warning fires every cycle once the threshold is crossed.
     """
     # Import here to avoid circular import: retry_service ← output_router
-    from utils.output_router import _chunk_message
+    from leaguebot.core.utils.output_router import _chunk_message
 
     db_path: str = bot.db_path
 

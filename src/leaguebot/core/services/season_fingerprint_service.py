@@ -32,8 +32,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from db.database import get_connection
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -202,7 +202,7 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
             # Every signup still unsettled on the server (issue #220): the review names each, and
             # confirming placements waits on them, so a signup approved, rejected or sent back
             # after the report is a change to what would be confirmed.
-            from services.season_lifecycle_service import UNSETTLED_STATES
+            from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 
             areas["unsettled signups"] = _digest(
                 await _rows(
@@ -404,8 +404,8 @@ async def _artwork_signature(bot: LeagueBot) -> list:
     review and the button would otherwise pass unnoticed, and that is precisely the change
     the render this replaced used to catch.
     """
-    from models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
-    from utils.paths import resolve_within_project_root
+    from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, TEMPLATE_COLUMNS
+    from leaguebot.core.utils.paths import resolve_within_project_root
 
     config = await bot.image_config_service.get_config()
     if config is None:

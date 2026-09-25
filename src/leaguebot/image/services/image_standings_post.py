@@ -40,14 +40,14 @@ from pathlib import Path
 
 import discord
 
-from db.database import get_connection
-from models.classification_occasion import ClassificationOccasion
-from models.image_module import PostingOrigin
-from services.image_standings_service import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.image.models.image_module import PostingOrigin
+from leaguebot.image.services.image_standings_service import (
     CONSTRUCTORS_TEMPLATE_KEY,
     DRIVERS_TEMPLATE_KEY,
 )
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -174,9 +174,9 @@ async def _calendar(bot: LeagueBot, division_id: int):
     and a column that disappears when a round is cancelled would redraw the graphic's width
     from one posting to the next. A round's *cells* are what emptying handles.
     """
-    from services.calendar_post_service import tracks_by_name
-    from services.image_calendar_service import MYSTERY_DATUM
-    from services.image_standings_service import RoundHeading
+    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
+    from leaguebot.image.services.image_standings_service import RoundHeading
 
     tracks = await tracks_by_name(bot.db_path)
 
@@ -223,8 +223,8 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
     A round with no active session result is **absent** from the mapping, which is how the
     grid tells "not yet run, or cancelled" from "run, and this driver took no part".
     """
-    from models.session_result import SessionType
-    from services.results_post_service import _load_driver_rows
+    from leaguebot.core.models.session_result import SessionType
+    from leaguebot.results.services.results_post_service import _load_driver_rows
 
     if not ordinal_of_round:
         return {}
@@ -339,15 +339,15 @@ async def build_drawings(
     behind the grid, the names — because the two graphics draw the same season and differ
     only in what a row stands for.
     """
-    from services import standings_service
-    from services.image_results_post import (
+    from leaguebot.results.services import standings_service
+    from leaguebot.image.services.image_results_post import (
         _driver_names,
         _nationality_collected,
         _nationalities,
         _team_keys,
         _team_names,
     )
-    from services.image_standings_service import resolve_drawing
+    from leaguebot.image.services.image_standings_service import resolve_drawing
 
     driver_keys = [s.driver_user_id for s in driver_snapshots]
     team_keys = [s.team_instance_id for s in team_snapshots]
@@ -437,11 +437,11 @@ async def build_drawings(
 
 async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
     """Render one championship. Returns the render service's PostingDecision."""
-    from services.image_render_service import (
+    from leaguebot.image.services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
-    from services.image_standings_service import build_fill_spec
+    from leaguebot.image.services.image_standings_service import build_fill_spec
 
     config = await bot.image_config_service.get_config()
     directories, directory_faults = resolve_configured_directories(
@@ -457,7 +457,7 @@ async def render_png(bot: LeagueBot, drawing, origin: PostingOrigin):
         image_type=drawing.template_key,
     )
 
-    from utils.image_naming import stem_for_drawing
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
     return await bot.image_render_service.render_for_posting(
         drawing.template_key,
@@ -495,7 +495,7 @@ async def _post_one(
     before the previous one is deleted, so a render that fails leaves the channel holding
     the standings it had, and the caller's text fallback replaces nothing prematurely.
     """
-    from services.results_post_service import (
+    from leaguebot.results.services.results_post_service import (
         _delete_posting,
         _get_standings_message_id,
         _get_standings_message_ids,
@@ -527,7 +527,7 @@ async def _post_one(
             await report(bot, what, decision.problem.detail)
         return ChampionshipOutcome(action=FELL_BACK, notices=decision.notices)
 
-    from services.image_render_service import discard_attachment
+    from leaguebot.image.services.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
     attachment = discord.File(str(png), filename=png.name)
@@ -550,7 +550,7 @@ async def _post_one(
     # A standings message id is keyed by round, on the top-ranked driver's snapshot row.
     # A season-boundary sheet has no round and no snapshot row to carry one, replaces
     # nothing, and will never be reposted — so it neither reads nor writes the slot. See
-    # `models.classification_occasion`, which is where that reasoning is kept.
+    # `leaguebot.core.models.classification_occasion`, which is where that reasoning is kept.
     if occasion.names_a_round:
         previous_id = await _get_standings_message_id(
             db_path, division_id, round_id, championship
@@ -733,7 +733,7 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
     if not notices:
         return
     try:
-        from services.image_render_service import ImageRenderService
+        from leaguebot.image.services.image_render_service import ImageRenderService
 
         await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001

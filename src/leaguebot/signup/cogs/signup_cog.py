@@ -31,17 +31,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.module_cog import RETURNED_BY_CLOSE, execute_forced_close
-from db.database import get_connection
-from models.driver_profile import DriverState
-from models.signup_module import SignupModuleConfig, SignupModuleSettings
-from services import track_service
-from utils.input_validator import parse_datetime
-from utils.league_bot import LeagueBot, bot_of
-from utils.time_parsing import parse_time_of_day
-from utils.channel_guard import league_manager_only, league_role_faults
-from utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
-from utils.message_builder import discord_ts
+from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE, execute_forced_close
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
+from leaguebot.core.services import track_service
+from leaguebot.core.utils.input_validator import parse_datetime
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults
+from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
+from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
 
@@ -864,7 +864,7 @@ class SignupCog(commands.Cog):
         # A channel does one job (decided 2026-09-06). This stood as a guard against the
         # bot interaction channel alone; every configurable channel of the server is
         # checked now, the interaction channel among them.
-        from services.channel_registry_service import (
+        from leaguebot.core.services.channel_registry_service import (
             ChannelUse,
             find_channel_use,
             refusal,
@@ -1098,7 +1098,7 @@ class SignupCog(commands.Cog):
 
         Returns True when the command replied and must stop.
         """
-        from services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         if season_number is None:
@@ -1459,7 +1459,7 @@ class SignupCog(commands.Cog):
 
         # A window opens only while the season waits for one, or while it is being raced
         # with no window already run and unplaced (issue #220).
-        from services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
+        from leaguebot.core.services.season_lifecycle_service import WINDOW_OPENS_FROM, live_season_stage
 
         live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] not in WINDOW_OPENS_FROM:
@@ -1598,7 +1598,7 @@ class SignupCog(commands.Cog):
         await self.bot.signup_module_service.set_window_open(
             posted_msg.id, track_list
         )
-        from services.season_lifecycle_service import advance_on_window_open
+        from leaguebot.core.services.season_lifecycle_service import advance_on_window_open
 
         await advance_on_window_open(self.bot.db_path)
 

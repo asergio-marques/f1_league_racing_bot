@@ -15,13 +15,13 @@ import random
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from db.database import get_connection
-from models.session import MAX_SLOTS, SessionType
-from utils.math_utils import get_phase3_weights, draw_weighted
-from utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.session import MAX_SLOTS, SessionType
+from leaguebot.weather.utils.math_utils import get_phase3_weights, draw_weighted
+from leaguebot.weather.utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
 
     if not row["phase2_done"]:
         log.warning("Phase 3: Phase 2 not done for round %s — running Phase 2 first.", round_id)
-        from services.phase2_service import run_phase2
+        from leaguebot.weather.services.phase2_service import run_phase2
         await run_phase2(round_id, bot)
 
     # Load active Phase 1 PhaseResult for Rpc
@@ -154,8 +154,8 @@ async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
         await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
         await db.commit()
 
-    from services.forecast_cleanup_service import post_phase_message
-    from services.image_weather_post import attach_forecast
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+    from leaguebot.image.services.image_weather_post import attach_forecast
 
     attachment = await attach_forecast(bot, round_id, 3)
 

@@ -15,12 +15,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from db.database import get_connection
-from utils.message_builder import mystery_notice_message
-from services.forecast_cleanup_service import store_forecast_message
+from leaguebot.core.db.database import get_connection
+from leaguebot.weather.utils.message_builder import mystery_notice_message
+from leaguebot.weather.services.forecast_cleanup_service import store_forecast_message
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -71,8 +71,8 @@ async def run_mystery_notice(round_id: int, bot: "LeagueBot") -> None:
     #
     # It carries **no division role mention**, as its textual counterpart carries none: the
     # conditions are unknown to every participant alike (FR-052).
-    from services.forecast_cleanup_service import post_phase_message
-    from services.image_weather_post import attach_forecast
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+    from leaguebot.image.services.image_weather_post import attach_forecast
 
     attachment = await attach_forecast(bot, round_id, 1)
 

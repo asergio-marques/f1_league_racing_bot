@@ -64,13 +64,13 @@ VERDICT_TEXT_CASES: tuple[str, ...] = (
 # different numbers on every invocation, and a reproducible picture is far easier to compare
 # against a template than a shifting one.
 
-from models.session import MAX_SLOTS, SESSIONS_BY_FORMAT, SessionType  # noqa: E402
-from models.session_result import (  # noqa: E402
+from leaguebot.core.models.session import MAX_SLOTS, SESSIONS_BY_FORMAT, SessionType  # noqa: E402
+from leaguebot.core.models.session_result import (  # noqa: E402
     OutcomeModifier,
     QualifyingSessionResult,
     RaceSessionResult,
 )
-from utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
+from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS  # noqa: E402
 
 #: The three types a phase 2 forecast draws for a session.
 PHASE2_TYPES = ("sunny", "mixed", "rain")
@@ -94,7 +94,7 @@ VERDICT_SANCTIONS = (
 
 def sessions_for(round_format) -> list[SessionType]:
     """The sessions a round of *round_format* is run over, read and never restated."""
-    from models.round import RoundFormat
+    from leaguebot.core.models.round import RoundFormat
 
     raw = str(getattr(round_format, "value", round_format) or "NORMAL")
     try:
@@ -385,8 +385,8 @@ def fabricate_standings_round_results(
     from types import SimpleNamespace
     from typing import Any
 
-    from models.round import RoundFormat
-    from services.result_submission_service import get_sessions_for_format
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.results.services.result_submission_service import get_sessions_for_format
 
     def team_of(driver) -> str:
         return driver.team_key or driver.team_name
@@ -503,7 +503,7 @@ def _attendance_totals(count: int, limit: int) -> list[int]:
     total — a field where everyone holds the same number tells a manager nothing about how
     the sheet orders or draws it.
     """
-    from services.image_attendance_service import MARK_NEAR_BAND
+    from leaguebot.image.services.image_attendance_service import MARK_NEAR_BAND
 
     if count <= 0:
         return []
@@ -567,7 +567,7 @@ def fabricate_attendance_records(drivers, round_ordinals, limit: int | None = No
     that same number to ``resolve_drawing``, or the marks will answer to a limit the plate
     above them does not name.
     """
-    from services.image_attendance_service import DriverRecord
+    from leaguebot.image.services.image_attendance_service import DriverRecord
 
     ordinals = list(round_ordinals)
     limit = fabricate_attendance_limit(ordinals) if limit is None else limit

@@ -21,16 +21,16 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
     catalogue_for,
 )
-from models.round import RoundStatus
-from utils.date_formatting import format_date_and_time
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.utils.date_formatting import format_date_and_time
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
 
 log = logging.getLogger(__name__)
 
@@ -236,7 +236,7 @@ def build_fill_spec(
     the shared helper and resolved them by hand instead. That hand-rolled resolution
     produced *relative* paths where every other path produced absolute ones, and a
     relative href reaches the rasteriser as a file it cannot find — see
-    ``utils.svg_fill._as_href``.
+    ``leaguebot.image.utils.svg_fill._as_href``.
     """
     catalogue = catalogue_for(TEMPLATE_KEY)
     index = FieldIndex(root)
@@ -370,7 +370,7 @@ def build_fill_spec(
 def _y_of(index: FieldIndex, field_id: str) -> float | None:
     # Reuses the fill pipeline's own geometry so the crop decision here and the cut there
     # cannot disagree about where a node sits.
-    from utils.svg_fill import _element_y
+    from leaguebot.image.utils.svg_fill import _element_y
 
     element = index.resolve(field_id)
     return None if element is None else _element_y(element)

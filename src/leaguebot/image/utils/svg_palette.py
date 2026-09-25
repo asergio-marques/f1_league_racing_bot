@@ -35,7 +35,7 @@ with. An inline ``style`` on the stop does work, so that is what a stop gets.
 
 Precedence, weakest first: the template's own rules and presentation attributes, then the
 injected palette, then anything written into an element's inline ``style``. The last of those
-is where :mod:`utils.svg_fill` writes a data-driven recolour, so the fastest-lap colour and
+is where :mod:`leaguebot.image.utils.svg_fill` writes a data-driven recolour, so the fastest-lap colour and
 the standings highlight ink still win over a league's palette — they say something about the
 *data*, and a tier's identity must not overwrite them.
 """
@@ -45,7 +45,7 @@ import re
 
 from lxml import etree
 
-from utils.svg_document import SVG_NS, merge_style
+from leaguebot.image.utils.svg_document import SVG_NS, merge_style
 
 #: What a slot id may be made of. Deliberately narrow: a slot is interpolated into a CSS
 #: selector, so anything outside this set could close the rule and inject a stylesheet of
@@ -109,7 +109,7 @@ def colour_slots(root: etree._Element) -> frozenset[str]:
     incomplete until every division has a colour for it.
 
     **The whole tree is walked, ``<defs>`` included** — unlike
-    :class:`~utils.svg_document.FieldIndex`, which skips it. A gradient's stops live in
+    :class:`~leaguebot.image.utils.svg_document.FieldIndex`, which skips it. A gradient's stops live in
     ``<defs>``, so a scan that skipped it would miss slots that are genuinely demanded and
     report a template complete when it is not.
     """

@@ -31,9 +31,9 @@ import dataclasses
 import logging
 from dataclasses import dataclass
 
-from db.database import get_connection
-from models.round import RoundStatus
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ async def refresh_division_calendar(
     if not getattr(division, "calendar_message_id", None):
         return None
 
-    from services import calendar_post_service as calendar
+    from leaguebot.core.services import calendar_post_service as calendar
 
     rounds = await bot.season_service.get_division_rounds(division.id)
     if round_ids:
@@ -308,7 +308,7 @@ async def _withdraw_call(bot: LeagueBot, round_id: int, division_id: int) -> str
     re-arms its buttons among others, so it must not outlive the call. The answers in
     `driver_round_attendance` are not touched.
     """
-    from services.rsvp_service import withdraw_rsvp_call
+    from leaguebot.attendance.services.rsvp_service import withdraw_rsvp_call
 
     undeleted: list[str] = []
     try:

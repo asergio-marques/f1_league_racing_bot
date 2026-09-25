@@ -10,16 +10,16 @@ from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, TypeVar
 
 import discord
 
-from db.database import get_connection
-from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
-from models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
-from services.channel_registry_service import as_text_channel
-from services.team_service import resolve_team_reference
-from utils import results_formatter
-from utils.batch_notice import batch_notice
-from utils.channel_guard import is_league_manager
-from utils.input_validator import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
+from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.team_service import resolve_team_reference
+from leaguebot.results.utils import results_formatter
+from leaguebot.core.utils.batch_notice import batch_notice
+from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.core.utils.input_validator import (
     USER_MENTION,
     parse_gap,
     parse_lap_gap,
@@ -27,16 +27,16 @@ from utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
-from utils.league_bot import LeagueBot, bot_of
-from utils.tyre_compound import (
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.image.utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
     tyre_compound_list,
 )
-from utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
+from leaguebot.core.utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
 
 if TYPE_CHECKING:
-    from services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
 
@@ -269,12 +269,12 @@ async def _build_penalty_review_state(
     division_id: int,
     submission_channel_id: int,
 ) -> "PenaltyReviewState":
-    """Reconstruct a :class:`~services.penalty_wizard.PenaltyReviewState` from the DB.
+    """Reconstruct a :class:`~leaguebot.results.services.penalty_wizard.PenaltyReviewState` from the DB.
 
     Used by the bot restart-recovery path to re-post the appeals review prompt
     after a crash during the appeals phase (``status = 'AWAITING_APPEAL_VERDICTS'``).
     """
-    from services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
     db_path: str = bot.db_path
 
@@ -342,8 +342,8 @@ async def enter_penalty_state(
     When called from restart-recovery, pass ``skip_results_post=True`` only when
     ``results_posted = 1`` in the DB (i.e. posting already completed before the crash).
     """
-    from services import standings_service, results_post_service  # lazy imports
-    from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
+    from leaguebot.results.services import standings_service, results_post_service  # lazy imports
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
 
     db_path: str = bot.db_path
 
@@ -430,7 +430,7 @@ async def enter_penalty_state(
             if standings_ch_id:
                 sc = as_text_channel(guild.get_channel(standings_ch_id))
                 if sc:
-                    from services.standings_service import (
+                    from leaguebot.results.services.standings_service import (
                         compute_driver_standings,
                         compute_team_standings,
                     )
@@ -534,7 +534,7 @@ async def finalize_penalty_review(
     ``approving`` is claimed after the last await of the checks, so two presses cannot both pass
     them, and released however the approval ends, so one that fails can be pressed again.
     """
-    from services.penalty_wizard import _BEING_APPROVED, _review_moved_on
+    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED, _review_moved_on
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_reports(interaction, state)
@@ -563,9 +563,9 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
     """What approving a first pass's reports does, once :func:`finalize_penalty_review` has
     checked the review is current and claimed it."""
     import json as _json
-    from services import results_post_service as _rps
-    from services import penalty_service as _ps
-    from services import verdict_announcement_service as _vas
+    from leaguebot.results.services import results_post_service as _rps
+    from leaguebot.results.services import penalty_service as _ps
+    from leaguebot.results.services import verdict_announcement_service as _vas
 
     await interaction.response.defer(ephemeral=True)
 
@@ -676,7 +676,7 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
             await db.commit()
 
         # The report stage's controls come down as the round leaves it (#402).
-        from services.penalty_wizard import _take_down_report_stage
+        from leaguebot.results.services.penalty_wizard import _take_down_report_stage
         await _take_down_report_stage(state)
 
         # Audit log PENALTY_REVIEW_APPROVED
@@ -756,7 +756,7 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
             await _report_unannounced_verdicts(interaction, bot, verdict_faults)
 
         # === NEW: Attendance pipeline (033-attendance-tracking) ===
-        from services.attendance_service import (
+        from leaguebot.attendance.services.attendance_service import (
             record_attendance_from_results,
             cascade_attendance_from_round,
             post_attendance_sheet,
@@ -1052,7 +1052,7 @@ async def _post_appeals_prompt(state, guild, bot: LeagueBot, db_path: str) -> bo
     the round waits at ``AWAITING_APPEAL_VERDICTS`` and restart recovery re-posts the prompt —
     but an amendment cannot: there is no route to its last stage, so the caller undoes it (#345).
     """
-    from services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+    from leaguebot.results.services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
 
     appeals_view = AppealsReviewView(state=state)
     sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
@@ -1078,7 +1078,7 @@ async def _report_incomplete_sanctions(
     *logged* says the run has already posted its own ``ATTENDANCE_SANCTIONS | Incomplete``
     line; where it never got that far, the log channel is told here instead.
     """
-    from services.attendance_service import sync_hint
+    from leaguebot.attendance.services.attendance_service import sync_hint
 
     hint = await sync_hint(db_path, division_id, round_id)
     body = "\n".join(f"• {line}" for line in failures)
@@ -1142,7 +1142,7 @@ async def _report_unpostable_results(
     interaction, bot: LeagueBot, db_path: str, division_id: int, faults: list[str],
 ) -> None:
     """What the results cascade could not post."""
-    from services.results_post_service import results_sync_hint
+    from leaguebot.results.services.results_post_service import results_sync_hint
 
     await _report_faults(
         interaction, bot,
@@ -1171,7 +1171,7 @@ async def _report_attendance_not_recorded(
     out of the caller, and past the point where the appeals prompt is posted: the round
     would be left mid-lifecycle with nothing said, which is this issue's own shape.
     """
-    from services.attendance_service import sync_hint
+    from leaguebot.attendance.services.attendance_service import sync_hint
 
     try:
         hint = await sync_hint(db_path, division_id, round_id)
@@ -1208,7 +1208,7 @@ async def _report_unannounced_verdicts(interaction, bot: LeagueBot, faults: list
     ``PENALTY_REVIEW_APPROVED`` alone. The audit line is also written before the verdicts go
     out, so marking it would mean reordering the approval to no one's benefit.
     """
-    from services.verdict_announcement_service import verdict_repair_hint
+    from leaguebot.results.services.verdict_announcement_service import verdict_repair_hint
 
     await _report_faults(
         interaction, bot,
@@ -1235,8 +1235,8 @@ async def finalize_appeals_review(
     :func:`_approve_amendment_appeals` before anything here runs (#345).
     """
     import json as _json
-    from services import results_post_service as _rps
-    from services import verdict_announcement_service as _vas
+    from leaguebot.results.services import results_post_service as _rps
+    from leaguebot.results.services import verdict_announcement_service as _vas
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_appeals(interaction, state)
@@ -1321,7 +1321,7 @@ async def finalize_appeals_review(
             # This is the only place a round becomes finished, and so the only place a division
             # can become finished by racing. Approving the last round's appeals is what ends a
             # division, and a division ending is what lets `/season complete` run (issue #154).
-            from services.season_service import SeasonService
+            from leaguebot.core.services.season_service import SeasonService
 
             await SeasonService(db_path).refresh_division_status(division_id)
 
@@ -1400,7 +1400,7 @@ async def _apply_staged_appeals(
     ``post_appeal_announcements`` reads them, in the order the corrections were staged.
     """
     import datetime as _dt
-    from services import penalty_service as _ps
+    from leaguebot.results.services import penalty_service as _ps
 
     if not staged_appeals:
         return []
@@ -1506,7 +1506,7 @@ async def _snapshot_staged_drivers(
     """Return current ``finishing_position``, ``post_race_time_penalties``, and
     ``total_points`` for every driver referenced in *staged*.  Used for audit log.
     """
-    from services.standings_service import compute_driver_standings
+    from leaguebot.results.services.standings_service import compute_driver_standings
 
     if not staged:
         return []
@@ -1532,7 +1532,7 @@ async def _snapshot_staged_drivers(
         dsr_rows = await cursor.fetchall()
         # The standings are keyed by the account a driver uses now; a staged penalty by the
         # one its result stands under (issue #243).
-        from services.driver_service import current_account_map_for_division
+        from leaguebot.core.services.driver_service import current_account_map_for_division
 
         current_of = await current_account_map_for_division(db, division_id)
 
@@ -1591,8 +1591,8 @@ async def _save_session_result_in_tx(
     Split out for `replace_round_results`, which has to write every session of a round in the
     same transaction as the delete of the results they replace.
     """
-    from services.season_service import SeasonImmutableError
-    from services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.season_service import SeasonImmutableError
+    from leaguebot.core.services.driver_service import resolve_driver_profile_id
 
     submitted_at = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
@@ -1691,7 +1691,7 @@ async def _verdicts_by_driver(
     recoverable through the row it points at: ``penalty_records`` and ``appeal_records`` store
     neither ``driver_user_id`` nor ``session_type``.
     """
-    from services.verdict_records import select_verdicts
+    from leaguebot.results.services.verdict_records import select_verdicts
 
     by_table: dict[str, dict[int, list[int]]] = {}
     for verdict_table in _VERDICT_TABLES:
@@ -1756,7 +1756,7 @@ async def _repoint_verdicts(
     """
     if not verdicts:
         return
-    from services.driver_service import current_account_map_for_division
+    from leaguebot.core.services.driver_service import current_account_map_for_division
 
     current_of = await current_account_map_for_division(db, division_id)
 
@@ -1803,7 +1803,7 @@ def _amend_verdict_state(db_path: str, division_id: int, bot: LeagueBot, *, divi
     replay fills in each round's number, for the one fault line that names a round it could not
     read from the database.
     """
-    from services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
     def _factory(round_id: int) -> PenaltyReviewState:
         return PenaltyReviewState(
@@ -1846,7 +1846,7 @@ async def _repost_attendance_after_amendment(
 
     Returns the faults met, as lines a league can read.
     """
-    from services import attendance_service
+    from leaguebot.attendance.services import attendance_service
 
     if not await bot.module_service.is_attendance_enabled():
         return []
@@ -1903,7 +1903,7 @@ async def _remember_superseded_announcements(
     a report stage retried after a failure — would read what the first had already cleared and
     overwrite the list with less.
     """
-    from services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     rows: list[dict] = []
     async with get_connection(db_path) as db:
@@ -1931,7 +1931,7 @@ async def take_down_superseded_announcements(bot: LeagueBot, db_path: str, round
     Called by the final stage once the replacements are up, so produce-then-destroy holds across
     the two stages as it does within one. Returns the faults met, as lines a league can read.
     """
-    from services.results_post_service import _delete_posting, _parse_ids
+    from leaguebot.results.services.results_post_service import _delete_posting, _parse_ids
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -2015,7 +2015,7 @@ async def _clear_round_verdict_records(
     Deleting them is also what releases the foreign key, so the rows may be rewritten against
     whichever driver rows the corrected classification produced.
     """
-    from services.verdict_records import delete_verdicts
+    from leaguebot.results.services.verdict_records import delete_verdicts
 
     # Scoped to the sessions given, because those are all an amendment replays: clearing the
     # whole round would drop the decisions of sessions whose reports are never re-approved,
@@ -2066,7 +2066,7 @@ async def snapshot_before_amendment(
     whole of what the amendment changes that a revert cannot recompute. The standings and the
     points follow from the driver rows, so restoring those and cascading again reproduces them.
     """
-    from services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     sessions: list[dict] = []
     async with get_connection(db_path) as db:
@@ -2173,7 +2173,7 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot
 
     snapshot = _json.loads(row["pre_amendment_state"])
 
-    from services.verdict_records import delete_verdicts
+    from leaguebot.results.services.verdict_records import delete_verdicts
 
     async with get_connection(db_path) as db:
         for state in snapshot["sessions"]:
@@ -2250,7 +2250,7 @@ async def revert_abandoned_amendment(db_path: str, round_id: int, bot: LeagueBot
     # when the round is in fact back — and the caller would then hand an amendment with no
     # snapshot left to the sweep, which cannot claim it, leaving the row and its channel for a
     # restart to clear. A stale standing is a `/results standings sync` away.
-    from services import standings_service
+    from leaguebot.results.services import standings_service
 
     division_id = await _division_of_round(db_path, round_id)
     if division_id is not None:
@@ -2275,7 +2275,7 @@ async def _standings_names(db_path: str, division_id: int, bot: LeagueBot | None
     moving who did not. Where the names cannot be had, the cascade runs on ids rather than not
     at all.
     """
-    from services.results_post_service import standings_display_names
+    from leaguebot.results.services.results_post_service import standings_display_names
 
     try:
         if guild is None and bot is not None:
@@ -2548,7 +2548,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
     ``staged_penalties`` column, which an amendment does not own; ``reports_approved`` on the
     state does that job here, and the claim keeps a double click from running two at once.
     """
-    from services import penalty_service as _ps
+    from leaguebot.results.services import penalty_service as _ps
 
     await interaction.response.defer(ephemeral=True)
 
@@ -2614,7 +2614,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
     await _rearm_amendment(db_path, round_id, deadline)
 
     # The report stage's controls come down as the amendment leaves it, pardons included (#402).
-    from services.penalty_wizard import _take_down_report_stage
+    from leaguebot.results.services.penalty_wizard import _take_down_report_stage
     await _take_down_report_stage(state)
 
     try:
@@ -2651,8 +2651,8 @@ async def _approve_amendment_appeals(interaction, state) -> None:
     A failure in step 2 reverts the round and closes the channel, as any internal failure of an
     amendment does; nothing has been published by then, and the manager runs the command again.
     """
-    from services import results_post_service as _rps
-    from services import standings_service as _ss
+    from leaguebot.results.services import results_post_service as _rps
+    from leaguebot.results.services import standings_service as _ss
 
     await interaction.response.defer(ephemeral=True)
 
@@ -2756,7 +2756,7 @@ async def _log_result_amended(
     What could not be posted is named in this entry, ending with the commands that repair it,
     rather than in a separate one — which is what the README tells a league to look for.
     """
-    from services.results_post_service import results_sync_hint
+    from leaguebot.results.services.results_post_service import results_sync_hint
 
     bot = state.bot
     hint = ""
@@ -2898,7 +2898,7 @@ async def run_amendment_review_stages(
 
     **The round's decisions are read back out of the database first.** They were written when
     the round was originally reviewed and nothing has held them in memory since, so
-    :func:`~services.penalty_service.load_staged_from_records` turns the stored rows back into
+    :func:`~leaguebot.results.services.penalty_service.load_staged_from_records` turns the stored rows back into
     the staged entries the review screens already know how to draw. A manager who changes
     nothing approves exactly what was there before.
 
@@ -2910,9 +2910,9 @@ async def run_amendment_review_stages(
 
     Returns the state the screens share. The approvals happen through the screens themselves.
     """
-    from services.penalty_service import load_staged_from_records
-    from services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
-    from services.penalty_wizard import _render_prompt_content
+    from leaguebot.results.services.penalty_service import load_staged_from_records
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
+    from leaguebot.results.services.penalty_wizard import _render_prompt_content
 
     # **Scoped to the sessions being amended** (#345). `apply_penalties` walks whatever
     # session types the staged set names, and stage one re-inserted only the amended sessions'
@@ -2984,7 +2984,7 @@ async def amend_round_results(
     from their session's corrected classification, and ``SeasonImmutableError`` for an archived
     season, with nothing written in either case.
     """
-    from services.season_service import SeasonImmutableError
+    from leaguebot.core.services.season_service import SeasonImmutableError
 
     submitted_at = datetime.now(timezone.utc).isoformat()
     # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an
@@ -3064,7 +3064,7 @@ async def amend_round_results(
     # just re-pointed onto the new classification. The posting also *added* a message rather than
     # replacing one, so the original Final Results posting was orphaned above it. And an
     # amendment reverted before it completed left that provisional posting standing.
-    from services import standings_service  # lazy import
+    from leaguebot.results.services import standings_service  # lazy import
 
     await standings_service.cascade_recompute_from_round(
         db_path, division_id, round_id, await _standings_names(db_path, division_id, bot)
@@ -3102,7 +3102,7 @@ async def _write_amended_session_in_tx(
     league manager's (issue #116): amending a FINAL round overwrites what the league raced, and
     only the amendment's own snapshot, held until it completes, puts it back.
     """
-    from services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.driver_service import resolve_driver_profile_id
 
     def _get(obj, key, default=None):
         if hasattr(obj, key):
@@ -3993,7 +3993,7 @@ async def other_active_team_assignments(
 
         # A session recorded before the driver changed account stands under the old one;
         # the check compares drivers, so both are read as the account in use (issue #243).
-        from services.driver_service import current_account_map
+        from leaguebot.core.services.driver_service import current_account_map
 
         cursor = await db.execute(
             "SELECT 1 FROM rounds r JOIN divisions d ON d.id = r.division_id "
@@ -4014,7 +4014,7 @@ async def other_active_team_assignments(
 
 async def current_accounts(db_path: str) -> dict[int, int]:
     """`driver_service.current_account_map` on a connection of its own, for the paste paths."""
-    from services.driver_service import current_account_map
+    from leaguebot.core.services.driver_service import current_account_map
 
     async with get_connection(db_path) as db:
         return await current_account_map(db)
@@ -4061,7 +4061,7 @@ async def _apply_points_in_tx(
     the sessions it inserts in the same transaction, so a crash can never leave a round's new
     results in place with no points on them.
     """
-    from services.standings_service import compute_points_for_session  # lazy import
+    from leaguebot.results.services.standings_service import compute_points_for_session  # lazy import
 
     # Load config entries for (season, config, session_type)
     entries_cursor = await db.execute(
@@ -4392,7 +4392,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
 
     if not results_enabled:
         # The round just reached a terminal state, so its division may now be finished.
-        from services.season_service import SeasonService
+        from leaguebot.core.services.season_service import SeasonService
 
         await SeasonService(db_path).refresh_division_status(division_id)
 
@@ -4512,7 +4512,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     # ------------------------------------------------------------------
     # 7. Load attached config names for this season
     # ------------------------------------------------------------------
-    from services import season_points_service  # lazy import to avoid circular
+    from leaguebot.results.services import season_points_service  # lazy import to avoid circular
 
     config_names = await season_points_service.get_attached_config_names(db_path, season_id)
 
@@ -4816,7 +4816,7 @@ class ResubmissionCancelView(LeagueView):
     async def cancel_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        from services.penalty_wizard import _require_lm
+        from leaguebot.results.services.penalty_wizard import _require_lm
 
         if not await _require_lm(interaction, self.state):
             return
@@ -4919,7 +4919,7 @@ async def enter_resubmit_flow(
     """
     import asyncio
     import json as _json
-    from services.penalty_wizard import _delete_review_message, _take_down_approval
+    from leaguebot.results.services.penalty_wizard import _delete_review_message, _take_down_approval
 
     bot = state.bot
     db_path: str = bot.db_path
@@ -5134,7 +5134,7 @@ async def _resubmit_collection_task(
         )
         return
 
-    from services import season_points_service
+    from leaguebot.results.services import season_points_service
     config_names = await season_points_service.get_attached_config_names(db_path, season_id)
 
     sessions = get_sessions_for_format(round_format)

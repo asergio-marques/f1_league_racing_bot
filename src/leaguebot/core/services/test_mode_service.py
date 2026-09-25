@@ -13,11 +13,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from db.database import get_connection
-from utils.league_bot import LeagueBot
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from services.scheduler_service import SchedulerService
+    from leaguebot.core.services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)
 
@@ -93,8 +93,8 @@ async def switch_test_mode_off(bot: LeagueBot, *, discard_backup: bool = False) 
     if row is None or not row["test_mode_active"]:
         return 0
 
-    from services.forecast_cleanup_service import flush_pending_deletions
-    from services.test_roster_service import clear_all_test_drivers
+    from leaguebot.weather.services.forecast_cleanup_service import flush_pending_deletions
+    from leaguebot.core.services.test_roster_service import clear_all_test_drivers
 
     try:
         await flush_pending_deletions(bot)
@@ -102,7 +102,7 @@ async def switch_test_mode_off(bot: LeagueBot, *, discard_backup: bool = False) 
         log.exception("switch_test_mode_off: could not flush pending deletions")
     removed = await clear_all_test_drivers(bot.db_path)
     if discard_backup:
-        from services import backup_service
+        from leaguebot.core.services import backup_service
 
         try:
             backup_service.discard(bot.db_path, backup_service.jobstore_path_of(bot))

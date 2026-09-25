@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING
 
 from discord.ext import commands, tasks
 
-from services.retry_service import attempt_delivery, get_all_pending
+from leaguebot.core.services.retry_service import attempt_delivery, get_all_pending
 
 if TYPE_CHECKING:
-    from utils.league_bot import LeagueBot
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 

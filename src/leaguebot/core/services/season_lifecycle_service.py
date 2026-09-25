@@ -14,10 +14,10 @@ from __future__ import annotations
 import json
 import logging
 
-from db.database import get_connection
-from models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
-from utils.league_bot import LeagueBot
-from utils.league_server import league_guild
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
 
@@ -151,8 +151,8 @@ async def turn_down_pending_placements(bot: LeagueBot, season_id: int, guild) ->
     loses the driver role. A driver without the former-driver flag is thereby pending
     deletion. Returns the profile ids turned down.
     """
-    from models.driver_profile import DriverState
-    from services.driver_service import write_transition
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.core.services.driver_service import write_transition
 
     db_path = bot.db_path
     placeholders = ",".join("?" for _ in UNSETTLED_STATES)
@@ -236,7 +236,7 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
         try:
             signup_cfg = await bot.signup_module_service.get_config()
             if signup_cfg is not None and signup_cfg.signups_open:
-                from cogs.module_cog import execute_forced_close
+                from leaguebot.core.cogs.module_cog import execute_forced_close
 
                 try:
                     bot.scheduler_service.cancel_signup_close_timer()
@@ -385,7 +385,7 @@ async def _close_driver_signups(
                 # The channel's own deletion job stays armed, and reads the wizard record
                 # when it fires; only the inactivity timeout is cancelled.
                 try:
-                    from services.wizard_service import inactivity_job_id
+                    from leaguebot.signup.services.wizard_service import inactivity_job_id
 
                     bot.scheduler_service._scheduler.remove_job(inactivity_job_id(uid))
                 except Exception:  # noqa: BLE001 — a job already gone is the aim
@@ -495,8 +495,8 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
         reason="Season ended",
     )
 
-    from models.driver_profile import DriverState
-    from services.driver_service import write_transition
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.core.services.driver_service import write_transition
 
     async with get_connection(db_path) as db:
         # Through the transition table, as every change of a driver's state is.
@@ -524,7 +524,7 @@ async def run_driver_pass(db_path: str, *, bot: LeagueBot | None = None, guild=N
 
     if bot is not None:
         # Once committed, so a deletion that fails leaves every portrait where it was.
-        from services.driver_portrait_service import discard_portraits
+        from leaguebot.image.services.driver_portrait_service import discard_portraits
 
         await discard_portraits(bot, accounts)
 

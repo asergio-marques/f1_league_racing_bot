@@ -32,7 +32,7 @@ class DriverProfile:
     Carries no ban counters. ``race_ban_count``, ``season_ban_count``, ``league_ban_count``
     and ``ban_races_remaining`` were only ever written as zero and went with the ban states
     in issue #221; a qualifying ban never had a counter at all. The bot issues the four
-    sanctions in ``services.image_preview_data.VERDICT_SANCTIONS`` and no others; the fifth
+    sanctions in ``leaguebot.image.services.image_preview_data.VERDICT_SANCTIONS`` and no others; the fifth
     entry there, no further action, is no sanction at all (#138).
     """
 

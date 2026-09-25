@@ -8,11 +8,11 @@ from datetime import datetime, timezone
 
 import discord
 
-from services.channel_registry_service import as_text_channel
-from db.database import get_connection, sole_row
-from models.round import RoundFormat
-from utils.league_bot import LeagueBot
-from utils.league_server import LeagueView
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ class _RsvpButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         # Delegate to the cog that handles RSVP button interactions.
         # The cog is responsible for validation, DB updates, and embed editing.
-        from cogs.attendance_cog import handle_rsvp_button
+        from leaguebot.attendance.cogs.attendance_cog import handle_rsvp_button
         await handle_rsvp_button(interaction, self._custom_id)
 
 
@@ -159,7 +159,7 @@ class _RsvpButton(discord.ui.Button):
 # disabled module shall produce nothing ... whatever the path arrives at it, a scheduled
 # job, a restart, or a command" — and a gate at the entry point is the only placement that
 # holds for all three, since these functions are reached from the APScheduler callbacks in
-# ``bot.py``, from the restart recovery, and from ``/test-mode advance`` alike.
+# ``__main__.py``, from the restart recovery, and from ``/test-mode advance`` alike.
 #
 # It is deliberately a gate and **not** a job cancellation (issue #114). Cancelling the three
 # RSVP jobs when the module is switched off looks equivalent and is not: only ``/season
@@ -260,7 +260,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
                          "test_display_name": str | None}, ...]
         }
     """
-    from services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not called to check-in (issue #220),
     # and so holds no attendance row for the round either.
@@ -391,7 +391,7 @@ async def _checkin_attachment(
     to restore (XIV.7). The round's attendance rows are opened afterwards either way.
     """
     try:
-        from services.image_rsvp_post import try_attach
+        from leaguebot.image.services.image_rsvp_post import try_attach
         deadline_hours = None
         try:
             config = await bot.attendance_service.get_config()
@@ -637,7 +637,7 @@ async def run_rsvp_notice(round_id: int, bot: LeagueBot) -> None:
             # The check-in graphic is drawn once and never redrawn — the button callbacks and
             # the deadline job never reach the image module — so once this send is over the
             # file has no further reader.
-            from services.image_rsvp_post import discard_attachment
+            from leaguebot.image.services.image_rsvp_post import discard_attachment
 
             discard_attachment(attachment)
 

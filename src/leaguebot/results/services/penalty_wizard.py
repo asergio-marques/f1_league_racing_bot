@@ -15,16 +15,16 @@ from typing import Any
 
 import discord
 
-from db.database import get_connection
-from models.points_config import SessionType
-from models.round import RoundStatus
-from services.channel_registry_service import as_text_channel
-from services.driver_service import accounts_of_in_division, current_account_map_for_division
-from services.penalty_service import StagedPenalty, validate_penalty_input
-from utils.channel_guard import is_league_manager
-from utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
-from utils.league_bot import LeagueBot
-from utils.league_server import CallbackButton, LeagueModal, LeagueView
+from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.driver_service import accounts_of_in_division, current_account_map_for_division
+from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
+from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
+from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
 
 log = logging.getLogger(__name__)
 
@@ -826,8 +826,8 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
             return
 
-        from db.database import get_connection
-        from services.driver_service import current_account_of, resolve_driver_profile_id
+        from leaguebot.core.db.database import get_connection
+        from leaguebot.core.services.driver_service import current_account_of, resolve_driver_profile_id
 
         async with get_connection(self.state.db_path) as db:
             # --- Resolve driver profile ID ---
@@ -1292,7 +1292,7 @@ class PenaltyReviewView(LeagueView):
                 ephemeral=True,
             )
             return
-        from services.result_submission_service import finalize_penalty_review
+        from leaguebot.results.services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, self.state)
 
     @discord.ui.button(
@@ -1315,7 +1315,7 @@ class PenaltyReviewView(LeagueView):
         if not await _require_current(interaction, self.state):
             return
         await interaction.response.defer(ephemeral=True)
-        from services.result_submission_service import enter_resubmit_flow
+        from leaguebot.results.services.result_submission_service import enter_resubmit_flow
         await enter_resubmit_flow(interaction, self.state)
 
     @discord.ui.button(
@@ -1417,8 +1417,8 @@ class ApprovalView(LeagueView):
         if not await _require_approval_message(interaction, self.state):
             return
         # Immutability guard: reject finalize on archived season
-        from services.season_service import SeasonImmutableError
-        from db.database import get_connection as _gc
+        from leaguebot.core.services.season_service import SeasonImmutableError
+        from leaguebot.core.db.database import get_connection as _gc
         try:
             async with _gc(self.state.db_path) as _db:
                 _cur = await _db.execute(
@@ -1443,7 +1443,7 @@ class ApprovalView(LeagueView):
             )
             return
         # T007: wire to finalize_penalty_review
-        from services.result_submission_service import finalize_penalty_review
+        from leaguebot.results.services.result_submission_service import finalize_penalty_review
         await finalize_penalty_review(interaction, self.state)
 
 
@@ -1555,7 +1555,7 @@ class AppealsReviewView(LeagueView):
             return
         if not self.state.staged_appeals:
             # No corrections — finalise directly
-            from services.result_submission_service import finalize_appeals_review
+            from leaguebot.results.services.result_submission_service import finalize_appeals_review
             await finalize_appeals_review(interaction, self.state)
         else:
             # Ask for explicit confirmation before clearing
@@ -1592,7 +1592,7 @@ class AppealsReviewView(LeagueView):
                 ephemeral=True,
             )
             return
-        from services.result_submission_service import finalize_appeals_review
+        from leaguebot.results.services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, self.state)
 
 
@@ -1613,7 +1613,7 @@ class _AppealsConfirmClearView(LeagueView):
         if not await _require_lm(interaction, self.state):
             return
         self.state.staged_appeals.clear()
-        from services.result_submission_service import finalize_appeals_review
+        from leaguebot.results.services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(interaction, self.state)
         self.stop()
 

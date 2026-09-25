@@ -7,10 +7,10 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Collection, Iterable, Mapping
 
-from db.database import get_connection
-from models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
-from models.session_result import DriverSessionResult, OutcomeModifier
-from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.session_result import DriverSessionResult, OutcomeModifier
+from leaguebot.core.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 
 log = logging.getLogger(__name__)
 
@@ -314,7 +314,7 @@ async def compute_driver_standings(
         # A result keeps the account it was recorded under, and a driver who changed account
         # mid-season stands under two. Both are theirs and are counted as one driver, under
         # the account they use now (issue #243).
-        from services.driver_service import current_account_map_for_division
+        from leaguebot.core.services.driver_service import current_account_map_for_division
 
         current_of = await current_account_map_for_division(db, division_id)
 
@@ -345,7 +345,7 @@ async def compute_driver_standings(
     # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
     # seats decide who joins the standings without having scored, and every seat supplies the
     # team the final tiebreak orders on — a reserve who raced is in the set already.
-    from services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     async with get_connection(db_path) as db:
@@ -568,7 +568,7 @@ async def opening_driver_standings(
     """
     names = display_names or {}
 
-    from services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -684,7 +684,7 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
             (round_id, division_id),
         )
         existing = await cursor.fetchall()
-        from services.driver_service import current_account_map_for_division
+        from leaguebot.core.services.driver_service import current_account_map_for_division
 
         current_of = await current_account_map_for_division(db, division_id)
         dropped = [
@@ -742,7 +742,7 @@ async def persist_snapshots(
     team_snaps: list[TeamStandingsSnapshot],
 ) -> None:
     """INSERT OR REPLACE all snapshot rows into the database."""
-    from services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.driver_service import resolve_driver_profile_id
 
     async with get_connection(db_path) as db:
         await _drop_superseded_driver_rows(db, driver_snaps)
@@ -1004,7 +1004,7 @@ async def previous_standing_positions(
         # position is theirs all the same (issue #243).
         current_of: dict[int, int] = {}
         if not teams:
-            from services.driver_service import current_account_map_for_division
+            from leaguebot.core.services.driver_service import current_account_map_for_division
 
             current_of = await current_account_map_for_division(db, division_id)
     return {

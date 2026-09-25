@@ -19,15 +19,15 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from models.image_catalogues import (
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     catalogue_for,
 )
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
-from utils.country_data import country_for_nationality
-from utils.input_validator import USER_MENTION
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
+from leaguebot.image.utils.country_data import country_for_nationality
+from leaguebot.core.utils.input_validator import USER_MENTION
 
 TEMPLATE_KEY = "verdicts_template"
 
@@ -64,7 +64,7 @@ def sanction_text(penalty_type: str | None, time_seconds: int | None) -> str:
     stroke, and the compact rendering a results graphic places in a sanction column is a
     different presentation of the same datum and is never substituted here.
     """
-    from services.verdict_announcement_service import describe_penalty
+    from leaguebot.results.services.verdict_announcement_service import describe_penalty
 
     return describe_penalty(penalty_type, time_seconds)
 

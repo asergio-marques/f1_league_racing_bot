@@ -29,10 +29,10 @@ from types import SimpleNamespace
 
 import discord
 
-from services.channel_registry_service import as_text_channel
-from db.database import get_connection
-from models.image_module import PostingOrigin
-from utils.league_bot import LeagueBot
+from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.db.database import get_connection
+from leaguebot.image.models.image_module import PostingOrigin
+from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
 
@@ -111,8 +111,8 @@ async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_unco
     see the lineup as it **will** stand: the mid-season placements review, which draws what
     confirming will post and withholds its button where that will not draw (#374).
     """
-    from services.image_lineup_service import resolve_drawing
-    from services.image_results_post import SIGNUP_FOR_SEASON_SQL
+    from leaguebot.image.services.image_lineup_service import resolve_drawing
+    from leaguebot.image.services.image_results_post import SIGNUP_FOR_SEASON_SQL
 
     async with get_connection(bot.db_path) as db:
         division = await (
@@ -123,7 +123,7 @@ async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_unco
             )
         ).fetchone()
         if division is None:
-            from services.image_lineup_service import LineupDataError
+            from leaguebot.image.services.image_lineup_service import LineupDataError
 
             raise LineupDataError(f"division {division_id} no longer exists")
         season_id = division["season_id"]
@@ -185,7 +185,7 @@ async def build_drawing(bot: LeagueBot, guild, division_id: int, *, include_unco
     # league that switched nationality collection off configured, and raises nothing. Read
     # through the module's single reader rather than a copy of it — this path carried its
     # own, and its own read the wrong table.
-    from services.image_results_post import _nationality_collected
+    from leaguebot.image.services.image_results_post import _nationality_collected
 
     collected = await _nationality_collected(bot.db_path)
 
@@ -225,8 +225,8 @@ async def render_png(
     *obtain_missing_portraits* is `refresh_before_render`'s *obtain_missing*, and is for
     the placements review alone.
     """
-    from services.image_lineup_service import build_fill_spec
-    from services.image_render_service import (
+    from leaguebot.image.services.image_lineup_service import build_fill_spec
+    from leaguebot.image.services.image_render_service import (
         resolve_configured_directories,
         spec_builder_with_faults,
     )
@@ -250,7 +250,7 @@ async def render_png(
     # for that. The drawing is already built, but it carries the user id as the datum and the
     # file is not read until the fill -- so this is still in time. Never raises: a portrait
     # that cannot be obtained resolves exactly as it would have done otherwise.
-    from services.driver_portrait_service import refresh_before_render
+    from leaguebot.image.services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
         bot,
@@ -260,7 +260,7 @@ async def render_png(
         obtain_missing=obtain_missing_portraits,
     )
 
-    from utils.image_naming import stem_for_drawing
+    from leaguebot.image.utils.image_naming import stem_for_drawing
 
     return await bot.image_render_service.render_for_posting(
         LINEUP_TEMPLATE_KEY,
@@ -338,7 +338,7 @@ async def try_post(
             await _report(bot, row["name"], decision.problem.detail)
         return LineupPostOutcome()
 
-    from services.image_render_service import discard_attachment
+    from leaguebot.image.services.image_render_service import discard_attachment
 
     png = decision.png_paths[0]
     attachment = discord.File(str(png), filename=png.name)

@@ -30,8 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from models.classification_occasion import ClassificationOccasion
-from models.image_catalogues import (
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.image.models.image_catalogues import (
     DIVISION_LOGO_ASSET,
     DIVISION_LOGO_FIELD,
     CapacityError,
@@ -39,9 +39,9 @@ from models.image_catalogues import (
     column_crop_fields,
     row_crop_fields,
 )
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
-from utils.country_data import country_for_nationality
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
+from leaguebot.image.utils.country_data import country_for_nationality
 
 ATTENDANCE_TEMPLATE_KEY = "attendance_template"
 
@@ -156,7 +156,7 @@ class AttendanceDrawing:
     classification_label: str
     template_key: str = ATTENDANCE_TEMPLATE_KEY
     #: Whether this sheet is about a round, and so has a grand prix to name. False at both
-    #: season boundaries — see `models.classification_occasion`.
+    #: season boundaries — see `leaguebot.core.models.classification_occasion`.
     names_a_race: bool = True
     division_tier: str | None = None
     season_number: str | None = None

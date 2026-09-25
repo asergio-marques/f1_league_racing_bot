@@ -7,22 +7,22 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.points_config import SessionType
-from services import points_config_service, season_points_service
-from services.points_config_service import (
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.points_config_service import (
     ConfigAlreadyExistsError,
     ConfigNotFoundError,
     InvalidSessionTypeError,
 )
-from services.season_points_service import (
+from leaguebot.results.services.season_points_service import (
     ConfigNotAttachedError,
     SeasonNotInSetupError,
 )
-from utils.channel_guard import league_admin_only, league_manager_only
-from utils.input_validator import NAME
-from utils.league_bot import LeagueBot, bot_of
-from utils.league_server import LeagueModal, LeagueView, guild_of
-from utils.season_gate import season_for_command
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
+from leaguebot.core.utils.input_validator import NAME
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
+from leaguebot.core.utils.league_server import LeagueModal, LeagueView, guild_of
+from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
 
@@ -258,7 +258,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         self._db_path = db_path
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        from services.amendment_service import (
+        from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
             modification_ordering_warnings,
             modify_session_points,
@@ -373,8 +373,8 @@ async def _run_xml_import(
     Parses, validates, persists, and replies with an ephemeral summary.
     Posts an audit log entry on both success and failure.
     """
-    from services.points_config_service import ConfigNotFoundError, xml_import_config
-    from utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
+    from leaguebot.results.services.points_config_service import ConfigNotFoundError, xml_import_config
+    from leaguebot.core.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
     async def _audit(msg: str) -> None:
         await bot_of(interaction).output_router.post_log(
@@ -511,7 +511,7 @@ class ResultsCog(commands.Cog):
         the amendment were then cancelled or lapsed, its revert posting nothing. It waits, as a
         submission of another of the division's rounds does.
         """
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             amendment_wait_text,
             open_amendment_in_division,
         )
@@ -886,7 +886,7 @@ class ResultsCog(commands.Cog):
             )
             scope_label = f"season {season.season_number}"
 
-        from utils import results_formatter
+        from leaguebot.results.utils import results_formatter
 
         await interaction.followup.send(
             results_formatter.format_config_list(scope_label, rows), ephemeral=True
@@ -980,7 +980,7 @@ class ResultsCog(commands.Cog):
                 raw_entries = [e for e in raw_entries if e.session_type == session_type_filter]
                 raw_fl = [f for f in raw_fl if f.session_type == session_type_filter]
 
-            from utils.results_formatter import _collapse_trailing_zeros
+            from leaguebot.results.utils.results_formatter import _collapse_trailing_zeros
 
             for st in SessionType:
                 session_entries = sorted(
@@ -997,7 +997,7 @@ class ResultsCog(commands.Cog):
                 label = _LABEL_MAP.get(fl_entry.session_type.value, fl_entry.session_type.value)
                 fl_by_session[label] = (fl_entry.fl_points, fl_entry.fl_position_limit)
 
-        from utils import results_formatter
+        from leaguebot.results.utils import results_formatter
 
         formatted = results_formatter.format_config_view(name, entries_by_session, fl_by_session)
         await interaction.followup.send(formatted, ephemeral=True)
@@ -1102,7 +1102,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import (
+        from leaguebot.core.services.amendment_service import (
             AmendmentModifiedError,
             disable_amendment_mode,
             enable_amendment_mode,
@@ -1149,7 +1149,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import (
+        from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
             get_amendment_state,
             revert_modification_store,
@@ -1195,7 +1195,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import (
+        from leaguebot.core.services.amendment_service import (
             AmendmentNotActiveError,
             modification_ordering_warnings,
             modify_session_points,
@@ -1252,7 +1252,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import AmendmentNotActiveError, modify_fl_bonus
+        from leaguebot.core.services.amendment_service import AmendmentNotActiveError, modify_fl_bonus
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl"
@@ -1294,7 +1294,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import AmendmentNotActiveError, modify_fl_position_limit
+        from leaguebot.core.services.amendment_service import AmendmentNotActiveError, modify_fl_position_limit
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl-plimit"
@@ -1363,7 +1363,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from services.amendment_service import (
+        from leaguebot.core.services.amendment_service import (
             AmendmentNotDeliverableError,
             NonMonotonicAmendmentError,
             approval_faults,
@@ -1421,7 +1421,7 @@ class ResultsCog(commands.Cog):
         # until its last stage is approved; approving here reposts every round of every
         # division from the same database, and would publish them unapproved. Shown in the
         # panel and read again at the press, as the two refusals above are.
-        from services.result_submission_service import (
+        from leaguebot.results.services.result_submission_service import (
             amendment_wait_text,
             open_amendment_in_season,
         )
@@ -1569,7 +1569,7 @@ class ResultsCog(commands.Cog):
             await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
             return
 
-        from db.database import get_connection
+        from leaguebot.core.db.database import get_connection
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(
                 "SELECT reserves_in_standings FROM division_results_config WHERE division_id = ?",
@@ -1636,7 +1636,7 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div):
             return
 
-        from services.results_post_service import repost_standings_for_division
+        from leaguebot.results.services.results_post_service import repost_standings_for_division
         status = await repost_standings_for_division(
             self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
         )
@@ -1691,7 +1691,7 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div):
             return
 
-        from services.results_post_service import repost_results_for_division
+        from leaguebot.results.services.results_post_service import repost_results_for_division
         status = await repost_results_for_division(
             self.bot.db_path, div.id, guild_of(interaction), bot=self.bot
         )

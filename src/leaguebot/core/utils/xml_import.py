@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from lxml import etree
 
-from models.points_config import SessionType
+from leaguebot.results.models.points_config import SessionType
 
 __all__ = [
     "XmlImportPayload",

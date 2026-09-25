@@ -8,19 +8,19 @@ from typing import TYPE_CHECKING, Literal
 
 import discord
 
-from db.database import get_connection
-from models.points_config import SessionType
-from utils.input_validator import (
+from leaguebot.core.db.database import get_connection
+from leaguebot.results.models.points_config import SessionType
+from leaguebot.core.utils.input_validator import (
     is_disqualification,
     is_no_further_action,
     parse_gap,
     parse_penalty_seconds,
     parse_time,
 )
-from utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.penalty_wizard import StagedPardon
 
 log = logging.getLogger(__name__)
 
@@ -216,7 +216,7 @@ async def apply_penalties(
     """
     import datetime
 
-    from services import results_post_service
+    from leaguebot.results.services import results_post_service
 
     # Map (session_type_value, driver_user_id) -> new table row id (race or qual)
     driver_to_new_result_id: dict[tuple[str, int], int] = {}
@@ -460,7 +460,7 @@ async def apply_penalties(
             )
             row3 = await cursor3.fetchone()
         if row3:
-            from utils.league_server import league_guild
+            from leaguebot.core.utils.league_server import league_guild
 
             guild = await league_guild(bot)
 
@@ -536,13 +536,13 @@ async def load_staged_from_records(
 
     Returned in the order the records were written, so a manager reads them as they were decided.
     """
-    from services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.penalty_wizard import StagedPardon
 
     reports: list[StagedPenalty] = []
     appeals: list[StagedPenalty] = []
     pardons: list[StagedPardon] = []
 
-    from services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     async with get_connection(db_path) as db:
         rows_of: dict[str, list[dict]] = {}

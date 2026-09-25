@@ -296,9 +296,9 @@ def merge_style(element: etree._Element, updates: dict[str, str | None]) -> None
     cancelled is written with an explicit neutral value rather than removed.
 
     Inline is the strongest source, which is why two callers need it and it lives here
-    rather than in either of them: :mod:`utils.svg_fill` writes a data-driven recolour this
+    rather than in either of them: :mod:`leaguebot.image.utils.svg_fill` writes a data-driven recolour this
     way because XIV.2 requires it beat the template's stylesheet, and
-    :mod:`utils.svg_palette` writes a gradient stop this way because Inkscape will not apply
+    :mod:`leaguebot.image.utils.svg_palette` writes a gradient stop this way because Inkscape will not apply
     a class rule to a ``<stop>`` at all.
     """
     current = declarations(element.get("style"))
