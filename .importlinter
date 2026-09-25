@@ -1,0 +1,88 @@
+# Which code may import which: the import rules of docs/design/architecture.md (#282).
+#
+# Run by tests/unit/test_import_contracts.py, so the ordinary test run checks them on every host
+# and in CI. By hand: `.venv/bin/lint-imports` from the repository root, with src/ on the path
+# (`PYTHONPATH=src`).
+#
+# Where today's code breaks a rule, the import is listed under `ignore_imports` with the issue
+# that will remove it. A listed import that no longer exists fails the run, so each list can
+# only get shorter: remove an import and its line in the same commit. An entry marked
+# "permanent" is not a breach but a stated exception, with its reason.
+#
+# `allow_indirect_imports` limits a rule to direct imports, so one listed breach is not
+# reported again through every chain that passes through it.
+#
+# These contracts describe today's layout, a folder per layer. When the code moves into one
+# folder per module (architecture.md, decisions 3 and 4), they are rewritten for that layout,
+# and the rules between modules are added then.
+
+[importlinter]
+root_packages =
+    cogs
+    services
+    utils
+    models
+    db
+include_external_packages = True
+
+[importlinter:contract:nothing-below-the-cogs-imports-a-cog]
+name = Nothing below the cogs imports a cog
+type = forbidden
+source_modules =
+    services
+    utils
+    models
+    db
+forbidden_modules =
+    cogs
+allow_indirect_imports = True
+ignore_imports =
+    # #283: the in-memory state reaches for the seasons being set up and for pending reasons.
+    services.in_memory_state -> cogs.admin_review_cog
+    services.in_memory_state -> cogs.season_cog
+    # #285: the check-in rules live in the cog.
+    services.rsvp_service -> cogs.attendance_cog
+    # #286: signup's forced close lives in the module cog, and its views in its cogs.
+    services.season_end_service -> cogs.module_cog
+    services.season_lifecycle_service -> cogs.module_cog
+    services.wizard_service -> cogs.admin_review_cog
+    services.wizard_service -> cogs.signup_cog
+
+[importlinter:contract:models-use-no-discord-and-no-database]
+name = Models use no Discord and no database
+type = forbidden
+source_modules =
+    models
+forbidden_modules =
+    discord
+    aiosqlite
+    sqlite3
+    db
+    services
+    cogs
+
+[importlinter:contract:the-database-code-imports-nothing-else-of-the-bots]
+name = The database code imports nothing else of the bot's
+type = forbidden
+source_modules =
+    db
+forbidden_modules =
+    cogs
+    services
+    utils
+    models
+
+[importlinter:contract:utilities-use-no-services]
+name = Utilities use no services
+type = forbidden
+source_modules =
+    utils
+forbidden_modules =
+    services
+allow_indirect_imports = True
+ignore_imports =
+    # Permanent: the bot's type names every service it carries, for the type checker only
+    # (under TYPE_CHECKING). Services stay typed attributes on the bot (decision 1).
+    utils.league_bot -> services.*
+    # T3: the log writer queues a failed line on the retry queue itself.
+    utils.output_router -> services.retry_service
