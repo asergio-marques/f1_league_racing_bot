@@ -621,3 +621,91 @@ def test_every_job_says_what_happens_if_it_is_missed():
     )
 
 
+# ── 8. No private name crosses a module ─────────────────────────────────────────────────────
+
+
+@cache
+def _files_by_module_name() -> dict[str, str]:
+    """``"services.retry_service"`` to ``"services/retry_service.py"``, for every file in `src/`."""
+    names: dict[str, str] = {}
+    for path, _tree in _sources():
+        dotted = path[: -len(".py")].replace("/", ".")
+        names[dotted.removesuffix(".__init__")] = path
+    return names
+
+
+def _is_private(name: str) -> bool:
+    return name.startswith("_") and not name.startswith("__")
+
+
+def _private_names_across_modules() -> Counter[tuple[str, str]]:
+    files = _files_by_module_name()
+    found: Counter[tuple[str, str]] = Counter()
+    for path, tree in _sources():
+        here = classify(f"src/{path}")
+        aliases: dict[str, str] = {}
+        uses: list[tuple[str, str]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.asname and alias.name in files:
+                        aliases[alias.asname] = alias.name
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                for alias in node.names:
+                    as_module = f"{node.module}.{alias.name}"
+                    if as_module in files:
+                        aliases[alias.asname or alias.name] = as_module
+                    elif _is_private(alias.name) and node.module in files:
+                        uses.append((node.module, alias.name))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Attribute) and _is_private(node.attr)
+                    and isinstance(node.value, ast.Name) and node.value.id in aliases):
+                uses.append((aliases[node.value.id], node.attr))
+        for module, name in uses:
+            if classify(f"src/{files[module]}") != here:
+                found[(path, f"{module}.{name}")] += 1
+    return found
+
+
+KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
+    ("bot.py", "services.penalty_wizard._render_appeals_prompt_content"): (1, PASS["results"]),
+    ("bot.py", "services.result_submission_service._build_penalty_review_state"): (1, PASS["results"]),
+    ("bot.py", "services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
+    ("cogs/season_cog.py", "services.result_submission_service._ConfigSelectView"): (1, PASS["results"]),
+    ("cogs/season_cog.py", "services.result_submission_service._build_division_validation_data"): (1, PASS["results"]),
+    ("cogs/season_cog.py", "services.result_submission_service._close_amend_channel_record"): (2, PASS["results"]),
+    ("cogs/test_mode_cog.py", "services.rsvp_service._rebuild_embed_for_round"): (1, PASS["attendance"]),
+    ("services/attendance_service.py", "services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("services/attendance_service.py", "services.image_results_post._nationalities"): (1, PASS["image"]),
+    ("services/attendance_service.py", "services.image_results_post._nationality_collected"): (1, PASS["image"]),
+    ("services/attendance_service.py", "services.results_post_service._bot_member"): (1, PASS["results"]),
+    ("services/attendance_service.py", "services.results_post_service._channel_fault"): (1, PASS["results"]),
+    ("services/image_results_post.py", "services.results_post_service._delete_posting"): (1, PASS["results"]),
+    ("services/image_results_post.py", "services.results_post_service._parse_ids"): (1, PASS["results"]),
+    ("services/image_standings_post.py", "services.results_post_service._delete_posting"): (1, PASS["results"]),
+    ("services/image_standings_post.py", "services.results_post_service._get_standings_message_id"): (1, PASS["results"]),
+    ("services/image_standings_post.py", "services.results_post_service._get_standings_message_ids"): (1, PASS["results"]),
+    ("services/image_standings_post.py", "services.results_post_service._load_driver_rows"): (1, PASS["results"]),
+    ("services/image_standings_post.py", "services.results_post_service._set_standings_message_id"): (1, PASS["results"]),
+    ("services/in_memory_state.py", "cogs.admin_review_cog._PENDING_REASONS"): (1, PASS["signup"]),
+    ("services/result_submission_service.py", "services.attendance_service._recalculate_forward"): (1, PASS["attendance"]),
+    ("services/results_post_service.py", "services.image_results_post._driver_names"): (2, PASS["image"]),
+    ("services/season_classification_service.py", "services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("services/season_classification_service.py", "services.results_post_service._get_show_reserves"): (2, PASS["results"]),
+    ("services/verdict_announcement_service.py", "services.image_results_post._driver_names"): (1, PASS["image"]),
+}
+
+
+def test_no_private_name_crosses_a_module():
+    """A name starting with an underscore is used only inside its own module (architecture.md,
+    "How modules and core fit together"; PEP 8). A module is what `classify()` in
+    `tools/coverage_by_module.py` says it is. Here a breach is keyed by the file using the name
+    and the name it uses, and the issue is the pass of the module that owns the name: it either
+    makes the name public or moves the code that needs it."""
+    _check(
+        "no private name crosses a module",
+        _private_names_across_modules(),
+        KNOWN_PRIVATE_NAMES_ACROSS_MODULES,
+    )
+
+
