@@ -89,6 +89,7 @@ def test_known_files_are_classified(path, expected):
         ("src/models/driver_profile.py", "core"),
         ("src/utils/roster_import.py", "core"),
         ("src/utils/league_bot.py", "core"),
+        ("src/services/placement_service.py", "core"),
         # The signup review panel, the points amendment, and fetching a portrait.
         ("src/cogs/admin_review_cog.py", "signup"),
         ("src/models/amendment_state.py", "results"),

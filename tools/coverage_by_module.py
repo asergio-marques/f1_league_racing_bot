@@ -71,14 +71,15 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
     ("attendance", ("attendance", "rsvp")),
     ("stewarding", ("steward_", "steward_cog")),
     ("results", (
-        "results_", "result_submission", "placement_service", "points_config",
+        "results_", "result_submission", "points_config",
         "points_ordering", "penalty", "verdict", "standings_service",
     )),
     ("signup", (
         "signup", "availability", "wizard_service",
     )),
     ("core", (
-        "bot.py", "/db/", "driver_", "team_", "roster_import", "module_service", "season_service", "season_lifecycle_service",
+        "bot.py", "/db/", "driver_", "team_", "roster_import", "module_service", "season_service",
+        "season_lifecycle_service",
         "channel_registry", "hub_service",
         "config_service", "output_router", "scheduler_service",
         "backup_service", "retry_service", "init_cog", "bot_cog", "admin_review", "amendment",
@@ -99,13 +100,15 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
 
 #: Files whose names point at the wrong module, placed by their full path before any pattern
 #: is tried (#282). Core owns the driver, the team and the test roster, and signup owns only the
-#: signing up (CLAUDE.md); the signup review panel is signup's; the mid-season points amendment
-#: is results'; fetching a driver's portrait is image's. A full path cannot catch a later file
+#: signing up (CLAUDE.md); placing drivers and posting the lineup are core's (the core
+#: specification's "Placement into a division and team"); the signup review panel is signup's;
+#: the mid-season points amendment is results'; fetching a driver's portrait is image's. A full path cannot catch a later file
 #: whose name merely contains it: `src/services/team_service.py` is not in
 #: `src/services/steward_team_service.py`.
 OWNED_BY_PATH: dict[str, str] = {
     "src/cogs/admin_review_cog.py": "signup",
     "src/models/amendment_state.py": "results",
+    "src/services/placement_service.py": "core",
     "src/services/driver_portrait_service.py": "image",
     "src/services/season_points_service.py": "results",
     "src/utils/league_bot.py": "core",

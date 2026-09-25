@@ -821,7 +821,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("services/image_standings_post.py", "_post_one"): (1, PASS["image"]),
     ("services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
     ("services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, PASS["results"]),
+    ("services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, HANDLERS),
     ("services/result_submission_service.py", "_post_appeals_prompt"): (1, PASS["results"]),
     ("services/result_submission_service.py", "_resubmit_collection_task"): (14, PASS["results"]),
     ("services/result_submission_service.py", "_resubmit_collection_task._cancelled"): (1, PASS["results"]),
