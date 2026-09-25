@@ -188,15 +188,18 @@ deliberation close that fell in a six-hour outage.
 concurrently, which is not "in the order it would have happened" [STW-RST-001]. So core's start-up
 sweep, which runs before the scheduler starts, hands each of this module's events that came due, in
 ascending order of its moment, to this module's handler for its kind (architecture.md, "Timed work
-and restarts"). The handler holds this module's logic: it reads the module's own rows, applies the
-downtime extension, acts on what is still due and re-arms the rest, containing each failure so that
-a start-up cannot be taken down by one unreadable row. A cycle close waiting for a repaired channel
-is the change queue's (§4).
+and restarts"). The handler holds this module's logic. Handed an event, by the sweep or by the
+scheduler, it first applies any downtime not yet applied, then acts on the event if its row still
+says it is due, and otherwise re-arms it at its moved moment. So a window that merely contained the
+outage, with no boundary falling inside it, moves when its own end falls due. A cycle close waiting
+for a repaired channel is the change queue's (§4).
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
 gateway cut with the process alive is the other half of [STW-RST-002] and is recorded by
-`on_disconnect`/`on_resumed` into the same place, so the handlers have one thing to read.
+`on_disconnect`/`on_resumed` into the same place, so the handlers have one thing to read. Each of
+these writes is a change on the queue like any other (architecture.md, "How a change is carried
+out").
 
 *Rejected:* deriving the gap from the jobs that missed their fire time. It only sees boundaries
 that fell inside the gap, and the case the rule is mostly about is a window that merely *contained*
@@ -430,11 +433,12 @@ module-level job callable survives its service or callback being absent, as
 `test_scheduler_job_callables.py` does. The two halves are tested apart because that is the only
 way to test either without a clock that runs.
 
-**This module's start-up handlers are tested as `test_bot_rsvp_recovery.py` tests its own
-recovery.** Build a database with an open cycle whose boundary has passed and a `last_seen_at` an
-hour ago, hand the handlers what the sweep would, against a stubbed guild, and assert on the rows
-and on what was posted. That single test shape covers [STW-RST-001] and [STW-RST-002].
-[STW-RST-004] is the change queue's, and is tested with a close left waiting on the queue.
+**This module's handlers are tested as `test_bot_rsvp_recovery.py` tests its own recovery.** Build
+a database with an open cycle and a `last_seen_at` an hour ago, hand the handlers events as the
+sweep would, against a stubbed guild, and assert on the rows and on what was posted. Two cases
+cover [STW-RST-001] and [STW-RST-002]: a boundary that passed during the outage, and a window that
+merely spanned it, moved when its end falls due. [STW-RST-004] is the change queue's, and is tested
+with a close left waiting on the queue.
 
 **Discord is a `MagicMock`, and a test that builds a view is `async def`.** apt's 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it, so a sync test
