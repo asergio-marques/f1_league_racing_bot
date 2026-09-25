@@ -743,3 +743,104 @@ def test_only_the_router_writes_the_log_channel():
     assert sorted(_files_naming_the_log_channel()) == sorted(LOG_CHANNEL_NAMED_BY)
 
 
+# ── 10. Posts go through the output handlers ────────────────────────────────────────────────
+
+#: Where a post is made today, the router's own excepted. See the module docstring of
+#: `utils/output_router.py`.
+POSTING_ALLOWED = frozenset({"utils/output_router.py"})
+#: A `.send` that is not a post, and why.
+NOT_A_POST = {
+    ("bot.py", "main.guild_sync"): "the reply to the owner's own `!sync` command",
+}
+
+
+def _is_a_follow_up(func: ast.Attribute) -> bool:
+    """Whether a `.send` is a follow-up to an interaction, which answers a member and is no post."""
+    receiver = func.value
+    return (isinstance(receiver, ast.Attribute) and receiver.attr == "followup") or (
+        isinstance(receiver, ast.Name) and receiver.id == "followup"
+    )
+
+
+def _direct_posts() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if (path in POSTING_ALLOWED or (path, function) in NOT_A_POST
+                or not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr == "send" and not _is_a_follow_up(node.func):
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
+    ("bot.py", "_abandon_interrupted_resubmission"): (1, PASS["core"]),
+    ("bot.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
+    ("bot.py", "_recover_orphaned_submission_channels"): (2, PASS["core"]),
+    ("cogs/bot_cog.py", "_open_progress"): (1, PASS["core"]),
+    ("cogs/module_cog.py", "execute_forced_close"): (1, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog._review_mid_season_placements"): (7, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog._send_channel_faults"): (1, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog.on_message"): (1, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog.season_config_review"): (3, PASS["core"]),
+    ("cogs/season_cog.py", "SeasonCog.season_review"): (18, PASS["core"]),
+    ("cogs/season_cog.py", "_ApproveView.on_timeout"): (1, PASS["core"]),
+    ("cogs/season_cog.py", "_confirm_privately"): (1, PASS["core"]),
+    ("cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
+    ("services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
+    ("services/calendar_post_service.py", "replace_calendar_message"): (2, PASS["core"]),
+    ("services/cancellation_notice_service.py", "_send"): (1, PASS["core"]),
+    ("services/forecast_cleanup_service.py", "post_phase_message"): (1, PASS["weather"]),
+    ("services/hub_service.py", "refresh_panel"): (1, PASS["core"]),
+    ("services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
+    ("services/image_results_post.py", "try_post"): (1, PASS["image"]),
+    ("services/image_standings_post.py", "_post_one"): (1, PASS["image"]),
+    ("services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
+    ("services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
+    ("services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, PASS["results"]),
+    ("services/result_submission_service.py", "_post_appeals_prompt"): (1, PASS["results"]),
+    ("services/result_submission_service.py", "_resubmit_collection_task"): (14, PASS["results"]),
+    ("services/result_submission_service.py", "_resubmit_collection_task._cancelled"): (1, PASS["results"]),
+    ("services/result_submission_service.py", "enter_penalty_state"): (1, PASS["results"]),
+    ("services/result_submission_service.py", "enter_resubmit_flow"): (1, PASS["results"]),
+    ("services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
+    ("services/result_submission_service.py", "run_result_submission_job"): (13, PASS["results"]),
+    ("services/results_post_service.py", "_send_chunked"): (1, PASS["results"]),
+    ("services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
+    ("services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
+    ("services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),
+    ("services/rsvp_service.py", "run_rsvp_last_notice"): (1, PASS["attendance"]),
+    ("services/rsvp_service.py", "run_rsvp_notice"): (2, PASS["attendance"]),
+    ("services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
+    ("services/wizard_service.py", "WizardService._advance_wizard_in_channel"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._answer_stands"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._commit_correction"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._correction_timeout_callback"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_availability"): (3, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_driver_type"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_lap_time"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_nationality"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_notes"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_platform"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_platform_id"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._handle_preferred_teams"): (2, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._trigger_channel_hold"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService.commit_wizard"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService.request_changes"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService.select_correction_parameter"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService.start_wizard"): (1, PASS["signup"]),
+    ("utils/batch_notice.py", "batch_notice"): (1, PASS["core"]),
+}
+
+
+def test_posts_go_through_the_output_handlers():
+    """A post to a channel goes through the handler for its kind: log line, standing post, notice
+    or bot-owned channel (architecture.md, "Posting to Discord"). The handlers are still to be
+    built, so today every `.send` outside the router is listed, under the pass of the module that
+    makes it."""
+    _check("posts go through the output handlers", _direct_posts(), KNOWN_DIRECT_POSTS)
