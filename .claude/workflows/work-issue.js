@@ -521,12 +521,15 @@ const builderPrompt = k => {
     evidence: f.evidence,
     note: f.ownerRuled ? 'the owner has ruled on your dispute: follow the decisions below' : f.status === 'disputed' ? 'your dispute was not judged: fix it or dispute it again' : '',
   }))
+  // A branch may carry this issue's work before the stage's first round: from an earlier run
+  // of the stage, or, after the owner refused the result at acceptance, from a whole earlier pass.
   const start = first && !previous
-    ? 'Start the stage from the plan.'
+    ? `Start the stage from the plan. Read git -C ${worktree} log ${base}..HEAD first: where the branch already carries work for this issue, the plan is an amendment to it, and you build on what is there.`
     : `Earlier rounds have already worked on this branch: read git -C ${worktree} log ${base}..HEAD first. Fix each open material finding below in a commit of its own, or dispute it with evidence where you judge it wrong; fix the failures below; and finish whatever this stage still owes. Report every finding id you fixed or disputed.`
-  const answered = first && previous && previous.status === 'question'
-    ? ' The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.'
-    : ''
+  const answered = !(first && previous) ? ''
+    : previous.status === 'question' ? ' The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.'
+      : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for the changes in the decisions below. Make them: they bind you, and this stage owes them until they are done.'
+        : ''
   return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}.
 
 ${WHERE}
