@@ -527,7 +527,7 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/font_metrics.py", "_families_of"): (4, TRACEBACKS),
     ("image/utils/font_metrics.py", "measure"): (1, TRACEBACKS),
     ("core/utils/interaction_errors.py", "report_failure"): (2, TRACEBACKS),
-    ("core/utils/output_router.py", "OutputRouter._enqueue_if_configured"): (1, TRACEBACKS),
+    ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, TRACEBACKS),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, TRACEBACKS),
 }
 
@@ -750,7 +750,7 @@ def test_no_private_name_crosses_a_module():
 
 #: Every file that may name the log channel, and why. Only the first posts to it.
 LOG_CHANNEL_NAMED_BY = {
-    "core/utils/output_router.py": "the one writer of the log channel",
+    "core/services/output_router.py": "the one writer of the log channel",
     "core/models/server_config.py": "the setting itself",
     "core/services/config_service.py": "reads and stores the setting",
     "core/cogs/bot_cog.py": "the commands that set it",
@@ -783,8 +783,8 @@ def test_only_the_router_writes_the_log_channel():
 # ── 10. Posts go through the output handlers ────────────────────────────────────────────────
 
 #: Where a post is made today, the router's own excepted. See the module docstring of
-#: `core/utils/output_router.py`.
-POSTING_ALLOWED = frozenset({"core/utils/output_router.py"})
+#: `core/services/output_router.py`.
+POSTING_ALLOWED = frozenset({"core/services/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
     ("__main__.py", "main.guild_sync"): "the reply to the owner's own `!sync` command",

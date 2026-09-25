@@ -18,7 +18,7 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView, league_guild
-from leaguebot.core.utils.output_router import _chunk_message
+from leaguebot.core.services.output_router import _chunk_message
 
 log = logging.getLogger(__name__)
 

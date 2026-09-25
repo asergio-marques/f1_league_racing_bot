@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
-    from leaguebot.core.utils.output_router import OutputRouter
+    from leaguebot.core.services.output_router import OutputRouter
 
 
 class LeagueBot(commands.Bot):

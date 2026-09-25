@@ -83,8 +83,6 @@ ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
-    # #441: the log writer queues a failed line on the retry queue itself.
-    leaguebot.core.utils.output_router -> leaguebot.core.services.retry_service
 
 [importlinter:contract:core-uses-no-module]
 name = Core uses no module

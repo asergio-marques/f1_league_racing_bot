@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
 
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.utils.output_router import OutputRouter
+    from leaguebot.core.services.output_router import OutputRouter
 
 log = logging.getLogger(__name__)
 

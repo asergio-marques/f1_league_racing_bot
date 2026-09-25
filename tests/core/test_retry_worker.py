@@ -24,7 +24,7 @@ from leaguebot.core.services.retry_service import (
     get_all_pending,
     mark_failed,
 )
-from leaguebot.core.utils.output_router import OutputRouter
+from leaguebot.core.services.output_router import OutputRouter
 
 
 # ---------------------------------------------------------------------------

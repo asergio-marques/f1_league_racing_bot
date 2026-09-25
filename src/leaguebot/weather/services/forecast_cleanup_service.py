@@ -287,7 +287,7 @@ async def post_phase_message(
 
     if attachment is None:
         # The textual path, unchanged: the router chunks it and owns its own retry.
-        from leaguebot.core.utils.output_router import ForecastChannel
+        from leaguebot.core.services.output_router import ForecastChannel
 
         msg = await bot.output_router.post_forecast(
             ForecastChannel(channel_id), text, enqueue_on_failure=True

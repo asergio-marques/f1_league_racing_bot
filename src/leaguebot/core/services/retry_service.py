@@ -144,7 +144,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     The warning fires every cycle once the threshold is crossed.
     """
     # Import here to avoid circular import: retry_service ← output_router
-    from leaguebot.core.utils.output_router import _chunk_message
+    from leaguebot.core.services.output_router import _chunk_message
 
     db_path: str = bot.db_path
 

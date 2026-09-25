@@ -59,7 +59,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.league_server import CallbackButton, CallbackSelect, LeagueModal, LeagueView, guild_of, is_foreign_guild
-from leaguebot.core.utils.output_router import _chunk_message
+from leaguebot.core.services.output_router import _chunk_message
 from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
     ParsedRound,

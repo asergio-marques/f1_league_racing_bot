@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.utils.output_router import OutputRouter
+from leaguebot.core.services.output_router import OutputRouter
 
 
 def _channel(sent):
@@ -116,7 +116,7 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
 async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing():
     """Nothing to post to. It came to the same before — the router asked Discord for a channel
     with no id and logged the failure — less the request (#228)."""
-    from leaguebot.core.utils.output_router import ForecastChannel
+    from leaguebot.core.services.output_router import ForecastChannel
 
     bot = MagicMock()
     bot.fetch_channel = AsyncMock()

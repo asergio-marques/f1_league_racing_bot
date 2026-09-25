@@ -84,7 +84,7 @@ async def main() -> None:
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.core.services.amendment_service import AmendmentService
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.utils.output_router import OutputRouter
+    from leaguebot.core.services.output_router import OutputRouter
 
     # A staged restore is swapped in **here**, before a single service is constructed and
     # before the scheduler opens its job store. Every service captures its path and holds
@@ -142,7 +142,7 @@ async def main() -> None:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.attendance.services.attendance_service import AttendanceService
-    from leaguebot.core.utils.output_router import OutputRouter as _OutputRouter  # already imported above
+    from leaguebot.core.services.output_router import OutputRouter as _OutputRouter  # already imported above
 
     bot.module_service = ModuleService(DB_PATH)
     bot.signup_module_service = SignupModuleService(DB_PATH)

@@ -452,7 +452,7 @@ The code that makes a post still builds its own text, pictures and buttons, and 
 it is handed back. The handler does the sending: it applies who the post may mention, hands back the
 message id, deletes or edits a message when asked, and says whether a failure was Discord's.
 Retrying is the change queue's, except for log lines. The log line's handler is today's router,
-`core/utils/output_router.py`.
+`core/services/output_router.py`.
 
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.

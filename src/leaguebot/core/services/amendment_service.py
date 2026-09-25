@@ -396,7 +396,7 @@ class AmendmentService:
         )
         if _forecast_withdrawn:
             from leaguebot.weather.utils.message_builder import invalidation_message
-            from leaguebot.core.utils.output_router import ForecastChannel
+            from leaguebot.core.services.output_router import ForecastChannel
 
             amended_track = next(
                 (str(db_value) for f, _, db_value in applied if f == "track_name"),
