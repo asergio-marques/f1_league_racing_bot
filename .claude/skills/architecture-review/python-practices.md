@@ -178,7 +178,9 @@ Every practice names its primary source. Cite that source in a finding, not this
   rule,** never left to the scheduler's default misfire behaviour. **Settled here:** each module
   tells core's one start-up sweep which of its runs came due; the sweep only hands each, in the
   order they fell due and one at a time, to the handler its module provides for that kind of job,
-  and the handler decides what becomes of it (architecture.md, "Timed work and restarts").
+  and the handler decides what becomes of it. A job firing on time calls the same handler, the
+  modules' "bot is starting" steps run before any missed job, and members' changes wait until the
+  sweep has queued its own (architecture.md, "Timed work and restarts").
 - **Inject the clock.** Services take `now`. The house already does this, and CLAUDE.md
   requires tests to pin it. Datetimes are timezone-aware and UTC inside the bot
   (`datetime.now(UTC)`, 3.11 alias), and `zoneinfo` is used only for display. *Source:*
