@@ -1,8 +1,8 @@
 # Which code may import which: the import rules of docs/design/architecture.md (#282).
 #
-# Run by tests/unit/test_import_contracts.py, so the ordinary test run checks them on every host
-# and in CI. By hand: `.venv/bin/lint-imports` from the repository root, with src/ on the path
-# (`PYTHONPATH=src`).
+# Run by tests/repository/test_import_contracts.py, so the ordinary test run checks them on every
+# host and in CI. By hand: `.venv/bin/lint-imports` from the repository root, with the package
+# installed (`pip install -e .`).
 #
 # Where today's code breaks a rule, the import is listed under `ignore_imports` with the issue
 # that will remove it. A listed import that no longer exists fails the run, so each list can
@@ -12,78 +12,75 @@
 # `allow_indirect_imports` limits a rule to direct imports, so one listed breach is not
 # reported again through every chain that passes through it.
 #
-# These contracts describe today's layout, a folder per layer. When the code moves into one
-# folder per module (architecture.md, "How the code is laid out"), they are rewritten for that
-# layout, and the rules between modules are added then.
+# The code is one package with a folder for core and one for each module, and inside each a
+# folder per kind of code (architecture.md, "How the code is laid out"). A `*` stands for any
+# one of those folders, so `leaguebot.*.services` is every module's services and core's.
 
 [importlinter]
 root_packages =
-    cogs
-    services
-    utils
-    models
-    db
+    leaguebot
 include_external_packages = True
 
 [importlinter:contract:nothing-below-the-cogs-imports-a-cog]
 name = Nothing below the cogs imports a cog
 type = forbidden
 source_modules =
-    services
-    utils
-    models
-    db
+    leaguebot.*.services
+    leaguebot.*.utils
+    leaguebot.*.models
+    leaguebot.core.db
 forbidden_modules =
-    cogs
+    leaguebot.*.cogs
 allow_indirect_imports = True
 ignore_imports =
     # #283: the in-memory state reaches for the seasons being set up and for pending reasons
     # (the reasons are signup's to publish, #286).
-    services.in_memory_state -> cogs.admin_review_cog
-    services.in_memory_state -> cogs.season_cog
+    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
+    leaguebot.core.services.in_memory_state -> leaguebot.core.cogs.season_cog
     # #285: the check-in rules live in the cog.
-    services.rsvp_service -> cogs.attendance_cog
+    leaguebot.attendance.services.rsvp_service -> leaguebot.attendance.cogs.attendance_cog
     # #286: signup's forced close lives in the module cog, and its views in its cogs.
-    services.season_end_service -> cogs.module_cog
-    services.season_lifecycle_service -> cogs.module_cog
-    services.wizard_service -> cogs.admin_review_cog
-    services.wizard_service -> cogs.signup_cog
+    leaguebot.core.services.season_end_service -> leaguebot.core.cogs.module_cog
+    leaguebot.core.services.season_lifecycle_service -> leaguebot.core.cogs.module_cog
+    leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.admin_review_cog
+    leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.signup_cog
 
 [importlinter:contract:models-use-no-discord-and-no-database]
 name = Models use no Discord and no database
 type = forbidden
 source_modules =
-    models
+    leaguebot.*.models
 forbidden_modules =
     discord
     aiosqlite
     sqlite3
-    db
-    services
-    cogs
+    leaguebot.core.db
+    leaguebot.*.services
+    leaguebot.*.cogs
 
 [importlinter:contract:the-database-code-imports-nothing-else-of-the-bots]
 name = The database code imports nothing else of the bot's
 type = forbidden
 source_modules =
-    db
+    leaguebot.core.db
 forbidden_modules =
-    cogs
-    services
-    utils
-    models
+    leaguebot.*.cogs
+    leaguebot.*.services
+    leaguebot.*.utils
+    leaguebot.*.models
+    leaguebot.__main__
 
 [importlinter:contract:utilities-use-no-services]
 name = Utilities use no services
 type = forbidden
 source_modules =
-    utils
+    leaguebot.*.utils
 forbidden_modules =
-    services
+    leaguebot.*.services
 allow_indirect_imports = True
 ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
-    utils.league_bot -> services.*
+    leaguebot.core.utils.league_bot -> leaguebot.*.services.*
     # #441: the log writer queues a failed line on the retry queue itself.
-    utils.output_router -> services.retry_service
+    leaguebot.core.utils.output_router -> leaguebot.core.services.retry_service

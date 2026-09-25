@@ -11,7 +11,7 @@ is not listed, and when a listed breach has gone but its line is still here. So 
 only get shorter. Fix a breach and delete (or lower) its line in the same commit.
 
 A breach is counted per function, as ``(file, function): (how many, issue)``. The file is
-relative to `src/`, and the function is its dotted name inside the file (``Class.method``,
+relative to the package, `src/leaguebot/`, and the function is its dotted name inside the file (``Class.method``,
 ``outer.inner``), or ``<module>`` for code at the top level of the file.
 
 The source is read, never imported, so a rule holds for code that only runs on a path no test
@@ -28,7 +28,8 @@ from functools import cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src"
+#: The bot, as the one package it is installed as (architecture.md, "How the code is laid out").
+PACKAGE = ROOT / "src" / "leaguebot"
 
 sys.path.insert(0, str(ROOT / "tools"))
 from coverage_by_module import classify  # noqa: E402
@@ -57,11 +58,18 @@ HANDLERS = "#441"
 
 @cache
 def _sources() -> tuple[tuple[str, ast.Module], ...]:
-    """Every file under `src/`, as ``(path relative to src, parsed tree)``, in sorted order."""
+    """Every file of the package, as ``(path relative to it, parsed tree)``, in sorted order."""
     return tuple(
-        (path.relative_to(SRC).as_posix(), ast.parse(path.read_text(encoding="utf-8")))
-        for path in sorted(SRC.rglob("*.py"))
+        (path.relative_to(PACKAGE).as_posix(), ast.parse(path.read_text(encoding="utf-8")))
+        for path in sorted(PACKAGE.rglob("*.py"))
     )
+
+
+def _kind(path: str) -> str:
+    """The kind of code a file of the package holds: the folder inside its module's folder
+    (``cogs``, ``services``, ``utils``, ``models`` or ``db``), or ``""`` for the entry point."""
+    parts = path.split("/")
+    return parts[1] if len(parts) > 2 else ""
 
 
 def _owners(tree: ast.Module) -> dict[ast.AST, str]:
@@ -82,7 +90,7 @@ def _owners(tree: ast.Module) -> dict[ast.AST, str]:
 
 @cache
 def _all_nodes() -> tuple[tuple[str, str, ast.AST], ...]:
-    """Every node in `src/`, as ``(file, function, node)``, walked once for all the rules."""
+    """Every node in the package, as ``(file, function, node)``, walked once for all the rules."""
     return tuple(
         (path, owners.get(node, "<module>"), node)
         for path, tree in _sources()
@@ -92,7 +100,7 @@ def _all_nodes() -> tuple[tuple[str, str, ast.AST], ...]:
 
 
 def _nodes() -> Iterator[tuple[str, str, ast.AST]]:
-    """Every node in `src/`, as ``(file, function, node)``."""
+    """Every node in the package, as ``(file, function, node)``."""
     yield from _all_nodes()
 
 
@@ -149,7 +157,7 @@ def _opens_a_connection(call: ast.Call) -> bool:
 def _database_code_outside_services() -> Counter[tuple[str, str]]:
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in _nodes():
-        if path.startswith(("services/", "db/")) or not isinstance(node, ast.Call):
+        if _kind(path) in ("services", "db") or not isinstance(node, ast.Call):
             continue
         if _call_name(node) in SQL_CALLS or _opens_a_connection(node):
             found[(path, function)] += 1
@@ -646,10 +654,11 @@ def test_every_job_says_what_happens_if_it_is_missed():
 
 @cache
 def _files_by_module_name() -> dict[str, str]:
-    """``"leaguebot.core.services.retry_service"`` to ``"core/services/retry_service.py"``, for every file in `src/`."""
+    """``"leaguebot.core.services.retry_service"`` to ``"core/services/retry_service.py"``, for
+    every file of the package."""
     names: dict[str, str] = {}
     for path, _tree in _sources():
-        dotted = path[: -len(".py")].replace("/", ".")
+        dotted = "leaguebot." + path[: -len(".py")].replace("/", ".")
         names[dotted.removesuffix(".__init__")] = path
     return names
 
@@ -662,7 +671,7 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
     files = _files_by_module_name()
     found: Counter[tuple[str, str]] = Counter()
     for path, tree in _sources():
-        here = classify(f"src/{path}")
+        here = classify(f"src/leaguebot/{path}")
         aliases: dict[str, str] = {}
         uses: list[tuple[str, str]] = []
         for node in ast.walk(tree):
@@ -682,7 +691,7 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
                     and isinstance(node.value, ast.Name) and node.value.id in aliases):
                 uses.append((aliases[node.value.id], node.attr))
         for module, name in uses:
-            if classify(f"src/{files[module]}") != here:
+            if classify(f"src/leaguebot/{files[module]}") != here:
                 found[(path, f"{module}.{name}")] += 1
     return found
 

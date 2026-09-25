@@ -10,16 +10,17 @@ Three properties carry that purpose and are pinned here:
   by construction, because a test file's lines are hit by running it. Counting it inflates
   every module and the total alike — the subject of issue #208. A change that let `tests/`
   back in would restore exactly the blindness the tool was written to remove.
-- **An unclassified file is reported, never absorbed.** Anything matching no rule lands in
-  `UNASSIGNED` and is printed. Were it defaulted into `core` instead, a new service would
-  silently drag that module's figure about and no one would know the mapping had gone stale.
+- **A file's module is its folder, and a file outside the package is reported, never
+  absorbed.** Anything under `src/` outside `src/leaguebot/` lands in `UNASSIGNED` and is
+  printed. Were it defaulted into `core` instead, it would silently drag that module's figure
+  about.
 - **It gates, at a floor given on the command line** (#208, reversing "reported, never
   gated"). `--fail-under N` exits non-zero naming every bucket below *N*, after printing the
   table — the breakdown is the useful part of a failing build. The default of 0 gates
   nothing, so running the tool by hand is still a report.
 
-The real `RULES` are exercised rather than a fixture mapping, so a rule deleted or a module
-renamed fails here rather than quietly reclassifying half the codebase.
+The real source tree is walked as well as sample paths, so every file of the bot is shown to
+land in a module that exists.
 """
 from __future__ import annotations
 
@@ -104,39 +105,34 @@ def test_files_named_for_the_wrong_module_are_placed_with_their_owner(path, expe
     assert cbm.classify(path) == expected
 
 
-def test_every_file_placed_by_its_path_exists():
-    """An entry naming a file that has gone would place nothing, and only look as if it did."""
-    missing = sorted(path for path in cbm.OWNED_BY_PATH if not (ROOT / path).is_file())
-    assert missing == []
+def test_a_file_at_the_top_of_the_package_counts_with_core():
+    """The entry point sits above core and the modules (architecture.md), and is measured with
+    core, as `bot.py` was before the package."""
+    assert cbm.classify("src/leaguebot/__main__.py") == "core"
+    assert cbm.classify("src/leaguebot/__init__.py") == "core"
 
 
-def test_a_file_placed_by_its_path_does_not_claim_a_longer_name_holding_it():
-    """`team_service.py` is placed in core by its full path, which a stewarding file whose name
-    merely contains it does not match."""
-    assert cbm.classify("src/services/steward_team_service.py") == "stewarding"
-    assert cbm.classify(r"C:\bot\src\services\team_service.py") == "core"
+def test_a_new_module_is_its_own_bucket():
+    """A module's folder is its bucket, so a module built later needs no entry here."""
+    assert cbm.classify("src/leaguebot/steward/services/steward_team_service.py") == "steward"
 
 
-def test_an_unknown_file_is_unassigned_not_absorbed_into_core():
+def test_a_file_outside_the_package_is_unassigned_not_absorbed_into_core():
     """A mapping that silently defaults is a mapping that rots. See the module docstring."""
     assert cbm.classify("src/services/entirely_new_thing.py") == cbm.UNASSIGNED
+    assert cbm.classify("src/entirely_new_thing.py") == cbm.UNASSIGNED
 
 
-def test_the_first_matching_rule_wins():
-    """`RULES` is ordered, and the tool documents that the first match decides.
-
-    `image_weather_service` contains both `image_` and `weather`; it is the image module's
-    rendering of a weather forecast, and `image` precedes `weather`'s patterns for it.
-    """
-    modules = [module for module, _ in cbm.RULES]
-    assert modules.index("image") < modules.index("attendance")
-    assert cbm.classify("src/leaguebot/image/services/image_weather_service.py") == "image"
+def test_an_absolute_path_classifies_the_same():
+    """A report can carry the checkout's absolute path rather than one relative to it."""
+    assert cbm.classify("/home/pi/bot/src/leaguebot/weather/services/phase1_service.py") == "weather"
 
 
 def test_windows_paths_classify_the_same():
     """The suite runs on `windows-latest`, which reports backslash-separated paths."""
-    assert cbm.classify(r"src\services\phase1_service.py") == "weather"
-    assert cbm.is_measured(r"src\services\phase1_service.py")
+    assert cbm.classify(r"src\leaguebot\weather\services\phase1_service.py") == "weather"
+    assert cbm.classify(r"C:\bot\src\leaguebot\core\services\team_service.py") == "core"
+    assert cbm.is_measured(r"src\leaguebot\weather\services\phase1_service.py")
 
 
 # ---------------------------------------------------------------------------
@@ -286,22 +282,18 @@ def test_asking_for_an_unknown_module_says_so_rather_than_raising():
 
 
 def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
-    """Its services are named `steward_*`, and `results` used to claim them.
-
-    `RULES` is ordered and the first match wins, so while the `results` bucket carried a
-    bare "steward" pattern the whole module's coverage was reported as the results module's
-    and hidden from the per-module floor — the failure issue #208 added that floor to make
-    visible.
-    """
+    """While the file-to-module list was ordered patterns, a bare "steward" pattern in the
+    `results` bucket once reported the whole stewarding module's coverage as the results
+    module's, and hid it from the per-module floor. By folder, the two cannot mix."""
     report = _report(
-        ("src/services/steward_licence_service.py", 10, 5),
+        ("src/leaguebot/steward/services/steward_licence_service.py", 10, 5),
         ("src/leaguebot/results/services/results_post_service.py", 10, 0),
     )
 
     buckets = cbm.group(report)
 
-    assert [f[0] for f in buckets["stewarding"]["files"]] == [
-        "src/services/steward_licence_service.py"
+    assert [f[0] for f in buckets["steward"]["files"]] == [
+        "src/leaguebot/steward/services/steward_licence_service.py"
     ]
     assert [f[0] for f in buckets["results"]["files"]] == [
         "src/leaguebot/results/services/results_post_service.py"
@@ -339,7 +331,7 @@ def test_main_reports_unassigned_files_without_being_asked(tmp_path, capsys):
     out = capsys.readouterr().out
     assert cbm.UNASSIGNED in out
     assert "brand_new_service" in out
-    assert "RULES" in out
+    assert cbm.PACKAGE_PREFIX in out
 
 
 def test_main_can_break_one_module_down(tmp_path, capsys):
@@ -376,17 +368,15 @@ def test_main_survives_a_report_with_no_production_code(tmp_path, capsys):
 # ---------------------------------------------------------------------------
 
 
-def test_every_module_of_the_bot_has_a_rule():
-    """The five modules plus core, as `core_specification.md` names them."""
-    modules = {module for module, _ in cbm.RULES}
+def test_every_file_of_the_bot_is_in_a_module_that_exists():
+    """The five modules plus core, as `core_specification.md` names them, and nothing else:
+    a file in a folder of the package that is none of them has been put in the wrong place."""
+    modules = {
+        cbm.classify(path.relative_to(ROOT).as_posix())
+        for path in sorted((ROOT / "src").rglob("*.py"))
+    }
 
-    assert {"weather", "image", "attendance", "results", "signup", "core"} <= modules
-
-
-def test_no_rule_is_empty():
-    """An empty pattern tuple would match nothing and silently retire a module."""
-    for module, patterns in cbm.RULES:
-        assert patterns, f"{module} has no patterns"
+    assert modules == {"weather", "image", "attendance", "results", "signup", "core"}
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +385,7 @@ def test_no_rule_is_empty():
 
 
 def _mixed_report() -> dict:
-    """One healthy module and one thin one, by the real rules."""
+    """One healthy module and one thin one, by their folders."""
     return _report(
         ("src/leaguebot/weather/services/phase1_service.py", 100, 5),      # weather, 95%
         ("src/leaguebot/attendance/services/attendance_service.py", 100, 60),  # attendance, 40%
