@@ -130,7 +130,11 @@ async def run_migrations(db_path: str) -> None:
     go-live on it is never edited again: every schema change is a new migration numbered after
     it, carrying a test of its own, and no applied file is ever changed. At go-live, also
     consider recording a checksum of each applied file and refusing one that has changed
-    since, which would enforce that rule.
+    since, which would enforce that rule. And make the check that every table has an owning
+    module (`_declared_tables` in `tests/repository/test_architecture_rules.py`) read every
+    migration rather than the baseline alone, applying each file's drops and renames, since
+    rebuilding a table creates a temporary one; until then a table a later migration adds is
+    under no owner, and its writes go unchecked.
 
     **A database from before the baseline is refused, not migrated.** It records versions
     such as ``001_initial.sql`` that no longer exist, and the baseline applied over its tables
