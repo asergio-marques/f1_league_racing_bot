@@ -519,3 +519,30 @@ def test_a_catch_all_handler_keeps_the_error_details():
     )
 
 
+# ── 5. No background task is started and then dropped ──────────────────────────────────────
+
+
+def _dropped_tasks() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and _call_name(node.value) in ("create_task", "ensure_future")):
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
+    ("bot.py", "_recover_orphaned_submission_channels"): (1, BACKGROUND_FAILURES),
+    ("cogs/test_mode_cog.py", "TestModeCog.advance"): (1, BACKGROUND_FAILURES),
+    ("services/result_submission_service.py", "enter_resubmit_flow"): (1, BACKGROUND_FAILURES),
+    ("services/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
+    ("services/wizard_service.py", "WizardService.recover_wizards"): (1, BACKGROUND_FAILURES),
+}
+
+
+def test_no_background_task_is_started_and_dropped():
+    """A task nobody keeps hold of can vanish part-way, and its failure goes unseen, because
+    Python holds only a weak reference to it (architecture.md, "Timed work and restarts")."""
+    _check("no background task is dropped", _dropped_tasks(), KNOWN_DROPPED_TASKS)
+
+
