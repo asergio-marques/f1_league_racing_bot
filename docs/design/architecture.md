@@ -233,3 +233,64 @@ constitution's Principle X and by each module's specification, not here.
 **A module's private code stays inside it.** A name starting with an underscore is used only
 inside its own module (PEP 8's convention). What a module offers the others is public, and its
 docstring says what it promises.
+
+---
+
+## The database
+
+**All database code is in services**, or in core's database code for connections and
+migrations. A cog never opens a connection, and neither does the start-up code.
+
+**One service operation is one save.** It opens its connection, makes its changes, and either
+commits them all or none. It does not hand its connection to a caller. When one module has to
+change another module's table as part of the same save, it calls that module's service and
+passes its own connection, so the change still happens all at once.
+
+**A settings change and its audit record are saved together** (decided with the plan for
+#282). The core specification's "The record of what changed" asks for both. Saved separately,
+a failure between the two leaves a change with no record of who made it. The exception is a
+record of how an operation turned out, where the operation is deliberately not all-or-nothing.
+Turning off the results module is one: it keeps going when the erasure of the season's
+messages fails part-way (the docstring of `_apply_results_disable`, decided 2026-09-21). Its
+record can only be written once the outcome is known.
+
+**While a save is open, the bot waits on nothing but that save's own connection** (#155). Not
+on Discord, and not on a second connection. SQLite lets one writer in at a time, so a post made
+in the middle of a save holds up every other save in the bot for as long as Discord takes to
+answer. A second connection that tried to write would be kept waiting by the first until it gave up
+and failed. Save first,
+then post, then record what was posted in a save of its own.
+
+**Each table is written by one module** (decision 14). Every statement that changes a table
+lives in the module that owns it, and other modules ask that module to make the change. Each
+module's design file lists its tables. Where a module keeps its own columns on a core table,
+as weather and attendance do on rounds and sessions, the design file names those columns as an
+exception rather than moving them.
+
+**Where a rule goes: the schema or a service.**
+
+- A rule about identity or reference (there is one of these per that, this belongs to that)
+  goes in the schema, as a key.
+- A fixed list of values lives in its Python enum. It is repeated as a CHECK in the schema
+  only where the list is not expected to grow, and a test ties the two together, as
+  `tests/unit/test_schema_rules.py` already does for others.
+- A trigger only keeps tables of one module in step.
+- Everything else is service code.
+
+Once the bot is live, a CHECK or a key can only be changed by rebuilding its table, which is
+why the rule is settled now, before stewarding adds its tables.
+
+**Deletes are proven by a test** (decision 13). Deleting a season, division, round or driver
+removes what hangs off it through lists written by hand. When a module added a table and a list
+was not updated, the delete failed or left rows behind: #151, #268, #148 and #235. A test fills
+a database with one row in every table, fails when a new table is not filled, and runs every
+kind of delete against it. After that, a link may be changed to delete automatically, one at a
+time, only where the linked rows plainly belong to what is being deleted. Never where the link
+is there to stop a delete, as a placed driver's seat stops a team being removed from under them
+(#148). A module's design file names any link of its own that is there for that reason.
+
+**A database update is applied whole, or not at all.** Each migration runs in one transaction
+with foreign keys switched off, and the keys are checked before it commits. This is SQLite's
+own procedure for changing a table ("Making Other Kinds Of Table Schema Changes", in its ALTER
+TABLE documentation). With the keys switched on, rebuilding a table would silently delete every
+row that points at it. The rules for the schema baseline itself are CLAUDE.md's.
