@@ -15,8 +15,12 @@ every figure and tells you nothing. `tools/` is excluded for the same reason. Si
 gate reads the same scope, from `.coveragerc`; the filter here is now belt and braces rather
 than the only thing keeping the suite out of the figure.
 
-**The mapping is data, not cleverness.** `RULES` is an ordered list of (module, patterns);
-the first pattern matching a path wins. Anything matching nothing lands in `UNASSIGNED` and
+**The mapping is data, not cleverness.** `OWNED_BY_PATH` places a few files by their full
+path first, where a file's name points at the wrong module. Then `RULES`, an ordered list of
+(module, patterns), places the rest: the first pattern matching a path wins. It is also the
+one record of which module owns a file until the code is grouped into module folders
+(`docs/design/architecture.md`, decision 3), so the architecture checks read it too.
+Anything matching nothing lands in `UNASSIGNED` and
 is printed, rather than being swept into `core` where it would quietly distort that module's
 figure. A new service therefore shows up as unassigned until someone places it, which is the
 intended failure mode — a silent default is how a mapping rots.
@@ -71,10 +75,10 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
         "points_ordering", "penalty", "verdict", "standings_service",
     )),
     ("signup", (
-        "signup", "driver_", "team_", "roster_import", "availability", "wizard_service",
+        "signup", "availability", "wizard_service",
     )),
     ("core", (
-        "bot.py", "/db/", "module_service", "season_service", "season_lifecycle_service",
+        "bot.py", "/db/", "driver_", "team_", "roster_import", "module_service", "season_service", "season_lifecycle_service",
         "channel_registry", "hub_service",
         "config_service", "output_router", "scheduler_service",
         "backup_service", "retry_service", "init_cog", "bot_cog", "admin_review", "amendment",
@@ -93,6 +97,20 @@ RULES: list[tuple[str, tuple[str, ...]]] = [
     )),
 ]
 
+#: Files whose names point at the wrong module, placed by their full path before any pattern
+#: is tried (#282). Core owns the driver, the team and the test roster, and signup owns only the
+#: signing up (CLAUDE.md); the signup review panel is signup's; the mid-season points amendment
+#: is results'; fetching a driver's portrait is image's. A full path cannot catch a later file
+#: whose name merely contains it: `src/services/team_service.py` is not in
+#: `src/services/steward_team_service.py`.
+OWNED_BY_PATH: dict[str, str] = {
+    "src/cogs/admin_review_cog.py": "signup",
+    "src/models/amendment_state.py": "results",
+    "src/services/driver_portrait_service.py": "image",
+    "src/services/season_points_service.py": "results",
+    "src/utils/league_bot.py": "core",
+}
+
 #: Files outside this prefix are not the bot and are not measured. See the module docstring.
 MEASURED_PREFIX = "src/"
 
@@ -102,6 +120,9 @@ UNASSIGNED = "UNASSIGNED"
 def classify(path: str) -> str:
     """Return the module owning *path*, or `UNASSIGNED` where no rule claims it."""
     normalised = path.replace("\\", "/")
+    for owned, module in OWNED_BY_PATH.items():
+        if normalised == owned or normalised.endswith("/" + owned):
+            return module
     for module, patterns in RULES:
         if any(pattern in normalised for pattern in patterns):
             return module
