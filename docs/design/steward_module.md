@@ -41,7 +41,9 @@ an auto-rule hook that is a no-op until S19 fills it in, rather than S16 and S19
 The module's code sits in its own folder, `src/leaguebot/steward/` (`architecture.md`, "How the
 code is laid out"), and that folder is its bucket in `tools/coverage_by_module.py`, which reads a
 file's module from where it sits. The first file there adds `steward` to the modules
-`test_every_file_of_the_bot_is_in_a_module_that_exists` expects, and nothing else records it.
+`test_every_file_of_the_bot_is_in_a_module_that_exists` expects, and to the rules between modules in
+`.importlinter`, with its entry in the dependency table: it needs results [STW-MOD-007].
+`test_every_module_is_under_the_rules_between_modules` fails until it is there.
 
 ---
 
