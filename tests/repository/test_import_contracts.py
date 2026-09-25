@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import re
 from pathlib import Path
 
 from importlinter import configuration
@@ -71,25 +72,47 @@ def _modules() -> set[str]:
     return {path.name for path in PACKAGE.iterdir() if (path / "__init__.py").is_file()} - {"core"}
 
 
+#: The name of a module's own contract, which states the modules it may use: its row of the
+#: dependency table (architecture.md, "How modules and core fit together").
+_MODULE_CONTRACT = re.compile(
+    r"(?P<module>[a-z]+)-uses-no-other-module(?:-but-(?P<allowed>[a-z-]+))?"
+)
+
+
 def test_every_module_is_under_the_rules_between_modules():
     """The rules between modules name each module by hand, so a module's folder the contracts do
     not name would be under none of them: core could use it, and it could use anything. Adding a
-    module adds it to `.importlinter`, and to the dependency table there."""
+    module adds it to `.importlinter`, and to the dependency table there. Each module's contract
+    says in its name which modules it may use, and forbids exactly the rest, so a module left
+    out of another's forbidden list is found here."""
     modules = _modules()
 
     assert _named("core-uses-no-module", "forbidden_modules") == modules
     assert _named("nothing-imports-the-entry-point", "source_modules") == modules | {"core"}
-    own = {
-        name: _named(name.removeprefix("importlinter:contract:"), "source_modules")
-        for name in _contracts().sections()
-        if name.startswith("importlinter:contract:")
-    }
-    for module in sorted(modules):
-        assert any(
-            name.removeprefix("importlinter:contract:").startswith(f"{module}-uses-")
-            and sources == {module}
-            for name, sources in own.items()
-        ), f"No contract says which modules `{module}` may use."
+    rows = {}
+    for section in _contracts().sections():
+        match = _MODULE_CONTRACT.fullmatch(section.removeprefix("importlinter:contract:"))
+        if match is None:
+            continue
+        module, allowed = match["module"], set((match["allowed"] or "").split("-and-")) - {""}
+        assert _named(match[0], "source_modules") == {module}
+        assert _named(match[0], "forbidden_modules") == modules - {module} - allowed, match[0]
+        rows[module] = allowed
+    assert set(rows) == modules, "Every module has a contract saying which modules it may use."
+
+
+def test_every_folder_of_the_package_is_a_package():
+    """import-linter reads only regular packages: a folder with no `__init__.py`, and every file
+    beneath it, is left out of the import graph, and every contract passes without reading it."""
+    missing = sorted(
+        {
+            folder.as_posix()
+            for path in PACKAGE.rglob("*.py")
+            for folder in path.relative_to(PACKAGE).parents
+            if not (PACKAGE / folder / "__init__.py").is_file()
+        }
+    )
+    assert missing == []
 
 
 def _placed(parts: tuple[str, ...]) -> bool:
