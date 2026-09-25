@@ -410,6 +410,13 @@ reopened, the hub's panel posted again, as the core specification's "When the bo
 step of the sweep too, reached through the hook for the bot starting. Each step of the sweep is kept
 separate, so one failing is reported and does not stop the rest.
 
+**The sweep is core's, and the work is each module's.** The sweep decides which timed events are
+due and in what order, and hands each to the handler its module provides for that kind of job. The
+builder signs each handler up with its kind of job, beside the kind's missed-run choice. The handler
+does the module's own work, and core holds no module's catch-up code: each module writes the
+handler for every kind of timed job it has, and its catch-up work moves out of the entry point into
+those handlers.
+
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
 are its later steps, and a restart carries on with them.
