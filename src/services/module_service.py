@@ -1,4 +1,5 @@
-"""ModuleService — read/write weather and signup module enable flags."""
+"""ModuleService — reads and writes the on/off flag of each optional module: weather, signup,
+results, attendance and images."""
 from __future__ import annotations
 
 import logging

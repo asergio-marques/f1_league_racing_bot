@@ -70,13 +70,51 @@ def _report(*files: tuple[str, int, int]) -> dict:
         ("src/services/standings_service.py", "results"),
         ("src/services/penalty_service.py", "results"),
         ("src/services/wizard_service.py", "signup"),
-        ("src/services/driver_service.py", "signup"),
         ("src/services/season_service.py", "core"),
         ("src/bot.py", "core"),
     ],
 )
 def test_known_files_are_classified(path, expected):
     assert cbm.classify(path) == expected
+
+
+@pytest.mark.parametrize(
+    "path, expected",
+    [
+        # Core owns the driver, the team and the test roster; signup owns the signing up.
+        ("src/services/driver_service.py", "core"),
+        ("src/services/team_service.py", "core"),
+        ("src/cogs/driver_cog.py", "core"),
+        ("src/cogs/team_cog.py", "core"),
+        ("src/models/driver_profile.py", "core"),
+        ("src/utils/roster_import.py", "core"),
+        ("src/utils/league_bot.py", "core"),
+        ("src/services/placement_service.py", "core"),
+        # The signup review panel, the points amendment, and fetching a portrait.
+        ("src/cogs/admin_review_cog.py", "signup"),
+        ("src/models/amendment_state.py", "results"),
+        ("src/services/season_points_service.py", "results"),
+        ("src/services/driver_portrait_service.py", "image"),
+    ],
+)
+def test_files_named_for_the_wrong_module_are_placed_with_their_owner(path, expected):
+    """Issue #282 found these under the module their names suggest rather than the one that owns
+    them, so the design passes, which are assigned from this mapping, would have reviewed the
+    wrong files."""
+    assert cbm.classify(path) == expected
+
+
+def test_every_file_placed_by_its_path_exists():
+    """An entry naming a file that has gone would place nothing, and only look as if it did."""
+    missing = sorted(path for path in cbm.OWNED_BY_PATH if not (ROOT / path).is_file())
+    assert missing == []
+
+
+def test_a_file_placed_by_its_path_does_not_claim_a_longer_name_holding_it():
+    """`team_service.py` is placed in core by its full path, which a stewarding file whose name
+    merely contains it does not match."""
+    assert cbm.classify("src/services/steward_team_service.py") == "stewarding"
+    assert cbm.classify(r"C:\bot\src\services\team_service.py") == "core"
 
 
 def test_an_unknown_file_is_unassigned_not_absorbed_into_core():

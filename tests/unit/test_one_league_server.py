@@ -248,27 +248,91 @@ async def test_a_command_while_no_server_is_claimed_still_reaches_the_tier_guard
     interaction.response.send_message.assert_not_awaited()
 
 
+#: discord.py's own bases for what a member presses or submits. `LayoutView` (Components v2)
+#: is not a `View`, and a `DynamicItem` is answered by a plain view the library builds for it,
+#: so either would skip `LeagueView`'s check as surely as a direct `View` would (#282).
+_DISCORD_UI_BASES = ("View", "Modal", "LayoutView", "BaseView", "DynamicItem")
+
+
+def _src_trees():
+    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
+    for path in sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True)):
+        with open(path, encoding="utf-8") as fh:
+            yield os.path.relpath(path, src).replace(os.sep, "/"), ast.parse(fh.read())
+
+
 def test_every_view_and_modal_derives_from_the_league_s_own():
     """A view derived from discord.py's own class directly would skip the check, silently.
 
     Read from the source rather than from the live classes, because several views are
-    defined inside the function that posts them and exist only once it runs.
+    defined inside the function that posts them and exist only once it runs. A base written
+    with a subscript, as `DynamicItem[Button]` is, is read without it.
     """
-    src = os.path.join(os.path.dirname(__file__), "..", "..", "src")
     direct = []
-    for path in sorted(glob.glob(os.path.join(src, "**", "*.py"), recursive=True)):
-        if path.endswith(os.path.join("utils", "league_server.py")):
+    for path, tree in _src_trees():
+        if path == "utils/league_server.py":
             continue
-        with open(path, encoding="utf-8") as fh:
-            tree = ast.parse(fh.read())
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
             for base in node.bases:
-                name = ast.unparse(base)
-                if name.split(".")[-1] in ("View", "Modal"):
-                    direct.append(f"{os.path.relpath(path, src)}: {node.name}({name})")
+                named = base.value if isinstance(base, ast.Subscript) else base
+                if ast.unparse(named).split(".")[-1] in _DISCORD_UI_BASES:
+                    direct.append(f"{path}: {node.name}({ast.unparse(base)})")
     assert direct == []
+
+
+#: Event handlers that do not ask whether the server is the league's, and why.
+_LISTENERS_NOT_ABOUT_A_SERVER = {
+    ("bot.py", "on_ready"): "starts the bot, before any server is in question",
+    ("bot.py", "on_disconnect"): "reports a lost connection to the host, whichever server",
+    ("bot.py", "_warn_if_serving_several"): (
+        "warns the host of every server the bot sits in, the league's included, by design "
+        "(utils/league_server.py, 'Upon another server the bot stays, and refuses')"
+    ),
+}
+
+
+def _event_handlers(tree):
+    """Every function in *tree* the bot calls on a Discord event, however it is registered."""
+    registered = {
+        node.args[0].id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_listener" and node.args and isinstance(node.args[0], ast.Name)
+    }
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        decorators = [ast.unparse(d) for d in node.decorator_list]
+        if node.name in registered or any(
+            d.endswith("Cog.listener()") or d.endswith(".event") for d in decorators
+        ):
+            yield node
+
+
+def test_every_event_listener_asks_whether_the_server_is_the_league_s():
+    """The command tree does not see events, so each listener asks `is_foreign_guild` itself
+    (#244). This covers the next listener as well as today's (#282), whether it is a cog's
+    `@commands.Cog.listener()`, a `@bot.event` or a `bot.add_listener`."""
+    unasked = []
+    for path, tree in _src_trees():
+        for handler in _event_handlers(tree):
+            asks = any(
+                isinstance(call, ast.Call) and ast.unparse(call.func).endswith("is_foreign_guild")
+                for call in ast.walk(handler)
+            )
+            if not asks and (path, handler.name) not in _LISTENERS_NOT_ABOUT_A_SERVER:
+                unasked.append(f"{path}: {handler.name}")
+    assert unasked == []
+
+
+def test_every_listener_excused_from_the_check_still_exists():
+    """An excuse for a listener that has gone would quietly excuse the next one of its name."""
+    present = {
+        (path, handler.name) for path, tree in _src_trees() for handler in _event_handlers(tree)
+    }
+    assert sorted(set(_LISTENERS_NOT_ABOUT_A_SERVER) - present) == []
 
 
 # ── The warning to the host ───────────────────────────────────────────────

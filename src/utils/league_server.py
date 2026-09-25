@@ -8,8 +8,9 @@ switch off, as the README requires — never meets a second server anyway, and t
 safeguard for the mistake, not the mechanism a league relies on.
 
 **The server is checked here, once, and nowhere after.** Every slash command passes through
-`LeagueCommandTree.interaction_check` before its body runs, and the four event listeners ask
-`is_foreign_guild` before they read anything. Past that point nothing in the bot scopes by
+`LeagueCommandTree.interaction_check` before its body runs, and every event listener asks
+`is_foreign_guild` before it reads anything; `tests/unit/test_one_league_server.py` holds each
+new listener to it. Past that point nothing in the bot scopes by
 server: the tables carry no `server_id`, the services take none, and a query reads the
 league's data because the database holds no other. A per-query scope that could never fail
 would only suggest to a reader that it might (decided 2026-09-18, issue #244).

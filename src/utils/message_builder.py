@@ -1,6 +1,6 @@
 """Message builders for forecast and log channel outputs.
 
-All output is plain text (no embeds) per Constitution Principle VII.
+All output is plain text (no embeds).
 """
 
 from __future__ import annotations

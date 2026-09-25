@@ -372,7 +372,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A duplication producing a round in the past shall warn and shall not be refused.
     - A division created by duplication shall inherit none of the source division's channels.
 - A division may be renamed, and its name, tier and role amended, while its season is in Placements alone.
-- A division deleted while its season is in Placements shall take with it its rounds, its sessions, its teams and seats, and the placements made in it.
+- A division deleted while its season is in Placements shall take with it its rounds, its sessions, and its teams and seats. A division in which a driver is placed shall not be deleted until every driver placed in it has been unassigned. Decided 2026-09-25 (#282), the deletion being destructive enough that a refusal is preferred to taking placements with it.
 - A division shall stand in one of four states: setup until its season's placements are first confirmed, active once they are, finished once every one of its rounds is finished, and cancelled where it was called off.
 - A division of a season in one of the three ongoing states may be cancelled, upon the word `CONFIRM`. Its rounds shall be unscheduled, every one of them that may still be cancelled shall be, the cancellation shall be announced as set out under Announcing a cancellation below, and it shall thereafter be excluded from the validation of tiers, from the standings and from the end of the season.
 - Every division shall carry a role, which the bot mentions when it posts to that division.

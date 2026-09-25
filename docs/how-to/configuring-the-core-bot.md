@@ -340,7 +340,7 @@ Got something wrong? Until placements are confirmed you can fix any of it:
 |---|---|
 | `/division amend` | Change a division's name, tier or role — one, two or all three at once |
 | `/division rename` | Change only the name |
-| `/division delete` | Remove a division and all its rounds |
+| `/division delete` | Remove a division and all its rounds (unassign its drivers first: a division with a driver placed in it cannot be deleted) |
 
 > **`/division add` is refused outside placements.** A season still in configuration, or waiting on or taking its signups, has no divisions yet — confirm the configuration and close the window first.
 

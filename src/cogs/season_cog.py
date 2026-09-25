@@ -7297,7 +7297,7 @@ class _ApproveView(LeagueView):
     **How it ends.** The view times out after five minutes, deletes its own message and
     replaces it with a notice pinging the reviewer. That timer is held in memory and dies
     with the process, which is why the message is also recorded in `season_review_prompts`
-    and swept at startup — see migration 050.
+    and swept at startup by `_recover_expired_review_prompts`.
     """
 
     #: The command whose report this button answers, named when the review expires.

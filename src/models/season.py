@@ -5,7 +5,7 @@ against: SETUP until its placements are first confirmed, ACTIVE from then until 
 and COMPLETED or CANCELLED after. ``stage`` is the lifecycle state issue #220 specifies,
 refining SETUP and ACTIVE into the stages a league actually passes through.
 
-The two are kept in step by the database (migration 057) and never disagree:
+The two are kept in step by the database (the `seasons_stage_*` triggers) and never disagree:
 ``STAGES_OF_STATUS`` is the mapping, and ``test_season_stage_matches_status`` pins it. A
 reader that means "placements confirmed and being raced" may keep reading ``status``; one
 that needs to know whether signups are open, or whether placements are being made
@@ -39,7 +39,8 @@ class SeasonStage(str, Enum):
     CANCELLED = "CANCELLED"
 
 
-#: The stages each status admits. Migration 057's triggers enforce the same mapping.
+#: The stages each status admits. The `seasons_stage_matches_status` triggers enforce the same
+#: mapping.
 STAGES_OF_STATUS: dict[SeasonStatus, frozenset[SeasonStage]] = {
     SeasonStatus.SETUP: frozenset({
         SeasonStage.CONFIGURATION,

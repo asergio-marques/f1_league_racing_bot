@@ -341,7 +341,7 @@ def portrait_configuration_fault(config) -> str | None:
     or a future path that writes the columns directly, and is what `/season placements-review` and
     the confirmation of placements read.
 
-    Total, and tolerant of a configuration object predating migration 047: a missing field
+    Total, and tolerant of a configuration object without the portrait settings: a missing field
     reads as off, which is what its default says.
     """
     if config is None or not getattr(config, "use_pfp", False):

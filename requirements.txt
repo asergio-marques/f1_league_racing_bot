@@ -33,6 +33,10 @@ coverage==7.15.4
 mypy==2.3.1
 types-lxml==2026.2.16
 
+# Which code may import which (#282): the contracts in `.importlinter`, which
+# `tests/unit/test_import_contracts.py` runs as part of the suite.
+import-linter==2.15
+
 # Pillow backs the one test that inspects the rasterised PNG pixel by pixel, which is the
 # only guard against Inkscape collapsing flowed text. That test is `rasteriser`-marked, so
 # CI never runs it and nothing but a hand-run would catch a break — it is pinned here rather

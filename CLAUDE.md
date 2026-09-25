@@ -43,7 +43,7 @@ and the checks to run — including the `pytest tests/ -q` run. Read it rather t
 | `README.md` | **Source.** User-facing. |
 | `docs/wip-specs/core_specification.md` | **Source, and the home of everything no module owns** (decided 2026-09-08). Leagues, seasons, divisions, tiers, rounds, sessions, tracks, teams, seats, drivers, the channels and the log, which modules exist, what survives a restart, and test mode. It absorbed `other_changes.md`, `module_list.md` and the signup spec's Driver Profile, Teams, Changes to Seasons and initialisation sections, all four of which are now deleted or trimmed — do not recreate a grab-bag document beside it. A rule belongs here unless a single module owns it: **core owns the driver, signup owns the signing up**, and core names the modules while each module's own spec keeps its enable, disable and dependency rules. |
 | `docs/how-to/` | **Becoming the source for behaviour.** Task-ordered guides for a league manager. A guide owns the *order* of a job. **A module's guide covers that module only:** core setup is named as a prerequisite and linked, never explained, and findings about core behaviour belong in the core guide or the README, not in it. |
-| `docs/design/` | **Why the code is shaped as it is** (decided 2026-09-20). One file per module: its structure, the alternatives rejected and the trade-offs taken. **Source for intent, never for detail** — where it and the code disagree about what the code *does*, the code wins and the document is corrected, as with a wip-spec. It restates no functional rule, citing the wip-spec's requirement IDs instead. A decision constraining one function still belongs in that function's docstring, pinned by a named test: the design file holds the shape, the docstring the local constraint. Written before a module is built and corrected at close-out. |
+| `docs/design/` | **Why the code is shaped as it is** (decided 2026-09-20). `architecture.md` holds what binds every module (decided 2026-09-25, #282), and one file per module holds the rest, pointing to it rather than repeating it: its structure, the alternatives rejected and the trade-offs taken. **Source for intent, never for detail** — where it and the code disagree about what the code *does*, the code wins and the document is corrected, as with a wip-spec. It restates no functional rule, citing the wip-spec's requirement IDs instead. **It documents the design, not its history** (decided 2026-09-25): each decision, and the alternatives it rejected, is written in the section it governs, never gathered in a list at the head; it cites other documentation (the wip-specs, the constitution, CLAUDE.md, other design files, docstrings) and never an issue or a commit; it keeps no register of where the code falls short, which the architecture checks and the tracker hold; and it records no provenance, neither who took a decision nor when nor how, only the decision and its reasons. A decision constraining one function still belongs in that function's docstring, pinned by a named test: the design file holds the shape, the docstring the local constraint. Written before a module is built and corrected at close-out. |
 | `docs/how-to/test-mode.md` | **Derived, hand-written.** For maintainers, not leagues — how test mode *is used*, as a walkthrough. Technical register, not strictly a `how-to/` guide, but placed in the same directory for ease. The **rules** test mode holds to live in the core specification's `## Test mode` section (decided 2026-09-08); this guide stays the walkthrough and its overlap with that section is intended. |
 | GitHub issues | **The register of defects** (decided 2026-09-09). Records what is wrong, never what shall be done — do not read an issue as a rule, and do not fix one without being asked. Raise one when reading the code turns up a defect out of scope for the task in hand. It replaced `docs/wip-specs/known_issues.md`, whose sixty-six entries were migrated and the document deleted; do not recreate it. `CONTRIBUTING.md` holds the priority levels and what a good issue carries. |
 | `specs/NNN-*/` | **Derived, and a historical record.** Spec-kit output per increment. Do not hand-maintain, never copy a wip-spec rule into it, and never read it as current behaviour — it describes one increment as planned, not the bot as it stands. |
@@ -92,6 +92,10 @@ later polish phase.
   nobody else can reach. Run `git status --porcelain` and stage from what it shows. The rule
   binds hardest when several agents work in parallel, where a blanket stage cannot tell one
   agent's change from another's; see the `fix-issues` skill.
+- **Move or rename a file with `git mv`, in a commit apart from any change to its content**
+  (decided 2026-09-25), so git records a rename and the file's history follows it. The move
+  into module folders (`docs/design/architecture.md`, "How the code is laid out") and the split of
+  `season_cog.py` depend on it.
 - **Every pull request tracks an issue and carries its labels; every release is cut by the
   Release workflow** (decided 2026-09-21, #259). The rules — label groups, the `internal` file
   test, the version scheme, when each bump is due — are in `CONTRIBUTING.md`, under "Pull
@@ -202,6 +206,13 @@ running it — before #208 nothing scoped the run, so the gate counted the suite
 
 A file matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into
 `core`, and is gated like any other bucket — so add new services to `RULES` when it says so.
+
+**The architecture's rules are tests too** (decided 2026-09-25, #282).
+`tests/unit/test_import_contracts.py` runs the import-linter contracts in `.importlinter`, and
+`tests/unit/test_architecture_rules.py` checks the rest. Both run with the suite, so CI needs no
+step of its own for them. Each lists today's breaches with the issue that fixes them, and fails
+on a new breach and on a fixed one still listed: fix a breach and delete its line in the same
+commit. What each rule is, and why, is `docs/design/architecture.md`'s.
 
 **CI runs a type check too, and gates on it** (decided 2026-09-23, #228). Its
 `python-type-check` job runs `mypy` from the repository root, which reads `mypy.ini`; run it by
