@@ -709,3 +709,37 @@ def test_no_private_name_crosses_a_module():
     )
 
 
+# ── 9. Only the router writes the log channel ───────────────────────────────────────────────
+
+#: Every file that may name the log channel, and why. Only the first posts to it.
+LOG_CHANNEL_NAMED_BY = {
+    "utils/output_router.py": "the one writer of the log channel",
+    "models/server_config.py": "the setting itself",
+    "services/config_service.py": "reads and stores the setting",
+    "cogs/bot_cog.py": "the commands that set it",
+    "services/channel_registry_service.py": "lists it among the channels in use",
+    "services/pack_service.py": "clears it when the bot is packed",
+}
+
+
+def _files_naming_the_log_channel() -> set[str]:
+    found: set[str] = set()
+    for path, _function, node in _nodes():
+        if (
+            (isinstance(node, ast.Attribute) and node.attr == "log_channel_id")
+            or (isinstance(node, ast.Name) and node.id == "log_channel_id")
+            or (isinstance(node, ast.keyword) and node.arg == "log_channel_id")
+            or (isinstance(node, ast.Constant) and node.value == "log_channel_id")
+        ):
+            found.add(path)
+    return found
+
+
+def test_only_the_router_writes_the_log_channel():
+    """Every log line goes through `OutputRouter` (architecture.md, "Posting to Discord"), which
+    keeps the rules for log lines in one place: no one is mentioned, a long record is split, and
+    a failed line is retried. A new file naming the log channel is a new writer, until shown
+    otherwise and added above with its reason."""
+    assert sorted(_files_naming_the_log_channel()) == sorted(LOG_CHANNEL_NAMED_BY)
+
+
