@@ -180,11 +180,11 @@ module offers the others is public, and its docstring says what it promises.
 ## How a change is carried out
 
 **Every change goes through one queue.** Every change to the bot's data is put on one queue and
-carried out one at a time, whoever or whatever asks for it: a person (a command, a button, a form,
-a typed answer), a timer, a Discord event (a member leaving), or the start-up sweep. Commands that
-only read do not use it. Carrying out changes on the spot is what left data half-changed when two
-presses overlapped, the bot stopped part-way or a step failed, and what let a success be reported
-over a change only half done.
+carried out one at a time, whoever or whatever asks for it: a person (a command, a button, a form, a
+typed answer), a timer, a Discord event (a member leaving), or a handler the start-up sweep calls.
+Commands that only read do not use it. Carrying out changes on the spot is what left data
+half-changed when two presses overlapped, the bot stopped part-way or a step failed, and what let a
+success be reported over a change only half done.
 
 *Rejected:* putting only the championship changes, or only the long approvals, through the queue,
 which leaves every other change with the same risks. *Rejected:* each command writing its own
@@ -203,13 +203,13 @@ audit record, which is how some settings came to have none.
   channel exists, the bot may post there, the text fits, the change is allowed in the season's
   current stage): once when it is asked for, and again when the worker takes it up, since changes
   ahead of it may have moved the season on. A request a person made that fails is refused. A change
-  a timer, an event or the sweep asked for is dropped once its work is no longer due, as a job that
-  fires after its work was cancelled does nothing (see "Timed work and restarts"). Where it fails a
-  check the league can repair (a channel, set by a command; the bot's permission, restored in
-  Discord), it waits instead, and is retried the way a step that failed because of Discord is
-  (below); meanwhile the log channel records what failed, as the core specification's "Setting the
-  bot up" has it do. Any other check it fails is a fault (below). This is the gate
-  `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+  a timer, an event or a handler the sweep calls asked for is dropped once its work is no longer
+  due, as a job that fires after its work was cancelled does nothing (see "Timed work and
+  restarts"). Where it fails a check the league can repair (a channel, set by a command; the bot's
+  permission, restored in Discord), it waits instead, and is retried the way a step that failed
+  because of Discord is (below); meanwhile the log channel records what failed, as the core
+  specification's "Setting the bot up" has it do. Any other check it fails is a fault (below). This
+  is the gate `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
@@ -253,8 +253,8 @@ audit record, which is how some settings came to have none.
   later change that would post to the same place, or change what the waiting step is about to post,
   waits behind it, and every other change goes ahead. Two kinds of change are never held behind it.
   A command that repairs what the step needs, such as setting a channel, runs, and the waiting step
-  is tried again at once, as `steward_module.md` §4 has the channel-setting commands resume a
-  waiting close; a repair made in Discord, such as restoring the bot's permission, is found at the
+  is tried again at once, as `steward_module.md` §4 has a waiting close tried again when its
+  channel is set; a repair made in Discord, such as restoring the bot's permission, is found at the
   next try. And a change that makes the waiting step's work no longer due, such as cancelling its
   round or turning its module off, runs, and the waiting change is checked again after it: its steps
   whose work is no longer due are dropped and the rest go ahead, since switching a module off stops
@@ -374,13 +374,17 @@ rebuild every job from the database.
 
 **Each kind of job's handler decides what happens if it is missed.** When the bot was down at the
 moment a job was due, the handler its module provides for that kind of job (below) decides what
-becomes of it: it runs late, it is skipped, or, for stewarding, its moments are moved on by the time
-the bot was down (`steward_module.md` §3). The handler records a skip on the event's row, the row
-being its own module's, so the late job finds nothing due when the scheduler runs it. Every job is
-armed with no limit on how late it may run (`misfire_grace_time=None`), so the scheduler never drops
-one on its own and its default never decides, as `steward_module.md` §3 sets out. What each kind
-does when missed is a rule a league notices, so it belongs to the specifications (the core
-specification's "When the bot stops").
+becomes of it: whether it runs late or is skipped, or whatever else its module's specification asks
+(for stewarding, [STW-RST-001] to [STW-RST-003]). The handler records a skip on the event's row, the
+row being its own module's, as a change on the queue like any other, so the late job finds nothing
+due when the scheduler runs it. Every job is armed with no limit on how late it may run
+(`misfire_grace_time=None`), so the scheduler never drops one on its own and its default never
+decides, as `steward_module.md` §3 sets out. What each kind does when missed is a rule a league
+notices, so it belongs to the specifications (the core specification's "When the bot stops", and the
+stewarding specification's [STW-RST-001] to [STW-RST-003]).
+
+*Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
+sweep to apply, which puts a module's rule in core.
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -399,7 +403,8 @@ Start-up:
 3. applies the migrations, before connecting to Discord;
 4. runs the builder: the services, the cogs, the hooks and the kinds of timed job;
 5. runs the start-up sweep once, when Discord first connects;
-6. starts the queue, which carries on with any change a stop cut off;
+6. starts the queue, which carries on with any change a stop cut off, and tries a change waiting on
+   a repair again at once;
 7. only then lets scheduled jobs run.
 
 Tests can then run the whole start-up in order, instead of checking its order by searching the
@@ -414,10 +419,12 @@ hook for the bot starting. Each step of the sweep is kept separate, so one faili
 does not stop the rest.
 
 **The sweep only delegates.** It is core's: it finds the timed events that came due and hands each,
-in order, to the handler its module provides for that kind of job, and it does nothing else. The
-builder signs each handler up with its kind of job. The handler holds its module's logic, what
-becomes of a missed event among it, and core holds none of a module's: each module writes the
-handler for every kind of timed job it has, and the entry point holds none of it.
+in order, to the handler its module provides for that kind of job, and calls whoever signed up for
+the bot starting. It holds no module's logic. The builder signs each handler up with its kind of
+job as it registers the kind with the scheduler service; that is the hook core offers for a timed
+event falling due. The handler holds its module's logic, what becomes of a missed event included;
+core holds none of it. Each module writes the handler for every kind of timed job it has, and the
+entry point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
