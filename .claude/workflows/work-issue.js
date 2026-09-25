@@ -247,11 +247,13 @@ const TRIAGE_SCHEMA = {
 // product owner for business, the issue reviewer for engineering. Neither decides: each cites a
 // written rule or escalates to the owner. A triager that fails leaves its questions escalated,
 // since asking the owner is the safe way to fail.
-const triage = async (questions, tag, where, context) => {
+// `handled` holds the questions already answered or put to the owner, so that a question two
+// checkers both met reaches the owner once.
+const triage = async (questions, tag, where, context, handled = []) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => agent(
-    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[]. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}`,
+    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[]. A question that asks the same as one already handled, listed below, is neither answered nor escalated again. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
     { label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
@@ -299,7 +301,8 @@ if (stage === 'check') {
 
   const raised = [architecture, design, product].filter(Boolean).flatMap(r => r.raised)
   const triaged = raised.length
-    ? await triage(raised, 'check', `The plan was drafted at commit ${commit}.${branchNote}`, context)
+    ? await triage(raised, 'check', `The plan was drafted at commit ${commit}.${branchNote}`, context,
+      [...(product ? product.questions : []), ...(architecture ? architecture.questions : []), ...(design ? design.questions : [])].map(q => q.question))
     : { answers: [], escalations: [], findings: [] }
 
   const questions = [
@@ -761,7 +764,8 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (reviewed.lanes.issue === null) roundEscalations.push(...questions.engineering)
   const raised = got.flatMap(r => r.raised)
   if (raised.length) {
-    const t = await triage(raised, `r${k}`, BRANCH_READ, `${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}`)
+    const handled = [...got.flatMap(r => r.answers).map(a => a.question), ...roundEscalations.map(q => q.question)]
+    const t = await triage(raised, `r${k}`, BRANCH_READ, `${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}`, handled)
     citations.push(...t.answers)
     roundEscalations.push(...t.escalations)
     for (const f of t.findings) addFindings(f.lane, [f])
