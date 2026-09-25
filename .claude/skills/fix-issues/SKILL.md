@@ -197,7 +197,7 @@ from its neighbour's, and the resulting commit is on the wrong branch by the tim
 Name the files:
 
 ```bash
-git add src/services/driver_service.py tests/unit/test_driver_service.py
+git add src/leaguebot/core/services/driver_service.py tests/core/test_driver_service.py
 ```
 
 `git status --porcelain` before each commit, and stage from what it shows. An agent that cannot name
@@ -207,8 +207,11 @@ every path it is committing does not yet know what it changed.
 full run at the end:
 
 ```bash
-flock -w 3600 /tmp/f1-pytest.lock python3 -m pytest tests/ -q
+flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q
 ```
+
+The interpreter is the main checkout's virtualenv, which carries the pins, and `PYTHONPATH=src` makes
+it test the worktree's own code rather than the checkout it was installed from (CLAUDE.md, Testing).
 
 This is the whole mechanism by which "never run two pytest sessions at once" survives having several
 agents at work. An agent waits for the lock; it does not skip the run, and it does not open a second
@@ -222,7 +225,8 @@ solved problem for a slower one on a disk that is already near full.
 **An image-module issue cannot be finished in a worktree.** `resources/league/` holds the league's
 own artwork — around 1,400 files — and all but nine `.gitkeep` files are gitignored, so a fresh
 worktree has the empty skeleton. CI has no artwork either and the suite is green there, so an
-ordinary run in a worktree is sound. A `-m rasteriser` run is not: it would pass without ever
+ordinary run in a worktree is sound, given `PYTHONPATH=src` so that it tests the worktree's own code
+rather than the checkout the shared virtualenv was installed from (CLAUDE.md, Testing). A `-m rasteriser` run is not: it would pass without ever
 touching the assets whose rendering it claims to check. Run the rasteriser marker by hand in the main
 checkout, where the artwork lives, and verify its output as PNG rather than as SVG in a browser.
 

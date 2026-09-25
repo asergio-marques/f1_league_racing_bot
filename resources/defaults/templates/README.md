@@ -279,7 +279,7 @@ CI resolve. The columns were 32 and 24, so that pair overran into the next round
 because SVG text simply overruns and reports nothing. Narrow them again and it will.
 
 `tools/relayout_standings_grid.py` computes the whole grid from those constants and is
-idempotent; `tests/unit/test_image_standings_geometry.py` asserts the shipped files against the
+idempotent; `tests/image/test_image_standings_geometry.py` asserts the shipped files against the
 same numbers from the other side, including a rasterised check that no text reaches a divider.
 
 ## None of these files draws a division logo, and yours may

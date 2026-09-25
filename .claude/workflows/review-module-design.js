@@ -253,7 +253,7 @@ const reviewPrompt = (c, inventory) => `${preamble}
 
 Your concern: **${c.key}**. ${c.brief}
 
-Judge against ${GOVERNING} first, then the repository's recorded decisions, then .claude/skills/architecture-review/python-practices.md for what they leave open. ${GOVERNING} describe the shape the code is to have, and their decisions are settled: a divergence from them is expected, and your finding says what this module must change to reach the shape, citing the section it rests on. Never offer an option they reject; a shape you think better goes in forArchitecture. This module's entries in the ratchet lists (tests/unit/test_architecture_rules.py and .importlinter) and its open issues are this pass's to correct: address each one.
+Judge against ${GOVERNING} first, then the repository's recorded decisions, then .claude/skills/architecture-review/python-practices.md for what they leave open. ${GOVERNING} describe the shape the code is to have, and their decisions are settled: a divergence from them is expected, and your finding says what this module must change to reach the shape, citing the section it rests on. Never offer an option they reject; a shape you think better goes in forArchitecture. This module's entries in the ratchet lists (tests/repository/test_architecture_rules.py and .importlinter) and its open issues are this pass's to correct: address each one.
 
 Some divergences are carried bot-wide by open issues of their own:
 ${PROGRAMME.map(x => `- ${x}`).join('\n')}

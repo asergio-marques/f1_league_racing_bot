@@ -1,0 +1,219 @@
+"""The season-setup commands defer before they do their work.
+
+Each of `/season setup`, `/division add`, `/round add` and `/round amend` writes the SETUP
+season through `_snapshot_pending`, and `/round add` and `/round amend` also load and parse
+the calendar template to check its capacity. Until issue #147 the write rebuilt the whole
+season, and on a season holding more than one division that work outlasted Discord's
+three-second window: the interaction token expired, and the reply raised `404 Unknown
+interaction` *after* the round had already been written. What a league manager saw was a
+command that appeared to fail while having silently succeeded. The write is small now, but
+the template parse is not, and a deferral costs nothing.
+
+Deferring first buys fifteen minutes, so these pin two things: that the deferral happens
+before any of that work, and that every reply thereafter goes to `followup` — a
+`response.send_message` after a defer is itself a 404.
+
+**`/round add-bulk` and `/round add-xml` are deliberately not in this list.** They open a
+modal, and `send_modal` must be an interaction's *first* response — a deferred interaction
+cannot open one. They defer inside the modal's `on_submit` instead, where the work
+actually happens, and `tests/core/test_round_import_cog.py` pins that. Adding them here
+would be a plausible-looking change that breaks both commands.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivision
+from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.season import SeasonStage
+
+
+CHANNEL = 111
+MANAGER_ROLE = 222
+
+
+def _role() -> MagicMock:
+    role = MagicMock()
+    role.id = MANAGER_ROLE
+    role.name = "Stewards"
+    return role
+
+
+def _config() -> ServerConfig:
+    return ServerConfig(
+        server_id=1,
+        interaction_role_id=MANAGER_ROLE,
+        league_admin_role_id=444,
+        interaction_channel_id=CHANNEL,
+        log_channel_id=333,
+    )
+
+
+def _interaction() -> MagicMock:
+    """An interaction that fails the way Discord does if a reply precedes the defer."""
+    import discord
+
+    interaction = MagicMock()
+    interaction.guild_id = 1
+    interaction.channel_id = CHANNEL
+    # The tier guard admits a Member holding the interaction role, in the interaction
+    # channel, and nothing else — so the user has to satisfy both for the command body to
+    # be reached at all.
+    interaction.user = MagicMock(spec=discord.Member)
+    interaction.user.id = 42
+    interaction.user.display_name = "Manager"
+    interaction.user.roles = [_role()]
+    interaction.user.guild_permissions.administrator = False
+    interaction.guild.get_role = lambda role_id: _role() if role_id == MANAGER_ROLE else None
+    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock(
+        side_effect=AssertionError(
+            "replied via response.send_message; after a defer this is a 404"
+        )
+    )
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+def _bot() -> MagicMock:
+    bot = MagicMock()
+    bot.db_path = ":memory:"
+    # A configured server. An uninitialised one used to be passed straight through by both
+    # guards, which is how these tests once reached the command body without one; the tier
+    # guards refuse it instead, there being no channel to check and no role to hold.
+    bot.config_service.get_server_config = AsyncMock(return_value=_config())
+    bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
+    bot.season_service.get_setup_season = AsyncMock(return_value=None)
+    bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
+    bot.season_service.sync_pending_config = AsyncMock(return_value=(42, 1, []))
+    bot.season_service.get_divisions = AsyncMock(return_value=[])
+    bot.team_service.seed_division_teams = AsyncMock()
+    bot.output_router.post_log = AsyncMock()
+    return bot
+
+
+def _pending(server_id: int = 1) -> PendingConfig:
+    div = PendingDivision(
+        name="Pro",
+        role_id=10,
+        channel_id=20,
+        tier=1,
+        rounds=[
+            {
+                "round_number": 1,
+                "format": RoundFormat.NORMAL,
+                "track_name": "United Kingdom",
+                "scheduled_at": datetime(2026, 5, 1, 14, 0, 0),
+            }
+        ],
+    )
+    return PendingConfig(divisions=[div], season_id=7)
+
+
+def _cog(pending: PendingConfig | None) -> SeasonCog:
+    cog = SeasonCog(_bot())
+    if pending is not None:
+        cog._pending[0] = pending
+    return cog
+
+
+async def _call(coro_method, interaction, **kwargs):
+    """Invoke a command through its decorators, as the command tree does."""
+    await coro_method.callback(*coro_method.binding_args, interaction, **kwargs)
+
+
+async def test_round_add_defers_before_touching_the_database(monkeypatch):
+    """The reported bug: the round was written, then the reply hit an expired token."""
+    cog = _cog(_pending())
+    interaction = _interaction()
+
+    order: list[str] = []
+    interaction.response.defer = AsyncMock(side_effect=lambda **_: order.append("defer"))
+
+    async def _snapshot(cfg):
+        order.append("snapshot")
+
+    async def _overflow(would_hold):
+        order.append("overflow")
+        return None
+
+    monkeypatch.setattr(cog, "_snapshot_pending", _snapshot)
+    monkeypatch.setattr(cog, "_calendar_round_overflow", _overflow)
+    monkeypatch.setattr(
+        "leaguebot.core.services.track_service.resolve_track_name",
+        AsyncMock(return_value="Hungaroring"),
+    )
+
+    await cog.round_add.callback(
+        cog,
+        interaction,
+        division_name="Pro",
+        format="NORMAL",
+        scheduled_at="2026-10-22T18:00",
+        track="14 – Hungaroring",
+    )
+
+    assert order and order[0] == "defer", (
+        f"deferred too late: {order} — the slow work must not precede the defer"
+    )
+    interaction.followup.send.assert_awaited()
+
+
+@pytest.mark.parametrize(
+    "command, kwargs",
+    [
+        ("season_setup", {"game_edition": 2026}),
+        ("division_add", {}),
+        ("round_add", {}),
+        ("round_amend", {}),
+    ],
+)
+def test_every_setup_command_defers_first(command, kwargs):
+    """A source-level check: the defer is the first statement that awaits anything.
+
+    Driving all four through their real bodies would need four different sets of
+    stubs; what actually regresses is someone adding a query above the defer, and
+    that is visible here without pretending to exercise the command.
+    """
+    import inspect
+
+    src = inspect.getsource(getattr(SeasonCog, command).callback)
+    body = src.split("-> None:", 1)[1]
+    defer_at = body.index("interaction.response.defer")
+    for earlier in ("await self.bot.", "get_connection(", "await interaction.followup"):
+        found = body.find(earlier)
+        assert found == -1 or found > defer_at, (
+            f"{command}: {earlier!r} runs before the defer"
+        )
+
+
+@pytest.mark.parametrize(
+    "command", ["season_setup", "division_add", "round_add", "round_amend"]
+)
+def test_no_setup_command_replies_through_response(command):
+    """After a defer the only valid reply is a followup; send_message would 404."""
+    import inspect
+
+    src = inspect.getsource(getattr(SeasonCog, command).callback)
+    assert "interaction.response.send_message" not in src, (
+        f"{command} still replies via response.send_message after deferring"
+    )
+
+
+async def test_season_setup_begins_the_season_in_configuration():
+    """Issue #220: a season is set up in Configuration, before any division exists."""
+    from leaguebot.core.models.season import SeasonStage
+
+    cog = _cog(None)
+    interaction = _interaction()
+
+    from tests.support.undecorate import undecorate
+
+    await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
+
+    kwargs = cog.bot.season_service.sync_pending_config.await_args.kwargs
+    assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION

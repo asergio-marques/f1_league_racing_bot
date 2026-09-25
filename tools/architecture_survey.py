@@ -10,23 +10,24 @@ the last one rather than re-deriving a count by a slightly different grep.
 docstrings and `followup.send`; a grep for `execute` matches prose. What each section counts:
 
 - **Size.** Physical lines of every `*.py` under `src/`, and files per layer, `__init__.py`
-  excluded. The layer is the first directory under `src/`; `src/bot.py` is a layer of its own.
+  excluded. The layer is the folder inside a module's folder (`src/leaguebot/<module>/<layer>/`);
+  the entry point, `src/leaguebot/__main__.py`, is a layer of its own. Until the package move
+  (#438) the layer was the first directory under `src/`, and `src/bot.py` the entry point.
 - **SQL.** Calls of `execute`, `executemany`, `executescript`, `execute_fetchall` and
   `execute_insert`, whatever they are called on.
 - **Imports.** Every `import` and `from ... import` that resolves to a file under `src/`,
   function-local imports included. Each is marked when it sits under `if TYPE_CHECKING:`.
-  An import pointing into `cogs` or `bot` from any other layer is listed as upward.
+  An import pointing into `cogs` or the entry point from any other layer is listed as upward.
 - **Channel writes.** Calls of `.send(...)`, except `interaction.followup.send`;
   `response.send_message` is a different method and is not counted. A write whose result is
   thrown away is counted separately: that message can never be edited or deleted (#189).
 - **Service reads.** Loads of an attribute ending `_service`, split by what it is read from:
-  `self.bot.X`, a bare `bot.X`, or anything else. `bot.X_service = ...` in `src/bot.py` is an
+  `self.bot.X`, a bare `bot.X`, or anything else. `bot.X_service = ...` in the entry point is an
   assignment, listed on its own.
 - **Fan-in.** For each service, the distinct files importing it and the statements doing so.
 - **Module dependencies.** Import statements from a file of one module to a file of another,
-  the module being what `classify()` in `tools/coverage_by_module.py` says. That mapping is
-  the only record of module ownership the bot has, and it is known to be imperfect (#282
-  names `driver_*` and `team_*` filed under signup): the figures inherit its errors.
+  the module being what `classify()` in `tools/coverage_by_module.py` says: the folder the file
+  sits in.
 - **Broad handlers.** `except:`, `except Exception` and `except BaseException`, bare or in a
   tuple.
 - **Blocking in async.** `subprocess.run`, `call`, `check_call`, `check_output`, `Popen` and
@@ -65,8 +66,10 @@ from coverage_by_module import UNASSIGNED, classify  # noqa: E402
 SQL_METHODS = frozenset(
     {"execute", "executemany", "executescript", "execute_fetchall", "execute_insert"}
 )
-LAYERS = ("bot", "cogs", "services", "utils", "models", "db")
-UPWARD_TARGETS = frozenset({"bot", "cogs"})
+LAYERS = ("entry", "cogs", "services", "utils", "models", "db")
+UPWARD_TARGETS = frozenset({"entry", "cogs"})
+#: The entry point, which sits above core and the modules.
+ENTRY = "src/leaguebot/__main__.py"
 BLOCKING = frozenset({
     ("subprocess", "run"), ("subprocess", "call"), ("subprocess", "check_call"),
     ("subprocess", "check_output"), ("subprocess", "Popen"), ("time", "sleep"),
@@ -114,17 +117,18 @@ class FileShape:
 
 
 def layer_of(rel: str) -> str:
-    """The layer a path under `src/` belongs to; `src/bot.py` is its own."""
-    if rel == "src/bot.py":
-        return "bot"
+    """The layer a path under `src/` belongs to, `src/leaguebot/<module>/<layer>/...`; the entry
+    point is its own."""
+    if rel == ENTRY:
+        return "entry"
     parts = rel.split("/")
-    return parts[1] if len(parts) > 2 and parts[1] in LAYERS else "other"
+    return parts[3] if len(parts) > 4 and parts[3] in LAYERS else "other"
 
 
 def known_tables(src: Path) -> set[str]:
     """Every table the migrations leave standing, applied in file order."""
     tables: set[str] = set()
-    for sql in sorted((src / "db" / "migrations").glob("*.sql")):
+    for sql in sorted((src / "leaguebot" / "core" / "db" / "migrations").glob("*.sql")):
         text = sql.read_text(encoding="utf-8")
         tables.update(_CREATE.findall(text))
         tables.difference_update(_DROP.findall(text))
@@ -400,12 +404,12 @@ def report(shapes: list[FileShape], root: Path, module: str | None) -> str:
             if target_layer in UPWARD_TARGETS and s.layer not in UPWARD_TARGETS | {"cogs"}:
                 flags = ", ".join(f for f, on in (("TYPE_CHECKING", imp.type_checking), ("local", imp.local)) if on)
                 upward.append([f"{s.path}:{imp.line}", imp.target, flags or "-"])
-            elif target_layer == "bot" and s.layer == "cogs":
-                upward.append([f"{s.path}:{imp.line}", imp.target, "cog imports bot.py"])
+            elif target_layer == "entry" and s.layer == "cogs":
+                upward.append([f"{s.path}:{imp.line}", imp.target, "cog imports the entry point"])
     present = [l for l in LAYERS if any(k[0] == l or k[1] == l for k in matrix)]
     out.append("Statements, from row to column:\n")
     out.append(_table(["from \\ to", *present], [[r, *[matrix[(r, c)] or "" for c in present]] for r in present]))
-    out.append("\nUpward — into `cogs/` or `bot.py` from any other layer:\n")
+    out.append("\nUpward — into `cogs/` or the entry point from any other layer:\n")
     out.append(_table(["import", "target", "note"], sorted(upward)))
 
     # Channel writes
@@ -419,10 +423,10 @@ def report(shapes: list[FileShape], root: Path, module: str | None) -> str:
 
     # Services on the bot
     out.append("\n## Services reached through the bot\n")
-    assigned = by_path.get("src/bot.py")
+    assigned = by_path.get(ENTRY)
     if assigned and module in (None, "core"):
         services = [a for a in assigned.bot_assignments if a.endswith("_service")]
-        out.append(f"`src/bot.py` assigns {len(services)} services: {', '.join(f'`{a}`' for a in services)}.\n")
+        out.append(f"`{ENTRY}` assigns {len(services)} services: {', '.join(f'`{a}`' for a in services)}.\n")
     reads = [s for s in scoped if s.service_reads]
     totals = Counter()
     for s in reads:
@@ -438,7 +442,7 @@ def report(shapes: list[FileShape], root: Path, module: str | None) -> str:
     statements: Counter[str] = Counter()
     for s in shapes:
         for imp in s.imports:
-            if imp.target.startswith("src/services/") and imp.target != s.path:
+            if layer_of(imp.target) == "services" and imp.target != s.path:
                 importers[imp.target].add(s.path)
                 statements[imp.target] += 1
     fan = sorted(

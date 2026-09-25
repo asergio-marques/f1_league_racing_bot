@@ -1,0 +1,620 @@
+"""Unit tests for ImageConfigService — T009.
+
+Covers the defaults every enable must produce, the single-transaction creation of the
+config row plus eight toggle rows, and the allow-list guarding the generic setter.
+"""
+from __future__ import annotations
+
+import pytest
+
+from types import SimpleNamespace
+
+from leaguebot.core.db.database import run_migrations
+from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
+from leaguebot.image.models.image_module import ImageConfig
+from leaguebot.image.services.image_config_service import (
+    PFP_FLAG_COLUMNS,
+    SETTABLE_COLUMNS,
+    ImageConfigService,
+    UnknownConfigField,
+    pfp_change_refusal,
+)
+
+@pytest.fixture
+async def db_path(tmp_path):
+    path = str(tmp_path / "test.db")
+    await run_migrations(path)
+    return path
+
+
+@pytest.fixture
+def service(db_path):
+    return ImageConfigService(db_path)
+
+
+# ── Defaults ──────────────────────────────────────────────────────────────
+
+
+async def test_create_with_defaults_sets_every_packaged_default(service):
+    cfg = await service.create_with_defaults()
+
+    assert cfg.module_enabled is False
+    assert cfg.template_directory == "resources/defaults/templates"
+    for column, default_filename in TEMPLATE_COLUMNS.items():
+        assert getattr(cfg, column) == default_filename
+    for column, (_cmd, default_dir, _packaged) in ASSET_DIRECTORIES.items():
+        assert getattr(cfg, column) == default_dir
+    assert cfg.time_zone == "UTC"
+    assert cfg.time_format == "24H"
+    assert cfg.date_format == "DDD_DD_MON_YYYY"
+    assert cfg.fastest_lap_colour == "#A020F0"
+
+
+async def test_create_with_defaults_leaves_portraits_opt_in(service):
+    """Migration 047's defaults: off, but a working configuration the moment it is enabled."""
+    cfg = await service.create_with_defaults()
+
+    assert cfg.use_pfp is False
+    assert cfg.pfp_prerender is True
+    assert cfg.pfp_daily is False
+    assert cfg.pfp_daily_time == "03:00"
+
+
+async def test_create_with_defaults_inserts_exactly_nine_disabled_toggles(service):
+    await service.create_with_defaults()
+    toggles = await service.get_toggles()
+
+    assert set(toggles) == set(ASPECTS)
+    assert len(toggles) == 9
+    assert not any(toggles.values())
+
+
+async def test_create_with_defaults_is_idempotent(service):
+    await service.create_with_defaults()
+    await service.set_field("template_directory", "resources/custom")
+    await service.set_aspect("standings", True)
+
+    await service.create_with_defaults()
+
+    cfg = await service.get_config()
+    assert cfg.template_directory == "resources/custom"
+    assert (await service.get_toggles())["standings"] is True
+
+
+async def test_get_config_returns_none_before_creation(service):
+    assert await service.get_config() is None
+
+
+# ── The allow-list ────────────────────────────────────────────────────────
+
+
+async def test_set_field_rejects_column_outside_allow_list(service):
+    await service.create_with_defaults()
+    for forbidden in ("module_enabled", "server_id", "nonexistent_column"):
+        with pytest.raises(UnknownConfigField):
+            await service.set_field(forbidden, "x")
+
+
+async def test_allow_list_covers_all_settable_columns(service):
+    # 1 template dir + 15 filenames + 8 asset dirs + 4 preferences + the portrait time
+    # = 29 scalar columns. With the 8 toggles that is 37 configuration values in total
+    # (SC-008). The three portrait toggles are booleans and are deliberately outside this
+    # set -- they are written through `set_pfp_flag`, not the string-valued `set_field`.
+    # The eighth asset directory is the division logo, added 2026-09-02.
+    assert len(SETTABLE_COLUMNS) == 30
+    assert not (SETTABLE_COLUMNS & PFP_FLAG_COLUMNS)
+    await service.create_with_defaults()
+    for column in SETTABLE_COLUMNS:
+        await service.set_field(column, "probe")
+    cfg = await service.get_config()
+    for column in SETTABLE_COLUMNS:
+        assert getattr(cfg, column) == "probe"
+
+
+async def test_set_aspect_rejects_unknown_aspect(service):
+    await service.create_with_defaults()
+    with pytest.raises(UnknownConfigField):
+        await service.set_aspect("not_an_aspect", True)
+
+
+async def test_toggle_aspect_flips_and_returns_new_state(service):
+    await service.create_with_defaults()
+
+    assert await service.toggle_aspect("weather") is True
+    assert (await service.get_toggles())["weather"] is True
+
+    assert await service.toggle_aspect("weather") is False
+    assert (await service.get_toggles())["weather"] is False
+
+
+async def test_toggling_one_aspect_leaves_the_others_alone(service):
+    await service.create_with_defaults()
+    await service.toggle_aspect("standings")
+
+    toggles = await service.get_toggles()
+    assert toggles["standings"] is True
+    assert all(not v for k, v in toggles.items() if k != "standings")
+
+
+# ── 036 / T016: the ordered check sequence, and validate-then-store ───────
+
+import dataclasses as _dc  # noqa: E402
+
+from leaguebot.image.models.image_catalogues import CATALOGUES as _CATALOGUES  # noqa: E402
+from leaguebot.image.models.image_catalogues import FieldCatalogue as _FieldCatalogue  # noqa: E402
+from leaguebot.image.models.image_module import (  # noqa: E402
+    PROBLEM_EXTENSION,
+    PROBLEM_MISSING_MANDATORY_FIELD,
+    PROBLEM_NOT_FOUND,
+    PROBLEM_NOT_SVG,
+    ImageConfig as _ImageConfig,
+)
+from leaguebot.image.services.image_validity_service import (  # noqa: E402
+    check_all_templates,
+    check_filename,
+    check_template,
+)
+
+_VALID_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675"/>'
+
+#: A bare canvas passes Layer 1 but no longer passes Layer 2 for the calendar, whose
+#: catalogue was populated in 037. A "sound" calendar template must now carry the
+#: whole-graphic mandatory field and one complete round, its crop point standing at the
+#: declared height. The lineup (038) needs its own sound bytes below. The remaining
+#: thirteen types still have empty catalogues and skip Layer 2.
+_VALID_CALENDAR_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_1_number">1</text>'
+    b'<text id="round_1_country_name">C</text>'
+    b'<text id="round_1_race_name">R</text>'
+    b'<text id="round_1_date">1 Jan</text>'
+    b'<rect id="round_1_vertical_crop_point" x="0" y="675" width="1" height="1"/>'
+    b'<g id="round_1_cancelled"/>'
+    b"</svg>"
+)
+
+
+#: A sound lineup template carries the whole-graphic mandatory field and the reserve
+#: block. Its *team* fields are keyed by a league's own teams, so a template checked with
+#: no division in view is not asked for them (research R4).
+#: A sound lineup template declares at least one **team block** as well as the reserve
+#: block since v6.0.0 (047 FR-020). It was checkable only down to the reserve while the
+#: team fields were named after a league's own teams and so unknowable at this moment.
+_VALID_LINEUP_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<g id="team_1_group"><text id="team_1_name">T</text>'
+    b'<text id="team_1_driver_1_name">N</text></g>'
+    b'<g id="reserve_group"><text id="reserve_driver_1_name">N</text></g>'
+    b"</svg>"
+)
+
+
+#: A sound results template (039) carries the five whole-graphic mandatory fields and one
+#: complete row. The two kinds share every field but the columns of their rows, and a
+#: template must carry its own kind's alone — a sibling's field is a fault (XIV.3, v4.4.0).
+def _results_svg(*row_columns: bytes) -> bytes:
+    columns = b"".join(
+        b'<text id="row_1_%s">x</text>' % name for name in row_columns
+    )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b'<text id="race_name">R</text>'
+        b'<text id="session_name">S</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_driver_name">N</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_postrace_penalty">-</text>'
+        b'<text id="row_1_appeal_penalty">-</text>'
+        b'<text id="row_1_points">0</text>'
+        + columns
+        + b"</g></svg>"
+    )
+
+
+_VALID_RESULTS_QUALIFYING_SVG = _results_svg(b"best_lap", b"gap")
+_VALID_RESULTS_RACE_SVG = _results_svg(b"time", b"fastest_lap", b"ingame_penalty")
+
+
+#: A sound standings template (040) carries the three whole-graphic mandatory fields and one
+#: complete row. It declares **no round**, which is sound: the results grid is an optional
+#: unit (XIV.3, v4.5.0) and a template declaring none of it draws a classification alone.
+#: The two championships are siblings whose row catalogues differ, so each gets its own.
+def _standings_svg(*row_extra: bytes) -> bytes:
+    extra = b"".join(b'<text id="row_1_%s">x</text>' % name for name in row_extra)
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="classification_label">After Round 1</text>'
+        b'<text id="result_status">F</text>'
+        b'<g id="row_1_group">'
+        b'<text id="row_1_position">1</text>'
+        b'<text id="row_1_team_name">T</text>'
+        b'<image id="row_1_team_image"/>'
+        b'<text id="row_1_points">0</text>'
+        + extra
+        + b"</g></svg>"
+    )
+
+
+_VALID_STANDINGS_DRIVERS_SVG = _standings_svg(b"driver_name")
+_VALID_STANDINGS_CONSTRUCTORS_SVG = _standings_svg()
+
+
+#: A sound attendance sheet (041): the two whole-graphic mandatories and one complete row. It
+#: declares no round at all, the grid being an optional unit (XIV.3), and no position, the row
+#: ordinal of a sheet being a place in the layout and not a datum (XIV.11, v4.6.0).
+_VALID_ATTENDANCE_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="classification_label">After Round 1</text>'
+    b'<g id="row_1_group">'
+    b'<text id="row_1_driver_name">N</text>'
+    b'<text id="row_1_points">0</text>'
+    b"</g></svg>"
+)
+
+#: A sound check-in call (041). No session at all, and none of the values a button press can
+#: change — which is what makes the type static (XIV.17).
+_VALID_RSVP_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="race_name">R</text>'
+    b'<text id="round_format">Normal</text>'
+    b'<text id="round_date">1 Jan 2026</text>'
+    b'<text id="round_time">20:00 UTC</text>'
+    b"</svg>"
+)
+
+
+#: The weather headings every phase graphic must carry (042).
+_WEATHER_HEADING = (
+    b'<text id="division_name">D</text>'
+    b'<text id="phase_description">P</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="race_name">R</text>'
+)
+
+
+def _weather_p2_svg(sessions: int) -> bytes:
+    """A sound phase 2 template. No slot and no summary: both are phase 3's alone."""
+    blocks = b"".join(
+        b'<g id="session_%d_group">'
+        b'<text id="session_%d_name">S</text>'
+        b'<text id="session_%d_slot_type">Mixed</text>'
+        b"</g>" % (n, n, n)
+        for n in range(1, sessions + 1)
+    )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+def _weather_p3_svg(sessions: int, slots: int) -> bytes:
+    """A sound phase 3 template, declaring the slot floor its variant requires."""
+    blocks = b""
+    for n in range(1, sessions + 1):
+        cells = b"".join(
+            b'<g id="session_%d_slot_%d_group">'
+            b'<text id="session_%d_slot_%d_label">Clear</text>'
+            b"</g>" % (n, m, n, m)
+            for m in range(1, slots + 1)
+        )
+        blocks += (
+            b'<g id="session_%d_group"><text id="session_%d_name">S</text>' % (n, n)
+            + cells
+            + b"</g>"
+        )
+    return (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + blocks
+        + b"</svg>"
+    )
+
+
+_VALID_WEATHER_SVGS = {
+    "weather_p1_template": (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        + _WEATHER_HEADING
+        + b'<text id="rain_probability">30%</text>'
+        + b"</svg>"
+    ),
+    "weather_p2_template": _weather_p2_svg(2),
+    "weather_p2_sprint_template": _weather_p2_svg(4),
+    "weather_p3_template": _weather_p3_svg(2, 4),
+    "weather_p3_sprint_template": _weather_p3_svg(4, 3),
+    "weather_mystery_template": (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+        b'<text id="division_name">D</text>'
+        b'<text id="round_number">1</text>'
+        b"</svg>"
+    ),
+}
+
+_WEATHER_BY_FILENAME = {
+    TEMPLATE_COLUMNS[key]: svg for key, svg in _VALID_WEATHER_SVGS.items()
+}
+
+
+#: A sound verdict template (043): the eight mandatory fields, and no collection at all.
+_VALID_VERDICTS_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b'<text id="session_name">Race</text>'
+    b'<text id="verdict_stage">Post-Race Penalty</text>'
+    b'<text id="driver_name">A Driver</text>'
+    b'<text id="penalty">5 seconds added</text>'
+    b'<text id="description">Contact at turn four.</text>'
+    b'<text id="justification">Video evidence reviewed.</text>'
+    b"</svg>"
+)
+
+
+#: The banner heads a batch of verdicts and names nobody: the division and the round are the
+#: whole of what it must carry.
+_VALID_VERDICT_BANNER_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="304">'
+    b'<text id="division_name">D</text>'
+    b'<text id="round_number">1</text>'
+    b"</svg>"
+)
+
+
+def _sound_bytes(filename: str) -> bytes:
+    """The soundest template for *filename* at the depth its type is checked to."""
+    if filename == TEMPLATE_COLUMNS["verdicts_template"]:
+        return _VALID_VERDICTS_SVG
+    if filename == TEMPLATE_COLUMNS["verdict_banner_template"]:
+        return _VALID_VERDICT_BANNER_SVG
+    if filename in _WEATHER_BY_FILENAME:
+        return _WEATHER_BY_FILENAME[filename]
+    if filename == TEMPLATE_COLUMNS["calendar_template"]:
+        return _VALID_CALENDAR_SVG
+    if filename == TEMPLATE_COLUMNS["lineup_template"]:
+        return _VALID_LINEUP_SVG
+    if filename == TEMPLATE_COLUMNS["results_qualifying_template"]:
+        return _VALID_RESULTS_QUALIFYING_SVG
+    if filename == TEMPLATE_COLUMNS["results_race_template"]:
+        return _VALID_RESULTS_RACE_SVG
+    if filename == TEMPLATE_COLUMNS["standings_drivers_template"]:
+        return _VALID_STANDINGS_DRIVERS_SVG
+    if filename == TEMPLATE_COLUMNS["standings_constructors_template"]:
+        return _VALID_STANDINGS_CONSTRUCTORS_SVG
+    if filename == TEMPLATE_COLUMNS["attendance_template"]:
+        return _VALID_ATTENDANCE_SVG
+    if filename == TEMPLATE_COLUMNS["rsvp_template"]:
+        return _VALID_RSVP_SVG
+    return _VALID_SVG
+
+
+def _make_config(template_directory="templates", **overrides) -> _ImageConfig:
+    values = dict(
+        module_enabled=True,
+        template_directory=template_directory,
+        # Every asset directory, pointed at the **packaged** folder rather than the
+        # league one the column actually defaults to. `resources/defaults/` is tracked
+        # and identical on every host; `resources/league/` is gitignored and holds
+        # whatever the machine running this happens to carry.
+        #
+        # Derived rather than listed, so an asset class added later arrives here on its
+        # own. Listing them is what made the eighth class break five fixtures at once.
+        **{
+            column: packaged
+            for column, (_cmd, _league, packaged) in ASSET_DIRECTORIES.items()
+        },
+        use_pfp=False,
+        pfp_prerender=True,
+        pfp_daily=False,
+        pfp_daily_time="03:00",
+        time_zone="UTC",
+        time_format="24H",
+        date_format="DDD_DD_MON_YYYY",
+        fastest_lap_colour="#A020F0",
+        **dict(TEMPLATE_COLUMNS),
+    )
+    values.update(overrides)
+    return _ImageConfig(**values)
+
+
+@pytest.fixture()
+def template_dir(tmp_path):
+    directory = tmp_path / "templates"
+    directory.mkdir()
+    for filename in TEMPLATE_COLUMNS.values():
+        (directory / filename).write_bytes(_sound_bytes(filename))
+    return tmp_path
+
+
+@pytest.fixture()
+def catalogue_slot():
+    saved = dict(_CATALOGUES)
+    yield lambda key, cat: _CATALOGUES.__setitem__(key, cat)
+    _CATALOGUES.clear()
+    _CATALOGUES.update(saved)
+
+
+# FR-001 — the extension check, case-insensitive, before any filesystem access.
+
+
+@pytest.mark.parametrize("name", ["calendar.svg", "calendar.SVG", "calendar.Svg"])
+def test_extension_accepted_case_insensitively(name):
+    assert check_filename(name) is None
+
+
+@pytest.mark.parametrize("name", ["calendar.txt", "calendar", "calendar.svg.bak", ""])
+def test_extension_rejected(name):
+    problem = check_filename(name)
+    assert problem is not None
+    assert problem.kind == PROBLEM_EXTENSION
+
+
+def test_extension_is_checked_before_the_filesystem(tmp_path):
+    """A bad name is refused without the directory even having to exist."""
+    config = _make_config(template_directory="nowhere", calendar_template="x.txt")
+    problem = check_template(config, "calendar_template", root=tmp_path)
+    assert problem.kind == PROBLEM_EXTENSION
+
+
+# FR-002 … FR-004 — the rest of the sequence, each class distinguishable.
+
+
+def test_sound_template_yields_no_problem(template_dir):
+    assert check_template(_make_config(), "calendar_template", root=template_dir) is None
+
+
+def test_absent_file_names_the_path_searched(template_dir):
+    (template_dir / "templates" / "calendar_template.svg").unlink()
+    problem = check_template(_make_config(), "calendar_template", root=template_dir)
+
+    assert problem.kind == PROBLEM_NOT_FOUND
+    assert "calendar_template.svg" in problem.detail
+    assert problem.template_key == "calendar_template"
+
+
+def test_malformed_file_is_a_parse_problem_not_a_missing_one(template_dir):
+    (template_dir / "templates" / "calendar_template.svg").write_bytes(
+        b'<svg xmlns="http://www.w3.org/2000/svg"><!-- a -- b --></svg>'
+    )
+    problem = check_template(_make_config(), "calendar_template", root=template_dir)
+
+    assert problem.kind == PROBLEM_NOT_SVG
+    assert "double hyphen" in problem.detail
+    assert "XMLSyntaxError" not in problem.detail  # FR-046
+
+
+def test_a_directory_named_as_a_template_is_not_a_file(template_dir):
+    target = template_dir / "templates" / "calendar_template.svg"
+    target.unlink()
+    target.mkdir()
+    assert check_template(_make_config(), "calendar_template", root=template_dir) is not None
+
+
+def test_missing_mandatory_field_is_its_own_class(template_dir, catalogue_slot):
+    catalogue_slot("calendar_template", _FieldCatalogue(mandatory=frozenset({"season_name"})))
+    problem = check_template(_make_config(), "calendar_template", root=template_dir)
+
+    assert problem.kind == PROBLEM_MISSING_MANDATORY_FIELD
+    assert "season_name" in problem.detail
+
+
+def test_all_four_failure_classes_are_mutually_distinguishable(template_dir, catalogue_slot):
+    """SC-003 — four defects, four different kinds."""
+    kinds = {check_filename("calendar.txt").kind}
+
+    (template_dir / "templates" / "lineup_template.svg").unlink()
+    kinds.add(check_template(_make_config(), "lineup_template", root=template_dir).kind)
+
+    (template_dir / "templates" / "rsvp_template.svg").write_bytes(b"not markup")
+    kinds.add(check_template(_make_config(), "rsvp_template", root=template_dir).kind)
+
+    catalogue_slot("verdicts_template", _FieldCatalogue(mandatory=frozenset({"nope"})))
+    kinds.add(check_template(_make_config(), "verdicts_template", root=template_dir).kind)
+
+    assert len(kinds) == 4
+
+
+# FR-007 / FR-008 — every template, named individually.
+
+
+def test_check_all_templates_is_silent_when_all_are_sound(template_dir):
+    assert check_all_templates(_make_config(), root=template_dir) == []
+
+
+def test_check_all_templates_names_each_failure_separately(template_dir):
+    (template_dir / "templates" / "calendar_template.svg").unlink()
+    (template_dir / "templates" / "lineup_template.svg").write_bytes(b"not markup")
+
+    problems = check_all_templates(_make_config(), root=template_dir)
+
+    assert {p.template_key for p in problems} == {"calendar_template", "lineup_template"}
+    assert len({p.kind for p in problems}) == 2  # distinct reasons, not one blanket
+
+
+def test_candidate_override_does_not_mutate_the_stored_config():
+    """The heart of FR-005: the copy is what gets checked."""
+    config = _make_config()
+    proposed = _dc.replace(config, calendar_template="other.svg")
+
+    assert proposed.calendar_template == "other.svg"
+    assert config.calendar_template == "calendar_template.svg"
+
+
+# ── The portrait toggles and the at-least-one rule ────────────────────────
+
+
+async def test_set_pfp_flag_writes_each_toggle(service):
+    await service.create_with_defaults()
+
+    await service.set_pfp_flag("use_pfp", True)
+    await service.set_pfp_flag("pfp_daily", True)
+    await service.set_pfp_flag("pfp_prerender", False)
+
+    cfg = await service.get_config()
+    assert (cfg.use_pfp, cfg.pfp_daily, cfg.pfp_prerender) == (True, True, False)
+
+
+async def test_set_pfp_flag_refuses_a_column_outside_the_three(service):
+    await service.create_with_defaults()
+    # The string-valued time is not a flag, and no other column is reachable this way.
+    for forbidden in ("pfp_daily_time", "module_enabled", "server_id", "time_zone"):
+        with pytest.raises(UnknownConfigField):
+            await service.set_pfp_flag(forbidden, True)
+
+
+def _pfp_config(**overrides) -> ImageConfig:
+    """A config carrying only the fields `pfp_change_refusal` reads."""
+    values = {"use_pfp": True, "pfp_prerender": True, "pfp_daily": False}
+    values.update(overrides)
+    return SimpleNamespace(**values)  # type: ignore[return-value]
+
+
+@pytest.mark.parametrize("column", ["use_pfp", "pfp_prerender", "pfp_daily"])
+def test_enabling_anything_is_never_refused(column):
+    # Including from the state the rule exists to forbid: nothing is ever made worse by
+    # switching something on, so the rule only ever inspects a disable.
+    both_off = _pfp_config(pfp_prerender=False, pfp_daily=False)
+    assert pfp_change_refusal(both_off, column, True) is None
+
+
+def test_disabling_the_master_toggle_is_never_refused():
+    # Turning the feature off wholesale is what an "invalid" configuration was an awkward
+    # spelling of, so it cannot itself be invalid.
+    cfg = _pfp_config(pfp_prerender=False, pfp_daily=False)
+    assert pfp_change_refusal(cfg, "use_pfp", False) is None
+
+
+def test_disabling_the_only_remaining_trigger_is_refused():
+    cfg = _pfp_config(pfp_prerender=True, pfp_daily=False)
+    message = pfp_change_refusal(cfg, "pfp_prerender", False)
+    assert message is not None
+    assert "daily updates" in message
+
+    cfg = _pfp_config(pfp_prerender=False, pfp_daily=True)
+    message = pfp_change_refusal(cfg, "pfp_daily", False)
+    assert message is not None
+    assert "pre-render updates" in message
+
+
+def test_disabling_one_trigger_is_allowed_while_the_other_stands():
+    both_on = _pfp_config(pfp_prerender=True, pfp_daily=True)
+    assert pfp_change_refusal(both_on, "pfp_prerender", False) is None
+    assert pfp_change_refusal(both_on, "pfp_daily", False) is None
+
+
+def test_the_rule_does_not_bind_while_portraits_are_disabled():
+    # The two sub-toggles refuse outright while the master is off, so this state is not
+    # reachable by command; the rule still declines to invent a refusal for it.
+    off = _pfp_config(use_pfp=False, pfp_prerender=True, pfp_daily=False)
+    assert pfp_change_refusal(off, "pfp_prerender", False) is None

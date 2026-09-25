@@ -1,0 +1,593 @@
+"""Obtaining a driver's portrait from the server profile picture of their Discord account.
+
+The lineup already keys a portrait on the driver's Discord user ID and looks for it in the
+configured driver image directory (see the image module specification, "Lineup image
+generation"). This service is what puts a file there.
+
+Four engineering decisions live here rather than in a specification, because a league
+experiences none of them:
+
+**The file written is an SVG wrapping the PNG as a base64 data URI**, not a `.png`.
+`asset_resolver.ASSET_EXTENSION` is deliberately single-valued -- resolution is one computed
+name and one existence test, and admitting a second extension would make a missing file look
+like a present one. Wrapping keeps every one of those guarantees: the resolver finds an
+ordinary `.svg`, `svg_fill` gives it a `file://` URI as it does any other asset, and
+`_unreachable_links` is satisfied because the outer file genuinely exists. The payload is
+base64 rather than a relative link because the rasteriser reads the filled drawing from a
+directory of its own, where a relative href resolves to nothing and is drawn as nothing.
+
+**The avatar hash decides whether to download.** `Member.display_avatar.key` is carried on the
+Member object the lineup already fetches for its display names, so comparing it costs no HTTP
+whatever. A render that changes nothing downloads nothing.
+
+**`driver_portraits` is the ownership register.** A portrait file with no row was placed by
+the league itself; the bot never overwrites it and never fetches over it. This is what makes
+writing into `resources/league/drivers/` safe, that directory being the league's own.
+
+**A failure never reaches the render.** `Asset.read` goes through `HTTPClient.get_from_cdn`,
+which issues a bare session GET rather than passing through `HTTPClient.request` -- so it
+consumes no REST rate-limit budget, but equally gets none of discord.py's 429 handling: a 429
+raises a bare `HTTPException` with no backoff and no retry. Any `HTTPException` therefore
+abandons the rest of the batch rather than hammering the queue behind it, and writes no row,
+so the next occasion tries again. Pinned by
+`test_driver_portrait_service.py::test_an_http_error_abandons_the_rest_of_the_batch`.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import logging
+import os
+from collections.abc import Iterable
+from datetime import datetime, timezone
+from pathlib import Path
+
+import discord
+
+from leaguebot.core.db.database import get_connection
+from leaguebot.image.utils.asset_resolver import filename_for
+from leaguebot.core.utils.league_bot import LeagueBot
+
+log = logging.getLogger(__name__)
+
+#: Discord serves a square avatar; 128 is the smallest size that still reads well in a 44px
+#: lineup slot on a 2x display, and keeps a forty-driver division under a megabyte.
+PORTRAIT_SIZE = 128
+
+#: How many avatars are fetched at once. The CDN would tolerate more, but the bot runs on a
+#: Raspberry Pi and there is nothing to be gained by opening forty sockets to save a second.
+DEFAULT_CONCURRENCY = 8
+
+#: How long a *render* will wait for portraits before drawing with what it has. A cold
+#: division is not meant to complete in one render: what did not arrive is fetched on the
+#: next, and the division converges over two or three postings. The daily job passes None,
+#: nothing waiting on it.
+DEFAULT_RENDER_BUDGET_SECONDS = 2.0
+
+#: Distinguishes "the caller did not resolve a directory" from "the caller resolved one and
+#: it was rejected". The two must not be conflated: a rejected directory reaches
+#: `refresh_before_render` as None, and re-resolving it there would obtain portraits into the
+#: very directory the render had just refused.
+_UNSET = object()
+
+
+def wrap_size(aspect: float) -> tuple[int, int]:
+    """The wrapper's pixel size for a slot of ratio *aspect*, longest side `PORTRAIT_SIZE`.
+
+    Rounded to whole pixels, and never below one, so a preposterous ratio degrades to a
+    sliver rather than to a zero-width document the rasteriser would reject.
+    """
+    if not aspect or aspect <= 0:
+        aspect = 1.0
+    if aspect >= 1.0:
+        return PORTRAIT_SIZE, max(1, round(PORTRAIT_SIZE / aspect))
+    return max(1, round(PORTRAIT_SIZE * aspect)), PORTRAIT_SIZE
+
+
+def wrap_png(data: bytes, aspect: float = 1.0) -> str:
+    """The SVG that carries *data* as a driver portrait, shaped to *aspect*.
+
+    **Authored at the shape the league's own lineup template draws portraits at**, which
+    since 2026-09-01 is the league's to choose. The default of 1:1 is what a league that has
+    changed nothing gets, and what is used whenever the lineup template cannot be read.
+
+    `preserveAspectRatio="xMidYMid slice"` is the centre crop: Discord serves a square
+    avatar, and a non-square slot takes the middle of it and trims both sides equally. The
+    alternative, `meet`, would letterbox instead -- and the rasteriser fills that band by
+    carrying the outermost pixels outward rather than leaving it clear, so a portrait would
+    be smeared rather than merely padded. Cropping a face towards its centre is the better
+    failure of the two.
+
+    No `clipPath` and no filter, per the authoring rules in `resources/README.md`: an
+    `<image>` establishes its own viewport and clips `slice` to it, so none is needed. The
+    wrapper is generated, but it is not exempt from those rules.
+    """
+    payload = base64.b64encode(data).decode("ascii")
+    width, height = wrap_size(aspect)
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:xlink="http://www.w3.org/1999/xlink" '
+        f'viewBox="0 0 {width} {height}" '
+        f'width="{width}" height="{height}">\n'
+        f'  <image width="{width}" height="{height}" '
+        'preserveAspectRatio="xMidYMid slice" '
+        f'xlink:href="data:image/png;base64,{payload}" '
+        f'href="data:image/png;base64,{payload}"/>\n'
+        "</svg>\n"
+    )
+
+
+def portrait_key(avatar_key: str, aspect: float) -> str:
+    """What is recorded for a portrait we obtained: the avatar, and the shape we wrapped it at.
+
+    The shape belongs in the key because the key is what decides whether a portrait is still
+    current. A league that re-shapes its lineup template has not changed a single avatar, so
+    on the avatar alone every portrait would read as unchanged and stay at the old shape for
+    as long as the drivers kept their pictures. Folding the shape in re-wraps them all on the
+    next refresh, and needs no migration: an old row simply carries no `@`, matches nothing,
+    and is refreshed once.
+    """
+    return f"{avatar_key}@{float(aspect):.4f}"
+
+
+def portrait_aspect(config) -> float:
+    """The shape the league's lineup template draws driver portraits at. 1:1 when unreadable.
+
+    The lineup is the only template carrying driver slots, so one file answers this and no
+    survey of the sixteen is needed. Every failure -- no configuration, a template directory
+    that does not resolve, a file that will not parse, a lineup declaring no portrait slot at
+    all -- lands on 1:1, which is what the bot shipped with and what a league that has
+    re-shaped nothing is already using.
+
+    A portrait is never worth an exception: this runs on the way to drawing a graphic, and a
+    lineup template too broken to read is a fault the render itself will report in terms a
+    manager can act on. Reporting it twice, from here, in worse terms, would help nobody.
+    """
+    try:
+        from leaguebot.image.services.image_validity_service import class_aspect_of
+        from leaguebot.core.utils.paths import resolve_within_project_root
+        from leaguebot.image.utils.svg_document import load_svg
+
+        filename = getattr(config, "lineup_template", None)
+        directory = getattr(config, "template_directory", None)
+        if not filename or not directory:
+            return 1.0
+        path = resolve_within_project_root(directory) / filename
+        if not path.is_file():
+            return 1.0
+        found = class_aspect_of(load_svg(path), "lineup_template", "driver")
+        return found if found and found > 0 else 1.0
+    except Exception:  # noqa: BLE001 -- a portrait never fails a render
+        log.debug(
+            "driver portraits: could not read the portrait shape; assuming 1:1",
+            exc_info=True,
+        )
+        return 1.0
+
+
+def portrait_path(directory: Path, discord_user_id: str) -> Path:
+    """Where the portrait for *discord_user_id* lives.
+
+    Named through `filename_for` rather than by formatting a string, so the name this service
+    writes can never drift from the name `resolve_asset` looks for.
+    """
+    return Path(directory) / filename_for(str(discord_user_id))
+
+
+def has_own_avatar(member) -> bool:
+    """Whether *member* presents a picture of their own, rather than Discord's generated one.
+
+    A generated avatar stands for the absence of a portrait, not for a portrait, so nothing is
+    obtained for such a driver and their seat draws the class fallback exactly as an
+    unsupplied portrait does.
+    """
+    return getattr(member, "avatar", None) is not None or (
+        getattr(member, "guild_avatar", None) is not None
+    )
+
+
+def _write_atomically(path: Path, text: str) -> None:
+    """Write *text* to *path* without ever leaving a half-written portrait behind.
+
+    A render reading the directory concurrently sees either the old file or the new one. The
+    temporary lands in the same directory so that `os.replace` is a rename within one
+    filesystem, which is the only form of it that is atomic.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.partial")
+    temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)
+
+
+async def _load_owned(db_path: str) -> dict[str, str]:
+    """The portraits this bot owns, as user id -> avatar key."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, avatar_key FROM driver_portraits"
+        )
+        rows = await cursor.fetchall()
+    return {str(row["discord_user_id"]): row["avatar_key"] for row in rows}
+
+
+async def _record(db_path: str, user_id: str, key: str, now) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_portraits (discord_user_id, avatar_key, fetched_at) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(discord_user_id) DO UPDATE SET "
+            "avatar_key = excluded.avatar_key, fetched_at = excluded.fetched_at",
+            (str(user_id), key, now.isoformat()),
+        )
+        await db.commit()
+
+
+async def _disown(db_path: str, user_id: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "DELETE FROM driver_portraits WHERE discord_user_id = ?", (str(user_id),)
+        )
+        await db.commit()
+
+
+async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
+    """Remove the portrait this bot obtained for *user_id*, the file and its row together.
+
+    Returns whether anything was removed. A driver who takes their profile picture down wants
+    this, their seat reverting to the placeholder; so does every account no driver is drawn
+    under any longer, which :func:`discard_portraits` passes on — one a driver has replaced
+    (issues #222 and #243), and each of a driver deleted (issue #235).
+
+    **Only where the file is ours to remove.** `driver_portraits` is the ownership register:
+    a portrait with no row was placed by the league itself, and the bot never overwrites such
+    a file and never fetches over it (see the module docstring). An unowned portrait is
+    therefore left exactly where it is, being the league's own artwork and deliberate.
+
+    **The row never goes without the file.** Deleting the row alone would *disown* a portrait
+    the bot wrote, after which the bot would refuse to overwrite its own leftover for good —
+    the very thing the register exists to prevent. A caller that cannot resolve a directory
+    must leave both alone rather than take the row on its own.
+    """
+    user_id = str(user_id)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM driver_portraits WHERE discord_user_id = ?", (user_id,)
+        )
+        if await cursor.fetchone() is None:
+            return False
+    portrait_path(Path(directory), user_id).unlink(missing_ok=True)
+    await _disown(db_path, user_id)
+    return True
+
+
+async def discard_portraits(bot: LeagueBot, user_ids: Iterable[str]) -> int:
+    """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any longer.
+
+    Returns how many were removed. Two paths want this. `/driver reassign` discards the
+    portrait of the account a driver has just replaced, everything being drawn under their
+    current account (issues #222 and #243). The driver pass that ends a season discards those
+    of every driver it deletes, past accounts and current alike (issue #235). Either account
+    has its picture obtained afresh should it be drawn again, as any driver's is.
+
+    Each goes through :func:`remove_portrait`, which leaves a portrait the league placed itself
+    where it is.
+
+    **Where the league names no image configuration, or a driver directory that cannot be
+    resolved, nothing is removed** — neither the files nor their rows; see
+    :func:`remove_portrait` for why the row must never go on its own. What that leaves behind
+    stays, nothing sweeping for it afterwards: the directory failing to resolve at the moment
+    a driver is deleted is the whole of the residue, and not worth a sweep (issue #235).
+
+    Never raises, and one portrait that cannot be removed does not keep the rest. Both callers
+    have committed by the time this runs, and a portrait is not worth reporting a completed
+    command, or a season's end, as a failure.
+    """
+    user_ids = [str(user_id) for user_id in user_ids]
+    if not user_ids:
+        return 0
+    try:
+        config = await bot.image_config_service.get_config()
+        if config is None:
+            return 0
+        from leaguebot.image.services.image_render_service import resolve_configured_directories
+
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("driver", "driver_image_directory"),),
+            image_type="driver_portraits",
+        )
+        directory = directories.get("driver")
+        if directory is None:
+            return 0
+    except Exception:  # noqa: BLE001 -- a portrait never fails the command that discards it
+        log.warning("driver portraits: could not resolve where to discard them", exc_info=True)
+        return 0
+
+    removed = 0
+    for user_id in user_ids:
+        try:
+            if await remove_portrait(bot.db_path, user_id, directory):
+                removed += 1
+        except Exception:  # noqa: BLE001 -- as above, and the rest are still worth removing
+            log.warning(
+                "driver portraits: could not discard the one of %s", user_id, exc_info=True
+            )
+    return removed
+
+
+async def assigned_driver_ids(db_path: str) -> list[str]:
+    """The Discord user IDs assigned to a seat in the active season.
+
+    Sorted, so the daily refresh works through a roster in a stable order rather than
+    whatever order SQLite happens to return -- which matters the moment a run is cut short.
+
+    Test drivers are excluded: their IDs are synthetic and resolve to no Discord account, so
+    fetching for them could only ever fail.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT DISTINCT dp.discord_user_id AS uid
+            FROM driver_season_assignments dsa
+            JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+            JOIN seasons s ON s.id = dsa.season_id
+            WHERE s.status = 'ACTIVE'
+              AND dp.is_test_driver = 0
+            """,
+        )
+        rows = await cursor.fetchall()
+    return sorted(str(row["uid"]) for row in rows)
+
+
+async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> int:
+    """The daily portrait refresh for the league. Returns how many were written.
+
+    Unlike the pre-render trigger this has no graphic to scope it, so it works through every
+    driver seated in the active season. It also passes no wall-clock budget: nothing is
+    waiting on it, and a roster that takes a minute at 03:00 costs nobody anything.
+
+    Never raises. It is an APScheduler job, and an exception here would be logged into a void
+    the league never reads.
+    """
+    try:
+        config = await bot.image_config_service.get_config()
+        if config is None or not getattr(config, "use_pfp", False):
+            return 0
+        if not getattr(config, "pfp_daily", False):
+            return 0
+
+        from leaguebot.core.utils.league_server import league_guild
+
+        guild = await league_guild(bot)
+        if guild is None:
+            log.warning("driver portraits: the league's server is not reachable")
+            return 0
+
+        from leaguebot.image.services.image_render_service import resolve_configured_directories
+
+        directories, _faults = resolve_configured_directories(
+            config,
+            (("driver", "driver_image_directory"),),
+            image_type="driver_portraits",
+        )
+        directory = directories.get("driver")
+        if directory is None:
+            return 0
+
+        members = []
+        for user_id in await assigned_driver_ids(bot.db_path):
+            member = guild.get_member(int(user_id))
+            if member is not None:
+                members.append(member)
+        if not members:
+            return 0
+
+        return await refresh_portraits(
+            bot.db_path,
+            members,
+            directory,
+            aspect=portrait_aspect(config),
+            budget_seconds=None,
+            now=now,
+        )
+    except Exception:  # noqa: BLE001 -- a scheduled job that raises is a job that stops
+        log.warning("driver portraits: the daily refresh failed", exc_info=True)
+        return 0
+
+
+async def refresh_before_render(
+    bot: LeagueBot,
+    members,
+    *,
+    config=None,
+    directory=_UNSET,
+    obtain_missing: bool = False,
+    now: datetime | None = None,
+) -> int:
+    """Refresh the portraits a graphic is about to draw, where the league asked for that.
+
+    The gate for the pre-render trigger, in one place: both the posting path and the preview
+    path call this rather than each deciding for itself whether the feature is on.
+
+    *config* and *directory* are accepted because the posting path has already read and
+    resolved both, and resolving twice per render would be waste; either may be omitted and
+    is then worked out here.
+
+    Passing ``directory=None`` is **not** the same as omitting it. None means the caller
+    resolved the driver directory and it was rejected, and the gate shuts: obtaining
+    portraits into a directory the render has just refused would be worse than obtaining
+    none. Omitting the argument entirely means the caller has not looked, and it is resolved
+    here.
+
+    *obtain_missing* obtains a portrait for each member who has **none**, whichever update
+    trigger the league chose. Only the placements review sets it, through the lineup it draws
+    (image specification, "The drawing of placements under review"). A member who already has
+    a portrait is left to the trigger: where the league updates before every render this
+    brings them all up to date as any render does, and where it updates daily it touches
+    only the missing. ``use_pfp`` still governs: a league not taking portraits from Discord
+    at all is never fetched for.
+
+    Returns the number of portraits written, and never raises.
+    """
+    try:
+        if config is None:
+            config = await bot.image_config_service.get_config()
+        # `getattr` rather than attribute access: a configuration object predating migration
+        # 047 carries neither field. Absent reads as off, which is the same answer the
+        # defaults give.
+        if config is None or not getattr(config, "use_pfp", False):
+            return 0
+        # `pfp_prerender` is the league's choice about *ordinary* postings. The placements
+        # review sets `obtain_missing` and obtains the missing whichever trigger is on: it is
+        # the one moment a season is judged on a drawing, and a driver seated since the last
+        # daily run would otherwise be judged as a placeholder the league will not see
+        # (decided 2026-09-23).
+        every = bool(getattr(config, "pfp_prerender", False))
+        if not every and not obtain_missing:
+            return 0
+        if not members:
+            return 0
+
+        if directory is _UNSET:
+            from leaguebot.image.services.image_render_service import resolve_configured_directories
+
+            directories, _faults = resolve_configured_directories(
+                config,
+                (("driver", "driver_image_directory"),),
+                image_type="driver_portraits",
+            )
+            directory = directories.get("driver")
+        if directory is None:
+            # The configured directory was rejected. The render reports that fault itself,
+            # in the terms a manager can act on; obtaining portraits into it is not this
+            # module's problem to solve twice.
+            return 0
+        if not every:
+            # Only the review reaches here: a portrait already present is the daily
+            # trigger's to keep current, and re-fetching it would spend the review's budget
+            # on drivers who already draw correctly.
+            members = [
+                member
+                for member in members
+                if not portrait_path(directory, str(member.id)).exists()
+            ]
+            if not members:
+                return 0
+
+        return await refresh_portraits(
+            bot.db_path,
+            members,
+            directory,
+            aspect=portrait_aspect(config),
+            now=now,
+        )
+    except Exception:  # noqa: BLE001 -- a portrait never fails a render
+        # Beneath this lie reads of the database and the directory, either of which can
+        # raise. The lineup render would turn that into a drawing refused, and at the
+        # placements review a refused drawing withholds the approve button — which the
+        # obtaining of a portrait must never do (image specification, decided 2026-09-23).
+        log.warning("driver portraits: the pre-render refresh failed", exc_info=True)
+        return 0
+
+
+async def refresh_portraits(
+    db_path: str,
+    members,
+    directory,
+    *,
+    aspect: float = 1.0,
+    budget_seconds: float | None = DEFAULT_RENDER_BUDGET_SECONDS,
+    concurrency: int = DEFAULT_CONCURRENCY,
+    now: datetime | None = None,
+) -> int:
+    """Bring the portraits of *members* up to date. Returns how many were written.
+
+    *aspect* is the shape the league's lineup template draws portraits at; the avatar is
+    centre-cropped to it. Callers read it with :func:`portrait_aspect`, and 1:1 is what a
+    league that has re-shaped nothing gets.
+
+    Never raises for anything a portrait can do: the caller is drawing a graphic, and a
+    portrait that cannot be obtained resolves exactly as it would have resolved had this
+    never run.
+    """
+    directory = Path(directory)
+    now = now or datetime.now(timezone.utc)
+    owned = await _load_owned(db_path)
+
+    stale: list = []
+    for member in members:
+        user_id = str(member.id)
+        path = portrait_path(directory, user_id)
+
+        if not has_own_avatar(member):
+            # Removing an avatar reverts the seat to the placeholder, but only where the file
+            # is ours to remove — which `remove_portrait` is the one judge of.
+            await remove_portrait(db_path, user_id, directory)
+            continue
+
+        if user_id not in owned and path.exists():
+            continue  # the league drew this one themselves
+
+        if owned.get(user_id) == portrait_key(
+            member.display_avatar.key, aspect
+        ) and path.is_file():
+            continue  # unchanged since it was obtained, and wrapped at the shape in force
+
+        stale.append(member)
+
+    if not stale:
+        return 0
+
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    abort = asyncio.Event()
+    written = 0
+
+    async def fetch(member) -> None:
+        nonlocal written
+        if abort.is_set():
+            return
+        async with semaphore:
+            if abort.is_set():
+                return
+            asset = member.display_avatar
+            try:
+                data = await asset.with_format("png").with_size(PORTRAIT_SIZE).read()
+            except discord.HTTPException as exc:
+                # See the module docstring: there is no 429 handling beneath us, so stop
+                # rather than send the rest of the queue into the same wall.
+                abort.set()
+                log.warning("driver portraits: abandoning the batch after %s", exc)
+                return
+            except Exception:  # noqa: BLE001 -- a portrait never fails a render
+                log.warning(
+                    "driver portraits: could not obtain one for %s", member.id, exc_info=True
+                )
+                return
+
+            try:
+                _write_atomically(
+                    portrait_path(directory, str(member.id)), wrap_png(data, aspect)
+                )
+            except OSError:
+                log.warning(
+                    "driver portraits: could not write one for %s", member.id, exc_info=True
+                )
+                return
+
+            await _record(
+                db_path, str(member.id), portrait_key(asset.key, aspect), now
+            )
+            written += 1
+
+    tasks = [asyncio.create_task(fetch(member)) for member in stale]
+    done, pending = await asyncio.wait(tasks, timeout=budget_seconds)
+    for task in pending:
+        # Out of budget rather than in error: what did not arrive is fetched next time.
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+        log.info(
+            "driver portraits: %s of %s obtained within the budget",
+            written,
+            len(stale),
+        )
+    return written

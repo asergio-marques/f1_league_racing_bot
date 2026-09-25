@@ -27,9 +27,11 @@ cd f1_league_weather_randomizer_bot
 python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
-Install into the virtualenv, not system-wide. `requirements.txt` pins exact versions, and a
+The last line installs the bot itself into the virtualenv, as the package `leaguebot`, which is how
+it is started (below). Install into the virtualenv, not system-wide. `requirements.txt` pins exact versions, and a
 virtualenv is what makes those pins apply. On Debian and Raspberry Pi OS especially, a
 system-wide install leaves the interpreter importing apt's own copies from
 `/usr/lib/python3/dist-packages` — which pip never writes to — so the bot runs against
@@ -70,8 +72,22 @@ SCHEDULER_DB_PATH=
 ### 3. Run the bot
 
 ```bash
-python src/bot.py
+python -m leaguebot
 ```
+
+Run it from the repository's root, with the virtualenv active: a relative `DB_PATH` is read from
+the folder the bot is started in.
+
+**Upgrading to v0.5.0.** The bot became an installed package in v0.5.0. After updating to it, run
+`pip install -e .` once in the virtualenv, and start the bot with `python -m leaguebot` rather
+than `python src/bot.py`, changing a service's start command to match. Timed work saved by an
+earlier version cannot be carried over, because each job names the code it runs by where that code
+used to be. Upgrade with no signups open and no season racing, and delete the scheduler's job store
+(`scheduler.db` beside `DB_PATH`, or the file `SCHEDULER_DB_PATH` names) before the first start:
+the bot re-arms its standing jobs, such as a signup's close time and the daily portrait refresh, as
+it starts. A job store left in place holds jobs the bot can no longer run, and one of them can stop
+the start from finishing. For the same reason, do not restore a backup saved before v0.5.0: it
+brings the old job store back with it.
 
 On first run the bot creates **two** database files and applies all schema migrations
 automatically:
@@ -2855,6 +2871,9 @@ Phase 2 and Phase 3 horizons.
 
 ## Running Tests
 
+With the virtualenv from Setup active, and the bot installed into it (`pip install -e .`), which
+is how the tests import it:
+
 ```bash
 pytest
 ```
@@ -2864,15 +2883,22 @@ pytest
 ## Architecture
 
 ```
-src/
-  bot.py               Entry point
-  models/              Dataclasses and enums
-  db/                  Database connection + migrations
-  services/            Business logic (season, phases, scheduler, amendments)
-  cogs/                Discord slash commands
-  utils/               Math formulas, message builders, channel guard, output router,
-                       autocomplete bounds, logging filters
+src/leaguebot/         The bot, one installed package
+  __main__.py          Entry point: builds everything and starts the bot
+  core/                What every module shares: seasons, divisions, rounds, drivers, teams,
+                       the database and its migrations, the scheduler, the log channel
+  results/             Results & standings
+  attendance/          Attendance
+  signup/              Signup
+  weather/             Weather
+  image/               Image generation
+                       Each holds a folder for each kind of code it has: cogs/ (slash commands),
+                       services/ (rules and database code), models/ (dataclasses and enums),
+                       utils/ (helpers), and in core db/
 tests/
-  unit/                Pure-function tests (math_utils)
-  integration/         Database migration and query tests
+  core/, results/, …   One folder per module, as under src/leaguebot/
+  repository/          The repository's own rules: architecture checks, configuration, tools
+  support/             Helpers the tests share
 ```
+
+Why the code is laid out this way is in `docs/design/architecture.md`.

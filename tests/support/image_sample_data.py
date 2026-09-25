@@ -16,8 +16,8 @@ on them exercises the problem/notice distinction rather than assuming it.
 """
 from __future__ import annotations
 
-from utils.svg_document import FieldIndex
-from utils.svg_fill import FillSpec
+from leaguebot.image.utils.svg_document import FieldIndex
+from leaguebot.image.utils.svg_fill import FillSpec
 
 #: A Discord display name of the sort no league controls the length of. Any template
 #: field carrying a driver name should be bounded, and this is what proves it.
@@ -82,8 +82,8 @@ def build_calendar_drawing(root):
     from datetime import datetime, timedelta, timezone
     from types import SimpleNamespace
 
-    from models.image_catalogues import CapacityError, catalogue_for
-    from services.image_calendar_service import CalendarDataError, resolve_drawing
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.image.services.image_calendar_service import CalendarDataError, resolve_drawing
 
     try:
         capacity = catalogue_for("calendar_template").capacity(root) or 0
@@ -159,8 +159,8 @@ def build_lineup_drawing(root, teams):
     """
     from types import SimpleNamespace
 
-    from models.image_catalogues import CapacityError, catalogue_for
-    from services.image_lineup_service import LineupDataError, resolve_drawing
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.image.services.image_lineup_service import LineupDataError, resolve_drawing
 
     configurable = [t for t in teams if not getattr(t, "is_reserve", False)]
     if not configurable:
@@ -250,14 +250,14 @@ def build_results_drawing(root, template_key: str, teams):
     count cannot reach are simply not drawn — which is what "insofar as the number of rows
     declared allows" means.
     """
-    from models.image_catalogues import CapacityError, catalogue_for
-    from models.points_config import SessionType
-    from models.session_result import (
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.models.session_result import (
         OutcomeModifier,
         QualifyingSessionResult,
         RaceSessionResult,
     )
-    from services.image_results_service import (
+    from leaguebot.image.services.image_results_service import (
         QUALIFYING_TEMPLATE_KEY,
         ResultsDataError,
         resolve_drawing,
@@ -322,7 +322,7 @@ def build_results_drawing(root, template_key: str, teams):
             # a classification rather than as a field of drivers tied with the leader.
             cycle = (index - 1) // len(cases)
             if cycle and best_lap:
-                from utils.results_formatter import parse_lap_time, render_lap_time
+                from leaguebot.results.utils.results_formatter import parse_lap_time, render_lap_time
 
                 parsed = parse_lap_time(best_lap)
                 if parsed is not None:
@@ -460,8 +460,8 @@ def build_attendance_drawing(root, teams, *, limits: bool = True):
     reach are simply not drawn, which is what "insofar as the number of rows declared allows"
     means.
     """
-    from models.image_catalogues import CapacityError, catalogue_for
-    from services.image_attendance_service import (
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.image.services.image_attendance_service import (
         ATTENDANCE_TEMPLATE_KEY,
         AttendanceDataError,
         DriverRecord,
@@ -612,8 +612,8 @@ def build_rsvp_drawing(root, *, case: str = "sprint"):
     """
     from datetime import datetime, timezone
 
-    from services.attendance_service import derive_checkin_deadline
-    from services.image_rsvp_service import resolve_drawing
+    from leaguebot.attendance.services.attendance_service import derive_checkin_deadline
+    from leaguebot.image.services.image_rsvp_service import resolve_drawing
 
     chosen = next(
         (entry for entry in SAMPLE_RSVP_CASES if entry[0] == case), SAMPLE_RSVP_CASES[0]
@@ -686,7 +686,7 @@ def build_verdict_banner_drawing(root, *, case: str | None = None):
     draws the round that matched no track record, which is the only state the banner has
     besides the ordinary one.
     """
-    from services.image_verdict_banner_service import resolve_drawing
+    from leaguebot.image.services.image_verdict_banner_service import resolve_drawing
 
     if case == "no_track":
         return resolve_drawing(
@@ -713,7 +713,7 @@ def build_weather_drawing(root, template_key: str):
     their sprint template and an endurance round from their plain one; phase 1 and the mystery
     notice draw one apiece.
     """
-    from services.image_weather_service import resolve_drawing
+    from leaguebot.image.services.image_weather_service import resolve_drawing
 
     sprint = template_key.endswith("_sprint_template")
     fmt, track, race, country, sessions = _SAMPLE_WEATHER_ROUNDS[
@@ -795,7 +795,7 @@ VERDICT_TEXT_NOT_PROVIDED = "(not provided)"
 
 def build_verdict_drawing(root, *, case: str = "penalty_added_sprint"):
     """One fabricated verdict. `root` is unused: the type declares no collection to count."""
-    from services.image_verdict_service import (
+    from leaguebot.image.services.image_verdict_service import (
         VerdictDrawing,
         VerdictKind,
         resolve_mentions,
@@ -914,8 +914,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
     through the same resolution the real thing uses rather than from loose sample ids.
     """
     if template_key == "calendar_template":
-        from services.image_calendar_service import build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_calendar_service import build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         # The packaged track directory. `/images test` reads no live data (FR-036), and
         # a preview must still resolve its assets — without a directory every round image
@@ -932,8 +932,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         )
 
     if template_key == "lineup_template":
-        from services.image_lineup_service import LineupDataError, build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_lineup_service import LineupDataError, build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         if teams is None:
             raise LineupDataError(
@@ -959,8 +959,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         )
 
     if template_key in ("results_qualifying_template", "results_race_template"):
-        from services.image_results_service import ResultsDataError, build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_results_service import ResultsDataError, build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         if teams is None:
             raise ResultsDataError(
@@ -989,8 +989,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         "standings_drivers_template",
         "standings_constructors_template",
     ):
-        from services.image_standings_service import StandingsDataError, build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_standings_service import StandingsDataError, build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         if teams is None:
             raise StandingsDataError(
@@ -1019,8 +1019,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         )
 
     if template_key == "attendance_template":
-        from services.image_attendance_service import build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_attendance_service import build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         directories = {}
         for asset_class, relative in (
@@ -1040,8 +1040,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         )
 
     if template_key == "rsvp_template":
-        from services.image_rsvp_service import build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_rsvp_service import build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         directories = {}
         try:
@@ -1056,8 +1056,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         )
 
     if template_key == "verdicts_template":
-        from services.image_verdict_service import build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_verdict_service import build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         directories = {}
         for asset_class, relative in (
@@ -1076,8 +1076,8 @@ def build_spec(template_key: str, root, *, teams=None, variant=None) -> FillSpec
         )
 
     if template_key.startswith("weather_"):
-        from services.image_weather_service import build_fill_spec
-        from utils.paths import resolve_within_project_root
+        from leaguebot.image.services.image_weather_service import build_fill_spec
+        from leaguebot.core.utils.paths import resolve_within_project_root
 
         directories = {}
         for asset_class, relative in (
@@ -1190,14 +1190,14 @@ def build_standings_drawing(root, template_key: str, teams):
     derivation the real thing calls — so the preview exercises the arithmetic rather than
     imitating it (Constitution XIV.7).
     """
-    from models.image_catalogues import CapacityError, catalogue_for
-    from models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-    from services.image_standings_service import (
+    from leaguebot.image.models.image_catalogues import CapacityError, catalogue_for
+    from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+    from leaguebot.image.services.image_standings_service import (
         DRIVERS_TEMPLATE_KEY,
         StandingsDataError,
         resolve_drawing,
     )
-    from services.standings_service import derive_gaps, derive_movement
+    from leaguebot.results.services.standings_service import derive_gaps, derive_movement
 
     configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]
     if not configurable:

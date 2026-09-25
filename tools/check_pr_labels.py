@@ -53,7 +53,7 @@ GROUPS: dict[str, Callable[[str], bool]] = {
 # how-to guides, and what a host installs. The test-mode guide sits among the how-to guides
 # but is written for maintainers.
 LEAGUE_FACING_DIRECTORIES = ("src/", "resources/defaults/", "docs/how-to/")
-LEAGUE_FACING_FILES = ("README.md", "requirements.txt")
+LEAGUE_FACING_FILES = ("README.md", "requirements.txt", "pyproject.toml")
 NOT_LEAGUE_FACING = ("docs/how-to/test-mode.md",)
 
 _PART_OF = re.compile(r"\bpart\s+of\s+#(\d+)", re.IGNORECASE)

@@ -153,7 +153,7 @@ are part of the build and keep their tests: `tools/coverage_by_module.py`, CI's 
 coverage gate; `tools/check_pr_labels.py`, the required pull-request label check; and
 `tools/next_version.py`, which names every release (the last two decided 2026-09-21, #259). Bot
 code a tool happens to use is in `src/` and is tested like any other — the LCH colour maths
-`tools/tier_palette.py` relies on is tested in `tests/unit/test_colour_lch.py`.
+`tools/tier_palette.py` relies on is tested in `tests/image/test_colour_lch.py`.
 
 Tests that pin a date must pin "now" alongside it. Several services accept a `now` parameter for
 exactly this; a test that seeds a future date and lets the code read the wall clock passes today
@@ -201,16 +201,18 @@ under four. It needs Python 3.12+, and both the Pi and CI are on 3.13.
 statements and is ~98% "covered" by construction, because a test file's lines are hit by
 running it — before #208 nothing scoped the run, so the gate counted the suite and reported
 86% while the bot sat at 68.8%, under the floor, on every green build. Do not add a scope to
-`pyproject.toml` or `setup.cfg`: coverage reads those first and the two would drift.
-`tests/unit/test_coverage_scope.py` pins both halves.
+`pyproject.toml` or `setup.cfg`: coverage reads `.coveragerc` alone when it exists, so a scope
+written in either would be silently ignored, and the two would drift.
+`tests/repository/test_coverage_scope.py` pins both halves.
 
-A file matching no rule in the tool is printed as `UNASSIGNED` rather than absorbed into
-`core`, and is gated like any other bucket — so add new services to `RULES` when it says so.
+A file's module is the folder it sits in under `src/leaguebot/`, so the tool keeps no list of its
+own. A file outside the package is printed as `UNASSIGNED` rather than absorbed into `core`, and
+is gated like any other bucket.
 
 **The architecture's rules are tests too** (decided 2026-09-25, #282).
-`tests/unit/test_import_contracts.py` runs the import-linter contracts in `.importlinter`, and
-`tests/unit/test_architecture_rules.py` checks the rest. Both run with the suite, so CI needs no
-step of its own for them. Each lists today's breaches with the issue that fixes them, and fails
+`tests/repository/test_import_contracts.py` runs the import-linter contracts in `.importlinter`, and
+`tests/repository/test_architecture_rules.py` checks the rest. Both run with the suite, so CI needs
+no step of its own for them. Each lists today's breaches with the issue that fixes them, and fails
 on a new breach and on a fixed one still listed: fix a breach and delete its line in the same
 commit. What each rule is, and why, is `docs/design/architecture.md`'s.
 
@@ -221,19 +223,20 @@ checks `src/` and not the tests, and it checks all of it.
 
 **Nothing is exempt from it, and nothing may be made so.** `mypy.ini` has no section but
 `[mypy]`, no library is skipped, and there is no `# type: ignore` anywhere in `src/` —
-`tests/unit/test_type_check_config.py` refuses each. Where the check cannot see something the
+`tests/repository/test_type_check_config.py` refuses each. Where the check cannot see something the
 code knows, the code says it: a narrowing with its reason, a helper that raises by name
 (`guild_of`, `channel_id_of`, `sole_row`, `inserted_id`), a declared type. A `cast` is allowed
 only where it is true by construction, with a docstring saying why (`bot_of`,
 `as_text_channel`). A `None` the check exposes that can really happen is a defect: fix it, with a
 test, rather than narrowing it away.
 
-**The bot is `LeagueBot`** (`src/utils/league_bot.py`): every attribute `bot.py` attaches is
-declared there first, a `bot` parameter is annotated as it, and an interaction's bot is reached
-through `bot_of(interaction)`. **A library that ships no types is described in `stubs/`** — at
-present fontTools and APScheduler 3, for the part the bot uses and no more. Using more of one
-means extending its stub; `tests/unit/test_library_stubs.py` runs mypy's `stubtest` so a stub
-cannot drift from the installed library. lxml is described by the pinned `types-lxml`.
+**The bot is `LeagueBot`** (`src/leaguebot/core/utils/league_bot.py`): every attribute the entry
+point, `src/leaguebot/__main__.py`, attaches is declared there first, a `bot` parameter is annotated
+as it, and an interaction's bot is reached through `bot_of(interaction)`. **A library that ships no
+types is described in `stubs/`** — at present fontTools and APScheduler 3, for the part the bot uses
+and no more. Using more of one means extending its stub; `tests/repository/test_library_stubs.py`
+runs mypy's `stubtest` so a stub cannot drift from the installed library. lxml is described by the
+pinned `types-lxml`.
 
 **A test must not depend on what the host happens to carry.** The suite runs on three
 materially different environments — a Windows development machine, CI's runners, and the
@@ -251,25 +254,33 @@ Note that pinning `requirements.txt` does **not** settle this. A Debian or Raspb
 that installs from apt imports out of `/usr/lib/python3/dist-packages`, which pip never writes
 to, so the pins govern CI and a virtualenv and nothing else.
 
-**No test may depend on `.env`.** A development host carries a gitignored one; CI runners do
-not. `src/bot.py` reads `BOT_TOKEN` at import time, so `tests/conftest.py` gives it a
-placeholder before collection — import `bot` at module level freely, and do not add a per-file
-default. Five test files passed on the Pi and failed collection on both runners before this
-(2026-09-16); `tests/unit/test_suite_needs_no_dotenv.py` pins it.
+**No test may depend on `.env`.** A development host carries a gitignored one; CI runners do not.
+`src/leaguebot/__main__.py` reads `BOT_TOKEN` at import time, so `tests/conftest.py` gives it a
+placeholder before collection — import the entry point, `leaguebot.__main__`, at module level
+freely, and do not add a per-file default. Five test files passed on the Pi and failed collection on
+both runners before this (2026-09-16); `tests/repository/test_suite_needs_no_dotenv.py` pins it.
 
 **A test that constructs a `discord.ui.View` or `Modal` must be `async def`.** discord.py 2.5.0
 calls `asyncio.get_running_loop()` in `View.__init__`, where 2.7.1 defers it, so a sync test that
 builds one passed on CI and raised `RuntimeError: no running event loop` wherever an older copy
-was imported — which on the Pi was apt's, until #381 made **2.6 the minimum** and `bot.py` began
-refusing to start below it. The rule stands whatever is installed: `pytest.ini` sets
+was imported — which on the Pi was apt's, until #381 made **2.6 the minimum** and the entry point
+began refusing to start below it. The rule stands whatever is installed: `pytest.ini` sets
 `asyncio_mode = auto`, so `async def` is the whole fix and needs no decorator; do not reach for
 `asyncio.run()` in a sync test, which closes the loop on return and leaves the view bound to a
 dead one (decided 2026-09-08, after five such tests failed on the Pi alone).
 
 **Run the suite with the interpreter that carries the pins** — a virtualenv built from
-`requirements.txt`, never a system Python importing apt's `dist-packages`. Since #381 the bot
-needs discord.py 2.6 or later, which apt does not ship, so a system-Python run now fails at
+`requirements.txt`, with the bot installed into it (`pip install -e .`), never a system Python
+importing apt's `dist-packages`. The tests import the bot as that installed package, `leaguebot`:
+`pytest.ini` puts nothing on the path, so a virtualenv without it fails at collection. Since #381
+the bot needs discord.py 2.6 or later, which apt does not ship, so a system-Python run now fails at
 import rather than testing a library the bot never runs on.
+
+**A worktree sharing that virtualenv runs the suite with `PYTHONPATH=src`.** An editable install
+points the virtualenv at the `src/` of the checkout it was made from, so without it a worktree's
+run would test the other checkout's code. `tests/conftest.py` refuses to start such a run and says
+so. Never `pip install -e .` from a worktree into a shared virtualenv: that moves it, and every
+other checkout using it, onto the worktree's code.
 
 **The suite keeps no scratch.** `pytest.ini` sets `tmp_path_retention_count = 0` and
 `tmp_path_retention_policy = failed`, and `tests/conftest.py` sweeps the template scratch
@@ -281,7 +292,7 @@ dishonestly, as 0-byte PNGs and `database or disk is full` scattered across unre
 modules. The policy drops a *passing* test's scratch as it finishes; a **failing** test's is
 kept, so a red run can still be inspected (decided 2026-09-16, measured at 152 MB against
 2.9 MB on the same subset). All three mechanisms are pinned by
-`tests/unit/test_scratch_retention.py` (decided 2026-09-08).
+`tests/repository/test_scratch_retention.py` (decided 2026-09-08).
 
 **A mass failure across unrelated modules is a full `/tmp` until proved otherwise.** The two
 mechanisms above exist to prevent it and either can be defeated — by an interrupted run that
@@ -299,7 +310,7 @@ reintroduces the cost it exists to remove. Applying every migration and committi
 runs to some forty flushes per database, which Linux absorbs and Windows does not — it is
 what took the `windows-latest` job from three minutes to over an hour. Never loop over the
 migrations directory yourself, which four files did until issue #252 timed the Windows job
-out, and which `tests/unit/test_migration_steps.py` now refuses.
+out, and which `tests/repository/test_migration_steps.py` now refuses.
 
 **A test builds its schema from the production migrations, never from a copy** (#233). Call
 `run_migrations` on a file under `tmp_path` — not `:memory:`, which the substitution above
@@ -310,16 +321,17 @@ constraints, defaults or triggers, so a test on it passes on data the bot refuse
 every driver the same Discord account, another two race sessions to a round, a third penalty
 defaults the schema does not have. A table of the test's own — a spy it reads back, another
 program's jobstore — is no copy and is fine. The exceptions are a database whose schema is the
-subject (`tests/integration/test_database.py` builds one from before the baseline) and one
+subject (`tests/core/test_database.py` builds one from before the baseline) and one
 nothing reads inside (the backup tests copy a stand-in whole). `test_migration_steps.py` names
 them with their reasons and refuses any other.
 
-**The schema starts from one baseline** (decided 2026-09-19, issue #254). The 61 migrations
-that built it before go-live were squashed into `src/db/migrations/001_baseline.sql`; git keeps
-them, and no test of a historic migration remains. Until go-live — release `v1.0.0` (decided
-2026-09-21, #259) — a schema change edits the baseline. From go-live on, every schema change is a new migration numbered after it, with a
-test of its own, and no applied file is ever edited. `run_migrations` refuses a database that
-records a migration the bot does not carry. The docstring there holds the detail.
+**The schema starts from one baseline** (decided 2026-09-19, issue #254). The 61 migrations that
+built it before go-live were squashed into `src/leaguebot/core/db/migrations/001_baseline.sql`; git
+keeps them, and no test of a historic migration remains. Until go-live — release `v1.0.0` (decided
+2026-09-21, #259) — a schema change edits the baseline. From go-live on, every schema change is a
+new migration numbered after it, with a test of its own, and no applied file is ever edited.
+`run_migrations` refuses a database that records a migration the bot does not carry. The docstring
+there holds the detail.
 
 **A test that needs Inkscape carries the `rasteriser` marker and does not run in CI.** Inkscape
 is a separate program, too heavy to install on a hosted runner for what it returns there, so

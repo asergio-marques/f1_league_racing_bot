@@ -15,16 +15,13 @@ every figure and tells you nothing. `tools/` is excluded for the same reason. Si
 gate reads the same scope, from `.coveragerc`; the filter here is now belt and braces rather
 than the only thing keeping the suite out of the figure.
 
-**The mapping is data, not cleverness.** `OWNED_BY_PATH` places a few files by their full
-path first, where a file's name points at the wrong module. Then `RULES`, an ordered list of
-(module, patterns), places the rest: the first pattern matching a path wins. It is also the
-one record of which module owns a file until the code is grouped into module folders
-(`docs/design/architecture.md`, "How the code is laid out"), so the architecture checks read it
-too.
-Anything matching nothing lands in `UNASSIGNED` and
-is printed, rather than being swept into `core` where it would quietly distort that module's
-figure. A new service therefore shows up as unassigned until someone places it, which is the
-intended failure mode — a silent default is how a mapping rots.
+**The module is the folder.** The bot is one package, `leaguebot`, with a folder for core and
+one for each module (`docs/design/architecture.md`, "How the code is laid out"), so a file under
+`src/leaguebot/results/` is the results module's, and so on. The package's own top-level files,
+the entry point `__main__.py` and its `__init__.py`, sit above core and the modules and are
+counted with core. A new module needs nothing here: its folder is its bucket.
+Anything under `src/` outside the package lands in `UNASSIGNED` and is printed, rather than being
+swept into `core` where it would quietly distort that module's figure.
 
 **It gates, as well as reporting** (decided 2026-09-16, reversing "reported, never gated").
 `--fail-under N` prints the table and then exits non-zero naming every bucket below *N*. The
@@ -34,9 +31,9 @@ the workflow passes `MIN_COVERAGE_REQUIRED` to both so the value is written once
 the whole-repo figure can clear 75% with a module at 40% inside it, which is the situation
 this tool was written to make visible and could only report.
 
-Every bucket is gated on the same terms, `UNASSIGNED` included. A new service with no rule
-and no tests fails the build with a message that says exactly that, rather than being quietly
-tolerated because it has no home yet.
+Every bucket is gated on the same terms, `UNASSIGNED` included. A file outside the package with
+no tests fails the build with a message that says exactly that, rather than being quietly
+tolerated because it has no home.
 
 The default floor is 0, so running it by hand is still a report.
 
@@ -57,63 +54,12 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
-#: Ordered. The first pattern matching a file's path decides its module, so a more specific
-#: rule must precede a broader one. Patterns are plain substrings of the reported path.
-RULES: list[tuple[str, tuple[str, ...]]] = [
-    ("weather", (
-        "phase1_service", "phase2_service", "phase3_service", "weather_config_service",
-        "forecast_cleanup_service", "mystery_notice_service", "weather_cog",
-        "math_utils", "message_builder", "weather_config",
-    )),
-    ("image", (
-        "image_", "svg_", "asset_resolver", "colour", "palette_import", "font_metrics",
-        "tyre_compound", "country_data", "nationality_data",
-    )),
-    ("attendance", ("attendance", "rsvp")),
-    ("stewarding", ("steward_", "steward_cog")),
-    ("results", (
-        "results_", "result_submission", "points_config",
-        "points_ordering", "penalty", "verdict", "standings_service",
-    )),
-    ("signup", (
-        "signup", "availability", "wizard_service",
-    )),
-    ("core", (
-        "bot.py", "/db/", "driver_", "team_", "roster_import", "module_service", "season_service",
-        "season_lifecycle_service",
-        "channel_registry", "hub_service",
-        "config_service", "output_router", "scheduler_service",
-        "backup_service", "retry_service", "init_cog", "bot_cog", "admin_review", "amendment",
-        "in_memory_state", "pack_service", "factory_reset_service",
-        "approval_window", "clean_cog", "module_cog", "retry_cog",
-        "season_cog", "test_mode", "track_cog", "calendar_post", "channel_guard", "league_server",
-        "cancellation_notice",
-        "interaction_errors",
-        "season_classification", "season_end", "season_fingerprint", "season_gate",
-        "season_points",
-        "test_roster_service", "track_service",
-        "autocomplete", "date_formatting", "time_parsing", "input_validator", "timezones",
-        "utils/version.py", "about_service",
-        "log_filters",
-        "paths", "batch_notice", "round_import", "xml_import", "models/",
-    )),
-]
+#: Where the bot's files are reported, as the one package `leaguebot`. See the module docstring.
+PACKAGE_PREFIX = "src/leaguebot/"
 
-#: Files whose names point at the wrong module, placed by their full path before any pattern is
-#: tried (#282). Core owns the driver, the team and the test roster, and signup owns only the
-#: signing up (CLAUDE.md); placing drivers and posting the lineup are core's (the core
-#: specification's "Placement into a division and team"); the signup review panel is signup's;
-#: the mid-season points amendment is results'; fetching a driver's portrait is image's. A full
-#: path cannot catch a later file whose name merely contains it: `src/services/team_service.py`
-#: is not in `src/services/steward_team_service.py`.
-OWNED_BY_PATH: dict[str, str] = {
-    "src/cogs/admin_review_cog.py": "signup",
-    "src/models/amendment_state.py": "results",
-    "src/services/placement_service.py": "core",
-    "src/services/driver_portrait_service.py": "image",
-    "src/services/season_points_service.py": "results",
-    "src/utils/league_bot.py": "core",
-}
+#: The bucket the package's own top-level files count towards: the entry point sits above core and
+#: the modules, and is measured with core.
+TOP_LEVEL = "core"
 
 #: Files outside this prefix are not the bot and are not measured. See the module docstring.
 MEASURED_PREFIX = "src/"
@@ -122,15 +68,21 @@ UNASSIGNED = "UNASSIGNED"
 
 
 def classify(path: str) -> str:
-    """Return the module owning *path*, or `UNASSIGNED` where no rule claims it."""
+    """Return the module owning *path*: the folder it sits in under `src/leaguebot/`.
+
+    A file at the top of the package counts as `TOP_LEVEL`, and one outside it as `UNASSIGNED`.
+    The path may be relative, as `coverage json` reports it, or absolute, and in either
+    separator.
+    """
     normalised = path.replace("\\", "/")
-    for owned, module in OWNED_BY_PATH.items():
-        if normalised == owned or normalised.endswith("/" + owned):
-            return module
-    for module, patterns in RULES:
-        if any(pattern in normalised for pattern in patterns):
-            return module
-    return UNASSIGNED
+    if normalised.startswith(PACKAGE_PREFIX):
+        inside = normalised[len(PACKAGE_PREFIX):]
+    elif "/" + PACKAGE_PREFIX in normalised:
+        inside = normalised.split("/" + PACKAGE_PREFIX, 1)[1]
+    else:
+        return UNASSIGNED
+    folder, _, rest = inside.partition("/")
+    return folder if rest else TOP_LEVEL
 
 
 def is_measured(path: str) -> bool:
@@ -276,8 +228,8 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(format_module(buckets, UNASSIGNED))
         print(
-            f"\n{len(buckets[UNASSIGNED]['files'])} file(s) matched no rule. "
-            "Add them to RULES in tools/coverage_by_module.py."
+            f"\n{len(buckets[UNASSIGNED]['files'])} file(s) sit outside the package. "
+            f"Move them into a module's folder under {PACKAGE_PREFIX}."
         )
 
     # The gate comes last, after everything above has printed: the breakdown is the useful

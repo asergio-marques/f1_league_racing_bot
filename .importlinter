@@ -1,8 +1,9 @@
 # Which code may import which: the import rules of docs/design/architecture.md (#282).
 #
-# Run by tests/unit/test_import_contracts.py, so the ordinary test run checks them on every host
-# and in CI. By hand: `.venv/bin/lint-imports` from the repository root, with src/ on the path
-# (`PYTHONPATH=src`).
+# Run by tests/repository/test_import_contracts.py, so the ordinary test run checks them on every
+# host and in CI. By hand: `.venv/bin/lint-imports` from the repository root, with the package
+# installed (`pip install -e .`). In a worktree sharing that virtualenv, run it with
+# `PYTHONPATH=src`, or it reads the checkout the virtualenv was installed from.
 #
 # Where today's code breaks a rule, the import is listed under `ignore_imports` with the issue
 # that will remove it. A listed import that no longer exists fails the run, so each list can
@@ -12,78 +13,272 @@
 # `allow_indirect_imports` limits a rule to direct imports, so one listed breach is not
 # reported again through every chain that passes through it.
 #
-# These contracts describe today's layout, a folder per layer. When the code moves into one
-# folder per module (architecture.md, "How the code is laid out"), they are rewritten for that
-# layout, and the rules between modules are added then.
+# The code is one package with a folder for core and one for each module, and inside each a
+# folder per kind of code (architecture.md, "How the code is laid out"). A `*` stands for any
+# one of those folders, so `leaguebot.*.services` is every module's services and core's.
 
 [importlinter]
 root_packages =
-    cogs
-    services
-    utils
-    models
-    db
+    leaguebot
 include_external_packages = True
 
 [importlinter:contract:nothing-below-the-cogs-imports-a-cog]
 name = Nothing below the cogs imports a cog
 type = forbidden
 source_modules =
-    services
-    utils
-    models
-    db
+    leaguebot.*.services
+    leaguebot.*.utils
+    leaguebot.*.models
+    leaguebot.core.db
 forbidden_modules =
-    cogs
+    leaguebot.*.cogs
 allow_indirect_imports = True
 ignore_imports =
     # #283: the in-memory state reaches for the seasons being set up and for pending reasons
     # (the reasons are signup's to publish, #286).
-    services.in_memory_state -> cogs.admin_review_cog
-    services.in_memory_state -> cogs.season_cog
+    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
+    leaguebot.core.services.in_memory_state -> leaguebot.core.cogs.season_cog
     # #285: the check-in rules live in the cog.
-    services.rsvp_service -> cogs.attendance_cog
+    leaguebot.attendance.services.rsvp_service -> leaguebot.attendance.cogs.attendance_cog
     # #286: signup's forced close lives in the module cog, and its views in its cogs.
-    services.season_end_service -> cogs.module_cog
-    services.season_lifecycle_service -> cogs.module_cog
-    services.wizard_service -> cogs.admin_review_cog
-    services.wizard_service -> cogs.signup_cog
+    leaguebot.core.services.season_end_service -> leaguebot.core.cogs.module_cog
+    leaguebot.core.services.season_lifecycle_service -> leaguebot.core.cogs.module_cog
+    leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.admin_review_cog
+    leaguebot.signup.services.wizard_service -> leaguebot.signup.cogs.signup_cog
 
 [importlinter:contract:models-use-no-discord-and-no-database]
 name = Models use no Discord and no database
 type = forbidden
 source_modules =
-    models
+    leaguebot.*.models
 forbidden_modules =
     discord
     aiosqlite
     sqlite3
-    db
-    services
-    cogs
+    leaguebot.core.db
+    leaguebot.*.services
+    leaguebot.*.cogs
 
 [importlinter:contract:the-database-code-imports-nothing-else-of-the-bots]
 name = The database code imports nothing else of the bot's
 type = forbidden
 source_modules =
-    db
+    leaguebot.core.db
 forbidden_modules =
-    cogs
-    services
-    utils
-    models
+    leaguebot.*.cogs
+    leaguebot.*.services
+    leaguebot.*.utils
+    leaguebot.*.models
+    leaguebot.__main__
 
 [importlinter:contract:utilities-use-no-services]
 name = Utilities use no services
 type = forbidden
 source_modules =
-    utils
+    leaguebot.*.utils
 forbidden_modules =
-    services
+    leaguebot.*.services
 allow_indirect_imports = True
 ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
-    utils.league_bot -> services.*
-    # #441: the log writer queues a failed line on the retry queue itself.
-    utils.output_router -> services.retry_service
+    leaguebot.core.utils.league_bot -> leaguebot.*.services.*
+
+[importlinter:contract:core-uses-no-module]
+name = Core uses no module
+type = forbidden
+source_modules =
+    leaguebot.core
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+    leaguebot.image
+allow_indirect_imports = True
+ignore_imports =
+    # Permanent: the bot's type names every service it carries, the modules' among them, for the
+    # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
+    # (architecture.md, "How the code is laid out").
+    leaguebot.core.utils.league_bot -> leaguebot.*.services.*
+    # #283: core reaches a module directly where it is to offer a hook the module signs up to
+    # (architecture.md, "How modules and core fit together"). Attendance:
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.attendance.services.rsvp_service
+    leaguebot.core.services.amendment_service -> leaguebot.attendance.services.rsvp_service
+    leaguebot.core.services.cancellation_notice_service -> leaguebot.attendance.services.rsvp_service
+    leaguebot.core.services.season_classification_service -> leaguebot.attendance.services.attendance_service
+    # #283: image, which core is to ask for its graphics through a hook:
+    leaguebot.core.cogs.driver_cog -> leaguebot.image.services.driver_portrait_service
+    leaguebot.core.cogs.module_cog -> leaguebot.image.services.image_render_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_catalogues
+    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_constants
+    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_module
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_config_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_lineup_post
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_render_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_standings_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_validity_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.utils.asset_resolver
+    leaguebot.core.cogs.season_cog -> leaguebot.image.utils.svg_document
+    leaguebot.core.cogs.team_cog -> leaguebot.image.services.image_lineup_post
+    leaguebot.core.cogs.team_cog -> leaguebot.image.services.image_render_service
+    leaguebot.core.cogs.team_cog -> leaguebot.image.utils.asset_resolver
+    leaguebot.core.services.calendar_post_service -> leaguebot.image.services.image_calendar_service
+    leaguebot.core.services.calendar_post_service -> leaguebot.image.services.image_render_service
+    leaguebot.core.services.calendar_post_service -> leaguebot.image.utils.image_naming
+    leaguebot.core.services.placement_service -> leaguebot.image.models.image_catalogues
+    leaguebot.core.services.placement_service -> leaguebot.image.models.image_constants
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_attendance_post
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_lineup_post
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_standings_post
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_standings_service
+    leaguebot.core.services.placement_service -> leaguebot.image.utils.svg_document
+    leaguebot.core.services.season_classification_service -> leaguebot.image.services.image_results_post
+    leaguebot.core.services.season_fingerprint_service -> leaguebot.image.models.image_constants
+    leaguebot.core.services.season_lifecycle_service -> leaguebot.image.services.driver_portrait_service
+    leaguebot.core.services.team_service -> leaguebot.image.utils.asset_resolver
+    leaguebot.core.utils.date_formatting -> leaguebot.image.models.image_constants
+    leaguebot.core.utils.input_validator -> leaguebot.image.utils.nationality_data
+    # #283: results:
+    leaguebot.core.cogs.module_cog -> leaguebot.results.services.results_purge_service
+    leaguebot.core.cogs.season_cog -> leaguebot.results.services.result_submission_service
+    leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.results.services.result_submission_service
+    leaguebot.core.services.season_classification_service -> leaguebot.results.services.results_post_service
+    leaguebot.core.services.season_classification_service -> leaguebot.results.services.standings_service
+    leaguebot.core.services.season_service -> leaguebot.results.services.result_submission_service
+    leaguebot.core.services.test_roster_service -> leaguebot.results.models.points_config
+    # #283: signup:
+    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
+    leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
+    leaguebot.core.cogs.module_cog -> leaguebot.signup.services.wizard_service
+    leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
+    leaguebot.core.services.season_lifecycle_service -> leaguebot.signup.services.wizard_service
+    # #283: weather, and core's own formatting helpers, which still sit in weather's
+    # message builder:
+    leaguebot.core.cogs.season_cog -> leaguebot.weather.services.weather_config_service
+    leaguebot.core.cogs.season_cog -> leaguebot.weather.utils.message_builder
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.forecast_cleanup_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.mystery_notice_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase1_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase2_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase3_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.utils.message_builder
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.forecast_cleanup_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase1_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase2_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase3_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.weather_config_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.utils.message_builder
+    leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
+    leaguebot.core.services.test_mode_service -> leaguebot.weather.services.forecast_cleanup_service
+    # #462: `/round results amend`, a results command written in core's cog, to move to results.
+    leaguebot.core.cogs.season_cog -> leaguebot.results.models.points_config
+    # #284: the points amendment in the amendment service is results' code, to move there.
+    leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
+    leaguebot.core.services.amendment_service -> leaguebot.results.models.amendment_state
+    leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service
+    leaguebot.core.services.amendment_service -> leaguebot.results.utils.points_ordering
+
+# The dependency table (architecture.md, "How modules and core fit together"): attendance needs
+# results, and every module may ask the image module to draw its posts. No other module uses
+# another. It is written here by hand until #283 writes it into the code, where turning a module
+# on or off reads it.
+
+[importlinter:contract:results-uses-no-other-module-but-image]
+name = Results uses no other module but image
+type = forbidden
+source_modules =
+    leaguebot.results
+forbidden_modules =
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+allow_indirect_imports = True
+ignore_imports =
+    # #284: results recalculates attendance itself, where attendance is to act on a hook that
+    # results offers.
+    leaguebot.results.services.result_submission_service -> leaguebot.attendance.services.attendance_service
+
+[importlinter:contract:attendance-uses-no-other-module-but-results-and-image]
+name = Attendance uses no other module but results and image
+type = forbidden
+source_modules =
+    leaguebot.attendance
+forbidden_modules =
+    leaguebot.signup
+    leaguebot.weather
+allow_indirect_imports = True
+
+[importlinter:contract:signup-uses-no-other-module-but-image]
+name = Signup uses no other module but image
+type = forbidden
+source_modules =
+    leaguebot.signup
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.weather
+allow_indirect_imports = True
+ignore_imports =
+    # #283: core's timestamp helper, which still sits in weather's message builder.
+    leaguebot.signup.cogs.signup_cog -> leaguebot.weather.utils.message_builder
+    # #286: the wizard formats lap times with results' formatter.
+    leaguebot.signup.services.wizard_service -> leaguebot.results.utils.results_formatter
+
+[importlinter:contract:weather-uses-no-other-module-but-image]
+name = Weather uses no other module but image
+type = forbidden
+source_modules =
+    leaguebot.weather
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+allow_indirect_imports = True
+
+[importlinter:contract:image-uses-no-other-module]
+name = Image uses no other module
+type = forbidden
+source_modules =
+    leaguebot.image
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+allow_indirect_imports = True
+ignore_imports =
+    # #288: the image module fetches what it draws from the modules, where it is to draw what
+    # a module hands it.
+    leaguebot.image.services.image_preview_service -> leaguebot.attendance.services.attendance_service
+    leaguebot.image.services.image_rsvp_post -> leaguebot.attendance.services.attendance_service
+    leaguebot.image.services.image_preview_data -> leaguebot.results.services.result_submission_service
+    leaguebot.image.services.image_preview_data -> leaguebot.results.models.session_result
+    leaguebot.image.services.image_preview_service -> leaguebot.results.services.result_submission_service
+    leaguebot.image.services.image_preview_service -> leaguebot.results.services.standings_service
+    leaguebot.image.services.image_results_post -> leaguebot.results.services.results_post_service
+    leaguebot.image.services.image_results_service -> leaguebot.results.models.points_config
+    leaguebot.image.services.image_results_service -> leaguebot.results.utils.results_formatter
+    leaguebot.image.services.image_standings_post -> leaguebot.results.services.results_post_service
+    leaguebot.image.services.image_standings_post -> leaguebot.results.models.session_result
+    leaguebot.image.services.image_standings_post -> leaguebot.results.services.standings_service
+    leaguebot.image.services.image_standings_service -> leaguebot.results.models.points_config
+    leaguebot.image.services.image_standings_service -> leaguebot.results.models.session_result
+    leaguebot.image.services.image_standings_service -> leaguebot.results.services.standings_service
+    leaguebot.image.services.image_standings_service -> leaguebot.results.utils.results_formatter
+    leaguebot.image.services.image_verdict_service -> leaguebot.results.services.verdict_announcement_service
+    leaguebot.image.services.image_weather_service -> leaguebot.weather.utils.message_builder
+
+[importlinter:contract:nothing-imports-the-entry-point]
+name = Nothing imports the entry point
+type = forbidden
+source_modules =
+    leaguebot.core
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+    leaguebot.image
+forbidden_modules =
+    leaguebot.__main__

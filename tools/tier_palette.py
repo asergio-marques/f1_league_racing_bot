@@ -31,17 +31,19 @@ import re
 import sys
 from pathlib import Path
 
+# The bot's colour code, read from this checkout whether or not the bot is installed, so the script
+# runs under any Python that has lxml, as the image module's guide runs it.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from utils.colour import (  # noqa: E402
+from leaguebot.image.utils.colour import (  # noqa: E402
     InvalidColour,
     coerce_css_colour,
     normalise_hex,
     restate_in_hue,
     to_lch,
 )
-from utils.svg_document import computed_style, load_svg, stylesheet  # noqa: E402
-from utils.svg_palette import FILL_PREFIX, STOP_PREFIX, STROKE_PREFIX  # noqa: E402
+from leaguebot.image.utils.svg_document import computed_style, load_svg, stylesheet  # noqa: E402
+from leaguebot.image.utils.svg_palette import FILL_PREFIX, STOP_PREFIX, STROKE_PREFIX  # noqa: E402
 
 #: Where the drawings live unless the caller names one. The league tier, because the
 #: packaged templates declare no slots and so state no palette.

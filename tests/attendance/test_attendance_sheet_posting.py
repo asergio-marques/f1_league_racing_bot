@@ -1,0 +1,765 @@
+"""The attendance sheet's replacement ordering and the check-in deadline derivation.
+
+Covers Constitution XIV.8 (produce before destroy) and XIV.7 (one derivation, living with the
+data), and FR-045 / FR-026–FR-027 of
+``specs/041-attendance-image-generation/spec.md``.
+
+The ordering test is the one that matters most here. ``post_attendance_sheet`` used to delete
+the previously posted sheet at the top of the function and send its successor some ninety lines
+later, so a transient failure to post left the division with **no** sheet at all. The image path
+falls back to this same function, which is why the ordering had to be corrected here rather than
+beside it.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
+
+import aiosqlite
+import discord
+import pytest
+
+from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.attendance_service import (
+    derive_checkin_deadline,
+    post_attendance_sheet,
+)
+
+
+# ── The deadline derivation (T010/T011) ───────────────────────────────────
+
+
+def test_the_deadline_is_the_round_start_less_the_configured_hours():
+    start = datetime(2026, 8, 13, 20, 0, tzinfo=timezone.utc)
+    assert derive_checkin_deadline(start, 6) == datetime(
+        2026, 8, 13, 14, 0, tzinfo=timezone.utc
+    )
+
+
+def test_a_deadline_of_zero_hours_stands_at_the_rounds_own_start():
+    """FR-026's stated case, needing no branch of its own."""
+    start = datetime(2026, 8, 13, 20, 0, tzinfo=timezone.utc)
+    assert derive_checkin_deadline(start, 0) == start
+
+
+def test_the_deadline_is_timezone_aware_even_from_a_naive_round():
+    naive = datetime(2026, 8, 13, 20, 0)
+    result = derive_checkin_deadline(naive, 3)
+    assert result.tzinfo is not None
+    assert result == datetime(2026, 8, 13, 17, 0, tzinfo=timezone.utc)
+
+
+def test_the_deadline_crosses_a_day_boundary_correctly():
+    start = datetime(2026, 8, 13, 2, 0, tzinfo=timezone.utc)
+    assert derive_checkin_deadline(start, 5) == datetime(
+        2026, 8, 12, 21, 0, tzinfo=timezone.utc
+    )
+
+
+# ── Fakes for the posting path ────────────────────────────────────────────
+
+
+class _HTTPFailure(discord.HTTPException):
+    """A Discord failure that needs no response object to construct."""
+
+    def __init__(self):  # noqa: D107 — deliberately bypasses the base signature
+        pass
+
+
+class _FakeMessage:
+    def __init__(self, message_id: int, journal: list[str]):
+        self.id = message_id
+        self._journal = journal
+
+    async def delete(self):
+        self._journal.append(f"delete:{self.id}")
+
+
+class _FakeChannel:
+    """Records the order in which the flow sends and deletes."""
+
+    def __init__(self, journal: list[str], *, send_fails: bool = False):
+        self.journal = journal
+        self.send_fails = send_fails
+        self.sent_content: str | None = None
+        self.sent_file = None
+        self._next_id = 5000
+
+    async def send(self, content, file=None):
+        if self.send_fails:
+            self.journal.append("send:FAILED")
+            raise _HTTPFailure()
+        self._next_id += 1
+        self.sent_content = content
+        self.sent_file = file
+        self.journal.append(f"send:{self._next_id}")
+        return _FakeMessage(self._next_id, self.journal)
+
+    async def fetch_message(self, message_id: int):
+        self.journal.append(f"fetch:{message_id}")
+        return _FakeMessage(message_id, self.journal)
+
+
+class _FakeMember:
+    def __init__(self, name: str):
+        self.display_name = name
+
+
+class _FakeGuild:
+    def __init__(self, channel, members: dict[int, str]):
+        self._channel = channel
+        self._members = members
+        self.id = 1
+
+    def get_channel(self, _channel_id):
+        return self._channel
+
+    def get_member(self, user_id):
+        name = self._members.get(int(user_id))
+        return _FakeMember(name) if name else None
+
+
+def _fake_attachment(sentinel):
+    """Stand in for a successfully drawn sheet without touching the render pipeline."""
+
+    async def _attachment(*args, **kwargs):
+        return sentinel
+
+    return _attachment
+
+
+@pytest.fixture
+async def sheet_db(tmp_path):
+    """Division 7 of an active season: round 3 not yet run and round 9 cancelled, thresholds
+    of 10 and 20, and one driver — Discord user 111 — seated in Apex Racing with 4 attendance
+    points after round 3."""
+    path = str(tmp_path / "sheet.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-01-01', 'ACTIVE')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id) "
+            "VALUES (7, 1, 'Division 1', 3001)"
+        )
+        await db.executemany(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (?, 7, ?, 'NORMAL', ?, ?, ?)",
+            [
+                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00", "NOT_RUN"),
+                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00", "CANCELLED"),
+            ],
+        )
+        await db.execute(
+            "INSERT INTO attendance_config (id, autoreserve_threshold, autosack_threshold) "
+            "VALUES (1, 10, 20)"
+        )
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name) "
+            "VALUES (100, 7, 'Apex', 'Apex Racing')"
+        )
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (1, '111', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO team_seats (id, team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (200, 100, 1, 1)"
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (1, 1, 7, 200)"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, total_points_after) VALUES (3, 7, 1, 4)"
+        )
+        await db.commit()
+    return path
+
+
+async def _config(db_path, *, prior: str | None):
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM attendance_division_config")
+        await db.execute(
+            "INSERT INTO attendance_division_config "
+            "(division_id, attendance_channel_id, attendance_message_id) VALUES (7, '900', ?)",
+            (prior,),
+        )
+        await db.commit()
+
+
+async def _stored_message_id(db_path) -> str | None:
+    async with aiosqlite.connect(db_path) as db:
+        cur = await db.execute(
+            "SELECT attendance_message_id FROM attendance_division_config WHERE division_id = 7"
+        )
+        row = await cur.fetchone()
+    return row[0] if row else None
+
+
+# ── The replacement ordering (T012–T014) ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_the_replacement_is_posted_before_the_previous_sheet_is_deleted(sheet_db):
+    """XIV.8: at no instant is the channel without a sheet."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    sends = [i for i, e in enumerate(journal) if e.startswith("send:")]
+    deletes = [i for i, e in enumerate(journal) if e.startswith("delete:")]
+    assert sends and deletes, journal
+    assert max(sends) < min(deletes), f"deleted before sending: {journal}"
+
+
+@pytest.mark.asyncio
+async def test_exactly_one_send_site_and_one_delete_site_are_exercised(sheet_db):
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert len([e for e in journal if e.startswith("send:")]) == 1
+    assert len([e for e in journal if e.startswith("delete:")]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_post_leaves_the_previous_sheet_standing(sheet_db):
+    """The whole point of the ordering: a failure costs the league nothing it had."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal, send_fails=True)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert not any(e.startswith("delete:") for e in journal), journal
+    assert await _stored_message_id(sheet_db) == "4242"
+
+
+@pytest.mark.asyncio
+async def test_the_replacements_id_is_persisted(sheet_db):
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert await _stored_message_id(sheet_db) == "5001"
+
+
+@pytest.mark.asyncio
+async def test_a_first_posting_deletes_nothing(sheet_db):
+    await _config(sheet_db, prior=None)
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert not any(e.startswith("delete:") for e in journal)
+    assert await _stored_message_id(sheet_db) == "5001"
+
+
+class _ChannelWhosePriorSheetIsGone(_FakeChannel):
+    """Someone deleted the previous sheet by hand, so Discord no longer has it."""
+
+    async def fetch_message(self, message_id: int):
+        self.journal.append(f"fetch:{message_id}")
+        response = MagicMock(status=404, reason="Not Found")
+        raise discord.NotFound(response, "Unknown Message")
+
+
+@pytest.mark.asyncio
+async def test_a_previous_sheet_already_gone_is_passed_over_silently(sheet_db, caplog):
+    """FR-020: the replacement stands and is recorded, and nothing is logged — the sheet it
+    replaces is gone, which is what deleting it was for. A failed deletion of a sheet that
+    is still there is a different matter, and is logged."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _ChannelWhosePriorSheetIsGone(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    with caplog.at_level("WARNING", logger="leaguebot.attendance.services.attendance_service"):
+        await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert journal == ["send:5001", "fetch:4242"]
+    assert await _stored_message_id(sheet_db) == "5001"
+    assert caplog.records == []
+
+
+# ── The text is unchanged by the reorder (T014) ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_the_composed_sheet_text_is_unchanged_by_the_reorder(sheet_db):
+    """The reorder changed **when** the message is sent, never what it says."""
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_content == (
+        "**Attendance Standings**\n"
+        "\n"
+        "<@111> — 4 attendance points\n"
+        "\n"
+        "Drivers who reach 10 points will be moved to reserve.\n"
+        "Drivers who reach 20 points will be removed from all driving roles in all divisions."
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_sanction_annotation_is_unchanged_by_the_reorder(sheet_db):
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        sanctioned_profile_ids={1},
+    )
+
+    assert "*(reached point limit)*" in channel.sent_content
+
+
+@pytest.mark.asyncio
+async def test_with_a_graphic_the_message_carries_the_heading_alone(sheet_db, monkeypatch):
+    """FR-043 / XIV.16: the graphic replaces the table, it does not decorate it.
+
+    Posting the full textual body beside the attachment would tell a league everything twice
+    and ping every driver from a message whose point is the picture — and the graphic draws
+    names precisely so that it carries no mention.
+    """
+    monkeypatch.setattr(
+        attendance_service, "_sheet_attachment", _fake_attachment(object())
+    )
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_content == "**Attendance Standings**"
+    assert channel.sent_file is not None
+    assert "<@111>" not in channel.sent_content
+    assert "attendance point" not in channel.sent_content
+
+
+@pytest.mark.asyncio
+async def test_without_a_graphic_the_message_carries_the_whole_textual_sheet(sheet_db):
+    """The fallback loses nothing: with no picture, the text says it all."""
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_file is None
+    assert "<@111>" in channel.sent_content
+    assert "attendance point" in channel.sent_content
+
+
+@pytest.mark.asyncio
+async def test_a_failed_post_enqueues_the_textual_sheet_for_retry(sheet_db, monkeypatch):
+    """FR-060 / XIV.8: a **service** failure retries as text, never as a rendered image.
+
+    A retry queue is durable and outlives the state that filled it, so a picture retried an
+    hour later is a picture of a division that has moved on. The text is composed at the moment
+    it is finally sent.
+    """
+    from leaguebot.core.services import retry_service
+
+    enqueued: list[dict] = []
+
+    async def _fake_enqueue(db_path, channel_id, content, failure_reason):
+        enqueued.append(
+            {"channel_id": channel_id, "content": content, "reason": failure_reason}
+        )
+
+    monkeypatch.setattr(retry_service, "enqueue", _fake_enqueue)
+
+    await _config(sheet_db, prior="4242")
+    channel = _FakeChannel([], send_fails=True)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    guild.id = 1
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert len(enqueued) == 1
+    assert enqueued[0]["channel_id"] == 900
+    assert "Attendance Standings" in enqueued[0]["content"]
+    assert "attendance sheet for division 7" in enqueued[0]["reason"]
+
+
+@pytest.mark.asyncio
+async def test_a_queue_failure_never_masks_the_original_posting_failure(
+    sheet_db, monkeypatch
+):
+    from leaguebot.core.services import retry_service
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("queue is down")
+
+    monkeypatch.setattr(retry_service, "enqueue", _boom)
+
+    await _config(sheet_db, prior="4242")
+    channel = _FakeChannel([], send_fails=True)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    guild.id = 1
+
+    # Must not raise, and must still leave the prior sheet standing.
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+    assert await _stored_message_id(sheet_db) == "4242"
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_round_posts_nothing_and_generates_nothing(sheet_db):
+    """FR-047: a cancelled round distributes no points and produces no sheet.
+
+    The guard stands here as well as upstream so that no graphic is ever generated for a
+    posting that will not happen (XIV.8 — no posting, no graphic).
+    """
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
+
+    assert journal == []
+    assert await _stored_message_id(sheet_db) == "4242"
+
+
+@pytest.mark.asyncio
+async def test_no_channel_configured_posts_nothing_and_deletes_nothing(sheet_db):
+    """FR-046: where the textual flow posts nothing, nothing happens at all."""
+    async with get_connection(sheet_db) as db:
+        await db.execute("DELETE FROM attendance_division_config")
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_message_id) "
+            "VALUES (7, '4242')"
+        )
+        await db.commit()
+
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert journal == []
+
+
+# ── What the sheet says (FR-017–FR-019) ──────────────────────────────────
+
+
+async def _seat(db_path, *, profile_id: int, user_id: str, seat: int, total: int) -> None:
+    """Seat another driver in Apex Racing with *total* attendance points after round 3."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (?, ?, 'ASSIGNED')",
+            (profile_id, user_id),
+        )
+        cursor = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (100, ?, ?)",
+            (seat, profile_id),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id) VALUES (?, 1, 7, ?)",
+            (profile_id, cursor.lastrowid),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance "
+            "(round_id, division_id, driver_profile_id, total_points_after) VALUES (3, 7, ?, ?)",
+            (profile_id, total),
+        )
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_the_sheet_lists_the_most_points_first_then_by_name(sheet_db):
+    """FR-017/FR-018. Zebra and Alpha are level on 3, so the name decides between them; the
+    name is the one the server shows, not the Discord id, which here sorts the other way."""
+    await _config(sheet_db, prior=None)
+    async with get_connection(sheet_db) as db:
+        await db.execute("UPDATE driver_round_attendance SET total_points_after = 3")
+        await db.commit()
+    await _seat(sheet_db, profile_id=2, user_id="222", seat=2, total=5)
+    await _seat(sheet_db, profile_id=3, user_id="333", seat=3, total=3)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Zebra", 222: "Mike", 333: "Alpha"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    listed = [
+        line.split(" ")[0]
+        for line in channel.sent_content.splitlines()
+        if line.startswith("<@")
+    ]
+    assert listed == ["<@222>", "<@333>", "<@111>"]
+
+
+@pytest.mark.parametrize(
+    "autoreserve,autosack,footer",
+    [
+        (5, 10, [
+            "Drivers who reach 5 points will be moved to reserve.",
+            "Drivers who reach 10 points will be removed from all driving roles in all divisions.",
+        ]),
+        (0, 10, [
+            "Drivers who reach 10 points will be removed from all driving roles in all divisions.",
+        ]),
+        (5, None, ["Drivers who reach 5 points will be moved to reserve."]),
+        (0, 0, []),
+    ],
+)
+@pytest.mark.asyncio
+async def test_the_footer_names_only_the_thresholds_in_force(
+    sheet_db, autoreserve, autosack, footer
+):
+    """FR-019: a threshold of nought or none is switched off, and the sheet does not warn of
+    a sanction that cannot happen."""
+    await _config(sheet_db, prior=None)
+    async with get_connection(sheet_db) as db:
+        await db.execute(
+            "UPDATE attendance_config SET autoreserve_threshold = ?, autosack_threshold = ?",
+            (autoreserve, autosack),
+        )
+        await db.commit()
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    lines = channel.sent_content.splitlines()
+    assert [line for line in lines if line.startswith("Drivers who reach")] == footer
+    assert lines[-1] == (footer[-1] if footer else "<@111> — 4 attendance points")
+
+
+# ── The sheet graphic does not outlive its posting attempt ────────────────
+
+
+def _sheet_artifact(tmp_path):
+    directory = tmp_path / "f1bot_render_attendance"
+    directory.mkdir()
+    png = directory / "attendance_template.png"
+    png.write_bytes(b"\x89PNG")
+    return png
+
+
+def _real_attachment(png):
+    """A `discord.File` over *png*, as `_sheet_attachment` builds for real."""
+    import discord
+
+    async def _attachment(*_args, **_kwargs):
+        return discord.File(str(png), filename="attendance.png")
+
+    return _attachment
+
+
+@pytest.mark.asyncio
+async def test_the_sheet_graphic_is_gone_once_it_has_posted(
+    sheet_db, monkeypatch, tmp_path
+):
+    png = _sheet_artifact(tmp_path)
+    monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_file is not None, "the sheet still posts as a graphic"
+    assert not png.exists()
+    assert not png.parent.exists()
+
+
+@pytest.mark.asyncio
+async def test_the_sheet_graphic_is_gone_when_the_send_fails(
+    sheet_db, monkeypatch, tmp_path
+):
+    """The textual sheet is enqueued for retry; the picture never is (XIV.8, FR-060)."""
+    png = _sheet_artifact(tmp_path)
+    monkeypatch.setattr(attendance_service, "_sheet_attachment", _real_attachment(png))
+    await _config(sheet_db, prior="4242")
+    channel = _FakeChannel([], send_fails=True)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert not png.exists(), "a failed upload must not strand the sheet"
+
+
+# ── The season's two boundaries ───────────────────────────────────────────
+#
+# The opening sheet takes the division's one live slot, so round one replaces it in the
+# ordinary way. The final sheet does not: it stands beside the last round's, which is the
+# one deliberate exception to the one-sheet rule. See `leaguebot.core.models.classification_occasion`.
+
+
+def _occasion(name):
+    from leaguebot.core.models.classification_occasion import ClassificationOccasion
+
+    return getattr(ClassificationOccasion, name)
+
+
+@pytest.mark.asyncio
+async def test_the_opening_sheet_takes_the_live_slot(sheet_db):
+    """Round one then replaces it, so the division never holds two sheets."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion("SEASON_OPENING"),
+    )
+
+    assert await _stored_message_id(sheet_db) == "5001"
+    assert "delete:4242" in journal
+
+
+@pytest.mark.asyncio
+async def test_the_final_sheet_stands_beside_the_last_rounds(sheet_db):
+    """It claims no slot and deletes nothing — nothing may ever replace the last word."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion("SEASON_FINAL"),
+    )
+
+    assert await _stored_message_id(sheet_db) == "4242", "the slot must be left as it was"
+    assert not [entry for entry in journal if entry.startswith("delete:")]
+    assert [entry for entry in journal if entry.startswith("send:")]
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_sheet_still_takes_the_slot(sheet_db):
+    """The occasion that predates the enum is untouched by it."""
+    await _config(sheet_db, prior="4242")
+    journal: list[str] = []
+    channel = _FakeChannel(journal)
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert await _stored_message_id(sheet_db) == "5001"
+    assert "delete:4242" in journal
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("occasion_name", ["SEASON_OPENING", "SEASON_FINAL"])
+async def test_a_boundary_graphic_carries_no_message_text(sheet_db, occasion_name, monkeypatch):
+    """The phrase is drawn on the sheet, so a heading above it would say it twice."""
+    from leaguebot.attendance.services import attendance_service
+
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    monkeypatch.setattr(
+        attendance_service, "_sheet_attachment", _fake_attachment(object())
+    )
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion(occasion_name),
+    )
+
+    assert channel.sent_content is None
+    assert channel.sent_file is not None
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_graphic_still_carries_its_heading(sheet_db, monkeypatch):
+    from leaguebot.attendance.services import attendance_service
+
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+    monkeypatch.setattr(
+        attendance_service, "_sheet_attachment", _fake_attachment(object())
+    )
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=3, division_id=7)
+
+    assert channel.sent_content == "**Attendance Standings**"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "occasion_name,phrase",
+    [("SEASON_OPENING", "Opening Classification"), ("SEASON_FINAL", "Final Classification")],
+)
+async def test_the_textual_fallback_is_headed_by_the_phrase(sheet_db, occasion_name, phrase):
+    """A bare table of names and numbers says nothing about what it is a table of."""
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion(occasion_name),
+    )
+
+    assert channel.sent_file is None, "no bot in scope, so this is the textual sheet"
+    assert channel.sent_content.startswith(f"**Attendance — {phrase}**")
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_round_does_not_stop_a_boundary_sheet(sheet_db):
+    """No round is the subject of it, so no round's cancellation bears on it.
+
+    Round 9 is CANCELLED in the fixture, and an ordinary sheet for it posts nothing.
+    """
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(None, guild, sheet_db, round_id=9, division_id=7)
+    assert channel.sent_content is None, "an ordinary sheet skips a cancelled round"
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=9, division_id=7,
+        occasion=_occasion("SEASON_FINAL"),
+    )
+    assert channel.sent_content is not None
+
+
+@pytest.mark.asyncio
+async def test_the_opening_sheet_reads_the_seats_rather_than_the_attendance_record(sheet_db):
+    """Nobody has attended anything yet, so the record it usually reads holds nothing.
+
+    Driver 111 has an attendance row for round 3 worth 4 points. The opening sheet must
+    show them on zero, drawn from their seat rather than from that row.
+    """
+    await _config(sheet_db, prior=None)
+    channel = _FakeChannel([])
+    guild = _FakeGuild(channel, {111: "Ayrton"})
+
+    await post_attendance_sheet(
+        None, guild, sheet_db, round_id=3, division_id=7,
+        occasion=_occasion("SEASON_OPENING"),
+    )
+
+    assert "0 attendance points" in channel.sent_content
+    assert "4 attendance points" not in channel.sent_content

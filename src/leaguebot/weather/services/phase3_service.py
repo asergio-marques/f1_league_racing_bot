@@ -1,0 +1,183 @@
+"""Phase 3 service — Slot-by-slot weather assignment, at the phase 3 horizon.
+
+The horizon is configured (``weather_pipeline_config.phase_3_hours``, two hours by default)
+and is no fixed T−2; see ``phase1_service`` for the whole of that note.
+
+For each session, draws N weather labels using weighted probabilities
+derived from the Phase 2 slot type and Phase 1 Rpc.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import random
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.session import MAX_SLOTS, SessionType
+from leaguebot.weather.utils.math_utils import get_phase3_weights, draw_weighted
+from leaguebot.weather.utils.message_builder import phase3_message, phase_log_message, session_type_label, format_slots_for_log
+
+if TYPE_CHECKING:
+    from leaguebot.core.utils.league_bot import LeagueBot
+
+log = logging.getLogger(__name__)
+
+_MIN_SLOTS = 2
+
+
+async def run_phase3(round_id: int, bot: "LeagueBot") -> None:
+    """Execute Phase 3 for *round_id*.
+
+    Produces nothing at all while the weather module is disabled for the round's server: no
+    draw, no ``phase_results`` row, no ``phase3_done``, nothing posted. The check lives in the
+    runner rather than only at its call sites because a phase computes, records *and* posts,
+    and the core specification's rule — a disabled module produces nothing, "whatever the path
+    arrives at it" — can only hold for every route in if the runner itself refuses. Guarding the
+    callers alone is what let issue #113 through.
+    """
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.track_name, r.phase2_done, r.phase3_done, r.division_id, "
+            "       d.forecast_channel_id, d.mention_role_id "
+            "FROM rounds r "
+            "JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "WHERE r.id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+
+    if row is None:
+        log.error("Phase 3: round_id=%s not found", round_id)
+        return
+
+    # The module gate — see the docstring for why it sits here.
+    if not await bot.module_service.is_weather_enabled():
+        log.info(
+            "Phase 3: weather module disabled — round %s left untouched.",
+            round_id,
+        )
+        return
+
+    if row["phase3_done"]:
+        log.info("Phase 3 already done for round %s — skipping.", round_id)
+        return
+
+    if not row["phase2_done"]:
+        log.warning("Phase 3: Phase 2 not done for round %s — running Phase 2 first.", round_id)
+        from leaguebot.weather.services.phase2_service import run_phase2
+        await run_phase2(round_id, bot)
+
+    # Load active Phase 1 PhaseResult for Rpc
+    async with get_connection(bot.db_path) as db:
+        p1_cursor = await db.execute(
+            "SELECT payload FROM phase_results "
+            "WHERE round_id = ? AND phase_number = 1 AND status = 'ACTIVE' "
+            "ORDER BY id DESC LIMIT 1",
+            (round_id,),
+        )
+        p1_row = await p1_cursor.fetchone()
+
+    if p1_row is None:
+        log.error("Phase 3: no active Phase 1 PhaseResult for round %s", round_id)
+        return
+
+    p1_payload = json.loads(p1_row["payload"])
+    rpc: float = p1_payload["rpc"]
+    track_name: str = row["track_name"] or p1_payload.get("track", "Unknown")
+
+    # Load sessions with their Phase 2 slot assignments
+    async with get_connection(bot.db_path) as db:
+        s_cursor = await db.execute(
+            "SELECT id, session_type, phase2_slot_type FROM sessions "
+            "WHERE round_id = ? ORDER BY id",
+            (round_id,),
+        )
+        sessions = await s_cursor.fetchall()
+
+    session_weather: list[tuple[str, list[str]]] = []
+    session_draws: list[dict] = []
+
+    for session_row in sessions:
+        session_id: int = session_row["id"]
+        session_type_val: str = session_row["session_type"]
+        slot_type: str = session_row["phase2_slot_type"] or "sunny"
+
+        # Determine draw count
+        try:
+            st_enum = SessionType(session_type_val)
+            max_s = MAX_SLOTS.get(st_enum, 4)
+        except ValueError:
+            max_s = 4
+
+        min_s = _MIN_SLOTS if slot_type == "mixed" else 1
+        min_s = min(min_s, max_s)  # guard: min cannot exceed session-type cap
+        n_slots = random.randint(min_s, max_s)
+
+        weights = get_phase3_weights(slot_type, rpc)
+        slots = [draw_weighted(weights) for _ in range(n_slots)]
+
+        session_weather.append((session_type_label(session_type_val), slots))
+        session_draws.append({
+            "session_id": session_id,
+            "session_type": session_type_val,
+            "slot_type": slot_type,
+            "n_slots": n_slots,
+            "slots": slots,
+            "slots_display": format_slots_for_log(slots),
+        })
+
+    # Persist
+    payload = {
+        "phase": 3,
+        "round_id": round_id,
+        "track": track_name,
+        "rpc": rpc,
+        "session_draws": session_draws,
+    }
+    now = datetime.now(timezone.utc)
+
+    async with get_connection(bot.db_path) as db:
+        for draw in session_draws:
+            await db.execute(
+                "UPDATE sessions SET phase3_slots = ? WHERE id = ?",
+                (json.dumps(draw["slots"]), draw["session_id"]),
+            )
+        await db.execute(
+            "INSERT INTO phase_results (round_id, phase_number, payload, status, created_at) "
+            "VALUES (?, 3, ?, 'ACTIVE', ?)",
+            (round_id, json.dumps(payload), now.isoformat()),
+        )
+        await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = ?", (round_id,))
+        await db.commit()
+
+    from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
+    from leaguebot.image.services.image_weather_post import attach_forecast
+
+    attachment = await attach_forecast(bot, round_id, 3)
+
+    # Produce before destroy (Constitution XIV.8) — see phase2_service for the reasoning.
+    # This is the phase where it matters most: the phase 3 render is the one that falls back
+    # two hours before a race, and deleting the phase 2 forecast first would strip the
+    # division of its standing forecast on exactly the path where something already failed.
+    await post_phase_message(
+        bot,
+        round_id=round_id,
+        division_id=row["division_id"],
+        channel_id=row["forecast_channel_id"],
+        phase_number=3,
+        text=phase3_message(row["mention_role_id"], track_name, session_weather),
+        attachment=attachment,
+        attachment_text=f"<@&{row['mention_role_id']}>",
+        supersedes=2,
+    )
+
+    await bot.output_router.post_log(
+        phase_log_message(3, round_id, track_name, payload),
+    )
+    log.info("Phase 3 complete for round %s", round_id)
+
+

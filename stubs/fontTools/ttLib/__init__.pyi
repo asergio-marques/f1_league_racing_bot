@@ -1,8 +1,8 @@
 # What the type check knows of fontTools (#228). fontTools ships no type information and no
 # stub package describes it, so this does — for the part the bot uses and no more: opening a
-# face in `src/utils/font_metrics.py`, the four tables read there, and the character map.
+# face in `src/leaguebot/image/utils/font_metrics.py`, the four tables read there, and the character map.
 # A use this does not describe is a type error, not a silent `Any`: extend the stub, don't
-# silence the call. `tests/unit/test_library_stubs.py` holds it to the installed fontTools.
+# silence the call. `tests/repository/test_library_stubs.py` holds it to the installed fontTools.
 #
 # The table classes below are private to the stub. fontTools gives a table its attributes as it
 # decompiles one, so there is nothing on the runtime class to check them against; the tests of

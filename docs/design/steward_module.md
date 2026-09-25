@@ -38,10 +38,12 @@ and `steward_ballot_service` in wave 6 ahead of it. The seam that makes that ord
 stops, and nothing before S30 reads it. The same seam holds between S16 and S19 — the close calls
 an auto-rule hook that is a no-op until S19 fills it in, rather than S16 and S19 being one issue.
 
-`tools/coverage_by_module.py` must gain a `steward` bucket, and the `"steward"` pattern must come
-out of the `results` bucket where it sits today. First match wins in `RULES`, so otherwise the
-whole module's coverage would be counted as the results module's — which is exactly the failure
-issue #208 added the per-module gate to make visible.
+The module's code sits in its own folder, `src/leaguebot/steward/` (`architecture.md`, "How the
+code is laid out"), and that folder is its bucket in `tools/coverage_by_module.py`, which reads a
+file's module from where it sits. The first file there adds `steward` to the modules
+`test_every_file_of_the_bot_is_in_a_module_that_exists` expects, and to the rules between modules in
+`.importlinter`, with its entry in the dependency table: it needs results [STW-MOD-007].
+`test_every_module_is_under_the_rules_between_modules` fails until it is there.
 
 ---
 
@@ -175,25 +177,38 @@ waves 6 to 11. If the fire time lived only in the job store, [STW-RST-002] would
 every armed job of every open cycle on start-up, and S36 would have to reach back into S12, S13 and
 S15. As columns, the extension is an `UPDATE` and the jobs re-arm from what it wrote.
 
-Jobs go into the existing `SchedulerService`, with ids in this module's own prefix namespace so
-that `cancel_round(only=…)` can take this module's jobs and no other's — the mechanism
-`_WEATHER_JOB_PREFIXES` exists for, and the mistake issue #117 was. They are armed with no misfire
-grace, unlike every other job in the service: [STW-RST-001] requires what came due during a stop to
-be carried out on start, and the service's 300-second default would discard a deliberation close
-that fell in a six-hour outage.
+Jobs go into the existing `SchedulerService`, with ids in this module's own prefix namespace so that
+`cancel_round(only=…)` can take this module's jobs and no other's — the mechanism
+`_WEATHER_JOB_PREFIXES` exists for, and the mistake issue #117 was. They are armed with no lateness
+limit, as architecture.md has every job armed ("Timed work and restarts").
 
-**Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once
-and concurrently, which is not "in the order it would have happened" [STW-RST-001]. So the sweep
-runs before the scheduler starts: it reads the module's own rows, applies the downtime extension,
-then walks what is still due in ascending order of its moment and re-arms the rest. It is also
-where a cycle close waiting for a repaired channel is tried again [STW-RST-004].
-`_recover_rsvp_views_and_deadlines` in `bot.py` is the precedent, down to containing each failure
-so that a start-up cannot be taken down by one unreadable row.
+**Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once and
+concurrently, which is not "in the order it would have happened" [STW-RST-001]. So core's start-up
+sweep, which runs before the scheduler starts, hands each of this module's events that came due, in
+ascending order of its moment, to this module's handler for its kind (architecture.md, "Timed work
+and restarts"). This module's kinds of timed job include the per-ticket stages, the cycle
+boundaries, a closed ticket's channel deletion and a timed ban's expiry, and its way of telling
+which of their events came due reads the due moments of each that have passed. Its handlers move
+only the windows [STW-RST-003]. The handler holds this module's logic. Handed an event, by the sweep
+or by the scheduler, it puts one change on the queue, whose steps first apply any downtime not yet
+applied, reading the module's downtime record, written at start by the start step's change, queued
+ahead of it, and after a gateway cut by the change `on_resumed` asks for; then act on the event if
+its row still says it is due, and otherwise re-arm it at its moved moment. So a window that merely
+contained the outage, with no boundary falling inside it, moves when its own end falls due. A cycle
+close waiting for a repaired channel is the change queue's (§4).
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
 gateway cut with the process alive is the other half of [STW-RST-002] and is recorded by
-`on_disconnect`/`on_resumed` into the same place, so the sweep has one thing to read.
+`on_disconnect`/`on_resumed` into the module's downtime record too, so the handlers' changes have
+one thing to read. Each of these writes is a change on the queue like any other (architecture.md,
+"How a change is carried out"). At start, a step signed up for the bot starting, which runs before
+any missed event is handed out, records the gap, `now - last_seen_at`, in the module's downtime
+record, also through the queue; the steps of a handler's change read that record, never
+`last_seen_at`, and apply what has not yet been applied. Through the queue, a heartbeat waits behind
+a change's posts, so a crash during a long run of posts counts that wait as downtime and lengthens
+windows by a little more than the outage. That is accepted, since the queue holds every change to
+the bot's data.
 
 *Rejected:* deriving the gap from the jobs that missed their fire time. It only sees boundaries
 that fell inside the gap, and the case the rule is mostly about is a window that merely *contained*
@@ -202,7 +217,7 @@ it — a defence period open across an outage, whose end has not yet arrived and
 The extension is applied to every open window and to every later moment of the same cycle, and
 recorded as a running total on the cycle so the league can be told why a round's verdicts came
 later than the periods it configured. Clocks in which nobody acts are simply not in the set the
-sweep touches [STW-RST-003]: a timed ban's expiry is a date, and the seven-day countdown to a
+handlers move [STW-RST-003]: a timed ban's expiry is a date, and the seven-day countdown to a
 channel's deletion is a date, and neither is a window.
 
 ---
@@ -231,17 +246,19 @@ with one commit and no Discord call inside it. The cascade is pure computation o
 loaded — each rule triggered at most once per driver per close, so it terminates — which is what
 makes a bounded transaction possible at all.
 
-**Then the postings, outside it, and idempotent.** A `steward_cycle_closes` row carries a state:
-checked, written, posted. [STW-CYC-111] is kept by not writing `posted_at` until the postings are
-made; [STW-CYC-110] and [STW-RST-004] by the start-up sweep and the channel-setting commands
-resuming from the state. Idempotence is what decision 7 is for: a resumed close knows what it
-already posted because it recorded each message as it sent it.
+**Then the postings, outside it, and idempotent.** The close is a change on the queue, and the
+queue's step marks alone decide where it resumes: [STW-CYC-110] and [STW-RST-004] are kept by the
+queue carrying it on from its first step not done when the bot starts and when a channel-setting
+command runs (architecture.md, "How a change is carried out"). The `steward_cycle_closes` row keeps
+`posted_at` only as the record [STW-CYC-111] asks for, written once the postings are made. §7
+records each message in the same save as its step's mark, which is what later edits and deletions
+find.
 
 The honest summary, and the one to hold in mind when reading [STW-CYC-108]: **the half that touches
 a licence is atomic, and the half that touches Discord is gated, idempotent and resumable.** A
-posting that fails after the licences are written leaves the close at `written` and does not roll
-them back. Any other reading either holds a write lock across the network or promises to unsend a
-message.
+posting that fails after the licences are written leaves the close with its posting steps not done
+and does not roll them back. Any other reading either holds a write lock across the network or
+promises to unsend a message.
 
 ---
 
@@ -277,19 +294,20 @@ which owns `/division`; `module enable steward` to `module_cog`; `images templat
 `licence` value of `images config toggle` [STW-SHT-017, STW-SHT-018] to `image_cog`; the three
 test-mode commands [STW-TST-002, STW-TST-003, STW-TST-005] to `test_mode_cog`.
 
-Two guards, not one. `utils.channel_guard` has `league_admin_only` and `league_manager_only`;
-levels 3 and 4 [STW-MOD-018] need `head_steward_only` and `steward_only` beside them, checking the
-team list rather than a role [STW-TEM-002] and checking the steward command channel rather than the
-interaction channel [STW-CHN-012]. They belong in `channel_guard` with the other two, whose module
-docstring is where the "two tiers" statement it corrects also lives.
+Two guards, not one. `leaguebot.core.utils.channel_guard` has `league_admin_only` and
+`league_manager_only`; levels 3 and 4 [STW-MOD-018] need `head_steward_only` and `steward_only`
+beside them, checking the team list rather than a role [STW-TEM-002] and checking the steward
+command channel rather than the interaction channel [STW-CHN-012]. They belong in `channel_guard`
+with the other two, whose module docstring is where the "two tiers" statement it corrects also
+lives.
 
 ---
 
 ## 6. Views, forms and custom ids
 
-Everything derives from `LeagueView` and `LeagueModal`; `tests/unit/test_one_league_server.py` will
-fail otherwise, and a persistent view answering its custom id on a server the league has left is
-what those bases exist to refuse.
+Everything derives from `LeagueView` and `LeagueModal`; `tests/repository/test_one_league_server.py`
+will fail otherwise, and a persistent view answering its custom id on a server the league has left
+is what those bases exist to refuse.
 
 **`stw:<control>:<ticket row id>`, colon-separated, integer key.** The unique ticket ID is for
 people and runs to 21 characters (`S12_D3_R22_001_APPEAL`); the row id is short and never changes.
@@ -382,11 +400,11 @@ fetches that message and reads its attachments.
 ## 8. The schema change
 
 The bot is not live, so every table and column above is added to
-`src/db/migrations/001_baseline.sql` rather than to a new migration, as issue #254 settled. Each is added by the issue
-that first needs it, not in one block up front: S01 the licence and sanction tables, S02 the config
-row, S03 the channels and `steward_messages`, S04 the team, S06 the outcomes, S08 the auto-rules,
-S10 the tickets, S11 the ballots and verdicts, S12 the cycles, S16 the close record, S36 the
-downtime record.
+`src/leaguebot/core/db/migrations/001_baseline.sql` rather than to a new migration, as issue #254
+settled. Each is added by the issue that first needs it, not in one block up front: S01 the licence
+and sanction tables, S02 the config row, S03 the channels and `steward_messages`, S04 the team, S06
+the outcomes, S08 the auto-rules, S10 the tickets, S11 the ballots and verdicts, S12 the cycles, S16
+the close record, S36 the downtime record.
 
 The cost is that a developer's existing database has to be recreated at each such issue —
 `run_migrations` will not re-apply a baseline it has already recorded, and refuses a database
@@ -425,10 +443,12 @@ module-level job callable survives its service or callback being absent, as
 `test_scheduler_job_callables.py` does. The two halves are tested apart because that is the only
 way to test either without a clock that runs.
 
-**The start-up sweep is tested as `test_bot_rsvp_recovery.py` tests its own.** Build a database
-with an open cycle whose boundary has passed and a `last_seen_at` an hour ago, run the sweep
-against a stubbed guild, and assert on the rows and on what was posted. That single test shape
-covers [STW-RST-001], [STW-RST-002] and [STW-RST-004].
+**This module's handlers are tested as `test_bot_rsvp_recovery.py` tests its own recovery.** Build a
+database with an open cycle and a `last_seen_at` an hour ago, run the start step and hand the
+handlers events as the sweep would, against a stubbed guild, then run the queue, and assert on the
+rows and on what was posted. Two cases cover [STW-RST-001] and [STW-RST-002]: a boundary that passed
+during the outage, and a window that merely spanned it, moved when its end falls due. [STW-RST-004]
+is the change queue's, and is tested with a close left waiting on the queue.
 
 **Discord is a `MagicMock`, and a test that builds a view is `async def`.** apt's 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it, so a sync test
@@ -456,10 +476,9 @@ the database to explain the gap. The exclusion predicate is the cost, and it is 
 one query that forgets it resurrects a sanction that should not exist.
 
 **~~How long a gap may be disregarded.~~** Settled 2026-09-20: five minutes, now named in
-[STW-RST-002]. It is the interval the bot already holds to in six places — the scheduler's
-300-second misfire grace, `APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry
-loop, the signup correction timeout and the signup view's own — so the downtime rule and the
-misfire grace cannot disagree about one boundary. Below it, everybody's window is quietly
+[STW-RST-002]. It is the interval the bot already holds to elsewhere, as in
+`APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry loop, the signup correction
+timeout and the signup view's own. Below it, everybody's window is quietly
 shortened by the outage; that is accepted.
 
 **~~What the flip-flop latch of a historical-accumulation rule becomes on a merge.~~** Settled
@@ -492,6 +511,6 @@ removing or pausing an outcome while an appeal *submission* is open as well as a
 it. A paused outcome therefore cannot be one an open appeal must prefill.
 
 The design consequence is that the refusal these two rules describe is one check over the module's
-open stages, not a check per command: the stages are rows with a due moment (decision 3), so "is
+open stages, not a check per command: the stages are rows with a due moment (§3), so "is
 any report deliberation, appeal submission or appeal deliberation open" is a single query, and both
 rules call it.

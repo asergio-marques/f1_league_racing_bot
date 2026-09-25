@@ -22,15 +22,16 @@ end, and one run's accumulated scratch reached 817 MB and filled the tmpfs befor
 The template scratch below is the one thing pytest does not own, so `pytest_sessionstart`
 sweeps it to the same schedule.
 
-**`BOT_TOKEN` is given a placeholder before any test module is collected.** `src/bot.py` reads
-it with `os.environ["BOT_TOKEN"]` at import time, after `load_dotenv()`, so importing the module
-to reach one of its recovery sweeps raises without it. A development host has a gitignored `.env`
-that supplies a real one and hides the problem; a CI runner has neither, and every test file
-importing `bot` at module level then fails at collection, which aborts the whole run. It is set
+**`BOT_TOKEN` is given a placeholder before any test module is collected.** The entry point,
+`src/leaguebot/__main__.py`, reads it with `os.environ["BOT_TOKEN"]` at import time, after
+`load_dotenv()`, so importing the module to reach one of its recovery sweeps raises without it. A
+development host has a gitignored `.env` that supplies a real one and hides the problem; a CI runner
+has neither, and every test file importing the entry point at module level then fails at
+collection, which aborts the whole run. It is set
 here, once, rather than in the test files, because a per-file default only helps files collected
 after it — which is how the suite passed locally and failed on both runners. `setdefault`, so a
 real token in the environment is left alone; nothing in the suite connects to Discord with it.
-Pinned by `tests/unit/test_suite_needs_no_dotenv.py`.
+Pinned by `tests/repository/test_suite_needs_no_dotenv.py`.
 """
 from __future__ import annotations
 
@@ -45,6 +46,33 @@ import pytest
 
 # Before any test module is imported — see the module docstring.
 os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
+
+
+def _refuse_another_checkouts_bot() -> None:
+    """Stop the run before it starts when the bot it would test is another checkout's.
+
+    The tests import the bot as the package installed into the virtualenv (`pip install -e .`),
+    and an editable install points the virtualenv at the `src/` of the checkout it was made from.
+    A worktree sharing that virtualenv would run every test against the other checkout's code,
+    and pass on code that is not its own. The remedy is to put this checkout's `src/` first, as
+    `PYTHONPATH=src`, which Python reads before the install. `test_import_roots.py` holds the same
+    thing as a test; this stops the thousands of others from running first. It runs from
+    `pytest_configure`, where stopping the run prints its reason alone.
+    """
+    import leaguebot
+
+    here = Path(__file__).resolve().parents[1] / "src" / "leaguebot"
+    found = Path(leaguebot.__file__).resolve().parent
+    if found != here:
+        pytest.exit(
+            f"The bot these tests would import is {found}, not this checkout's {here}. The "
+            "virtualenv was installed from another checkout: run with PYTHONPATH=src.",
+            returncode=pytest.ExitCode.USAGE_ERROR,
+        )
+
+
+def pytest_configure(config):
+    _refuse_another_checkouts_bot()
 
 
 _TEMPLATE_PREFIX = "f1-schema-"
@@ -76,7 +104,7 @@ def _install_template_migrations() -> None:
     module, because the tests bind `run_migrations` by name at *their* import time and a
     later patch would not reach them.
     """
-    from db import database
+    from leaguebot.core.db import database
 
     global _TEMPLATE_SCRATCH
 
@@ -116,7 +144,7 @@ _install_template_migrations()
 def _install_unsynced_connections() -> None:
     """Open every aiosqlite connection in the suite at `synchronous = OFF` (#256).
 
-    The bot runs its database at FULL, deliberately (see `_enable_wal` in `db.database`).
+    The bot runs its database at FULL, deliberately (see `_enable_wal` in `leaguebot.core.db.database`).
     Under WAL that flushes the log on every commit, and the log and the database again when
     the last connection closes and checkpoints — five flushes for a connection that writes.
     Across the suite that came to some seven flushes a test (counted 2026-09-24). Linux
@@ -188,7 +216,7 @@ def pytest_sessionstart(session):
 
 
 def pytest_collection_modifyitems(config, items):
-    from services.image_render_service import converter_available
+    from leaguebot.image.services.image_render_service import converter_available
 
     if converter_available(use_cache=False):
         return
@@ -220,6 +248,6 @@ def _no_posting_throttle(monkeypatch):
     rather than a failure anyone can see. `results_post_service` imports cleanly wherever the
     suite runs; if it ever does not, that is worth a loud error.
     """
-    from services import results_post_service
+    from leaguebot.results.services import results_post_service
 
     monkeypatch.setattr(results_post_service, "POSTING_THROTTLE_SECONDS", 0)

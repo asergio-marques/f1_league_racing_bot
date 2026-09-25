@@ -1,0 +1,36 @@
+# The bot as one installed package, `leaguebot` (docs/design/architecture.md, "How the code is
+# laid out"). Install it into the virtualenv after the pinned requirements, and start the bot as a
+# package:
+#
+#     pip install -r requirements.txt
+#     pip install -e .
+#     python -m leaguebot
+#
+# The bot and the tests then import the code from one place, the installed package, rather than
+# from a path set in the start command or in `pytest.ini`.
+#
+# **No dependencies are declared here.** `requirements.txt` is the one list of what the bot runs
+# on, pinned exactly, and it is installed first; a second list here would drift from it.
+#
+# **The version below is not the bot's.** The bot's version is read from `VERSION`, or from git,
+# when it starts (`src/leaguebot/core/utils/version.py`); this one only satisfies the packaging
+# tools and never changes.
+#
+# The install is editable (`-e`): the package stays in `src/`, where `PROJECT_ROOT` in
+# `src/leaguebot/core/utils/paths.py` finds `resources/` and `VERSION` beside it.
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leaguebot"
+version = "0.0.0"
+description = "A Discord bot for F1 game league racing"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["leaguebot*"]
+
+[tool.setuptools.package-data]
+"leaguebot.core.db.migrations" = ["*.sql"]

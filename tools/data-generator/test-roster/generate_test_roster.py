@@ -17,7 +17,7 @@ roster across them, then writes:
     because a team whose seats both went empty has no row in the CSV to be found by
 
 Nothing here touches the database or needs a running bot. The synthetic IDs simply
-mirror the convention in src/services/test_roster_service.py, so the CSV lines up with
+mirror the convention in src/leaguebot/core/services/test_roster_service.py, so the CSV lines up with
 what the bot creates when these commands are pasted into a clean test-mode season.
 
 Usage:
@@ -51,7 +51,7 @@ TEAMS_PATH = DATA_DIR / "teams.txt"
 FIRST_DRIVER_ID = 9_000_000_000_000_000_001
 
 #: The reserve team is appended to every division and is never taken from user input —
-#: the name is protected by TeamService (see src/services/team_service.py).
+#: the name is protected by TeamService (see src/leaguebot/core/services/team_service.py).
 RESERVE_TEAM = "Reserve"
 
 MAX_DRIVERS_PER_TEAM = 2
@@ -201,7 +201,7 @@ def load_nationalities(src_dir=SRC_DIR):
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
     try:
-        from utils.nationality_data import NATIONALITY_LOOKUP
+        from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
     except ImportError as error:
         raise ValueError(
             f"Could not import the bot's nationality list from {src_dir} ({error}). "

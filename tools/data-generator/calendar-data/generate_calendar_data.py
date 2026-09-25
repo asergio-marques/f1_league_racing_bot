@@ -3,7 +3,7 @@
 
 Invents a plausible calendar for one or more divisions: a random circuit per round, one
 race a week, and an evening slot each division keeps for its whole season. The output is
-the XML payload parsed by parse_round_xml in src/utils/round_import.py, so what this
+the XML payload parsed by parse_round_xml in src/leaguebot/core/utils/round_import.py, so what this
 writes is pasted into the modal whole.
 
 Circuits are read from the bot's own migration (see load_tracks), not copied into this
@@ -148,7 +148,7 @@ def load_zone_validator(src_dir=SRC_DIR):
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
     try:
-        from utils.timezones import is_known_zone
+        from leaguebot.core.utils.timezones import is_known_zone
     except ImportError as error:
         raise ValueError(
             f"Could not import the bot's time-zone list from {src_dir} ({error}). "

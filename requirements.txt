@@ -10,8 +10,8 @@
 # Install into a virtualenv to be governed by this file (see README, Setup).
 #
 # discord.py 2.6 is now a **minimum**, not a preference (#381): `/team add` and `/team modify`
-# take their input in a modal carrying a role picker, which needs `discord.ui.Label`. `bot.py`
-# refuses to start below it rather than failing inside the team cog. So apt's 2.5 no longer
+# take their input in a modal carrying a role picker, which needs `discord.ui.Label`. The entry
+# point refuses to start below it rather than failing inside the team cog. So apt's 2.5 no longer
 # runs the bot or its tests, and the tests are written to depend on neither host's lxml.
 
 discord.py==2.7.1
@@ -34,7 +34,7 @@ mypy==2.3.1
 types-lxml==2026.2.16
 
 # Which code may import which (#282): the contracts in `.importlinter`, which
-# `tests/unit/test_import_contracts.py` runs as part of the suite.
+# `tests/repository/test_import_contracts.py` runs as part of the suite.
 import-linter==2.15
 
 # Pillow backs the one test that inspects the rasterised PNG pixel by pixel, which is the

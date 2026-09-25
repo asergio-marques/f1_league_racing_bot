@@ -90,6 +90,9 @@ rule and was Critical, and one filed as serious turned out to clean up after its
 
 ## Running the tests
 
+In the virtualenv the README's Setup builds, which holds the pinned requirements and the bot itself
+(`pip install -e .`), since the tests import the bot as that installed package:
+
 ```
 pytest tests/ -q
 ```
@@ -103,15 +106,15 @@ Every change to production code carries its unit tests with it, in the same chan
 file is a defect in the test, not a convenience: the copy agrees with itself forever, so it cannot
 fail when the shipped code is wrong and it cannot fail when the shipped code is deleted — while
 still reporting green and counting towards the coverage figure. Call the function. Where it sits
-behind decorators, reach its body with `tests/support/undecorate.py`, which exists for exactly
-that; reimplementing is not the fallback. `tests/unit/test_no_inline_reimplementation.py` refuses
+behind decorators, reach its body with `tests/support/undecorate.py`, which exists for exactly that;
+reimplementing is not the fallback. `tests/repository/test_no_inline_reimplementation.py` refuses
 the least visible form of this, where a test branches on production state and then performs the
 action itself.
 
 **A test builds its schema from the migrations.** Call `run_migrations` and seed the rows the test
-needs; never write a `CREATE TABLE` for a table the migrations already declare. A hand-written
-copy has the columns and none of the constraints, defaults or triggers, so a test on it passes on
-data the bot refuses. `tests/unit/test_migration_steps.py` refuses one, and names the few tests
+needs; never write a `CREATE TABLE` for a table the migrations already declare. A hand-written copy
+has the columns and none of the constraints, defaults or triggers, so a test on it passes on data
+the bot refuses. `tests/repository/test_migration_steps.py` refuses one, and names the few tests
 whose subject is the schema itself.
 
 No test may require a live Discord bot. Anything needing a running bot, a real gateway connection
@@ -153,10 +156,11 @@ error code and no library is skipped, and tests refuse each. Where the check can
 the code knows, say it in the code — a narrowing with its reason, or one of the helpers that
 raises by name — rather than switching the check off.
 
-**The bot is typed as `LeagueBot`** (`src/utils/league_bot.py`). Declare an attribute there before
-`bot.py` attaches it, annotate a `bot` parameter as it, and reach an interaction's bot through
-`bot_of(interaction)`. A library that ships no types is described in `stubs/`; using more of one
-means extending its stub, which `stubtest` then holds to the installed version.
+**The bot is typed as `LeagueBot`** (`src/leaguebot/core/utils/league_bot.py`). Declare an attribute
+there before the entry point, `src/leaguebot/__main__.py`, attaches it, annotate a `bot` parameter
+as it, and reach an interaction's bot through `bot_of(interaction)`. A library that ships no types
+is described in `stubs/`; using more of one means extending its stub, which `stubtest` then holds to
+the installed version.
 
 ## Pull requests
 
@@ -178,8 +182,8 @@ breaks any of the rules below.
 - **`internal` follows the files.** A pull request that changes nothing a league sees must carry
   `internal`, which leaves it out of the release notes; one that changes anything a league sees
   must not. A league sees `src/`, `resources/defaults/`, `docs/how-to/` other than
-  `test-mode.md`, `README.md` and `requirements.txt`. A renamed file counts under its old path
-  too.
+  `test-mode.md`, `README.md`, `requirements.txt` and `pyproject.toml`, the last two being what a
+  host installs. A renamed file counts under its old path too.
 
 The check runs again whenever the labels, the description or the commits change. To see what it
 will say, run it against the open pull request:
@@ -206,15 +210,16 @@ of exactly that form names a version.
 | **patch** | Fixes that should reach a host between minor releases. A Critical fix is released on its own, without waiting for anything else |
 | **major** | Before go-live, go-live itself and nothing else. After it, a release that takes away or changes a command, a setting or a file convention a league relies on, or one a host cannot install without doing something by hand |
 
-**A build between releases is `vMAJOR.MINOR.PATCH-N`**, the last release and the number of
-changes merged since it, so `v0.4.0-230` follows `v0.4.0-229`. Pull requests are squash-merged,
-one commit each on `main`, which is what keeps the number in merge order. Nobody stamps it:
-`VERSION` holds two placeholders, the version and the date and time its last change was made,
-that GitHub fills in whenever it packages the code, and a clone asks git instead. **Never write a value into `VERSION`** — see `src/utils/version.py`.
+**A build between releases is `vMAJOR.MINOR.PATCH-N`**, the last release and the number of changes
+merged since it, so `v0.4.0-230` follows `v0.4.0-229`. Pull requests are squash-merged, one commit
+each on `main`, which is what keeps the number in merge order. Nobody stamps it: `VERSION` holds two
+placeholders, the version and the date and time its last change was made, that GitHub fills in
+whenever it packages the code, and a clone asks git instead. **Never write a value into `VERSION`**
+— see `src/leaguebot/core/utils/version.py`.
 
 **Go-live is `v1.0.0`.** Every release before it is marked a pre-release. From `v1.0.0` on the
 migration baseline is frozen, and every schema change is a new migration (see `run_migrations`
-in `src/db/database.py`).
+in `src/leaguebot/core/db/database.py`).
 
 **To cut one:**
 
