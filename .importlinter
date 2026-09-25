@@ -84,3 +84,101 @@ ignore_imports =
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
     # #441: the log writer queues a failed line on the retry queue itself.
     leaguebot.core.utils.output_router -> leaguebot.core.services.retry_service
+
+[importlinter:contract:core-uses-no-module]
+name = Core uses no module
+type = forbidden
+source_modules =
+    leaguebot.core
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+    leaguebot.image
+allow_indirect_imports = True
+ignore_imports =
+    # Permanent: the bot's type names every service it carries, the modules' among them, for the
+    # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
+    # (architecture.md, "How the code is laid out").
+    leaguebot.core.utils.league_bot -> leaguebot.*.services.*
+    # #283: core reaches a module directly where it is to offer a hook the module signs up to
+    # (architecture.md, "How modules and core fit together"). Attendance:
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.attendance.services.rsvp_service
+    leaguebot.core.services.amendment_service -> leaguebot.attendance.services.rsvp_service
+    leaguebot.core.services.cancellation_notice_service -> leaguebot.attendance.services.rsvp_service
+    leaguebot.core.services.season_classification_service -> leaguebot.attendance.services.attendance_service
+    # #283: image, which core is to ask for its graphics through a hook:
+    leaguebot.core.cogs.driver_cog -> leaguebot.image.services.driver_portrait_service
+    leaguebot.core.cogs.module_cog -> leaguebot.image.services.image_render_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_catalogues
+    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_constants
+    leaguebot.core.cogs.season_cog -> leaguebot.image.models.image_module
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_config_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_lineup_post
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_render_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_standings_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.services.image_validity_service
+    leaguebot.core.cogs.season_cog -> leaguebot.image.utils.asset_resolver
+    leaguebot.core.cogs.season_cog -> leaguebot.image.utils.svg_document
+    leaguebot.core.cogs.team_cog -> leaguebot.image.services.image_lineup_post
+    leaguebot.core.cogs.team_cog -> leaguebot.image.services.image_render_service
+    leaguebot.core.cogs.team_cog -> leaguebot.image.utils.asset_resolver
+    leaguebot.core.services.calendar_post_service -> leaguebot.image.services.image_calendar_service
+    leaguebot.core.services.calendar_post_service -> leaguebot.image.services.image_render_service
+    leaguebot.core.services.calendar_post_service -> leaguebot.image.utils.image_naming
+    leaguebot.core.services.placement_service -> leaguebot.image.models.image_catalogues
+    leaguebot.core.services.placement_service -> leaguebot.image.models.image_constants
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_attendance_post
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_lineup_post
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_standings_post
+    leaguebot.core.services.placement_service -> leaguebot.image.services.image_standings_service
+    leaguebot.core.services.placement_service -> leaguebot.image.utils.svg_document
+    leaguebot.core.services.season_classification_service -> leaguebot.image.services.image_results_post
+    leaguebot.core.services.season_fingerprint_service -> leaguebot.image.models.image_constants
+    leaguebot.core.services.season_lifecycle_service -> leaguebot.image.services.driver_portrait_service
+    leaguebot.core.services.team_service -> leaguebot.image.utils.asset_resolver
+    leaguebot.core.utils.date_formatting -> leaguebot.image.models.image_constants
+    leaguebot.core.utils.input_validator -> leaguebot.image.utils.nationality_data
+    # #283: results:
+    leaguebot.core.cogs.module_cog -> leaguebot.results.services.results_purge_service
+    leaguebot.core.cogs.season_cog -> leaguebot.results.models.points_config
+    leaguebot.core.cogs.season_cog -> leaguebot.results.services.result_submission_service
+    leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.results.services.result_submission_service
+    leaguebot.core.models.session_result -> leaguebot.results.models.points_config
+    leaguebot.core.services.season_classification_service -> leaguebot.results.services.results_post_service
+    leaguebot.core.services.season_classification_service -> leaguebot.results.services.standings_service
+    leaguebot.core.services.season_service -> leaguebot.results.services.result_submission_service
+    leaguebot.core.services.test_roster_service -> leaguebot.results.models.points_config
+    leaguebot.core.utils.xml_import -> leaguebot.results.models.points_config
+    # #283: signup:
+    leaguebot.core.cogs.module_cog -> leaguebot.signup.models.signup_module
+    leaguebot.core.cogs.module_cog -> leaguebot.signup.services.wizard_service
+    leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
+    leaguebot.core.services.season_lifecycle_service -> leaguebot.signup.services.wizard_service
+    # #283: weather, and core's own formatting helpers, which still sit in weather's
+    # message builder:
+    leaguebot.core.cogs.season_cog -> leaguebot.weather.services.weather_config_service
+    leaguebot.core.cogs.season_cog -> leaguebot.weather.utils.message_builder
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.forecast_cleanup_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.mystery_notice_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase1_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase2_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.services.phase3_service
+    leaguebot.core.cogs.test_mode_cog -> leaguebot.weather.utils.message_builder
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.forecast_cleanup_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase1_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase2_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.phase3_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.services.weather_config_service
+    leaguebot.core.services.amendment_service -> leaguebot.weather.utils.message_builder
+    leaguebot.core.services.retry_service -> leaguebot.weather.utils.message_builder
+    leaguebot.core.services.test_mode_service -> leaguebot.weather.services.forecast_cleanup_service
+    # #284: the points amendment in the amendment service is results' code, to move there.
+    leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
+    leaguebot.core.services.amendment_service -> leaguebot.results.models.amendment_state
+    leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service
+    leaguebot.core.services.amendment_service -> leaguebot.results.utils.points_ordering
+    # #286: the in-memory state reaches for pending reasons, which are signup's to publish.
+    leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
