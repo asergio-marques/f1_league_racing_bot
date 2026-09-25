@@ -180,9 +180,9 @@ S15. As columns, the extension is an `UPDATE` and the jobs re-arm from what it w
 Jobs go into the existing `SchedulerService`, with ids in this module's own prefix namespace so
 that `cancel_round(only=…)` can take this module's jobs and no other's — the mechanism
 `_WEATHER_JOB_PREFIXES` exists for, and the mistake issue #117 was. They are armed with no misfire
-grace, unlike every other job in the service: [STW-RST-001] requires what came due during a stop to
-be carried out on start, and the service's 300-second default would discard a deliberation close
-that fell in a six-hour outage.
+grace, as every job is (architecture.md, "Timed work and restarts"): [STW-RST-001] requires what
+came due during a stop to be carried out on start, and a lateness limit would discard a
+deliberation close that fell in a six-hour outage.
 
 **Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once and
 concurrently, which is not "in the order it would have happened" [STW-RST-001]. So core's start-up
@@ -191,8 +191,7 @@ ascending order of its moment, to this module's handler for its kind (architectu
 and restarts"). The handler holds this module's logic: it reads the module's own rows, applies the
 downtime extension, acts on what is still due and re-arms the rest, containing each failure so that
 a start-up cannot be taken down by one unreadable row. A cycle close waiting for a repaired channel
-is a change on the queue, which tries it again when the bot starts [STW-RST-004] (architecture.md,
-"How a change is carried out").
+is the change queue's (§4).
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
@@ -237,8 +236,9 @@ makes a bounded transaction possible at all.
 
 **Then the postings, outside it, and idempotent.** A `steward_cycle_closes` row carries a state:
 checked, written, posted. [STW-CYC-111] is kept by not writing `posted_at` until the postings are
-made; [STW-CYC-110] and [STW-RST-004] by the change queue, which resumes the close from its state
-when the bot starts and when a channel-setting command runs. Idempotence is what decision 7 is for:
+made; [STW-CYC-110] and [STW-RST-004] by the change queue, which carries the close on from its
+first step not done when the bot starts and when a channel-setting command runs, `posted_at` being
+only the record [STW-CYC-111] asks for. Idempotence is what §7 is for:
 a resumed close knows what it already posted because it recorded each message as it sent it.
 
 The honest summary, and the one to hold in mind when reading [STW-CYC-108]: **the half that touches
@@ -462,10 +462,9 @@ the database to explain the gap. The exclusion predicate is the cost, and it is 
 one query that forgets it resurrects a sanction that should not exist.
 
 **~~How long a gap may be disregarded.~~** Settled 2026-09-20: five minutes, now named in
-[STW-RST-002]. It is the interval the bot already holds to in six places — the scheduler's
-300-second misfire grace, `APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry
-loop, the signup correction timeout and the signup view's own — so the downtime rule and the
-misfire grace cannot disagree about one boundary. Below it, everybody's window is quietly
+[STW-RST-002]. It is the interval the bot already holds to in five places:
+`APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry loop, the signup correction
+timeout and the signup view's own. Below it, everybody's window is quietly
 shortened by the outage; that is accepted.
 
 **~~What the flip-flop latch of a historical-accumulation rule becomes on a merge.~~** Settled
@@ -498,6 +497,6 @@ removing or pausing an outcome while an appeal *submission* is open as well as a
 it. A paused outcome therefore cannot be one an open appeal must prefill.
 
 The design consequence is that the refusal these two rules describe is one check over the module's
-open stages, not a check per command: the stages are rows with a due moment (decision 3), so "is
+open stages, not a check per command: the stages are rows with a due moment (§3), so "is
 any report deliberation, appeal submission or appeal deliberation open" is a single query, and both
 rules call it.
