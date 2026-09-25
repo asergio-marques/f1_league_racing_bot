@@ -182,3 +182,90 @@ ignore_imports =
     leaguebot.core.services.amendment_service -> leaguebot.results.utils.points_ordering
     # #286: the in-memory state reaches for pending reasons, which are signup's to publish.
     leaguebot.core.services.in_memory_state -> leaguebot.signup.cogs.admin_review_cog
+
+# The dependency table (architecture.md, "How modules and core fit together"): attendance needs
+# results, and every module may ask the image module to draw its posts. No other module uses
+# another. It is written here by hand until #283 writes it into the code, where turning a module
+# on or off reads it.
+
+[importlinter:contract:results-uses-no-other-module-but-image]
+name = Results uses no other module but image
+type = forbidden
+source_modules =
+    leaguebot.results
+forbidden_modules =
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+allow_indirect_imports = True
+ignore_imports =
+    # #284: results recalculates attendance itself, where attendance is to act on a hook that
+    # results offers.
+    leaguebot.results.services.result_submission_service -> leaguebot.attendance.services.attendance_service
+
+[importlinter:contract:attendance-uses-no-other-module-but-results-and-image]
+name = Attendance uses no other module but results and image
+type = forbidden
+source_modules =
+    leaguebot.attendance
+forbidden_modules =
+    leaguebot.signup
+    leaguebot.weather
+allow_indirect_imports = True
+
+[importlinter:contract:signup-uses-no-other-module-but-image]
+name = Signup uses no other module but image
+type = forbidden
+source_modules =
+    leaguebot.signup
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.weather
+allow_indirect_imports = True
+ignore_imports =
+    # #283: core's timestamp helper, which still sits in weather's message builder.
+    leaguebot.signup.cogs.signup_cog -> leaguebot.weather.utils.message_builder
+    # #286: the wizard formats lap times with results' formatter.
+    leaguebot.signup.services.wizard_service -> leaguebot.results.utils.results_formatter
+
+[importlinter:contract:weather-uses-no-other-module-but-image]
+name = Weather uses no other module but image
+type = forbidden
+source_modules =
+    leaguebot.weather
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+allow_indirect_imports = True
+
+[importlinter:contract:image-uses-no-other-module]
+name = Image uses no other module
+type = forbidden
+source_modules =
+    leaguebot.image
+forbidden_modules =
+    leaguebot.results
+    leaguebot.attendance
+    leaguebot.signup
+    leaguebot.weather
+allow_indirect_imports = True
+ignore_imports =
+    # #288: the image module fetches what it draws from the modules, where it is to draw what
+    # a module hands it.
+    leaguebot.image.services.image_preview_service -> leaguebot.attendance.services.attendance_service
+    leaguebot.image.services.image_rsvp_post -> leaguebot.attendance.services.attendance_service
+    leaguebot.image.services.image_preview_data -> leaguebot.results.services.result_submission_service
+    leaguebot.image.services.image_preview_service -> leaguebot.results.services.result_submission_service
+    leaguebot.image.services.image_preview_service -> leaguebot.results.services.standings_service
+    leaguebot.image.services.image_results_post -> leaguebot.results.services.results_post_service
+    leaguebot.image.services.image_results_service -> leaguebot.results.models.points_config
+    leaguebot.image.services.image_results_service -> leaguebot.results.utils.results_formatter
+    leaguebot.image.services.image_standings_post -> leaguebot.results.services.results_post_service
+    leaguebot.image.services.image_standings_post -> leaguebot.results.services.standings_service
+    leaguebot.image.services.image_standings_service -> leaguebot.results.models.points_config
+    leaguebot.image.services.image_standings_service -> leaguebot.results.services.standings_service
+    leaguebot.image.services.image_standings_service -> leaguebot.results.utils.results_formatter
+    leaguebot.image.services.image_verdict_service -> leaguebot.results.services.verdict_announcement_service
+    leaguebot.image.services.image_weather_service -> leaguebot.weather.utils.message_builder
