@@ -37,7 +37,8 @@ forbidden_modules =
     cogs
 allow_indirect_imports = True
 ignore_imports =
-    # #283: the in-memory state reaches for the seasons being set up and for pending reasons.
+    # #283: the in-memory state reaches for the seasons being set up and for pending reasons
+    # (the reasons are signup's to publish, #286).
     services.in_memory_state -> cogs.admin_review_cog
     services.in_memory_state -> cogs.season_cog
     # #285: the check-in rules live in the cog.
