@@ -378,7 +378,7 @@ const BUILDER_RULES = `The rules of the work:
 - Every change to production code carries its tests (CLAUDE.md, "Testing"). Before each commit, run the tests that cover what you changed, as below; before each commit that touches src/, run ${BIN}/mypy from ${worktree}. Do not run the whole suite: the round's tester does.
 - Never push, never touch GitHub, never file anything, and never pip install into the shared virtualenv.
 - Where the plan, the owner's decisions and the rules cited to you do not settle something, return it as a question rather than guess: kind "business" for anything about what the bot does, what a league sees or what a spec says, and "engineering" for the rest. Carry on with whatever it does not block, and set blocked only where nothing is left that you can do.
-- Finish with everything committed: git -C ${worktree} status --porcelain shows no tracked change.
+- Finish with everything committed, new files included: git -C ${worktree} status --porcelain --untracked-files=all prints nothing.
 
 ${RUN_PYTEST}`
 
@@ -419,7 +419,7 @@ const BUILDER_SCHEMA = {
     },
     questions: QUESTIONS,
     blocked: { type: 'boolean' },
-    clean: { type: 'boolean', description: 'git status --porcelain showed no tracked change at the end' },
+    clean: { type: 'boolean', description: 'git status --porcelain --untracked-files=all printed nothing at the end' },
     separateDefects: {
       type: 'array',
       items: { type: 'object', required: ['title', 'evidence', 'whatALeagueSees'], properties: { title: { type: 'string' }, evidence: EVIDENCE, whatALeagueSees: { type: 'string' } } },
@@ -460,7 +460,7 @@ const REVIEW_SCHEMA = {
 
 const TESTS_CHECK_SCHEMA = {
   type: 'object',
-  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'environmentProblem'],
+  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'environmentProblem'],
   properties: {
     collectionOk: { type: 'boolean' },
     collectionDetail: { type: 'string' },
@@ -478,13 +478,14 @@ const TESTS_CHECK_SCHEMA = {
       },
     },
     otherFailures: { type: 'array', items: { type: 'string' } },
+    uncommitted: { type: 'array', items: { type: 'string' }, description: 'every line git status --porcelain --untracked-files=all prints: work left uncommitted, new files included' },
     environmentProblem: { type: 'string', description: 'empty unless the host, not the code, is at fault' },
   },
 }
 
 const SUITE_SCHEMA = {
   type: 'object',
-  required: ['exitCode', 'summary', 'failures', 'mypyClean', 'mypyErrors', 'xfailMarkersLeft', 'tmpFree', 'environmentProblem', 'log'],
+  required: ['exitCode', 'summary', 'failures', 'mypyClean', 'mypyErrors', 'xfailMarkersLeft', 'uncommitted', 'tmpFree', 'environmentProblem', 'log'],
   properties: {
     exitCode: { type: 'integer', description: 'the suite\'s exit code, read from its .exit file' },
     summary: { type: 'string', description: 'pytest\'s closing line' },
@@ -495,6 +496,7 @@ const SUITE_SCHEMA = {
     mypyClean: { type: 'boolean' },
     mypyErrors: { type: 'array', items: { type: 'string' } },
     xfailMarkersLeft: { type: 'integer', description: 'the lines git grep finds for the issue\'s expected-failure reason' },
+    uncommitted: { type: 'array', items: { type: 'string' }, description: 'every line git status --porcelain --untracked-files=all prints: work left uncommitted, new files included' },
     tmpFree: { type: 'string' },
     environmentProblem: { type: 'string', description: 'empty unless the host, not the code, is at fault' },
     log: { type: 'string', description: 'the suite\'s log file' },
@@ -568,10 +570,11 @@ const productPrompt = (k, questions, testReport) => `Job 2 — a round of the br
 
 const testsTesterPrompt = (k, tests) => `You check the failing tests written in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
-1. Collection: pytest tests/ --collect-only -q must exit 0.
-2. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test must fail. For each, give the failure pytest reports: the assertion or exception, and its line.
-3. As committed: pytest <the files holding them> -q -rxX. Each new test must be reported xfailed, nothing else in those files may fail, and nothing may XPASS.
-4. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem.
+1. What is committed: list every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted. The tests must be committed to count.
+2. Collection: pytest tests/ --collect-only -q must exit 0.
+3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test must fail. For each, give the failure pytest reports: the assertion or exception, and its line.
+4. As committed: pytest <the files holding them> -q -rxX. Each new test must be reported xfailed, nothing else in those files may fail, and nothing may XPASS.
+5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem.
 
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
@@ -588,7 +591,7 @@ const buildTesterPrompt = k => {
 1. Run df -h /tmp, and note in tmpFree what is free.
 2. Start the whole suite detached, as below, with tests/ as the targets and ${logFile} as LOG.
 3. While it runs, run the type check: cd ${worktree} && ${BIN}/mypy, with a Bash timeout of 600000 ms. Note every error.
-4. Count the expected-failure markers left: git -C ${worktree} grep -n -F 'reason="#${issue}:' -- tests/, and report how many lines it finds.
+4. Count the expected-failure markers left: git -C ${worktree} grep -n -F 'reason="#${issue}:' -- tests/, and report how many lines it finds. List every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted.
 5. Wait for the suite, as below, until its exit code appears.
 6. Read the outcome: the exit code from ${logFile}.exit; pytest's closing line, from tail -n 5 ${logFile}; and every line grep -E '^(FAILED|ERROR)' ${logFile} finds, each with the reason pytest gives for it further up the log.
 7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem.
@@ -643,7 +646,7 @@ const testsProblems = t => {
   }
   const missing = written.filter(w => !t.tests.some(x => x.nodeid === w.nodeid))
   for (const w of missing) problems.push(`${w.nodeid} was not run by the tester`)
-  return [...problems, ...t.otherFailures]
+  return [...problems, ...t.otherFailures, ...t.uncommitted.map(u => `not committed: ${u}`)]
 }
 
 // A builder with no test written yet has nothing for the tester to run: an empty list of targets
@@ -669,6 +672,7 @@ const suiteProblems = t => {
   problems.push(...t.mypyErrors.map(e => `mypy: ${e}`))
   if (!t.mypyClean && !t.mypyErrors.length) problems.push('mypy reported errors')
   if (t.xfailMarkersLeft) problems.push(`${t.xfailMarkersLeft} expected-failure marker(s) naming #${issue} are left in tests/`)
+  problems.push(...t.uncommitted.map(u => `not committed: ${u}`))
   return problems
 }
 
@@ -691,7 +695,7 @@ const reviewBuild = async (k, built, questions) => {
     () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, null), { label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
-  const green = !!test && !test.environmentProblem && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0
+  const green = !!test && !test.environmentProblem && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length
   return {
     lanes: { issue: issueAndDesign ? issueAndDesign.issue : null, code, product, design: issueAndDesign ? issueAndDesign.design : undefined },
     test,
