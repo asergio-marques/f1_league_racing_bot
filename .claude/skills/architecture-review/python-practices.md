@@ -47,7 +47,7 @@ Every practice names its primary source. Cite that source in a finding, not this
   - `import-linter` contracts (`layers`, `forbidden`, `independence`) run in CI. The cost is a
     new pinned dependency and a CI step. *Source:* import-linter documentation.
   - An `ast` test in the suite. This repo already pins rules that way:
-    `tests/unit/test_coverage_scope.py`, `test_migration_steps.py`,
+    `tests/repository/test_coverage_scope.py`, `test_migration_steps.py`,
     `test_type_check_config.py`.
 - **Introduce the rule onto code that breaks it as a ratchet.** List each existing breach in
   the check, naming the issue that will remove it. The test fails on any new breach, and also on any
@@ -100,7 +100,7 @@ Every practice names its primary source. Cite that source in a finding, not this
   on. It also cannot be constructed without the whole graph. A service names the services it
   needs.
 - **Configuration is read once, at start-up, into a typed settings object**, and is passed in
-  from there. Nothing reads `os.environ` at import. `src/bot.py` reading `BOT_TOKEN` at import
+  from there. Nothing reads `os.environ` at import. `src/leaguebot/__main__.py` reading `BOT_TOKEN` at import
   is why `tests/conftest.py` has to plant a placeholder.
 - **A base class earns its place by holding behaviour its subclasses share.** In discord.py,
   `commands.Cog` subclasses share typed service access and the error path. The existing

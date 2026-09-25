@@ -176,7 +176,7 @@ Work in the order the plan committed to, at its commit points.
   full runs alike. Run `.venv/bin/mypy` before any commit that touches `src/`.
 - **Stage every path by name**, from `git status --porcelain`.
 - **Write enforcement tests the way the suite's rule-pinning tests are written.** Model them
-  on `tests/unit/test_migration_steps.py` and `test_coverage_scope.py`: a module docstring
+  on `tests/repository/test_migration_steps.py` and `test_coverage_scope.py`: a module docstring
   saying which decision they pin and why, deterministic order (`sorted()`, never `rglob`
   order), and nothing that depends on the host. A ratchet entry for a new tech-debt issue
   gets its number in Phase 8, before the pull request opens.

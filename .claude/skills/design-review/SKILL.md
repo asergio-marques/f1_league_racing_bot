@@ -175,9 +175,9 @@ plan carries:
    divergence section (CLAUDE.md, the `docs/design/` row).
 6. **The commit points.** Err well on the side of more. The design file comes last, in the
    same pull request as the final correction.
-7. **The documents owed.** These are the design file, any docstrings the inventory found
-   wrong, and `RULES` in `tools/coverage_by_module.py` whenever a file moves or is renamed.
-   A file matching no rule is gated as `UNASSIGNED` and fails CI.
+7. **The documents owed.** These are the design file and any docstrings the inventory found
+   wrong. A file's module is the folder it sits in, so nothing records it apart; a file
+   outside `src/leaguebot/` is gated as `UNASSIGNED` and fails CI.
 8. **The branch name**, following `fix-issue`'s convention.
 
 ## Phase 6 — Claim the issue

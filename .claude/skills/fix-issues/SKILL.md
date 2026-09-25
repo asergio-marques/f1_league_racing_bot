@@ -197,7 +197,7 @@ from its neighbour's, and the resulting commit is on the wrong branch by the tim
 Name the files:
 
 ```bash
-git add src/services/driver_service.py tests/unit/test_driver_service.py
+git add src/leaguebot/core/services/driver_service.py tests/core/test_driver_service.py
 ```
 
 `git status --porcelain` before each commit, and stage from what it shows. An agent that cannot name

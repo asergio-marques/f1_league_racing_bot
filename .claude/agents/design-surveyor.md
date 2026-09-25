@@ -15,8 +15,9 @@ not say whether a shape is good, and do not propose changes. A sentence of yours
 
 Your prompt names a **scope** — `bot` (the whole of `src/`) or a module as `classify()` in
 `tools/coverage_by_module.py` names it (`core`, `results`, `attendance`, `signup`, `weather`,
-`image`). It also names one or more **aspects** to inventory. Stay inside both. Where a
-file's module is unclear, `classify()` decides, and you note any file it places oddly.
+`image`): the folder the files sit in under `src/leaguebot/`, which is what `classify()` reads.
+It also names one or more **aspects** to inventory. Stay inside both, and note any file that
+sits in a module's folder but does another module's work.
 
 `docs/design/architecture.md` describes the shape the code is to have. You do not judge the
 code against it, but you inventory what it will need: the aspects below are cut along its
@@ -24,7 +25,7 @@ sections, so the reviewer can compare fact with target without re-reading the co
 
 ## The aspects, and what each must answer
 
-- **Tables.** Every table the scope writes or reads, from `src/db/migrations/`. For each: what
+- **Tables.** Every table the scope writes or reads, from `src/leaguebot/core/db/migrations/`. For each: what
   one row means, in a sentence a maintainer can use; its key; which files write it and which
   read it, and which module each writer belongs to; any copy of a value derived from another
   table, naming what recomputes it; and any link to it that stops a delete. Name the scope's
@@ -58,10 +59,10 @@ sections, so the reviewer can compare fact with target without re-reading the co
   command fails, and what is logged.
 - **Constraints.** Decisions a later reader might tune away: a docstring saying "decided", a
   test whose name or docstring pins a trade-off, a lock or an ordering held on purpose.
-- **Mechanisms** (whole-bot scope only). The composition root in `src/bot.py`, the scheduler,
+- **Mechanisms** (whole-bot scope only). The composition root in `src/leaguebot/__main__.py`, the scheduler,
   the channel registry and `OutputRouter`, `report_failure`, the `League*` bases, the
-  one-league claim (`utils/league_server.py`), module enable and disable
-  (`module_service`), and database connection handling (`db/database.py`). For each: where
+  one-league claim (`core/utils/league_server.py`), module enable and disable
+  (`module_service`), and database connection handling (`core/db/database.py`). For each: where
   it is, what it does, and who bypasses it.
 
 ## Measure with the tool, not by hand
