@@ -580,9 +580,9 @@ Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder wrote', tests)}`
 
-const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
+const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
 
-const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks. Read and follow .claude/skills/architecture-review/SKILL.md, Phase 9, and .claude/skills/architecture-review/python-practices.md, and judge against the owner's decisions below as well. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
+const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks. Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
 
 const buildTesterPrompt = k => {
   const logFile = `/tmp/work-issue-${issue}-build-r${k}.log`
@@ -777,10 +777,18 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean && !built.questions.length) {
     const product = reviewed.lanes.product
     summary = product.summary
+    // The product owner found nothing but left its summary out: ask again. Whatever else the
+    // second call finds counts, so a finding or a question it raises stops the pass.
     if (!summary) {
-      const asked = await agent(`${productPrompt(k, [], reviewed.test)}\n\nThe round has passed every check. Write summary now; nothing else is needed.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
-      summary = asked ? asked.summary : ''
-      if (!summary) log('The product owner wrote no summary; the calling session asks it again before the gate.')
+      const asked = await agent(`${productPrompt(k, [], reviewed.test)}\n\nThe other checkers found nothing in this round. Write summary now.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      if (asked) {
+        addFindings('product', asked.findings)
+        citations.push(...asked.answers)
+        if (asked.escalations.length) { status = 'question'; escalations = asked.escalations; break }
+        if (asked.findings.some(f => f.material)) continue
+        summary = asked.summary
+      }
+      if (!summary) log('The product owner wrote no summary. The calling session asks the product-owner agent for it before the gate.')
     }
     status = 'passed'
     break
