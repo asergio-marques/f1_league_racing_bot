@@ -476,6 +476,9 @@ Clones all rounds from an existing division into a new one, shifting every sched
 
 Permanently removes the division and all its rounds from the pending setup.
 
+> A division with a driver placed in it cannot be deleted. Unassign its drivers first with
+> `/driver unassign`.
+
 #### `/division rename` — Rename a division
 *Access: League manager · Setup only*
 
