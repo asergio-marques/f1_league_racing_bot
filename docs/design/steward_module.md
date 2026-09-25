@@ -185,17 +185,19 @@ be carried out on start, and the service's 300-second default would discard a de
 that fell in a six-hour outage.
 
 **Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once and
-concurrently, which is not "in the order it would have happened" [STW-RST-001]. So the sweep runs
-before the scheduler starts: it reads the module's own rows, applies the downtime extension, then
-walks what is still due in ascending order of its moment and re-arms the rest. It is also where a
-cycle close waiting for a repaired channel is tried again [STW-RST-004].
-`_recover_rsvp_views_and_deadlines` in `__main__.py` is the precedent, down to containing each
-failure so that a start-up cannot be taken down by one unreadable row.
+concurrently, which is not "in the order it would have happened" [STW-RST-001]. So core's start-up
+sweep, which runs before the scheduler starts, hands each of this module's events that came due, in
+ascending order of its moment, to this module's handler for its kind (architecture.md, "Timed work
+and restarts"). The handler holds this module's logic: it reads the module's own rows, applies the
+downtime extension, acts on what is still due and re-arms the rest, containing each failure so that
+a start-up cannot be taken down by one unreadable row. A cycle close waiting for a repaired channel
+is a change on the queue, which tries it again when the bot starts [STW-RST-004] (architecture.md,
+"How a change is carried out").
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
 gateway cut with the process alive is the other half of [STW-RST-002] and is recorded by
-`on_disconnect`/`on_resumed` into the same place, so the sweep has one thing to read.
+`on_disconnect`/`on_resumed` into the same place, so the handlers have one thing to read.
 
 *Rejected:* deriving the gap from the jobs that missed their fire time. It only sees boundaries
 that fell inside the gap, and the case the rule is mostly about is a window that merely *contained*
@@ -204,7 +206,7 @@ it — a defence period open across an outage, whose end has not yet arrived and
 The extension is applied to every open window and to every later moment of the same cycle, and
 recorded as a running total on the cycle so the league can be told why a round's verdicts came
 later than the periods it configured. Clocks in which nobody acts are simply not in the set the
-sweep touches [STW-RST-003]: a timed ban's expiry is a date, and the seven-day countdown to a
+handlers move [STW-RST-003]: a timed ban's expiry is a date, and the seven-day countdown to a
 channel's deletion is a date, and neither is a window.
 
 ---
@@ -235,9 +237,9 @@ makes a bounded transaction possible at all.
 
 **Then the postings, outside it, and idempotent.** A `steward_cycle_closes` row carries a state:
 checked, written, posted. [STW-CYC-111] is kept by not writing `posted_at` until the postings are
-made; [STW-CYC-110] and [STW-RST-004] by the start-up sweep and the channel-setting commands
-resuming from the state. Idempotence is what decision 7 is for: a resumed close knows what it
-already posted because it recorded each message as it sent it.
+made; [STW-CYC-110] and [STW-RST-004] by the change queue, which resumes the close from its state
+when the bot starts and when a channel-setting command runs. Idempotence is what decision 7 is for:
+a resumed close knows what it already posted because it recorded each message as it sent it.
 
 The honest summary, and the one to hold in mind when reading [STW-CYC-108]: **the half that touches
 a licence is atomic, and the half that touches Discord is gated, idempotent and resumable.** A
@@ -428,10 +430,11 @@ module-level job callable survives its service or callback being absent, as
 `test_scheduler_job_callables.py` does. The two halves are tested apart because that is the only
 way to test either without a clock that runs.
 
-**The start-up sweep is tested as `test_bot_rsvp_recovery.py` tests its own.** Build a database
-with an open cycle whose boundary has passed and a `last_seen_at` an hour ago, run the sweep
-against a stubbed guild, and assert on the rows and on what was posted. That single test shape
-covers [STW-RST-001], [STW-RST-002] and [STW-RST-004].
+**This module's start-up handlers are tested as `test_bot_rsvp_recovery.py` tests its own
+recovery.** Build a database with an open cycle whose boundary has passed and a `last_seen_at` an
+hour ago, hand the handlers what the sweep would, against a stubbed guild, and assert on the rows
+and on what was posted. That single test shape covers [STW-RST-001] and [STW-RST-002].
+[STW-RST-004] is the change queue's, and is tested with a close left waiting on the queue.
 
 **Discord is a `MagicMock`, and a test that builds a view is `async def`.** apt's 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it, so a sync test
