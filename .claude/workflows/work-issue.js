@@ -391,7 +391,7 @@ const BUILDER_RULES = `The rules of the work:
 
 ${RUN_PYTEST}`
 
-const TESTS_JOB = `This is the tests stage. Write only the tests the plan says fail before the change, and no production code at all. Mark each new test, and each existing test whose expectation the change alters, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. Run the new tests both ways, as below: with --runxfail each must fail, for the reason the plan gives; without it each must be reported xfailed, and nothing else in their files may fail. Commit them as the first commit of this work, unless the plan places them otherwise. List every test in tests[], each with what it checks in plain terms, and the acceptance criterion it pins where there is one.`
+const TESTS_JOB = `This is the tests stage. Write only the tests the plan says fail before the change, and no production code at all. Mark each new test, and each existing test whose expectation the change alters, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. Run the new tests both ways, as below: with --runxfail each must fail, for the reason the plan gives; without it each must be reported xfailed, and nothing else in their files may fail. Commit them as the first commit of this work, unless the plan places them otherwise. A test the plan names as pinning behaviour that already holds is written unmarked, since it passes already, and is committed with the rest. List every test in tests[], each with what it checks in plain terms, the acceptance criterion it pins where there is one, and alreadyPasses true for a test of that kind.`
 
 const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed. By the end, none may be left.`
 
@@ -414,7 +414,12 @@ const BUILDER_SCHEMA = {
       items: {
         type: 'object',
         required: ['nodeid', 'pins'],
-        properties: { nodeid: { type: 'string' }, pins: { type: 'string', description: 'what it checks, in plain terms' }, criterion: { type: 'string' } },
+        properties: {
+          nodeid: { type: 'string' },
+          pins: { type: 'string', description: 'what it checks, in plain terms' },
+          criterion: { type: 'string' },
+          alreadyPasses: { type: 'boolean', description: 'the tests stage: a test that pins behaviour already built, written unmarked' },
+        },
       },
       description: 'the tests stage: every failing test written so far; the build: every xfail marker removed this round',
     },
@@ -477,12 +482,12 @@ const TESTS_CHECK_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['nodeid', 'failsWithRunxfail', 'realFailure', 'xfailedAsCommitted'],
+        required: ['nodeid', 'failsWithRunxfail', 'realFailure', 'outcomeAsCommitted'],
         properties: {
           nodeid: { type: 'string' },
           failsWithRunxfail: { type: 'boolean' },
-          realFailure: { type: 'string', description: 'the assertion or exception pytest reports under --runxfail, with its line' },
-          xfailedAsCommitted: { type: 'boolean' },
+          realFailure: { type: 'string', description: 'the assertion or exception pytest reports under --runxfail, with its line; empty where it passed' },
+          outcomeAsCommitted: { type: 'string', enum: ['xfailed', 'passed', 'failed', 'xpassed', 'error', 'not run'] },
         },
       },
     },
@@ -581,8 +586,8 @@ const testsTesterPrompt = (k, tests) => `You check the failing tests written in 
 
 1. What is committed: list every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted. The tests must be committed to count.
 2. Collection: pytest tests/ --collect-only -q must exit 0.
-3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test must fail. For each, give the failure pytest reports: the assertion or exception, and its line.
-4. As committed: pytest <the files holding them> -q -rxX. Each new test must be reported xfailed, nothing else in those files may fail, and nothing may XPASS.
+3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give the failure pytest reports: the assertion or exception, and its line. A test marked alreadyPasses must pass here too.
+4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem.
 
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
@@ -649,12 +654,16 @@ const testsProblems = t => {
   if (!t) return ['the tester returned nothing']
   const problems = []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
-  for (const x of t.tests) {
-    if (!x.failsWithRunxfail) problems.push(`${x.nodeid} passes already under --runxfail, so it pins nothing yet`)
-    if (!x.xfailedAsCommitted) problems.push(`${x.nodeid} is not reported xfailed as committed`)
+  for (const w of written) {
+    const x = t.tests.find(r => r.nodeid === w.nodeid)
+    if (!x) { problems.push(`${w.nodeid} was not run by the tester`); continue }
+    if (w.alreadyPasses) {
+      if (x.outcomeAsCommitted !== 'passed') problems.push(`${w.nodeid} pins behaviour already built, so it must pass, but was ${x.outcomeAsCommitted}`)
+      continue
+    }
+    if (!x.failsWithRunxfail) problems.push(`${w.nodeid} passes already under --runxfail, so it pins nothing yet`)
+    if (x.outcomeAsCommitted !== 'xfailed') problems.push(`${w.nodeid} is ${x.outcomeAsCommitted} as committed, not xfailed`)
   }
-  const missing = written.filter(w => !t.tests.some(x => x.nodeid === w.nodeid))
-  for (const w of missing) problems.push(`${w.nodeid} was not run by the tester`)
   return [...problems, ...t.otherFailures, ...t.uncommitted.map(u => `not committed: ${u}`)]
 }
 
@@ -670,7 +679,8 @@ const reviewTests = async (k, built, questions) => {
     () => agent(productPrompt(k, questions.business, test), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const problems = testsProblems(test)
-  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !test.environmentProblem && written.length > 0 && !problems.length }
+  const failing = written.filter(w => !w.alreadyPasses)
+  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !test.environmentProblem && failing.length > 0 && !problems.length }
 }
 
 const suiteProblems = t => {
@@ -732,7 +742,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   written = stage === 'tests' ? built.tests : [...written, ...built.tests]
   for (const x of built.fixed) { const f = ledger.get(x.id); if (f) { f.status = 'fixed'; f.fixedIn = x.commit } }
   for (const x of built.disputed) { const f = ledger.get(x.id); if (f) { f.status = 'disputed'; f.dispute = x.reason } }
-  if (stage === 'tests' && built.planComplete && !built.tests.length) {
+  if (stage === 'tests' && built.planComplete && !built.tests.some(t => !t.alreadyPasses)) {
     status = 'failed'
     failure = 'the builder wrote no failing test: the tests stage is only for a plan that names one'
     break
