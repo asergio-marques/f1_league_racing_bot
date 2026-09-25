@@ -372,13 +372,15 @@ and acts only if the row still says the work is due. A job that fires after its 
 cancelled then does nothing. The job store becomes a convenience: if it were lost, the bot could
 rebuild every job from the database.
 
-**Each kind of job says what happens if it is missed.** When the bot was down at the moment a job
-was due, the job either runs late or is skipped. That choice is declared once for each kind of job,
-where the kind is registered, and the start-up sweep applies it. A skip is recorded on the event's
-row, so the late job finds nothing due when the scheduler runs it. Every job is armed with no limit
-on how late it may run (`misfire_grace_time=None`), so the scheduler never drops one on its own and
-its default never decides, as `steward_module.md` §3 sets out. Which choice is right is a rule a
-league notices, so it belongs to the core specification ("When the bot stops").
+**Each kind of job's handler decides what happens if it is missed.** When the bot was down at the
+moment a job was due, the handler its module provides for that kind of job (below) decides what
+becomes of it: it runs late, it is skipped, or, for stewarding, its moments are moved on by the time
+the bot was down (`steward_module.md` §3). The handler records a skip on the event's row, the row
+being its own module's, so the late job finds nothing due when the scheduler runs it. Every job is
+armed with no limit on how late it may run (`misfire_grace_time=None`), so the scheduler never drops
+one on its own and its default never decides, as `steward_module.md` §3 sets out. What each kind
+does when missed is a rule a league notices, so it belongs to the specifications (the core
+specification's "When the bot stops").
 
 **Jobs are made only through the scheduler service.** Nothing else arms, finds or removes a job. A
 round's job is named from the round and the event, so arming it again replaces the old one instead
@@ -404,17 +406,17 @@ Tests can then run the whole start-up in order, instead of checking its order by
 source code.
 
 **One sweep picks up the timed events that were missed.** It walks everything that came due while
-the bot was down, in the order it would have happened, and applies each kind's declared choice: run
-it late, or skip it. A timed event that makes a change puts it on the queue, like any other. A
-module's start-up work that is no missed event (a review posted again, an interrupted submission
-reopened, the hub's panel posted again, as the core specification's "When the bot stops" lists) is a
-step of the sweep too, reached through the hook for the bot starting. Each step of the sweep is kept
-separate, so one failing is reported and does not stop the rest.
+the bot was down, in the order it would have happened, and hands each to its handler. A timed event
+that makes a change puts it on the queue, like any other. A module's start-up work that is no missed
+event (a review posted again, an interrupted submission reopened, the hub's panel posted again, as
+the core specification's "When the bot stops" lists) is a step of the sweep too, reached through the
+hook for the bot starting. Each step of the sweep is kept separate, so one failing is reported and
+does not stop the rest.
 
-**The sweep is core's, and the work is each module's.** The sweep decides which timed events are
-due and in what order, and hands each to the handler its module provides for that kind of job. The
-builder signs each handler up with its kind of job, beside the kind's missed-run choice. The handler
-does the module's own work, and core holds no module's catch-up code: each module writes the
+**The sweep only delegates.** It is core's: it finds the timed events that came due and hands each,
+in order, to the handler its module provides for that kind of job, and it does nothing else. The
+builder signs each handler up with its kind of job. The handler holds its module's logic, what
+becomes of a missed event among it, and core holds none of a module's: each module writes the
 handler for every kind of timed job it has, and the entry point holds none of it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is

@@ -645,9 +645,9 @@ KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE: dict[tuple[str, str], tuple[int, str]] = {
 
 def test_every_job_says_what_happens_if_it_is_missed():
     """Each `add_job` passes `misfire_grace_time=None` (architecture.md, "Timed work and
-    restarts"). Whether a job due while the bot was down runs late or is skipped is declared for
-    each kind of job and applied by the start-up sweep, so the scheduler must never drop a late
-    job on its own, which its default grace, or any number here, would do."""
+    restarts"). What becomes of a job due while the bot was down is decided by its kind's handler,
+    which the start-up sweep hands it to, so the scheduler must never drop a late job on its own,
+    which its default grace, or any number here, would do."""
     _check(
         "every job says what happens if it is missed",
         _jobs_without_a_missed_run_rule(),
