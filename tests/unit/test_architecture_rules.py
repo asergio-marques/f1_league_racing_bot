@@ -586,3 +586,38 @@ def test_nothing_reaches_past_the_scheduler_service():
     )
 
 
+# ── 7. Every job says what happens if it is missed ──────────────────────────────────────────
+
+
+def _jobs_without_a_missed_run_rule() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if (isinstance(node, ast.Call) and _call_name(node) == "add_job"
+                and not any(keyword.arg == "misfire_grace_time" for keyword in node.keywords)):
+            found[(path, function)] += 1
+    return found
+
+
+KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE: dict[tuple[str, str], tuple[int, str]] = {
+    ("services/scheduler_service.py", "SchedulerService.schedule_amendment_sweep"): (1, PASS["core"]),
+    ("services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (4, PASS["core"]),
+    ("services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["core"]),
+    ("services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, PASS["core"]),
+    ("services/scheduler_service.py", "SchedulerService.schedule_round"): (3, PASS["core"]),
+    ("services/scheduler_service.py", "SchedulerService.schedule_signup_close_timer"): (1, PASS["core"]),
+    ("services/wizard_service.py", "WizardService._arm_channel_delete_job"): (1, PASS["signup"]),
+    ("services/wizard_service.py", "WizardService._arm_inactivity_job"): (1, PASS["signup"]),
+}
+
+
+def test_every_job_says_what_happens_if_it_is_missed():
+    """Each `add_job` states its `misfire_grace_time` (architecture.md, "Timed work and
+    restarts"): whether a job due while the bot was down runs late or is skipped is a choice made
+    for each kind of job, not the scheduler's default."""
+    _check(
+        "every job says what happens if it is missed",
+        _jobs_without_a_missed_run_rule(),
+        KNOWN_JOBS_WITHOUT_A_MISSED_RUN_RULE,
+    )
+
+
