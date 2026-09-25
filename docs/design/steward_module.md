@@ -177,18 +177,20 @@ waves 6 to 11. If the fire time lived only in the job store, [STW-RST-002] would
 every armed job of every open cycle on start-up, and S36 would have to reach back into S12, S13 and
 S15. As columns, the extension is an `UPDATE` and the jobs re-arm from what it wrote.
 
-Jobs go into the existing `SchedulerService`, with ids in this module's own prefix namespace so
-that `cancel_round(only=…)` can take this module's jobs and no other's — the mechanism
+Jobs go into the existing `SchedulerService`, with ids in this module's own prefix namespace so that
+`cancel_round(only=…)` can take this module's jobs and no other's — the mechanism
 `_WEATHER_JOB_PREFIXES` exists for, and the mistake issue #117 was. They are armed with no misfire
-grace, as every job is (architecture.md, "Timed work and restarts"): [STW-RST-001] requires what
-came due during a stop to be carried out on start, and a lateness limit would discard a
+grace, as architecture.md has every job armed ("Timed work and restarts"): [STW-RST-001] requires
+what came due during a stop to be carried out on start, and a lateness limit would discard a
 deliberation close that fell in a six-hour outage.
 
 **Order is the start-up sweep's, not the scheduler's.** APScheduler fires everything due at once and
 concurrently, which is not "in the order it would have happened" [STW-RST-001]. So core's start-up
 sweep, which runs before the scheduler starts, hands each of this module's events that came due, in
 ascending order of its moment, to this module's handler for its kind (architecture.md, "Timed work
-and restarts"). The handler holds this module's logic. Handed an event, by the sweep or by the
+and restarts"). This module's kinds of timed job are the per-ticket stages and the cycle boundaries,
+and its way of telling which of their events came due reads the `stage_due_at` moments that have
+passed. The handler holds this module's logic. Handed an event, by the sweep or by the
 scheduler, it first applies any downtime not yet applied, then acts on the event if its row still
 says it is due, and otherwise re-arms it at its moved moment. So a window that merely contained the
 outage, with no boundary falling inside it, moves when its own end falls due. A cycle close waiting
@@ -199,7 +201,12 @@ for a repaired channel is the change queue's (§4).
 gateway cut with the process alive is the other half of [STW-RST-002] and is recorded by
 `on_disconnect`/`on_resumed` into the same place, so the handlers have one thing to read. Each of
 these writes is a change on the queue like any other (architecture.md, "How a change is carried
-out").
+out"). At start, a step signed up for the bot starting, which runs before any missed event is
+handed out, records the gap, `now - last_seen_at`, in the module's downtime record, also through
+the queue; the handlers read that record, never `last_seen_at`, and apply what they have not yet
+applied. Through the queue, a heartbeat waits behind a change's posts, so a crash during a long run
+of posts counts that wait as downtime and lengthens windows by a little more than the outage. That
+is accepted, since the queue holds every change to the bot's data.
 
 *Rejected:* deriving the gap from the jobs that missed their fire time. It only sees boundaries
 that fell inside the gap, and the case the rule is mostly about is a window that merely *contained*
@@ -237,18 +244,18 @@ with one commit and no Discord call inside it. The cascade is pure computation o
 loaded — each rule triggered at most once per driver per close, so it terminates — which is what
 makes a bounded transaction possible at all.
 
-**Then the postings, outside it, and idempotent.** A `steward_cycle_closes` row carries a state:
-checked, written, posted. [STW-CYC-111] is kept by not writing `posted_at` until the postings are
-made; [STW-CYC-110] and [STW-RST-004] by the change queue, which carries the close on from its
-first step not done when the bot starts and when a channel-setting command runs, `posted_at` being
-only the record [STW-CYC-111] asks for. Idempotence is what §7 is for:
+**Then the postings, outside it, and idempotent.** The close is a change on the queue, and the
+queue's step marks alone decide where it resumes: [STW-CYC-110] and [STW-RST-004] are kept by the
+queue carrying it on from its first step not done when the bot starts and when a channel-setting
+command runs. The `steward_cycle_closes` row keeps `posted_at` only as the record [STW-CYC-111]
+asks for, written once the postings are made. Idempotence is what §7 is for:
 a resumed close knows what it already posted because it recorded each message as it sent it.
 
 The honest summary, and the one to hold in mind when reading [STW-CYC-108]: **the half that touches
 a licence is atomic, and the half that touches Discord is gated, idempotent and resumable.** A
-posting that fails after the licences are written leaves the close at `written` and does not roll
-them back. Any other reading either holds a write lock across the network or promises to unsend a
-message.
+posting that fails after the licences are written leaves the close with its posting steps not done
+and does not roll them back. Any other reading either holds a write lock across the network or
+promises to unsend a message.
 
 ---
 
@@ -433,12 +440,12 @@ module-level job callable survives its service or callback being absent, as
 `test_scheduler_job_callables.py` does. The two halves are tested apart because that is the only
 way to test either without a clock that runs.
 
-**This module's handlers are tested as `test_bot_rsvp_recovery.py` tests its own recovery.** Build
-a database with an open cycle and a `last_seen_at` an hour ago, hand the handlers events as the
-sweep would, against a stubbed guild, and assert on the rows and on what was posted. Two cases
-cover [STW-RST-001] and [STW-RST-002]: a boundary that passed during the outage, and a window that
-merely spanned it, moved when its end falls due. [STW-RST-004] is the change queue's, and is tested
-with a close left waiting on the queue.
+**This module's handlers are tested as `test_bot_rsvp_recovery.py` tests its own recovery.** Build a
+database with an open cycle and a `last_seen_at` an hour ago, run the start step that records the
+gap, then hand the handlers events as the sweep would, against a stubbed guild, and assert on the
+rows and on what was posted. Two cases cover [STW-RST-001] and [STW-RST-002]: a boundary that passed
+during the outage, and a window that merely spanned it, moved when its end falls due. [STW-RST-004]
+is the change queue's, and is tested with a close left waiting on the queue.
 
 **Discord is a `MagicMock`, and a test that builds a view is `async def`.** apt's 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it, so a sync test
@@ -466,7 +473,7 @@ the database to explain the gap. The exclusion predicate is the cost, and it is 
 one query that forgets it resurrects a sanction that should not exist.
 
 **~~How long a gap may be disregarded.~~** Settled 2026-09-20: five minutes, now named in
-[STW-RST-002]. It is the interval the bot already holds to in five places:
+[STW-RST-002]. It is the interval the bot already holds to elsewhere, as in
 `APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry loop, the signup correction
 timeout and the signup view's own. Below it, everybody's window is quietly
 shortened by the outage; that is accepted.
