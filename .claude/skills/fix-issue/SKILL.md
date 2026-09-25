@@ -243,7 +243,11 @@ the wip-specs, the README, the how-to guides and the test-suite run.
 A bug fix that restores documented behaviour needs no document change — but that is an outcome
 `close-out` reaches, not a reason to skip it. Any **decision the user made in conversation**
 while planning this fix is a project rule from that moment and belongs in the wip-spec,
-whatever the issue said.
+whatever the issue said. That includes every answer the user gave to a business question at a
+gate or mid-build, and every behaviour change they asked for at Gate 3: each goes into the
+wip-spec, and into the README and the module's guide where a league sees it. A rule the product
+owner cited needs nothing, being written down already. Where the user ruled that the code was
+right and a spec wrong, the spec's correction is owed here.
 
 Reference the issue by number in the closing report, and say plainly whether it is fixed,
 partly fixed, or turned out not to reproduce.
