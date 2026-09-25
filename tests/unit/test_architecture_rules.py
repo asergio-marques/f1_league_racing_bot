@@ -228,3 +228,106 @@ def test_database_code_lives_only_in_services():
     )
 
 
+# ── 2. Nothing is awaited between a write and its commit, but the connection itself ─────────
+
+#: SQL that changes the database, as the first word of a statement.
+_WRITE = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE)\b", re.IGNORECASE)
+#: What may be awaited on a cursor while a write is open: reading its rows, or closing it.
+_CURSOR_CALLS = frozenset({"fetchone", "fetchall", "fetchmany", "close"})
+#: `db.database`'s helper that reads a cursor's one row, which is a cursor call by another name.
+_CURSOR_HELPERS = frozenset({"sole_row"})
+
+
+def _sql_text(node: ast.AST) -> str | None:
+    """The SQL a call passes, where it is written out in the call; None where it is not."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(v.value for v in node.values if isinstance(v, ast.Constant))
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _sql_text(node.left), _sql_text(node.right)
+        return None if left is None else left + (right or "")
+    return None
+
+
+def _awaits_in_order(body: list[ast.stmt]) -> list[ast.Await]:
+    """Every `await` in *body*, in source order, leaving out any nested function's own."""
+    found: list[ast.Await] = []
+
+    def visit(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            if isinstance(child, ast.Await):
+                found.append(child)
+            visit(child)
+
+    for statement in body:
+        if isinstance(statement, ast.Await):
+            found.append(statement)
+        visit(statement)
+    return sorted(found, key=lambda node: (node.lineno, node.col_offset))
+
+
+def _on_the_connection(awaited: ast.AST, connection: str) -> bool:
+    """Whether *awaited* works on the open connection: a call on it, on a cursor, or given it."""
+    if not isinstance(awaited, ast.Call):
+        return False
+    func = awaited.func
+    if isinstance(func, ast.Attribute):
+        if isinstance(func.value, ast.Name) and func.value.id == connection:
+            return True
+        if func.attr in _CURSOR_CALLS:
+            return True
+    if isinstance(func, ast.Name) and func.id in _CURSOR_HELPERS:
+        return True
+    arguments = list(awaited.args) + [keyword.value for keyword in awaited.keywords]
+    return any(isinstance(argument, ast.Name) and argument.id == connection for argument in arguments)
+
+
+def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if not isinstance(node, ast.AsyncWith):
+            continue
+        for item in node.items:
+            if not (isinstance(item.context_expr, ast.Call) and _opens_a_connection(item.context_expr)
+                    and isinstance(item.optional_vars, ast.Name)):
+                continue
+            connection = item.optional_vars.id
+            writing = False
+            for awaited in _awaits_in_order(node.body):
+                call = awaited.value
+                name = _call_name(call) if isinstance(call, ast.Call) else ""
+                on_connection = (
+                    isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name) and call.func.value.id == connection
+                )
+                if on_connection and name in ("commit", "rollback"):
+                    writing = False
+                elif on_connection and name in SQL_CALLS:
+                    text = _sql_text(call.args[0]) if call.args else None
+                    writing = writing or text is None or bool(_WRITE.match(text))
+                elif writing and not _on_the_connection(call, connection):
+                    found[(path, function)] += 1
+    return found
+
+
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
+    ("services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
+}
+
+
+def test_nothing_else_is_awaited_while_a_write_is_open():
+    """Between a write and its commit, only the connection is awaited (architecture.md, "The
+    database"; #155). SQLite admits one writer at a time, so a call to Discord made while a
+    write is open holds up every other save in the bot until Discord answers, and a second
+    connection that writes would wait on the first until it gave up and failed. SQL the check cannot read, being
+    built elsewhere, counts as a write."""
+    _check(
+        "nothing is awaited while a write is open",
+        _awaits_inside_a_write(),
+        KNOWN_AWAITS_INSIDE_A_WRITE,
+    )
+
+
