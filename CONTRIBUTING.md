@@ -90,6 +90,9 @@ rule and was Critical, and one filed as serious turned out to clean up after its
 
 ## Running the tests
 
+In the virtualenv the README's Setup builds, which holds the pinned requirements and the bot itself
+(`pip install -e .`), since the tests import the bot as that installed package:
+
 ```
 pytest tests/ -q
 ```
