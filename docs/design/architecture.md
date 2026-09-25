@@ -74,12 +74,13 @@ amendment move into their owners' services. Last, what is left is split by comma
 *Rejected:* splitting by command group straight away, which moves the size without reducing
 it. *Rejected:* leaving the file whole.
 
-**8. Posting to Discord: one small handler for each kind of post.** There are four kinds:
-log lines; posts the bot updates or replaces in place (calendar, lineup, standings, sheets,
-forecasts); one-off notices; and channels the bot creates and later deletes whole. Each
-handler holds the rules for its kind once: what to do when a post fails, who it may mention,
-and remembering the message so it can be found again. Until the handlers exist, the router is
-described as what it is: the log writer, and the poster of a forecast's text.
+**8. Posting to Discord: one small handler for each kind of post.** There are four kinds: log
+lines; posts the bot updates or replaces in place (calendar, lineup, standings, sheets,
+forecasts); one-off notices; and channels the bot creates and later deletes whole. Each handler
+holds the rules for its kind once: what to do when a post fails, who it may mention, and
+remembering the message so it can be found again. Until the handlers exist, the router is
+described as what it is: the log writer, and the poster of a forecast's text and the notices
+posted in a forecast's place.
 *Rejected:* one gateway for every post, which would need to know every module's rules.
 *Rejected:* one handler per channel, which repeats the same rules a dozen times.
 
@@ -206,9 +207,9 @@ object (`LeagueBot`), the scheduler service, the base classes for the command tr
 forms, `report_failure`, and the log channel writer.
 
 **The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
-imports every module. It holds the builder that makes every service, loads every module's cogs,
-signs each module up to core's hooks, and starts the bot. That is how core can offer hooks
-without ever importing a module.
+imports every module at run time. It holds the builder that makes every service, loads every
+module's cogs, signs each module up to core's hooks, and starts the bot. That is how core can
+offer hooks without ever importing a module.
 
 **What each part may do:**
 
@@ -380,16 +381,18 @@ not.
 - **Posts are remembered.** A post a step makes is recorded with its message id, so repeating the
   step replaces the post rather than adding a second. The one gap: if the bot stops after a post
   is sent but before it is recorded, repeating the step sends it again, and a post that replaced
-  an earlier one leaves its first copy behind. Scanning the channel to spot that is not done:
+  an earlier one leaves its first copy behind, a known gap against Constitution XIV rule 8 ("at
+  most one such message stands at any moment"). Scanning the channel to spot that is not done:
   `steward_module.md` §7 rejects scanning a channel as guesswork, and that reasoning carries
   over.
 - **A failed step is retried, without holding up the queue.** A step that fails because of
   Discord is retried with growing waits, by running the owner's post again, as text where it
   would have been a picture (Constitution XIV, rule 8). While it waits, it steps aside: a later
-  change to anything it touches (its round, its division or its season) waits behind it, and
-  the rest go ahead. It is retried until it succeeds, and reported to the log channel if it keeps
-  failing, as the core specification's "When the bot stops" requires of a failed post. The old
-  retry queue is kept for log lines only.
+  change to the same round or division, or to the season's own record (its stage, its settings),
+  waits behind it, and changes to other rounds and divisions go ahead. It is retried until it
+  succeeds, and reported to the log channel if it keeps failing, as the core specification's
+  "When the bot stops" requires of a failed post. The old retry queue is kept for log lines
+  only.
 - **The record is the queue's.** The queue writes the audit record and the log-channel line for
   every change.
 
@@ -607,13 +610,13 @@ queued change (#439).
 **The code does not match this file yet.** Below is everything #282's review found to differ,
 how much of it there is, and the issue that will fix it. Where a check counts it, the number is
 the check's, measured on 25 September 2026, and the check's own list is the up-to-date one.
-Lines leave this table as the issues close.
+Lines leave these tables as the issues close.
 
 ### Counted by a check
 
 | What does not match yet | How much today | Fixed by |
 |---|---|---|
-| Code below the cogs imports a cog | 7 import links (11 import statements) in 5 services | #283, #285, #286 |
+| Code below the cogs imports a cog | 7 import links (the check's count; 11 import statements) in 5 services | #283, #285, #286 |
 | A utility imports a service (the log writer queues its own retries) | 1 | #441 |
 | Database code outside services | 176 calls in 68 functions (the cogs and the start-up code) | #283, #284, #285, #286 |
 | Something else awaited while a save is open | 1 (test mode's fake drivers) | #283 |
@@ -655,10 +658,10 @@ Lines leave this table as the issues close.
 | The go-live obligations for the schema are scattered | #283 |
 | Three standings columns (`current_position`, `current_points`, `points_gap_to_first` on `driver_season_assignments`) are stored and never read | #283 |
 | Penalty and appeal reviews resume only their prompt after a restart | #284 |
-| Two docstrings say a verdict's message id is never stored | #284 |
+| Two docstrings say a verdict's message id is never stored | #284, #288 |
 | Services read the clock themselves in about fifty places, and one reads the local date rather than UTC | #283, then each module's pass |
-| Tables are written by more than one module: by a rough count of the SQL naming each table, the audit table by four and `divisions` by three | #438 (the check), then each module's pass |
+| Tables are written by more than one module: by a rough count of the SQL naming each table, `rounds` by four and the audit table by three | #438 (the check), then each module's pass |
 | Modules import one another outside the dependency table: image reads results, attendance and weather; results calls attendance; signup calls results and weather | #438 (the check), then each module's pass |
 | A failed log line is re-sent by the retry worker, not by the log writer, and without its setting that stops a line notifying anyone | #441 |
 | Not yet checked or counted: catch-all handlers outside the four places, errors caught other than by name, a connection handed back to its caller | #283–#288 |
-| Checking the templates runs on the bot's main loop, holding everything up each time a graphic is prepared | #288 |
+| Checking the templates, and loading and filling a graphic's template, run on the bot's main loop and hold everything up each time a graphic is made; only turning it into a picture runs off the loop | #288 |
