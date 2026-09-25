@@ -1,6 +1,6 @@
 ---
 name: "fix-issue"
-description: "Take a GitHub issue from the tracker through analysis and a reviewed plan, then claim it — assign the issue and create its fix branch through GitHub so the branch is linked to the issue — before implementing. Invoke when the user names an issue number to fix."
+description: "Take a GitHub issue from the tracker through analysis and a plan checked against the architecture, the design files and the specs, then claim it — assign the issue and create its fix branch through GitHub so the branch is linked to the issue — and build it through the work-issue workflow: the failing tests first, then build, review and test until they pass, with the user deciding at each gate. Invoke when the user names an issue number to fix."
 argument-hint: "The issue number, e.g. 123 or #123"
 user-invocable: true
 disable-model-invocation: false
@@ -9,8 +9,8 @@ disable-model-invocation: false
 # Fix a tracked issue
 
 The user has named an issue to fix. Work it in phases, in order: **read it, verify it against
-the code, plan the fix and have the plan approved, claim it on GitHub, build, close out, and
-open the pull request — labelled — once the user says so.**
+the code, plan the fix, have the plan checked and approved, claim it on GitHub, build it through
+the workflow, close out, and open the pull request — labelled — once the user says so.**
 
 The issue number is `$ARGUMENTS`. Strip a leading `#`. If no number was given, ask for one
 before doing anything else — do not guess from the tracker.
@@ -151,11 +151,74 @@ git branch --show-current
 
 If the link is missing, do not carry on down an unlinked branch — say so.
 
-## Phase 5 — Build it
+## Phase 5 — Build it, through the workflow
 
-Work the approved plan, committing at the points it named. Testing follows `CLAUDE.md`: a
-targeted subset as you go, the full `pytest tests/ -q` at the end, and the `rasteriser` marker
-by hand if the fix touches the image module.
+The `work-issue` workflow builds the fix, in two stages with a gate between them. Build nothing by
+hand. Pass every stage the same arguments:
+
+- `issue`, `modules`, and `plan`: the approved plan, in full;
+- `worktree`: the checkout's absolute path. That is the main checkout, which `--checkout` put on
+  the branch;
+- `python`: the absolute path of that checkout's `.venv/bin/python`;
+- `branch`, and `base`: `git merge-base origin/main HEAD`, taken once;
+- `criteria`: the plan's item 7, and `checks`: its item 8;
+- `decisions`: every answer the user has given on this issue, word for word, with its date.
+
+**Leave the checkout alone while a stage runs:** its builder is working in it.
+
+### The tests stage, then Gate 2
+
+```
+Workflow({ name: "work-issue", args: { stage: "tests", ... } })
+```
+
+The builder writes and commits only the tests the plan says fail before the fix, each marked
+`xfail(strict=True)` so that every commit stays green. The tester shows each test's real
+failure, and the product owner and the issue reviewer judge whether each fails for the right
+reason, and whether together they pin every spec rule the fix touches and everything a league
+should see. Skip the stage only where the approved plan names no test that fails before the fix,
+as for a pure move, and said so.
+
+When it returns `passed`, **Gate 2**: put the tests to the user through `AskUserQuestion`,
+with the product owner's `summary`, which says in plain terms what each test checks, and every
+rule it cited. The options are to approve them or to change them. A change goes into
+`decisions`, and the stage runs again with this result as `previous`.
+
+### The build stage
+
+```
+Workflow({ name: "work-issue", args: { stage: "build", ... } })
+```
+
+Each round, the builder builds or fixes, and commits. Then four checkers look at the branch side
+by side: the issue reviewer against the architecture, the design, the issue and the plan; the
+code reviewer for defects in the code; the product owner against the spec rules and the
+acceptance criteria; and the tester, who runs the whole suite and mypy behind the test lock. A
+design verifier follows the issue reviewer wherever the branch changes a design file. The rounds
+repeat until nothing material is open, no question is, and the suite and mypy are green, for at
+most three rounds a run. Tell the user it takes about ten agents for a fix that passes on its
+second round.
+
+### What a stage returns
+
+- **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
+  the product owner framed them, its recommendation first. Add the answers to `decisions`, and
+  run the same stage again with this result as `previous`, so its rounds carry on.
+- **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
+  with `openMaterial` and `lastFailures`.
+- **`failed`:** read `failure`. A host at fault, such as a full `/tmp`, is repaired and the stage
+  run again. A builder that returned nothing, or a checkout on the wrong branch, is looked into
+  before anything runs again.
+- **`separateDefects`** are drafts for the tracker. Draft each in full, wait for an explicit
+  yes, and file only what is approved.
+- **`minor`** findings are settled with the user before Gate 3: fix the wording yourself where
+  the answer is plain, and ask where it is not.
+
+A checker that returned nothing is never read as a pass: the stage cannot pass without it.
+
+**The `rasteriser` marker still runs by hand** if the fix touches the image module:
+`pytest tests/ -q -m rasteriser` in the main checkout, on a host with Inkscape, with the output
+checked as PNG. CI cannot run it, and neither does the workflow.
 
 ## Phase 6 — Close out
 
