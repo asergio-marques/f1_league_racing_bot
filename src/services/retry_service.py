@@ -1,8 +1,9 @@
 """RetryService — persistent message retry queue.
 
-When OutputRouter fails to post a message to a Discord channel, it calls
-``enqueue`` to persist the attempt.  ``RetryCog`` runs ``attempt_delivery`` on
-a 5-minute loop until the message is delivered.
+When a post fails, its text is kept here with ``enqueue``: by ``OutputRouter`` for log lines
+and a forecast's text, and by the forecast, calendar and attendance sheet posters for their
+own. ``RetryCog`` runs ``attempt_delivery`` on a 5-minute loop until the message is
+delivered.
 
 Constitution Principle V: successful and stuck-entry retry outcomes are posted
 to the calculation log channel for full observability.

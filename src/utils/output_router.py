@@ -1,10 +1,17 @@
-"""OutputRouter — single chokepoint for all channel writes.
+"""OutputRouter — the one writer of the log channel, and the poster of a forecast's text.
 
-Constitution Principle VII: Two output channel categories only:
-  1. Forecast channels  (per-division)
-  2. Calculation log channel  (the league's one)
+It is **not** the way every post leaves the bot. A graphic, an embed, a message carrying
+buttons, and every post the bot later replaces in place are sent by the module that makes
+them, so a forecast drawn as a graphic, a calendar or a results table never passes through
+here. Which channels exist, and what each may carry, is Constitution Principle VII and
+`services/channel_registry_service.py`.
 
-No other channel receives bot messages.
+What it holds, for its two kinds of post, are the rules for them: a mention in a log line
+names without notifying, a record longer than one message is split, both are sent with
+mentions switched off, and a failed post is queued for retry where the caller asks. The log
+channel is written nowhere else, which `tests/unit/test_architecture_rules.py` checks. The
+target is one handler for each kind of post, of which this is the log writer
+(`docs/design/architecture.md`, "Posting to Discord").
 """
 
 from __future__ import annotations
@@ -48,7 +55,7 @@ class ForecastChannel:
 
 
 class OutputRouter:
-    """Routes all bot output to the correct channels with error isolation."""
+    """Writes the log channel and a forecast's text, each failure contained; see above."""
 
     def __init__(self, bot: "LeagueBot", retry_db_path: "Optional[str]" = None) -> None:
         self._bot = bot

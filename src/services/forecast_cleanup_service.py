@@ -2,9 +2,9 @@
 
 Feature 007: Forecast Message Cleanup.
 
-Constitution Principle VII: Every channel write goes through OutputRouter.
-Deletes are the inverse of writes; they use the same channel references stored
-at write time.
+Deletes are the inverse of writes: they use the channel and message ids stored when the
+forecast was posted, whether it went out as text through `OutputRouter` or as a graphic sent
+from here.
 
 Public API:
   store_forecast_message  — persist a message ID after posting
