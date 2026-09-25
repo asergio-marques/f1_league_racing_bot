@@ -186,16 +186,16 @@ limit, as architecture.md has every job armed ("Timed work and restarts").
 concurrently, which is not "in the order it would have happened" [STW-RST-001]. So core's start-up
 sweep, which runs before the scheduler starts, hands each of this module's events that came due, in
 ascending order of its moment, to this module's handler for its kind (architecture.md, "Timed work
-and restarts"). This module's kinds of timed job are the per-ticket stages, the cycle boundaries, a
-closed ticket's channel deletion and a timed ban's expiry, and its way of telling which of their
-events came due reads the due moments of each that have passed. Its handlers move only the windows
-[STW-RST-003]. The handler holds this module's logic. Handed an event, by the sweep or by the
-scheduler, it puts one change on the queue, whose steps first apply any downtime not yet applied,
-reading the module's downtime record, written at start by the start step's change, queued ahead of
-it, and after a gateway cut by the change `on_resumed` asks for; then act on the event if its row
-still says it is due, and otherwise re-arm it at its moved moment. So a window that merely contained
-the outage, with no boundary falling inside it, moves when its own end falls due. A cycle close
-waiting for a repaired channel is the change queue's (§4).
+and restarts"). This module's kinds of timed job include the per-ticket stages, the cycle
+boundaries, a closed ticket's channel deletion and a timed ban's expiry, and its way of telling
+which of their events came due reads the due moments of each that have passed. Its handlers move
+only the windows [STW-RST-003]. The handler holds this module's logic. Handed an event, by the sweep
+or by the scheduler, it puts one change on the queue, whose steps first apply any downtime not yet
+applied, reading the module's downtime record, written at start by the start step's change, queued
+ahead of it, and after a gateway cut by the change `on_resumed` asks for; then act on the event if
+its row still says it is due, and otherwise re-arm it at its moved moment. So a window that merely
+contained the outage, with no boundary falling inside it, moves when its own end falls due. A cycle
+close waiting for a repaired channel is the change queue's (§4).
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
