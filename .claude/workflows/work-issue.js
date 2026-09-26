@@ -253,7 +253,7 @@ const triage = async (questions, tag, where, context, handled = []) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => agent(
-    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[]. A question that asks the same as one already handled, listed below, is neither answered nor escalated again. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
+    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], copying the question word for word. A question that asks the same as one already handled, listed below, is neither answered nor escalated again. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
     { label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
@@ -354,13 +354,20 @@ let written = previous && previous.tests ? [...previous.tests] : []
 // round, so that a design finding is always judged by the verifier and never closed on the
 // builder's word.
 const designFiles = new Set(previous && previous.designFiles ? previous.designFiles : [])
-// A dispute the owner has since ruled on, in `rulings` as {<finding id>: "fix" or "leave"}: one
-// left as built is closed; any other goes back to the builder, which follows the ruling.
+// The owner's rulings, in `rulings` as {<finding id>: "fix" or "leave"}. On a dispute: one left as
+// built is closed, and any other goes back to the builder, which follows the ruling. On a minor
+// finding: one the owner wants made becomes material, so that its checker must confirm it like
+// any other, and one left is closed.
 const rulings = ARGS.rulings || {}
 for (const f of ledger.values()) {
-  if (f.status !== 'upheld') continue
-  if (rulings[f.id] === 'leave') { f.status = 'closed'; f.ownerLeft = true }
-  else { f.status = 'open'; f.ownerRuled = true; f.asked = false }
+  const ruling = rulings[f.id]
+  if (f.status === 'upheld') {
+    if (ruling === 'leave') { f.status = 'closed'; f.ownerLeft = true }
+    else { f.status = 'open'; f.ownerRuled = true; f.asked = false }
+  } else if (!f.material && f.status === 'open' && ruling) {
+    if (ruling === 'fix') { f.material = true; f.ownerWants = true }
+    else { f.status = 'closed'; f.ownerLeft = true }
+  }
 }
 
 const STAGE_NAME = stage === 'tests' ? 'the tests stage, where only the failing tests are written' : 'the build'
@@ -374,10 +381,10 @@ const NO_PYTEST = `Never run pytest: ${stage === 'build' ? 'the suite is running
 // pytest nobody reads.
 const RUN_PYTEST = `How to run pytest here, for a handful of tests and the whole suite alike: always from ${worktree}, behind the test lock, with the pinned interpreter, so that the run tests this checkout's code. Start it detached, and wait on it through its process:
 
-    cd ${worktree} && rm -f LOG LOG.exit && nohup bash -c 'flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
+    cd ${worktree} && rm -f LOG LOG.exit && nohup bash -c 'flock -E 75 -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src ${python} -m pytest <targets> -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
     timeout 540 tail --pid=<that pid> -f /dev/null; cat LOG.exit 2>/dev/null || echo still running
 
-where LOG is a file under /tmp named for the run. Repeat the second line, each Bash call with a timeout of 600000 ms, until the exit code appears: another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes. Then read LOG. Never wait with sleep, pgrep or pkill; never read an exit code through a pipe such as | tail; never start a second pytest session while one of yours runs; and never edit a file while a run you started is going.`
+where LOG is a file under /tmp named for the run. Repeat the second line, each Bash call with a timeout of 600000 ms, until the exit code appears: another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes. Then read LOG. An exit code of 75 is flock giving up after an hour without the lock, which is the host's problem and not the code's. Never wait with sleep, pgrep or pkill; never read an exit code through a pipe such as | tail; never start a second pytest session while one of yours runs; and never edit a file while a run you started is going.`
 
 const BUILDER_RULES = `The rules of the work:
 - Stay inside the approved plan. A separate defect you notice goes in separateDefects[], as a draft for the owner; it is not fixed here.
@@ -548,9 +555,12 @@ const builderPrompt = k => {
     why: f.why,
     fix: f.fix,
     evidence: f.evidence,
-    note: f.ownerRuled ? 'the owner has ruled on your dispute: follow the decisions below'
-      : f.status === 'disputed' ? 'your dispute was not judged: fix it or dispute it again'
-        : f.notFixedBecause ? `the ${LANE_NAMES[f.lane]} judged it not fixed: ${f.notFixedBecause}` : '',
+    note: [
+      f.ownerRuled ? 'the owner has ruled on your dispute: follow the decisions below' : '',
+      f.ownerWants ? 'found minor, but the owner wants it made' : '',
+      f.status === 'disputed' ? 'your dispute was not judged: fix it or dispute it again' : '',
+      f.notFixedBecause ? `the ${LANE_NAMES[f.lane]} judged it not fixed: ${f.notFixedBecause}` : '',
+    ].filter(Boolean).join('; '),
   }))
   // A branch may carry this issue's work before the stage's first round: from an earlier run
   // of the stage, or, after the owner refused the result at acceptance, from a whole earlier pass.
@@ -572,7 +582,10 @@ ${start}${answered}
 ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
 
-const issuePrompt = (k, questions, testReport) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[]; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section('The tester\'s report', testReport)}`
+const TESTS_WRITTEN = 'The tests the builder wrote. One marked alreadyPasses pins behaviour already built: it is unmarked and must pass. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
+const COPY_QUESTION = 'copying the question word for word into answers[].question or escalations[].question'
+
+const issuePrompt = (k, questions, testReport, tests) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section('The tester\'s report', testReport)}`
 
 const summaryAsk = () => {
   if (stage === 'tests') return 'If you find nothing material and escalate nothing, write summary: the tests, for the owner to review before any code is written, in plain terms: each acceptance criterion and each spec rule the work touches, the test that pins it and what that test checks, and every rule you cited. Otherwise leave summary empty.'
@@ -580,7 +593,7 @@ const summaryAsk = () => {
   return 'If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. Otherwise leave summary empty.'
 }
 
-const productPrompt = (k, questions, testReport) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[]; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport, tests) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section('The tester\'s report', testReport)}`
 
 const testsTesterPrompt = (k, tests) => `You check the failing tests written in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
@@ -588,7 +601,7 @@ const testsTesterPrompt = (k, tests) => `You check the failing tests written in 
 2. Collection: pytest tests/ --collect-only -q must exit 0.
 3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give the failure pytest reports: the assertion or exception, and its line. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
-5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem.
+5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Report it there too for an exit code of 75.
 
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
@@ -608,7 +621,7 @@ const buildTesterPrompt = k => {
 4. Count the expected-failure markers left: git -C ${worktree} grep -n -F 'reason="#${issue}:' -- tests/, and report how many lines it finds. List every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted.
 5. Wait for the suite, as below, until its exit code appears.
 6. Read the outcome: the exit code from ${logFile}.exit; pytest's closing line, from tail -n 5 ${logFile}; and every line grep -E '^(FAILED|ERROR)' ${logFile} finds, each with the reason pytest gives for it further up the log.
-7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem.
+7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem. Say so there too for an exit code of 75.
 
 ${RUN_PYTEST}`
 }
@@ -633,8 +646,10 @@ const judge = (lane, result) => {
     if (f.lane !== lane || !f.material || !['open', 'fixed', 'disputed'].includes(f.status)) continue
     const v = verdicts.get(f.id)
     if (!v) { if (f.status === 'disputed') f.status = 'open'; continue }
-    if (v.status === 'fixed' || v.status === 'dispute-accepted') f.status = 'closed'
-    else if (v.status === 'dispute-upheld' || f.status === 'disputed') { f.status = 'upheld'; f.upheldBecause = v.grounds }
+    // Only a dispute the builder made reaches the owner; any other verdict but fixed or accepted
+    // means the finding stands, and its grounds go to the builder.
+    if (v.status === 'fixed' || v.status === 'dispute-accepted') { f.status = 'closed'; f.notFixedBecause = '' }
+    else if (f.status === 'disputed') { f.status = 'upheld'; f.upheldBecause = v.grounds }
     else { f.status = 'open'; f.notFixedBecause = v.grounds }
   }
 }
@@ -652,7 +667,7 @@ const upheldQuestion = f => ({
 const testsProblems = t => {
   if (t === undefined) return ['no failing test is written yet']
   if (!t) return ['the tester returned nothing']
-  const problems = []
+  const problems = t.environmentProblem ? [`the host: ${t.environmentProblem}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
   for (const w of written) {
     const x = t.tests.find(r => r.nodeid === w.nodeid)
@@ -675,8 +690,8 @@ const reviewTests = async (k, built, questions) => {
     : undefined
   if (test === undefined) log(`Round ${k}: no failing test is written yet, so the tester is not sent out.`)
   const [issueResult, productResult] = await parallel([
-    () => agent(issuePrompt(k, questions.engineering, test), { label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
-    () => agent(productPrompt(k, questions.business, test), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => agent(issuePrompt(k, questions.engineering, test, built.tests), { label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
+    () => agent(productPrompt(k, questions.business, test, built.tests), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const problems = testsProblems(test)
   const failing = written.filter(w => !w.alreadyPasses)
@@ -686,7 +701,7 @@ const reviewTests = async (k, built, questions) => {
 const suiteProblems = t => {
   if (t === undefined) return ['the suite was not run: the builder was blocked and made no commit']
   if (!t) return ['the tester returned nothing']
-  const problems = t.failures.map(f => `${f.test}: ${f.reason}`)
+  const problems = [...(t.environmentProblem ? [`the host: ${t.environmentProblem}`] : []), ...t.failures.map(f => `${f.test}: ${f.reason}`)]
   if (t.exitCode !== 0 && !t.failures.length) problems.push(`pytest exited ${t.exitCode}: ${t.summary}`)
   problems.push(...t.mypyErrors.map(e => `mypy: ${e}`))
   if (!t.mypyClean && !t.mypyErrors.length) problems.push('mypy reported errors')
@@ -725,6 +740,10 @@ const reviewBuild = async (k, built, questions) => {
 
 // ---- the round loop -------------------------------------------------------------------------
 
+const TRIAGE_CONTEXT = `${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}`
+// Two wordings of one question count as the same when they differ only in case and spacing.
+const sameQuestion = text => String(text).toLowerCase().replace(/\s+/g, ' ').trim()
+
 const rounds = []
 let status = 'unfinished'
 let failure = ''
@@ -740,8 +759,9 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   commits.push(...built.commits)
   separateDefects.push(...built.separateDefects)
   written = stage === 'tests' ? built.tests : [...written, ...built.tests]
-  for (const x of built.fixed) { const f = ledger.get(x.id); if (f) { f.status = 'fixed'; f.fixedIn = x.commit } }
-  for (const x of built.disputed) { const f = ledger.get(x.id); if (f) { f.status = 'disputed'; f.dispute = x.reason } }
+  // A claim counts only on a finding the builder still owes: a settled or minor one stays as it is.
+  for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit } }
+  for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason } }
   if (stage === 'tests' && built.planComplete && !built.tests.some(t => !t.alreadyPasses)) {
     status = 'failed'
     failure = 'the builder wrote no failing test: the tests stage is only for a plan that names one'
@@ -765,7 +785,8 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   lastTest = reviewed.test
 
   const got = Object.values(reviewed.lanes).filter(Boolean)
-  citations.push(...got.flatMap(r => r.answers))
+  const roundAnswers = got.flatMap(r => r.answers)
+  citations.push(...roundAnswers)
   separateDefects.push(...got.flatMap(r => r.separateDefects))
   const roundEscalations = got.flatMap(r => r.escalations)
   // A checker that returned nothing answered none of the builder's questions routed to it: they
@@ -774,15 +795,22 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (reviewed.lanes.issue === null) roundEscalations.push(...questions.engineering)
   const raised = got.flatMap(r => r.raised)
   if (raised.length) {
-    const handled = [...got.flatMap(r => r.answers).map(a => a.question), ...roundEscalations.map(q => q.question)]
-    const t = await triage(raised, `r${k}`, BRANCH_READ, `${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}`, handled)
+    const handled = [...roundAnswers.map(a => a.question), ...roundEscalations.map(q => q.question)]
+    const t = await triage(raised, `r${k}`, BRANCH_READ, TRIAGE_CONTEXT, handled)
     citations.push(...t.answers)
+    roundAnswers.push(...t.answers)
     roundEscalations.push(...t.escalations)
     for (const f of t.findings) addFindings(f.lane, [f])
   }
   const upheld = [...ledger.values()].filter(f => f.status === 'upheld' && !f.asked)
   for (const f of upheld) f.asked = true
   roundEscalations.push(...upheld.map(upheldQuestion))
+  // A question of the builder's that no checker answered or put to the owner goes to the owner,
+  // as a question routed to a checker that returned nothing does: it is never dropped.
+  const said = new Set([...roundAnswers, ...roundEscalations].map(x => sameQuestion(x.question)))
+  const unheard = built.questions.filter(q => !said.has(sameQuestion(q.question)))
+  if (unheard.length) log(`Round ${k}: ${unheard.length} question(s) of the builder's went unanswered, and go to the owner.`)
+  roundEscalations.push(...unheard)
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
   const open = [...ledger.values()].filter(materialPending)
@@ -800,12 +828,23 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     // The product owner found nothing but left its summary out: ask again. Whatever else the
     // second call finds counts, so a finding or a question it raises stops the pass.
     if (!summary) {
-      const asked = await agent(`${productPrompt(k, [], reviewed.test)}\n\nThe other checkers found nothing in this round. Write summary now.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? built.tests : null)}\n\nThe other checkers found nothing in this round. Write summary now.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
       if (asked) {
         addFindings('product', asked.findings)
         citations.push(...asked.answers)
-        if (asked.escalations.length) { status = 'question'; escalations = asked.escalations; break }
-        if (asked.findings.some(f => f.material)) continue
+        separateDefects.push(...asked.separateDefects)
+        const late = [...asked.escalations]
+        if (asked.raised.length) {
+          const t = await triage(asked.raised, `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...asked.answers, ...asked.escalations].map(x => x.question))
+          citations.push(...t.answers)
+          late.push(...t.escalations)
+          for (const f of t.findings) addFindings(f.lane, [f])
+        }
+        const record = rounds[rounds.length - 1]
+        record.openMaterial = [...ledger.values()].filter(materialPending).length
+        record.questions = late.length
+        if (late.length) { status = 'question'; escalations = late; break }
+        if (record.openMaterial) continue
         summary = asked.summary
       }
       if (!summary) log('The product owner wrote no summary. The calling session asks the product-owner agent for it before the gate.')
