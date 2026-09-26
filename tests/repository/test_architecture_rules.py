@@ -51,8 +51,6 @@ TRACEBACKS = "#442"
 BACKGROUND_FAILURES = "#453"
 #: The handlers for each kind of post, which move core's own posts onto them.
 HANDLERS = "#441"
-#: Each module's commands, moved out of core's command groups into the module's own.
-COMMAND_GROUPS = "#462"
 #: The start-up catch-up in the entry point: each module moves its own share into the handler it
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
@@ -728,9 +726,7 @@ def test_no_private_name_crosses_a_module():
     "How modules and core fit together"; PEP 8). A module is what `classify()` in
     `tools/coverage_by_module.py` says it is. Here a breach is keyed by the file using the name
     and the name it uses, and the issue is the pass of the module that owns the name: it either
-    makes the name public or moves the code that needs it. Where the code using the name is one of
-    that module's commands written in core's cog, the issue is the one that moves those commands
-    into the module's own, which leaves the name inside its module."""
+    makes the name public or moves the code that needs it."""
     _check(
         "no private name crosses a module",
         _private_names_across_modules(),
