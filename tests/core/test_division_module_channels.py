@@ -64,6 +64,12 @@ ALL = sorted(COMMANDS)
 GATED = sorted(k for k, v in COMMANDS.items() if v[2])
 UNGATED = sorted(k for k, v in COMMANDS.items() if not v[2])
 
+#: What a gated command says while its module is off.
+MODULE_OFF = {
+    "attendance": "❌ The Attendance module is not enabled.",
+    "results": "❌ The Results & Standings module is not enabled.",
+}
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -348,7 +354,8 @@ async def test_a_disabled_module_refuses_the_assignment(tmp_path, which):
 
     await _run(cog, which, interaction)
 
-    assert "not enabled" in _replied(interaction)
+    # Word for word: each module's own cog has a gate of its own, worded differently.
+    assert _replied(interaction) == MODULE_OFF[module]
     assert await _audit_rows(db_path) == []
 
 

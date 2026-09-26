@@ -39,6 +39,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.channel_registry_service import ChannelUse
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 9708
 SEASON_ID = 1
@@ -435,6 +436,64 @@ async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
     logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "weather-channel" in logged
     assert "Division 1" in logged
+
+
+# ---------------------------------------------------------------------------
+# Each command checks its own module first, in its own words
+# ---------------------------------------------------------------------------
+
+
+async def _run_command(cog, command: str, interaction) -> None:
+    """Run the body of one of the three commands above `_set_division_channel`."""
+    await undecorate(getattr(SeasonCog, command))(
+        cog, interaction, "Division 1", _channel()
+    )
+
+
+def _assert_nothing_done(cog, interaction, refused: str) -> None:
+    """Refused before the season is read: nothing written and nothing logged."""
+    assert _replied(interaction) == refused
+    cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
+    cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
+    cog.bot.season_service.set_division_results_channel.assert_not_awaited()
+    cog.bot.season_service.set_division_standings_channel.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_the_weather_channel_is_refused_while_weather_is_off(tmp_path, monkeypatch):
+    """Setting a forecast channel for a module that is not running configures something no
+    code reads. The words are the command's own, not the weather cog's gate."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    interaction = _interaction()
+
+    await _run_command(cog, "division_weather_channel", interaction)
+
+    _assert_nothing_done(cog, interaction, "❌ The Weather module is not enabled.")
+    assert await _audit(db_path) == []
+
+
+@pytest.mark.parametrize(
+    "command", ["division_results_channel", "division_standings_channel"]
+)
+async def test_the_results_channels_are_refused_while_results_is_off(
+    tmp_path, monkeypatch, command
+):
+    """The words are the commands' own, not the results cog's gate."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    interaction = _interaction()
+
+    await _run_command(cog, command, interaction)
+
+    _assert_nothing_done(
+        cog, interaction, "❌ The Results & Standings module is not enabled."
+    )
+    assert await _audit(db_path) == []
 
 
 # ---------------------------------------------------------------------------
