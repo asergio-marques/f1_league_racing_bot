@@ -1,19 +1,19 @@
 """The four per-module division channel commands, and where they have diverged.
 
-Issue #208. `/weather channel`, `/results channel results` and `/results channel standings` are
-covered in their own modules' tests, `tests/weather/` and `tests/results/`. These five —
-`rsvp-channel`, `attendance-channel`, `verdicts-channel`, `lineup-channel` and
-`calendar-channel` — each carry their own copy of the same forty lines, and copies drift.
+Issue #208. `/weather channel` and the three `/results channel` commands are covered in their
+own modules' tests, `tests/weather/` and `tests/results/`. These four — `rsvp-channel`,
+`attendance-channel`, `lineup-channel` and `calendar-channel` — each carry their own copy of the
+same forty lines, and copies drift.
 
 **What all four hold to** is what this file pins first: the season and the division must both
 exist, the channel-does-one-job guard runs before any write, and the assignment is audited and
 logged. Those are parametrised across all four precisely so a divergence in one of them fails
 rather than passes quietly.
 
-**Where they legitimately differ.** `rsvp` and `attendance` belong to the attendance module and
-`verdicts` to the results module, and each refuses when its own module is switched off —
-assigning a channel to a module that is not running would configure something no code reads.
-`lineup` and `calendar` are core settings with no such gate. The three gated ones also defer
+**Where they legitimately differ.** `rsvp` and `attendance` belong to the attendance module, and
+each refuses when its module is switched off — assigning a channel to a module that is not
+running would configure something no code reads. `lineup` and `calendar` are core settings with
+no such gate. The two gated ones also defer
 first, because their work reaches a service; the core pair reply directly. That difference is invisible until the refusal guard has to choose
 between `response.send_message` and `followup.send`, which is why it is pinned here as well as
 in the guard's own file.
@@ -21,14 +21,14 @@ in the guard's own file.
 **Where they once differed by accident** (issue #212, which #208 pinned rather than fixed).
 `lineup` and `calendar` wrote `old_value = ''` into the audit entry, so a reassignment could not
 be traced back, and the attendance pair wrote their channel ids as strings where every other
-command writes integers. All five now record the channel they replaced, as an integer —
+command writes integers. All four now record the channel they replaced, as an integer —
 `test_the_core_pair_record_the_channel_they_replaced` and
 `test_every_channel_command_here_audits_its_ids_as_integers`.
 
 **"Set" and "updated" are different words for a reason:** a manager who meant to assign a fresh
 channel and is told it was *updated* has just moved an existing one, and that is worth noticing
 before the next round posts somewhere unexpected. The core pair always said "set", having never
-read the old id; all five now choose the word from it.
+read the old id; all four now choose the word from it.
 """
 from __future__ import annotations
 
@@ -55,7 +55,6 @@ ACTOR_ID = 77
 COMMANDS = {
     "rsvp": ("division_rsvp_channel", "RSVP_CHANNEL_SET", "attendance"),
     "attendance": ("division_attendance_channel", "ATTENDANCE_CHANNEL_SET", "attendance"),
-    "verdicts": ("division_verdicts_channel", "VERDICTS_CHANNEL_SET", "results"),
     "lineup": ("division_lineup_channel", "SIGNUP_LINEUP_CHANNEL_SET", None),
     "calendar": ("division_calendar_channel", "DIVISION_CALENDAR_CHANNEL_SET", None),
 }
@@ -66,7 +65,6 @@ UNGATED = sorted(k for k, v in COMMANDS.items() if not v[2])
 #: What a gated command says while its module is off.
 MODULE_OFF = {
     "attendance": "❌ The Attendance module is not enabled.",
-    "results": "❌ The Results & Standings module is not enabled.",
 }
 
 
@@ -110,7 +108,6 @@ def _make_cog(
     attendance_enabled: bool = True,
     results_enabled: bool = True,
     old_config=None,
-    old_penalty_channel=None,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -122,9 +119,6 @@ def _make_cog(
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.season_service.set_division_penalty_channel = AsyncMock(
-        return_value=old_penalty_channel
-    )
     bot.attendance_service = MagicMock()
     bot.attendance_service.get_division_config = AsyncMock(return_value=old_config)
     bot.attendance_service.set_rsvp_channel = AsyncMock(return_value=None)
@@ -340,8 +334,7 @@ async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which):
 async def test_a_disabled_module_refuses_the_assignment(tmp_path, which):
     """Assigning a channel to a module that is not running configures something no code
     reads, and the notices the manager is expecting would never arrive. Each command
-    checks its *own* module, so a league running attendance and not results must still be
-    refused the verdicts channel."""
+    checks its *own* module."""
     module = COMMANDS[which][2]
     db_path = await _make_db(tmp_path, name=f"disabled_{which}")
     cog = _make_cog(
@@ -360,8 +353,8 @@ async def test_a_disabled_module_refuses_the_assignment(tmp_path, which):
 
 @pytest.mark.parametrize("which", GATED)
 async def test_another_modules_state_does_not_refuse_the_assignment(tmp_path, which):
-    """The other half of the same rule: a league that has switched attendance off must
-    still be able to set its verdicts channel."""
+    """The other half of the same rule: a league that has switched results off must still be
+    able to set its attendance channels."""
     module = COMMANDS[which][2]
     db_path = await _make_db(tmp_path, name=f"othermodule_{which}")
     cog = _make_cog(
@@ -504,7 +497,6 @@ async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, wh
         _make_cog(
             moved_db,
             old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
-            old_penalty_channel=111,
         ),
         which,
         moved,
@@ -521,7 +513,6 @@ async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, whi
     cog = _make_cog(
         db_path,
         old_config=SimpleNamespace(rsvp_channel_id=111, attendance_channel_id=111),
-        old_penalty_channel=111,
     )
 
     await _run(cog, which, _interaction())
@@ -565,7 +556,6 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
     cog = _make_cog(
         db_path,
         old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
-        old_penalty_channel=111,
     )
 
     await _run(cog, which, _interaction())
@@ -581,7 +571,6 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
 
 #: The command each module's channel answers to once it sits under that module's group.
 MODULE_COMMANDS = {
-    "verdicts": "/results channel verdicts",
     "rsvp": "/attendance channel rsvp",
     "attendance": "/attendance channel attendance",
 }

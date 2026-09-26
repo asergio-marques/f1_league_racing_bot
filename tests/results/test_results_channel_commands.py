@@ -3,7 +3,8 @@
 Results' own commands, under results' own group. They sat under core's `/division` until #462
 moved them, and only their names changed. `/results channel results` and `/results channel
 standings` share one body, `ResultsCog._set_division_channel`, which this file takes with the
-check beneath it (issue #208 first covered it in core's cog).
+check beneath it (issue #208 first covered it in core's cog). `/results channel verdicts` has a
+body of its own, taken at the end: it defers, and checks the bot may post in the channel first.
 
 **A channel serves one purpose across the whole server** (decided 2026-09-06). Two settings
 sharing one channel interleave two kinds of posting, and several posting paths edit or delete
@@ -87,6 +88,7 @@ def _make_cog(
     bot.db_path = db_path
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
@@ -94,6 +96,7 @@ def _make_cog(
     )
     bot.season_service.set_division_results_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
+    bot.season_service.set_division_penalty_channel = AsyncMock(return_value=None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -102,17 +105,19 @@ def _make_cog(
     return cog
 
 
-def _channel(channel_id: int = CHANNEL_ID, name: str = "forecasts"):
+def _channel(channel_id: int = CHANNEL_ID, name: str = "forecasts", *, may_post: bool = True):
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
     channel.name = name
     channel.mention = f"#{name}"
+    channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=may_post))
     return channel
 
 
-def _interaction(*, done: bool = False):
+def _interaction(*, done: bool = False, guild: bool = True):
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
+    interaction.guild = MagicMock() if guild else None
     interaction.user = MagicMock()
     interaction.user.id = ACTOR_ID
     interaction.user.display_name = "Manager"
@@ -120,6 +125,7 @@ def _interaction(*, done: bool = False):
     interaction.response = MagicMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.is_done = MagicMock(return_value=done)
+    interaction.response.defer = AsyncMock()
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -137,7 +143,7 @@ def _replied(interaction) -> str:
 async def _audit(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT change_type, old_value, new_value, division_id FROM audit_entries "
+            "SELECT change_type, old_value, new_value, division_id, actor_id FROM audit_entries "
             " ORDER BY id",
         )
         return [dict(r) for r in await cursor.fetchall()]
@@ -450,4 +456,194 @@ async def test_the_results_channels_are_logged_under_results_channel(
         f"Manager (<@{ACTOR_ID}>) | {command} | Success",
         "  division: Division 1",
         "  channel: #forecasts",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# /results channel verdicts, which has a body of its own
+# ---------------------------------------------------------------------------
+
+
+async def _verdicts(cog, interaction, *, name: str = "Division 1", channel=None) -> None:
+    await undecorate(ResultsCog.channel_verdicts)(
+        cog, interaction, name, channel or _channel(name="verdicts")
+    )
+
+
+async def test_the_verdicts_channel_is_refused_while_results_is_off(tmp_path, monkeypatch):
+    """Word for word: the results cog's own gate is worded differently, and the command keeps
+    the words it had before it moved. Nothing is deferred, written or logged."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    assert _replied(interaction) == "❌ The Results & Standings module is not enabled."
+    interaction.response.defer.assert_not_awaited()
+    cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
+    assert await _audit(db_path) == []
+
+
+async def test_the_verdicts_channel_is_not_refused_while_attendance_is_off(tmp_path, monkeypatch):
+    """Each command checks its *own* module: a league that has switched attendance off must
+    still be able to set its verdicts channel."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+
+    await _verdicts(cog, _interaction())
+
+    assert len(await _audit(db_path)) == 1
+
+
+async def test_the_verdicts_channel_defers_before_working(tmp_path, monkeypatch):
+    """Its work reaches a service and the database, which can outrun Discord's three-second
+    response window, so everything after the module check follows up."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+    interaction.response.send_message.assert_not_awaited()
+    interaction.followup.send.assert_awaited()
+
+
+async def test_a_verdicts_channel_the_bot_cannot_post_in_is_refused(tmp_path, monkeypatch):
+    """Checked before the write rather than discovered at the first verdict."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction, channel=_channel(name="verdicts", may_post=False))
+
+    assert _replied(interaction) == (
+        "❌ Cannot access that channel. Ensure the bot has permission to post there."
+    )
+    cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
+    assert await _audit(db_path) == []
+
+
+async def test_the_verdicts_channel_outside_a_guild_is_refused(tmp_path, monkeypatch):
+    """`permissions_for(guild.me)` needs a guild, so the absence is answered rather than
+    raising an `AttributeError` at a manager."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction(guild=False)
+
+    await _verdicts(cog, interaction)
+
+    assert "Cannot access that channel" in _replied(interaction)
+
+
+async def test_the_verdicts_channel_needs_a_live_season(tmp_path, monkeypatch):
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, season=None)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    assert "No season is live" in _replied(interaction)
+    assert await _audit(db_path) == []
+
+
+async def test_the_verdicts_channel_refuses_an_unknown_division_by_name(tmp_path, monkeypatch):
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction, name="Division 9")
+
+    assert _replied(interaction) == '❌ Division "Division 9" not found.'
+    assert await _audit(db_path) == []
+
+
+async def test_the_verdicts_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await _verdicts(cog, _interaction(), name="dIvIsIoN 1")
+
+    cog.bot.season_service.set_division_penalty_channel.assert_awaited_once_with(
+        DIVISION_ID, CHANNEL_ID
+    )
+
+
+async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path, monkeypatch):
+    """The check runs before the write, and follows up, the command having deferred."""
+    _in_use(monkeypatch, ChannelUse("results", "Division 2"))
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    assert "#verdicts is already the results channel for **Division 2**" in _replied(interaction)
+    interaction.response.send_message.assert_not_awaited()
+    cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
+    assert await _audit(db_path) == []
+
+
+async def test_the_verdicts_channel_is_set_and_audited(tmp_path, monkeypatch):
+    """The record the command wrote while core held it: `VERDICTS_CHANNEL_SET`, with the
+    channel ids as integers."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    assert _replied(interaction) == "✅ Verdicts channel for Division 1 set to #verdicts."
+    [entry] = await _audit(db_path)
+    assert entry["change_type"] == "VERDICTS_CHANNEL_SET"
+    assert entry["division_id"] == DIVISION_ID
+    assert entry["actor_id"] == ACTOR_ID
+    assert json.loads(entry["old_value"]) == {"channel_id": None}
+    assert json.loads(entry["new_value"]) == {"channel_id": CHANNEL_ID}
+
+
+async def test_moving_the_verdicts_channel_says_it_was_updated(tmp_path, monkeypatch):
+    """And records the channel it replaced, which is what makes the audit answer "where were
+    the verdicts going before?"."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    cog.bot.season_service.set_division_penalty_channel = AsyncMock(return_value=111)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    assert _replied(interaction) == "✅ Verdicts channel for Division 1 updated to #verdicts."
+    assert json.loads((await _audit(db_path))[0]["old_value"]) == {"channel_id": 111}
+
+
+async def test_the_verdicts_channel_is_logged_under_results_channel_verdicts(
+    tmp_path, monkeypatch
+):
+    """A log line names the member, the command and its outcome, with the division and the
+    channel beneath it."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await _verdicts(cog, _interaction())
+
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
+    assert logged.splitlines() == [
+        f"Manager (<@{ACTOR_ID}>) | /results channel verdicts | Success",
+        "  division: Division 1",
+        "  channel: #verdicts",
     ]

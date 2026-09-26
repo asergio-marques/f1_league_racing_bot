@@ -1843,3 +1843,87 @@ class ResultsCog(commands.Cog):
             )
             return
         await self._set_division_channel(interaction, name, channel, "standings")
+
+    @channel_group.command(
+        name="verdicts",
+        description="Set the verdicts (penalty announcement) channel for a division.",
+    )
+    @app_commands.describe(name="Division name", channel="Verdicts announcement channel")
+    @league_manager_only
+    async def channel_verdicts(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        """Set the channel a division's verdicts are announced in (#462).
+
+        A body of its own rather than `_set_division_channel`'s, as it had under core's
+        `/division`: it defers, and refuses a channel the bot cannot post in before anything
+        else is read, so the refusal of a channel in use follows up rather than responds. The
+        change is recorded by core's `audit_service` as `VERDICTS_CHANNEL_SET`.
+        """
+        if not await self.bot.module_service.is_results_enabled():
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        guild = interaction.guild
+
+        # Validate bot access
+        if guild is None or not channel.permissions_for(guild.me).send_messages:
+            await interaction.followup.send(
+                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
+                ephemeral=True,
+            )
+            return
+
+        season = await self.bot.season_service.get_setup_or_active_season()
+        if season is None:
+            await interaction.followup.send(
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.followup.send(
+                f"\u274c Division \"{name}\" not found.",
+                ephemeral=True,
+            )
+            return
+
+        refused = await channel_refusal(
+            self.bot.db_path, channel, "verdicts", division_name=div.name
+        )
+        if refused is not None:
+            await interaction.followup.send(refused, ephemeral=True)
+            return
+
+        old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
+
+        await audit_service.record_change(
+            self.bot.db_path,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            change_type="VERDICTS_CHANNEL_SET",
+            old_value={"channel_id": old_id},
+            new_value={"channel_id": channel.id},
+            now=datetime.now(timezone.utc),
+            division_id=div.id,
+        )
+
+        if old_id is None:
+            msg = f"\u2705 Verdicts channel for {name} set to #{channel.name}."
+        else:
+            msg = f"\u2705 Verdicts channel for {name} updated to #{channel.name}."
+        await interaction.followup.send(msg, ephemeral=True)
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results channel verdicts | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )

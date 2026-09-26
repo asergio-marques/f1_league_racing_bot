@@ -181,7 +181,7 @@ def _named_by_its_module(label: str, command: str):
         pytest.param("weather channel", "/weather channel", id="weather channel"),
         pytest.param("results channel", "/results channel results", id="results channel"),
         pytest.param("standings channel", "/results channel standings", id="standings channel"),
-        _named_by_its_module("verdicts channel", "/results channel verdicts"),
+        pytest.param("verdicts channel", "/results channel verdicts", id="verdicts channel"),
         _named_by_its_module("RSVP channel", "/attendance channel rsvp"),
         _named_by_its_module("attendance channel", "/attendance channel attendance"),
     ],
@@ -213,7 +213,7 @@ async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_pa
 
     assert channels == [
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
-        "**Am**'s verdicts channel is no longer on the server — `/division verdicts-channel`.",
+        "**Am**'s verdicts channel is no longer on the server — `/results channel verdicts`.",
         "**Am**'s attendance channel is no longer on the server — "
         "`/division attendance-channel`.",
     ]
@@ -326,7 +326,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
     refusal = call.args[0]
     assert "**Pro** has no results channel — `/results channel results`." in refusal
     assert "**Am** has no standings channel" in refusal
-    assert "**Am** has no verdicts channel — `/division verdicts-channel`." in refusal
+    assert "**Am** has no verdicts channel — `/results channel verdicts`." in refusal
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 

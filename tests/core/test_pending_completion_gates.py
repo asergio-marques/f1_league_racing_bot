@@ -365,7 +365,7 @@ MODULE_CHANNEL_COMMANDS = {
     "weather": (WeatherCog, "channel", "season_service", "set_division_forecast_channel"),
     "results": (ResultsCog, "channel_results", "season_service", "set_division_results_channel"),
     "standings": (ResultsCog, "channel_standings", "season_service", "set_division_standings_channel"),
-    "verdicts": (SeasonCog, "division_verdicts_channel", "season_service", "set_division_penalty_channel"),
+    "verdicts": (ResultsCog, "channel_verdicts", "season_service", "set_division_penalty_channel"),
     "rsvp": (SeasonCog, "division_rsvp_channel", "attendance_service", "set_rsvp_channel"),
     "attendance": (SeasonCog, "division_attendance_channel", "attendance_service", "set_attendance_channel"),
 }
