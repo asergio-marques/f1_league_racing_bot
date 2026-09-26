@@ -2335,6 +2335,8 @@ async def test_rescoring_leaves_another_season_alone(db_path):
 async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     """Scoring the second session raises: the approval fails whole, and the season, the
     staged changes and the first session's points are exactly as they stood."""
+    import sqlite3
+
     from leaguebot.core.services.amendment_service import approve_amendment
     from leaguebot.results.services import result_submission_service
 
@@ -2351,7 +2353,7 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     async def failing_on_the_second_session(db, session_result_id, *args, **kwargs):
         calls.append(session_result_id)
         if len(calls) == 2:
-            raise RuntimeError("database is locked")
+            raise sqlite3.OperationalError("database is locked")
         return await real_scoring(db, session_result_id, *args, **kwargs)
 
     monkeypatch.setattr(
@@ -2359,7 +2361,7 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     )
 
     reposted: list[tuple] = []
-    with pytest.raises(RuntimeError, match="database is locked"):
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
         await approve_amendment(path, season_id, 99, _scoring_bot(path, reposted))
 
     assert reposted == [], "a failed approval reposted"
