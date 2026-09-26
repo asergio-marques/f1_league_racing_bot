@@ -1,6 +1,6 @@
 // The finding ledger and the owner's questions: what closes a finding, what reaches the owner,
 // the owner's rulings, and what the host rather than the code is blamed for.
-const { q, builder, review, testsCheck, suite, finding, base, round } = require('./stubs')
+const { q, builder, review, testsCheck, suite, finding, base, round, changes } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS', decisions: 'DECISIONS-TEXT' }
 const clean = label => {
   if (label.endsWith(':product')) return review({ summary: 'ACCEPTANCE' })
@@ -190,10 +190,10 @@ Object.assign(module.exports, {
   alreadyPassingPin: {
     args: { ...base, stage: 'tests' },
     respond(label) {
-      if (label.endsWith(':builder')) return builder({ tests: [{ nodeid: 'tests/x/test_a.py::test_a', pins: 'p' }, { nodeid: 'tests/x/test_a.py::test_pin', pins: 'q', alreadyPasses: true }] })
+      if (label.endsWith(':builder')) return builder({ tests: [{ nodeid: 'tests/x/test_a.py::test_a', change: 'added', scenario: 's', expects: 'e' }, { nodeid: 'tests/x/test_a.py::test_pin', change: 'added', scenario: 's', expects: 'e', alreadyPasses: true }] })
       if (label.endsWith(':tester')) return testsCheck({ tests: [
         { nodeid: 'tests/x/test_a.py::test_a', failsWithRunxfail: true, realFailure: 'AssertionError', outcomeAsCommitted: 'xfailed' },
-        { nodeid: 'tests/x/test_a.py::test_pin', failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }] })
+        { nodeid: 'tests/x/test_a.py::test_pin', failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }], changes: changes([['tests/x/test_a.py::test_a', 'added'], ['tests/x/test_a.py::test_pin', 'added']]) })
       if (label.endsWith(':product')) return review({ summary: 'S' })
       return review()
     },
@@ -202,10 +202,10 @@ Object.assign(module.exports, {
   alreadyPassingPinFails: {
     args: { ...base, stage: 'tests', maxRounds: 1 },
     respond(label) {
-      if (label.endsWith(':builder')) return builder({ tests: [{ nodeid: 'tests/x/test_a.py::test_a', pins: 'p' }, { nodeid: 'tests/x/test_a.py::test_pin', pins: 'q', alreadyPasses: true }] })
+      if (label.endsWith(':builder')) return builder({ tests: [{ nodeid: 'tests/x/test_a.py::test_a', change: 'added', scenario: 's', expects: 'e' }, { nodeid: 'tests/x/test_a.py::test_pin', change: 'added', scenario: 's', expects: 'e', alreadyPasses: true }] })
       if (label.endsWith(':tester')) return testsCheck({ tests: [
         { nodeid: 'tests/x/test_a.py::test_a', failsWithRunxfail: true, realFailure: 'AssertionError', outcomeAsCommitted: 'xfailed' },
-        { nodeid: 'tests/x/test_a.py::test_pin', failsWithRunxfail: true, realFailure: 'AssertionError', outcomeAsCommitted: 'failed' }] })
+        { nodeid: 'tests/x/test_a.py::test_pin', failsWithRunxfail: true, realFailure: 'AssertionError', outcomeAsCommitted: 'failed' }], changes: changes([['tests/x/test_a.py::test_a', 'added'], ['tests/x/test_a.py::test_pin', 'added']]) })
       if (label.endsWith(':product')) return review({ summary: 'S' })
       return review()
     },
@@ -214,7 +214,7 @@ Object.assign(module.exports, {
   onlyPinsIsFailure: {
     args: { ...base, stage: 'tests' },
     respond(label) {
-      if (label.endsWith(':builder')) return builder({ tests: [{ nodeid: 'tests/x/test_a.py::test_pin', pins: 'q', alreadyPasses: true }] })
+      if (label.endsWith(':builder')) return builder({ tests: [{ nodeid: 'tests/x/test_a.py::test_pin', change: 'added', scenario: 's', expects: 'e', alreadyPasses: true }] })
       return review()
     },
     expect: r => r.status === 'failed' && r.failure.includes('no failing test'),

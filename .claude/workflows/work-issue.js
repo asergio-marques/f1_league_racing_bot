@@ -372,6 +372,13 @@ const commits = previous ? [...previous.commits] : []
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 let written = previous && previous.tests ? [...previous.tests] : []
+let supportWritten = previous && previous.support ? [...previous.support] : []
+// The tests stage's lists as the owner last saw them at Gate 2, so that the report can mark what
+// is new or changed since: taken from a run that passed, which is what reached the gate, and
+// carried unchanged through any run that stopped short of it.
+const shown = stage !== 'tests' || !previous ? null
+  : previous.status === 'passed' ? { tests: previous.tests || [], support: previous.support || [] }
+    : previous.shown || null
 // Every design file the branch has changed. Once there is one, the design verifier runs in every
 // round, so that a design finding is always judged by the verifier and never closed on the
 // builder's word.
@@ -427,7 +434,28 @@ const BUILDER_RULES = `The rules of the work:
 
 ${RUN_PYTEST}`
 
-const TESTS_JOB = `This is the tests stage. Write only the tests the plan says fail before the change, and no production code at all. Mark each new test, and each existing test whose expectation the change alters, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. Run the new tests both ways, as below: with --runxfail each must fail, for the reason the plan gives; without it each must be reported xfailed, and nothing else in their files may fail. Commit them as the first commit of this work, unless the plan places them otherwise. A test the plan names as pinning behaviour that already holds is written unmarked, since it passes already, and is committed with the rest. List every test in tests[], each with what it checks in plain terms, the acceptance criterion it pins where there is one, and alreadyPasses true for a test of that kind.`
+// The command that lists what the branch changes under tests/, which the builder's lists must
+// match entry for entry (tools/changed_tests.py).
+const CHANGED_TESTS = from => `cd ${worktree} && ${python} tools/changed_tests.py --repo ${worktree} --base ${from}${stage === 'build' ? ` --issue ${issue}` : ''}`
+
+const TESTS_JOB = `This is the tests stage. Make every change to tests/ that this work needs, and no production code at all:
+- add the tests the plan says fail before the change;
+- change each existing test the change alters, whether its expectation or a call the plan changes;
+- delete each test the plan makes obsolete;
+- change the fixtures, helpers and data under tests/ that these need.
+The one exception is the architecture ratchet lines the plan names as removed: the build deletes each in the commit that removes its breach, and you leave them. After this stage the build may change no test, so anything the plan's change needs of tests/ is made here.
+
+Mark each new test, and each changed test that fails before the change, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. A test that passes as committed, because it pins behaviour already built or because the build has already made it pass, is left unmarked. Run the tests both ways, as below: with --runxfail each marked test must fail, for the reason the plan gives; without it each marked test must be reported xfailed and each unmarked one must pass, and nothing else in their files may fail. Commit them as the first commit of this work, unless the plan places them otherwise.
+
+List in tests[] every test this work adds, changes, deletes or moves since ${base}, earlier rounds and runs included, and in support[] every fixture, helper, module-level value or file under tests/ that it adds, changes, deletes or moves. Both lists must match what ${CHANGED_TESTS(base)} prints, entry for entry, with its node ids, its names and its change for each: run it before you finish. Import lines are never a change. The owner approves the tests from these lists before any code is written, so write each entry in plain terms, as a league manager would follow it:
+- change: added, modified, deleted or moved.
+- scenario: the concrete situation the test sets up and the action it takes: which drivers, seasons, rounds or records, in what state, and which command or call.
+- expects: what it asserts.
+- before: for a modified test, what it set up and expected until now; where only its wording or docstring changes, say so.
+- why: for a deleted test, why it goes, and what pins its rule now if anything does; for a moved one, why it moves.
+- criterion: the acceptance criterion it pins, where there is one.
+- alreadyPasses: true for a test left unmarked because it passes already.
+Each entry in support[] gives the file and the name as the command prints them, the change, what it now does, and in affects the node ids of the tests that use it.`
 
 const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed. By the end, none may be left.`
 
@@ -435,7 +463,7 @@ const BUILD_JOB = `This is the build. Carry out the approved plan, commit point 
 
 const BUILDER_SCHEMA = {
   type: 'object',
-  required: ['onBranch', 'commits', 'planComplete', 'remaining', 'tests', 'fixed', 'disputed', 'questions', 'blocked', 'clean', 'separateDefects', 'notes'],
+  required: ['onBranch', 'commits', 'planComplete', 'remaining', 'tests', 'support', 'fixed', 'disputed', 'questions', 'blocked', 'clean', 'separateDefects', 'notes'],
   properties: {
     onBranch: { type: 'boolean', description: 'the checkout was on the expected branch' },
     commits: {
@@ -449,15 +477,34 @@ const BUILDER_SCHEMA = {
       type: 'array',
       items: {
         type: 'object',
-        required: ['nodeid', 'pins'],
+        required: ['nodeid', 'change'],
         properties: {
           nodeid: { type: 'string' },
-          pins: { type: 'string', description: 'what it checks, in plain terms' },
+          change: { type: 'string', enum: ['added', 'modified', 'deleted', 'moved', 'markerRemoved'], description: 'markerRemoved in the build alone' },
+          scenario: { type: 'string', description: 'the tests stage: the concrete situation the test sets up and the action it takes' },
+          expects: { type: 'string', description: 'the tests stage: what it asserts' },
+          before: { type: 'string', description: 'a modified test: what it set up and expected until now' },
+          why: { type: 'string', description: 'a deleted test: why it goes; a moved one: why it moves' },
           criterion: { type: 'string' },
-          alreadyPasses: { type: 'boolean', description: 'the tests stage: a test that pins behaviour already built, written unmarked' },
+          alreadyPasses: { type: 'boolean', description: 'the tests stage: a test left unmarked because it passes already' },
         },
       },
-      description: 'the tests stage: every failing test written so far; the build: every xfail marker removed this round',
+      description: 'the tests stage: every test the work adds, changes, deletes or moves since its base; the build: every xfail marker removed this round',
+    },
+    support: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['file', 'name', 'change'],
+        properties: {
+          file: { type: 'string' },
+          name: { type: 'string', description: 'as tools/changed_tests.py names it' },
+          change: { type: 'string', enum: ['added', 'modified', 'deleted', 'moved'] },
+          what: { type: 'string', description: 'what it now does, in plain terms' },
+          affects: { type: 'array', items: { type: 'string' }, description: 'the node ids of the tests that use it' },
+        },
+      },
+      description: 'the tests stage: every fixture, helper, module-level value or file under tests/ the work changes since its base; the build: empty',
     },
     fixed: {
       type: 'array',
@@ -508,10 +555,30 @@ const REVIEW_SCHEMA = {
   },
 }
 
+// What tools/changed_tests.py prints, copied by the tester that runs it.
+const CHANGES = {
+  type: 'object',
+  required: ['tests', 'support', 'markersRemoved'],
+  properties: {
+    tests: {
+      type: 'array',
+      items: { type: 'object', required: ['nodeid', 'change'], properties: { nodeid: { type: 'string' }, change: { type: 'string' }, from: { type: 'string' } } },
+    },
+    support: {
+      type: 'array',
+      items: { type: 'object', required: ['file', 'name', 'change'], properties: { file: { type: 'string' }, name: { type: 'string' }, change: { type: 'string' }, from: { type: 'string' } } },
+    },
+    markersRemoved: { type: 'array', items: { type: 'string' } },
+  },
+  description: 'the tests, support and markersRemoved tools/changed_tests.py printed, copied exactly; empty lists where it failed',
+}
+
 const TESTS_CHECK_SCHEMA = {
   type: 'object',
-  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem'],
+  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem', 'changes', 'changesError'],
   properties: {
+    changes: CHANGES,
+    changesError: { type: 'string', description: 'empty unless tools/changed_tests.py exited non-zero: what it printed on stderr' },
     lockTimedOut: { type: 'boolean', description: 'any pytest run exited 75: flock gave up waiting for the lock' },
     collectionOk: { type: 'boolean' },
     collectionDetail: { type: 'string' },
@@ -612,30 +679,32 @@ ${start}${answered}
 ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
 
-const TESTS_WRITTEN = 'The tests the builder wrote. One marked alreadyPasses pins behaviour already built: it is unmarked and must pass. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
+const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with the scenario and expectation it gives the owner. One marked alreadyPasses passes already: it is unmarked and must pass. A deleted one is gone, and says why. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
+const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ the builder changed, each under its label'
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
-const issuePrompt = (k, questions, testReport, tests) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section('The tester\'s report', testReport)}`
+const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}${section('The tester\'s report', testReport)}`
 
 const summaryAsk = () => {
-  if (stage === 'tests') return 'If you find nothing material and escalate nothing, write summary: the tests, for the owner to review before any code is written, in plain terms: each acceptance criterion and each spec rule the work touches, the test that pins it and what that test checks, and every rule you cited. Otherwise leave summary empty.'
+  if (stage === 'tests') return 'If you find nothing material and escalate nothing, write summary: for the owner to review before any code is written, in plain terms, each acceptance criterion and each spec rule the work touches, numbered, with the labels of the tests that pin it (A1, M1 and so on). The report lists every test with its scenario beside your summary, so do not repeat them. Otherwise leave summary empty.'
   if (kind === 'design-pass') return 'If you find nothing material and escalate nothing, write summary: a short confirmation that nothing a league sees has changed, and what you checked to be sure. Otherwise leave summary empty.'
   return 'If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. Otherwise leave summary empty.'
 }
 
-const productPrompt = (k, questions, testReport, tests) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport, tests, support) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}${section('The tester\'s report', testReport)}`
 
-const testsTesterPrompt = (k, tests) => `You check the failing tests written in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
+const testsTesterPrompt = (k, tests) => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
 1. What is committed: list every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted. The tests must be committed to count.
 2. Collection: pytest tests/ --collect-only -q must exit 0.
 3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give the failure pytest reports: the assertion or exception, and its line. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
+${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
 
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
-${RUN_PYTEST}${section('The tests the builder wrote', tests)}`
+${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (a deleted test is not among them)', tests)}`
 
 const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
 
@@ -695,12 +764,139 @@ const upheldQuestion = f => ({
   recommendation: `The ${LANE_NAMES[f.lane]}'s grounds are above; this is the owner's call.`,
 })
 
+// ---- the tests stage's list of test changes, and the Gate 2 report --------------------------
+
+const GROUPS = [
+  { change: 'added', title: 'Added', prefix: 'A' },
+  { change: 'modified', title: 'Modified', prefix: 'M' },
+  { change: 'deleted', title: 'Deleted', prefix: 'D' },
+  { change: 'moved', title: 'Moved', prefix: 'MV' },
+]
+// A parametrised test is one function, whatever cases it runs: it is compared without them.
+const bareId = id => String(id || '').replace(/\[.*\]$/, '')
+const fileOf = id => bareId(id).split('::')[0]
+const supportKey = s => `${s.file}::${s.name}`
+const filled = v => String(v === undefined || v === null ? '' : v).trim() !== ''
+// Entries in report order: files sorted, and within a file as the builder listed them.
+const byFile = (entries, fileOfEntry) => [...new Set(entries.map(fileOfEntry))].sort().map(f => [f, entries.filter(e => fileOfEntry(e) === f)])
+
+// Every entry keeps a label for the whole run, so that the checkers, the product owner's summary
+// and the report all name a test the same way.
+const labelled = (tests, support) => {
+  const out = []
+  for (const g of [...GROUPS, { change: null, prefix: 'X' }]) {
+    const group = tests.filter(t => g.change ? t.change === g.change : !GROUPS.some(x => x.change === t.change))
+    let n = 0
+    for (const [, entries] of byFile(group, t => fileOf(t.nodeid))) for (const t of entries) out.push({ ...t, label: `${g.prefix}${++n}` })
+  }
+  let n = 0
+  const outSupport = []
+  for (const [, entries] of byFile(support, s => s.file)) for (const s of entries) outSupport.push({ ...s, label: `S${++n}` })
+  return { tests: out, support: outSupport }
+}
+
+// The builder's lists against what tools/changed_tests.py prints. The owner approves the tests
+// from the lists, so a change they leave out is a change nobody approved, and one they describe
+// without its scenario is a change approved blind.
+const listProblems = (t, tests, support) => {
+  if (t.changesError) return [`tools/changed_tests.py could not list what the branch changes under tests/: ${t.changesError}`]
+  const problems = []
+  const compare = (found, listed, keyOf, where) => {
+    const mine = new Map(listed.map(x => [keyOf(x), x]))
+    const theirs = new Map(found.map(x => [keyOf(x), x]))
+    for (const [key, x] of theirs) {
+      const w = mine.get(key)
+      if (!w) problems.push(`${key} is ${x.change} on the branch, but ${where} does not list it`)
+      else if (w.change !== x.change) problems.push(`${key} is listed as ${w.change}, but the branch has it ${x.change}`)
+    }
+    for (const [key, w] of mine) if (!theirs.has(key)) problems.push(`${key} is listed as ${w.change}, but the branch does not change it`)
+  }
+  compare(t.changes.tests, tests, x => bareId(x.nodeid), 'tests[]')
+  compare(t.changes.support, support, supportKey, 'support[]')
+  for (const w of tests) {
+    const owed = ['scenario', 'expects', ...(w.change === 'modified' ? ['before'] : []), ...(w.change === 'deleted' ? ['why'] : [])]
+    const missing = owed.filter(f => !filled(w[f]))
+    if (missing.length) problems.push(`${w.nodeid} gives no ${missing.join(' and no ')}, and the owner approves the tests from these`)
+  }
+  for (const s of support) if (!filled(s.what)) problems.push(`${supportKey(s)} does not say what it now does`)
+  return problems
+}
+
+// Against the lists the owner last saw at Gate 2: an entry that was not there, or whose
+// description has changed since.
+const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'alreadyPasses', 'what', 'affects']
+const sinceShown = (entry, before, keyOf) => {
+  if (!shown) return ''
+  const was = before.find(b => keyOf(b) === keyOf(entry))
+  if (!was || was.change !== entry.change) return ' *(new since the last Gate 2)*'
+  return DESCRIBED.some(f => JSON.stringify(was[f] || '') !== JSON.stringify(entry[f] || '')) ? ' *(changed since the last Gate 2)*' : ''
+}
+
+const counts = () => ({
+  ...Object.fromEntries(GROUPS.map(g => [g.change, written.filter(t => t.change === g.change).length])),
+  support: supportWritten.length,
+})
+
+// The Gate 2 report: every entry of both lists, none left out and none merged, for the calling
+// session to write to a file of its own and put before the owner.
+const gateReport = (test, summaryText) => {
+  const lines = [
+    `# Gate 2 — #${issue}: the tests`,
+    '',
+    `Every test this work adds, modifies, deletes or moves on \`${branch}\` since \`${base}\`, with the scenario each one tests. A test marked as an expected failure fails today because the behaviour is missing; one that passes already says so.`,
+    '',
+    `${GROUPS.map(g => `${written.filter(t => t.change === g.change).length} ${g.change}`).join(', ')}; ${supportWritten.length} supporting.`,
+  ]
+  const field = (name, value) => filled(value) ? [`  - *${name}:* ${value}`] : []
+  const movedFrom = new Map(((test && test.changes && test.changes.tests) || []).filter(x => x.from).map(x => [bareId(x.nodeid), x.from]))
+  const labelOf = new Map(written.map(t => [bareId(t.nodeid), t.label]))
+  const others = written.filter(t => !GROUPS.some(g => g.change === t.change))
+  for (const g of [...GROUPS, ...(others.length ? [{ change: null, title: 'Listed with a change the report does not know' }] : [])]) {
+    const group = g.change ? written.filter(t => t.change === g.change) : others
+    lines.push('', `## ${g.title} (${group.length})`)
+    if (!group.length) { lines.push('', 'None.'); continue }
+    for (const [file, entries] of byFile(group, t => fileOf(t.nodeid))) {
+      lines.push('', `**\`${file}\`**`, '')
+      for (const t of entries) {
+        const from = movedFrom.get(bareId(t.nodeid))
+        lines.push(
+          `- **${t.label}** \`${String(t.nodeid).slice(file.length + 2)}\`${sinceShown(t, shown ? shown.tests : [], x => bareId(x.nodeid))}`,
+          ...field('Scenario', t.scenario),
+          ...field(g.change === 'deleted' ? 'Expected' : 'Expects', t.expects),
+          ...field('Before', t.before),
+          ...field('From', from ? `\`${from}\`` : ''),
+          ...field(g.change === 'deleted' ? 'Why it goes' : 'Why', t.why),
+          ...field('Criterion', t.criterion),
+          ...(t.alreadyPasses ? ['  - *Passes already:* left unmarked'] : []),
+        )
+      }
+    }
+  }
+  lines.push('', `## Supporting changes (${supportWritten.length})`, '')
+  if (!supportWritten.length) lines.push('None.')
+  for (const s of supportWritten) {
+    const affects = (s.affects || []).map(id => labelOf.get(bareId(id)) || `\`${id}\``).join(', ')
+    lines.push(`- **${s.label}** \`${supportKey(s)}\`, ${s.change}${sinceShown(s, shown ? shown.support : [], supportKey)}. ${filled(s.what) ? `${String(s.what).trim().replace(/[^.!?]$/, '$&.')}` : ''}${affects ? ` *Affects:* ${affects}.` : ''}`)
+  }
+  if (shown) {
+    const gone = [
+      ...shown.tests.filter(w => !written.some(t => bareId(t.nodeid) === bareId(w.nodeid) && t.change === w.change)).map(w => `\`${w.nodeid}\`, ${w.change}`),
+      ...shown.support.filter(w => !supportWritten.some(s => supportKey(s) === supportKey(w) && s.change === w.change)).map(w => `\`${supportKey(w)}\`, ${w.change}`),
+    ]
+    if (gone.length) lines.push('', '## In the last Gate 2, and no longer in the list', '', ...gone.map(g => `- ${g}`))
+  }
+  lines.push('', '## What a league will see, and the tests that pin it', '', filled(summaryText) ? summaryText : '*The product owner wrote no summary. Ask for it, and put it here, before the gate.*')
+  if (citations.length) lines.push('', '## Rules cited', '', ...citations.map(c => `- **${c.source}:** ${c.answer}`))
+  return `${lines.join('\n')}\n`
+}
+
 const testsProblems = t => {
-  if (t === undefined) return ['no failing test is written yet']
+  if (t === undefined) return ['no test is changed yet']
   if (!t) return ['the tester returned nothing']
   const problems = hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
   for (const w of written) {
+    if (w.change === 'deleted') continue
     const x = t.tests.find(r => r.nodeid === w.nodeid)
     if (!x) { problems.push(`${w.nodeid} was not run by the tester`); continue }
     if (w.alreadyPasses) {
@@ -710,23 +906,27 @@ const testsProblems = t => {
     if (!x.failsWithRunxfail) problems.push(`${w.nodeid} passes already under --runxfail, so it pins nothing yet`)
     if (x.outcomeAsCommitted !== 'xfailed') problems.push(`${w.nodeid} is ${x.outcomeAsCommitted} as committed, not xfailed`)
   }
-  return [...problems, ...t.otherFailures, ...t.uncommitted.map(u => `not committed: ${u}`)]
+  return [...problems, ...listProblems(t, written, supportWritten), ...t.otherFailures, ...t.uncommitted.map(u => `not committed: ${u}`)]
 }
 
-// A builder with no test written yet has nothing for the tester to run: an empty list of targets
+// A builder with no test changed yet has nothing for the tester to check. The tester runs no
+// deleted test, and runs none at all where every change is a deletion: an empty list of targets
 // would be the whole suite.
-const reviewTests = async (k, built, questions) => {
-  const test = built.tests.length
-    ? await agent(testsTesterPrompt(k, built.tests), { label: `tests:r${k}:tester`, phase: 'Review', effort: 'low', schema: TESTS_CHECK_SCHEMA })
+const reviewTests = async (k, questions) => {
+  const run = written.filter(w => w.change !== 'deleted')
+  const test = written.length || supportWritten.length
+    ? await agent(testsTesterPrompt(k, run), { label: `tests:r${k}:tester`, phase: 'Review', effort: 'low', schema: TESTS_CHECK_SCHEMA })
     : undefined
-  if (test === undefined) log(`Round ${k}: no failing test is written yet, so the tester is not sent out.`)
+  if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const [issueResult, productResult] = await parallel([
-    () => agent(issuePrompt(k, questions.engineering, test, built.tests), { label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
-    () => agent(productPrompt(k, questions.business, test, built.tests), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
+    () => agent(productPrompt(k, questions.business, test, written, supportWritten), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const problems = testsProblems(test)
-  const failing = written.filter(w => !w.alreadyPasses)
-  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && failing.length > 0 && !problems.length }
+  // A stage run again, as after a test change the build asked for, may add only tests the build
+  // has already made pass: the first run alone must hold one that fails.
+  const failing = written.filter(w => !w.alreadyPasses && w.change !== 'deleted')
+  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && (failing.length > 0 || !!previous) && !problems.length }
 }
 
 // The host, not the code: what the tester reports as such, and a lock flock gave up on.
@@ -792,11 +992,12 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (!built.onBranch) { status = 'failed'; failure = `the checkout at ${worktree} is not on ${branch}`; break }
   commits.push(...built.commits)
   separateDefects.push(...built.separateDefects)
-  written = stage === 'tests' ? built.tests : [...written, ...built.tests]
+  if (stage === 'tests') ({ tests: written, support: supportWritten } = labelled(built.tests, built.support || []))
+  else written = [...written, ...built.tests]
   // A claim counts only on a finding the builder still owes: a settled or minor one stays as it is.
   for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }
   for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason; f.notFixedBecause = '' } }
-  if (stage === 'tests' && built.planComplete && !built.tests.some(t => !t.alreadyPasses)) {
+  if (stage === 'tests' && !previous && built.planComplete && !built.tests.some(t => !t.alreadyPasses && t.change !== 'deleted')) {
     status = 'failed'
     failure = 'the builder wrote no failing test: the tests stage is only for a plan that names one'
     break
@@ -811,7 +1012,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     business: builderQuestions.filter(q => q.kind === 'business'),
     engineering: builderQuestions.filter(q => q.kind !== 'business'),
   }
-  const reviewed = stage === 'tests' ? await reviewTests(k, built, questions) : await reviewBuild(k, built, questions)
+  const reviewed = stage === 'tests' ? await reviewTests(k, questions) : await reviewBuild(k, built, questions)
   const dead = []
   for (const [lane, result] of Object.entries(reviewed.lanes)) {
     if (result === undefined) continue
@@ -871,7 +1072,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     // The product owner found nothing but left its summary out: ask again. Whatever else the
     // second call finds counts, so a finding or a question it raises stops the pass.
     if (!summary) {
-      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? built.tests : null)}\n\nThe other checkers found nothing in this round. Write summary now.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null)}\n\nThe other checkers found nothing in this round. Write summary now.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
       if (asked) {
         addFindings('product', asked.findings)
         citations.push(...asked.answers)
@@ -908,6 +1109,8 @@ return {
   escalations,
   summary,
   tests: written,
+  support: supportWritten,
+  ...(stage === 'tests' ? { shown, counts: counts(), report: gateReport(lastTest, summary) } : {}),
   lastTest,
   lastFailures,
   openMaterial: [...ledger.values()].filter(materialPending),
