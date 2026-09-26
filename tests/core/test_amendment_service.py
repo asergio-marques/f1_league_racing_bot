@@ -2334,7 +2334,8 @@ async def test_rescoring_leaves_another_season_alone(db_path):
 @pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     """Scoring the second session raises: the approval fails whole, and the season, the
-    staged changes and the first session's points are exactly as they stood."""
+    staged changes and the first session's points are exactly as they stood. Nothing is
+    reposted, and the log records no success."""
     import sqlite3
 
     from leaguebot.core.services.amendment_service import approve_amendment
@@ -2361,10 +2362,15 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     )
 
     reposted: list[tuple] = []
+    bot = _scoring_bot(path, reposted)
     with pytest.raises(sqlite3.OperationalError, match="database is locked"):
-        await approve_amendment(path, season_id, 99, _scoring_bot(path, reposted))
+        await approve_amendment(path, season_id, 99, bot)
 
     assert reposted == [], "a failed approval reposted"
+    logged = "\n".join(
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
+    )
+    assert "AMENDMENT_APPROVED" not in logged, "a failed approval was logged as a success"
     points, staged, state = await _season_state(path, season_id)
     assert points == [(1, 25), (2, 18), (3, 15)], "the season's table moved"
     assert staged == [(1, 30), (2, 18), (3, 15)], "the staged changes were lost"
