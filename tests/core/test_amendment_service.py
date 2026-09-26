@@ -2305,7 +2305,11 @@ async def test_a_cancelled_division_is_rescored(db_path):
 
 
 async def test_rescoring_leaves_another_season_alone(db_path):
-    """A completed season scored under its own STD table keeps the points it was scored with."""
+    """A completed season keeps the points it was scored with.
+
+    Its own STD table now pays 20 for a win while its winners hold 25, so a rescoring that
+    reaches that season at all moves them, whichever season's table it scores them under.
+    """
     path, season_id = db_path
     async with get_connection(path) as db:
         cursor = await db.execute(
@@ -2314,7 +2318,7 @@ async def test_rescoring_leaves_another_season_alone(db_path):
         )
         other_season_id = cursor.lastrowid
         await db.commit()
-    await _seed_points_config(path, other_season_id)
+    await _seed_points_config(path, other_season_id, race={1: 20, 2: 18, 3: 15})
     _division, _raced, other_sessions, _q, _unraced = await _seed_raced_division(
         path, other_season_id, "Alpha", channels=(531, 532), driver_offset=2000
     )
