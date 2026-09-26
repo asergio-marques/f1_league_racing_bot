@@ -208,9 +208,15 @@ After a rebase onto `origin/main`, it is `git -C <worktree> merge-base HEAD orig
 **Each issue is built by the `work-issue` workflow, exactly as `fix-issue` Phase 5 builds one**:
 the tests stage, Gate 2, the build stage and Gate 3, with the arguments listed there. The
 `worktree` is the issue's own `.claude/worktrees/fix-<N>`, by absolute path; the `python` is the
-main checkout's `.venv/bin/python`; and `criteria` and `checks` come from its Stage 2 check. The
-issues' runs go on concurrently, one run per issue at a time. Tell the user each build takes about
-ten agents, and that the Pi runs two of a workflow's agents at once.
+main checkout's `.venv/bin/python`; `criteria` and `checks` come from its Stage 2 check; and
+`testsHead` is as `fix-issue` names it. The issues' runs go on concurrently, one run per issue at a
+time. Tell the user each build takes about ten agents, and that the Pi runs two of a workflow's
+agents at once.
+
+**Each issue's Gate 2 file is written to the main checkout's `.claude/gates/<N>-gate-2.md`,** never
+to the issue's worktree, so that every gate file stands in one place in the user's workspace, and a
+worktree removed takes none with it. A build that stops with `testChanges` goes back through its
+own tests stage and Gate 2, as `fix-issue` says, while the other issues' runs carry on.
 
 **Every gate and every question goes to the user through `AskUserQuestion`, one issue at a
 time,** never through plan mode, which would halt every other issue's build. A rejection at Gate 3,

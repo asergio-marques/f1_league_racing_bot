@@ -195,7 +195,9 @@ Phase 5 builds a fix, with `kind: "design-pass"` and three differences:
   user's answers from Phase 4 as `decisions`, and no `criteria`: nothing a league sees may change.
 - **The tests stage runs only where the plan names a test that fails before a correction.** A pure
   move or rename is pinned by the existing tests staying green, and by the ratchet entry it removes.
-  Where it runs, Gate 2 follows it as in `fix-issue`.
+  Where it runs, Gate 2 follows it as in `fix-issue`, and the build is passed `testsHead`, so that
+  it changes no test the user did not approve there. Where it does not run, no `testsHead` is
+  passed, and the build updates the tests its moves need, as a pure move always has.
 - **No Gate 3.** A design pass changes nothing a league sees. The product owner confirms exactly
   that in every round, and anything a league would notice is a finding. The pass keeps its own
   second review, in Phase 10.
