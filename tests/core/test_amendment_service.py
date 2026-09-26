@@ -2353,6 +2353,24 @@ async def test_a_cancelled_division_is_rescored(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_a_finished_division_is_rescored_while_another_races(db_path):
+    """Beta finished its season, its last round cancelled, while Alpha still has a round to
+    race; what Beta raced is scored under the new table too."""
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
+    _division, _raced, finished_sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Beta", channels=(511, 512), driver_offset=1000,
+        division_status="FINISHED", unraced_status="CANCELLED",
+    )
+
+    await _approve_raised_win(path, season_id)
+
+    for session_id in finished_sessions:
+        assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
+
+
 async def test_rescoring_leaves_another_season_alone(db_path):
     """A completed season keeps the points it was scored with.
 
