@@ -235,15 +235,24 @@ const FINDING = {
 
 const TRIAGE_SCHEMA = {
   type: 'object',
-  required: ['answers', 'escalations', 'findings'],
+  required: ['answers', 'escalations', 'duplicates', 'findings'],
   properties: {
     answers: { type: 'array', items: ANSWER },
     escalations: QUESTIONS,
+    duplicates: {
+      type: 'array',
+      items: { type: 'object', required: ['ref', 'of'], properties: { ref: { type: 'string' }, of: { type: 'string', description: 'the question already handled that it repeats' } } },
+      description: 'questions that repeat one already handled: neither answered nor escalated',
+    },
     findings: { type: 'array', items: FINDING, description: 'where a cited rule means the branch must change' },
   },
 }
 
 // ---- agents ---------------------------------------------------------------------------------
+
+// A question carries a ref: b<round>-<n> for the builder's, r<round>-<n> or c<n> for one a checker
+// raised. A ref field may name several, so refs are read by pattern.
+const refsIn = x => String((x && x.ref) || '').match(/\b(?:b\d+-\d+|r\d+-\d+|c\d+)\b/g) || []
 
 // A question a checker meets outside its own ground is triaged by the checker who owns it: the
 // product owner for business, the issue reviewer for engineering. Neither decides: each cites a
@@ -255,7 +264,7 @@ const triage = async (questions, tag, where, context, handled = []) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => agent(
-    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], keeping the question's ref, where it has one, on what settles it. A question that asks the same as one already handled, listed below, is not escalated again: answer it in answers[], with its ref, as "already answered or put to the owner this round", naming which. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
+    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], keeping the question's ref on what settles it, and copying the question word for word into answers[].question. A question that asks the same as one already handled, listed below, goes in duplicates[] with its ref, and is neither answered nor escalated. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
     { label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
@@ -265,15 +274,22 @@ const triage = async (questions, tag, where, context, handled = []) => {
   const settled = (r, qs, who) => {
     if (r) return r
     if (qs.length) log(`The ${who}'s triage returned nothing; its ${qs.length} question(s) go to the owner.`)
-    return { answers: [], escalations: qs, findings: [] }
+    return { answers: [], escalations: qs.map(q => ({ ...q, unframed: true })), duplicates: [], findings: [] }
   }
   const rb = settled(b, business, 'product owner')
   const re = settled(e, engineering, 'issue reviewer')
-  return {
+  const result = {
     answers: [...rb.answers, ...re.answers],
     escalations: [...rb.escalations, ...re.escalations],
+    duplicates: [...rb.duplicates, ...re.duplicates],
     findings: [...rb.findings.map(f => ({ ...f, lane: 'product' })), ...re.findings.map(f => ({ ...f, lane: 'issue' }))],
   }
+  // A question the triage neither settled nor named as a duplicate goes to the owner as asked.
+  const returned = new Set([...result.answers, ...result.escalations, ...result.duplicates].flatMap(refsIn))
+  const lost = questions.filter(q => !returned.has(q.ref))
+  if (lost.length) log(`The triage left out ${lost.length} question(s); they go to the owner.`)
+  result.escalations.push(...lost.map(q => ({ ...q, unframed: true })))
+  return result
 }
 
 // ---- the check stage ------------------------------------------------------------------------
@@ -301,11 +317,11 @@ if (stage === 'check') {
   const failed = [['architecture', architecture], ['design', design], ['product', product]].filter(([, r]) => !r).map(([k]) => k)
   if (failed.length) log(`No result for: ${failed.join(', ')}. Resume the run before relying on the check.`)
 
-  const raised = [architecture, design, product].filter(Boolean).flatMap(r => r.raised)
+  const raised = [architecture, design, product].filter(Boolean).flatMap(r => r.raised).map((q, i) => ({ ...q, ref: `c${i + 1}` }))
   const triaged = raised.length
     ? await triage(raised, 'check', `The plan was drafted at commit ${commit}.${branchNote}`, context,
       [...(product ? product.questions : []), ...(architecture ? architecture.questions : []), ...(design ? design.questions : [])].map(q => q.question))
-    : { answers: [], escalations: [], findings: [] }
+    : { answers: [], escalations: [], duplicates: [], findings: [] }
 
   const questions = [
     ...(product ? product.questions : []),
@@ -363,6 +379,8 @@ const designFiles = new Set(previous && previous.designFiles ? previous.designFi
 const rulings = ARGS.rulings || {}
 const badRulings = Object.entries(rulings).filter(([, v]) => v !== 'fix' && v !== 'leave')
 if (badRulings.length) throw new Error(`A ruling is "fix" or "leave", not: ${badRulings.map(([id, v]) => `${id}: ${JSON.stringify(v)}`).join(', ')}`)
+const unknownRulings = Object.keys(rulings).filter(id => !ledger.has(id))
+if (unknownRulings.length) throw new Error(`rulings name findings previous does not hold: ${unknownRulings.join(', ')}. rulings carries the last result's disputes and minor findings only.`)
 const unruled = [...ledger.values()].filter(f => f.status === 'upheld' && !rulings[f.id]).map(f => f.id)
 if (unruled.length) throw new Error(`previous holds disputes the owner has not ruled on: ${unruled.join(', ')}. Pass each in rulings as "fix" or "leave".`)
 for (const f of ledger.values()) {
@@ -488,8 +506,9 @@ const REVIEW_SCHEMA = {
 
 const TESTS_CHECK_SCHEMA = {
   type: 'object',
-  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'environmentProblem'],
+  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem'],
   properties: {
+    lockTimedOut: { type: 'boolean', description: 'any pytest run exited 75: flock gave up waiting for the lock' },
     collectionOk: { type: 'boolean' },
     collectionDetail: { type: 'string' },
     tests: {
@@ -590,7 +609,7 @@ ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the p
 }
 
 const TESTS_WRITTEN = 'The tests the builder wrote. One marked alreadyPasses pins behaviour already built: it is unmarked and must pass. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
-const COPY_QUESTION = 'giving each answer or escalation the ref of the question it settles, and framing an escalation for the owner as your instructions say'
+const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
 const issuePrompt = (k, questions, testReport, tests) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section('The tester\'s report', testReport)}`
 
@@ -608,7 +627,7 @@ const testsTesterPrompt = (k, tests) => `You check the failing tests written in 
 2. Collection: pytest tests/ --collect-only -q must exit 0.
 3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give the failure pytest reports: the assertion or exception, and its line. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
-5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Report it there too for an exit code of 75.
+5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
 
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
@@ -675,7 +694,7 @@ const upheldQuestion = f => ({
 const testsProblems = t => {
   if (t === undefined) return ['no failing test is written yet']
   if (!t) return ['the tester returned nothing']
-  const problems = t.environmentProblem ? [`the host: ${t.environmentProblem}`] : []
+  const problems = hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
   for (const w of written) {
     const x = t.tests.find(r => r.nodeid === w.nodeid)
@@ -703,11 +722,11 @@ const reviewTests = async (k, built, questions) => {
   ])
   const problems = testsProblems(test)
   const failing = written.filter(w => !w.alreadyPasses)
-  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !test.environmentProblem && failing.length > 0 && !problems.length }
+  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && failing.length > 0 && !problems.length }
 }
 
 // The host, not the code: what the tester reports as such, and a lock flock gave up on.
-const hostProblem = t => t ? (t.environmentProblem || (t.exitCode === 75 ? 'flock gave up waiting an hour for the test lock' : '')) : ''
+const hostProblem = t => t ? (t.environmentProblem || (t.exitCode === 75 || t.lockTimedOut ? 'flock gave up waiting an hour for the test lock' : '')) : ''
 
 const suiteProblems = t => {
   if (t === undefined) return ['the suite was not run: the builder was blocked and made no commit']
@@ -808,12 +827,14 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   // go to the owner, as a failed triage's do.
   if (reviewed.lanes.product === null) roundEscalations.push(...questions.business)
   if (reviewed.lanes.issue === null) roundEscalations.push(...questions.engineering)
-  const raised = got.flatMap(r => r.raised)
+  const raised = got.flatMap(r => r.raised).map((q, i) => ({ ...q, ref: refsIn(q)[0] || `r${k}-${i + 1}` }))
+  const duplicates = []
   if (raised.length) {
     const handled = [...roundAnswers.map(a => a.question), ...roundEscalations.map(q => q.question)]
     const t = await triage(raised, `r${k}`, BRANCH_READ, TRIAGE_CONTEXT, handled)
     citations.push(...t.answers)
     roundAnswers.push(...t.answers)
+    duplicates.push(...t.duplicates)
     roundEscalations.push(...t.escalations)
     for (const f of t.findings) addFindings(f.lane, [f])
   }
@@ -822,19 +843,20 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   roundEscalations.push(...upheld.map(upheldQuestion))
   // A question of the builder's that no checker answered or put to the owner goes to the owner,
   // as a question routed to a checker that returned nothing does: it is never dropped.
-  const heard = [...roundAnswers, ...roundEscalations]
-  const heardRefs = new Set(heard.map(x => x.ref).filter(Boolean))
-  const said = new Set(heard.map(x => sameQuestion(x.question)))
+  const heard = [...roundAnswers, ...roundEscalations, ...duplicates]
+  const heardRefs = new Set(heard.flatMap(refsIn))
+  const said = new Set(heard.filter(x => x.question).map(x => sameQuestion(x.question)))
   const unheard = builderQuestions.filter(q => !heardRefs.has(q.ref) && !said.has(sameQuestion(q.question)))
   if (unheard.length) log(`Round ${k}: ${unheard.length} question(s) of the builder's went unanswered, and go to the owner.`)
-  roundEscalations.push(...unheard)
+  roundEscalations.push(...unheard.map(q => ({ ...q, unframed: true })))
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
   const open = [...ledger.values()].filter(materialPending)
   rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: roundEscalations.length, dead })
   log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${roundEscalations.length} question(s) for the owner.`)
 
-  if (roundEscalations.length) { status = 'question'; escalations = roundEscalations; break }
+  // A host problem found in the same round is named beside the questions, to be repaired first.
+  if (roundEscalations.length) { status = 'question'; escalations = roundEscalations; failure = hostProblem(reviewed.test) ? `the host, not the code: ${hostProblem(reviewed.test)}` : ''; break }
   if (hostProblem(reviewed.test)) { status = 'failed'; failure = `the host, not the code: ${hostProblem(reviewed.test)}`; break }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
   // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
@@ -852,7 +874,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
         separateDefects.push(...asked.separateDefects)
         const late = [...asked.escalations]
         if (asked.raised.length) {
-          const t = await triage(asked.raised, `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...roundAnswers, ...asked.answers, ...asked.escalations].map(x => x.question))
+          const t = await triage(asked.raised.map((q, i) => ({ ...q, ref: refsIn(q)[0] || `r${k}s-${i + 1}` })), `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...roundAnswers, ...asked.answers, ...asked.escalations].map(x => x.question))
           citations.push(...t.answers)
           late.push(...t.escalations)
           for (const f of t.findings) addFindings(f.lane, [f])
