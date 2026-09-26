@@ -77,8 +77,10 @@ and the code around it. Your prompt says whether this is a round of the **tests 
 - **Tests stage.** Every acceptance criterion, and every spec rule the work touches, is pinned by a
   test. Each test pins what a league sees (a reply, a saved outcome, a post), not how the code gets
   there. From the tester's `--runxfail` output, each test fails because the behaviour is missing, not
-  for a reason unrelated to it. An `ImportError` for code the plan has not written yet counts as
-  the behaviour missing.
+  for a reason unrelated to it. An `ImportError` or `AttributeError` for code the plan has not
+  written yet counts as the behaviour missing; a `NameError` from a typo, a missing fixture or a
+  syntax error does not. A test the plan names as pinning behaviour already built, listed as
+  already passing, is unmarked and must pass instead.
 - **Build.** Every spec rule touched holds. Quote the exact text a league will read (replies, posts,
   log lines, command and option names) and check it against the specs and the guides, in British
   English. Every criterion is met, and a test proves it. The documents owed are written, and say what

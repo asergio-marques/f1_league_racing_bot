@@ -77,7 +77,8 @@ Check the branch against:
   `async def`. No test relies on the host (the first item an index yields, installed fonts, `.env`).
   The `rasteriser` marker is used only where the test really rasterises. In the tests stage, each new
   test is marked `xfail(strict=True)` with a reason naming the issue, and the tester's `--runxfail`
-  output shows it failing for the reason the plan gives. An `ImportError` or `AttributeError` for
+  output shows it failing for the reason the plan gives. The exception is a test the plan names as
+  pinning behaviour already built, listed as already passing: it is unmarked, and must pass. An `ImportError` or `AttributeError` for
   code the plan has not written yet is that reason, since such a test imports it inside its body;
   a `NameError` from a typo, a missing fixture or a syntax error is not.
 - **CLAUDE.md's other rules** that a diff can break: British English in identifiers and prose, no
