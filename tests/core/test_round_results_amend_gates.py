@@ -218,6 +218,25 @@ async def test_a_server_with_no_season_is_refused(tmp_path):
     assert "archive" in _replied(interaction)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: the season gate's refusal still names /round results amend"
+)
+async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
+    """The season gate quotes back the name the command hands it, so a refusal naming a
+    command that no longer exists sends a league admin looking for it. The repository's
+    check of command names cannot see this one: the name is interpolated."""
+    db_path = await _make_db(tmp_path, name="amend_noseason_name")
+    cog = _make_cog(db_path, season=None)
+    interaction = _interaction()
+
+    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert _replied(interaction).startswith(
+        "❌ `/results rounds amend` acts on the season this server is building or racing, "
+        "and there is none."
+    )
+
+
 async def test_an_unknown_division_is_refused_by_name(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_nodiv")
     cog = _make_cog(db_path)
