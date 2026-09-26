@@ -40,7 +40,7 @@ const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
 }
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass") and maxRounds.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass") and maxRounds. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -355,6 +355,10 @@ if (stage === 'check') {
 // ---- the round loop, shared by the tests and build stages -----------------------------------
 
 const { worktree, python, branch, base } = ARGS
+// The commit at which the owner approved the tests at Gate 2. From it the build changes no test but
+// to remove the issue's markers, the ratchet lines the plan names and import lines: any other test
+// change it needs goes to the owner as a proposal, and the tests stage makes it.
+const testsHead = stage === 'build' ? ARGS.testsHead || null : null
 const BIN = python.slice(0, python.lastIndexOf('/'))
 const MAX_ROUNDS = { tests: 2, build: 3 }
 const maxRounds = Number(ARGS.maxRounds) || MAX_ROUNDS[stage]
@@ -457,13 +461,13 @@ List in tests[] every test this work adds, changes, deletes or moves since ${bas
 - alreadyPasses: true for a test left unmarked because it passes already.
 Each entry in support[] gives the file and the name as the command prints them, the change, what it now does, and in affects the node ids of the tests that use it.`
 
-const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed. By the end, none may be left.`
+const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but three things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; and import lines. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
 
 // ---- the round loop's schemas ---------------------------------------------------------------
 
 const BUILDER_SCHEMA = {
   type: 'object',
-  required: ['onBranch', 'commits', 'planComplete', 'remaining', 'tests', 'support', 'fixed', 'disputed', 'questions', 'blocked', 'clean', 'separateDefects', 'notes'],
+  required: ['onBranch', 'commits', 'planComplete', 'remaining', 'tests', 'support', 'testChanges', 'fixed', 'disputed', 'questions', 'blocked', 'clean', 'separateDefects', 'notes'],
   properties: {
     onBranch: { type: 'boolean', description: 'the checkout was on the expected branch' },
     commits: {
@@ -505,6 +509,23 @@ const BUILDER_SCHEMA = {
         },
       },
       description: 'the tests stage: every fixture, helper, module-level value or file under tests/ the work changes since its base; the build: empty',
+    },
+    testChanges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['nodeid', 'change', 'scenario', 'expects', 'needed'],
+        properties: {
+          nodeid: { type: 'string', description: 'the test, or file::name for a fixture, helper, value or file' },
+          change: { type: 'string', enum: ['added', 'modified', 'deleted', 'moved'] },
+          scenario: { type: 'string', description: 'the concrete situation it would set up and the action it would take' },
+          expects: { type: 'string', description: 'what it would assert' },
+          before: { type: 'string', description: 'a modified test: what it sets up and expects now' },
+          why: { type: 'string', description: 'a deleted test: why it would go' },
+          needed: { type: 'string', description: 'why the build needs it' },
+        },
+      },
+      description: 'the build: every test change it needs and has not made, for the owner; the tests stage: empty',
     },
     fixed: {
       type: 'array',
@@ -603,8 +624,10 @@ const TESTS_CHECK_SCHEMA = {
 
 const SUITE_SCHEMA = {
   type: 'object',
-  required: ['exitCode', 'summary', 'failures', 'mypyClean', 'mypyErrors', 'xfailMarkersLeft', 'uncommitted', 'tmpFree', 'environmentProblem', 'log'],
+  required: ['exitCode', 'summary', 'failures', 'mypyClean', 'mypyErrors', 'xfailMarkersLeft', 'uncommitted', 'tmpFree', 'environmentProblem', 'log', 'changes', 'changesError'],
   properties: {
+    changes: CHANGES,
+    changesError: { type: 'string', description: 'empty unless tools/changed_tests.py exited non-zero: what it printed on stderr' },
     exitCode: { type: 'integer', description: 'the suite\'s exit code, read from its .exit file' },
     summary: { type: 'string', description: 'pytest\'s closing line' },
     failures: {
@@ -665,7 +688,7 @@ const builderPrompt = k => {
     ? `Start the stage from the plan. Read git -C ${worktree} log ${base}..HEAD first: where the branch already carries work for this issue, the plan is an amendment to it, and you build on what is there.`
     : `Earlier rounds have already worked on this branch: read git -C ${worktree} log ${base}..HEAD first. Fix each open material finding below in a commit of its own, or dispute it with evidence where you judge it wrong; fix the failures below; and finish whatever this stage still owes. Report every finding id you fixed or disputed.`
   const answered = !(first && previous) ? ''
-    : previous.status === 'question' ? ' The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.'
+    : previous.status === 'question' ? ` The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.${previous.testChanges && previous.testChanges.length ? ` The test changes you proposed went to the owner: each made is on the branch now, committed by the tests stage${testsHead ? ` by ${testsHead}` : ''}, and each refused is in the decisions below, to build without.` : ''}`
       : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for changes: those in the decisions below, and any finding below that the owner wants made. Make them: they bind you, and this stage owes them until they are done.'
         : ''
   return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}.
@@ -721,6 +744,7 @@ const buildTesterPrompt = k => {
 5. Wait for the suite, as below, until its exit code appears.
 6. Read the outcome: the exit code from ${logFile}.exit; pytest's closing line, from tail -n 5 ${logFile}; and every line grep -E '^(FAILED|ERROR)' ${logFile} finds, each with the reason pytest gives for it further up the log.
 7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem. Say so there too for an exit code of 75.
+${testsHead ? `8. What the build has changed under tests/ since the owner approved the tests: run ${CHANGED_TESTS(testsHead)}, with a Bash timeout of 600000 ms, and copy the tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.` : '8. Leave the lists in changes empty, and changesError empty: this build has no approved tests to hold it to.'}
 
 ${RUN_PYTEST}`
 }
@@ -932,6 +956,22 @@ const reviewTests = async (k, questions) => {
 // The host, not the code: what the tester reports as such, and a lock flock gave up on.
 const hostProblem = t => t ? (t.environmentProblem || (t.exitCode === 75 || t.lockTimedOut ? 'flock gave up waiting an hour for the test lock' : '')) : ''
 
+// A ratchet list of the architecture checks, whose lines the build deletes as it removes each
+// breach the plan names: the issue reviewer holds each deletion to the plan.
+const isRatchet = s => s.file.startsWith('tests/repository/') && s.name.startsWith('KNOWN_') && s.change === 'modified'
+
+// What the build changed under tests/ after the owner approved the tests, but the three things it
+// may: markers removed, ratchet lines and imports, which the tool does not report.
+const unapprovedTestChanges = t => {
+  if (!testsHead || !t) return []
+  if (t.changesError) return [`tools/changed_tests.py could not list what the build changed under tests/: ${t.changesError}`]
+  const since = `since the tests the owner approved at ${testsHead}: revert it, and propose it in testChanges[] if the build needs it`
+  return [
+    ...t.changes.tests.map(x => `${x.nodeid} is ${x.change} ${since}`),
+    ...t.changes.support.filter(x => !isRatchet(x)).map(x => `${supportKey(x)} is ${x.change} ${since}`),
+  ]
+}
+
 const suiteProblems = t => {
   if (t === undefined) return ['the suite was not run: the builder was blocked and made no commit']
   if (!t) return ['the tester returned nothing']
@@ -941,6 +981,7 @@ const suiteProblems = t => {
   if (!t.mypyClean && !t.mypyErrors.length) problems.push('mypy reported errors')
   if (t.xfailMarkersLeft) problems.push(`${t.xfailMarkersLeft} expected-failure marker(s) naming #${issue} are left in tests/`)
   problems.push(...t.uncommitted.map(u => `not committed: ${u}`))
+  problems.push(...unapprovedTestChanges(t))
   return problems
 }
 
@@ -963,7 +1004,7 @@ const reviewBuild = async (k, built, questions) => {
     () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, null), { label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
-  const green = !!test && !hostProblem(test) && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length
+  const green = !!test && !hostProblem(test) && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length && !unapprovedTestChanges(test).length
   return {
     lanes: { issue: issueAndDesign ? issueAndDesign.issue : null, code, product, design: issueAndDesign ? issueAndDesign.design : undefined },
     test,
@@ -983,6 +1024,8 @@ let status = 'unfinished'
 let failure = ''
 let escalations = []
 let summary = ''
+// The test changes the build needs and did not make, for the owner to decide.
+let testChanges = []
 let lastTest = null
 
 for (let k = offset + 1; k <= offset + maxRounds; k++) {
@@ -1057,11 +1100,14 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
   const open = [...ledger.values()].filter(materialPending)
-  rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: roundEscalations.length, dead })
-  log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${roundEscalations.length} question(s) for the owner.`)
+  const proposed = stage === 'build' ? built.testChanges || [] : []
+  rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: roundEscalations.length, testChanges: proposed.length, dead })
+  log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${roundEscalations.length} question(s) for the owner; ${proposed.length} test change(s) proposed.`)
 
   // A host problem found in the same round is named beside the questions, to be repaired first.
-  if (roundEscalations.length) { status = 'question'; escalations = roundEscalations; failure = hostProblem(reviewed.test) ? `the host, not the code: ${hostProblem(reviewed.test)}` : ''; break }
+  // A test change the build needs stops it as a question does: the owner decides it before the
+  // build goes on, and the tests stage makes it.
+  if (roundEscalations.length || proposed.length) { status = 'question'; escalations = roundEscalations; testChanges = proposed; failure = hostProblem(reviewed.test) ? `the host, not the code: ${hostProblem(reviewed.test)}` : ''; break }
   if (hostProblem(reviewed.test)) { status = 'failed'; failure = `the host, not the code: ${hostProblem(reviewed.test)}`; break }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
   // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
@@ -1107,6 +1153,8 @@ return {
   lastRound: offset + rounds.length,
   rounds,
   escalations,
+  testChanges,
+  testsHead,
   summary,
   tests: written,
   support: supportWritten,
