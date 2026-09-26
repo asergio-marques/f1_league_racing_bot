@@ -179,8 +179,8 @@ def _named_by_its_module(label: str, command: str):
     "label,command",
     [
         pytest.param("weather channel", "/weather channel", id="weather channel"),
-        _named_by_its_module("results channel", "/results channel results"),
-        _named_by_its_module("standings channel", "/results channel standings"),
+        pytest.param("results channel", "/results channel results", id="results channel"),
+        pytest.param("standings channel", "/results channel standings", id="standings channel"),
         _named_by_its_module("verdicts channel", "/results channel verdicts"),
         _named_by_its_module("RSVP channel", "/attendance channel rsvp"),
         _named_by_its_module("attendance channel", "/attendance channel attendance"),
@@ -324,7 +324,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
 
     (call,) = interaction.followup.send.await_args_list
     refusal = call.args[0]
-    assert "**Pro** has no results channel — `/division results-channel`." in refusal
+    assert "**Pro** has no results channel — `/results channel results`." in refusal
     assert "**Am** has no standings channel" in refusal
     assert "**Am** has no verdicts channel — `/division verdicts-channel`." in refusal
     cog.bot.season_service.transition_to_active.assert_not_awaited()

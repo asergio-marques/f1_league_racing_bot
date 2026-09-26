@@ -1,8 +1,9 @@
-"""Assigning a division's output channels, and the rule that a channel does one job.
+"""`/results channel …`: setting the channels a division's results are posted to.
 
-Issue #208. `season_cog.py` is the largest file in the bot and was at 44.1%. This file takes
-`_set_division_channel` and the guard beneath it — the path the results and standings channel
-commands go through.
+Results' own commands, under results' own group. They sat under core's `/division` until #462
+moved them, and only their names changed. `/results channel results` and `/results channel
+standings` share one body, `ResultsCog._set_division_channel`, which this file takes with the
+check beneath it (issue #208 first covered it in core's cog).
 
 **A channel serves one purpose across the whole server** (decided 2026-09-06). Two settings
 sharing one channel interleave two kinds of posting, and several posting paths edit or delete
@@ -32,9 +33,9 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.channel_registry_service import ChannelUse
+from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 9708
@@ -81,9 +82,11 @@ def _make_cog(
     *,
     season=SimpleNamespace(id=SEASON_ID),
     divisions=None,
-) -> SeasonCog:
+) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = db_path
+    bot.module_service = MagicMock()
+    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)
     bot.season_service.get_divisions = AsyncMock(
@@ -94,7 +97,7 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
     return cog
 
@@ -388,8 +391,8 @@ async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
 
 
 async def _run_command(cog, command: str, interaction) -> None:
-    """Run the body of one of the two commands above `_set_division_channel`."""
-    await undecorate(getattr(SeasonCog, command))(
+    """Run the body of one of the two commands `_set_division_channel` serves."""
+    await undecorate(getattr(ResultsCog, command))(
         cog, interaction, "Division 1", _channel()
     )
 
@@ -404,7 +407,7 @@ def _assert_nothing_done(cog, interaction, refused: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "command", ["division_results_channel", "division_standings_channel"]
+    "command", ["channel_results", "channel_standings"]
 )
 async def test_the_results_channels_are_refused_while_results_is_off(
     tmp_path, monkeypatch, command
@@ -429,10 +432,6 @@ async def test_the_results_channels_are_refused_while_results_is_off(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#462: the log lines still name /division results-channel and standings-channel",
-)
 @pytest.mark.parametrize(
     "channel_type, command",
     [("results", "/results channel results"), ("standings", "/results channel standings")],

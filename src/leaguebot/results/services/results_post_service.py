@@ -1309,7 +1309,7 @@ def _channel_fault(
     """The fault standing between the bot and posting to *channel_id*, or None.
 
     Reads the gateway cache rather than calling Discord, which is what makes it usable as a
-    gate: it is the same reading ``/division results-channel`` already takes before it
+    gate: it is the same reading ``/division verdicts-channel`` already takes before it
     accepts a channel.
     """
     channel = guild.get_channel(channel_id)

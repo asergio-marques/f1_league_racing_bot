@@ -573,7 +573,7 @@ async def test_the_panel_says_which_command_repairs_the_channel():
     await _review(cog, interaction, panel_faults=[CHANNEL_FAULT])
 
     panel = _panel(interaction)
-    assert "/division standings-channel" in panel
+    assert "/results channel standings" in panel
     assert "/results amend review" in panel
 
 

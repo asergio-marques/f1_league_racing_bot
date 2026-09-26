@@ -650,13 +650,13 @@ async def test_a_division_missing_a_channel_it_posts_to_withholds_approval(db_pa
     on what the press would refuse."""
     cog = _cog(db_path)
     cog._placement_confirmation_faults = AsyncMock(
-        return_value=([], ["**Pro** has no results channel — `/division results-channel`."])
+        return_value=([], ["**Pro** has no results channel — `/results channel results`."])
     )
     messages = await _review(cog, _interaction())
 
     cog._post_approval_prompt.assert_not_awaited()
     assert "Every division needs every channel it posts to" in _private(messages)
-    assert "**Pro** has no results channel — `/division results-channel`." in _private(messages)
+    assert "**Pro** has no results channel — `/results channel results`." in _private(messages)
 
 
 async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path):
@@ -665,7 +665,7 @@ async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path
     with every other division channel now (#374), and the review is where both are named."""
     cog = _cog(db_path, results=True, phantoms=["Standrad"])
     cog._placement_confirmation_faults = AsyncMock(
-        return_value=([], ["**Pro** has no standings channel — `/division standings-channel`."])
+        return_value=([], ["**Pro** has no standings channel — `/results channel standings`."])
     )
     messages = await _review(cog, _interaction())
 

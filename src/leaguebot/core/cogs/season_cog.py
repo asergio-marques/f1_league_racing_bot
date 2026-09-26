@@ -2449,8 +2449,8 @@ class SeasonCog(commands.Cog):
         ("lineup_channel_id", "lineup channel", "/division lineup-channel", None),
         ("calendar_channel_id", "calendar channel", "/division calendar-channel", None),
         ("forecast_channel_id", "weather channel", "/weather channel", "weather"),
-        ("results_channel_id", "results channel", "/division results-channel", "results"),
-        ("standings_channel_id", "standings channel", "/division standings-channel", "results"),
+        ("results_channel_id", "results channel", "/results channel results", "results"),
+        ("standings_channel_id", "standings channel", "/results channel standings", "results"),
         ("penalty_channel_id", "verdicts channel", "/division verdicts-channel", "results"),
         ("rsvp_channel_id", "RSVP channel", "/division rsvp-channel", "attendance"),
         (
@@ -4177,7 +4177,7 @@ class SeasonCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # Division channel assignment (shared helper + 2 commands)
+    # Division channel assignment
     # ------------------------------------------------------------------
 
     async def _refuse_channel_in_use(
@@ -4212,114 +4212,6 @@ class SeasonCog(commands.Cog):
         else:
             await interaction.response.send_message(message, ephemeral=True)
         return True
-
-    async def _set_division_channel(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-        channel_type: str,  # "results" | "standings"
-    ) -> None:
-        from leaguebot.core.services import audit_service
-
-        # 1. The live season: a division's channels belong to it, and an archived one's no longer matter (#220)
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None:
-            await interaction.response.send_message(
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
-            )
-            return
-
-        # 2. Find division by name
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await interaction.response.send_message(
-                f"\u274c Division **{name}** not found in the current season.",
-                ephemeral=True,
-            )
-            return
-
-        # 3. A channel does one job. Checked before the write, so a refusal leaves the
-        # configuration exactly as it stood — the same-value case included, which used to
-        # be written and only then reported as unchanged.
-        if await self._refuse_channel_in_use(
-            interaction, channel, channel_type, division_name=div.name
-        ):
-            return
-
-        # 4. Upsert channel + get old value (for the audit entry)
-        if channel_type == "results":
-            old_id = await self.bot.season_service.set_division_results_channel(div.id, channel.id)
-            type_label = "Results"
-        else:
-            old_id = await self.bot.season_service.set_division_standings_channel(div.id, channel.id)
-            type_label = "Standings"
-
-        # The same-value case is caught by the guard above, before anything is written.
-
-        # 5. Audit
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="DIVISION_CHANNEL_SET",
-            old_value={"channel_type": channel_type, "channel_id": old_id},
-            new_value={"channel_type": channel_type, "channel_id": channel.id},
-            now=datetime.now(timezone.utc),
-            division_id=div.id,
-        )
-
-        # "Updated" says a channel was moved rather than assigned afresh (issue #212).
-        verb = "set" if old_id is None else "updated"
-        await interaction.response.send_message(
-            f"\u2705 {type_label} channel for **{name}** {verb} to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division {channel_type}-channel | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
-        )
-
-    @division.command(
-        name="results-channel",
-        description="Set the results posting channel for a division.",
-    )
-    @app_commands.describe(name="Division name", channel="Results channel")
-    @league_manager_only
-    async def division_results_channel(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-    ) -> None:
-        if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
-            )
-            return
-        await self._set_division_channel(interaction, name, channel, "results")
-
-    @division.command(
-        name="standings-channel",
-        description="Set the standings posting channel for a division.",
-    )
-    @app_commands.describe(name="Division name", channel="Standings channel")
-    @league_manager_only
-    async def division_standings_channel(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-    ) -> None:
-        if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
-            )
-            return
-        await self._set_division_channel(interaction, name, channel, "standings")
 
     @division.command(
         name="verdicts-channel",

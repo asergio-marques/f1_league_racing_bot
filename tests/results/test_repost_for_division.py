@@ -381,7 +381,7 @@ async def test_a_division_with_no_configuration_at_all_says_no_channel(tmp_path)
 
 async def test_a_channel_that_has_been_deleted_says_no_channel(tmp_path):
     """Configured but gone. From the manager's side there is nowhere to post, and the fix
-    is the same `/division results-channel` command."""
+    is the same `/results channel results` command."""
     db_path = await _make_db(tmp_path, name="results_chgone")
 
     status, _, post = await _results(db_path, guild=_guild(missing=True))

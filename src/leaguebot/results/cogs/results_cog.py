@@ -1,7 +1,9 @@
-"""ResultsCog — /results config, /results amend, /results reserves, /round results commands."""
+"""ResultsCog — /results config, /results amend, /results reserves, /results standings,
+/results rounds and /results channel commands."""
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -18,6 +20,8 @@ from leaguebot.results.services.season_points_service import (
     ConfigNotAttachedError,
     SeasonNotInSetupError,
 )
+from leaguebot.core.services import audit_service
+from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import NAME
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
@@ -1412,8 +1416,8 @@ class ResultsCog(commands.Cog):
                 f"be published:**\n• {bullet_list}\n"
                 f"Approving rescores every round of every division and reposts each one, so "
                 f"it is refused entire while any of that cannot be done — nothing would "
-                f"be changed. Repair the channels with `/division results-channel` and "
-                f"`/division standings-channel`, then run `/results amend review` again."
+                f"be changed. Repair the channels with `/results channel results` and "
+                f"`/results channel standings`, then run `/results amend review` again."
             )
 
         # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
@@ -1715,3 +1719,127 @@ class ResultsCog(commands.Cog):
                 f"\u274c Division '{division}' has no results channel configured.",
                 ephemeral=True,
             )
+
+    # ------------------------------------------------------------------
+    # /results channel group
+    # ------------------------------------------------------------------
+
+    channel_group = app_commands.Group(
+        name="channel",
+        description="Set the channels a division's results are posted to",
+        parent=results_group,
+    )
+
+    async def _set_division_channel(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+        channel_type: str,  # "results" | "standings"
+    ) -> None:
+        """Set a division's results or standings channel, for the two commands below.
+
+        Results' own commands, under results' own group: they sat under core's `/division`
+        until #462 moved them, and only their names changed. Each checks its module first in
+        its own words, not `_module_gate`'s, as it was worded before it moved.
+
+        **The live season's division** (#220): a division's channels belong to the season being
+        built or raced, and an archived one's no longer matter. Pending completion is live,
+        so a channel lost before the season completes may be repaired.
+
+        **A channel does one job** (`channel_refusal`), checked before the write, so a
+        refusal leaves the configuration exactly as it stood — the value the setting already
+        holds included. The change is recorded by core's `audit_service`, as it was when core
+        wrote it: `DIVISION_CHANNEL_SET`, with its `channel_type`.
+        """
+        season = await self.bot.season_service.get_setup_or_active_season()
+        if season is None:
+            await interaction.response.send_message(
+                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
+                ephemeral=True,
+            )
+            return
+
+        divisions = await self.bot.season_service.get_divisions(season.id)
+        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
+        if div is None:
+            await interaction.response.send_message(
+                f"\u274c Division **{name}** not found in the current season.",
+                ephemeral=True,
+            )
+            return
+
+        refused = await channel_refusal(
+            self.bot.db_path, channel, channel_type, division_name=div.name
+        )
+        if refused is not None:
+            await interaction.response.send_message(refused, ephemeral=True)
+            return
+
+        if channel_type == "results":
+            old_id = await self.bot.season_service.set_division_results_channel(div.id, channel.id)
+            type_label = "Results"
+        else:
+            old_id = await self.bot.season_service.set_division_standings_channel(div.id, channel.id)
+            type_label = "Standings"
+
+        await audit_service.record_change(
+            self.bot.db_path,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            change_type="DIVISION_CHANNEL_SET",
+            old_value={"channel_type": channel_type, "channel_id": old_id},
+            new_value={"channel_type": channel_type, "channel_id": channel.id},
+            now=datetime.now(timezone.utc),
+            division_id=div.id,
+        )
+
+        # "Updated" says a channel was moved rather than assigned afresh (issue #212).
+        verb = "set" if old_id is None else "updated"
+        await interaction.response.send_message(
+            f"\u2705 {type_label} channel for **{name}** {verb} to {channel.mention}.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results channel {channel_type} | Success\n"
+            f"  division: {name}\n"
+            f"  channel: #{channel.name}",
+        )
+
+    @channel_group.command(
+        name="results",
+        description="Set the results posting channel for a division.",
+    )
+    @app_commands.describe(name="Division name", channel="Results channel")
+    @league_manager_only
+    async def channel_results(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        if not await self.bot.module_service.is_results_enabled():
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
+        await self._set_division_channel(interaction, name, channel, "results")
+
+    @channel_group.command(
+        name="standings",
+        description="Set the standings posting channel for a division.",
+    )
+    @app_commands.describe(name="Division name", channel="Standings channel")
+    @league_manager_only
+    async def channel_standings(
+        self,
+        interaction: discord.Interaction,
+        name: str,
+        channel: discord.TextChannel,
+    ) -> None:
+        if not await self.bot.module_service.is_results_enabled():
+            await interaction.response.send_message(
+                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            )
+            return
+        await self._set_division_channel(interaction, name, channel, "standings")
