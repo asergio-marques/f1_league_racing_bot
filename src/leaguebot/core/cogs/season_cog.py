@@ -4220,7 +4220,7 @@ class SeasonCog(commands.Cog):
         channel: discord.TextChannel,
         channel_type: str,  # "weather" | "results" | "standings"
     ) -> None:
-        import json as _json
+        from leaguebot.core.services import audit_service
 
         # 1. The live season: a division's channels belong to it, and an archived one's no longer matter (#220)
         season = await self.bot.season_service.get_setup_or_active_season()
@@ -4263,22 +4263,16 @@ class SeasonCog(commands.Cog):
         # The same-value case is caught by the guard above, before anything is written.
 
         # 5. Audit
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'DIVISION_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    _json.dumps({"channel_type": channel_type, "channel_id": old_id}),
-                    _json.dumps({"channel_type": channel_type, "channel_id": channel.id}),
-                    now,
-                ),
-            )
-            await db.commit()
+        await audit_service.record_change(
+            self.bot.db_path,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            change_type="DIVISION_CHANNEL_SET",
+            old_value={"channel_type": channel_type, "channel_id": old_id},
+            new_value={"channel_type": channel_type, "channel_id": channel.id},
+            now=datetime.now(timezone.utc),
+            division_id=div.id,
+        )
 
         # "Updated" says a channel was moved rather than assigned afresh (issue #212).
         verb = "set" if old_id is None else "updated"
@@ -4361,7 +4355,8 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        import json as _json
+        from leaguebot.core.services import audit_service
+
         if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
                 "\u274c The Results & Standings module is not enabled.", ephemeral=True
@@ -4404,22 +4399,16 @@ class SeasonCog(commands.Cog):
         old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
 
         # Audit log
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'VERDICTS_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": channel.id}),
-                    now,
-                ),
-            )
-            await db.commit()
+        await audit_service.record_change(
+            self.bot.db_path,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            change_type="VERDICTS_CHANNEL_SET",
+            old_value={"channel_id": old_id},
+            new_value={"channel_id": channel.id},
+            now=datetime.now(timezone.utc),
+            division_id=div.id,
+        )
 
         if old_id is None:
             msg = f"\u2705 Verdicts channel for {name} set to #{channel.name}."
@@ -4444,7 +4433,8 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        import json as _json
+        from leaguebot.core.services import audit_service
+
         if not await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "\u274c The Attendance module is not enabled.", ephemeral=True
@@ -4489,22 +4479,16 @@ class SeasonCog(commands.Cog):
 
         await self.bot.attendance_service.set_rsvp_channel(div.id, channel.id)
 
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'RSVP_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": channel.id}),
-                    now,
-                ),
-            )
-            await db.commit()
+        await audit_service.record_change(
+            self.bot.db_path,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            change_type="RSVP_CHANNEL_SET",
+            old_value={"channel_id": old_id},
+            new_value={"channel_id": channel.id},
+            now=datetime.now(timezone.utc),
+            division_id=div.id,
+        )
 
         if old_id is None:
             msg = f"\u2705 RSVP channel for {name} set to {channel.mention}."
@@ -4529,7 +4513,8 @@ class SeasonCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        import json as _json
+        from leaguebot.core.services import audit_service
+
         if not await self.bot.module_service.is_attendance_enabled():
             await interaction.response.send_message(
                 "\u274c The Attendance module is not enabled.", ephemeral=True
@@ -4574,22 +4559,16 @@ class SeasonCog(commands.Cog):
 
         await self.bot.attendance_service.set_attendance_channel(div.id, channel.id)
 
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'ATTENDANCE_CHANNEL_SET', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    _json.dumps({"channel_id": old_id}),
-                    _json.dumps({"channel_id": channel.id}),
-                    now,
-                ),
-            )
-            await db.commit()
+        await audit_service.record_change(
+            self.bot.db_path,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            change_type="ATTENDANCE_CHANNEL_SET",
+            old_value={"channel_id": old_id},
+            new_value={"channel_id": channel.id},
+            now=datetime.now(timezone.utc),
+            division_id=div.id,
+        )
 
         if old_id is None:
             msg = f"\u2705 Attendance channel for {name} set to {channel.mention}."

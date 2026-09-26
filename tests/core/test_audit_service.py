@@ -18,19 +18,11 @@ import inspect
 import json
 from datetime import datetime, timezone
 
-import pytest
-
 from leaguebot.core.db.database import get_connection, run_migrations
-
-_NO_AUDIT_SERVICE = pytest.mark.xfail(
-    strict=True, reason="#462: core has no audit_service.record_change yet"
-)
+from leaguebot.core.services.audit_service import record_change
 
 
-@_NO_AUDIT_SERVICE
 async def test_record_change_writes_one_row_as_the_commands_did(tmp_path):
-    from leaguebot.core.services.audit_service import record_change
-
     db_path = str(tmp_path / "audit.db")
     await run_migrations(db_path)
     now = datetime(2026, 9, 26, 18, 30, 5, tzinfo=timezone.utc)
@@ -65,11 +57,8 @@ async def test_record_change_writes_one_row_as_the_commands_did(tmp_path):
     ]
 
 
-@_NO_AUDIT_SERVICE
 def test_record_change_is_always_handed_the_time():
     """Keyword-only and with no default, so no caller can leave it to read the clock."""
-    from leaguebot.core.services.audit_service import record_change
-
     now = inspect.signature(record_change).parameters["now"]
     assert now.kind is inspect.Parameter.KEYWORD_ONLY
     assert now.default is inspect.Parameter.empty
