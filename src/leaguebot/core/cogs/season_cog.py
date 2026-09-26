@@ -4107,8 +4107,9 @@ class SeasonCog(commands.Cog):
         if message is None:
             return False
 
-        # Some of these commands defer and some do not, so the reply follows whichever
-        # state the interaction is already in — a fresh response after a defer is a 404.
+        # Both callers answer before any defer. The follow-up branch is kept as a guard for a
+        # later caller that defers first: a fresh response after a defer is a 404, so the
+        # reply follows whichever state the interaction is already in.
         if interaction.response.is_done():
             await interaction.followup.send(message, ephemeral=True)
         else:

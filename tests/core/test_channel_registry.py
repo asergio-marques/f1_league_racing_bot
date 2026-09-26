@@ -323,9 +323,10 @@ async def test_channel_refusal_holds_one_divisions_setting_against_another_s(db_
 # ── Core's own channel commands send it in the interaction's state ─────────
 #
 # `SeasonCog._refuse_channel_in_use` sends `channel_refusal`'s text for the channel commands core
-# keeps. Some channel commands defer and some do not, and a fresh response after a defer is a
-# 404, so the refusal asks which state the interaction is in rather than assume. Pinned in both
-# directions, because it is invisible until a manager meets it on the one command that defers.
+# keeps. Both answer before any defer today. A fresh response after a defer is a 404, so the
+# refusal asks which state the interaction is in rather than assume, a guard kept for a later
+# caller that defers first. Pinned in both directions, so the guard holds before any caller
+# comes to need it.
 
 
 def _season_cog(db_path):

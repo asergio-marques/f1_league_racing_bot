@@ -10,7 +10,8 @@ and each carries its own copy of the same forty lines, and copies drift.
 the channel-does-one-job guard runs before any write, and the assignment is audited and logged.
 Those are parametrised across both precisely so a divergence in one of them fails rather than
 passes quietly. Neither is gated on a module, and both reply directly rather than defer: they
-write two rows and answer.
+write two rows and answer. The refusal they share would still follow up after a defer, a guard
+kept for a later caller that defers, and `tests/core/test_channel_registry.py` pins it.
 
 **Where they once differed by accident** (issue #212, which #208 pinned rather than fixed). They
 wrote `old_value = ''` into the audit entry, so a reassignment could not be traced back. Both now
