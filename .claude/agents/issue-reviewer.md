@@ -61,7 +61,9 @@ You are given a drafted plan and the modules it touches. A module's design file 
 You are given the issue, the approved plan, the checks it passed, the base commit, and the earlier
 rounds' findings with what became of each. Read the branch as it stands at its tip:
 `git diff <base>...HEAD`, `git log <base>..HEAD`, and the files themselves. Your prompt says whether
-this is a round of the **tests stage** (only the failing tests are written) or of the **build**.
+this is a round of the **tests stage** (every change to `tests/` the work needs is made, and no
+production code is added) or of the **build**. A tests stage run again because the build stopped to
+ask for a test change finds the build's commits already on the branch: they are not its own.
 
 Check the branch against:
 
@@ -76,12 +78,22 @@ Check the branch against:
   a copy. A test that pins a date pins `now` as well. A test that constructs a view or a form is
   `async def`. No test relies on the host (the first item an index yields, installed fonts, `.env`).
   The `rasteriser` marker is used only where the test really rasterises. In the tests stage, each new
-  test is marked `xfail(strict=True)` with a reason naming the issue, and the tester's `--runxfail`
-  output shows it failing for the reason the plan gives. For code the plan has not written yet, an
-  `ImportError` or `AttributeError` is that reason, since such a test imports it inside its body; a
-  `NameError` from a typo, a missing fixture or a syntax error is not. The one exception is a test
-  the plan names as pinning behaviour already built, listed as already passing: it is unmarked, and
-  must pass.
+  or changed test that fails before the change is marked `xfail(strict=True)` with a reason naming
+  the issue, and the tester's `--runxfail` output shows it failing for the reason the plan gives. For
+  code the plan has not written yet, an `ImportError` or `AttributeError` is that reason, since such
+  a test imports it inside its body; a `NameError` from a typo, a missing fixture or a syntax error
+  is not. The one exception is a test listed as already passing: it is unmarked, and must pass.
+- **The list of test changes,** in the tests stage. The owner approves the tests from it at Gate 2,
+  before any code is written, so it must say what the tests do. The workflow holds the list to the
+  diff itself; you hold each entry to its code. Its scenario, its expectation and, for a modified
+  test, what it did before, say what the test's code sets up, does and asserts, and what it did at
+  the base. A description that claims what the code does not do, or leaves out what it asserts, is
+  material. Each supporting entry says what its code now does.
+- **The tests the owner approved,** in the build. The branch changes nothing under `tests/` after
+  them but the issue's markers, removed; the ratchet lines the plan names, deleted; and the imports
+  and patched paths a move of the plan's rewrites, binding and patching the same names.
+  A change to a ratchet list deletes only the lines the plan names. Any other test change the build
+  needs is proposed to the owner rather than made.
 - **CLAUDE.md's other rules** that a diff can break: British English in identifiers and prose, no
   `# type: ignore` in `src/`, a `cast` only where true by construction, `VERSION` untouched, no
   schema change outside the baseline before go-live.

@@ -62,8 +62,11 @@ Draft the plan. It must carry:
 
 1. **The root cause**, in a sentence, in terms of what a league sees.
 2. **The change**, file by file, with the functions touched.
-3. **The tests** — the named test that fails before the fix and passes after, plus any existing
-   test the change invalidates.
+3. **The tests** — every test to be added, modified or deleted, each with the scenario it tests:
+   the named tests that fail before the fix and pass after; each existing test the change alters,
+   whether its expectation or a call the change rewrites; and each the change makes obsolete. The
+   tests stage makes all of them, and the build may change no test after Gate 2, so a test left out
+   here stops the build later.
 4. **The commit points.** Name each one, and err well on the side of more.
 5. **The documents that need updating** — the owning wip-spec, `README.md`, the module's how-to
    guide — or a stated "none, this restores documented behaviour".
@@ -175,7 +178,12 @@ hand. Pass every stage the same arguments:
 - `criteria`: the plan's item 7, and `checks`: its item 8;
 - `decisions`: every answer the user has given on this issue, word for word, with its date. A
   spec change an answer calls for is written by the build, as a document owed;
-- `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on.
+- `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on;
+- `testsHead`: for the build, the commit at which the user last approved the tests at a Gate 2:
+  the last of the tests stage's `commits` then, in this pass or, where a pass after a rejection at
+  Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
+  branch at all. After a rebase it is that commit as the branch now carries it. From it the build
+  changes no test.
 
 **Leave the checkout alone while a stage runs:** its builder is working in it.
 
@@ -185,19 +193,34 @@ hand. Pass every stage the same arguments:
 Workflow({ name: "work-issue", args: { stage: "tests", ... } })
 ```
 
-The builder writes and commits only the tests the plan says fail before the fix, each marked
-`xfail(strict=True)` so that every commit stays green. A test the plan names as pinning behaviour
-already built, as after a rejection at Gate 3, is written unmarked, and the tester checks that it
-passes. The tester shows each test's real
-failure, and the product owner and the issue reviewer judge whether each fails for the right
-reason, and whether together they pin every spec rule the fix touches and everything a league
-should see. Skip the stage only where the approved plan names no test that fails before the fix,
-as for a pure move, and said so.
+The builder makes every change to `tests/` the work needs, and no production code: it adds the
+tests the plan says fail before the fix, changes the existing tests the fix alters, deletes those
+it makes obsolete, and changes the fixtures and helpers they need. Each test that fails before the
+fix is marked `xfail(strict=True)`, so that every commit stays green; one that passes already, as
+after a rejection at Gate 3, is left unmarked, and the tester checks that it passes. The ratchet
+lines the plan names are the one thing left to the build, which deletes each with its breach.
 
-When it returns `passed`, **Gate 2**: put the tests to the user through `AskUserQuestion`,
-with the product owner's `summary`, which says in plain terms what each test checks, and every
-rule it cited. The options are to approve them or to change them. A change goes into
-`decisions`, and the stage runs again with this result as `previous`.
+The builder lists every test it adds, modifies, deletes or moves, each with the scenario it sets
+up, what it expects, what it did before where it is modified, and why it goes where it is deleted;
+and every fixture, helper or value it changes, with what it now does. The tester runs
+`tools/changed_tests.py` against the branch, and the round is not green until the list matches it
+entry for entry. The tester shows each test's real failure, and the product owner and the issue
+reviewer judge whether each fails for the right reason, whether each entry says what its test
+does, and whether together they pin every spec rule the fix touches and everything a league should
+see. Skip the stage only where the approved plan changes no test at all, and said so.
+
+When it returns `passed`, **Gate 2**, which is shown in a file of its own:
+
+1. Write the result's `report`, word for word, to `.claude/gates/<N>-gate-2.md` in the main
+   checkout, replacing any earlier one. It lists every entry, labelled A1, M1, D1, MV1 and S1 on,
+   with its scenario, then the product owner's summary and every rule cited. Where the summary is
+   empty, get it as "What a stage returns" says and put it in place of the line that says so.
+2. Send the file to the user with `SendUserFile`.
+3. Ask through `AskUserQuestion`, naming the file and giving the result's `counts` ("15 added,
+   1 modified, 1 deleted, 0 moved; 6 supporting"). The options are to approve the tests or to
+   change them. A change goes into `decisions`, in the user's words, with the node id written
+   beside each label they name, and the stage runs again with this result as
+   `previous`. The file it writes next marks each entry new or changed since, and lists any gone.
 
 ### The build stage
 
@@ -214,6 +237,12 @@ repeat until nothing material is open, no question is, and the suite and mypy ar
 most three rounds a run. Tell the user it takes about ten agents for a fix that passes on its
 second round.
 
+**The build changes no test the user did not approve at Gate 2.** From `testsHead` it may remove the
+issue's markers, delete the ratchet lines the plan names, and rewrite the imports and patched
+paths that a move of the plan's rewrites; nothing else under `tests/`. The tester runs `tools/changed_tests.py` from `testsHead` each round, and any other
+change goes back to the builder to revert. A test change the build needs, including one a checker's
+finding calls for, is proposed in `testChanges`, and the stage stops for the user.
+
 ### What a stage returns
 
 - **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
@@ -225,6 +254,15 @@ second round.
   Every such dispute needs a ruling, or the stage refuses to run; a finding left as built is
   closed. `rulings` carries the last result's disputes and minor findings only, never an older
   run's. Where `failure` names the host as well, repair it before the stage runs again.
+- **`testChanges`**, on a `question` result from the build, are the test changes it needs and has
+  not made. Put each to the user through `AskUserQuestion`, in the question itself: the test, the
+  change, its scenario, what it expects, and why the build needs it. The options are to make it, to
+  change it, or to refuse it and build without it. Record each answer in `decisions`, answer any
+  `escalations` beside them, and then:
+  - where one is to be made, run the **tests stage** again with its own last result as `previous`,
+    to make it; hold Gate 2 again on the file it writes, where the new entries are marked; and then
+    run the build again with its last result as `previous` and the new `testsHead`;
+  - where every one is refused, run the build again with its last result as `previous`.
 - **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
   with `openMaterial` and `lastFailures`. A finding there that the user once wanted made, though
   it was found minor, can still be left: pass it as `"leave"` in `rulings`.
@@ -239,7 +277,7 @@ second round.
   leave are passed as `"leave"`. Nothing is fixed by hand, however small.
 - **An empty `summary`** on a `passed` result means the product owner left it out twice. Ask a
   `product-owner` agent for it through the `Agent` tool, with the branch and the criteria, before
-  the gate.
+  the gate. At Gate 2, give it the result's `tests` with their labels, and have it cite them.
 
 A checker that returned nothing is never read as a pass: the stage cannot pass without it.
 

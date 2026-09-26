@@ -237,6 +237,12 @@ poc/
 # meant to be shared. `.claude/settings.json` is the shared one.
 .claude/settings.local.json
 
+# The Gate 2 reports the `fix-issue` and `fix-issues` skills write for the owner: every test an
+# issue's work changes, with the scenario each one tests, rewritten each time the gate is held.
+# They belong to one working session and describe a branch that is not yet reviewed, so nothing
+# in them is worth keeping in the history.
+.claude/gates/
+
 # Data generator output — regenerated on every run, never committed
 tools/data-generator/roster.csv
 tools/data-generator/roster_old.csv

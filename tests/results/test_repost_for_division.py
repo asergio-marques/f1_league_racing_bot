@@ -323,7 +323,7 @@ async def test_a_round_with_no_results_at_all_is_skipped(tmp_path):
     assert [call.args[6] for call in post.await_args_list] == [1]
 
 
-async def test_each_round_is_labelled_by_its_own_status(tmp_path):
+async def test_each_round_s_results_are_labelled_by_its_own_status(tmp_path):
     """A round still awaiting verdicts is provisional and a finalised one is not; a sync
     labelling a whole season "Final Results" would tell a league that rounds under appeal
     are settled."""
