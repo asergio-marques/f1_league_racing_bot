@@ -358,25 +358,46 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 # The three things that stay open
 # ---------------------------------------------------------------------------
 
-async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path):
+#: Each module channel command, the service holding the setter it reaches, and that setter.
+#: The cog is named with each so that the command can follow its code to another one.
+MODULE_CHANNEL_COMMANDS = {
+    "weather": (SeasonCog, "division_weather_channel", "season_service", "set_division_forecast_channel"),
+    "results": (SeasonCog, "division_results_channel", "season_service", "set_division_results_channel"),
+    "standings": (SeasonCog, "division_standings_channel", "season_service", "set_division_standings_channel"),
+    "verdicts": (SeasonCog, "division_verdicts_channel", "season_service", "set_division_penalty_channel"),
+    "rsvp": (SeasonCog, "division_rsvp_channel", "attendance_service", "set_rsvp_channel"),
+    "attendance": (SeasonCog, "division_attendance_channel", "attendance_service", "set_attendance_channel"),
+}
+
+
+@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
+async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
-    channels, so one deleted before completion has to be repointed.
+    channels, so one deleted before completion has to be repointed. Each of the six, not one
+    for all: they do not share a body.
     """
+    cog_class, command, service, setter = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = _bot(db_path, SeasonStage.PENDING_COMPLETION)
-    bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
-    cog = _cog(SeasonCog, bot)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    bot.attendance_service = MagicMock()
+    bot.attendance_service.get_division_config = AsyncMock(return_value=None)
+    setattr(getattr(bot, service), setter, AsyncMock(return_value=None))
+    cog = _cog(cog_class, bot)
     interaction = _interaction()
-    channel = MagicMock(id=808, mention="<#808>", name="standings")
+    channel = MagicMock(id=808, mention="<#808>")
+    channel.name = which
+    channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=True))
 
     with patch(
         "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
-        await cog._set_division_channel(interaction, "Pro", channel, "standings")
+        await undecorate(getattr(cog_class, command))(cog, interaction, "Pro", channel)
 
     said = _said(interaction)
     assert "✅" in said, said
-    bot.season_service.set_division_standings_channel.assert_awaited_once()
+    assert "❌" not in said, said
+    getattr(getattr(bot, service), setter).assert_awaited_once()
 
 
 async def test_round_results_amend_is_not_turned_away_by_the_stage(tmp_path):
