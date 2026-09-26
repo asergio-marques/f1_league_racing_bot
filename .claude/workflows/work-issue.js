@@ -11,6 +11,10 @@ export const meta = {
   ],
 }
 
+// The control flow below is checked with every agent replaced by a stand-in, by
+// tests/repository/test_work_issue_workflow.py and the scenarios in
+// tests/repository/work_issue_workflow/. A change to the loop carries the scenario that pins it.
+
 // The invoking runtime may hand args over as a JSON string; accept both.
 const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
 
