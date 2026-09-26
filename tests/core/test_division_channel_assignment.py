@@ -1,8 +1,8 @@
 """Assigning a division's output channels, and the rule that a channel does one job.
 
 Issue #208. `season_cog.py` is the largest file in the bot and was at 44.1%. This file takes
-`_set_division_channel` and the guard beneath it — the path every `/division …-channel` command
-goes through.
+`_set_division_channel` and the guard beneath it — the path three of the `/division …-channel`
+commands go through.
 
 **A channel serves one purpose across the whole server** (decided 2026-09-06). Two settings
 sharing one channel interleave two kinds of posting, and several posting paths edit or delete
@@ -19,12 +19,8 @@ collapsing the two messages would lose it.
 
 **The same-value case used to be written and only then reported as unchanged.** The guard
 running first is what fixed that, and `test_a_refused_assignment_writes_nothing` holds it
-against a later reader who moves the check after the upsert for tidiness.
-
-**The reply follows whichever state the interaction is already in.** Some of these commands
-defer and some do not, and a fresh response after a defer is a 404 — so the refusal has to ask
-rather than assume. That is pinned in both directions, because it is invisible until a manager
-meets it on the one command that defers.
+against a later reader who moves the check after the upsert for tidiness. The refusal's own
+rule, and the state of the interaction it is sent in, are pinned in `test_channel_registry.py`.
 """
 from __future__ import annotations
 
@@ -313,55 +309,6 @@ async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, chann
     await cog._set_division_channel(interaction, "Division 1", _channel(), channel_type)
 
     assert "updated to" in _replied(interaction)
-
-
-# ---------------------------------------------------------------------------
-# Replying in whichever state the interaction is in
-# ---------------------------------------------------------------------------
-
-
-async def test_a_refusal_before_a_defer_answers_the_interaction(tmp_path, monkeypatch):
-    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction(done=False)
-
-    await cog._refuse_channel_in_use(
-        interaction, _channel(), "weather", division_name="Division 1"
-    )
-
-    interaction.response.send_message.assert_awaited_once()
-    interaction.followup.send.assert_not_awaited()
-
-
-async def test_a_refusal_after_a_defer_follows_up_instead(tmp_path, monkeypatch):
-    """A fresh response after a defer is a 404, so the refusal asks rather than assumes.
-    Invisible until a manager meets it on the one command that defers."""
-    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction(done=True)
-
-    await cog._refuse_channel_in_use(
-        interaction, _channel(), "weather", division_name="Division 1"
-    )
-
-    interaction.followup.send.assert_awaited_once()
-    interaction.response.send_message.assert_not_awaited()
-
-
-async def test_a_free_channel_reports_no_use(tmp_path, monkeypatch):
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    refused = await cog._refuse_channel_in_use(
-        interaction, _channel(), "weather", division_name="Division 1"
-    )
-
-    assert refused is False
-    assert _replied(interaction) == ""
 
 
 # ---------------------------------------------------------------------------

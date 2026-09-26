@@ -19,15 +19,17 @@ import ast
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.channel_registry_service import (
     SETTING_LABELS,
     ChannelUse,
     as_text_channel,
+    channel_refusal,
     find_channel_use,
     refusal,
 )
@@ -264,19 +266,12 @@ def test_every_setting_has_a_label_a_league_would_recognise():
 # refusal rather than sending it, so a module's command sends it in whichever state its own
 # interaction is in.
 
-_NO_CHANNEL_REFUSAL = pytest.mark.xfail(
-    strict=True, reason="#462: channel_registry_service has no channel_refusal yet"
-)
-
 
 def _text_channel(channel_id: int):
     return SimpleNamespace(id=channel_id, mention=f"<#{channel_id}>")
 
 
-@_NO_CHANNEL_REFUSAL
 async def test_channel_refusal_passes_a_free_channel(db_path):
-    from leaguebot.core.services.channel_registry_service import channel_refusal
-
     season_id = await _season(db_path)
     await _division(db_path, season_id, "Pro")
 
@@ -285,11 +280,8 @@ async def test_channel_refusal_passes_a_free_channel(db_path):
     ) is None
 
 
-@_NO_CHANNEL_REFUSAL
 async def test_channel_refusal_names_what_already_holds_the_channel(db_path):
     """A channel does one job, across the whole server."""
-    from leaguebot.core.services.channel_registry_service import channel_refusal
-
     season_id = await _season(db_path)
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=pro)
@@ -301,11 +293,8 @@ async def test_channel_refusal_names_what_already_holds_the_channel(db_path):
     assert message == refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False)
 
 
-@_NO_CHANNEL_REFUSAL
 async def test_channel_refusal_says_the_setting_already_holds_it_in_its_own_words(db_path):
     """Re-running a command with the value it already holds is refused, and is not a clash."""
-    from leaguebot.core.services.channel_registry_service import channel_refusal
-
     season_id = await _season(db_path)
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "weather", 500, division_id=pro)
@@ -317,11 +306,8 @@ async def test_channel_refusal_says_the_setting_already_holds_it_in_its_own_word
     assert message == refusal("<#500>", ChannelUse("weather", "Pro"), same_setting=True)
 
 
-@_NO_CHANNEL_REFUSAL
 async def test_channel_refusal_holds_one_divisions_setting_against_another_s(db_path):
     """The same setting in another division is a clash, not the value already held."""
-    from leaguebot.core.services.channel_registry_service import channel_refusal
-
     season_id = await _season(db_path)
     pro = await _division(db_path, season_id, "Pro")
     await _division(db_path, season_id, "Academy")
@@ -332,6 +318,76 @@ async def test_channel_refusal_holds_one_divisions_setting_against_another_s(db_
     )
 
     assert message == refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False)
+
+
+# ── Core's own channel commands send it in the interaction's state ─────────
+#
+# `SeasonCog._refuse_channel_in_use` sends `channel_refusal`'s text for the channel commands core
+# keeps. Some channel commands defer and some do not, and a fresh response after a defer is a
+# 404, so the refusal asks which state the interaction is in rather than assume. Pinned in both
+# directions, because it is invisible until a manager meets it on the one command that defers.
+
+
+def _season_cog(db_path):
+    cog = SeasonCog.__new__(SeasonCog)
+    cog.bot = SimpleNamespace(db_path=db_path)
+    return cog
+
+
+def _interaction(*, done: bool):
+    interaction = MagicMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.response.is_done = MagicMock(return_value=done)
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def test_a_refusal_before_a_defer_answers_the_interaction(db_path):
+    season_id = await _season(db_path)
+    pro = await _division(db_path, season_id, "Pro")
+    await _set(db_path, "results", 500, division_id=pro)
+    interaction = _interaction(done=False)
+
+    refused = await _season_cog(db_path)._refuse_channel_in_use(
+        interaction, _text_channel(500), "lineup", division_name="Pro"
+    )
+
+    assert refused is True
+    interaction.response.send_message.assert_awaited_once_with(
+        refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False), ephemeral=True
+    )
+    interaction.followup.send.assert_not_awaited()
+
+
+async def test_a_refusal_after_a_defer_follows_up_instead(db_path):
+    season_id = await _season(db_path)
+    pro = await _division(db_path, season_id, "Pro")
+    await _set(db_path, "results", 500, division_id=pro)
+    interaction = _interaction(done=True)
+
+    refused = await _season_cog(db_path)._refuse_channel_in_use(
+        interaction, _text_channel(500), "lineup", division_name="Pro"
+    )
+
+    assert refused is True
+    interaction.followup.send.assert_awaited_once_with(
+        refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False), ephemeral=True
+    )
+    interaction.response.send_message.assert_not_awaited()
+
+
+async def test_a_free_channel_is_not_refused(db_path):
+    season_id = await _season(db_path)
+    await _division(db_path, season_id, "Pro")
+    interaction = _interaction(done=False)
+
+    refused = await _season_cog(db_path)._refuse_channel_in_use(
+        interaction, _text_channel(500), "lineup", division_name="Pro"
+    )
+
+    assert refused is False
+    interaction.response.send_message.assert_not_awaited()
+    interaction.followup.send.assert_not_awaited()
 
 
 # ── The hub (issue #279) ──────────────────────────────────────────────────

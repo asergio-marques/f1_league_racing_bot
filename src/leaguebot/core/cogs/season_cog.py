@@ -4193,28 +4193,20 @@ class SeasonCog(commands.Cog):
         A channel serves one purpose across the whole server (decided 2026-09-06): two
         settings sharing one interleave two kinds of posting, and several posting paths
         edit or delete their last message by an id stored against the channel, so sharing
-        is how one output comes to delete another's.
-
-        Re-running a command with the value it already holds is refused too, and says so
-        in its own words — it is not a collision with something else, and reporting it as
-        one would send a manager looking for a conflict that does not exist.
+        is how one output comes to delete another's. The rule, and the words for the value
+        the setting already holds, are `channel_refusal`'s; this sends its refusal for the
+        channel commands of this cog.
         """
-        from leaguebot.core.services.channel_registry_service import (
-            ChannelUse,
-            find_channel_use,
-            refusal,
-        )
+        from leaguebot.core.services.channel_registry_service import channel_refusal
 
-        mine = ChannelUse(setting, division_name)
-        use = await find_channel_use(
-            self.bot.db_path, channel.id
+        message = await channel_refusal(
+            self.bot.db_path, channel, setting, division_name=division_name
         )
-        if use is None:
+        if message is None:
             return False
 
         # Some of these commands defer and some do not, so the reply follows whichever
         # state the interaction is already in — a fresh response after a defer is a 404.
-        message = refusal(channel.mention, use, same_setting=(use == mine))
         if interaction.response.is_done():
             await interaction.followup.send(message, ephemeral=True)
         else:

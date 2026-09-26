@@ -29,6 +29,7 @@ from leaguebot.core.db.database import get_connection
 __all__ = [
     "ChannelUse",
     "as_text_channel",
+    "channel_refusal",
     "find_channel_use",
     "SETTING_LABELS",
     "DIVISION_SOURCES",
@@ -171,6 +172,34 @@ def refusal(channel_mention: str, use: ChannelUse, *, same_setting: bool) -> str
         f"❌ {channel_mention} is already the {use.describe()}. "
         f"A channel does one job — pick one that is not in use, or clear the other "
         f"setting first."
+    )
+
+
+async def channel_refusal(
+    db_path: str,
+    channel: discord.TextChannel,
+    setting: str,
+    *,
+    division_name: str | None = None,
+) -> str | None:
+    """Why *channel* may not become *setting*, or None where nothing already holds it.
+
+    What every channel command checks before it writes, so that a refusal leaves the
+    configuration exactly as it stood. *setting* is a key of :data:`SETTING_LABELS`, and
+    *division_name* the division the command sets it for, None for a server setting. The
+    channel already holding that same setting is refused in :func:`refusal`'s own words for
+    it, not as a clash.
+
+    **Returned rather than sent.** Some channel commands defer and some do not, and a fresh
+    response after a defer is a 404, so each command sends the refusal in whichever state
+    its own interaction is in. A module's command reaches this rule here, in core's service,
+    rather than through core's cog.
+    """
+    use = await find_channel_use(db_path, channel.id)
+    if use is None:
+        return None
+    return refusal(
+        channel.mention, use, same_setting=(use == ChannelUse(setting, division_name))
     )
 
 
