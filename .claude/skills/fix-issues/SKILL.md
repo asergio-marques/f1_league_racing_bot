@@ -1,6 +1,6 @@
 ---
 name: "fix-issues"
-description: "Work several tracked issues in parallel, one branch and one pull request each, chosen by severity label rather than by number. Analysis runs concurrently in isolated worktrees; every plan and every question still reaches the user, and the test suite still runs one session at a time. Invoke when the user names a severity — Critical, High, Medium or Low — rather than an issue number."
+description: "Work several tracked issues in parallel, one branch and one pull request each, chosen by severity label rather than by number. Analysis runs concurrently in isolated worktrees, and each issue is checked and built through the work-issue workflow; every plan, every gate and every question still reaches the user, and the test suite still runs one session at a time. Invoke when the user names a severity — Critical, High, Medium or Low — rather than an issue number."
 argument-hint: "One or more severity labels, e.g. High, or Critical High"
 user-invocable: true
 disable-model-invocation: false
@@ -15,8 +15,9 @@ request**.
 `$ARGUMENTS` holds one or more of `Critical`, `High`, `Medium`, `Low`, in any case and any order. If
 none was given, ask which severity to work — do not guess, and do not fall back to "the most urgent".
 
-This skill orchestrates. The per-issue work is [`fix-issue`](../fix-issue/SKILL.md) and its six
-phases are followed as written, except where a subagent cannot follow them — each such deviation is
+This skill orchestrates. The per-issue work is [`fix-issue`](../fix-issue/SKILL.md) and its
+phases are followed as written, the `work-issue` workflow and its gates included, except where a
+subagent cannot follow them — each such deviation is
 named below, with its reason, at the point it applies. `CLAUDE.md` governs the work itself: British
 English, testing, the documentation layout. Neither document is restated here.
 
@@ -135,19 +136,28 @@ something that was never built. Ask instead: is it already built, is it still wa
 the owning wip-spec say about it — bearing in mind that where a wip-spec and the implementation
 disagree, the implementation wins.
 
-The report must carry `fix-issue` Phase 3's six items in full: the root cause in terms of what a
-league sees, the change file by file, the named test that fails before and passes after, the commit
-points, the documents owed, and the proposed branch name. Anything less goes back to the agent
-before it reaches the user.
+The report must carry `fix-issue` Phase 3's first six items in full: the root cause in terms of
+what a league sees, the change file by file, the named test that fails before and passes after,
+the commit points, the documents owed, and the proposed branch name. Anything less goes back to the
+agent before it reaches the user. Items 7 and 8 come from the check in Stage 2, not from the agent.
 
 An agent that finds the defect does not reproduce returns that finding and its evidence instead of a
 plan. That is a success, not a failure.
 
-## Stage 2 — Review, one at a time, through the user
+## Stage 2 — Check, then review, one at a time, through the user
 
-Bring each returned plan to the user in plan mode, singly. Bring each question through
-`AskUserQuestion`. Relay the answers to the owning agent with `SendMessage`, which resumes it with
-its analysis intact — a fresh `Agent` call would start cold and re-read everything.
+**Check each returned plan before the user sees it**, through the `work-issue` workflow's check
+stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
+product owner's questions to the user first, and items 7 and 8 added to the plan from its result.
+Keep each check's result for the issue's build. Run the checks one at a time, as the plans come
+back: each is three read-only agents, and the Pi runs two at once.
+
+Bring each checked plan to the user in plan mode, singly: that is its Gate 1. Bring each question
+through `AskUserQuestion`. Relay the answers to the owning agent with `SendMessage`, which resumes
+it with its analysis intact — a fresh `Agent` call would start cold and re-read everything.
+
+**Every plan passes Gate 1 before any issue's tests or build start.** Plan mode reaches every
+running agent, a workflow's builders included, and halts them mid-edit.
 
 Nothing here is inferred. A reply that changes the subject is not approval, and an agent waits until
 its own plan is answered. A plan the user rejects ends that agent; a plan they amend goes back for
@@ -174,20 +184,42 @@ stop — do not assign, do not create a branch, do not switch account.
 `gh issue develop` is that the branch is created **through GitHub and linked to the issue**; a branch
 created locally and pushed is not linked. That linkage happens with or without `--checkout`. What
 `--checkout` would additionally do is move the main checkout's `HEAD` — which belongs to the user,
-may hold other work, and would then own the branch the agent's worktree needs, since git permits one
-checkout of a branch at a time. The agent takes it up in its own worktree instead:
-
-```bash
-git fetch origin && git checkout <approved-branch-name>
-```
+may hold other work, and would then own the branch the build's worktree needs, since git permits one
+checkout of a branch at a time.
 
 If the link is missing, do not carry on down an unlinked branch — say so and stop that issue.
 
-## Stage 4 — Build: parallel edits, one test run at a time
+**Once the link is confirmed, make the build's worktree by hand**, from the main checkout:
 
-Agents implement their approved plans concurrently and commit at the points their plans named.
+```bash
+git fetch origin
+git worktree add .claude/worktrees/fix-<N> <approved-branch-name>
+```
 
-**Stage every path by name. `git add -A`, `git add .` and `git commit -a` are forbidden in this
+The analysis agent's own worktree is gone by now: an isolated worktree its agent left unchanged is
+removed as soon as the agent stops. This one takes up the branch `gh issue develop` created, as a
+local branch tracking it, and leaves the user's `HEAD` alone. Its absolute path is the `worktree`
+handed to the workflow, and `git -C <worktree> rev-parse HEAD`, taken now, before anything is
+committed, is the `base`: never `git merge-base` from the main checkout, whose `HEAD` is the user's.
+After a rebase onto `origin/main`, it is `git -C <worktree> merge-base HEAD origin/main`.
+
+## Stage 4 — Build: through the workflow, one test run at a time
+
+**Each issue is built by the `work-issue` workflow, exactly as `fix-issue` Phase 5 builds one**:
+the tests stage, Gate 2, the build stage and Gate 3, with the arguments listed there. The
+`worktree` is the issue's own `.claude/worktrees/fix-<N>`, by absolute path; the `python` is the
+main checkout's `.venv/bin/python`; and `criteria` and `checks` come from its Stage 2 check. The
+issues' runs go on concurrently, one run per issue at a time. Tell the user each build takes about
+ten agents, and that the Pi runs two of a workflow's agents at once.
+
+**Every gate and every question goes to the user through `AskUserQuestion`, one issue at a
+time,** never through plan mode, which would halt every other issue's build. A rejection at Gate 3,
+or an answer that amends a plan, sends that issue back to the Stage 2 check. Its amended plan
+waits for plan mode until no build is running.
+
+The workflow's builders and testers keep two rules the whole batch depends on.
+
+**Every path is staged by name. `git add -A`, `git add .` and `git commit -a` are forbidden in this
 workflow** (decided 2026-09-17). Three separate things here are ignored or untracked and a blanket
 stage sweeps up all of them: the league's own artwork under `resources/league/`, the worktrees under
 `.claude/worktrees/` — each a full checkout carrying its own `.git`, which commits as a bare gitlink
@@ -204,19 +236,26 @@ git add src/leaguebot/core/services/driver_service.py tests/core/test_driver_ser
 every path it is committing does not yet know what it changed.
 
 **Every pytest invocation is wrapped in the lock**, targeted subsets while iterating as much as the
-full run at the end:
+full run at the end. The workflow starts each one detached and waits on its process, since one
+shell call is cut off after ten minutes and a wait for the lock can outlast that; run your own
+close-out runs the same way:
 
 ```bash
-flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q
+cd <worktree> && rm -f LOG LOG.exit && nohup bash -c 'flock -E 75 -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
+timeout 540 tail --pid=<that pid> -f /dev/null; cat LOG.exit 2>/dev/null || echo still running
 ```
+
+LOG is a file under `/tmp` named for the run, and the first line clears it and its exit file, so
+that an earlier run's exit code is never read as this one's. The second line is repeated until the
+exit code appears; 75 is flock giving up on the lock.
 
 The interpreter is the main checkout's virtualenv, which carries the pins, and `PYTHONPATH=src` makes
 it test the worktree's own code rather than the checkout it was installed from (CLAUDE.md, Testing).
 
 This is the whole mechanism by which "never run two pytest sessions at once" survives having several
 agents at work. An agent waits for the lock; it does not skip the run, and it does not open a second
-terminal. The timeout is an hour because the full suite takes about eight minutes and an agent may
-be behind two others.
+terminal. The timeout is an hour because a builder or tester may be waiting behind two other issues'
+full runs.
 
 Scratch stays on `/tmp` deliberately. Serialising means only one run's `tmp_path` trees exist at a
 time, which is what the tmpfs has room for; pointing `TMPDIR` at the SD card instead would trade a
@@ -224,7 +263,8 @@ solved problem for a slower one on a disk that is already near full.
 
 **An image-module issue cannot be finished in a worktree.** `resources/league/` holds the league's
 own artwork — around 1,400 files — and all but nine `.gitkeep` files are gitignored, so a fresh
-worktree has the empty skeleton. CI has no artwork either and the suite is green there, so an
+worktree has the empty skeleton. The build's suite includes the `rasteriser` tests wherever Inkscape
+is installed, and in a worktree they run on that skeleton. CI has no artwork either and the suite is green there, so an
 ordinary run in a worktree is sound, given `PYTHONPATH=src` so that it tests the worktree's own code
 rather than the checkout the shared virtualenv was installed from (CLAUDE.md, Testing). A `-m rasteriser` run is not: it would pass without ever
 touching the assets whose rendering it claims to check. Run the rasteriser marker by hand in the main
@@ -232,9 +272,11 @@ checkout, where the artwork lives, and verify its output as PNG rather than as S
 
 ## Stage 5 — Close out, and deliver
 
-Each agent invokes the `close-out` skill for its own issue, in its own worktree, before reporting
-that issue complete. It is mandatory per issue — one batch-wide close-out at the end would not know
-what each branch changed.
+**You run the `close-out` skill for each issue**, in that issue's worktree, once the user has
+accepted it at Gate 3, and one issue at a time: its suite runs go behind the lock like any other.
+It is mandatory per issue — one batch-wide close-out at the end would not know what each branch
+changed. It is yours rather than a subagent's because you alone hold the user's answers, and
+close-out writes each one into the wip-spec, as `fix-issue` Phase 6 says.
 
 **Push and open the pull request only on the user's explicit yes**, one pull request per issue,
 closing its number. **Label each as it is opened**, from its own issue: one work type, one severity
