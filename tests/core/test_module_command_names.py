@@ -7,10 +7,10 @@ subcommand to the cog that declares its group, so a module command left under `/
 Eight were, and this is the register of where each went.
 
 **Only the names change.** A moved command keeps its description and every parameter — its
-name, description, type, whether it is required and the choices it offers — so what a manager
-types after the command is what they typed before. Those are pinned here against the words the
-command carried under its old name, because once it has moved there is nothing left to compare
-it with.
+name, description, type, whether it is required, the choices it offers and the kinds of channel
+it accepts — so what a manager types after the command is what they typed before. Those are
+pinned here against the words the command carried under its old name, because once it has moved
+there is nothing left to compare it with.
 
 **Core keeps its own two.** `/division lineup-channel` and `/division calendar-channel` set the
 channels every season posts to whatever modules are on, so they stay under `/division`.
@@ -42,14 +42,22 @@ class Moved:
     new: str
     cog: type
     description: str
-    #: Each parameter as (name, description, type, required, choices as (name, value)).
-    parameters: tuple[tuple[str, str, str, bool, tuple[tuple[str, str], ...]], ...]
+    #: Each parameter as (name, description, type, required, choices as (name, value), the
+    #: channel kinds it accepts, sorted by name).
+    parameters: tuple[
+        tuple[str, str, str, bool, tuple[tuple[str, str], ...], tuple[str, ...]], ...
+    ]
+
+
+#: What a `discord.TextChannel` parameter accepts: text and announcement channels, never a voice
+#: channel, a thread or a category.
+TEXT_CHANNEL_KINDS: tuple[str, ...] = ("news", "text")
 
 
 def _channel_parameters(channel_description: str):
     return (
-        ("name", "Division name", "string", True, ()),
-        ("channel", channel_description, "channel", True, ()),
+        ("name", "Division name", "string", True, (), ()),
+        ("channel", channel_description, "channel", True, (), TEXT_CHANNEL_KINDS),
     )
 
 
@@ -102,8 +110,8 @@ MOVED: tuple[Moved, ...] = (
         ResultsCog,
         "Re-submit results for one session of a completed round.",
         (
-            ("division_name", "Division name", "string", True, ()),
-            ("round_number", "Round number", "integer", True, ()),
+            ("division_name", "Division name", "string", True, (), ()),
+            ("round_number", "Round number", "integer", True, (), ()),
             (
                 "session",
                 "Session to amend (if omitted, bot will ask)",
@@ -115,6 +123,7 @@ MOVED: tuple[Moved, ...] = (
                     ("Feature Qualifying", "FEATURE_QUALIFYING"),
                     ("Feature Race", "FEATURE_RACE"),
                 ),
+                (),
             ),
         ),
     ),
@@ -123,7 +132,16 @@ MOVED: tuple[Moved, ...] = (
         "attendance test rsvp",
         AttendanceCog,
         "Bulk-set RSVP statuses for test drivers in a division via a modal.",
-        (("division", "Division name whose active RSVP round to update.", "string", True, ()),),
+        (
+            (
+                "division",
+                "Division name whose active RSVP round to update.",
+                "string",
+                True,
+                (),
+                (),
+            ),
+        ),
     ),
 )
 
@@ -202,6 +220,7 @@ def test_each_moved_command_answers_to_its_new_name(new):
             parameter.type.name,
             parameter.required,
             tuple((choice.name, choice.value) for choice in parameter.choices),
+            tuple(sorted(kind.name for kind in parameter.channel_types)),
         )
         for parameter in command.parameters
     ) == moved.parameters
