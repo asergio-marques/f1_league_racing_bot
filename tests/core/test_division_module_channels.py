@@ -1,8 +1,8 @@
 """The four per-module division channel commands, and where they have diverged.
 
-Issue #208. `/division weather-channel`, `results-channel`, `standings-channel` and
-`verdicts-channel` share one body, `_set_division_channel`, covered by
-`test_division_channel_assignment.py`. These five — `rsvp-channel`, `attendance-channel`,
+Issue #208. `/division results-channel` and `standings-channel` share one body,
+`_set_division_channel`, covered by `tests/results/test_results_channel_commands.py`, and
+`/weather channel` is covered in `tests/weather/`. These five — `rsvp-channel`, `attendance-channel`,
 `verdicts-channel`, `lineup-channel` and `calendar-channel` — do not. Each carries its own copy
 of the same forty lines, and copies drift.
 

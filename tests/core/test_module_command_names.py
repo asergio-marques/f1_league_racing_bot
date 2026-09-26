@@ -184,7 +184,23 @@ def _declared() -> dict[str, tuple[type, app_commands.Command | app_commands.Gro
 DECLARED = _declared()
 
 
+#: What #462 has still to move, by its old name and its new, and the groups it has still to
+#: empty: each is expected to fail until it has. It shrinks as each command moves.
+_NOT_YET_MOVED: frozenset[str] = frozenset({
+    "division results-channel", "results channel results",
+    "division standings-channel", "results channel standings",
+    "division verdicts-channel", "results channel verdicts",
+    "division rsvp-channel", "attendance channel rsvp",
+    "division attendance-channel", "attendance channel attendance",
+    "round results amend", "results rounds amend",
+    "test-mode rsvp set-status", "attendance test rsvp",
+    "round results", "test-mode rsvp",
+})
+
+
 def _until_moved(value: str, what: str):
+    if value not in _NOT_YET_MOVED:
+        return value
     return pytest.param(
         value,
         id=value,

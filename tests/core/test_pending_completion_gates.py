@@ -32,6 +32,7 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.cogs.team_cog import TeamCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
+from leaguebot.weather.cogs.weather_cog import WeatherCog
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22400
@@ -361,7 +362,7 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 #: Each module channel command, the service holding the setter it reaches, and that setter.
 #: The cog is named with each so that the command can follow its code to another one.
 MODULE_CHANNEL_COMMANDS = {
-    "weather": (SeasonCog, "division_weather_channel", "season_service", "set_division_forecast_channel"),
+    "weather": (WeatherCog, "channel", "season_service", "set_division_forecast_channel"),
     "results": (SeasonCog, "division_results_channel", "season_service", "set_division_results_channel"),
     "standings": (SeasonCog, "division_standings_channel", "season_service", "set_division_standings_channel"),
     "verdicts": (SeasonCog, "division_verdicts_channel", "season_service", "set_division_penalty_channel"),

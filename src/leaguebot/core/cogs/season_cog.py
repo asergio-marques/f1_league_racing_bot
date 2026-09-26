@@ -2448,7 +2448,7 @@ class SeasonCog(commands.Cog):
     _DIVISION_CHANNELS = (
         ("lineup_channel_id", "lineup channel", "/division lineup-channel", None),
         ("calendar_channel_id", "calendar channel", "/division calendar-channel", None),
-        ("forecast_channel_id", "weather channel", "/division weather-channel", "weather"),
+        ("forecast_channel_id", "weather channel", "/weather channel", "weather"),
         ("results_channel_id", "results channel", "/division results-channel", "results"),
         ("standings_channel_id", "standings channel", "/division standings-channel", "results"),
         ("penalty_channel_id", "verdicts channel", "/division verdicts-channel", "results"),
@@ -4177,7 +4177,7 @@ class SeasonCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # Division channel assignment (shared helper + 3 commands)
+    # Division channel assignment (shared helper + 2 commands)
     # ------------------------------------------------------------------
 
     async def _refuse_channel_in_use(
@@ -4218,7 +4218,7 @@ class SeasonCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
         channel: discord.TextChannel,
-        channel_type: str,  # "weather" | "results" | "standings"
+        channel_type: str,  # "results" | "standings"
     ) -> None:
         from leaguebot.core.services import audit_service
 
@@ -4250,10 +4250,7 @@ class SeasonCog(commands.Cog):
             return
 
         # 4. Upsert channel + get old value (for the audit entry)
-        if channel_type == "weather":
-            old_id = await self.bot.season_service.set_division_forecast_channel(div.id, channel.id)
-            type_label = "Weather forecast"
-        elif channel_type == "results":
+        if channel_type == "results":
             old_id = await self.bot.season_service.set_division_results_channel(div.id, channel.id)
             type_label = "Results"
         else:
@@ -4285,25 +4282,6 @@ class SeasonCog(commands.Cog):
             f"  division: {name}\n"
             f"  channel: #{channel.name}",
         )
-
-    @division.command(
-        name="weather-channel",
-        description="Set the weather forecast channel for a division.",
-    )
-    @app_commands.describe(name="Division name", channel="Weather forecast channel")
-    @league_manager_only
-    async def division_weather_channel(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-    ) -> None:
-        if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "\u274c The Weather module is not enabled.", ephemeral=True
-            )
-            return
-        await self._set_division_channel(interaction, name, channel, "weather")
 
     @division.command(
         name="results-channel",

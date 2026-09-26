@@ -1,7 +1,7 @@
 """Assigning a division's output channels, and the rule that a channel does one job.
 
 Issue #208. `season_cog.py` is the largest file in the bot and was at 44.1%. This file takes
-`_set_division_channel` and the guard beneath it — the path three of the `/division …-channel`
+`_set_division_channel` and the guard beneath it — the path the results and standings channel
 commands go through.
 
 **A channel serves one purpose across the whole server** (decided 2026-09-06). Two settings
@@ -89,7 +89,6 @@ def _make_cog(
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
-    bot.season_service.set_division_forecast_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_results_channel = AsyncMock(return_value=None)
     bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
     bot.output_router = MagicMock()
@@ -170,7 +169,7 @@ async def test_the_live_season_is_the_one_whose_channels_are_set(tmp_path, monke
     )
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
+    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
     cog.bot.season_service.get_setup_or_active_season.assert_awaited_once()
     assert "No season is live" in _replied(interaction)
@@ -183,7 +182,7 @@ async def test_a_server_with_no_season_is_refused(tmp_path, monkeypatch):
     cog = _make_cog(db_path, season=None)
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
+    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
     assert "No season is live" in _replied(interaction)
 
@@ -194,7 +193,7 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, monkeypatch):
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "Division 9", _channel(), "weather")
+    await cog._set_division_channel(interaction, "Division 9", _channel(), "results")
 
     assert "Division 9" in _replied(interaction)
     assert "not found" in _replied(interaction)
@@ -207,9 +206,9 @@ async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "dIvIsIoN 1", _channel(), "weather")
+    await cog._set_division_channel(interaction, "dIvIsIoN 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_forecast_channel.assert_awaited_once()
+    cog.bot.season_service.set_division_results_channel.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -220,28 +219,28 @@ async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
 async def test_a_channel_doing_another_job_is_refused_as_a_clash(tmp_path, monkeypatch):
     """Two settings sharing one channel interleave two kinds of posting, and the posting
     paths that edit or delete their last message would delete each other's."""
-    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
+    _in_use(monkeypatch, ChannelUse("standings", "Division 1"))
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
+    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
+    cog.bot.season_service.set_division_results_channel.assert_not_awaited()
     assert _replied(interaction) != ""
 
 
 async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
     """Not a collision with something else. Telling a manager it clashes would send them
     looking for a conflict that does not exist."""
-    _in_use(monkeypatch, ChannelUse("weather", "Division 1"))
+    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
+    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
+    cog.bot.season_service.set_division_results_channel.assert_not_awaited()
 
 
 async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
@@ -249,16 +248,16 @@ async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
     a reader collapsing the two messages would lose the distinction entirely."""
     db_path = await _make_db(tmp_path)
 
-    _in_use(monkeypatch, ChannelUse("weather", "Division 1"))
+    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
     same = _interaction()
     await _make_cog(db_path)._set_division_channel(
-        same, "Division 1", _channel(), "weather"
+        same, "Division 1", _channel(), "results"
     )
 
-    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
+    _in_use(monkeypatch, ChannelUse("standings", "Division 1"))
     clash = _interaction()
     await _make_cog(db_path)._set_division_channel(
-        clash, "Division 1", _channel(), "weather"
+        clash, "Division 1", _channel(), "results"
     )
 
     assert _replied(same) != _replied(clash)
@@ -267,11 +266,11 @@ async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
 async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
     """The guard runs before the upsert. The same-value case used to be written and only
     then reported as unchanged — this holds the order against a later tidy-up."""
-    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
+    _in_use(monkeypatch, ChannelUse("standings", "Division 1"))
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
 
-    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "weather")
+    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "results")
 
     assert await _audit(db_path) == []
 
@@ -282,23 +281,22 @@ async def test_a_free_channel_is_accepted(tmp_path, monkeypatch):
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    await cog._set_division_channel(interaction, "Division 1", _channel(), "weather")
+    await cog._set_division_channel(interaction, "Division 1", _channel(), "results")
 
-    cog.bot.season_service.set_division_forecast_channel.assert_awaited_once()
+    cog.bot.season_service.set_division_results_channel.assert_awaited_once()
     assert "set to" in _replied(interaction)
 
 
 @pytest.mark.parametrize(
     "channel_type, setter",
     [
-        ("weather", "set_division_forecast_channel"),
         ("results", "set_division_results_channel"),
         ("standings", "set_division_standings_channel"),
     ],
 )
 async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, channel_type, setter):
     """A manager who meant a fresh assignment and is told it was *updated* has moved an
-    existing one — worth noticing before the next post lands somewhere else. These three
+    existing one — worth noticing before the next post lands somewhere else. These two
     always said "set to" (issue #212)."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
@@ -319,7 +317,6 @@ async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, chann
 @pytest.mark.parametrize(
     "channel_type,setter,label",
     [
-        ("weather", "set_division_forecast_channel", "Weather forecast"),
         ("results", "set_division_results_channel", "Results"),
         ("standings", "set_division_standings_channel", "Standings"),
     ],
@@ -327,8 +324,8 @@ async def test_moving_a_channel_says_it_was_updated(tmp_path, monkeypatch, chann
 async def test_each_channel_type_writes_its_own_column(
     tmp_path, monkeypatch, channel_type, setter, label
 ):
-    """Three near-identical branches. One calling the wrong setter would point a
-    division's forecasts at its standings channel, and only this would object."""
+    """Two near-identical branches. One calling the wrong setter would point a
+    division's results at its standings channel, and only this would object."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
@@ -340,7 +337,7 @@ async def test_each_channel_type_writes_its_own_column(
     assert label in _replied(interaction)
 
 
-@pytest.mark.parametrize("channel_type", ["weather", "results", "standings"])
+@pytest.mark.parametrize("channel_type", ["results", "standings"])
 async def test_each_assignment_is_audited_against_its_division(
     tmp_path, monkeypatch, channel_type
 ):
@@ -360,14 +357,14 @@ async def test_each_assignment_is_audited_against_its_division(
 
 
 async def test_the_audit_records_the_channel_being_replaced(tmp_path, monkeypatch):
-    """A manager re-pointing a division's forecasts needs the old channel recoverable from
+    """A manager re-pointing a division's results needs the old channel recoverable from
     the log; without it there is no way back to what it was."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
-    cog.bot.season_service.set_division_forecast_channel = AsyncMock(return_value=660000)
+    cog.bot.season_service.set_division_results_channel = AsyncMock(return_value=660000)
 
-    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "weather")
+    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "results")
 
     entry = (await _audit(db_path))[0]
     assert json.loads(entry["old_value"])["channel_id"] == 660000
@@ -378,11 +375,11 @@ async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
 
-    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "weather")
+    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "results")
 
     logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "weather-channel" in logged
     assert "Division 1" in logged
+    assert "#forecasts" in logged
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +388,7 @@ async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
 
 
 async def _run_command(cog, command: str, interaction) -> None:
-    """Run the body of one of the three commands above `_set_division_channel`."""
+    """Run the body of one of the two commands above `_set_division_channel`."""
     await undecorate(getattr(SeasonCog, command))(
         cog, interaction, "Division 1", _channel()
     )
@@ -401,25 +398,9 @@ def _assert_nothing_done(cog, interaction, refused: str) -> None:
     """Refused before the season is read: nothing written and nothing logged."""
     assert _replied(interaction) == refused
     cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
-    cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
     cog.bot.season_service.set_division_results_channel.assert_not_awaited()
     cog.bot.season_service.set_division_standings_channel.assert_not_awaited()
     cog.bot.output_router.post_log.assert_not_awaited()
-
-
-async def test_the_weather_channel_is_refused_while_weather_is_off(tmp_path, monkeypatch):
-    """Setting a forecast channel for a module that is not running configures something no
-    code reads. The words are the command's own, not the weather cog's gate."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
-    interaction = _interaction()
-
-    await _run_command(cog, "division_weather_channel", interaction)
-
-    _assert_nothing_done(cog, interaction, "❌ The Weather module is not enabled.")
-    assert await _audit(db_path) == []
 
 
 @pytest.mark.parametrize(
@@ -446,24 +427,6 @@ async def test_the_results_channels_are_refused_while_results_is_off(
 # ---------------------------------------------------------------------------
 # The log line names the command by its module's group (#462)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.xfail(strict=True, reason="#462: the log line still names /division weather-channel")
-async def test_the_weather_channel_is_logged_as_weather_channel(tmp_path, monkeypatch):
-    """A log line names the member, the command and its outcome, and the command is the one a
-    league now types: `/weather channel`."""
-    _free(monkeypatch)
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "weather")
-
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert logged.splitlines() == [
-        f"Manager (<@{ACTOR_ID}>) | /weather channel | Success",
-        "  division: Division 1",
-        "  channel: #forecasts",
-    ]
 
 
 @pytest.mark.xfail(

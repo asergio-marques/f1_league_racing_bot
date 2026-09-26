@@ -178,7 +178,7 @@ def _named_by_its_module(label: str, command: str):
 @pytest.mark.parametrize(
     "label,command",
     [
-        _named_by_its_module("weather channel", "/weather channel"),
+        pytest.param("weather channel", "/weather channel", id="weather channel"),
         _named_by_its_module("results channel", "/results channel results"),
         _named_by_its_module("standings channel", "/results channel standings"),
         _named_by_its_module("verdicts channel", "/results channel verdicts"),
