@@ -62,7 +62,8 @@ You are given the issue, the approved plan, the checks it passed, the base commi
 rounds' findings with what became of each. Read the branch as it stands at its tip:
 `git diff <base>...HEAD`, `git log <base>..HEAD`, and the files themselves. Your prompt says whether
 this is a round of the **tests stage** (every change to `tests/` the work needs is made, and no
-production code) or of the **build**.
+production code is added) or of the **build**. A tests stage run again because the build stopped to
+ask for a test change finds the build's commits already on the branch: they are not its own.
 
 Check the branch against:
 
