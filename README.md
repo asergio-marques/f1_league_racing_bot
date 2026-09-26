@@ -425,7 +425,7 @@ Erases the league entire and cleans the bot out of this server. Only the server'
 
 A season begins with `/season setup`, in **configuration**: settle the team list, the modules and their settings, and whether the season runs in test mode. `/season config-review` checks that configuration and posts a **✅ Confirm configuration** button. Once confirmed, the season moves on — to waiting for its signup window where the signup module is enabled, or straight to placements where it is not (or under test mode). In placements you add divisions with `/division add` and rounds with `/round add`, then review with `/season placements-review` and press its **Approve** button.
 
-> **A channel does one job.** Every command that sets a channel — the eight `/division …-channel` commands, `/bot interaction-channel`, `/bot log-channel`, `/bot hub-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
+> **A channel does one job.** Every command that sets a channel — a division's eight, `/division lineup-channel`, `/division calendar-channel`, `/weather channel` and the `/results channel` and `/attendance channel` commands, then `/bot interaction-channel`, `/bot log-channel`, `/bot hub-channel` and `/signup channel` — refuses a channel already set as something else anywhere on this server, naming what holds it. Two divisions cannot share a results channel, and a calendar channel cannot double as a log.
 >
 > This is not tidiness: several postings **replace** the message they last put up, finding it by an id stored against the channel, so two purposes in one channel is how one output deletes another's message. Setting a channel to the value it already holds is refused too, in its own words — nothing else holds it, and nothing changes.
 
@@ -467,7 +467,7 @@ Tiers must additionally be **sequential from 1 with no gaps** across the whole s
 
 **Naming.** A division's name heads every posting and every graphic of the division, so it cannot hold a role mention, `@everyone` or `@here`, a mention of a member, an emoji, or Discord formatting such as `**bold**`. The command refuses such a name and says what it found. The same holds wherever a division is named: `/division duplicate`, `/division rename` and `/division amend`.
 
-Division channels are not set here. Assign them afterwards with the `/division *-channel` commands.
+Division channels are not set here. Assign them afterwards with `/division lineup-channel` and `/division calendar-channel`, and with each enabled module's own: `/weather channel`, the `/results channel` commands and the `/attendance channel` commands.
 
 #### `/division duplicate` — Copy a division with a datetime offset
 *Access: League manager · Setup only*
@@ -792,34 +792,6 @@ Unschedules every round of the division, cancels each one **not yet raced**, mar
 results and its status. A cancelled division is excluded from tier validation, from the standings,
 and from the gate on completing the season.
 
-#### `/division weather-channel` — Set the weather forecast channel for a division
-*Access: League manager · Weather module required*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where weather forecast messages are posted |
-
-Required for every division while the weather module is enabled: approval is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
-
-#### `/division results-channel` — Set the results posting channel for a division
-*Access: League manager · Results & Standings module required*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where session results are posted |
-
-#### `/division standings-channel` — Set the standings posting channel for a division
-*Access: League manager · Results & Standings module required*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where standings tables are posted |
-
-Required for every division while the results & standings module is enabled, along with [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division): approval is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
-
 #### `/division lineup-channel` — Set the lineup posting channel for a division
 *Access: League manager*
 
@@ -836,35 +808,13 @@ Required for every division while the results & standings module is enabled, alo
 | `name` | String | ✅ | Division name |
 | `channel` | Channel | ✅ | Channel where the division's calendar is posted |
 
-> **Neither of these two is enforced at approval**, unlike the six module channels above. A division missing its lineup or calendar channel is silently skipped — approval neither refuses nor warns, and the division simply posts no lineup and no calendar for the whole season.
+> **Both are required at approval**, whatever modules you run. A division missing its lineup or calendar channel, or whose channel has since been deleted from the server, is named in `/season placements-review` with the command that sets it, the Approve button is withheld, and pressing a button already offered is refused on the same reading. See [`/season placements-review`](#season-placements-review--review-pending-configuration).
 
-#### `/division attendance-channel` — Set the attendance logging channel for a division
-*Access: League manager · Attendance module required*
+A division's other six channels are its modules', each set by that module's own command and described with it: [`/weather channel`](#weather-channel--set-the-weather-forecast-channel-for-a-division) for its forecasts; [`/results channel results`](#results-channel-results--set-the-results-posting-channel-for-a-division), [`/results channel standings`](#results-channel-standings--set-the-standings-posting-channel-for-a-division) and [`/results channel verdicts`](#results-channel-verdicts--set-the-verdicts-channel-for-a-division) for its results, standings and verdicts; and [`/attendance channel rsvp`](#attendance-channel-rsvp--set-the-rsvp-notice-channel-for-a-division) and [`/attendance channel attendance`](#attendance-channel-attendance--set-the-attendance-logging-channel-for-a-division) for its check-in calls and attendance sheet.
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where the attendance sheet is posted |
+> A division's eight channels are one per kind of image output. The image module draws nothing where its source module posts nothing, so an output with no channel set produces no picture — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
 
-#### `/division rsvp-channel` — Set the RSVP notice channel for a division
-*Access: League manager · Attendance module required*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where check-in calls are posted |
-
-#### `/division verdicts-channel` — Set the verdicts channel for a division
-*Access: League manager · Results & Standings module required*
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `name` | String | ✅ | Division name |
-| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced |
-
-> These eight channels are one per kind of image output. The image module draws nothing where its source module posts nothing, so an output with no channel set produces no picture — see [Configuring the image module](docs/how-to/configuring-the-image-module.md).
-
-> **Each of the eight says whether it set the channel or moved it.** The reply reads *set to* where the division had no channel for that purpose and *updated to* where it replaced one — worth noticing before the next post lands somewhere you did not expect. The previous channel is recorded in the audit either way.
+> **Each of the eight channel commands says whether it set the channel or moved it.** The reply reads *set to* where the division had no channel for that purpose and *updated to* where it replaced one — worth noticing before the next post lands somewhere you did not expect. The previous channel is recorded in the audit either way.
 
 #### `/division calendar-sync` — Repost a division's calendar
 *Access: League manager*
@@ -983,14 +933,7 @@ Prints each fake driver with their synthetic user ID, their team and their natio
 |-----------|------|----------|-------------|
 | `division` | String | ✅ | Division name |
 
-#### `/test-mode rsvp set-status` — Bulk-set RSVP statuses
-*Access: League admin · Requires test mode active · Attendance module*
-
-Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses.
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `division` | String | ✅ | Division name; the division must be in the ongoing season and have an open RSVP. Where two calls stand, as in a double-header, it takes the one still open |
+> **Setting check-in answers.** The attendance module's own test tool, [`/attendance test rsvp`](#attendance-test-rsvp--bulk-set-rsvp-statuses), opens a form for setting the RSVP status of the test drivers in a division's open check-in. It is described with the attendance module's commands. It is a league admin's, as every command here is, and it is refused while test mode is off.
 
 > Turning test mode **off** — by the toggle in configuration, or by the season ending — deletes every fake driver on the server, across all divisions, keeping their history. The seeded points configurations are **not** deleted with them — they are ordinary configurations of the server, and `/results config remove` takes them away if you do not want them. Turning it **on** seeds the Standard and Half Points configurations onto the current season if none are attached, and is refused outright while the server holds real drivers.
 
@@ -1073,7 +1016,7 @@ Enabling is guarded where disabling mostly is not: no module but signup can be e
 
 > **Setting the weather module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
-The weather module's own configuration is the three deadline commands below and nothing else, and `/weather config view` reads them back. Where forecasts are posted is set per division by [`/division weather-channel`](#division-weather-channel--set-the-weather-forecast-channel-for-a-division); the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
+The weather module's own configuration is the three deadline commands below and nothing else, and `/weather config view` reads them back. Where forecasts are posted is set per division by [`/weather channel`](#weather-channel--set-the-weather-forecast-channel-for-a-division); the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
 
 The three deadline commands share the same preconditions, checked in this order:
 
@@ -1119,6 +1062,18 @@ No parameters. Replies to you alone with the Phase 1, Phase 2 and Phase 3 deadli
 > **The posted forecasts do not name a horizon.** Each is titled by what it is — "Initial chance of rain", "Initial session forecast", "Final session forecast" — and the first two say a further forecast follows later, the second adding that it will be an accurate one. None states when it was posted or when the next arrives, so the wording is right at whatever deadlines you set. The graphics have always described themselves this way and the text now matches them.
 
 > **A restart keeps the horizons you set.** When the bot starts again with forecasts still outstanding, it works out which ones it missed from your configured deadlines, the same ones confirming placements and `/round amend` use. It used to fall back to the packaged 5 / 2 / 2, as `/round amend` once did; neither does now. It catches up only on rounds still to be run: a cancelled round, every round of a cancelled division, and a round whose race time passed while the bot was down get no forecast.
+
+#### `/weather channel` — Set the weather forecast channel for a division
+*Access: League manager · Weather module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where weather forecast messages are posted |
+
+Required for every division while the weather module is enabled: approval is refused until each one has a forecast channel, and a division created by `/division duplicate` does not inherit the source division's. For the rest of the module's setup, see [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
+
+It acts on the season being built or raced, pending completion included, so a forecast channel deleted before the season completes can be repaired. It is refused while the weather module is off (`❌ The Weather module is not enabled.`), for a channel already doing another job, and for the channel the division already has.
 
 ---
 
@@ -1488,7 +1443,39 @@ No parameters. Returns `unassigned_drivers.csv` in an ephemeral reply, holding t
 
 > **Setting the results & standings module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
-All commands below require the results module to be enabled (`/module enable results`) and the interaction role, unless their own `*Access:*` line says otherwise. Where results, standings and verdicts are posted is set per division by [`/division results-channel`](#division-results-channel--set-the-results-posting-channel-for-a-division), [`/division standings-channel`](#division-standings-channel--set-the-standings-posting-channel-for-a-division) and [`/division verdicts-channel`](#division-verdicts-channel--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
+All commands below require the results module to be enabled (`/module enable results`) and the interaction role, unless their own `*Access:*` line says otherwise. Where results, standings and verdicts are posted is set per division by [`/results channel results`](#results-channel-results--set-the-results-posting-channel-for-a-division), [`/results channel standings`](#results-channel-standings--set-the-standings-posting-channel-for-a-division) and [`/results channel verdicts`](#results-channel-verdicts--set-the-verdicts-channel-for-a-division); all three are required before a season can be approved.
+
+#### Division Channels
+
+The three act on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the results & standings module is off (`❌ The Results & Standings module is not enabled.`), for a channel already doing another job, and for the channel the division already has.
+
+##### `/results channel results` — Set the results posting channel for a division
+*Access: League manager · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where session results are posted |
+
+##### `/results channel standings` — Set the standings posting channel for a division
+*Access: League manager · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where standings tables are posted |
+
+##### `/results channel verdicts` — Set the verdicts channel for a division
+*Access: League manager · Results & Standings module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where penalty and appeal verdicts are announced |
+
+The bot must be able to post in the verdicts channel, or it is refused: `❌ Cannot access that channel. Ensure the bot has permission to post there.`
+
+Approval is refused until each division has all three, and a division created by `/division duplicate` does not inherit them. For the rest of the module's setup, see [Configuring the results & standings module](docs/how-to/configuring-the-results-module.md).
 
 #### Points Config Management
 
@@ -1794,17 +1781,17 @@ After all sessions of a round are submitted, the submission channel enters **pen
 - **🔄 Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes the prompt and any approval message down, and asks for every session again in the same channel, from the first. The results already submitted **stand, published and counted, until the last session is in**, and are then replaced all at once. The resubmission's announcement carries a **Cancel** button: pressing it stops the resubmission, keeps the earlier results, and brings the penalty prompt back — without the staged penalties and pardons, which stay discarded. The log channel's `RESULTS_RESUBMISSION_STAGED_DISCARD` entry lists every one it discarded.
 - **🏳️ Attendance Pardon** — stages an attendance pardon; see [Attendance Module](#attendance-module). Present regardless of whether that module is enabled.
 - **Remove #N** — a per-entry button appears for each staged penalty, allowing individual removals.
-- **Remove Pardon #N** — the same for each staged attendance pardon. Once the post-race penalties are approved the round's pardons stand and the button is refused; a granted pardon is changed with [`/round results amend`](#round-results-amend--re-submit-results-for-a-completed-session).
+- **Remove Pardon #N** — the same for each staged attendance pardon. Once the post-race penalties are approved the round's pardons stand and the button is refused; a granted pardon is changed with [`/results rounds amend`](#results-rounds-amend--re-submit-results-for-a-completed-session).
 
 Only members holding the configured interaction role may use these buttons.
 
 **✅ Approve** commits on the first press, with no confirmation step: it applies all staged penalties, recomputes positions and points for all affected sessions, deletes and reposts the results and standings under the **Post-Race Penalty Results** label, cascades standing recalculations to subsequent rounds, posts one verdict per decision to the division's verdicts channel, and runs the attendance pipeline where that module is enabled. The submission channel then enters **appeals review** (see below) — it is not closed here, and the round is not yet final. The penalty prompt and any approval message are taken down as it does, and a second press while the approval is still being applied is refused.
 
-> **A repost that could not land is named, not swallowed.** Approving either review stage deletes the results and standings already posted and puts the recalculated ones in their place. The bot establishes that the channel is still there, and still takes its postings, **before** it deletes anything: a channel that has been removed, or that the bot's permission has been taken away on, leaves what is already posted standing, so you keep the older version rather than losing both. Whatever could not be posted is named in your own reply and in the log channel, as a `RESULTS_REPOST | Incomplete` entry ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/round results amend` to run again instead — and the approval's own log entry reads `Incomplete` rather than `Success`. The approval itself goes through either way: the penalties are applied, the championship is recalculated and the round moves on, with only the posting outstanding. A channel the division was never given is not reported.
+> **A repost that could not land is named, not swallowed.** Approving either review stage deletes the results and standings already posted and puts the recalculated ones in their place. The bot establishes that the channel is still there, and still takes its postings, **before** it deletes anything: a channel that has been removed, or that the bot's permission has been taken away on, leaves what is already posted standing, so you keep the older version rather than losing both. Whatever could not be posted is named in your own reply and in the log channel, as a `RESULTS_REPOST | Incomplete` entry ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/results rounds amend` to run again instead — and the approval's own log entry reads `Incomplete` rather than `Success`. The approval itself goes through either way: the penalties are applied, the championship is recalculated and the round moves on, with only the posting outstanding. A channel the division was never given is not reported.
 >
-> **`/round results amend` is protected the same way, but reports only to the log.** It runs no button and has nobody to reply to, so what it could not post is named in its own `RESULT_AMENDED | Incomplete` entry rather than a separate one — with the same sync commands at the end.
+> **`/results rounds amend` is protected the same way, but reports only to the log.** It runs no button and has nobody to reply to, so what it could not post is named in its own `RESULT_AMENDED | Incomplete` entry rather than a separate one — with the same sync commands at the end.
 
-> **A verdict that could not be announced is named too.** The announcement in the verdicts channel is the only thing that tells a driver why their classification changed, so one that does not go out is listed in your reply and in the log channel as a `VERDICTS | Incomplete` entry — naming the driver where the failure was that driver's, and how many verdicts went unannounced where the whole channel was at fault. One failing does not stop the rest. A division with no verdicts channel set is reported rather than skipped — it is one of the three a division must have before its placements can be confirmed. No command re-announces a verdict that failed to go out, so repair the cause and post that decision yourself. The penalties and corrections stand either way. (An **amendment** is the one thing that does re-announce a round's verdicts — see [`/round results amend`](#round-results-amend--re-submit-results-for-a-completed-session) — but it announces all of them, as part of rebuilding the round, and is not a way to deliver one that was missed.)
+> **A verdict that could not be announced is named too.** The announcement in the verdicts channel is the only thing that tells a driver why their classification changed, so one that does not go out is listed in your reply and in the log channel as a `VERDICTS | Incomplete` entry — naming the driver where the failure was that driver's, and how many verdicts went unannounced where the whole channel was at fault. One failing does not stop the rest. A division with no verdicts channel set is reported rather than skipped — it is one of the three a division must have before its placements can be confirmed. No command re-announces a verdict that failed to go out, so repair the cause and post that decision yourself. The penalties and corrections stand either way. (An **amendment** is the one thing that does re-announce a round's verdicts — see [`/results rounds amend`](#results-rounds-amend--re-submit-results-for-a-completed-session) — but it announces all of them, as part of rebuilding the round, and is not a way to deliver one that was missed.)
 
 > **So is attendance the approval could not record.** Approving a penalty review records who attended and awards the attendance points, and both feed the auto-reserve and auto-sack thresholds. If either fails you get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, ending with the `/attendance sync` that recalculates the round. This is kept separate from the sanctions report on purpose: a failed sheet leaves the record right, and these leave the record wrong.
 
@@ -1828,7 +1815,7 @@ Approving here — or **No Changes / Confirm** with nothing staged — deletes a
 - A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over.
 - A resubmission that fails before the new results are saved also leaves the earlier results in place and brings the penalty prompt back, saying so in the channel.
 - A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
-- While another round of the division is being amended, the submission channel refuses a session's results, `CANCELLED` and both approvals, naming the round and the amend channel. The channel stays open: try again once the amendment has finished — it ends when approved, or is undone once half an hour has passed since its corrections were pasted. See [`/round results amend`](#round-results-amend--re-submit-results-for-a-completed-session).
+- While another round of the division is being amended, the submission channel refuses a session's results, `CANCELLED` and both approvals, naming the round and the amend channel. The channel stays open: try again once the amendment has finished — it ends when approved, or is undone once half an hour has passed since its corrections were pasted. See [`/results rounds amend`](#results-rounds-amend--re-submit-results-for-a-completed-session).
 
 ##### Fastest-lap tie-breaking — FL override header
 
@@ -1848,7 +1835,7 @@ Rules:
 - Omitting the header restores normal behaviour: the lowest lap time wins; ties fall to the driver listed highest (lowest finishing position).
 - The header is ignored for qualifying submissions.
 
-##### `/round results amend` — Re-submit results for a completed session
+##### `/results rounds amend` — Re-submit results for a completed session
 *Access: League admin · Results module required*
 
 Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in the same category as the bot commands channel, and **replays the round in three stages** — the way it was raced in the first place. One amendment covers as many of the round's sessions as need correcting.
@@ -1883,7 +1870,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 > **Verdicts are re-announced, and the superseded ones removed.** The bot records which message each verdict was posted in — and which header heads each round's run of them — so an amendment can replace them. All of a round's verdicts are announced again, in order, not only the ones that changed. A round's old announcements come down only once every one of its replacements is up: where one could not be posted, the originals are left standing rather than leaving a decision in no channel at all, and `RESULT_AMENDED | Incomplete` names them with a link to each so you can remove them once the verdict is posted. A round whose last verdict the amendment removed loses its old cards and their header. The one header that always stays is one heading an attendance sanction card: the amendment does not touch those cards, so their header stays with them.
 
-> **What it could not repost is named in the log.** Any of it the bot could not post — a channel deleted, or a permission taken away — is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/round results amend` to run again instead. The amendment itself is applied either way.
+> **What it could not repost is named in the log.** Any of it the bot could not post — a channel deleted, or a permission taken away — is named in the log channel under `RESULT_AMENDED | Incomplete` instead of `Success`, ending with the `/results rounds sync` and `/results standings sync` commands to run once the cause is repaired — or, where every division is already done and both of those are closed, with the `/results rounds amend` to run again instead. The amendment itself is applied either way.
 
 ---
 
@@ -1972,7 +1959,7 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 > **The attendance sanctions are the one exception.** With the attendance module on, approving re-checks the sanction thresholds. A sanction that then fails to apply does not undo the approval; the reply lists it, with the `/attendance sync` command that finishes it. See [When a sanction does not apply](#when-a-sanction-does-not-apply).
 
-> **Not while a round's results are being amended.** While any division has a `/round results amend` open, the panel names the round and its amend channel, and pressing Approve refuses and changes nothing: approving reposts every division, and would publish that amendment's corrections before they are approved. Review again once it has finished.
+> **Not while a round's results are being amended.** While any division has a `/results rounds amend` open, the panel names the round and its amend channel, and pressing Approve refuses and changes nothing: approving reposts every division, and would publish that amendment's corrections before they are approved. Review again once it has finished.
 
 ---
 
@@ -1986,7 +1973,7 @@ No parameters. Displays a diff of the staged changes against the current season 
 
 Deletes every existing standings Discord message for the division and reposts fresh standings for each round that has results, in round order. Useful after manual data corrections or if standings messages were accidentally deleted.
 
-> **Only while the season is being raced.** Refused once every division is done, and on a completed or cancelled season. If an amendment's repost failed in pending completion, the log tells you to run `/round results amend` again instead — that replaces the round's results *and* every later round's standings, so it recovers the same ground.
+> **Only while the season is being raced.** Refused once every division is done, and on a completed or cancelled season. If an amendment's repost failed in pending completion, the log tells you to run `/results rounds amend` again instead — that replaces the round's results *and* every later round's standings, so it recovers the same ground.
 
 > **Not while the division has an amendment open.** The amendment's corrections are recorded but not yet approved, and a sync would publish them. The refusal names the round and its amend channel; run the sync again once the amendment has finished.
 
@@ -2021,7 +2008,7 @@ Toggles whether reserve drivers appear in the publicly posted standings for the 
 
 > **Setting the attendance module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the attendance module](docs/how-to/configuring-the-attendance-module.md).
 
-All commands below require the attendance module to be enabled (`/module enable attendance`). Where check-in calls and attendance sheets are posted is set per division by [`/division rsvp-channel`](#division-rsvp-channel--set-the-rsvp-notice-channel-for-a-division) and [`/division attendance-channel`](#division-attendance-channel--set-the-attendance-logging-channel-for-a-division).
+All commands below require the attendance module to be enabled (`/module enable attendance`). Where check-in calls and attendance sheets are posted is set per division by [`/attendance channel rsvp`](#attendance-channel-rsvp--set-the-rsvp-notice-channel-for-a-division) and [`/attendance channel attendance`](#attendance-channel-attendance--set-the-attendance-logging-channel-for-a-division).
 
 > **A check-in call that fails to post is reported in the log channel**, naming the season, the division and the round. This matters more than it sounds: when a call cannot be posted, the round's attendance rows are never opened, so nobody is asked to check in and nothing is ever counted against anyone — the round ends up recorded as perfect attendance for the whole division. The report tells you to post it again once the cause is cleared, and names the [`/attendance post-check-in`](#attendance-post-check-in--post-a-rounds-check-in-call-by-hand) that does it, with the division and round already filled in. It appears whether or not the images module is enabled, because the fault is in the call and not in any picture.
 
@@ -2034,6 +2021,24 @@ All commands below require the attendance module to be enabled (`/module enable 
 > **A round's check-in messages come down a day after the round.** 24 hours after a round's scheduled start, its call, its reminder and its reserve-distribution message are deleted from the check-in channel — the same moment as its last forecast. Posting another round's call deletes nothing, so two rounds of one division close together — a Saturday and Sunday double-header on the 5-day default — have both calls standing in the channel for a while, each answerable until its own deadline. If the bot is switched off when that day runs out, it takes them down as soon as it starts again. The answers are kept in the attendance record whatever becomes of the messages, and the attendance sheet carries what they cost.
 
 > **The three lead times below also decide how late a season can be approved.** A season holding a round whose notice, last notice or deadline has already passed is named in `/season placements-review`, which then offers no Approve button — a first round three days away cannot honour a five-day notice. See [Approving](#approving--the-button-in-season-placements-review).
+
+#### `/attendance channel rsvp` — Set the RSVP notice channel for a division
+*Access: League manager · Attendance module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where check-in calls are posted |
+
+#### `/attendance channel attendance` — Set the attendance logging channel for a division
+*Access: League manager · Attendance module required*
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | String | ✅ | Division name |
+| `channel` | Channel | ✅ | Channel where the attendance sheet is posted |
+
+Both are required for every division while the attendance module is enabled: approval is refused until each division has both. Each acts on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the module is off (`❌ The Attendance module is not enabled.`), for a channel the bot cannot post in, for a channel already doing another job, and for the channel the division already has.
 
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: League manager · No active season*
@@ -2134,7 +2139,7 @@ Recalculates the attendance of the round you name and of every later round whose
 
 It is safe to run more than once: a driver already sacked or already in the Reserve team is not sanctioned again, so a second run applies only what the first did not.
 
-> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached, and while a round of the division has a `/round results amend` open — it would recalculate from corrections nobody has approved yet.
+> **Limitation:** Available only while the season is ongoing, and only for a round whose penalties have been approved. It is refused, with nothing changed, if a channel it would post to cannot be reached, and while a round of the division has a `/results rounds amend` open — it would recalculate from corrections nobody has approved yet.
 
 #### `/attendance post-check-in` — Post a round's check-in call by hand
 *Access: League manager*
@@ -2153,6 +2158,15 @@ Posts the check-in call for the round you name, exactly as the scheduled call wo
 > **If the scheduled call posts while you are running this**, nothing is posted on top of it and the reply says so. A round is never left carrying two calls — the second would leave the first still answerable but tracked by nothing, so those answers would be lost and its buttons never closed at the deadline.
 >
 > The last three are deliberate. Before the call is due the scheduled one is still coming, and posting early would override the notice period you set with `/attendance config rsvp-notice`. After the deadline a call arrives with its buttons already locked, so nobody could answer it — and if you have set the deadline to `0` to disable it, the race itself is the cut-off, so you cannot post a call for a round already under way or run. And a call already standing is never replaced — [amend the round](#round-amend--amend-a-round-in-the-active-season) instead, which posts the call again and carries every answer already given across.
+
+#### `/attendance test rsvp` — Bulk-set RSVP statuses
+*Access: League admin · Requires test mode active · Attendance module*
+
+Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses. It is a tool of [test mode](#test-mode-commands), like the commands there: refused first while test mode is off, then while the attendance module is off.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `division` | String | ✅ | Division name; the division must be in the ongoing season and have an open RSVP. Where two calls stand, as in a double-header, it takes the one still open |
 
 ---
 
@@ -2233,7 +2247,7 @@ The choice names above are exactly the names `/images config view` and `/season 
 >
 > A failure is confined to the one graphic: if one session cannot be drawn, the round's other sessions, the other divisions, and the standings posted alongside are all unaffected. The session that failed falls back to its textual table and the log channel says why. A cancelled session keeps its textual notice whatever the toggle says, and the round's results *submission* channel stays textual throughout.
 >
-> With `attendance` on, a division's attendance sheet is posted to its attendance channel as a drawn table instead of the text list, redrawn and replaced on the same two occasions the text was: a round's post-race penalties being approved, and a round's attendance being recalculated after `/round results amend`. The graphic adds what text cannot carry — each driver's flag, their team's badge, and a column per round showing what that round cost them. **An empty cell means zero**: a round that counted nothing against a driver, whether it conferred none, was pardoned in full, or has not been run yet. The heading stays as message text; the sheet becomes the picture.
+> With `attendance` on, a division's attendance sheet is posted to its attendance channel as a drawn table instead of the text list, redrawn and replaced on the same two occasions the text was: a round's post-race penalties being approved, and a round's attendance being recalculated after `/results rounds amend`. The graphic adds what text cannot carry — each driver's flag, their team's badge, and a column per round showing what that round cost them. **An empty cell means zero**: a round that counted nothing against a driver, whether it conferred none, was pardoned in full, or has not been run yet. The heading stays as message text; the sheet becomes the picture.
 >
 > **A driver closing on the limit is marked.** If you have set `/attendance config autoreserve` or `/attendance config autosack`, the sheet draws a wash behind the total of anyone near it: **amber** for a driver **within two points** of the limit, **red** for a driver who has **reached** it. The two are drawn at the same weight and told apart by colour, so a warning reads as a warning and not as a fainter version of the sanction. A total of zero is never marked, however low you set the limit. The two marks are artwork like any other — `attendance_limit_near.svg` and `attendance_limit_reached.svg` in `resources/league/markers` — so you can redraw them, and a fully transparent file suppresses one. Set no limit and nothing is marked.
 >
