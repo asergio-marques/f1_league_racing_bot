@@ -1787,3 +1787,561 @@ async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_pat
     await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
 
     assert await _season_points(path, season_id) == {1: 25, 2: 18, 3: 0, 4: 0}
+
+
+# ---------------------------------------------------------------------------
+# An approved amendment scores every raced session again (#443)
+#
+# The approval replaced the season's points tables and reposted every round, but scored no
+# session again: every repost and every standings carried the points the rounds were first
+# scored under. The #130 tests above seed sessions with no points configuration and no
+# drivers, which is why they never saw it. Each session below was scored under the old
+# table, 25-18-15 with one point for the fastest lap inside the top ten, before the
+# amendment is approved.
+# ---------------------------------------------------------------------------
+
+_WINNER, _RUNNER_UP, _THIRD = 1001, 1002, 1003
+
+#: The classification every raced round below records unless a test gives its own: the
+#: winner, the runner-up, and third with the quickest lap, each holding what the old table
+#: gave them. ``(driver, position, outcome, fastest lap, points, fastest-lap bonus,
+#: post-race time penalty in ms)``.
+_OLD_CLASSIFICATION = (
+    (_WINNER, 1, "CLASSIFIED", "1:31.000", 25, 0, 0),
+    (_RUNNER_UP, 2, "CLASSIFIED", "1:31.500", 18, 0, 0),
+    (_THIRD, 3, "CLASSIFIED", "1:30.000", 15, 1, 0),
+)
+
+
+async def _seed_points_config(
+    path: str,
+    season_id: int,
+    config: str = "STD",
+    *,
+    race: dict[int, int] | None = None,
+    fastest_lap: tuple[int, int] | None = (1, 10),
+    qualifying: dict[int, int] | None = None,
+) -> None:
+    """Give the season *config*: 25-18-15 for the feature race unless *race* says otherwise,
+    ``(points, position limit)`` for its fastest lap, and *qualifying* for feature qualifying."""
+    race = {1: 25, 2: 18, 3: 15} if race is None else race
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO season_points_links (season_id, config_name) VALUES (?, ?)",
+            (season_id, config),
+        )
+        for session_type, table in (("FEATURE_RACE", race), ("FEATURE_QUALIFYING", qualifying or {})):
+            for position, points in table.items():
+                await db.execute(
+                    "INSERT INTO season_points_entries "
+                    "(season_id, config_name, session_type, position, points) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (season_id, config, session_type, position, points),
+                )
+        if fastest_lap is not None:
+            await db.execute(
+                "INSERT INTO season_points_fl "
+                "(season_id, config_name, session_type, fl_points, fl_position_limit) "
+                "VALUES (?, ?, 'FEATURE_RACE', ?, ?)",
+                (season_id, config, *fastest_lap),
+            )
+        await db.commit()
+
+
+async def _seed_raced_division(
+    path: str,
+    season_id: int,
+    name: str,
+    *,
+    channels: tuple[int, int],
+    round_statuses: tuple[str, ...] = ("FINAL", "FINAL"),
+    division_status: str = "ACTIVE",
+    unraced_status: str = "NOT_RUN",
+    config: str = "STD",
+    classification: tuple = _OLD_CLASSIFICATION,
+    qualifying: tuple = (),
+    fastest_lap_override: int | None = None,
+    driver_offset: int = 0,
+):
+    """A division whose raced rounds were scored under the old table, and one round to come.
+
+    *channels* are its ``(results, standings)`` channels. Each status in *round_statuses* is
+    a raced round, in order, carrying one feature race under *config* with *classification*,
+    and a feature qualifying with *qualifying* ``(driver, position, points)`` where given. The
+    round after them has not been raced. *driver_offset* is added to every driver id, so that
+    two divisions do not share a driver.
+
+    Returns ``(division_id, raced round ids, race session ids, qualifying session ids,
+    unraced round id)``.
+    """
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id, status) "
+            "VALUES (?, ?, 777, ?)",
+            (season_id, name, division_status),
+        )
+        division_id = cursor.lastrowid
+        await db.execute(
+            "INSERT INTO division_results_config "
+            "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
+            (division_id, *channels),
+        )
+        cursor = await db.execute(
+            "INSERT INTO team_instances (division_id, name, full_name) "
+            "VALUES (?, 'RBR', 'Red Bull Racing')",
+            (division_id,),
+        )
+        team_id = cursor.lastrowid
+
+        raced: list[int] = []
+        race_sessions: list[int] = []
+        qualifying_sessions: list[int] = []
+        for round_number, status in enumerate(round_statuses, start=1):
+            cursor = await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, track_name, status, "
+                "scheduled_at) VALUES (?, ?, 'NORMAL', 'Monza', ?, '2026-06-01T18:00:00')",
+                (division_id, round_number, status),
+            )
+            round_id = cursor.lastrowid
+            raced.append(round_id)
+            if qualifying:
+                cursor = await db.execute(
+                    "INSERT INTO session_results "
+                    "(round_id, division_id, session_type, status, config_name) "
+                    "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE', ?)",
+                    (round_id, division_id, config),
+                )
+                qualifying_sessions.append(cursor.lastrowid)
+                for driver, position, points in qualifying:
+                    await db.execute(
+                        "INSERT INTO qualifying_session_results (session_result_id, "
+                        "driver_user_id, team_instance_id, finishing_position, outcome, "
+                        "best_lap, points_awarded) VALUES (?, ?, ?, ?, 'CLASSIFIED', "
+                        "'1:29.000', ?)",
+                        (cursor.lastrowid, driver + driver_offset, team_id, position, points),
+                    )
+            cursor = await db.execute(
+                "INSERT INTO session_results "
+                "(round_id, division_id, session_type, status, config_name, fl_driver_override) "
+                "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', ?, ?)",
+                (
+                    round_id,
+                    division_id,
+                    config,
+                    None if fastest_lap_override is None else fastest_lap_override + driver_offset,
+                ),
+            )
+            session_id = cursor.lastrowid
+            race_sessions.append(session_id)
+            for driver, position, outcome, lap, points, bonus, penalty_ms in classification:
+                await db.execute(
+                    "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+                    "team_instance_id, finishing_position, outcome, fastest_lap, "
+                    "points_awarded, fastest_lap_bonus, postrace_time_penalties_ms) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        session_id, driver + driver_offset, team_id, position, outcome, lap,
+                        points, bonus, penalty_ms,
+                    ),
+                )
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, track_name, status, "
+            "scheduled_at) VALUES (?, ?, 'NORMAL', 'Spa', ?, '2026-09-01T18:00:00')",
+            (division_id, len(round_statuses) + 1, unraced_status),
+        )
+        unraced_round_id = cursor.lastrowid
+        await db.commit()
+    return division_id, raced, race_sessions, qualifying_sessions, unraced_round_id
+
+
+async def _race_points(path: str, session_id: int) -> dict[int, tuple[int, int]]:
+    """Each driver's stored ``(points, fastest-lap bonus)`` in a race session."""
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT driver_user_id, points_awarded, fastest_lap_bonus "
+            "FROM race_session_results WHERE session_result_id = ?",
+            (session_id,),
+        )
+        return {
+            r["driver_user_id"]: (r["points_awarded"], r["fastest_lap_bonus"])
+            for r in await cursor.fetchall()
+        }
+
+
+def _posts(reposted: list[tuple], channel_id: int, round_number: int) -> list[str]:
+    """What was posted to *channel_id* under the heading of *round_number*."""
+    return [
+        content
+        for posted_to, content in reposted
+        if posted_to == channel_id and f"Round {round_number} " in content
+    ]
+
+
+def _scoring_bot(path: str, reposted: list[tuple]):
+    """The repost stub above, with drivers the server does not hold.
+
+    These sessions carry drivers, which the #130 stub never had to name. Naming one reads
+    the database through the bot, and asks the server for them, which answers as Discord
+    does for somebody who is not a member.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    import discord
+
+    bot = _bot_recording_reposts(reposted)
+    bot.db_path = path
+    bot.get_guild.return_value.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Member")
+    )
+    return bot
+
+
+async def _approve_raised_win(path: str, season_id: int, reposted: list[tuple] | None = None):
+    """Stage a win worth 30 rather than 25, and approve it."""
+    from leaguebot.core.services.amendment_service import approve_amendment
+
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await approve_amendment(
+        path, season_id, 99, _scoring_bot(path, [] if reposted is None else reposted)
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_an_approved_amendment_rescores_every_raced_session(db_path):
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502)
+    )
+
+    await _approve_raised_win(path, season_id)
+
+    for session_id in sessions:
+        points = await _race_points(path, session_id)
+        assert points[_WINNER] == (30, 0), points
+        assert points[_RUNNER_UP] == (18, 0), points
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_an_approved_amendment_moves_the_standings(db_path):
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    division_id, raced, _s, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502)
+    )
+
+    await _approve_raised_win(path, season_id)
+
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT total_points FROM driver_standings_snapshots "
+            "WHERE round_id = ? AND division_id = ? AND driver_user_id = ?",
+            (raced[-1], division_id, _WINNER),
+        )
+        row = await cursor.fetchone()
+    assert row is not None and row["total_points"] == 60, "the standings kept the old points"
+
+
+@pytest.mark.xfail(strict=True, reason="#443: every standings is reposted with the old points")
+async def test_an_approved_amendment_reposts_every_standings_with_the_new_points(db_path):
+    """What the owner asked for at Gate 1: every standings, of every division, reposted with
+    the new totals, and none for a round not yet raced."""
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
+    await _seed_raced_division(
+        path, season_id, "Beta", channels=(511, 512), driver_offset=1000
+    )
+
+    reposted: list[tuple] = []
+    await _approve_raised_win(path, season_id, reposted)
+
+    for standings_channel, winner in ((502, _WINNER), (512, _WINNER + 1000)):
+        for round_number, total in ((1, 30), (2, 60)):
+            posts = _posts(reposted, standings_channel, round_number)
+            assert posts, f"round {round_number} standings were not reposted to {standings_channel}"
+            assert f"<@{winner}> — **{total} pts**" in posts[-1], posts[-1]
+        assert not _posts(reposted, standings_channel, 3), (
+            "standings were posted for a round that has not been raced"
+        )
+
+
+@pytest.mark.xfail(strict=True, reason="#443: every results table is reposted with the old points")
+async def test_an_approved_amendment_reposts_every_results_table_with_the_new_points(db_path):
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
+    await _seed_raced_division(
+        path, season_id, "Beta", channels=(511, 512), driver_offset=1000
+    )
+
+    reposted: list[tuple] = []
+    await _approve_raised_win(path, season_id, reposted)
+
+    for results_channel, winner in ((501, _WINNER), (511, _WINNER + 1000)):
+        for round_number in (1, 2):
+            posts = _posts(reposted, results_channel, round_number)
+            assert posts, f"round {round_number} results were not reposted to {results_channel}"
+            winner_line = next(
+                line for line in posts[-1].splitlines() if line.startswith(f"**1.** <@{winner}>")
+            )
+            assert winner_line.endswith("**30 pts**"), winner_line
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
+    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
+
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502)
+    )
+    await enable_amendment_mode(path, season_id)
+    await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
+
+    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+
+    for session_id in sessions:
+        assert (await _race_points(path, session_id))[_THIRD] == (15, 3)
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_rescoring_keeps_the_fastest_lap_override(db_path):
+    """The runner-up was given the fastest lap by hand; the rescoring must not hand it back
+    to the quickest time."""
+    from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
+
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502),
+        classification=(
+            (_WINNER, 1, "CLASSIFIED", "1:31.000", 25, 0, 0),
+            (_RUNNER_UP, 2, "CLASSIFIED", "1:31.500", 18, 1, 0),
+            (_THIRD, 3, "CLASSIFIED", "1:30.000", 15, 0, 0),
+        ),
+        fastest_lap_override=_RUNNER_UP,
+    )
+    await enable_amendment_mode(path, season_id)
+    await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
+
+    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+
+    for session_id in sessions:
+        points = await _race_points(path, session_id)
+        assert points[_RUNNER_UP] == (18, 3), points
+        assert points[_THIRD] == (15, 0), points
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
+    """Third set the quickest lap; with the bonus now limited to the top two, nobody holds it."""
+    from leaguebot.core.services.amendment_service import (
+        approve_amendment,
+        modify_fl_position_limit,
+    )
+
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502)
+    )
+    await enable_amendment_mode(path, season_id)
+    await modify_fl_position_limit(path, season_id, "STD", "FEATURE_RACE", 2)
+
+    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+
+    for session_id in sessions:
+        points = await _race_points(path, session_id)
+        assert points[_THIRD] == (15, 0), points
+        assert all(bonus == 0 for _points, bonus in points.values()), points
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_an_approved_amendment_rescores_qualifying(db_path):
+    from leaguebot.core.services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_points_config(path, season_id, qualifying={1: 3})
+    _division, _raced, _s, qualifying_sessions, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502),
+        qualifying=((_WINNER, 1, 3), (_RUNNER_UP, 2, 0)),
+    )
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 1, 5)
+
+    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+
+    async with get_connection(path) as db:
+        for session_id in qualifying_sessions:
+            cursor = await db.execute(
+                "SELECT points_awarded FROM qualifying_session_results "
+                "WHERE session_result_id = ? AND driver_user_id = ?",
+                (session_id, _WINNER),
+            )
+            assert (await cursor.fetchone())["points_awarded"] == 5
+
+
+async def test_a_session_under_another_configuration_keeps_its_points(db_path):
+    """Beta races under ALT, 12-8-6 with no fastest-lap bonus; amending STD leaves it alone."""
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    await _seed_points_config(path, season_id, "ALT", race={1: 12, 2: 8, 3: 6}, fastest_lap=None)
+    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
+    _division, _raced, alt_sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Beta", channels=(511, 512), config="ALT", driver_offset=1000,
+        classification=(
+            (_WINNER, 1, "CLASSIFIED", "1:31.000", 12, 0, 0),
+            (_RUNNER_UP, 2, "CLASSIFIED", "1:31.500", 8, 0, 0),
+            (_THIRD, 3, "CLASSIFIED", "1:30.000", 6, 0, 0),
+        ),
+    )
+
+    await _approve_raised_win(path, season_id)
+
+    for session_id in alt_sessions:
+        assert await _race_points(path, session_id) == {
+            _WINNER + 1000: (12, 0),
+            _RUNNER_UP + 1000: (8, 0),
+            _THIRD + 1000: (6, 0),
+        }
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_rescoring_keeps_the_sanctions(db_path):
+    """The winner and the runner-up are paid the new table; the penalties stand.
+
+    The runner-up was given a time penalty and is stored at the second place it left them
+    in; third did not finish, fourth was disqualified having set the quickest lap, and
+    fifth did not start.
+    """
+    from leaguebot.core.services.amendment_service import approve_amendment
+
+    path, season_id = db_path
+    await _seed_points_config(path, season_id, race={1: 25, 2: 18, 3: 15, 4: 12, 5: 10})
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502), round_statuses=("FINAL",),
+        classification=(
+            (_WINNER, 1, "CLASSIFIED", "1:31.000", 25, 0, 0),
+            (_RUNNER_UP, 2, "CLASSIFIED", "1:31.500", 18, 0, 5000),
+            (_THIRD, 3, "DNF", "1:32.000", 0, 0, 0),
+            (1004, 4, "DSQ", "1:29.000", 0, 0, 0),
+            (1005, 5, "DNS", None, 0, 0, 0),
+        ),
+    )
+    await enable_amendment_mode(path, season_id)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 20)
+
+    await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
+
+    points = await _race_points(path, sessions[0])
+    assert points[_WINNER][0] == 30, points
+    assert points[_RUNNER_UP][0] == 20, "the time-penalised driver was not scored at their place"
+    assert points[_THIRD][0] == 0, "a driver who did not finish was paid for their place"
+    assert points[1004] == (0, 0), "a disqualified driver was paid"
+    assert points[1005] == (0, 0), "a driver who did not start was paid"
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db_path):
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502),
+        round_statuses=("FINAL", "AWAITING_REPORT_VERDICTS"),
+    )
+
+    reposted: list[tuple] = []
+    await _approve_raised_win(path, season_id, reposted)
+
+    assert (await _race_points(path, sessions[1]))[_WINNER] == (30, 0)
+    posts = _posts(reposted, 501, 2)
+    assert posts, "the round in review was not reposted"
+    assert "Provisional Results" in posts[-1], posts[-1]
+    assert "**30 pts**" in posts[-1], posts[-1]
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_a_cancelled_division_is_rescored(db_path):
+    """Beta was cancelled after two rounds; what it raced is scored under the new table too
+    (decided 2026-09-26)."""
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
+    _division, _raced, cancelled_sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Beta", channels=(511, 512), driver_offset=1000,
+        division_status="CANCELLED", unraced_status="CANCELLED",
+    )
+
+    await _approve_raised_win(path, season_id)
+
+    for session_id in cancelled_sessions:
+        assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
+
+
+async def test_rescoring_leaves_another_season_alone(db_path):
+    """A completed season scored under its own STD table keeps the points it was scored with."""
+    path, season_id = db_path
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number) "
+            "VALUES ('2025-01-01', 'COMPLETED', 0)"
+        )
+        other_season_id = cursor.lastrowid
+        await db.commit()
+    await _seed_points_config(path, other_season_id)
+    _division, _raced, other_sessions, _q, _unraced = await _seed_raced_division(
+        path, other_season_id, "Alpha", channels=(531, 532), driver_offset=2000
+    )
+    await _seed_points_config(path, season_id)
+    await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
+
+    await _approve_raised_win(path, season_id)
+
+    for session_id in other_sessions:
+        assert (await _race_points(path, session_id))[_WINNER + 2000] == (25, 0)
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
+    """Scoring the second session raises: the approval fails whole, and the season, the
+    staged changes and the first session's points are exactly as they stood."""
+    from leaguebot.core.services.amendment_service import approve_amendment
+    from leaguebot.results.services import result_submission_service
+
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502)
+    )
+    await _staged_amendment(path, season_id)
+
+    real_scoring = result_submission_service._apply_points_in_tx
+    calls: list[int] = []
+
+    async def failing_on_the_second_session(db, session_result_id, *args, **kwargs):
+        calls.append(session_result_id)
+        if len(calls) == 2:
+            raise RuntimeError("database is locked")
+        return await real_scoring(db, session_result_id, *args, **kwargs)
+
+    monkeypatch.setattr(
+        result_submission_service, "_apply_points_in_tx", failing_on_the_second_session
+    )
+
+    reposted: list[tuple] = []
+    with pytest.raises(RuntimeError, match="database is locked"):
+        await approve_amendment(path, season_id, 99, _scoring_bot(path, reposted))
+
+    assert reposted == [], "a failed approval reposted"
+    points, staged, state = await _season_state(path, season_id)
+    assert points == [(1, 25), (2, 18), (3, 15)], "the season's table moved"
+    assert staged == [(1, 30), (2, 18), (3, 15)], "the staged changes were lost"
+    assert state is not None and state.amendment_active and state.modified_flag
+    for session_id in sessions:
+        assert (await _race_points(path, session_id))[_WINNER] == (25, 0), (
+            "a failed approval kept part of its rescoring"
+        )
