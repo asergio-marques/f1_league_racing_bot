@@ -156,8 +156,10 @@ repo. Tests here stub Discord and exercise the code beneath it.
 by hand, verified by running them, and a broken one costs a maintainer a rerun rather than a
 league anything. Do not add tests for them. The exceptions are the tools a workflow runs, which
 are part of the build and keep their tests: `tools/coverage_by_module.py`, CI's per-module
-coverage gate; `tools/check_pr_labels.py`, the required pull-request label check; and
-`tools/next_version.py`, which names every release (the last two decided 2026-09-21, #259). Bot
+coverage gate; `tools/check_pr_labels.py`, the required pull-request label check;
+`tools/next_version.py`, which names every release (the last two decided 2026-09-21, #259); and
+`tools/changed_tests.py`, which the `work-issue` workflow runs to hold every test change to what the
+owner approved at Gate 2 (decided 2026-09-26). Bot
 code a tool happens to use is in `src/` and is tested like any other — the LCH colour maths
 `tools/tier_palette.py` relies on is tested in `tests/image/test_colour_lch.py`.
 
