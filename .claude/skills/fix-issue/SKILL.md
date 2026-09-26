@@ -217,10 +217,12 @@ second round.
 ### What a stage returns
 
 - **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
-  the product owner framed them, its recommendation first. Add the answers to `decisions`, and
-  run the same stage again with this result as `previous`, so its rounds carry on. An escalation
-  that carries `finding` is a dispute the user rules on: pass their choice as
-  `rulings: { "<finding>": "fix" }` or `"leave"`, and a finding left as built is closed.
+  the product owner framed them, its recommendation first. Merge any two that ask the same thing.
+  A question no checker settled comes as the builder wrote it: frame it for the user in plain
+  terms first. Add the answers to `decisions`, and run the same stage again with this result as
+  `previous`, so its rounds carry on. An escalation that carries `finding` is a dispute the user
+  rules on: pass their choice as `rulings: { "<finding>": "fix" }` or `"leave"`. Every such
+  dispute needs a ruling, or the stage refuses to run; a finding left as built is closed.
 - **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
   with `openMaterial` and `lastFailures`.
 - **`failed`:** read `failure`. A host at fault, such as a full `/tmp`, is repaired and the stage
