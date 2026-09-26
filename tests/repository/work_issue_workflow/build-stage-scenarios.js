@@ -176,3 +176,31 @@ Object.assign(module.exports, {
     expect: r => r.status === 'unfinished' && r.lastFailures.some(x => x.includes('could not list') && x.includes('bad revision t0')),
   },
 })
+
+Object.assign(module.exports, {
+  testsHeadCarriedFromTheLastRun: {
+    args: { ...B, decisions: 'D', previous: buildPrev({ testsHead: 't0' }) },
+    respond(label, prompt) {
+      if (label.endsWith(':tester') && !prompt.includes('--base t0 --issue 999')) throw new Error('testsHead not carried from previous')
+      return label.endsWith(':builder') ? builder({ tests: [] }) : lanesClean(label)
+    },
+    expect: r => r.status === 'passed' && r.testsHead === 't0',
+  },
+  citationsFromARerunTestsStageReachTheBuild: {
+    args: { ...H, decisions: 'D', citations: [{ question: 'q1', answer: 'a1', source: 's1' }, { question: 'q2', answer: 'a2', source: 's2' }], previous: buildPrev({ citations: [{ question: 'q1', answer: 'a1', source: 's1' }] }) },
+    respond(label, prompt) {
+      if (label.endsWith(':builder') && !prompt.includes('a2')) throw new Error('the tests stage citation did not reach the builder')
+      return label.endsWith(':builder') ? builder({ tests: [] }) : lanesClean(label)
+    },
+    expect: r => r.status === 'passed' && r.citations.length === 2,
+  },
+  buildTesterDidNotRunTheTool: {
+    args: { ...H, maxRounds: 1 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite({ changes: changes([], [], [], '') })
+      return lanesClean(label)
+    },
+    expect: r => r.status === 'unfinished' && r.lastFailures.some(x => x.includes('did not show that it ran')),
+  },
+})

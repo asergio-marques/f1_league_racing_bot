@@ -216,7 +216,7 @@ Object.assign(module.exports, {
       if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A, { failsWithRunxfail: false, outcomeAsCommitted: 'passed' }), ran(B, { failsWithRunxfail: false, outcomeAsCommitted: 'passed' })], changes: changes([[A, 'added'], [B, 'added']]) })
       return cleanLanes(label)
     },
-    expect: r => r.status === 'passed' && r.report.includes('`test_b` *(new since the last Gate 2)*') && r.report.includes('*Passes already:*'),
+    expect: r => r.status === 'passed' && r.report.includes('`test_b` *(new since the last Gate 2)*') && r.report.includes('*Passes already:*') && r.report.includes('**A1** `test_a`\n'),
   },
   reportListsEveryEntry: {
     args: { ...base, stage: 'tests', branch: 'fix/999-x' },
@@ -288,5 +288,89 @@ Object.assign(module.exports, {
       return review()
     },
     expect: r => r.status === 'passed' && r.summary === '' && r.report.includes('The product owner wrote no summary'),
+  },
+})
+
+// The review's second round: labels and descriptions kept from one gate to the next, ratchet lines
+// left to the build, and the tool's run proved.
+Object.assign(module.exports, {
+  labelsKeptAcrossGates: {
+    args: { ...base, stage: 'tests', decisions: 'GATE 2: add a test for the empty division', previous: passedTests({ tests: [entry('tests/y/test_c.py::test_b', 'added', { label: 'A1' })] }) },
+    respond(label) {
+      const B = 'tests/y/test_c.py::test_b'
+      const N = 'tests/a/test_z.py::test_new'
+      if (label.endsWith(':builder')) return builder({ tests: [entry(B, 'added'), entry(N, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(B), ran(N)], changes: changes([[B, 'added'], [N, 'added']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.report.includes('**A1** `test_b`\n') && r.report.includes('**A2** `test_new` *(new since the last Gate 2)*'),
+  },
+  builderGivenTheListToKeep: {
+    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' })] }) },
+    respond(label, prompt) {
+      if (label.endsWith(':builder') && (!prompt.includes('The list as it stands') || !prompt.includes('THE-SCENARIO-SHOWN') || !prompt.includes('"label": "A1"') || !prompt.includes('word for word'))) throw new Error('builder not given the list to keep')
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  firstBuilderGivenNoList: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      if (label.endsWith(':builder') && round(label) === 1 && prompt.includes('The list as it stands')) throw new Error('a first builder given a list')
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  affectsInAnotherOrderIsNoChange: {
+    args: { ...base, stage: 'tests', decisions: 'D', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1' })], support: [{ file: 'tests/x/test_a.py', name: 'seat', change: 'added', what: 'W', affects: [A, 'tests/x/test_a.py::test_b'], label: 'S1' }] }) },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added')], support: [{ file: 'tests/x/test_a.py', name: 'seat', change: 'added', what: 'W', affects: ['tests/x/test_a.py::test_b', A] }] })
+      if (label.endsWith(':tester')) return testsCheck({ changes: changes([[A, 'added']], [['tests/x/test_a.py', 'seat', 'added']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && !r.report.includes('since the last Gate 2'),
+  },
+  ratchetLinesAreLeftOutOfTheList: {
+    args: { ...base, stage: 'tests' },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck({ changes: changes([[A, 'added']], [['tests/repository/test_architecture_rules.py', 'KNOWN_DIRECT_POSTS', 'modified']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  movedWithoutWhy: {
+    args: { ...base, stage: 'tests', maxRounds: 1 },
+    respond(label) {
+      const V = 'tests/y/test_v.py::test_v'
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added'), entry(V, 'moved')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(V)], changes: changes([[A, 'added'], [V, 'moved', 'tests/x/test_v.py::test_v']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'unfinished' && r.lastFailures.some(x => x.includes('test_v gives no why')),
+  },
+  testerDidNotRunTheTool: {
+    args: { ...base, stage: 'tests', maxRounds: 1 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck({ changes: changes([[A, 'added']], [], [], '') })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'unfinished' && r.lastFailures.some(x => x.includes('did not show that it ran tools/changed_tests.py')),
+  },
+  onlyDeletionsSkipTheRuns: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      const D = 'tests/x/test_a.py::test_d'
+      if (label.endsWith(':tester') && !prompt.includes('there is no test to run: skip steps 3 and 4')) throw new Error('the tester was not told to skip the runs')
+      if (label.endsWith(':builder')) return builder({ tests: [entry(D, 'deleted', { why: 'W' })] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [], changes: changes([[D, 'deleted']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.counts.deleted === 1,
   },
 })

@@ -1,6 +1,7 @@
 // Stand-ins for the answers the workflow's agents give, each overridable field by field.
 // What tools/changed_tests.py prints, from [nodeid, change] pairs and [file, name, change] triples.
-const changes = (tests = [], support = [], markersRemoved = []) => ({
+const changes = (tests = [], support = [], markersRemoved = [], head = 'h1') => ({
+  head,
   tests: tests.map(([nodeid, change, from]) => ({ nodeid, change, ...(from ? { from } : {}) })),
   support: support.map(([file, name, change]) => ({ file, name, change })),
   markersRemoved,

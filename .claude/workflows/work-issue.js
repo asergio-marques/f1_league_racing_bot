@@ -358,7 +358,7 @@ const { worktree, python, branch, base } = ARGS
 // The commit at which the owner approved the tests at Gate 2. From it the build changes no test but
 // to remove the issue's markers, the ratchet lines the plan names and import lines: any other test
 // change it needs goes to the owner as a proposal, and the tests stage makes it.
-const testsHead = stage === 'build' ? ARGS.testsHead || null : null
+const testsHead = stage === 'build' ? ARGS.testsHead || (ARGS.previous && ARGS.previous.testsHead) || null : null
 const BIN = python.slice(0, python.lastIndexOf('/'))
 const MAX_ROUNDS = { tests: 2, build: 3 }
 const maxRounds = Number(ARGS.maxRounds) || MAX_ROUNDS[stage]
@@ -371,7 +371,10 @@ if (previous && previous.stage !== stage) throw new Error(`previous is a ${previ
 const offset = previous ? previous.lastRound : 0
 const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f }]))
 // Rules cited in an earlier stage, such as the tests stage's for the build, arrive in `citations`.
-const citations = previous ? [...previous.citations] : [...(ARGS.citations || [])]
+// Both the run's own and those passed in: a build resumed after a tests stage run again is given
+// that run's citations, which its own `previous` never saw.
+const citations = [...(previous ? previous.citations : []), ...(ARGS.citations || [])]
+  .filter((c, i, all) => all.findIndex(d => d.question === c.question && d.source === c.source && d.answer === c.answer) === i)
 const commits = previous ? [...previous.commits] : []
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
@@ -410,7 +413,7 @@ for (const f of ledger.values()) {
   }
 }
 
-const STAGE_NAME = stage === 'tests' ? 'the tests stage, where every test change is made and no production code' : 'the build'
+const STAGE_NAME = stage === 'tests' ? 'the tests stage, where every test change is made and no production code is added' : 'the build'
 const WHERE = `Work only in the checkout at ${worktree}, on branch ${branch}. First check that git -C ${worktree} branch --show-current prints ${branch}; if it does not, change nothing and report onBranch false. Run every git command as git -C ${worktree}, and read and edit files under ${worktree} only. The branch's work starts at ${base}.`
 const BRANCH_READ = `The branch is checked out at ${worktree}, on ${branch}, and its work starts at ${base}: read git -C ${worktree} log ${base}..HEAD, git -C ${worktree} diff ${base}...HEAD, and the files under ${worktree}.`
 const NO_PYTEST = `Never run pytest: ${stage === 'build' ? 'the suite is running beside you, and a second session corrupts it' : 'the tester has run what is needed'}.`
@@ -447,21 +450,22 @@ const TESTS_JOB = `This is the tests stage. Make every change to tests/ that thi
 - change each existing test the change alters, whether its expectation or a call the plan changes;
 - delete each test the plan makes obsolete;
 - change the fixtures, helpers and data under tests/ that these need.
-The one exception is the architecture ratchet lines the plan names as removed: the build deletes each in the commit that removes its breach, and you leave them. After this stage the build may change no test, so anything the plan's change needs of tests/ is made here.
+The one exception is the architecture ratchet lines the plan names as removed: the build deletes each in the commit that removes its breach, and you leave them. After this stage the build may change no test, so anything the plan's change needs of tests/ is made here. Where the build has already begun and stopped to ask for a test change, the branch carries its commits: add yours on top, and still no production code.
 
-Mark each new test, and each changed test that fails before the change, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. A test that passes as committed, because it pins behaviour already built or because the build has already made it pass, is left unmarked. Run the tests both ways, as below: with --runxfail each marked test must fail, for the reason the plan gives; without it each marked test must be reported xfailed and each unmarked one must pass, and nothing else in their files may fail. Commit them as the first commit of this work, unless the plan places them otherwise.
+Mark each new test, and each changed test that fails before the change, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A failing case added to a parametrised test is marked on the case alone, as pytest.param(<values>, marks=pytest.mark.xfail(strict=True, reason="#${issue}: ...")), so that its passing cases do not XPASS; and a test in a class is marked on its own method, never through the class. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. A test that passes as committed, because it pins behaviour already built or because the build has already made it pass, is left unmarked. Run the tests both ways, as below: with --runxfail each marked test must fail, for the reason the plan gives; without it each marked test must be reported xfailed and each unmarked one must pass, and nothing else in their files may fail. Commit them before any production code the plan adds: as the first commit of this work, unless the plan places them otherwise or the build has already begun.
 
-List in tests[] every test this work adds, changes, deletes or moves since ${base}, earlier rounds and runs included, and in support[] every fixture, helper, module-level value or file under tests/ that it adds, changes, deletes or moves. Both lists must match what ${CHANGED_TESTS(base)} prints, entry for entry, with its node ids, its names and its change for each: run it before you finish. Import lines are never a change. The owner approves the tests from these lists before any code is written, so write each entry in plain terms, as a league manager would follow it:
+List in tests[] every test this work adds, changes, deletes or moves since ${base}, earlier rounds and runs included, and in support[] every fixture, helper, module-level value or file under tests/ that it adds, changes, deletes or moves. Both lists must match what ${CHANGED_TESTS(base)} prints, entry for entry, with its node ids, its names and its change for each, the architecture ratchet lists alone excepted: run it before you finish. An import or a patched path that a move rewrites is never a change; one that binds or patches something else is. The owner approves the tests from these lists before any code is written, so write each entry in plain terms, as a league manager would follow it:
 - change: added, modified, deleted or moved.
 - scenario: the concrete situation the test sets up and the action it takes: which drivers, seasons, rounds or records, in what state, and which command or call.
 - expects: what it asserts.
 - before: for a modified test, what it set up and expected until now; where only its wording or docstring changes, say so.
 - why: for a deleted test, why it goes, and what pins its rule now if anything does; for a moved one, why it moves.
+Where a list already stands, from an earlier round or run, it is given to you below under its labels: keep each entry's description word for word where its test is unchanged and nobody has asked for it to change, since the owner compares the list with the one they last saw. A label the owner's decisions use names the entry that carries it there.
 - criterion: the acceptance criterion it pins, where there is one.
 - alreadyPasses: true for a test left unmarked because it passes already.
 Each entry in support[] gives the file and the name as the command prints them, the change, what it now does, and in affects the node ids of the tests that use it.`
 
-const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but three things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; and import lines. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
+const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but three things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; and the imports and patched paths that a move of the plan's rewrites, the names they bind or patch unchanged. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
 
 // ---- the round loop's schemas ---------------------------------------------------------------
 
@@ -579,8 +583,9 @@ const REVIEW_SCHEMA = {
 // What tools/changed_tests.py prints, copied by the tester that runs it.
 const CHANGES = {
   type: 'object',
-  required: ['tests', 'support', 'markersRemoved'],
+  required: ['head', 'tests', 'support', 'markersRemoved'],
   properties: {
+    head: { type: 'string', description: 'the head commit it printed; empty where it did not run or failed' },
     tests: {
       type: 'array',
       items: { type: 'object', required: ['nodeid', 'change'], properties: { nodeid: { type: 'string' }, change: { type: 'string' }, from: { type: 'string' } } },
@@ -697,12 +702,12 @@ ${WHERE}
 
 ${stage === 'tests' ? TESTS_JOB : BUILD_JOB}${DESIGN_PASS}
 
-${start}${answered}
+${start}${answered}${stage === 'tests' ? section('The list as it stands, under its labels', written.length || supportWritten.length ? { tests: written, support: supportWritten } : '') : ''}
 
 ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
 
-const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with the scenario and expectation it gives the owner. One marked alreadyPasses passes already: it is unmarked and must pass. A deleted one is gone, and says why. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
+const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with the scenario and expectation it gives the owner. Name a test by its node id in a finding: a label can change before the gate. One marked alreadyPasses passes already: it is unmarked and must pass. A deleted one is gone, and says why. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
 const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ the builder changed, each under its label'
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
@@ -723,7 +728,7 @@ const testsTesterPrompt = (k, tests) => `You check the tests changed in round ${
 3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give the failure pytest reports: the assertion or exception, and its line. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
-${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
+${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
 
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
@@ -744,7 +749,7 @@ const buildTesterPrompt = k => {
 5. Wait for the suite, as below, until its exit code appears.
 6. Read the outcome: the exit code from ${logFile}.exit; pytest's closing line, from tail -n 5 ${logFile}; and every line grep -E '^(FAILED|ERROR)' ${logFile} finds, each with the reason pytest gives for it further up the log.
 7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem. Say so there too for an exit code of 75.
-${testsHead ? `8. What the build has changed under tests/ since the owner approved the tests: run ${CHANGED_TESTS(testsHead)}, with a Bash timeout of 600000 ms, and copy the tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.` : '8. Leave the lists in changes empty, and changesError empty: this build has no approved tests to hold it to.'}
+${testsHead ? `8. What the build has changed under tests/ since the owner approved the tests: run ${CHANGED_TESTS(testsHead)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.` : '8. Leave changes empty, its head included, and changesError empty: this build has no approved tests to hold it to.'}
 
 ${RUN_PYTEST}`
 }
@@ -804,19 +809,46 @@ const filled = v => String(v === undefined || v === null ? '' : v).trim() !== ''
 // Entries in report order: files sorted, and within a file as the builder listed them.
 const byFile = (entries, fileOfEntry) => [...new Set(entries.map(fileOfEntry))].sort().map(f => [f, entries.filter(e => fileOfEntry(e) === f)])
 
-// Every entry keeps a label for the whole run, so that the checkers, the product owner's summary
-// and the report all name a test the same way.
+// A ratchet list of the architecture checks, whose lines the build deletes as it removes each
+// breach the plan names: the issue reviewer holds each deletion to the plan, and neither list of
+// the tests stage carries it.
+const isRatchet = s => s.file.startsWith('tests/repository/') && s.name.startsWith('KNOWN_') && s.change === 'modified'
+
+// Each entry is labelled for the owner. An entry the owner saw at the last Gate 2 keeps the label
+// it had there, so that the owner's answer ("reword A3") names the same test in the next list; a
+// new entry takes the next number free. Labels may shift between rounds before a gate, so the
+// checkers name tests by node id.
 const labelled = (tests, support) => {
-  const out = []
+  const before = new Map([
+    ...(shown ? shown.tests : []).filter(t => t.label).map(t => [`t|${t.nodeid}|${t.change}`, t.label]),
+    ...(shown ? shown.support : []).filter(x => x.label).map(x => [`s|${supportKey(x)}|${x.change}`, x.label]),
+  ])
+  const used = new Set()
+  const highest = {}
+  for (const label of before.values()) {
+    const [, prefix, n] = label.match(/^([A-Z]+)(\d+)$/) || []
+    if (prefix) highest[prefix] = Math.max(highest[prefix] || 0, Number(n))
+  }
+  const give = prefix => {
+    highest[prefix] = (highest[prefix] || 0) + 1
+    const label = `${prefix}${highest[prefix]}`
+    used.add(label)
+    return label
+  }
+  // Kept labels are claimed first, so that no new entry takes a number an old one holds.
+  const order = []
   for (const g of [...GROUPS, { change: null, prefix: 'X' }]) {
     const group = tests.filter(t => g.change ? t.change === g.change : !GROUPS.some(x => x.change === t.change))
-    let n = 0
-    for (const [, entries] of byFile(group, t => fileOf(t.nodeid))) for (const t of entries) out.push({ ...t, label: `${g.prefix}${++n}` })
+    for (const [, entries] of byFile(group, t => fileOf(t.nodeid))) for (const t of entries) order.push([t, `t|${t.nodeid}|${t.change}`, g.prefix])
   }
-  let n = 0
-  const outSupport = []
-  for (const [, entries] of byFile(support, s => s.file)) for (const s of entries) outSupport.push({ ...s, label: `S${++n}` })
-  return { tests: out, support: outSupport }
+  for (const [, entries] of byFile(support, x => x.file)) for (const x of entries) order.push([x, `s|${supportKey(x)}|${x.change}`, 'S'])
+  const labels = new Map()
+  for (const [entry, key] of order) if (before.has(key) && !used.has(before.get(key))) { labels.set(entry, before.get(key)); used.add(before.get(key)) }
+  for (const [entry, , prefix] of order) if (!labels.has(entry)) labels.set(entry, give(prefix))
+  return {
+    tests: order.filter(([, , prefix]) => prefix !== 'S').map(([t]) => ({ ...t, label: labels.get(t) })),
+    support: order.filter(([, , prefix]) => prefix === 'S').map(([x]) => ({ ...x, label: labels.get(x) })),
+  }
 }
 
 // The builder's lists against what tools/changed_tests.py prints. The owner approves the tests
@@ -824,6 +856,7 @@ const labelled = (tests, support) => {
 // without its scenario is a change approved blind.
 const listProblems = (t, tests, support) => {
   if (t.changesError) return [`tools/changed_tests.py could not list what the branch changes under tests/: ${t.changesError}`]
+  if (!filled(t.changes.head)) return ['the tester did not show that it ran tools/changed_tests.py: changes carries no head']
   const problems = []
   const compare = (found, listed, keyOf, where) => {
     const mine = new Map(listed.map(x => [keyOf(x), x]))
@@ -836,9 +869,9 @@ const listProblems = (t, tests, support) => {
     for (const [key, w] of mine) if (!theirs.has(key)) problems.push(`${key} is listed as ${w.change}, but the branch does not change it`)
   }
   compare(t.changes.tests, tests, x => bareId(x.nodeid), 'tests[]')
-  compare(t.changes.support, support, supportKey, 'support[]')
+  compare(t.changes.support.filter(x => !isRatchet(x)), support.filter(x => !isRatchet(x)), supportKey, 'support[]')
   for (const w of tests) {
-    const owed = ['scenario', 'expects', ...(w.change === 'modified' ? ['before'] : []), ...(w.change === 'deleted' ? ['why'] : [])]
+    const owed = ['scenario', 'expects', ...(w.change === 'modified' ? ['before'] : []), ...(['deleted', 'moved'].includes(w.change) ? ['why'] : [])]
     const missing = owed.filter(f => !filled(w[f]))
     if (missing.length) problems.push(`${w.nodeid} gives no ${missing.join(' and no ')}, and the owner approves the tests from these`)
   }
@@ -848,12 +881,14 @@ const listProblems = (t, tests, support) => {
 
 // Against the lists the owner last saw at Gate 2: an entry that was not there, or whose
 // description has changed since.
-const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'alreadyPasses', 'what', 'affects']
+// Not alreadyPasses: a test the build has made pass since is the same test.
+const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'what', 'affects']
+const described = (entry, f) => JSON.stringify(f === 'affects' ? [...(entry.affects || [])].sort() : entry[f] || '')
 const sinceShown = (entry, before, keyOf) => {
   if (!shown) return ''
   const was = before.find(b => keyOf(b) === keyOf(entry))
   if (!was || was.change !== entry.change) return ' *(new since the last Gate 2)*'
-  return DESCRIBED.some(f => JSON.stringify(was[f] || '') !== JSON.stringify(entry[f] || '')) ? ' *(changed since the last Gate 2)*' : ''
+  return DESCRIBED.some(f => described(was, f) !== described(entry, f)) ? ' *(changed since the last Gate 2)*' : ''
 }
 
 const counts = () => ({
@@ -947,24 +982,18 @@ const reviewTests = async (k, questions) => {
     () => agent(productPrompt(k, questions.business, test, written, supportWritten), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const problems = testsProblems(test)
-  // A stage run again, as after a test change the build asked for, may add only tests the build
-  // has already made pass: the first run alone must hold one that fails.
-  const failing = written.filter(w => !w.alreadyPasses && w.change !== 'deleted')
-  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && (failing.length > 0 || !!previous) && !problems.length }
+  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && !problems.length }
 }
 
 // The host, not the code: what the tester reports as such, and a lock flock gave up on.
 const hostProblem = t => t ? (t.environmentProblem || (t.exitCode === 75 || t.lockTimedOut ? 'flock gave up waiting an hour for the test lock' : '')) : ''
-
-// A ratchet list of the architecture checks, whose lines the build deletes as it removes each
-// breach the plan names: the issue reviewer holds each deletion to the plan.
-const isRatchet = s => s.file.startsWith('tests/repository/') && s.name.startsWith('KNOWN_') && s.change === 'modified'
 
 // What the build changed under tests/ after the owner approved the tests, but the three things it
 // may: markers removed, ratchet lines and imports, which the tool does not report.
 const unapprovedTestChanges = t => {
   if (!testsHead || !t) return []
   if (t.changesError) return [`tools/changed_tests.py could not list what the build changed under tests/: ${t.changesError}`]
+  if (!filled(t.changes.head)) return ['the tester did not show that it ran tools/changed_tests.py: changes carries no head']
   const since = `since the tests the owner approved at ${testsHead}: revert it, and propose it in testChanges[] if the build needs it`
   return [
     ...t.changes.tests.map(x => `${x.nodeid} is ${x.change} ${since}`),
@@ -1040,9 +1069,9 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   // A claim counts only on a finding the builder still owes: a settled or minor one stays as it is.
   for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }
   for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason; f.notFixedBecause = '' } }
-  if (stage === 'tests' && !previous && built.planComplete && !built.tests.some(t => !t.alreadyPasses && t.change !== 'deleted')) {
+  if (stage === 'tests' && !previous && built.planComplete && !built.tests.length && !(built.support || []).length) {
     status = 'failed'
-    failure = 'the builder wrote no failing test: the tests stage is only for a plan that names one'
+    failure = 'the builder changed no test: the tests stage is only for a plan that changes one'
     break
   }
 
