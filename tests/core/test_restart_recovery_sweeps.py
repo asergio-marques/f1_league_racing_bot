@@ -565,6 +565,30 @@ async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
     assert "/round results amend" in logged
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: the notice still says to re-run /round results amend"
+)
+async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_rounds_amend(tmp_path):
+    """Nothing to put back: the corrections were never entered, or the amendment had been
+    approved. For the first, the notice sends the manager to the command they now type."""
+    db_path = await _base_db(tmp_path, "amend_notice_rerun")
+    await _seed_amend(db_path)
+    stub = _stub_bot(db_path, guild=_amend_guild())
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=False),
+    ):
+        await bot_module._recover_orphaned_amend_channels(stub)
+
+    logged = str(stub.output_router.post_log.await_args.args[0])
+    assert (
+        "  Amendment channel deleted; nothing needed putting back. If the amendment had not "
+        "been approved, re-run /results rounds amend. If it had, its channels may be "
+        "part-rebuilt: run /results rounds sync and /results standings sync."
+    ) in logged.splitlines()
+
+
 async def test_the_notice_names_the_round_and_the_session(tmp_path):
     """A manager with four sessions amended over an evening needs to know which one went."""
     db_path = await _base_db(tmp_path, "amend_notice_names")

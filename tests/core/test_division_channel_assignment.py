@@ -435,3 +435,51 @@ async def test_a_successful_assignment_is_logged(tmp_path, monkeypatch):
     logged = cog.bot.output_router.post_log.await_args.args[0]
     assert "weather-channel" in logged
     assert "Division 1" in logged
+
+
+# ---------------------------------------------------------------------------
+# The log line names the command by its module's group (#462)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason="#462: the log line still names /division weather-channel")
+async def test_the_weather_channel_is_logged_as_weather_channel(tmp_path, monkeypatch):
+    """A log line names the member, the command and its outcome, and the command is the one a
+    league now types: `/weather channel`."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await cog._set_division_channel(_interaction(), "Division 1", _channel(), "weather")
+
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert logged.splitlines() == [
+        f"Manager (<@{ACTOR_ID}>) | /weather channel | Success",
+        "  division: Division 1",
+        "  channel: #forecasts",
+    ]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#462: the log lines still name /division results-channel and standings-channel",
+)
+@pytest.mark.parametrize(
+    "channel_type, command",
+    [("results", "/results channel results"), ("standings", "/results channel standings")],
+)
+async def test_the_results_channels_are_logged_under_results_channel(
+    tmp_path, monkeypatch, channel_type, command
+):
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await cog._set_division_channel(_interaction(), "Division 1", _channel(), channel_type)
+
+    logged = cog.bot.output_router.post_log.await_args.args[0]
+    assert logged.splitlines() == [
+        f"Manager (<@{ACTOR_ID}>) | {command} | Success",
+        "  division: Division 1",
+        "  channel: #forecasts",
+    ]

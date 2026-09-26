@@ -71,9 +71,9 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "team remove": ADMIN,
     "driver sack": ADMIN,
     # The same rule, on three commands the issue itself had at the lower tier.
-    # `/round results amend` overwrites a FINAL round's classification in place — it does
+    # `/results rounds amend` overwrites a FINAL round's classification in place — it does
     # not supersede, whatever the comment in `amend_session_results` used to claim.
-    "round results amend": ADMIN,
+    "results rounds amend": ADMIN,
     # Approval overwrites the season's points entire; the rest of `/results amend` writes
     # only the modification store, which `revert` discards.
     "results amend review": ADMIN,
@@ -90,11 +90,20 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "test-mode roster clear": ADMIN,
     "test-mode roster list": ADMIN,
     "test-mode roster remove": ADMIN,
-    "test-mode rsvp set-status": ADMIN,
     "test-mode backup save": ADMIN,
     "test-mode backup lock": ADMIN,
     "test-mode backup restore": ADMIN,
     "test-mode backup status": ADMIN,
+    # A module's test tool sits under the module's own group, and is test mode's all the same.
+    "attendance test rsvp": ADMIN,
+}
+
+#: The two league admin commands #462 renames, by the names they answer to until it lands.
+#: The register above holds them by their new names already, so until each has moved it is
+#: found at the higher tier with no entry to put it there.
+RENAMED_BY_462: dict[str, str] = {
+    "round results amend": "results rounds amend",
+    "test-mode rsvp set-status": "attendance test rsvp",
 }
 
 
@@ -135,6 +144,21 @@ def _every_command() -> dict[str, app_commands.Command]:
 COMMANDS = _every_command()
 
 
+def _tier_cases():
+    """Every command, the two #462 renames expected to fail until they have moved."""
+    for name in sorted(COMMANDS):
+        if name in RENAMED_BY_462:
+            yield pytest.param(
+                name,
+                id=name,
+                marks=pytest.mark.xfail(
+                    strict=True, reason=f"#462: /{name} is not yet /{RENAMED_BY_462[name]}"
+                ),
+            )
+        else:
+            yield name
+
+
 def test_the_cogs_declare_commands_at_all():
     """A guard on the guard: an import that quietly found nothing would pass everything."""
     assert len(COMMANDS) > 100
@@ -149,7 +173,7 @@ def test_every_command_declares_a_tier(name):
     )
 
 
-@pytest.mark.parametrize("name", sorted(COMMANDS))
+@pytest.mark.parametrize("name", list(_tier_cases()))
 def test_every_command_sits_at_the_tier_the_register_gives_it(name):
     callback = COMMANDS[name].callback
     expected = LEAGUE_ADMIN_COMMANDS.get(name)
@@ -174,6 +198,9 @@ def test_every_command_sits_at_the_tier_the_register_gives_it(name):
         )
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: /results rounds amend and /attendance test rsvp do not exist yet"
+)
 def test_the_register_names_no_command_that_does_not_exist():
     """A renamed or withdrawn command leaves its entry behind, and the entry says nothing."""
     missing = sorted((set(LEAGUE_ADMIN_COMMANDS) | SERVER_OWNER_COMMANDS) - set(COMMANDS))
@@ -197,6 +224,10 @@ def test_only_the_setup_commands_and_the_factory_reset_run_outside_the_interacti
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#462: the two league admin commands it moves still answer to their old names",
+)
 def test_the_tiers_divide_as_the_register_says():
     """The headline split, so a wholesale drift shows up as one failure rather than many.
 

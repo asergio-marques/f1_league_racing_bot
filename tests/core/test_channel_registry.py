@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -255,6 +256,83 @@ def test_re_setting_a_channel_to_itself_is_not_reported_as_a_clash():
 def test_every_setting_has_a_label_a_league_would_recognise():
     for setting, label in SETTING_LABELS.items():
         assert label and not label.endswith("_channel_id"), setting
+
+
+# ── The refusal a command sends, if any (#462) ────────────────────────────
+#
+# `channel_refusal` holds the rule a channel command applies before it writes, returning the
+# refusal rather than sending it, so a module's command sends it in whichever state its own
+# interaction is in.
+
+_NO_CHANNEL_REFUSAL = pytest.mark.xfail(
+    strict=True, reason="#462: channel_registry_service has no channel_refusal yet"
+)
+
+
+def _text_channel(channel_id: int):
+    return SimpleNamespace(id=channel_id, mention=f"<#{channel_id}>")
+
+
+@_NO_CHANNEL_REFUSAL
+async def test_channel_refusal_passes_a_free_channel(db_path):
+    from leaguebot.core.services.channel_registry_service import channel_refusal
+
+    season_id = await _season(db_path)
+    await _division(db_path, season_id, "Pro")
+
+    assert await channel_refusal(
+        db_path, _text_channel(500), "weather", division_name="Pro"
+    ) is None
+
+
+@_NO_CHANNEL_REFUSAL
+async def test_channel_refusal_names_what_already_holds_the_channel(db_path):
+    """A channel does one job, across the whole server."""
+    from leaguebot.core.services.channel_registry_service import channel_refusal
+
+    season_id = await _season(db_path)
+    pro = await _division(db_path, season_id, "Pro")
+    await _set(db_path, "results", 500, division_id=pro)
+
+    message = await channel_refusal(
+        db_path, _text_channel(500), "weather", division_name="Pro"
+    )
+
+    assert message == refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False)
+
+
+@_NO_CHANNEL_REFUSAL
+async def test_channel_refusal_says_the_setting_already_holds_it_in_its_own_words(db_path):
+    """Re-running a command with the value it already holds is refused, and is not a clash."""
+    from leaguebot.core.services.channel_registry_service import channel_refusal
+
+    season_id = await _season(db_path)
+    pro = await _division(db_path, season_id, "Pro")
+    await _set(db_path, "weather", 500, division_id=pro)
+
+    message = await channel_refusal(
+        db_path, _text_channel(500), "weather", division_name="Pro"
+    )
+
+    assert message == refusal("<#500>", ChannelUse("weather", "Pro"), same_setting=True)
+
+
+@_NO_CHANNEL_REFUSAL
+async def test_channel_refusal_holds_one_divisions_setting_against_another_s(db_path):
+    """The same setting in another division is a clash, not the value already held."""
+    from leaguebot.core.services.channel_registry_service import channel_refusal
+
+    season_id = await _season(db_path)
+    pro = await _division(db_path, season_id, "Pro")
+    await _division(db_path, season_id, "Academy")
+    await _set(db_path, "results", 500, division_id=pro)
+
+    message = await channel_refusal(
+        db_path, _text_channel(500), "results", division_name="Academy"
+    )
+
+    assert message == refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False)
+
 
 
 # ── The hub (issue #279) ──────────────────────────────────────────────────

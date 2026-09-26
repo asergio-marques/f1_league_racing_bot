@@ -1523,3 +1523,41 @@ async def test_merge_faults_keeps_the_order_it_was_given():
     from leaguebot.results.services.results_post_service import merge_faults
 
     assert merge_faults(["a", "b"], ["c"], []) == ["a", "b", "c"]
+
+
+# ---------------------------------------------------------------------------
+# results_sync_hint — once the season is pending completion, the amendment is what reposts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#462: the pending-completion hint still names /round results amend"
+)
+@pytest.mark.asyncio
+async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
+    """Both sync commands are refused there, so the hint names the one command that reposts,
+    by the name a manager now types (#462)."""
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.results_post_service import results_sync_hint
+
+    db_path = str(tmp_path / "sync_hint.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-01-01', 'ACTIVE', 3, 'PENDING_COMPLETION')"
+        )
+        season_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Main', 777)",
+            (season_id,),
+        )
+        division_id = cursor.lastrowid
+        await db.commit()
+
+    hint = await results_sync_hint(db_path, division_id)
+
+    assert hint.startswith(
+        "Repair the cause, then amend the round again with "
+        "`/results rounds amend division_name:Main` — "
+    )

@@ -431,6 +431,19 @@ async def test_the_changes_are_logged(tmp_path):
     assert "900000001" in logged
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: the modal still logs its changes as /test-mode rsvp set-status"
+)
+async def test_the_changes_are_logged_as_attendance_test_rsvp(tmp_path):
+    """The log names the command a maintainer now types, the attendance module's test tool."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_log_name"))
+
+    await _submit(bot, "900000001, accept")
+
+    logged = str(bot.output_router.post_log.await_args.args[0])
+    assert logged.splitlines()[0] == "Maintainer (<@77>) | /attendance test rsvp | 1 update(s)"
+
+
 async def test_nothing_applied_is_not_logged(tmp_path):
     """A log line for a paste that changed nothing would be a false record of a rehearsal's
     state."""

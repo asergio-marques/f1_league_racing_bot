@@ -506,6 +506,33 @@ async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(t
     assert "AMEND_REJECTED" in _logged(cog)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: a rejected paste still says to re-run /round results amend"
+)
+@pytest.mark.parametrize(
+    "rejected, told",
+    [
+        (
+            {"parsed": ["Line 1: driver not in division"]},
+            "Check the log channel for details, then re-run `/results rounds amend`.",
+        ),
+        (
+            {"fl_override": 999},
+            "Re-run `/results rounds amend` to try again.",
+        ),
+    ],
+    ids=["validation", "fastest-lap-override"],
+)
+async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(tmp_path, rejected, told):
+    """The admin is sent back to the command they now type."""
+    db_path = await _make_db(tmp_path, name="amend_rejected_rerun")
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    await _amend(_make_cog(db_path), interaction, **rejected)
+
+    assert _replied(interaction).endswith(told)
+
+
 async def test_a_failed_write_is_reported_and_logged_with_its_trace(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_fail")
     channel = _amend_channel()

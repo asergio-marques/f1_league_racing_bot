@@ -2000,6 +2000,41 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     assert state.appeals_prompt_message_id is None
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: the AMEND_FAILED notice still says to re-run /round results amend"
+)
+async def test_a_failed_amendment_stage_says_to_re_run_results_rounds_amend(tmp_path):
+    """The AMEND_FAILED notice, and the reply beside it, send the manager to the command they
+    now type."""
+    db_path = await _make_db(tmp_path, name="amend_stage_fails_rerun")
+    state = _state(db_path, staged=[_penalty()])
+    await _open_amendment(state)
+    interaction = _interaction()
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "leaguebot.results.services.result_submission_service._close_amendment_channel", new=AsyncMock()
+    ), patch(
+        "leaguebot.results.services.penalty_service.apply_penalties",
+        new=AsyncMock(side_effect=RuntimeError("disk full")),
+    ):
+        await _run_real_apply(finalize_penalty_review, state, interaction)
+
+    notice = next(
+        str(call.args[0])
+        for call in state.bot.output_router.post_log.await_args_list
+        if "AMEND_FAILED" in str(call.args[0])
+    )
+    assert notice.splitlines()[-1] == (
+        "  The round was put back as it was. Re-run /results rounds amend to try again."
+    )
+    assert str(interaction.followup.send.await_args.args[0]).endswith(
+        "then re-run `/results rounds amend`."
+    )
+
+
 async def test_a_kept_report_keeps_its_author_and_its_time(tmp_path):
     """**A verdict follows its driver with its justification, its author and its time.** The
     report stage writes the session's decisions out again, and stamping each with the admin who

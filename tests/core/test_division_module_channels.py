@@ -567,3 +567,46 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
     row = (await _audit_rows(db_path))[0]
     assert json.loads(row["old_value"])["channel_id"] == 111
     assert json.loads(row["new_value"])["channel_id"] == CHANNEL_ID
+
+
+# ---------------------------------------------------------------------------
+# The log line names the command by its module's group (#462)
+# ---------------------------------------------------------------------------
+
+#: The command each module's channel answers to once it sits under that module's group.
+MODULE_COMMANDS = {
+    "verdicts": "/results channel verdicts",
+    "rsvp": "/attendance channel rsvp",
+    "attendance": "/attendance channel attendance",
+}
+
+
+@pytest.mark.parametrize(
+    "which",
+    [
+        pytest.param(
+            which,
+            id=which,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason=f"#462: the log line still names /division {which}-channel, "
+                f"not {MODULE_COMMANDS[which]}",
+            ),
+        )
+        for which in GATED
+    ],
+)
+async def test_the_log_line_names_the_command_a_league_now_types(tmp_path, which):
+    """A log line names the member, the command and its outcome, with the division and the
+    channel beneath it."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+
+    await _run(cog, which, _interaction())
+
+    logged = str(cog.bot.output_router.post_log.await_args.args[0])
+    assert logged.splitlines() == [
+        f"Manager (<@{ACTOR_ID}>) | {MODULE_COMMANDS[which]} | Success",
+        "  division: Division 1",
+        "  channel: #notices",
+    ]

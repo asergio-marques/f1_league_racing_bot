@@ -164,6 +164,43 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         assert f"**Pro** has no {label}" in "\n".join(on)
 
 
+def _named_by_its_module(label: str, command: str):
+    return pytest.param(
+        label,
+        command,
+        id=label,
+        marks=pytest.mark.xfail(
+            strict=True, reason=f"#462: the {label} is still named with its /division command"
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "label,command",
+    [
+        _named_by_its_module("weather channel", "/weather channel"),
+        _named_by_its_module("results channel", "/results channel results"),
+        _named_by_its_module("standings channel", "/results channel standings"),
+        _named_by_its_module("verdicts channel", "/results channel verdicts"),
+        _named_by_its_module("RSVP channel", "/attendance channel rsvp"),
+        _named_by_its_module("attendance channel", "/attendance channel attendance"),
+    ],
+)
+async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_it(
+    db_path, label, command
+):
+    """Each missing channel is named with its division and the command that sets it, and a
+    module's channels are set under that module's own group (#462)."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")
+        await db.commit()
+    cog = _cog(db_path, weather=True, results=True, attendance=True)
+
+    _, channels = await cog._placement_confirmation_faults(SEASON_ID)
+
+    assert f"**Pro** has no {label} — `{command}`." in channels
+
+
 async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_path):
     """Nothing clears a channel's id when Discord deletes it, so mid-season every channel is
     still set — whether it is still there is the question worth asking (#374)."""
