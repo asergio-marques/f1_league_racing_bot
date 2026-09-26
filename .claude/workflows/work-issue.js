@@ -83,6 +83,7 @@ const QUESTION = {
       items: { type: 'object', required: ['label', 'meaning'], properties: { label: { type: 'string' }, meaning: { type: 'string', description: 'what choosing it means, for a league where it is a business question' } } },
     },
     recommendation: { type: 'string' },
+    ref: { type: 'string', description: 'where this escalates a question of the builder\'s, that question\'s ref' },
   },
 }
 const QUESTIONS = { type: 'array', items: QUESTION }
@@ -94,6 +95,7 @@ const ANSWER = {
     question: { type: 'string' },
     answer: { type: 'string', description: 'what the rule says, quoted, and what it means for this work' },
     source: { type: 'string', description: 'the document and section, or [REQ-ID]' },
+    ref: { type: 'string', description: 'where this settles a question of the builder\'s, that question\'s ref' },
   },
 }
 
@@ -253,7 +255,7 @@ const triage = async (questions, tag, where, context, handled = []) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => agent(
-    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], copying the question word for word. A question that asks the same as one already handled, listed below, is neither answered nor escalated again. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
+    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], keeping the question's ref, where it has one, on what settles it. A question that asks the same as one already handled, listed below, is not escalated again: answer it in answers[], with its ref, as "already answered or put to the owner this round", naming which. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
     { label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
@@ -359,12 +361,17 @@ const designFiles = new Set(previous && previous.designFiles ? previous.designFi
 // finding: one the owner wants made becomes material, so that its checker must confirm it like
 // any other, and one left is closed.
 const rulings = ARGS.rulings || {}
+const badRulings = Object.entries(rulings).filter(([, v]) => v !== 'fix' && v !== 'leave')
+if (badRulings.length) throw new Error(`A ruling is "fix" or "leave", not: ${badRulings.map(([id, v]) => `${id}: ${JSON.stringify(v)}`).join(', ')}`)
+const unruled = [...ledger.values()].filter(f => f.status === 'upheld' && !rulings[f.id]).map(f => f.id)
+if (unruled.length) throw new Error(`previous holds disputes the owner has not ruled on: ${unruled.join(', ')}. Pass each in rulings as "fix" or "leave".`)
 for (const f of ledger.values()) {
   const ruling = rulings[f.id]
+  if (!ruling) continue
   if (f.status === 'upheld') {
     if (ruling === 'leave') { f.status = 'closed'; f.ownerLeft = true }
     else { f.status = 'open'; f.ownerRuled = true; f.asked = false }
-  } else if (!f.material && f.status === 'open' && ruling) {
+  } else if (f.ownerWants ? ['open', 'fixed', 'disputed'].includes(f.status) : (!f.material && f.status === 'open')) {
     if (ruling === 'fix') { f.material = true; f.ownerWants = true }
     else { f.status = 'closed'; f.ownerLeft = true }
   }
@@ -569,7 +576,7 @@ const builderPrompt = k => {
     : `Earlier rounds have already worked on this branch: read git -C ${worktree} log ${base}..HEAD first. Fix each open material finding below in a commit of its own, or dispute it with evidence where you judge it wrong; fix the failures below; and finish whatever this stage still owes. Report every finding id you fixed or disputed.`
   const answered = !(first && previous) ? ''
     : previous.status === 'question' ? ' The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.'
-      : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for the changes in the decisions below. Make them: they bind you, and this stage owes them until they are done.'
+      : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for changes: those in the decisions below, and any finding below that the owner wants made. Make them: they bind you, and this stage owes them until they are done.'
         : ''
   return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}.
 
@@ -583,7 +590,7 @@ ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the p
 }
 
 const TESTS_WRITTEN = 'The tests the builder wrote. One marked alreadyPasses pins behaviour already built: it is unmarked and must pass. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
-const COPY_QUESTION = 'copying the question word for word into answers[].question or escalations[].question'
+const COPY_QUESTION = 'giving each answer or escalation the ref of the question it settles, and framing an escalation for the owner as your instructions say'
 
 const issuePrompt = (k, questions, testReport, tests) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section('The tester\'s report', testReport)}`
 
@@ -636,16 +643,17 @@ const addFindings = (lane, found) => {
 }
 
 // A checker's verdicts on its own earlier findings. Only a verdict closes a finding: a fix the
-// builder claims stays pending until its checker confirms it. A dispute the checker rejects,
-// whether it upholds the finding or judges it not fixed, goes to the owner. A checker that
-// returned nothing judges nothing, and its findings wait for the next round.
+// builder claims stays pending until its checker confirms it, and a dispute it does not judge
+// stays a dispute, which the builder is told. A dispute the checker rejects, whether it upholds
+// the finding or judges it not fixed, goes to the owner. A checker that returned nothing judges
+// nothing, and its findings wait for the next round.
 const judge = (lane, result) => {
   if (!result) return
   const verdicts = new Map(result.prior.map(p => [p.id, p]))
   for (const f of ledger.values()) {
     if (f.lane !== lane || !f.material || !['open', 'fixed', 'disputed'].includes(f.status)) continue
     const v = verdicts.get(f.id)
-    if (!v) { if (f.status === 'disputed') f.status = 'open'; continue }
+    if (!v) continue
     // Only a dispute the builder made reaches the owner; any other verdict but fixed or accepted
     // means the finding stands, and its grounds go to the builder.
     if (v.status === 'fixed' || v.status === 'dispute-accepted') { f.status = 'closed'; f.notFixedBecause = '' }
@@ -698,10 +706,13 @@ const reviewTests = async (k, built, questions) => {
   return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !test.environmentProblem && failing.length > 0 && !problems.length }
 }
 
+// The host, not the code: what the tester reports as such, and a lock flock gave up on.
+const hostProblem = t => t ? (t.environmentProblem || (t.exitCode === 75 ? 'flock gave up waiting an hour for the test lock' : '')) : ''
+
 const suiteProblems = t => {
   if (t === undefined) return ['the suite was not run: the builder was blocked and made no commit']
   if (!t) return ['the tester returned nothing']
-  const problems = [...(t.environmentProblem ? [`the host: ${t.environmentProblem}`] : []), ...t.failures.map(f => `${f.test}: ${f.reason}`)]
+  const problems = [...(hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []), ...t.failures.map(f => `${f.test}: ${f.reason}`)]
   if (t.exitCode !== 0 && !t.failures.length) problems.push(`pytest exited ${t.exitCode}: ${t.summary}`)
   problems.push(...t.mypyErrors.map(e => `mypy: ${e}`))
   if (!t.mypyClean && !t.mypyErrors.length) problems.push('mypy reported errors')
@@ -729,7 +740,7 @@ const reviewBuild = async (k, built, questions) => {
     () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, null), { label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
-  const green = !!test && !test.environmentProblem && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length
+  const green = !!test && !hostProblem(test) && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length
   return {
     lanes: { issue: issueAndDesign ? issueAndDesign.issue : null, code, product, design: issueAndDesign ? issueAndDesign.design : undefined },
     test,
@@ -760,8 +771,8 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   separateDefects.push(...built.separateDefects)
   written = stage === 'tests' ? built.tests : [...written, ...built.tests]
   // A claim counts only on a finding the builder still owes: a settled or minor one stays as it is.
-  for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit } }
-  for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason } }
+  for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }
+  for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason; f.notFixedBecause = '' } }
   if (stage === 'tests' && built.planComplete && !built.tests.some(t => !t.alreadyPasses)) {
     status = 'failed'
     failure = 'the builder wrote no failing test: the tests stage is only for a plan that names one'
@@ -769,9 +780,13 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   }
 
   phase('Review')
+  // Each question of the builder's gets a ref, which the checker that settles it carries on its
+  // answer or escalation: a question counts as heard by its ref, since an escalation is reframed
+  // for the owner and need not repeat the builder's words.
+  const builderQuestions = built.questions.map((q, i) => ({ ...q, ref: `b${k}-${i + 1}` }))
   const questions = {
-    business: built.questions.filter(q => q.kind === 'business'),
-    engineering: built.questions.filter(q => q.kind !== 'business'),
+    business: builderQuestions.filter(q => q.kind === 'business'),
+    engineering: builderQuestions.filter(q => q.kind !== 'business'),
   }
   const reviewed = stage === 'tests' ? await reviewTests(k, built, questions) : await reviewBuild(k, built, questions)
   const dead = []
@@ -807,8 +822,10 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   roundEscalations.push(...upheld.map(upheldQuestion))
   // A question of the builder's that no checker answered or put to the owner goes to the owner,
   // as a question routed to a checker that returned nothing does: it is never dropped.
-  const said = new Set([...roundAnswers, ...roundEscalations].map(x => sameQuestion(x.question)))
-  const unheard = built.questions.filter(q => !said.has(sameQuestion(q.question)))
+  const heard = [...roundAnswers, ...roundEscalations]
+  const heardRefs = new Set(heard.map(x => x.ref).filter(Boolean))
+  const said = new Set(heard.map(x => sameQuestion(x.question)))
+  const unheard = builderQuestions.filter(q => !heardRefs.has(q.ref) && !said.has(sameQuestion(q.question)))
   if (unheard.length) log(`Round ${k}: ${unheard.length} question(s) of the builder's went unanswered, and go to the owner.`)
   roundEscalations.push(...unheard)
 
@@ -818,7 +835,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${roundEscalations.length} question(s) for the owner.`)
 
   if (roundEscalations.length) { status = 'question'; escalations = roundEscalations; break }
-  if (reviewed.test && reviewed.test.environmentProblem) { status = 'failed'; failure = `the host, not the code: ${reviewed.test.environmentProblem}`; break }
+  if (hostProblem(reviewed.test)) { status = 'failed'; failure = `the host, not the code: ${hostProblem(reviewed.test)}`; break }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
   // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
   // reaches the builder only in the next round.
@@ -835,7 +852,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
         separateDefects.push(...asked.separateDefects)
         const late = [...asked.escalations]
         if (asked.raised.length) {
-          const t = await triage(asked.raised, `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...asked.answers, ...asked.escalations].map(x => x.question))
+          const t = await triage(asked.raised, `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...roundAnswers, ...asked.answers, ...asked.escalations].map(x => x.question))
           citations.push(...t.answers)
           late.push(...t.escalations)
           for (const f of t.findings) addFindings(f.lane, [f])
