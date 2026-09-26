@@ -1802,6 +1802,16 @@ async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_pat
 
 _WINNER, _RUNNER_UP, _THIRD = 1001, 1002, 1003
 
+#: The teams every seeded division fields, two drivers to a team as a league runs them:
+#: the winner and the runner-up drive for the first, third and the fourth driver for the
+#: second, and a fifth driver for the third. ``(shorthand, full name)``.
+_TEAMS = (("RBR", "Red Bull Racing"), ("FER", "Ferrari"), ("MCL", "McLaren"))
+
+
+def _team_of(driver: int) -> int:
+    """The index in ``_TEAMS`` of the team *driver* (before any offset) drives for."""
+    return (driver - _WINNER) // 2
+
 #: The classification every raced round below records unless a test gives its own: the
 #: winner, the runner-up, and third with the quickest lap, each holding what the old table
 #: gave them. ``(driver, position, outcome, fastest lap, points, fastest-lap bonus,
@@ -1865,6 +1875,9 @@ async def _seed_raced_division(
 ):
     """A division whose raced rounds were scored under the old table, and one round to come.
 
+    It fields the teams of ``_TEAMS``, each driver in the team ``_team_of`` names, so that
+    no team has more than two drivers in a session.
+
     *channels* are its ``(results, standings)`` channels. Each status in *round_statuses* is
     a raced round, in order, carrying one feature race under *config* with *classification*,
     and a feature qualifying with *qualifying* ``(driver, position, points)`` where given. The
@@ -1886,12 +1899,13 @@ async def _seed_raced_division(
             "(division_id, results_channel_id, standings_channel_id) VALUES (?, ?, ?)",
             (division_id, *channels),
         )
-        cursor = await db.execute(
-            "INSERT INTO team_instances (division_id, name, full_name) "
-            "VALUES (?, 'RBR', 'Red Bull Racing')",
-            (division_id,),
-        )
-        team_id = cursor.lastrowid
+        team_ids: list[int] = []
+        for shorthand, full_name in _TEAMS:
+            cursor = await db.execute(
+                "INSERT INTO team_instances (division_id, name, full_name) VALUES (?, ?, ?)",
+                (division_id, shorthand, full_name),
+            )
+            team_ids.append(cursor.lastrowid)
 
         raced: list[int] = []
         race_sessions: list[int] = []
@@ -1918,7 +1932,10 @@ async def _seed_raced_division(
                         "driver_user_id, team_instance_id, finishing_position, outcome, "
                         "best_lap, points_awarded) VALUES (?, ?, ?, ?, 'CLASSIFIED', "
                         "'1:29.000', ?)",
-                        (cursor.lastrowid, driver + driver_offset, team_id, position, points),
+                        (
+                            cursor.lastrowid, driver + driver_offset,
+                            team_ids[_team_of(driver)], position, points,
+                        ),
                     )
             cursor = await db.execute(
                 "INSERT INTO session_results "
@@ -1940,8 +1957,8 @@ async def _seed_raced_division(
                     "points_awarded, fastest_lap_bonus, postrace_time_penalties_ms) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        session_id, driver + driver_offset, team_id, position, outcome, lap,
-                        points, bonus, penalty_ms,
+                        session_id, driver + driver_offset, team_ids[_team_of(driver)],
+                        position, outcome, lap, points, bonus, penalty_ms,
                     ),
                 )
         cursor = await db.execute(
@@ -2046,7 +2063,11 @@ async def test_an_approved_amendment_moves_the_standings(db_path):
 @pytest.mark.xfail(strict=True, reason="#443: every standings is reposted with the old points")
 async def test_an_approved_amendment_reposts_every_standings_with_the_new_points(db_path):
     """What the owner asked for at Gate 1: every standings, of every division, reposted with
-    the new totals, and none for a round not yet raced."""
+    the new totals, and none for a round not yet raced.
+
+    Each post carries both championships. The winner and the runner-up drive for Red Bull
+    Racing, which the old table gave 43 a round and the new one 48.
+    """
     path, season_id = db_path
     await _seed_points_config(path, season_id)
     await _seed_raced_division(path, season_id, "Alpha", channels=(501, 502))
@@ -2058,10 +2079,11 @@ async def test_an_approved_amendment_reposts_every_standings_with_the_new_points
     await _approve_raised_win(path, season_id, reposted)
 
     for standings_channel, winner in ((502, _WINNER), (512, _WINNER + 1000)):
-        for round_number, total in ((1, 30), (2, 60)):
+        for round_number, total, team_total in ((1, 30, 48), (2, 60, 96)):
             posts = _posts(reposted, standings_channel, round_number)
             assert posts, f"round {round_number} standings were not reposted to {standings_channel}"
             assert f"<@{winner}> — **{total} pts**" in posts[-1], posts[-1]
+            assert f"1. Red Bull Racing — **{team_total} pts**" in posts[-1], posts[-1]
         assert not _posts(reposted, standings_channel, 3), (
             "standings were posted for a round that has not been raced"
         )
