@@ -179,8 +179,11 @@ hand. Pass every stage the same arguments:
 - `decisions`: every answer the user has given on this issue, word for word, with its date. A
   spec change an answer calls for is written by the build, as a document owed;
 - `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on;
-- `testsHead`: for the build, the commit at which the owner approved the tests, the last in the
-  tests stage's `commits`, or `base` where the stage was skipped. From it the build changes no test.
+- `testsHead`: for the build, the commit at which the user last approved the tests at a Gate 2:
+  the last of the tests stage's `commits` then, in this pass or, where a pass after a rejection at
+  Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
+  branch at all. After a rebase it is that commit as the branch now carries it. From it the build
+  changes no test.
 
 **Leave the checkout alone while a stage runs:** its builder is working in it.
 
@@ -215,7 +218,8 @@ When it returns `passed`, **Gate 2**, which is shown in a file of its own:
 2. Send the file to the user with `SendUserFile`.
 3. Ask through `AskUserQuestion`, naming the file and giving the result's `counts` ("15 added,
    1 modified, 1 deleted, 0 moved; 6 supporting"). The options are to approve the tests or to
-   change them. A change goes into `decisions`, and the stage runs again with this result as
+   change them. A change goes into `decisions`, in the user's words, with the node id written
+   beside each label they name, and the stage runs again with this result as
    `previous`. The file it writes next marks each entry new or changed since, and lists any gone.
 
 ### The build stage
@@ -234,8 +238,8 @@ most three rounds a run. Tell the user it takes about ten agents for a fix that 
 second round.
 
 **The build changes no test the user did not approve at Gate 2.** From `testsHead` it may remove the
-issue's markers, delete the ratchet lines the plan names, and change import lines; nothing else
-under `tests/`. The tester runs `tools/changed_tests.py` from `testsHead` each round, and any other
+issue's markers, delete the ratchet lines the plan names, and rewrite the imports and patched
+paths that a move of the plan's rewrites; nothing else under `tests/`. The tester runs `tools/changed_tests.py` from `testsHead` each round, and any other
 change goes back to the builder to revert. A test change the build needs, including one a checker's
 finding calls for, is proposed in `testChanges`, and the stage stops for the user.
 

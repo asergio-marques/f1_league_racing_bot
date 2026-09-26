@@ -89,7 +89,8 @@ Check the branch against:
   the base. A description that claims what the code does not do, or leaves out what it asserts, is
   material. Each supporting entry says what its code now does.
 - **The tests the owner approved,** in the build. The branch changes nothing under `tests/` after
-  them but the issue's markers, removed; the ratchet lines the plan names, deleted; and import lines.
+  them but the issue's markers, removed; the ratchet lines the plan names, deleted; and the imports
+  and patched paths a move of the plan's rewrites, binding and patching the same names.
   A change to a ratchet list deletes only the lines the plan names. Any other test change the build
   needs is proposed to the owner rather than made.
 - **CLAUDE.md's other rules** that a diff can break: British English in identifiers and prose, no
