@@ -48,7 +48,7 @@ class _Repo:
                 target.unlink()
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_text(text, encoding="utf-8")
         self._git("add", "-A")
         self._git("commit", "-q", "--allow-empty", "-m", "c")
         return self._git("rev-parse", "HEAD").strip()
