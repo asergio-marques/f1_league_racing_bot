@@ -17,10 +17,10 @@
 
 ## Configuring the attendance module
 ### Channels
-- <NEW COMMAND> A "division rsvp-channel" command will be made available to league managers, which shall have as input a division name and a channel on which RSVP polls shall be posted by the bot.
+- <NEW COMMAND> An "attendance channel rsvp" command will be made available to league managers, which shall have as input a division name and a channel on which RSVP polls shall be posted by the bot.
     - If a RSVP channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's RSVP channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
-- <NEW COMMAND> A "division attendance-channel" command will be made available to league managers, which shall have as input a division name and a channel on which attendance for each one of the rounds will be posted by the bot.
+- <NEW COMMAND> An "attendance channel attendance" command will be made available to league managers, which shall have as input a division name and a channel on which attendance for each one of the rounds will be posted by the bot.
     - If an attendance channel is not configured for a division in the placements review, then the season will fail validation.
     - Each division's attendance channel will be displayed in the placements review much alike other division channels like results, standings, weather, etc.
 
@@ -157,7 +157,7 @@
 - Neither sheet is about a round, so neither is prevented by a round recorded as cancelled. Where either is written out as text rather than drawn, it is headed by the phrase naming the occasion — "Attendance — Opening Classification" or "Attendance — Final Classification".
 - The opening sheet takes the place of the previous sheet in the ordinary way, so that the sheet of the first round replaces it and the division is never left holding a stale opening sheet beside a live one. The **final sheet does not**: it is posted beside the sheet of the last round and both stand. This is the one exception to the rule above that only one attendance total stands in the channel at a time.
 - The failure of either shall never prevent a season's placements from being confirmed nor the season from completing, and the failure of one division shall not prevent the others.
-- The attendance sheet for a round must be recalculated in the case "round results amend" is used. The pardons the round carries after the amendment shall be taken into consideration as well.
+- The attendance sheet for a round must be recalculated in the case "results rounds amend" is used. The pardons the round carries after the amendment shall be taken into consideration as well.
     - The sheet shall be reposted against the round the running totals stand at — the division's latest — and not against the round amended, there being one live sheet rather than one per round.
     - Any sanction the recalculation warrants shall be enforced against that latest round and no earlier one. A correction to an earlier round shall not undo a sanction already applied nor apply one retrospectively: the past is not rewritten. Decided 2026-09-20 (#345).
     - It follows that a driver whom the correction takes past a limit is sanctioned now, at the division's latest round, and not at the round where the limit would first have been crossed. Decided 2026-09-21.
@@ -198,7 +198,7 @@
     - Where a check-in call fails to post, the log entry reporting it shall name this command, with the division and round already filled in.
 
 ## Test mode
-- A "test-mode rsvp set-status" command shall be available to league managers, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode.
+- An "attendance test rsvp" command shall be available to league admins, which will take as its parameter the name of a division (mandatory). This will serve to set the RSVP status of fake drivers in test mode, and it is refused while test mode is off.
     - The command shall require the division to belong to a season in one of the three ongoing states and to have a check-in call currently posted; it shall be refused otherwise.
     - Where the division has more than one call posted, the command shall act upon the earliest whose deadline has not yet run, or upon the latest where every deadline has. Decided 2026-09-24 (#425).
     - The statuses shall be given in bulk through a modal, one entry per line in the form "<user ID>, <status>", the status being one of "accept", "tentative" or "decline".
