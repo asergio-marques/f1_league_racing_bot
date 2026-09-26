@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.cogs.team_cog import TeamCog
@@ -366,8 +367,8 @@ MODULE_CHANNEL_COMMANDS = {
     "results": (ResultsCog, "channel_results", "season_service", "set_division_results_channel"),
     "standings": (ResultsCog, "channel_standings", "season_service", "set_division_standings_channel"),
     "verdicts": (ResultsCog, "channel_verdicts", "season_service", "set_division_penalty_channel"),
-    "rsvp": (SeasonCog, "division_rsvp_channel", "attendance_service", "set_rsvp_channel"),
-    "attendance": (SeasonCog, "division_attendance_channel", "attendance_service", "set_attendance_channel"),
+    "rsvp": (AttendanceCog, "channel_rsvp", "attendance_service", "set_rsvp_channel"),
+    "attendance": (AttendanceCog, "channel_attendance", "attendance_service", "set_attendance_channel"),
 }
 
 

@@ -164,17 +164,6 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         assert f"**Pro** has no {label}" in "\n".join(on)
 
 
-def _named_by_its_module(label: str, command: str):
-    return pytest.param(
-        label,
-        command,
-        id=label,
-        marks=pytest.mark.xfail(
-            strict=True, reason=f"#462: the {label} is still named with its /division command"
-        ),
-    )
-
-
 @pytest.mark.parametrize(
     "label,command",
     [
@@ -182,8 +171,8 @@ def _named_by_its_module(label: str, command: str):
         pytest.param("results channel", "/results channel results", id="results channel"),
         pytest.param("standings channel", "/results channel standings", id="standings channel"),
         pytest.param("verdicts channel", "/results channel verdicts", id="verdicts channel"),
-        _named_by_its_module("RSVP channel", "/attendance channel rsvp"),
-        _named_by_its_module("attendance channel", "/attendance channel attendance"),
+        pytest.param("RSVP channel", "/attendance channel rsvp", id="RSVP channel"),
+        pytest.param("attendance channel", "/attendance channel attendance", id="attendance channel"),
     ],
 )
 async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_it(
@@ -215,7 +204,7 @@ async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_pa
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
         "**Am**'s verdicts channel is no longer on the server — `/results channel verdicts`.",
         "**Am**'s attendance channel is no longer on the server — "
-        "`/division attendance-channel`.",
+        "`/attendance channel attendance`.",
     ]
 
 

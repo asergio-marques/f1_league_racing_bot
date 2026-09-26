@@ -2452,11 +2452,11 @@ class SeasonCog(commands.Cog):
         ("results_channel_id", "results channel", "/results channel results", "results"),
         ("standings_channel_id", "standings channel", "/results channel standings", "results"),
         ("penalty_channel_id", "verdicts channel", "/results channel verdicts", "results"),
-        ("rsvp_channel_id", "RSVP channel", "/division rsvp-channel", "attendance"),
+        ("rsvp_channel_id", "RSVP channel", "/attendance channel rsvp", "attendance"),
         (
             "attendance_channel_id",
             "attendance channel",
-            "/division attendance-channel",
+            "/attendance channel attendance",
             "attendance",
         ),
     )
@@ -4212,166 +4212,6 @@ class SeasonCog(commands.Cog):
         else:
             await interaction.response.send_message(message, ephemeral=True)
         return True
-
-    @division.command(
-        name="rsvp-channel",
-        description="Set the RSVP notice channel for a division (attendance module).",
-    )
-    @app_commands.describe(name="Division name", channel="RSVP notice channel")
-    @league_manager_only
-    async def division_rsvp_channel(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-    ) -> None:
-        from leaguebot.core.services import audit_service
-
-        if not await self.bot.module_service.is_attendance_enabled():
-            await interaction.response.send_message(
-                "\u274c The Attendance module is not enabled.", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        guild = interaction.guild
-
-        if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await interaction.followup.send(
-                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
-                ephemeral=True,
-            )
-            return
-
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None:
-            await interaction.followup.send(
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
-            )
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await interaction.followup.send(
-                f"\u274c Division \"{name}\" not found.",
-                ephemeral=True,
-            )
-            return
-
-        if await self._refuse_channel_in_use(
-            interaction, channel, "rsvp", division_name=div.name
-        ):
-            return
-
-        old_cfg = await self.bot.attendance_service.get_division_config(div.id)
-        # Stored as text; audited as the integer every other channel command writes (#212).
-        old_id = int(old_cfg.rsvp_channel_id) if old_cfg and old_cfg.rsvp_channel_id else None
-
-        await self.bot.attendance_service.set_rsvp_channel(div.id, channel.id)
-
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="RSVP_CHANNEL_SET",
-            old_value={"channel_id": old_id},
-            new_value={"channel_id": channel.id},
-            now=datetime.now(timezone.utc),
-            division_id=div.id,
-        )
-
-        if old_id is None:
-            msg = f"\u2705 RSVP channel for {name} set to {channel.mention}."
-        else:
-            msg = f"\u2705 RSVP channel for {name} updated to {channel.mention}."
-        await interaction.followup.send(msg, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rsvp-channel | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
-        )
-
-    @division.command(
-        name="attendance-channel",
-        description="Set the attendance logging channel for a division (attendance module).",
-    )
-    @app_commands.describe(name="Division name", channel="Attendance logging channel")
-    @league_manager_only
-    async def division_attendance_channel(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-    ) -> None:
-        from leaguebot.core.services import audit_service
-
-        if not await self.bot.module_service.is_attendance_enabled():
-            await interaction.response.send_message(
-                "\u274c The Attendance module is not enabled.", ephemeral=True
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        guild = interaction.guild
-
-        if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await interaction.followup.send(
-                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
-                ephemeral=True,
-            )
-            return
-
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None:
-            await interaction.followup.send(
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
-            )
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await interaction.followup.send(
-                f"\u274c Division \"{name}\" not found.",
-                ephemeral=True,
-            )
-            return
-
-        if await self._refuse_channel_in_use(
-            interaction, channel, "attendance", division_name=div.name
-        ):
-            return
-
-        old_cfg = await self.bot.attendance_service.get_division_config(div.id)
-        # Stored as text; audited as the integer every other channel command writes (#212).
-        old_id = int(old_cfg.attendance_channel_id) if old_cfg and old_cfg.attendance_channel_id else None
-
-        await self.bot.attendance_service.set_attendance_channel(div.id, channel.id)
-
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="ATTENDANCE_CHANNEL_SET",
-            old_value={"channel_id": old_id},
-            new_value={"channel_id": channel.id},
-            now=datetime.now(timezone.utc),
-            division_id=div.id,
-        )
-
-        if old_id is None:
-            msg = f"\u2705 Attendance channel for {name} set to {channel.mention}."
-        else:
-            msg = f"\u2705 Attendance channel for {name} updated to {channel.mention}."
-        await interaction.followup.send(msg, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division attendance-channel | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
-        )
 
     @division.command(
         name="lineup-channel",
