@@ -373,8 +373,9 @@ MODULE_CHANNEL_COMMANDS = {
 @pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
 async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
-    channels, so one deleted before completion has to be repointed. Each of the six, not one
-    for all: they do not share a body.
+    channels, so one deleted before completion has to be repointed. Each of the six is run
+    through its own command body, not through a helper some of them share, so a gate added to
+    any one body is exercised.
     """
     cog_class, command, service, setter = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
