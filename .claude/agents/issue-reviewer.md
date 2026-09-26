@@ -77,10 +77,11 @@ Check the branch against:
   `async def`. No test relies on the host (the first item an index yields, installed fonts, `.env`).
   The `rasteriser` marker is used only where the test really rasterises. In the tests stage, each new
   test is marked `xfail(strict=True)` with a reason naming the issue, and the tester's `--runxfail`
-  output shows it failing for the reason the plan gives. The exception is a test the plan names as
-  pinning behaviour already built, listed as already passing: it is unmarked, and must pass. An `ImportError` or `AttributeError` for
-  code the plan has not written yet is that reason, since such a test imports it inside its body;
-  a `NameError` from a typo, a missing fixture or a syntax error is not.
+  output shows it failing for the reason the plan gives. For code the plan has not written yet, an
+  `ImportError` or `AttributeError` is that reason, since such a test imports it inside its body; a
+  `NameError` from a typo, a missing fixture or a syntax error is not. The one exception is a test
+  the plan names as pinning behaviour already built, listed as already passing: it is unmarked, and
+  must pass.
 - **CLAUDE.md's other rules** that a diff can break: British English in identifiers and prose, no
   `# type: ignore` in `src/`, a `cast` only where true by construction, `VERSION` untouched, no
   schema change outside the baseline before go-live.
@@ -91,7 +92,8 @@ on its evidence: **accept** it, or **uphold** the finding. An upheld dispute goe
 For each engineering question the builder raised, **cite** the written rule that settles it
 (`architecture.md`, a design file, CLAUDE.md, the plan, a docstring that records a decision), or
 **escalate** it to the owner with the options and your recommendation. Never settle one from your
-own preference. Pass business questions on untouched.
+own preference. Carry the question's ref on your answer or escalation, so that it is known to be
+settled. Pass business questions on untouched.
 
 Name every file under `docs/design/` the branch changes since its base, so that a design verifier
 reviews it.

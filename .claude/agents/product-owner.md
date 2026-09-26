@@ -46,6 +46,9 @@ A question reaches you from the builder, a reviewer or your own reading. It eith
   that allows two readings, a spec at odds with the code, two documents that disagree, and any rule
   the work would change.
 
+Where the question is the builder's, carry its ref on your answer or escalation, so that it is
+known to be settled however you word it.
+
 An escalated question is written for the owner, in plain terms. Lead with what a league would see
 or be told. Then give what the documents say, quoted, or that they say nothing; the options, each
 with what it means for a league; and your recommendation. Keep it short, with no file paths or
