@@ -201,6 +201,7 @@ removed as soon as the agent stops. This one takes up the branch `gh issue devel
 local branch tracking it, and leaves the user's `HEAD` alone. Its absolute path is the `worktree`
 handed to the workflow, and `git -C <worktree> rev-parse HEAD`, taken now, before anything is
 committed, is the `base`: never `git merge-base` from the main checkout, whose `HEAD` is the user's.
+After a rebase onto `origin/main`, it is `git -C <worktree> merge-base HEAD origin/main`.
 
 ## Stage 4 — Build: through the workflow, one test run at a time
 
@@ -240,11 +241,13 @@ shell call is cut off after ten minutes and a wait for the lock can outlast that
 close-out runs the same way:
 
 ```bash
-cd <worktree> && nohup bash -c 'flock -E 75 -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
+cd <worktree> && rm -f LOG LOG.exit && nohup bash -c 'flock -E 75 -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
 timeout 540 tail --pid=<that pid> -f /dev/null; cat LOG.exit 2>/dev/null || echo still running
 ```
 
-The second line is repeated until the exit code appears; 75 is flock giving up on the lock.
+LOG is a file under `/tmp` named for the run, and the first line clears it and its exit file, so
+that an earlier run's exit code is never read as this one's. The second line is repeated until the
+exit code appears; 75 is flock giving up on the lock.
 
 The interpreter is the main checkout's virtualenv, which carries the pins, and `PYTHONPATH=src` makes
 it test the worktree's own code rather than the checkout it was installed from (CLAUDE.md, Testing).
