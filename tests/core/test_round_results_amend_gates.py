@@ -200,8 +200,12 @@ async def test_the_results_module_must_be_on(tmp_path):
 
     await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
 
-    assert "Results & Standings module is not enabled" in _replied(interaction)
+    # Word for word: the results cog's own gate says "… not enabled on this server.", and
+    # the command keeps its own words wherever it is declared (#462: only the names change).
+    assert _replied(interaction) == "❌ The Results & Standings module is not enabled."
     interaction.response.defer.assert_not_awaited()
+    # The module is checked before the season is read.
+    cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):
