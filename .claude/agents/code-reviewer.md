@@ -48,7 +48,9 @@ alone misses most defects.
   report); needless complexity; dead code the change leaves behind.
 - **Tests.** A test that would pass without the fix; a test that asserts on a mock it set up
   itself; a test that misses the edge case the fix exists for; a changed behaviour with no test
-  that would notice it breaking.
+  that would notice it breaking. The builder cannot write that test itself: once the owner has
+  approved the tests, it proposes each missing one to the owner, and your finding stays open until
+  the tests stage has made it.
 
 ## What makes a finding
 

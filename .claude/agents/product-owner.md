@@ -82,11 +82,16 @@ and the code around it. Your prompt says whether this is a round of the **tests 
   there. From the tester's `--runxfail` output, each test fails because the behaviour is missing, not
   for a reason unrelated to it. An `ImportError` or `AttributeError` for code the plan has not
   written yet counts as the behaviour missing; a `NameError` from a typo, a missing fixture or a
-  syntax error does not. A test the plan names as pinning behaviour already built, listed as
-  already passing, is unmarked and must pass instead.
+  syntax error does not. A test listed as already passing is unmarked and must pass instead.
+  Read the list's scenarios together, as the owner will: they pin every criterion and rule between
+  them. A deleted test's rule no longer holds, or another test pins it now. A modified test's new
+  expectation is what the plan and the owner's decisions call for. Your summary names each test by
+  its label, and leaves the scenarios to the report beside it.
 - **Build.** Every spec rule touched holds. Quote the exact text a league will read (replies, posts,
   log lines, command and option names) and check it against the specs and the guides, in British
-  English. Every criterion is met, and a test proves it. The documents owed are written, and say what
+  English. Every criterion is met, and a test proves it. A test that is missing is a finding, but the
+  builder proposes it to the owner rather than writing it, and it stays open until the tests stage
+  has made it. The documents owed are written, and say what
   the code does. In a **design pass**, nothing a league sees has changed at all: any change a league
   would notice is a finding.
 
