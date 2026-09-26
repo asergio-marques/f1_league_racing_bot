@@ -1868,6 +1868,8 @@ async def _seed_raced_division(
     division_status: str = "ACTIVE",
     unraced_status: str = "NOT_RUN",
     config: str = "STD",
+    round_formats: tuple[str, ...] | None = None,
+    round_configs: tuple[str, ...] | None = None,
     classification: tuple = _OLD_CLASSIFICATION,
     qualifying: tuple = (),
     fastest_lap_override: int | None = None,
@@ -1883,6 +1885,9 @@ async def _seed_raced_division(
     and a feature qualifying with *qualifying* ``(driver, position, points)`` where given. The
     round after them has not been raced. *driver_offset* is added to every driver id, so that
     two divisions do not share a driver.
+
+    Every raced round is a Normal one scored under *config*, unless *round_formats* and
+    *round_configs* give each raced round, in order, a format and a configuration of its own.
 
     Returns ``(division_id, raced round ids, race session ids, qualifying session ids,
     unraced round id)``.
@@ -1910,11 +1915,15 @@ async def _seed_raced_division(
         raced: list[int] = []
         race_sessions: list[int] = []
         qualifying_sessions: list[int] = []
-        for round_number, status in enumerate(round_statuses, start=1):
+        formats = round_formats or ("NORMAL",) * len(round_statuses)
+        configs = round_configs or (config,) * len(round_statuses)
+        for round_number, (status, round_format, round_config) in enumerate(
+            zip(round_statuses, formats, configs, strict=True), start=1
+        ):
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, track_name, status, "
-                "scheduled_at) VALUES (?, ?, 'NORMAL', 'Monza', ?, '2026-06-01T18:00:00')",
-                (division_id, round_number, status),
+                "scheduled_at) VALUES (?, ?, ?, 'Monza', ?, '2026-06-01T18:00:00')",
+                (division_id, round_number, round_format, status),
             )
             round_id = cursor.lastrowid
             raced.append(round_id)
@@ -1923,7 +1932,7 @@ async def _seed_raced_division(
                     "INSERT INTO session_results "
                     "(round_id, division_id, session_type, status, config_name) "
                     "VALUES (?, ?, 'FEATURE_QUALIFYING', 'ACTIVE', ?)",
-                    (round_id, division_id, config),
+                    (round_id, division_id, round_config),
                 )
                 qualifying_sessions.append(cursor.lastrowid)
                 for driver, position, points in qualifying:
@@ -1944,7 +1953,7 @@ async def _seed_raced_division(
                 (
                     round_id,
                     division_id,
-                    config,
+                    round_config,
                     None if fastest_lap_override is None else fastest_lap_override + driver_offset,
                 ),
             )
@@ -2229,6 +2238,46 @@ async def test_a_session_under_another_configuration_keeps_its_points(db_path):
             _RUNNER_UP + 1000: (8, 0),
             _THIRD + 1000: (6, 0),
         }
+
+
+@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
+async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_reposted(db_path):
+    """What the owner asked for at Gate 2: two rounds of different formats, each scored under
+    a configuration of its own, both paying 25 for a win.
+
+    Round 1 is a Normal round under STD, round 2 an Endurance round under ENDURO. Only STD's
+    win is raised to 30: round 1 is scored again, round 2 keeps its points, and round 2 is
+    reposted all the same, its results table and its standings both.
+    """
+    path, season_id = db_path
+    await _seed_points_config(path, season_id)
+    await _seed_points_config(path, season_id, "ENDURO")
+    _division, _raced, sessions, _q, _unraced = await _seed_raced_division(
+        path, season_id, "Alpha", channels=(501, 502),
+        round_formats=("NORMAL", "ENDURANCE"), round_configs=("STD", "ENDURO"),
+    )
+
+    reposted: list[tuple] = []
+    await _approve_raised_win(path, season_id, reposted)
+
+    assert (await _race_points(path, sessions[0]))[_WINNER] == (30, 0), (
+        "the round under the amended configuration kept its old points"
+    )
+    assert await _race_points(path, sessions[1]) == {
+        _WINNER: (25, 0),
+        _RUNNER_UP: (18, 0),
+        _THIRD: (15, 1),
+    }, "the round under the unchanged configuration was scored under the amended one"
+
+    results = _posts(reposted, 501, 2)
+    assert results, "round 2's results were not reposted"
+    winner_line = next(
+        line for line in results[-1].splitlines() if line.startswith(f"**1.** <@{_WINNER}>")
+    )
+    assert winner_line.endswith("**25 pts**"), winner_line
+    standings = _posts(reposted, 502, 2)
+    assert standings, "round 2's standings were not reposted"
+    assert f"<@{_WINNER}> — **55 pts**" in standings[-1], standings[-1]
 
 
 @pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
