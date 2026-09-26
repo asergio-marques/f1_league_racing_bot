@@ -306,6 +306,7 @@ async def test_a_channel_already_doing_another_job_is_refused(tmp_path, which, m
 
     assert await _audit_rows(db_path) == []
     assert "#notices is already the results channel for **Division 2**" in _replied(interaction)
+    interaction.response.send_message.assert_not_awaited()
     getattr(cog.bot.attendance_service, COMMANDS[which][2]).assert_not_awaited()
 
 
