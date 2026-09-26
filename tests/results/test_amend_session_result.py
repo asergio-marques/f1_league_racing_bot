@@ -1,7 +1,7 @@
 """Writing an amended classification over a round that has already reached FINAL.
 
 Issue #208. `amend_round_results` (once `amend_session_result`) was uncovered. It is what
-`/round results amend` calls once the corrected pastes have been validated, and it is
+`/results rounds amend` calls once the corrected pastes have been validated, and it is
 destructive by design.
 
 **Nothing is superseded; the classification being replaced is gone.** The session header is

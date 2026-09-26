@@ -41,7 +41,7 @@ EXEMPT = {
     ("core/cogs/season_cog.py", "_report"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
-    ("core/cogs/season_cog.py", "selected"),
+    ("results/cogs/results_cog.py", "selected"),
     # A season review's poster: the messages one review command posted, handed to its button
     # and gone when the command returns (#228). `_report` above is where they then live.
     ("core/cogs/season_cog.py", "posted"),

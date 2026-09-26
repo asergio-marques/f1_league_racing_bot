@@ -16,7 +16,7 @@ is the other half: one table over every command the rule touches, exercised in f
     2. repairing a division's channels;
     3. amending the results of a round already final.
 
-The third is why `/round results amend` appears in the permitted table rather than the refused
+The third is why `/results rounds amend` appears in the permitted table rather than the refused
 one, while everything else under `/results` is refused: it is the season's last chance to
 correct its record before `/season complete` draws the final classification off it.
 """
@@ -403,15 +403,15 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     getattr(getattr(bot, service), setter).assert_awaited_once()
 
 
-async def test_round_results_amend_is_not_turned_away_by_the_stage(tmp_path):
+async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
     """The season's last chance to correct its record before the final classification."""
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = _bot(db_path, SeasonStage.PENDING_COMPLETION)
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    cog = _cog(SeasonCog, bot)
+    cog = _cog(ResultsCog, bot)
     interaction = _interaction()
 
-    await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro", 1)
+    await undecorate(ResultsCog.rounds_amend)(cog, interaction, "Pro", 1)
 
     said = _said(interaction)
     # It gets as far as looking for the round, which this season does not hold — not turned
@@ -419,14 +419,14 @@ async def test_round_results_amend_is_not_turned_away_by_the_stage(tmp_path):
     assert "Round 1 not found" in said, said
 
 
-async def test_round_results_amend_is_refused_on_an_archived_season(tmp_path):
+async def test_results_rounds_amend_is_refused_on_an_archived_season(tmp_path):
     """It deletes a round's driver rows and re-inserts them; nothing puts the old ones back."""
     db_path = await _db(tmp_path, SeasonStage.COMPLETED)
     bot = _bot(db_path, SeasonStage.COMPLETED)
-    cog = _cog(SeasonCog, bot)
+    cog = _cog(ResultsCog, bot)
     interaction = _interaction()
 
-    await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro", 1)
+    await undecorate(ResultsCog.rounds_amend)(cog, interaction, "Pro", 1)
 
     said = _said(interaction)
     assert "archive" in said, said

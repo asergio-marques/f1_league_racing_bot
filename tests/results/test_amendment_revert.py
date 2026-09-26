@@ -338,12 +338,9 @@ async def test_the_revert_is_announced(tmp_path):
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
     assert "AMEND_REVERTED" in logged
     assert "round: 4" in logged
-    assert "/round results amend" in logged
+    assert "/results rounds amend" in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the AMEND_REVERTED notice still says to re-run /round results amend"
-)
 async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     """The league is told the amendment lapsed and may be run again, so the notice sends the
     manager to the command they now type."""

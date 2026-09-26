@@ -708,7 +708,7 @@ async def _later_rounds(db_path, statuses: dict[int, str]) -> None:
 
 
 async def test_an_amended_round_redistributes_every_later_round(tmp_path):
-    """Issue #238. `/round results amend` re-runs this review for a round that may sit well
+    """Issue #238. `/results rounds amend` re-runs this review for a round that may sit well
     behind the season's latest, and every later round's stored total was worked out from the
     figure the amendment has just changed. A round not yet finalised holds no total to
     correct and is left alone."""
@@ -2000,9 +2000,6 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     assert state.appeals_prompt_message_id is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the AMEND_FAILED notice still says to re-run /round results amend"
-)
 async def test_a_failed_amendment_stage_says_to_re_run_results_rounds_amend(tmp_path):
     """The AMEND_FAILED notice, and the reply beside it, send the manager to the command they
     now type."""

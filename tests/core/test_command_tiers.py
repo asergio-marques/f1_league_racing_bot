@@ -102,7 +102,6 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
 #: The register above holds them by their new names already, so until each has moved it is
 #: found at the higher tier with no entry to put it there.
 RENAMED_BY_462: dict[str, str] = {
-    "round results amend": "results rounds amend",
     "test-mode rsvp set-status": "attendance test rsvp",
 }
 

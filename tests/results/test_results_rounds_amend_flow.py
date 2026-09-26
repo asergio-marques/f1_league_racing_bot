@@ -1,6 +1,6 @@
-"""The collection loop of `/round results amend`, once its channel is open.
+"""The collection loop of `/results rounds amend`, once its channel is open.
 
-Issue #208. `test_round_results_amend_gates.py` covers everything in front of the amendment
+Issue #208. `test_results_rounds_amend_gates.py` covers everything in front of the amendment
 channel. This file covers what happens inside it: the channel is created, a corrected paste is
 waited for, and the paste is validated and written — or the manager cancels, or nothing comes.
 
@@ -40,8 +40,8 @@ import pytest
 
 from leaguebot.core.models.season import SeasonStage
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from tests.support.undecorate import undecorate
 
@@ -144,7 +144,7 @@ def _make_cog(db_path, *, league_admin_role=True):
     )
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
     return cog
 
@@ -248,7 +248,7 @@ async def _amend(
 
         patches.append(patch("asyncio.wait", new=_no_one_came))
     if sessions is not None:
-        from leaguebot.core.cogs.season_cog import _AmendSessionsView
+        from leaguebot.results.cogs.results_cog import _AmendSessionsView
 
         async def _choose_them(view):
             view.selected = [st.value for st in sessions]
@@ -262,7 +262,7 @@ async def _amend(
             None if sessions is not None
             else SimpleNamespace(name="FEATURE_RACE", value="FEATURE_RACE")
         )
-        await undecorate(SeasonCog.round_results_amend)(
+        await undecorate(ResultsCog.rounds_amend)(
             cog, interaction, "Pro Division", 3, choice
         )
     finally:
@@ -506,9 +506,6 @@ async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(t
     assert "AMEND_REJECTED" in _logged(cog)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: a rejected paste still says to re-run /round results amend"
-)
 @pytest.mark.parametrize(
     "rejected, told",
     [
@@ -572,7 +569,7 @@ def _told_it_expired(interaction, waited_for: str) -> None:
     assert last.kwargs.get("ephemeral") is True
     assert "Amendment expired" in last.args[0]
     assert waited_for in last.args[0]
-    assert "/round results amend" in last.args[0]
+    assert "/results rounds amend" in last.args[0]
 
 
 async def test_a_paste_nobody_sends_tells_the_manager_it_expired(tmp_path):
@@ -1261,8 +1258,8 @@ async def test_a_fault_once_stage_one_has_begun_is_left_to_its_own_handling(tmp_
         opened.stage_one_started = True
         raise RuntimeError("after stage one")
 
-    with patch.object(SeasonCog, "_amend_round_results", new=_body), pytest.raises(RuntimeError):
-        await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro Division", 3, None)
+    with patch.object(ResultsCog, "_amend_round_results", new=_body), pytest.raises(RuntimeError):
+        await undecorate(ResultsCog.rounds_amend)(cog, interaction, "Pro Division", 3, None)
 
     cog.bot.output_router.post_log.assert_not_awaited()
 

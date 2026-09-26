@@ -562,12 +562,9 @@ async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
 
     logged = str(stub.output_router.post_log.await_args.args[0])
     assert "restarted mid-amendment" in logged
-    assert "/round results amend" in logged
+    assert "/results rounds amend" in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the notice still says to re-run /round results amend"
-)
 async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_rounds_amend(tmp_path):
     """Nothing to put back: the corrections were never entered, or the amendment had been
     approved. For the first, the notice sends the manager to the command they now type."""
@@ -699,12 +696,9 @@ async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
         str(call.args[0]) for call in bot.output_router.post_log.await_args_list
     )
     assert "put back as it was" in logged
-    assert "re-run /round results amend" in logged
+    assert "re-run /results rounds amend" in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the notice still says to re-run /round results amend"
-)
 async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_path):
     """The round was put back, so the amendment may be run again: the notice sends the manager
     to the command they now type."""

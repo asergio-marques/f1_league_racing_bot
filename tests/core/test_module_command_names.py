@@ -187,9 +187,8 @@ DECLARED = _declared()
 #: What #462 has still to move, by its old name and its new, and the groups it has still to
 #: empty: each is expected to fail until it has. It shrinks as each command moves.
 _NOT_YET_MOVED: frozenset[str] = frozenset({
-    "round results amend", "results rounds amend",
     "test-mode rsvp set-status", "attendance test rsvp",
-    "round results", "test-mode rsvp",
+    "test-mode rsvp",
 })
 
 

@@ -1,4 +1,4 @@
-"""What `/round results amend` refuses, and how it asks which session to amend.
+"""What `/results rounds amend` refuses, and how it asks which session to amend.
 
 Issue #208. The command is four hundred lines and a live collection loop; this file covers
 everything in front of that — the seven gates, and the session-selection step — because those
@@ -25,8 +25,7 @@ choice is made.
 would write a correction onto results that were already replaced.
 
 **The module has to be on.** Amending results with the results module off would write rows
-nothing reads and post nothing, and the command is reached from `/round` where a league with the
-module off can still see it.
+nothing reads and post nothing, and a league with the module off can still see the command.
 """
 from __future__ import annotations
 
@@ -39,8 +38,8 @@ import pytest
 
 from leaguebot.core.models.season import SeasonStage
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from tests.support.undecorate import undecorate
 
@@ -109,7 +108,7 @@ def _make_cog(
     ),
     divisions=None,
     rounds=None,
-) -> SeasonCog:
+) -> ResultsCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.module_service = MagicMock()
@@ -128,7 +127,7 @@ def _make_cog(
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=None)
 
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
     return cog
 
@@ -181,7 +180,7 @@ def _choice(session_type: SessionType | None):
 
 
 async def _amend(cog, interaction, *, division="Pro", round_number=3, session=None):
-    return await undecorate(SeasonCog.round_results_amend)(
+    return await undecorate(ResultsCog.rounds_amend)(
         cog, interaction, division, round_number, _choice(session)
     )
 
@@ -222,9 +221,6 @@ async def test_a_server_with_no_season_is_refused(tmp_path):
     assert "archive" in _replied(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the season gate's refusal still names /round results amend"
-)
 async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
     """The season gate quotes back the name the command hands it, so a refusal naming a
     command that no longer exists sends a league admin looking for it. The repository's

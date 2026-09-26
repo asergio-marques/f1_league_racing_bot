@@ -1530,9 +1530,6 @@ async def test_merge_faults_keeps_the_order_it_was_given():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the pending-completion hint still names /round results amend"
-)
 @pytest.mark.asyncio
 async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
     """Both sync commands are refused there, so the hint names the one command that reposts,

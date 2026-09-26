@@ -1310,7 +1310,7 @@ async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
 async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     """Delete any results-amend channels left open by a previous bot process.
 
-    The /round results amend wait_for loop dies with the process on restart.
+    The /results rounds amend wait_for loop dies with the process on restart.
     We detect stale rows in round_amend_channels, notify the log channel so
     the league manager knows to re-run the command, then delete the Discord
     channel and remove the DB row.
@@ -1401,7 +1401,7 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
             if reverted:
                 _what = (
                     "  Amendment channel deleted, and the round put back as it was. Please "
-                    "re-run /round results amend."
+                    "re-run /results rounds amend."
                 )
             else:
                 # Nothing to put back means one of two things, and the row cannot say which:
@@ -1409,7 +1409,7 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
                 # and its channels were being rebuilt when the bot stopped (#345).
                 _what = (
                     "  Amendment channel deleted; nothing needed putting back. If the "
-                    "amendment had not been approved, re-run /round results amend. If it had, "
+                    "amendment had not been approved, re-run /results rounds amend. If it had, "
                     "its channels may be part-rebuilt: run /results rounds sync and "
                     "/results standings sync."
                 )

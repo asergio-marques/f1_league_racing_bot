@@ -2303,7 +2303,7 @@ async def _division_of_round(db_path: str, round_id: int) -> int | None:
 #: What a manager is told on pressing a stage of an amendment that is no longer open.
 _AMENDMENT_NOT_OPEN = (
     "❌ This amendment is no longer open — it lapsed, was cancelled, or this step is "
-    "already being approved. Nothing was changed. Run `/round results amend` again if the "
+    "already being approved. Nothing was changed. Run `/results rounds amend` again if the "
     "round still needs correcting."
 )
 
@@ -2831,14 +2831,14 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}, stage: {stage}\n"
             f"  reason: {reason}\n"
-            f"  {outcome} Re-run /round results amend to try again."
+            f"  {outcome} Re-run /results rounds amend to try again."
         )
     except Exception:  # noqa: BLE001
         log.exception("amendment: could not log the failure of round %s", round_id)
     try:
         await interaction.followup.send(
             f"❌ The amendment failed at its {stage} stage. {outcome} Check the log "
-            "channel for details, then re-run `/round results amend`.",
+            "channel for details, then re-run `/results rounds amend`.",
             ephemeral=True,
         )
     except Exception:  # noqa: BLE001
@@ -3098,7 +3098,7 @@ async def _write_amended_session_in_tx(
 
     **Nothing is superseded here, and nothing keeps the classification being replaced.** The
     header is updated in place and the driver rows deleted outright, then re-inserted from the
-    amendment. That is why `/round results amend` is a league admin's command rather than a
+    amendment. That is why `/results rounds amend` is a league admin's command rather than a
     league manager's (issue #116): amending a FINAL round overwrites what the league raced, and
     only the amendment's own snapshot, held until it completes, puts it back.
     """
@@ -5353,7 +5353,7 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
                 f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
                 f"  round: {rctx['round_number']}, sessions: {_sessions_text(sessions)}\n"
                 "  The amendment's report and appeal stages were not approved in time, so the "
-                "round has been put back as it was. Re-run /round results amend to try again."
+                "round has been put back as it was. Re-run /results rounds amend to try again."
             )
         except Exception:  # noqa: BLE001 — the revert stands whether or not it was announced
             log.exception(
