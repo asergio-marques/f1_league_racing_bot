@@ -1016,7 +1016,7 @@ Enabling is guarded where disabling mostly is not: no module but signup can be e
 
 > **Setting the weather module up for the first time?** This section is the reference — every command, in its own right. For the order to do them in, follow [Configuring the weather module](docs/how-to/configuring-the-weather-module.md).
 
-The weather module's own configuration is the three deadline commands below and nothing else, and `/weather config view` reads them back. Where forecasts are posted is set per division by [`/weather channel`](#weather-channel--set-the-weather-forecast-channel-for-a-division); the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
+The weather module's own configuration is its three deadline commands, and `/weather config view` reads them back. Where forecasts are posted is set per division by [`/weather channel`](#weather-channel--set-the-weather-forecast-channel-for-a-division), documented after them; the rain probability itself is packaged per circuit and cannot be changed — see [Track Distribution Parameters](#track-distribution-parameters).
 
 The three deadline commands share the same preconditions, checked in this order:
 
