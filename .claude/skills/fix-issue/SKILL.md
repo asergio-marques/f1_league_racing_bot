@@ -159,7 +159,8 @@ If the link is missing, do not carry on down an unlinked branch — say so.
 
 **Record where the branch starts**, straight after the checkout and before anything is committed:
 `git rev-parse HEAD`. That is the `base` every stage is handed, so its reviewers read this issue's
-work and nothing else. Take it again after any rebase.
+work and nothing else. After a rebase it is the commit the branch now sits on: straight after
+rebasing onto `origin/main`, that is `git merge-base HEAD origin/main`, never `HEAD`.
 
 ## Phase 5 — Build it, through the workflow
 
@@ -228,8 +229,9 @@ second round.
 - **`separateDefects`** are drafts for the tracker. Draft each in full, wait for an explicit
   yes, and file only what is approved.
 - **`minor`** findings go to the user before the next gate, as a short list. Those they want made
-  go back to the build stage in `decisions`, with this result as `previous`: nothing is fixed by
-  hand, however small.
+  go back to the same stage, with this result as `previous` and each as
+  `rulings: { "<id>": "fix" }`, which makes it owed and has its checker confirm it; those they
+  leave are passed as `"leave"`. Nothing is fixed by hand, however small.
 - **An empty `summary`** on a `passed` result means the product owner left it out twice. Ask a
   `product-owner` agent for it through the `Agent` tool, with the branch and the criteria, before
   the gate.
