@@ -5,7 +5,7 @@ Tests cover:
 - Zero-staged-penalties still advances to AWAITING_APPEAL_VERDICTS (FR-009)
 - Zero-staged-corrections still advances to FINAL (FR-010)
 - channel-close only at FINAL (round_submission_channels.closed = 1)
-- round results amend rejected before FINAL, accepted at FINAL
+- results rounds amend rejected before FINAL, accepted at FINAL
 - penalty_records and appeal_records rows created when staged lists are non-empty
 """
 from __future__ import annotations

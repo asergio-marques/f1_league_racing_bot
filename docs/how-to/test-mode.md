@@ -175,10 +175,10 @@ Generating a roster by hand is tedious, and `tools/data-generator/test-roster/` 
 ### Attendance
 
 ```
-/test-mode rsvp set-status division:Pro
+/attendance test rsvp division:Pro
 ```
 
-Opens a modal for setting the RSVP status of the division's test drivers in one pass. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in call standing — the command resolves that call and refuses without one. Where a division holds two, as a double-header does until the earlier round's messages come down a day after it, it takes the earlier until that round's deadline has been advanced and the later after it; where every deadline has run, the latest. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
+Opens a modal for setting the RSVP status of the division's test drivers in one pass. It is the attendance module's own test tool, so it sits under `/attendance` rather than `/test-mode`, and it is test mode's all the same: refused while test mode is off, before anything else is checked. The attendance module must be enabled, and the division must be in the **ongoing** season and have a check-in call standing — the command resolves that call and refuses without one. Where a division holds two, as a double-header does until the earlier round's messages come down a day after it, it takes the earlier until that round's deadline has been advanced and the later after it; where every deadline has run, the latest. The module check matters because a check-in posted before the module was switched off leaves its embed behind: without it the command would go on writing answers for a module that is off.
 
 Driving a check-in through the buttons requires as many Discord accounts as there are drivers, which is precisely what makes attendance untestable by hand. This is the way round it.
 
@@ -258,7 +258,7 @@ Building a season to test one thing is slow, and testing the next thing usually 
 3. `/test-mode roster add` or `add-bulk` until each division is seated — with a `nationality` on each if you mean to look at the graphics — **before** confirming placements, since the roster commands work only in placements. `/test-mode roster list` to collect the mention strings.
 4. `/season placements-review`, and approve it.
 5. `/test-mode advance` repeatedly, checking each posted message as it appears.
-6. For attendance rounds, `/test-mode rsvp set-status` once the check-in has been advanced into existence.
+6. For attendance rounds, `/attendance test rsvp` once the check-in has been advanced into existence.
 7. `/season complete` when `advance` reports nothing left. Test mode switches itself off and the fake drivers are deleted, their history kept.
 8. `/season setup` and `/test-mode toggle` again to go round once more — or, to throw away a test season that never reached ongoing, `/season abort confirm:CONFIRM`, which leaves nothing behind. To erase everything outright, `/bot factory-reset confirm:CONFIRM` is the server owner's: it backs both databases up as `*.factory-<moment>.db` beside the live ones, then leaves a freshly migrated `bot.db` and an empty job store.
 
@@ -266,6 +266,6 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 ## Access
 
-Every command in this document is a **league admin's** — it requires the league admin role and the configured command channel. The whole of test mode sits at that tier, `/test-mode backup` no more than the rest: switching test mode on rewrites what the bot believes about a server, and a restore replaces everything it holds. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README.
+Every command in this document is a **league admin's** — it requires the league admin role and the configured command channel. The whole of test mode sits at that tier, `/test-mode backup` no more than the rest: switching test mode on rewrites what the bot believes about a server, and a restore replaces everything it holds. Full parameter tables are in the [Test Mode Commands](../../README.md#test-mode-commands) section of the README, and for `/attendance test rsvp`, which sits under the attendance module's own group, in its [entry in the Attendance Module section](../../README.md#attendance-test-rsvp--bulk-set-rsvp-statuses).
 
 The league admin role carries the interaction role's tier within it, so a league admin does not need to be given the interaction role as well. Discord's Administrator permission is not a way in — it reaches only `/bot init` and the four commands that change one setting each.

@@ -708,7 +708,7 @@ async def _later_rounds(db_path, statuses: dict[int, str]) -> None:
 
 
 async def test_an_amended_round_redistributes_every_later_round(tmp_path):
-    """Issue #238. `/round results amend` re-runs this review for a round that may sit well
+    """Issue #238. `/results rounds amend` re-runs this review for a round that may sit well
     behind the season's latest, and every later round's stored total was worked out from the
     figure the amendment has just changed. A round not yet finalised holds no total to
     correct and is left alone."""
@@ -1998,6 +1998,38 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     assert "AMEND_FAILED" in _logged(state)
     assert "put back as it was" in str(interaction.followup.send.await_args.args[0])
     assert state.appeals_prompt_message_id is None
+
+
+async def test_a_failed_amendment_stage_says_to_re_run_results_rounds_amend(tmp_path):
+    """The AMEND_FAILED notice, and the reply beside it, send the manager to the command they
+    now type."""
+    db_path = await _make_db(tmp_path, name="amend_stage_fails_rerun")
+    state = _state(db_path, staged=[_penalty()])
+    await _open_amendment(state)
+    interaction = _interaction()
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "leaguebot.results.services.result_submission_service._close_amendment_channel", new=AsyncMock()
+    ), patch(
+        "leaguebot.results.services.penalty_service.apply_penalties",
+        new=AsyncMock(side_effect=RuntimeError("disk full")),
+    ):
+        await _run_real_apply(finalize_penalty_review, state, interaction)
+
+    notice = next(
+        str(call.args[0])
+        for call in state.bot.output_router.post_log.await_args_list
+        if "AMEND_FAILED" in str(call.args[0])
+    )
+    assert notice.splitlines()[-1] == (
+        "  The round was put back as it was. Re-run /results rounds amend to try again."
+    )
+    assert str(interaction.followup.send.await_args.args[0]).endswith(
+        "then re-run `/results rounds amend`."
+    )
 
 
 async def test_a_kept_report_keeps_its_author_and_its_time(tmp_path):

@@ -1,35 +1,28 @@
-"""The four per-module division channel commands, and where they have diverged.
+"""Core's own two division channel commands, `/division lineup-channel` and `calendar-channel`.
 
-Issue #208. `/division weather-channel`, `results-channel`, `standings-channel` and
-`verdicts-channel` share one body, `_set_division_channel`, covered by
-`test_division_channel_assignment.py`. These five — `rsvp-channel`, `attendance-channel`,
-`verdicts-channel`, `lineup-channel` and `calendar-channel` — do not. Each carries its own copy
-of the same forty lines, and copies drift.
+Issue #208. A division's other channels are its modules' and are set under each module's own
+group, covered in that module's tests: `/weather channel` in `tests/weather/`, the three
+`/results channel` commands in `tests/results/`, and the two `/attendance channel` commands in
+`tests/attendance/`. These two are every season's whatever modules are on, so they stay core's,
+and each carries its own copy of the same forty lines, and copies drift.
 
-**What all four hold to** is what this file pins first: the season and the division must both
-exist, the channel-does-one-job guard runs before any write, and the assignment is audited and
-logged. Those are parametrised across all four precisely so a divergence in one of them fails
-rather than passes quietly.
+**What both hold to** is what this file pins first: the season and the division must both exist,
+the channel-does-one-job guard runs before any write, and the assignment is audited and logged.
+Those are parametrised across both precisely so a divergence in one of them fails rather than
+passes quietly. Neither is gated on a module, and both reply directly rather than defer: they
+write two rows and answer. The refusal they share would still follow up after a defer, a guard
+kept for a later caller that defers, and `tests/core/test_channel_registry.py` pins it.
 
-**Where they legitimately differ.** `rsvp` and `attendance` belong to the attendance module and
-`verdicts` to the results module, and each refuses when its own module is switched off —
-assigning a channel to a module that is not running would configure something no code reads.
-`lineup` and `calendar` are core settings with no such gate. The three gated ones also defer
-first, because their work reaches a service; the core pair reply directly. That difference is invisible until the refusal guard has to choose
-between `response.send_message` and `followup.send`, which is why it is pinned here as well as
-in the guard's own file.
-
-**Where they once differed by accident** (issue #212, which #208 pinned rather than fixed).
-`lineup` and `calendar` wrote `old_value = ''` into the audit entry, so a reassignment could not
-be traced back, and the attendance pair wrote their channel ids as strings where every other
-command writes integers. All five now record the channel they replaced, as an integer —
-`test_the_core_pair_record_the_channel_they_replaced` and
-`test_every_channel_command_here_audits_its_ids_as_integers`.
+**Where they once differed by accident** (issue #212, which #208 pinned rather than fixed). They
+wrote `old_value = ''` into the audit entry, so a reassignment could not be traced back. Both now
+record the channel they replaced, as an integer — `test_the_core_pair_record_the_channel_they_replaced`
+and `test_every_channel_command_here_audits_its_ids_as_integers`. Each writes its channel and its
+record in one transaction.
 
 **"Set" and "updated" are different words for a reason:** a manager who meant to assign a fresh
 channel and is told it was *updated* has just moved an existing one, and that is worth noticing
 before the next round posts somewhere unexpected. The core pair always said "set", having never
-read the old id; all five now choose the word from it.
+read the old id; both now choose the word from it.
 """
 from __future__ import annotations
 
@@ -52,17 +45,12 @@ DIVISION_ID = 11
 CHANNEL_ID = 780001
 ACTOR_ID = 77
 
-#: command attribute, audit change_type, and whether the attendance module gates it.
+#: command attribute and audit change_type.
 COMMANDS = {
-    "rsvp": ("division_rsvp_channel", "RSVP_CHANNEL_SET", "attendance"),
-    "attendance": ("division_attendance_channel", "ATTENDANCE_CHANNEL_SET", "attendance"),
-    "verdicts": ("division_verdicts_channel", "VERDICTS_CHANNEL_SET", "results"),
-    "lineup": ("division_lineup_channel", "SIGNUP_LINEUP_CHANNEL_SET", None),
-    "calendar": ("division_calendar_channel", "DIVISION_CALENDAR_CHANNEL_SET", None),
+    "lineup": ("division_lineup_channel", "SIGNUP_LINEUP_CHANNEL_SET"),
+    "calendar": ("division_calendar_channel", "DIVISION_CALENDAR_CHANNEL_SET"),
 }
 ALL = sorted(COMMANDS)
-GATED = sorted(k for k, v in COMMANDS.items() if v[2])
-UNGATED = sorted(k for k, v in COMMANDS.items() if not v[2])
 
 
 # ---------------------------------------------------------------------------
@@ -103,9 +91,6 @@ def _make_cog(
     season=SimpleNamespace(id=SEASON_ID),
     divisions=None,
     attendance_enabled: bool = True,
-    results_enabled: bool = True,
-    old_config=None,
-    old_penalty_channel=None,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = db_path
@@ -116,14 +101,6 @@ def _make_cog(
     )
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
-    bot.season_service.set_division_penalty_channel = AsyncMock(
-        return_value=old_penalty_channel
-    )
-    bot.attendance_service = MagicMock()
-    bot.attendance_service.get_division_config = AsyncMock(return_value=old_config)
-    bot.attendance_service.set_rsvp_channel = AsyncMock(return_value=None)
-    bot.attendance_service.set_attendance_channel = AsyncMock(return_value=None)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -208,14 +185,14 @@ async def _channel_column(db_path: str, column: str):
 
 
 # ---------------------------------------------------------------------------
-# What all four hold to
+# What both hold to
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("which", ALL)
 async def test_the_assignment_is_audited(tmp_path, which):
-    """A channel change nobody recorded cannot be explained afterwards, and these four are
-    exactly the settings a league argues about when a post lands in the wrong place."""
+    """A channel change nobody recorded cannot be explained afterwards, and these are exactly
+    the settings a league argues about when a post lands in the wrong place."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
 
@@ -327,49 +304,11 @@ async def test_the_manager_is_told_which_channel_was_assigned(tmp_path, which):
 
 
 # ---------------------------------------------------------------------------
-# The attendance pair: a module gate and a permission check
+# Every season's, whatever modules are on
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("which", GATED)
-async def test_a_disabled_module_refuses_the_assignment(tmp_path, which):
-    """Assigning a channel to a module that is not running configures something no code
-    reads, and the notices the manager is expecting would never arrive. Each command
-    checks its *own* module, so a league running attendance and not results must still be
-    refused the verdicts channel."""
-    module = COMMANDS[which][2]
-    db_path = await _make_db(tmp_path, name=f"disabled_{which}")
-    cog = _make_cog(
-        db_path,
-        attendance_enabled=(module != "attendance"),
-        results_enabled=(module != "results"),
-    )
-    interaction = _interaction()
-
-    await _run(cog, which, interaction)
-
-    assert "not enabled" in _replied(interaction)
-    assert await _audit_rows(db_path) == []
-
-
-@pytest.mark.parametrize("which", GATED)
-async def test_another_modules_state_does_not_refuse_the_assignment(tmp_path, which):
-    """The other half of the same rule: a league that has switched attendance off must
-    still be able to set its verdicts channel."""
-    module = COMMANDS[which][2]
-    db_path = await _make_db(tmp_path, name=f"othermodule_{which}")
-    cog = _make_cog(
-        db_path,
-        attendance_enabled=(module == "attendance"),
-        results_enabled=(module == "results"),
-    )
-
-    await _run(cog, which, _interaction())
-
-    assert len(await _audit_rows(db_path)) == 1
-
-
-@pytest.mark.parametrize("which", UNGATED)
+@pytest.mark.parametrize("which", ALL)
 async def test_a_core_channel_needs_no_module(tmp_path, which):
     """Lineups and the calendar are core settings — gating them on attendance would refuse
     a league that never enabled the module."""
@@ -381,48 +320,7 @@ async def test_a_core_channel_needs_no_module(tmp_path, which):
     assert len(await _audit_rows(db_path)) == 1
 
 
-@pytest.mark.parametrize("which", GATED)
-async def test_a_channel_the_bot_cannot_post_in_is_refused(tmp_path, which):
-    """Checked before the write rather than discovered at the first notice, when the round
-    it was meant to announce has already started."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _run(cog, which, interaction, channel=_channel(may_post=False))
-
-    assert "Cannot access that channel" in _replied(interaction)
-    assert await _audit_rows(db_path) == []
-
-
-@pytest.mark.parametrize("which", GATED)
-async def test_a_command_outside_a_guild_is_refused(tmp_path, which):
-    """`permissions_for(guild.me)` needs a guild, so the absence is answered rather than
-    raising an `AttributeError` at a manager."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction(guild=False)
-
-    await _run(cog, which, interaction)
-
-    assert "Cannot access that channel" in _replied(interaction)
-
-
-@pytest.mark.parametrize("which", GATED)
-async def test_the_gated_commands_defer_before_working(tmp_path, which):
-    """Their work reaches a service and the database, which can outrun Discord's
-    three-second response window."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _run(cog, which, interaction)
-
-    interaction.response.defer.assert_awaited_once()
-    interaction.followup.send.assert_awaited()
-
-
-@pytest.mark.parametrize("which", UNGATED)
+@pytest.mark.parametrize("which", ALL)
 async def test_the_core_pair_reply_directly(tmp_path, which):
     """They write two rows and answer; deferring would be a second round trip for nothing."""
     db_path = await _make_db(tmp_path)
@@ -433,32 +331,6 @@ async def test_the_core_pair_reply_directly(tmp_path, which):
 
     interaction.response.defer.assert_not_awaited()
     interaction.response.send_message.assert_awaited()
-
-
-async def test_the_rsvp_channel_reaches_the_attendance_service(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _run(cog, "rsvp", _interaction())
-
-    cog.bot.attendance_service.set_rsvp_channel.assert_awaited_once_with(
-        DIVISION_ID, CHANNEL_ID
-    )
-    cog.bot.attendance_service.set_attendance_channel.assert_not_awaited()
-
-
-async def test_the_attendance_channel_reaches_the_attendance_service(tmp_path):
-    """The two commands sit next to each other and write neighbouring columns; a copy-paste
-    that left the wrong setter behind would put RSVP notices in the logging channel."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _run(cog, "attendance", _interaction())
-
-    cog.bot.attendance_service.set_attendance_channel.assert_awaited_once_with(
-        DIVISION_ID, CHANNEL_ID
-    )
-    cog.bot.attendance_service.set_rsvp_channel.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -477,7 +349,7 @@ async def test_the_core_pair_write_their_own_column(tmp_path, which, column):
 
 
 # ---------------------------------------------------------------------------
-# Where the four have drifted — pinned as they stand
+# Where the two have drifted — pinned as they stand
 # ---------------------------------------------------------------------------
 
 
@@ -488,43 +360,18 @@ async def test_a_first_assignment_and_a_move_are_worded_differently(tmp_path, wh
     core pair always said "set" until issue #212."""
     first_db = await _make_db(tmp_path, name=f"first_{which}")
     moved_db = await _make_db(tmp_path, name=f"moved_{which}")
-    if which in CORE_COLUMNS:
-        await _seed_core_channel(moved_db, which, 111)
+    await _seed_core_channel(moved_db, which, 111)
     first = _interaction()
     moved = _interaction()
 
-    await _run(_make_cog(first_db, old_config=None), which, first)
-    await _run(
-        _make_cog(
-            moved_db,
-            old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
-            old_penalty_channel=111,
-        ),
-        which,
-        moved,
-    )
+    await _run(_make_cog(first_db), which, first)
+    await _run(_make_cog(moved_db), which, moved)
 
     assert "set to" in _replied(first)
     assert "updated to" in _replied(moved)
 
 
-@pytest.mark.parametrize("which", GATED)
-async def test_the_gated_commands_record_the_channel_they_replaced(tmp_path, which):
-    """Which is what makes the audit answer "where were the notices going before?"."""
-    db_path = await _make_db(tmp_path, name=f"replaced_{which}")
-    cog = _make_cog(
-        db_path,
-        old_config=SimpleNamespace(rsvp_channel_id=111, attendance_channel_id=111),
-        old_penalty_channel=111,
-    )
-
-    await _run(cog, which, _interaction())
-
-    old = json.loads((await _audit_rows(db_path))[0]["old_value"])
-    assert old["channel_id"] == 111
-
-
-@pytest.mark.parametrize("which", UNGATED)
+@pytest.mark.parametrize("which", ALL)
 async def test_the_core_pair_record_the_channel_they_replaced(tmp_path, which):
     """They once wrote an empty `old_value`, so a lineup or calendar channel that moved could
     not be traced back — against the rule that every change is recorded from what to what
@@ -538,7 +385,7 @@ async def test_the_core_pair_record_the_channel_they_replaced(tmp_path, which):
     assert old["channel_id"] == 111
 
 
-@pytest.mark.parametrize("which", UNGATED)
+@pytest.mark.parametrize("which", ALL)
 async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, which):
     db_path = await _make_db(tmp_path)
 
@@ -549,18 +396,11 @@ async def test_a_first_core_assignment_records_no_previous_channel(tmp_path, whi
 
 @pytest.mark.parametrize("which", ALL)
 async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, which):
-    """The attendance pair once wrote both ids as strings, since their table stores them as
-    text, where every other channel command writes integers — so a reader querying the audit
-    for a channel id had to know which command wrote the row (issue #212). The old id is
-    given here as each source really holds it: text for the attendance pair."""
+    """Every channel command writes its ids as integers, so a reader querying the audit for a
+    channel id need not know which command wrote the row (issue #212)."""
     db_path = await _make_db(tmp_path, name=f"types_{which}")
-    if which in CORE_COLUMNS:
-        await _seed_core_channel(db_path, which, 111)
-    cog = _make_cog(
-        db_path,
-        old_config=SimpleNamespace(rsvp_channel_id="111", attendance_channel_id="111"),
-        old_penalty_channel=111,
-    )
+    await _seed_core_channel(db_path, which, 111)
+    cog = _make_cog(db_path)
 
     await _run(cog, which, _interaction())
 

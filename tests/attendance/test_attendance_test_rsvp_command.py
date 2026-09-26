@@ -1,44 +1,41 @@
-"""Two test-mode commands: clearing a rehearsal's drivers, and opening the check-in modal.
+"""`/attendance test rsvp`: opening the modal that sets fake drivers' check-in answers.
 
-Issue #208. `/test-mode roster clear` and `/test-mode rsvp set-status` were uncovered. Both are
-maintainer tools that write a league's real data, which is why the gates in front of them matter
-more than the work behind them.
+Attendance's own test tool, under attendance's own group. It sat under core's `/test-mode` until
+#462 moved it, and only its name changed. Issue #208 first covered it there. It is a maintainer
+tool that writes a league's real data, which is why the gates in front of it matter more than the
+work behind it. The modal it opens has tests of its own, in `test_rsvp_bulk_set_modal.py`.
 
-**Neither runs outside test mode.** These exist to put a rehearsal into a state; run against a
-live season they would delete real drivers or overwrite real check-in answers. The test-mode
-flag is the only thing between the two, and it is checked before anything else.
+**It does not run outside test mode, and says so first.** It exists to put a rehearsal into a
+state; run against a live season it would overwrite real check-in answers. It is test mode's, a
+league admin's like every test mode command, and every test mode command but the toggle is
+refused while test mode is off, whatever else is off with it.
 
-**`rsvp set-status` is gated on the attendance module as well** (issue #114). A check-in call
-posted while the module was on leaves its `rsvp_embed_messages` row behind, so without the gate
-the command finds that embed and writes answers for a module the league has since switched off —
-which is a module producing output while disabled.
+**It is gated on the attendance module as well** (issue #114). A check-in call posted while the
+module was on leaves its `rsvp_embed_messages` row behind, so without the gate the command finds
+that embed and writes answers for a module the league has since switched off — which is a module
+producing output while disabled.
 
 **Each refusal says what to do next.** "No RSVP embed for this division" is met by
 `/test-mode advance`, not by re-running this command, and a maintainer who is not told that will
 retype the same thing.
 
-**Clearing nothing is reported, and not logged.** A division with no fake drivers in it is an
-ordinary answer to the command rather than a failure, but nothing happened — and a log line
-saying a rehearsal's roster was cleared when it was already empty would misdescribe the state
-the databases are in.
-
-**The division is matched case-insensitively, in the active season only.** A maintainer typing a
-name into a slash command is not copying it letter for letter, and a division from a previous
+**The division is matched case-insensitively, in a season being raced only.** A maintainer typing
+a name into a slash command is not copying it letter for letter, and a division from a previous
 season is not the one whose rehearsal is running.
 """
 from __future__ import annotations
 
 import os
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.test_mode_cog import TestModeCog, _RsvpBulkSetModal
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog, _RsvpBulkSetModal
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.undecorate import undecorate
 
-SERVER_ID = 12408
+SERVER_ID = 12409
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -52,7 +49,7 @@ EMBED_MESSAGE = 800
 
 
 async def _make_db(
-    tmp_path, *, name: str = "test_mode_cmds", season_status: str = "ACTIVE"
+    tmp_path, *, name: str = "test_rsvp_cmd", season_status: str = "ACTIVE"
 ) -> str:
     db_path = os.path.join(str(tmp_path), f"{name}.db")
     await run_migrations(db_path)
@@ -96,7 +93,7 @@ def _make_cog(
     config_missing: bool = False,
     attendance_enabled: bool = True,
     current_embed=_UNSET,
-) -> TestModeCog:
+) -> AttendanceCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.config_service = MagicMock()
@@ -115,10 +112,8 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    cog = TestModeCog.__new__(TestModeCog)
+    cog = AttendanceCog.__new__(AttendanceCog)
     cog.bot = bot
-    # The stage the roster may change in has tests of its own (test_test_mode_roster_stage).
-    cog._refuse_roster_change_outside_placements = AsyncMock(return_value=False)
     return cog
 
 
@@ -142,103 +137,12 @@ def _replied(interaction) -> str:
     )
 
 
-async def _clear(cog, interaction, *, division="Pro", result=0):
-    with patch(
-        "leaguebot.core.services.test_roster_service.clear_test_drivers",
-        new=AsyncMock(return_value=result),
-    ) as clear:
-        await undecorate(TestModeCog.roster_clear)(cog, interaction, division)
-    return clear
-
-
 async def _set_status(cog, interaction, *, division="Pro"):
-    await undecorate(TestModeCog.rsvp_set_status)(cog, interaction, division)
+    await undecorate(AttendanceCog.test_rsvp)(cog, interaction, division)
 
 
 # ---------------------------------------------------------------------------
-# /test-mode roster clear
-# ---------------------------------------------------------------------------
-
-
-async def test_the_divisions_fake_drivers_are_removed(tmp_path):
-    db_path = await _make_db(tmp_path, name="clear_ok")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    clear = await _clear(cog, interaction, result=5)
-
-    clear.assert_awaited_once()
-    assert clear.await_args.kwargs["division_name"] == "Pro"
-    assert "Removed **5**" in _replied(interaction)
-
-
-async def test_clearing_an_empty_division_says_so(tmp_path):
-    """An ordinary answer rather than a failure — a maintainer who cleared it a minute ago
-    should not be shown an error for doing it twice."""
-    db_path = await _make_db(tmp_path, name="clear_empty")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _clear(cog, interaction, result=0)
-
-    assert "No fake drivers found" in _replied(interaction)
-
-
-async def test_clearing_nothing_is_not_logged(tmp_path):
-    """Nothing happened, and a log line saying a rehearsal's roster was cleared when it was
-    already empty would misdescribe the state the databases are in."""
-    db_path = await _make_db(tmp_path, name="clear_nolog")
-    cog = _make_cog(db_path)
-
-    await _clear(cog, _interaction(), result=0)
-
-    cog.bot.output_router.post_log.assert_not_awaited()
-
-
-async def test_a_clear_is_logged_with_what_it_removed(tmp_path):
-    """Test mode writes a league's real tables, so the log is what distinguishes a
-    rehearsal's state from a real one afterwards."""
-    db_path = await _make_db(tmp_path, name="clear_log")
-    cog = _make_cog(db_path)
-
-    await _clear(cog, _interaction(), result=5)
-
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert "/test-mode roster clear" in logged
-    assert "Pro" in logged
-    assert "5" in logged
-
-
-async def test_a_refusal_from_the_service_is_passed_on(tmp_path):
-    """It returns a string to explain itself — an unknown division, a season in the wrong
-    state — and a maintainer cannot act on a refusal they are not shown."""
-    db_path = await _make_db(tmp_path, name="clear_refused")
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _clear(cog, interaction, result="Division 'Rookie' not found")
-
-    assert "Division 'Rookie' not found" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "kwargs", [{"test_mode": False}, {"config_missing": True}]
-)
-async def test_clearing_outside_test_mode_is_refused(tmp_path, kwargs):
-    """Run against a live season this deletes real drivers."""
-    db_path = await _make_db(tmp_path, name="clear_notestmode")
-    cog = _make_cog(db_path, **kwargs)
-    interaction = _interaction()
-
-    clear = await _clear(cog, interaction)
-
-    assert "only available when test mode is enabled" in _replied(interaction)
-    clear.assert_not_awaited()
-
-
-# ---------------------------------------------------------------------------
-# /test-mode rsvp set-status
+# /attendance test rsvp
 # ---------------------------------------------------------------------------
 
 
@@ -372,7 +276,25 @@ async def test_a_disabled_attendance_module_is_refused(tmp_path):
 
     await _set_status(cog, interaction)
 
-    assert "Attendance module is not enabled" in _replied(interaction)
+    # Word for word: the attendance cog's own gate is worded differently.
+    assert _replied(interaction) == (
+        "❌ The Attendance module is not enabled, so there is no check-in to set."
+    )
+    interaction.response.send_modal.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kwargs", [{"test_mode": False}, {"config_missing": True}])
+async def test_test_mode_is_checked_before_the_module(tmp_path, kwargs):
+    """Every test mode command but the toggle is refused while test mode is off, whatever
+    else is off with it — so a league admin outside test mode is told that, not that the
+    attendance module is off."""
+    db_path = await _make_db(tmp_path, name="rsvp_both_off")
+    cog = _make_cog(db_path, attendance_enabled=False, **kwargs)
+    interaction = _interaction()
+
+    await _set_status(cog, interaction)
+
+    assert _replied(interaction) == "ℹ️ Test mode is not active."
     interaction.response.send_modal.assert_not_awaited()
 
 

@@ -508,7 +508,7 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 # second while the first is outstanding would send a manager to reschedule a season whose
 # real fault was one unset channel.
 
-_NO_ATTENDANCE_CHANNEL = ([], ["**Pro** has no attendance channel — `/division attendance-channel`."])
+_NO_ATTENDANCE_CHANNEL = ([], ["**Pro** has no attendance channel — `/attendance channel attendance`."])
 
 
 async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):

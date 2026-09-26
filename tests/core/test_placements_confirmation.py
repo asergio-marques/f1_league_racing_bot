@@ -164,6 +164,32 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         assert f"**Pro** has no {label}" in "\n".join(on)
 
 
+@pytest.mark.parametrize(
+    "label,command",
+    [
+        pytest.param("weather channel", "/weather channel", id="weather channel"),
+        pytest.param("results channel", "/results channel results", id="results channel"),
+        pytest.param("standings channel", "/results channel standings", id="standings channel"),
+        pytest.param("verdicts channel", "/results channel verdicts", id="verdicts channel"),
+        pytest.param("RSVP channel", "/attendance channel rsvp", id="RSVP channel"),
+        pytest.param("attendance channel", "/attendance channel attendance", id="attendance channel"),
+    ],
+)
+async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_it(
+    db_path, label, command
+):
+    """Each missing channel is named with its division and the command that sets it, and a
+    module's channels are set under that module's own group (#462)."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")
+        await db.commit()
+    cog = _cog(db_path, weather=True, results=True, attendance=True)
+
+    _, channels = await cog._placement_confirmation_faults(SEASON_ID)
+
+    assert f"**Pro** has no {label} — `{command}`." in channels
+
+
 async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_path):
     """Nothing clears a channel's id when Discord deletes it, so mid-season every channel is
     still set — whether it is still there is the question worth asking (#374)."""
@@ -176,9 +202,9 @@ async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_pa
 
     assert channels == [
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
-        "**Am**'s verdicts channel is no longer on the server — `/division verdicts-channel`.",
+        "**Am**'s verdicts channel is no longer on the server — `/results channel verdicts`.",
         "**Am**'s attendance channel is no longer on the server — "
-        "`/division attendance-channel`.",
+        "`/attendance channel attendance`.",
     ]
 
 
@@ -287,9 +313,9 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
 
     (call,) = interaction.followup.send.await_args_list
     refusal = call.args[0]
-    assert "**Pro** has no results channel — `/division results-channel`." in refusal
+    assert "**Pro** has no results channel — `/results channel results`." in refusal
     assert "**Am** has no standings channel" in refusal
-    assert "**Am** has no verdicts channel — `/division verdicts-channel`." in refusal
+    assert "**Am** has no verdicts channel — `/results channel verdicts`." in refusal
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 

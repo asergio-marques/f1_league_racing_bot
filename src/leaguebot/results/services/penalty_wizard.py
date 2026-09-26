@@ -236,7 +236,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
         return (
             "❌ This round's post-race penalties have already been approved, and its pardons "
             "with them. Its appeals are reviewed below; a decision already applied is changed "
-            "with `/round results amend` once the round is final."
+            "with `/results rounds amend` once the round is final."
         )
     if row is None or row["status"] != RoundStatus.AWAITING_REPORT_VERDICTS.value:
         return "❌ This round's penalty review is over, so nothing here can be changed."
@@ -1132,7 +1132,7 @@ class PenaltyReviewView(LeagueView):
             # **No resubmission in an amendment** (#345). It replaces every session of the round
             # and sends it back through a first-pass review — against a round already FINAL. An
             # amendment's classification is corrected in its first stage; to start again, the
-            # manager cancels and runs `/round results amend` afresh.
+            # manager cancels and runs `/results rounds amend` afresh.
             for item in list(self.children):
                 if getattr(item, "custom_id", None) == _CID_RESUBMIT:
                     self.remove_item(item)

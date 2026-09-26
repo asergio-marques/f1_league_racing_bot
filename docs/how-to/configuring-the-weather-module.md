@@ -34,7 +34,7 @@ This guide covers the weather module only. Setting the bot up, creating a season
 |---|---|
 | `/module enable weather` and `/module disable weather` | The **league admin role** |
 | `/weather config` — the three timing commands | The **interaction role**, and the module already on |
-| `/division weather-channel` | The **interaction role**, and the module already on |
+| `/weather channel` | The **interaction role**, and the module already on |
 | Anything under `/images` | See the image guide |
 
 > **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
@@ -62,7 +62,7 @@ Turning the module off cancels every forecast still to come, and only those. You
 ## Step 2 — Give every division a forecast channel
 
 ```
-/division weather-channel  name: Division One  channel: #div1-weather
+/weather channel  name: Division One  channel: #div1-weather
 ```
 
 Forecasts are posted **per division**, so a league with three divisions sets three channels. There is no server-wide forecast channel and no default — a division without one is a division the bot cannot post to.

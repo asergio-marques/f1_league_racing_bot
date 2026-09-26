@@ -51,8 +51,6 @@ TRACEBACKS = "#442"
 BACKGROUND_FAILURES = "#453"
 #: The handlers for each kind of post, which move core's own posts onto them.
 HANDLERS = "#441"
-#: Each module's commands, moved out of core's command groups into the module's own.
-COMMAND_GROUPS = "#462"
 #: The start-up catch-up in the entry point: each module moves its own share into the handler it
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
@@ -185,6 +183,8 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "staged_penalties_warning"): (1, PASS["results"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.post_check_in"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
+    ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
+    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_call_stands"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (6, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
@@ -200,23 +200,19 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (3, PASS["core"]),
     ("core/cogs/module_cog.py", "execute_forced_close"): (4, PASS["core"]),
+    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (10, PASS["results"]),
     ("results/cogs/results_cog.py", "ResultsCog.reserves_toggle"): (4, PASS["results"]),
-    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (10, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (4, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._division_channel_faults"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._do_approve"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._placement_confirmation_faults"): (2, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._set_division_channel"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._standings_capacity_lines"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._track_autocomplete"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (3, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog.division_attendance_channel"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (4, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (4, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog.division_rsvp_channel"): (2, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog.division_verdicts_channel"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.round_add"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
@@ -235,9 +231,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (2, PASS["signup"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (2, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.rsvp_set_status"): (1, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (2, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["core"]),
     ("core/cogs/track_cog.py", "TrackCog.track_list"): (1, PASS["core"]),
 }
 
@@ -421,6 +415,7 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
 
 KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (1, TRACEBACKS),
+    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, TRACEBACKS),
     ("signup/cogs/admin_review_cog.py", "_may_review_signup"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._log"): (1, TRACEBACKS),
@@ -432,9 +427,9 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/module_cog.py", "execute_forced_close"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "BulkAmendSessionModal.on_submit"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "BulkConfigSessionModal.on_submit"): (1, TRACEBACKS),
+    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "_run_xml_import"): (1, TRACEBACKS),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (1, TRACEBACKS),
     ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (1, TRACEBACKS),
     ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (1, TRACEBACKS),
     ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (1, TRACEBACKS),
@@ -453,7 +448,6 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (2, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, TRACEBACKS),
-    ("core/cogs/test_mode_cog.py", "_RsvpBulkSetModal.on_submit"): (1, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_round_grid"): (2, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_seat_team_field"): (1, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_sheet_attachment"): (1, TRACEBACKS),
@@ -706,10 +700,6 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.results.services.result_submission_service._build_penalty_review_state"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.attendance.services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
-    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._ConfigSelectView"): (1, COMMAND_GROUPS),
-    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._build_division_validation_data"): (1, COMMAND_GROUPS),
-    ("core/cogs/season_cog.py", "leaguebot.results.services.result_submission_service._close_amend_channel_record"): (2, COMMAND_GROUPS),
-    ("core/cogs/test_mode_cog.py", "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round"): (1, COMMAND_GROUPS),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
@@ -736,9 +726,7 @@ def test_no_private_name_crosses_a_module():
     "How modules and core fit together"; PEP 8). A module is what `classify()` in
     `tools/coverage_by_module.py` says it is. Here a breach is keyed by the file using the name
     and the name it uses, and the issue is the pass of the module that owns the name: it either
-    makes the name public or moves the code that needs it. Where the code using the name is one of
-    that module's commands written in core's cog, the issue is the one that moves those commands
-    into the module's own, which leaves the name inside its module."""
+    makes the name public or moves the code that needs it."""
     _check(
         "no private name crosses a module",
         _private_names_across_modules(),
@@ -816,7 +804,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
     ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["signup"]),
-    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, PASS["results"]),
+    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (3, PASS["results"]),
     ("core/cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, HANDLERS),
@@ -1140,7 +1128,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._amend_round_results"): (3, COMMAND_GROUPS),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "AmendmentService.amend_round"): (6, PASS["core"]),
     ("core/services/amendment_service.py", "approve_amendment"): (7, PASS["results"]),

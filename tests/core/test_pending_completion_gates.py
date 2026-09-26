@@ -16,7 +16,7 @@ is the other half: one table over every command the rule touches, exercised in f
     2. repairing a division's channels;
     3. amending the results of a round already final.
 
-The third is why `/round results amend` appears in the permitted table rather than the refused
+The third is why `/results rounds amend` appears in the permitted table rather than the refused
 one, while everything else under `/results` is refused: it is the season's last chance to
 correct its record before `/season complete` draws the final classification off it.
 """
@@ -27,11 +27,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.cogs.team_cog import TeamCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
+from leaguebot.weather.cogs.weather_cog import WeatherCog
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22400
@@ -358,36 +360,58 @@ async def test_the_bulk_amend_modal_is_not_shown_in_pending_completion(tmp_path)
 # The three things that stay open
 # ---------------------------------------------------------------------------
 
-async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path):
+#: Each module channel command, the service holding the setter it reaches, and that setter.
+#: The cog is named with each so that the command can follow its code to another one.
+MODULE_CHANNEL_COMMANDS = {
+    "weather": (WeatherCog, "channel", "season_service", "set_division_forecast_channel"),
+    "results": (ResultsCog, "channel_results", "season_service", "set_division_results_channel"),
+    "standings": (ResultsCog, "channel_standings", "season_service", "set_division_standings_channel"),
+    "verdicts": (ResultsCog, "channel_verdicts", "season_service", "set_division_penalty_channel"),
+    "rsvp": (AttendanceCog, "channel_rsvp", "attendance_service", "set_rsvp_channel"),
+    "attendance": (AttendanceCog, "channel_attendance", "attendance_service", "set_attendance_channel"),
+}
+
+
+@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
+async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
-    channels, so one deleted before completion has to be repointed.
+    channels, so one deleted before completion has to be repointed. Each of the six is run
+    through its own command body, not through a helper some of them share, so a gate added to
+    any one body is exercised.
     """
+    cog_class, command, service, setter = MODULE_CHANNEL_COMMANDS[which]
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = _bot(db_path, SeasonStage.PENDING_COMPLETION)
-    bot.season_service.set_division_standings_channel = AsyncMock(return_value=None)
-    cog = _cog(SeasonCog, bot)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    bot.attendance_service = MagicMock()
+    bot.attendance_service.get_division_config = AsyncMock(return_value=None)
+    setattr(getattr(bot, service), setter, AsyncMock(return_value=None))
+    cog = _cog(cog_class, bot)
     interaction = _interaction()
-    channel = MagicMock(id=808, mention="<#808>", name="standings")
+    channel = MagicMock(id=808, mention="<#808>")
+    channel.name = which
+    channel.permissions_for = MagicMock(return_value=SimpleNamespace(send_messages=True))
 
     with patch(
         "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
-        await cog._set_division_channel(interaction, "Pro", channel, "standings")
+        await undecorate(getattr(cog_class, command))(cog, interaction, "Pro", channel)
 
     said = _said(interaction)
     assert "✅" in said, said
-    bot.season_service.set_division_standings_channel.assert_awaited_once()
+    assert "❌" not in said, said
+    getattr(getattr(bot, service), setter).assert_awaited_once()
 
 
-async def test_round_results_amend_is_not_turned_away_by_the_stage(tmp_path):
+async def test_results_rounds_amend_is_not_turned_away_by_the_stage(tmp_path):
     """The season's last chance to correct its record before the final classification."""
     db_path = await _db(tmp_path, SeasonStage.PENDING_COMPLETION)
     bot = _bot(db_path, SeasonStage.PENDING_COMPLETION)
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    cog = _cog(SeasonCog, bot)
+    cog = _cog(ResultsCog, bot)
     interaction = _interaction()
 
-    await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro", 1)
+    await undecorate(ResultsCog.rounds_amend)(cog, interaction, "Pro", 1)
 
     said = _said(interaction)
     # It gets as far as looking for the round, which this season does not hold — not turned
@@ -395,14 +419,14 @@ async def test_round_results_amend_is_not_turned_away_by_the_stage(tmp_path):
     assert "Round 1 not found" in said, said
 
 
-async def test_round_results_amend_is_refused_on_an_archived_season(tmp_path):
+async def test_results_rounds_amend_is_refused_on_an_archived_season(tmp_path):
     """It deletes a round's driver rows and re-inserts them; nothing puts the old ones back."""
     db_path = await _db(tmp_path, SeasonStage.COMPLETED)
     bot = _bot(db_path, SeasonStage.COMPLETED)
-    cog = _cog(SeasonCog, bot)
+    cog = _cog(ResultsCog, bot)
     interaction = _interaction()
 
-    await undecorate(SeasonCog.round_results_amend)(cog, interaction, "Pro", 1)
+    await undecorate(ResultsCog.rounds_amend)(cog, interaction, "Pro", 1)
 
     said = _said(interaction)
     assert "archive" in said, said

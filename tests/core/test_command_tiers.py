@@ -71,9 +71,9 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "team remove": ADMIN,
     "driver sack": ADMIN,
     # The same rule, on three commands the issue itself had at the lower tier.
-    # `/round results amend` overwrites a FINAL round's classification in place — it does
+    # `/results rounds amend` overwrites a FINAL round's classification in place — it does
     # not supersede, whatever the comment in `amend_session_results` used to claim.
-    "round results amend": ADMIN,
+    "results rounds amend": ADMIN,
     # Approval overwrites the season's points entire; the rest of `/results amend` writes
     # only the modification store, which `revert` discards.
     "results amend review": ADMIN,
@@ -90,11 +90,12 @@ LEAGUE_ADMIN_COMMANDS: dict[str, str] = {
     "test-mode roster clear": ADMIN,
     "test-mode roster list": ADMIN,
     "test-mode roster remove": ADMIN,
-    "test-mode rsvp set-status": ADMIN,
     "test-mode backup save": ADMIN,
     "test-mode backup lock": ADMIN,
     "test-mode backup restore": ADMIN,
     "test-mode backup status": ADMIN,
+    # A module's test tool sits under the module's own group, and is test mode's all the same.
+    "attendance test rsvp": ADMIN,
 }
 
 

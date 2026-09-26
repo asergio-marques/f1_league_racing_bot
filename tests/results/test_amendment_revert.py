@@ -338,7 +338,32 @@ async def test_the_revert_is_announced(tmp_path):
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
     assert "AMEND_REVERTED" in logged
     assert "round: 4" in logged
-    assert "/round results amend" in logged
+    assert "/results rounds amend" in logged
+
+
+async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
+    """The league is told the amendment lapsed and may be run again, so the notice sends the
+    manager to the command they now type."""
+    db_path = await _db(tmp_path, "sweep_announced_rerun")
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+    bot = _bot(db_path)
+    later = datetime.now(timezone.utc) + timedelta(
+        seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60
+    )
+
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await sweep_expired_amendments(bot, now=later)
+
+    notice = next(
+        str(call.args[0])
+        for call in bot.output_router.post_log.await_args_list
+        if "AMEND_REVERTED" in str(call.args[0])
+    )
+    assert notice.splitlines()[-1] == (
+        "  The amendment's report and appeal stages were not approved in time, so the round "
+        "has been put back as it was. Re-run /results rounds amend to try again."
+    )
 
 
 async def test_a_round_with_no_deadline_is_not_swept(tmp_path):

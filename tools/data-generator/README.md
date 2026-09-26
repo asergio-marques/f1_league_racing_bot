@@ -200,7 +200,7 @@ Both hold nothing but `<ID>, <status>`, one driver per line:
 9000000000000000009, decline
 ```
 
-**That format is the modal's, not ours.** `/test-mode rsvp set-status division:<name>` opens a
+**That format is the modal's, not ours.** `/attendance test rsvp division:<name>` opens a
 box that parses one entry per line, splits on the first comma, and reads the left half as a
 Discord user ID and the right as `accept`, `tentative` or `decline`. It has no token for
 "no response" and no comment syntax, so these files carry no header, no `#` lines and no mention

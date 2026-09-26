@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Random check-in generator — emits the blocks /test-mode rsvp set-status expects.
+"""Random check-in generator — emits the blocks /attendance test rsvp expects.
 
 Drivers are read from roster.csv in the parent directory, written there by the sibling
 roster generator - this script invents nobody of its own, so the IDs it emits are the
@@ -432,7 +432,7 @@ def main(argv=None):
         report(division, drivers, initial, changed, initial_path, changed_path)
 
     print(
-        "\nFor each division, run /test-mode rsvp set-status and paste its initial file "
+        "\nFor each division, run /attendance test rsvp and paste its initial file "
         "into the modal, then run it again and paste the changed file."
     )
     return 0

@@ -6,9 +6,9 @@
 ## Assigning channels to divisions
 - <COMMAND CHANGE AND NEW COMMAND> When adding a division, the command shall no longer intake a weather forecast channel. Instead, there will be a new "weather channel" command that has as input a division name and a channel, which serves a similar purpose.
 - It shall not be possible to confirm a season's placements if the weather module is enabled and not all divisions have a weather forecast channel configured.
-- <NEW COMMAND> There will be a new "results channel" command that has as input a division name and a channel on which race results shall be posted by the bot, formatted.
-- <NEW COMMAND> There will be a new "standings channel" command that has as input a division name and a channel on which standings shall be posted by the bot, formatted.
-- There shall be a "verdicts channel" command that has as input a division name and a channel on which penalty and appeal verdicts shall be posted by the bot. Automatic attendance sanctions are announced in the same channel.
+- <NEW COMMAND> There will be a new "results channel results" command that has as input a division name and a channel on which race results shall be posted by the bot, formatted.
+- <NEW COMMAND> There will be a new "results channel standings" command that has as input a division name and a channel on which standings shall be posted by the bot, formatted.
+- There shall be a "results channel verdicts" command that has as input a division name and a channel on which penalty and appeal verdicts shall be posted by the bot. Automatic attendance sanctions are announced in the same channel.
 - If the results & standings module is enabled, confirming a season's placements shall fail if any division lacks a results channel, a standings channel or a verdicts channel, or if no points configuration is attached to the season. Each missing item shall be named individually.
     - The confirmation shall also fail if a points configuration attached to the season no longer exists in the league points schema store, naming each such configuration and saying how to put it right. A season shall never be left unconfirmable without being told why.
 - It shall not be possible to enable the results & standings module once the season's placements have been confirmed.
@@ -249,7 +249,7 @@
 - Where a round, a division or a season is cancelled, the bot shall post to the division's results channel a note that no results shall be posted for that round, or no further results for that division or season. The note shall be posted silently, mentioning nobody and notifying nobody, the notification being the attendance module's to carry, and only while the module is enabled. Decided 2026-09-19 (#175).
 
 #### The format of an amendment
-- A re-insertion through "round results amend" shall take the same format as a first submission, without further columns. Decided 2026-09-20 (#345), withdrawing the two sanction columns that carried the post-race and appeal penalties.
+- A re-insertion through "results rounds amend" shall take the same format as a first submission, without further columns. Decided 2026-09-20 (#345), withdrawing the two sanction columns that carried the post-race and appeal penalties.
     - An amendment replays the round's report and appeal stages, where each sanction is kept, changed or removed with its justification and its author intact. A sanction shall not be re-entered as a column of the classification.
     - A paste carrying the withdrawn columns shall be refused, and the refusal shall say that sanctions are now reviewed rather than pasted.
 
@@ -405,7 +405,7 @@ Penalties are not applied by a command. Once every session of a round has been s
 Approving stage two shall apply any staged corrections, republish the round's results and standings under the final state, post a verdict for each correction, recompute the standings of every later round, mark the round final, and delete the submission channel. There shall be no second confirmation on this stage.
 
 #### Amending a submitted session
-- <NEW COMMAND> A "round results amend" command shall be a league admin's, amending a round already final overwriting the classification the league raced with nothing to put it back. It shall intake a division name and round number mandatorily, and optionally, a session name as well. Where the session is omitted, the bot shall ask which sessions to amend, and any number of the round's sessions may be chosen.
+- <NEW COMMAND> A "results rounds amend" command shall be a league admin's, amending a round already final overwriting the classification the league raced with nothing to put it back. It shall intake a division name and round number mandatorily, and optionally, a session name as well. Where the session is omitted, the bot shall ask which sessions to amend, and any number of the round's sessions may be chosen.
     - The command shall be refused for a round that has not been marked final by both review stages.
     - The amendment shall be carried out in a channel created for the purpose, private to the server's admin role, carrying a button to abandon it.
     - The points configuration recorded for each amended session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one for it.

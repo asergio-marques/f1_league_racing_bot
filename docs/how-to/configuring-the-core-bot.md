@@ -411,16 +411,16 @@ The bot posts nothing to a channel you have not named. Two channels are yours to
 
 They are set **per division**, so a league with three divisions sets three of each.
 
-The other six belong to modules. Set the ones whose module you turned on in step 2:
+The other six belong to modules, and each is set by its module's own command. Set the ones whose module you turned on in step 2:
 
 | Command | Needs this module | Carries |
 |---|---|---|
-| `/division weather-channel` | `weather` | Forecasts, and a silent note when a round is cancelled |
-| `/division results-channel` | `results` | Session results |
-| `/division standings-channel` | `results` | The championship tables |
-| `/division verdicts-channel` | `results` | Penalty and appeal verdicts |
-| `/division rsvp-channel` | `attendance` | Check-in calls |
-| `/division attendance-channel` | `attendance` | The attendance sheet |
+| `/weather channel` | `weather` | Forecasts, and a silent note when a round is cancelled |
+| `/results channel results` | `results` | Session results |
+| `/results channel standings` | `results` | The championship tables |
+| `/results channel verdicts` | `results` | Penalty and appeal verdicts |
+| `/attendance channel rsvp` | `attendance` | Check-in calls |
+| `/attendance channel attendance` | `attendance` | The attendance sheet |
 
 **Confirming placements will refuse a season that is missing any of these** — the calendar and lineup channels for every division, and the six for every enabled module — so it is cheaper to do them all now than to discover it at step 12. A channel set and since deleted from the server counts as missing, and confirming a mid-season window's placements checks them all again.
 
@@ -789,7 +789,7 @@ command.
 | `/division add` or `/season placements-review` refused, naming placements | The season is not in placements yet. Confirm its configuration with `/season config-review`, and close its signup window if it has one |
 | `/team add` or a signup setting refused, naming the season | The season's configuration is confirmed, which fixes them until it ends |
 | Confirmation refuses over tiers | A division was deleted and left a gap. `/division amend` something into it |
-| A `/division …-channel` command says no season is live | A division's channels belong to the season being built or raced. Once a season ends they no longer count; set the next season's up once its divisions exist |
+| A command setting a division's channel — `/division lineup-channel`, `/weather channel` and the rest — says no season is live | A division's channels belong to the season being built or raced. Once a season ends they no longer count; set the next season's up once its divisions exist |
 | "Unknown track" | The circuit name has to match exactly. Use the ID instead, or `/track list` to see the spellings |
 | A round appears at the wrong time to your drivers | You entered local time, not UTC. `/round amend` it |
 | The calendar in the channel is out of date | It changes by itself only on a cancellation; an amended round needs `/division calendar-sync` |

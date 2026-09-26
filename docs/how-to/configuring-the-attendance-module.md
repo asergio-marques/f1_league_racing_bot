@@ -40,7 +40,8 @@ This guide covers the attendance module only. Setting the bot up, creating a sea
 | `/attendance config` — all of them | The **interaction role** |
 | `/attendance sync` | The **interaction role** |
 | `/attendance post-check-in` | The **interaction role** |
-| `/division rsvp-channel` and `/division attendance-channel` | The **interaction role** |
+| `/attendance channel rsvp` and `/attendance channel attendance` | The **interaction role** |
+| `/attendance test rsvp` | The **league admin role**, and test mode on — it is test mode's, like every `/test-mode` command |
 | The check-in buttons | No role. A confirmed placement in that division, full-time or reserve — anybody else is told they are not a member of it |
 | The pardon button on a penalty review | Whoever runs your penalty reviews |
 | Anything under `/images` | See the image guide |
@@ -80,8 +81,8 @@ Switching it on gives you a starting configuration you can leave alone if it sui
 ## Step 3 — Give every division two channels
 
 ```
-/division rsvp-channel  name: Division One  channel: #div1-check-in
-/division attendance-channel  name: Division One  channel: #div1-attendance
+/attendance channel rsvp  name: Division One  channel: #div1-check-in
+/attendance channel attendance  name: Division One  channel: #div1-attendance
 ```
 
 Both are set **per division**, so a league with three divisions sets six channels. The first carries the check-in calls, the reminders and the reserve distribution result; the second carries the attendance sheet and nothing else. **Each needs a channel of its own.** The bot refuses a channel already doing another job (the other of the two, the same kind of channel in another division, or anything else it posts to) and names what holds it; see [Setting up the bot for your league](configuring-the-core-bot.md#step-9--point-each-division-at-its-channels). That suits these two anyway: one is a conversation before the race, the other a table that is replaced after it.
@@ -207,10 +208,10 @@ You are not going to wait five days to find out whether any of this works, and y
 ```
 /test-mode toggle
 /test-mode advance
-/test-mode rsvp set-status  division: Division One
+/attendance test rsvp  division: Division One
 ```
 
-`advance` fires the next thing due — the call, then the reminder unless you have set it to `0`, then the deadline — straight away, and posts each to the real channels so you see exactly what your drivers will see. `set-status` then opens a box where you can set every test driver's answer in one pass, which is the only practical way to drive a check-in to a known state; it needs a call already posted, so run it after the first `advance`. Keep advancing to fire the reminder and close check-in, and watch the reserves get distributed.
+`advance` fires the next thing due — the call, then the reminder unless you have set it to `0`, then the deadline — straight away, and posts each to the real channels so you see exactly what your drivers will see. `/attendance test rsvp` then opens a box where you can set every test driver's answer in one pass, which is the only practical way to drive a check-in to a known state; it needs a call already posted, so run it after the first `advance`. Keep advancing to fire the reminder and close check-in, and watch the reserves get distributed.
 
 See [Test mode](test-mode.md) for the whole picture, including the synthetic drivers you will need first.
 
@@ -246,7 +247,7 @@ The ordinary locks still decide whether they are in time. Move a full-time drive
 
 **Points are only charged when the round is finished with.** Not at provisional results, but when post-race penalties are approved. That is deliberate: it gives you a window to correct a classification that accidentally left somebody out before anyone is charged for it, and before a sanction can fire on a mistake.
 
-**Amending the results afterwards puts it right.** Re-run through `/round results amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Two things to expect: the round has to be **FINAL** before `/round results amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you approve the **last** of the amendment's three steps, not when you paste the corrected classification.
+**Amending the results afterwards puts it right.** Re-run through `/results rounds amend` and the bot recalculates that round's attendance, every later round's totals, reposts the sheet and re-checks the thresholds. Two things to expect: the round has to be **FINAL** before `/results rounds amend` will touch it, so a round still sitting at post-race penalties is refused; and the recalculation happens when you approve the **last** of the amendment's three steps, not when you paste the corrected classification.
 
 > **The amendment is also where you change a pardon.** Pardons you granted are carried into the amendment's report step and kept as they are unless you say otherwise — and that step is the only place to add one, edit one or take one back after a round has gone final. See [the results guide](configuring-the-results-module.md#a-classification-that-was-wrong) for the three steps in order.
 
@@ -317,7 +318,7 @@ You find out from the log channel, which gets an `ATTENDANCE | check-in call | N
 **Find the cause before you post anything.** The entry says what went wrong, and it is nearly always one of two things: the division's check-in channel has been deleted, renamed or had the bot's permissions changed, or Discord refused the message. Posting the call again before you have fixed that just fails a second time.
 
 1. **Read the reason** in the log entry.
-2. **Put the cause right** — usually restoring the channel in `/division rsvp-channel`, or giving the bot permission to post and embed links there.
+2. **Put the cause right** — usually restoring the channel in `/attendance channel rsvp`, or giving the bot permission to post and embed links there.
 3. **Post the call** with `/attendance post-check-in`, naming the division and the round. The log entry gives you the command with both already filled in, so you can copy it straight out.
 4. **Check the reply.** It tells you whether a call is now standing, not merely that the command was accepted — so a second failure is not mistaken for a success.
 
@@ -340,7 +341,7 @@ Worth knowing so you do not go looking for the setting.
 | Whether a mystery round gets a call | It always does. Unlike forecasts, check-in does not care that the circuit is secret |
 | How reserves are ordered for a seat | By when they accepted, earliest first. Changing your answer and changing it back puts you at the back of the queue |
 | Which team a reserve lands in | Worked out from who is missing. A team with nobody at all comes first, then one whose driver declined, then one whose driver never answered, then one with an empty seat, and last a team whose only gap is a tentative driver. Every team gets one before any team gets two, and where two are equal the team further down the constructors' table is served first |
-| Marking somebody present by hand | There is no command. Presence comes from the results; correct the results with `/round results amend` |
+| Marking somebody present by hand | There is no command. Presence comes from the results; correct the results with `/results rounds amend` |
 | Having both auto-reserve and auto-sack | Mutually exclusive by design |
 | Where the sanction announcements go | The division's verdicts channel, alongside your penalty decisions |
 
@@ -360,7 +361,7 @@ Worth running through before the season is approved.
 - [ ] Auto-reserve or auto-sack is set to a number you would defend, or deliberately left off
 - [ ] If either is on, every division has a Reserve team and a verdicts channel
 - [ ] If you want pictures: the image module is on, the two aspects are toggled, and the sheet's drawing file has rows enough for your biggest division
-- [ ] You have watched one full round go by with `/test-mode advance` and `/test-mode rsvp set-status`
+- [ ] You have watched one full round go by with `/test-mode advance` and `/attendance test rsvp`
 
 ---
 
@@ -380,7 +381,7 @@ Worth running through before the season is approved.
 | Auto-reserve or auto-sack refused | The other one is set. Set it to `0` first |
 | A driver over the threshold who was not sanctioned | Either they are in the Reserve team already, which is intended, or the sanction failed — the log channel says which driver and why. Put it right and run `/attendance sync` |
 | Points charged later than you expected | They are charged when post-race penalties are approved, never at provisional results |
-| A driver charged for a round they raced | They are in no session's results. Correct the classification with `/round results amend` and the round is recalculated |
+| A driver charged for a round they raced | They are in no session's results. Correct the classification with `/results rounds amend` and the round is recalculated |
 | Reserves not distributed | Nobody in the Reserve team accepted, or there was no vacancy — an accepted seat is never a vacancy, however slow the driver was to answer |
 | A reserve told they are on standby | Every team that needed one already had one. That is the intended outcome, not a failure |
 | Text where you expected a picture | The sheet worked and the drawing did not. The log channel names the reason |

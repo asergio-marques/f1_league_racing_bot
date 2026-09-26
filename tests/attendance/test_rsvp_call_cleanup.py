@@ -12,7 +12,7 @@ round's call, last notice and distribution message are taken down 24 hours after
 scheduled start, as weather's Phase 3 forecast already was. The answers are kept.
 
 A division can therefore hold more than one call at once, and anything that looked for "the
-division's call" by taking whichever row it found — `/test-mode rsvp set-status` did — has to
+division's call" by taking whichever row it found — `/attendance test rsvp` did — has to
 choose. `get_current_embed_message` does, and its tests are at the foot of this file.
 """
 from __future__ import annotations
@@ -359,8 +359,8 @@ async def test_the_cleanup_leaves_the_other_round_of_a_double_header_standing(tm
 # ---------------------------------------------------------------------------
 #
 # A division held one call at most while every new call took down all the others, so anything
-# looking for "the division's call" could take whichever row it found. `/test-mode rsvp
-# set-status` did exactly that. A double-header now leaves two standing, and the command must
+# looking for "the division's call" could take whichever row it found. `/attendance test rsvp`
+# did exactly that. A double-header now leaves two standing, and the command must
 # still reach the one whose check-in is open.
 
 

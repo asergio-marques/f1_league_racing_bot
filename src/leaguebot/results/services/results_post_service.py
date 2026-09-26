@@ -1309,7 +1309,7 @@ def _channel_fault(
     """The fault standing between the bot and posting to *channel_id*, or None.
 
     Reads the gateway cache rather than calling Discord, which is what makes it usable as a
-    gate: it is the same reading ``/division results-channel`` already takes before it
+    gate: it is the same reading ``/results channel verdicts`` already takes before it
     accepts a channel.
     """
     channel = guild.get_channel(channel_id)
@@ -1520,7 +1520,7 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
 
     **Except once the season is pending completion**, where both sync commands are refused
     (issue #224) and naming them would send a manager to a door that will not open. The one
-    repost still available there is `/round results amend` itself, which is also the only
+    repost still available there is `/results rounds amend` itself, which is also the only
     thing that can have failed: it replaces the round's own results *and* every later
     round's standings, so re-running it after the channel is repaired recovers the whole of
     what was lost. The stage is read here rather than passed in, so that none of the three
@@ -1538,7 +1538,7 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
     stage = row["stage"] if row is not None else None
     if stage == SeasonStage.PENDING_COMPLETION.value:
         return (
-            f"Repair the cause, then amend the round again with `/round results amend "
+            f"Repair the cause, then amend the round again with `/results rounds amend "
             f"division_name:{name}` — every division of this season is done, so the sync "
             f"commands are closed and the amendment is what reposts."
         )

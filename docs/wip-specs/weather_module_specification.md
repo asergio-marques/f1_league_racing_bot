@@ -16,7 +16,7 @@
 
 ## Configuring the weather module
 ### Channels
-- A "division weather-channel" command shall be available to league managers, which shall have as input a division name and a channel on which weather forecasts for that division shall be posted by the bot.
+- A "weather channel" command shall be available to league managers, which shall have as input a division name and a channel on which weather forecasts for that division shall be posted by the bot.
     - If a forecast channel is not configured for a division while the weather module is enabled, then the season shall fail validation and confirming its placements shall be refused, the offending divisions being named.
     - Each division's forecast channel shall be displayed in the placements review much alike other division channels like results, standings, attendance, etc.
     - A division created by duplicating another shall not inherit the source division's forecast channel.

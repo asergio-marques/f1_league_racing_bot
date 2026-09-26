@@ -116,12 +116,12 @@ async def test_pending_completion_is_refused_by_default():
 
 
 async def test_pending_completion_is_allowed_where_the_caller_names_it():
-    """`/round results amend` keeps acting on a season pending completion."""
+    """`/results rounds amend` keeps acting on a season pending completion."""
     season = _season(SeasonStage.PENDING_COMPLETION)
     interaction = _interaction()
 
     got = await season_for_command(
-        interaction, _service(season), "round results amend", stages=LIVE_STAGES
+        interaction, _service(season), "results rounds amend", stages=LIVE_STAGES
     )
 
     assert got is season
@@ -147,7 +147,7 @@ async def test_a_completed_season_is_unreachable_whatever_stages_are_named():
     got = await season_for_command(
         interaction,
         service,
-        "round results amend",
+        "results rounds amend",
         stages=LIVE_STAGES | {SeasonStage.COMPLETED, SeasonStage.CANCELLED},
     )
 

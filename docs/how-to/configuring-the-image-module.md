@@ -78,13 +78,13 @@ This is the step people skip, and then wonder why nothing appears. A picture nee
 |---|---|---|---|
 | Calendar | — | `/division calendar-channel` | Rounds, and tracks in your track list |
 | Lineup | — | `/division lineup-channel` | Teams added with `/team add` |
-| Session results | `results` | `/division results-channel` | A submitted session |
-| Standings | `results` | `/division standings-channel` | A scored round |
-| Attendance sheet | `attendance` | `/division attendance-channel` | Attendance being tracked |
-| Check-in call | `attendance` | `/division rsvp-channel` | — |
-| Weather forecasts | `weather` | `/division weather-channel` | — |
-| Verdicts | `results` | `/division verdicts-channel` | — |
-| Verdict banner | `results` | `/division verdicts-channel` | — |
+| Session results | `results` | `/results channel results` | A submitted session |
+| Standings | `results` | `/results channel standings` | A scored round |
+| Attendance sheet | `attendance` | `/attendance channel attendance` | Attendance being tracked |
+| Check-in call | `attendance` | `/attendance channel rsvp` | — |
+| Weather forecasts | `weather` | `/weather channel` | — |
+| Verdicts | `results` | `/results channel verdicts` | — |
+| Verdict banner | `results` | `/results channel verdicts` | — |
 
 Turn a missing module on with `/module enable <name>`. Set each channel per division — they are per division, not per server, so a league with three divisions sets three of each.
 
