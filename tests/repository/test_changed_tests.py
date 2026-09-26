@@ -113,12 +113,47 @@ def test_reformatting_and_comments_change_nothing(repo):
     assert result["tests"] == [] and result["support"] == []
 
 
-def test_imports_change_nothing_wherever_they_stand(repo):
-    """A move rewrites them, and a test importing unwritten code does so in its body."""
-    before = "import os\n\ndef test_a():\n    from services import x\n    assert x\n"
-    after = "import sys\n\ndef test_a():\n    from leaguebot.core.services import x\n    assert x\n"
+def test_a_move_s_imports_and_patch_targets_change_nothing(repo):
+    """A move rewrites the package of every import and patched path, and no scenario."""
+    before = dedent("""
+        from services import seats
+        from unittest.mock import patch
+
+        def test_a():
+            from services.driver_service import delete
+            with patch("services.driver_service.delete_driver"):
+                assert delete
+    """)
+    after = before.replace("from services import", "from leaguebot.core.services import").replace(
+        "from services.driver_service", "from leaguebot.core.services.driver_service"
+    ).replace('"services.driver_service.delete_driver"', '"leaguebot.core.services.driver_service.delete_driver"')
     result = _changes(repo, {FILE: before}, {FILE: after})
     assert result["tests"] == [] and result["support"] == []
+
+
+def test_sorting_or_splitting_the_imports_changes_nothing(repo):
+    before = "from os import path, sep\nimport json\n" + ONE_TEST
+    after = "import json\nfrom os import sep\nfrom os import path\n" + ONE_TEST
+    result = _changes(repo, {FILE: before}, {FILE: after})
+    assert result["support"] == []
+
+
+def test_an_import_binding_another_name_or_from_another_module_is_a_change(repo):
+    """Where a move would keep the names and the module, a swap to a stand-in keeps neither."""
+    before = "def test_a():\n    from leaguebot.results.services.points import compute\n    assert compute\n"
+    swapped = before.replace("leaguebot.results.services.points", "tests.support.fakes")
+    renamed = before.replace("import compute", "import old_compute as compute")
+    top = "from leaguebot.results.services.points import compute\n" + ONE_TEST
+    assert _tests(_changes(repo, {FILE: before}, {FILE: swapped})) == [(f"{FILE}::test_a", "modified")]
+    assert _tests(_changes(repo, {FILE: before}, {FILE: renamed})) == [(f"{FILE}::test_a", "modified")]
+    changed = _changes(repo, {FILE: top}, {FILE: top.replace("import compute", "import compute, total")})
+    assert _support(changed) == [(FILE, "<imports>", "modified")]
+
+
+def test_a_patch_target_naming_another_function_is_a_change(repo):
+    before = 'from unittest.mock import patch\n\ndef test_a():\n    with patch("leaguebot.x.y.first"):\n        pass\n'
+    result = _changes(repo, {FILE: before}, {FILE: before.replace("y.first", "y.second")})
+    assert _tests(result) == [(f"{FILE}::test_a", "modified")]
 
 
 def test_a_test_moved_unchanged_is_reported_once_as_a_move(repo):
@@ -138,7 +173,10 @@ def test_a_test_moved_and_changed_is_deleted_and_added(repo):
 def test_moved_support_is_reported_once_as_a_move(repo):
     fixture = "import pytest\n\n@pytest.fixture\ndef seat():\n    return 1\n"
     result = _changes(repo, {"tests/unit/conftest.py": fixture}, {"tests/unit/conftest.py": None, "tests/core/conftest.py": fixture})
-    assert result["support"] == [{"file": "tests/core/conftest.py", "name": "seat", "change": "moved", "from": "tests/unit/conftest.py"}]
+    assert result["support"] == [
+        {"file": "tests/core/conftest.py", "name": "<imports>", "change": "moved", "from": "tests/unit/conftest.py"},
+        {"file": "tests/core/conftest.py", "name": "seat", "change": "moved", "from": "tests/unit/conftest.py"},
+    ]
 
 
 def test_a_test_class_s_tests_carry_its_name_and_its_helpers_are_support(repo):
@@ -201,6 +239,45 @@ def test_losing_only_the_issue_s_marker_is_a_marker_removed(repo):
     assert result["markersRemoved"] == [f"{FILE}::test_a"]
 
 
+def test_losing_a_test_class_method_s_marker_is_a_marker_removed(repo):
+    before = "import pytest\n\nclass TestSeat:\n" + "".join("    " + line + "\n" for line in MARKED.strip().splitlines()[2:])
+    after = before.replace('    @pytest.mark.xfail(strict=True, reason="#42: not yet built")\n', "")
+    result = _changes(repo, {FILE: before.replace("def test_a():", "def test_a(self):")}, {FILE: after.replace("def test_a():", "def test_a(self):")}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::TestSeat::test_a"] and result["tests"] == []
+
+
+CASES = dedent("""
+    import pytest
+
+    @pytest.mark.parametrize("n", [
+        1,
+        pytest.param(2, marks=pytest.mark.xfail(strict=True, reason="#42: two not yet built")),
+        pytest.param(3, marks=[pytest.mark.slow, pytest.mark.xfail(strict=True, reason="#42: nor three")]),
+    ])
+    def test_a(n):
+        assert n
+""")
+
+
+def test_losing_a_case_s_marker_is_a_marker_removed(repo):
+    """A new failing case of a parametrised test is marked on the case alone."""
+    after = CASES.replace(', marks=pytest.mark.xfail(strict=True, reason="#42: two not yet built")', "")
+    result = _changes(repo, {FILE: CASES}, {FILE: after}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::test_a"] and result["tests"] == []
+
+
+def test_losing_a_case_s_marker_from_a_list_of_marks_is_a_marker_removed(repo):
+    after = CASES.replace(', pytest.mark.xfail(strict=True, reason="#42: nor three")', "")
+    result = _changes(repo, {FILE: CASES}, {FILE: after}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::test_a"] and result["tests"] == []
+
+
+def test_losing_a_case_s_marker_and_changing_the_case_is_a_modification(repo):
+    after = CASES.replace('pytest.param(2, marks=pytest.mark.xfail(strict=True, reason="#42: two not yet built"))', "4")
+    result = _changes(repo, {FILE: CASES}, {FILE: after}, issue="42")
+    assert _tests(result) == [(f"{FILE}::test_a", "modified")] and result["markersRemoved"] == []
+
+
 def test_losing_the_marker_and_changing_the_test_is_a_modification(repo):
     after = "import pytest\n" + ONE_TEST.replace("1 == 1", "1 == 2")
     result = _changes(repo, {FILE: MARKED}, {FILE: after}, issue="42")
@@ -215,6 +292,50 @@ def test_losing_another_issue_s_marker_is_a_modification(repo):
 
 def test_without_an_issue_a_lost_marker_is_a_modification(repo):
     result = _changes(repo, {FILE: MARKED}, {FILE: "import pytest\n" + ONE_TEST})
+    assert _tests(result) == [(f"{FILE}::test_a", "modified")]
+
+
+def test_an_async_test_is_a_test(repo):
+    async_test = "async def test_a():\n    assert 1\n"
+    result = _changes(repo, {"README": "x"}, {FILE: async_test})
+    assert _tests(result) == [(f"{FILE}::test_a", "added")]
+
+
+def test_what_a_test_class_declares_beside_its_methods_is_support(repo):
+    before = "import pytest\n\nclass TestSeat:\n    LIMIT = 1\n\n    def test_a(self):\n        assert self.LIMIT\n"
+    result = _changes(repo, {FILE: before}, {FILE: before.replace("LIMIT = 1", "LIMIT = 2")})
+    assert result["tests"] == []
+    assert _support(result) == [(FILE, "TestSeat::<class level>", "modified")]
+
+
+def test_a_change_to_the_shadowed_of_two_tests_of_one_name_is_seen(repo):
+    """pytest runs only the second; the first is still a test someone meant to run."""
+    two = "def test_a():\n    assert 1\n\ndef test_a():\n    assert 2\n"
+    result = _changes(repo, {FILE: two}, {FILE: two.replace("assert 1", "assert 3")})
+    assert _tests(result) == [(f"{FILE}::test_a", "modified")]
+
+
+def test_a_change_to_the_first_of_two_bindings_of_a_name_is_seen(repo):
+    two = "KNOWN_X = {1: 2}\nKNOWN_X |= {3: 4}\n" + ONE_TEST
+    result = _changes(repo, {FILE: two}, {FILE: two.replace("{1: 2}", "{1: 5}")})
+    assert _support(result) == [(FILE, "KNOWN_X", "modified")]
+
+
+def test_of_several_identical_tests_moved_one_is_paired_and_the_rest_deleted(repo):
+    result = _changes(
+        repo,
+        {"tests/a/test_one.py": ONE_TEST, "tests/b/test_two.py": ONE_TEST},
+        {"tests/a/test_one.py": None, "tests/b/test_two.py": None, FILE: ONE_TEST},
+    )
+    assert result["tests"] == [
+        {"nodeid": "tests/b/test_two.py::test_a", "change": "deleted"},
+        {"nodeid": FILE + "::test_a", "change": "moved", "from": "tests/a/test_one.py::test_a"},
+    ]
+
+
+def test_text_beyond_ascii_is_read(repo):
+    """git's output is read as UTF-8 whatever the host's code page, as on Windows."""
+    result = _changes(repo, {FILE: ONE_TEST}, {FILE: ONE_TEST.replace("1 == 1", "'Bortolotto Łukasz' != 'č'")})
     assert _tests(result) == [(f"{FILE}::test_a", "modified")]
 
 

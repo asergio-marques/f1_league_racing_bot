@@ -15,19 +15,25 @@ module-level assignment, by the name it binds (a ratchet list such as `KNOWN_DIR
 any other module-level code, as `<module level>`; and a file that is not Python, as `<file>`.
 
 **A change is a change to the syntax tree, not to the text.** Reformatting and comments change
-nothing; a docstring does, since it says what the test is for.
+nothing; a test's docstring does, since it says what the test is for. A file's or a class's own
+docstring is not read. A name bound twice in one file, as a test shadowed by a second of the same
+name, counts every binding, so that a change to the one pytest never runs is seen too.
 
-**Import statements are not counted, wherever they stand.** Moving a module rewrites every import
-of it and changes no scenario, and the build must be free to make that move; a test importing code
-the fix has not written yet does so inside its body, so those count for nothing either.
+**A move changes nothing, but it changes nothing else either.** Moving a module rewrites every
+import of it and every dotted path a test patches in it, and changes no scenario, so the build
+must be free to make it. An import is therefore read as the module's own name and the names it
+binds, less the package it sits in, and a string that is a dotted path of three parts or more, as
+`patch()` takes, as its last two. An import that binds another name, or takes it from another
+module, is a change. The imports at the top of a file are support, as `<imports>`.
 
 **A moved test, or moved support,** is one deleted in one place and added, unchanged and under the
 same name, in another. It is reported once, as moved, with where it came from. One moved and
 changed at once is reported as deleted and added.
 
 **With `--issue N`,** a test whose only change is the loss of its
-`xfail(..., reason="#N: ...")` marker is reported under `markersRemoved` rather than as modified:
-that is the one test change the build makes by design.
+`xfail(..., reason="#N: ...")` markers, on the test or on a case of it through
+`pytest.param(..., marks=...)`, is reported under `markersRemoved` rather than as modified: that is
+the one test change the build makes by design.
 
 Run it as:
 
@@ -43,6 +49,7 @@ import copy
 import fnmatch
 import json
 import posixpath
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Hashable
@@ -51,12 +58,16 @@ from typing import TypeVar
 
 MODULE_LEVEL = "<module level>"
 CLASS_LEVEL = "<class level>"
+IMPORTS = "<imports>"
 WHOLE_FILE = "<file>"
 
 _TEST_FILES = ("test_*.py", "*_test.py")
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 _Key = TypeVar("_Key", bound=Hashable)
+
+# A package, a module and a name in it, as `patch()` and `monkeypatch.setattr()` take a target.
+_DOTTED_PATH = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*){2,}")
 
 
 class ToolError(Exception):
@@ -69,33 +80,58 @@ class _Unit:
 
     node: ast.AST | None
     shape: str
+    bound_twice: bool = False
 
 
-class _WithoutImports(ast.NodeTransformer):
-    """The tree with every import statement taken out, a body left empty holding `pass`."""
+def _tail(dotted: str | None) -> str | None:
+    return dotted.rsplit(".", 1)[-1] if dotted else dotted
 
-    def visit_Import(self, node: ast.Import) -> None:
-        return None
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        return None
+class _AsMoved(ast.NodeTransformer):
+    """The tree as any move would leave it: each module named by itself, less its package."""
 
-    def generic_visit(self, node: ast.AST) -> ast.AST:
-        super().generic_visit(node)
-        body = getattr(node, "body", None)
-        if isinstance(body, list) and not body and not isinstance(node, ast.Module):
-            setattr(node, "body", [ast.Pass()])
+    def visit_Import(self, node: ast.Import) -> ast.Import:
+        return ast.Import(names=[ast.alias(name=_tail(a.name) or "", asname=a.asname) for a in node.names])
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.ImportFrom:
+        names = [ast.alias(name=a.name, asname=a.asname) for a in node.names]
+        return ast.ImportFrom(module=_tail(node.module), names=names, level=node.level)
+
+    def visit_Constant(self, node: ast.Constant) -> ast.Constant:
+        if isinstance(node.value, str) and _DOTTED_PATH.fullmatch(node.value):
+            return ast.Constant(value=".".join(node.value.rsplit(".", 2)[-2:]))
         return node
 
 
 def _shape(node: ast.AST) -> str:
-    """What a change is measured on: the syntax tree, less its imports."""
-    return ast.dump(_WithoutImports().visit(copy.deepcopy(node)))
+    """What a change is measured on: the syntax tree, as any move would leave it."""
+    return ast.dump(_AsMoved().visit(copy.deepcopy(node)))
+
+
+def _imports_shape(imports: list[ast.stmt]) -> str:
+    """The names a file imports, each once, in no order: sorting or splitting them is no change."""
+    bound = set()
+    for statement in imports:
+        moved = _AsMoved().visit(copy.deepcopy(statement))
+        module = getattr(moved, "module", None)
+        level = getattr(moved, "level", 0)
+        for alias in getattr(moved, "names", []):
+            bound.add((module or "", level, alias.name, alias.asname or ""))
+    return repr(sorted(bound))
+
+
+def _put(units: dict[str, _Unit], key: str, node: ast.AST | None, shape: str) -> None:
+    """Bind *key* to *node*, keeping any earlier binding of it in the shape."""
+    earlier = units.get(key)
+    if earlier is None:
+        units[key] = _Unit(node, shape)
+    else:
+        units[key] = _Unit(node, f"{earlier.shape}\n{shape}", bound_twice=True)
 
 
 def _git(repo: str, *args: str) -> str:
     result = subprocess.run(
-        ["git", "-C", repo, *args], capture_output=True, text=True, check=False
+        ["git", "-C", repo, *args], capture_output=True, text=True, encoding="utf-8", check=False
     )
     if result.returncode != 0:
         raise ToolError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
@@ -133,27 +169,29 @@ def _units(source: str, path: str) -> tuple[dict[str, _Unit], dict[str, _Unit]]:
     in_test_module = _is_test_module(path)
     tests: dict[str, _Unit] = {}
     support: dict[str, _Unit] = {}
+    imports: list[ast.stmt] = []
     loose: list[ast.stmt] = []
     for index, statement in enumerate(tree.body):
         if isinstance(statement, (ast.Import, ast.ImportFrom)):
+            imports.append(statement)
+        elif index == 0 and _is_docstring(statement):
             continue
-        if index == 0 and _is_docstring(statement):
-            continue
-        if isinstance(statement, _DEFS):
-            unit = _Unit(statement, _shape(statement))
+        elif isinstance(statement, _DEFS):
             if in_test_module and statement.name.startswith("test"):
-                tests[f"{path}::{statement.name}"] = unit
+                _put(tests, f"{path}::{statement.name}", statement, _shape(statement))
             else:
-                support[statement.name] = unit
+                _put(support, statement.name, statement, _shape(statement))
         elif isinstance(statement, ast.ClassDef):
             if in_test_module and statement.name.startswith("Test"):
                 _test_class(statement, path, tests, support)
             else:
-                support[statement.name] = _Unit(statement, _shape(statement))
+                _put(support, statement.name, statement, _shape(statement))
         elif (name := _bound_name(statement)) is not None:
-            support[name] = _Unit(statement, _shape(statement))
+            _put(support, name, statement, _shape(statement))
         else:
             loose.append(statement)
+    if imports:
+        support[IMPORTS] = _Unit(None, _imports_shape(imports))
     if loose:
         support[MODULE_LEVEL] = _Unit(None, _shape(ast.Module(body=loose, type_ignores=[])))
     return tests, support
@@ -168,11 +206,10 @@ def _test_class(
         if index == 0 and _is_docstring(statement):
             continue
         if isinstance(statement, _DEFS):
-            unit = _Unit(statement, _shape(statement))
             if statement.name.startswith("test"):
-                tests[f"{path}::{cls.name}::{statement.name}"] = unit
+                _put(tests, f"{path}::{cls.name}::{statement.name}", statement, _shape(statement))
             else:
-                support[f"{cls.name}::{statement.name}"] = unit
+                _put(support, f"{cls.name}::{statement.name}", statement, _shape(statement))
         else:
             rest.append(statement)
     if rest or cls.decorator_list or cls.bases or cls.keywords:
@@ -184,7 +221,7 @@ def _test_class(
             decorator_list=cls.decorator_list,
             type_params=getattr(cls, "type_params", []),
         )
-        support[f"{cls.name}::{CLASS_LEVEL}"] = _Unit(None, _shape(shell))
+        _put(support, f"{cls.name}::{CLASS_LEVEL}", None, _shape(shell))
 
 
 def _is_issue_marker(decorator: ast.expr, issue: str) -> bool:
@@ -201,15 +238,41 @@ def _is_issue_marker(decorator: ast.expr, issue: str) -> bool:
     return False
 
 
-def _only_marker_removed(before: _Unit, after: _Unit, issue: str) -> bool:
-    node = before.node
-    if not isinstance(node, _DEFS):
+def _without_markers(node: ast.AST, issue: str) -> tuple[ast.AST, int]:
+    """A copy of a test less the issue's markers, on it or on its cases, and how many it had."""
+    copied = copy.deepcopy(node)
+    if not isinstance(copied, _DEFS):
+        return copied, 0
+    kept = [d for d in copied.decorator_list if not _is_issue_marker(d, issue)]
+    removed = len(copied.decorator_list) - len(kept)
+    copied.decorator_list = kept
+    for decorator in kept:
+        for call in [n for n in ast.walk(decorator) if isinstance(n, ast.Call)]:
+            for keyword in [k for k in call.keywords if k.arg == "marks"]:
+                value = keyword.value
+                if _is_issue_marker(value, issue):
+                    call.keywords.remove(keyword)
+                    removed += 1
+                elif isinstance(value, (ast.List, ast.Tuple)):
+                    left = [e for e in value.elts if not _is_issue_marker(e, issue)]
+                    removed += len(value.elts) - len(left)
+                    if left:
+                        value.elts = left
+                    else:
+                        call.keywords.remove(keyword)
+    return copied, removed
+
+
+def _only_markers_removed(before: _Unit, after: _Unit, issue: str) -> bool:
+    """The test lost some of the issue's markers, and nothing else changed.
+
+    A name bound twice is never read so: its shadowed binding could have changed unseen.
+    """
+    if before.node is None or after.node is None or before.bound_twice or after.bound_twice:
         return False
-    kept = [d for d in node.decorator_list if not _is_issue_marker(d, issue)]
-    if len(kept) == len(node.decorator_list):
-        return False
-    stripped = type(node)(**{**{f: getattr(node, f) for f in node._fields}, "decorator_list": kept})
-    return _shape(stripped) == after.shape
+    was, had = _without_markers(before.node, issue)
+    now, has = _without_markers(after.node, issue)
+    return had > has and _shape(was) == _shape(now)
 
 
 def _side(repo: str, rev: str, path: str, present: bool) -> str:
@@ -244,7 +307,7 @@ def changed_tests(repo: str, base: str, head: str = "HEAD", issue: str | None = 
             elif after is None and before is not None:
                 deleted_tests[nodeid] = before
             elif before is not None and after is not None and before.shape != after.shape:
-                if issue and _only_marker_removed(before, after, issue):
+                if issue and _only_markers_removed(before, after, issue):
                     markers.append(nodeid)
                 else:
                     tests.append({"nodeid": nodeid, "change": "modified"})
