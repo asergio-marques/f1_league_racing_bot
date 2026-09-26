@@ -235,11 +235,16 @@ git add src/leaguebot/core/services/driver_service.py tests/core/test_driver_ser
 every path it is committing does not yet know what it changed.
 
 **Every pytest invocation is wrapped in the lock**, targeted subsets while iterating as much as the
-full run at the end:
+full run at the end. The workflow starts each one detached and waits on its process, since one
+shell call is cut off after ten minutes and a wait for the lock can outlast that; run your own
+close-out runs the same way:
 
 ```bash
-flock -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q
+cd <worktree> && nohup bash -c 'flock -E 75 -w 3600 /tmp/f1-pytest.lock env PYTHONPATH=src <main checkout>/.venv/bin/python -m pytest tests/ -q > LOG 2>&1; echo $? > LOG.exit' > /dev/null 2>&1 & echo $!
+timeout 540 tail --pid=<that pid> -f /dev/null; cat LOG.exit 2>/dev/null || echo still running
 ```
+
+The second line is repeated until the exit code appears; 75 is flock giving up on the lock.
 
 The interpreter is the main checkout's virtualenv, which carries the pins, and `PYTHONPATH=src` makes
 it test the worktree's own code rather than the checkout it was installed from (CLAUDE.md, Testing).
