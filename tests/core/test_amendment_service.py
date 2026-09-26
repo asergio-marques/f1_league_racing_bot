@@ -2033,7 +2033,6 @@ async def _approve_raised_win(path: str, season_id: int, reposted: list[tuple] |
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_an_approved_amendment_rescores_every_raced_session(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2049,7 +2048,6 @@ async def test_an_approved_amendment_rescores_every_raced_session(db_path):
         assert points[_RUNNER_UP] == (18, 0), points
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_an_approved_amendment_moves_the_standings(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2069,7 +2067,6 @@ async def test_an_approved_amendment_moves_the_standings(db_path):
     assert row is not None and row["total_points"] == 60, "the standings kept the old points"
 
 
-@pytest.mark.xfail(strict=True, reason="#443: every standings is reposted with the old points")
 async def test_an_approved_amendment_reposts_every_standings_with_the_new_points(db_path):
     """What the owner asked for at Gate 1: every standings, of every division, reposted with
     the new totals, and none for a round not yet raced.
@@ -2098,7 +2095,6 @@ async def test_an_approved_amendment_reposts_every_standings_with_the_new_points
         )
 
 
-@pytest.mark.xfail(strict=True, reason="#443: every results table is reposted with the old points")
 async def test_an_approved_amendment_reposts_every_results_table_with_the_new_points(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2120,7 +2116,6 @@ async def test_an_approved_amendment_reposts_every_results_table_with_the_new_po
             assert winner_line.endswith("**30 pts**"), winner_line
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
     from leaguebot.core.services.amendment_service import approve_amendment, modify_fl_bonus
 
@@ -2138,7 +2133,6 @@ async def test_an_approved_fastest_lap_amendment_rescores_the_bonus(db_path):
         assert (await _race_points(path, session_id))[_THIRD] == (15, 3)
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_rescoring_keeps_the_fastest_lap_override(db_path):
     """The runner-up was given the fastest lap by hand; the rescoring must not hand it back
     to the quickest time."""
@@ -2166,7 +2160,6 @@ async def test_rescoring_keeps_the_fastest_lap_override(db_path):
         assert points[_THIRD] == (15, 0), points
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
     """Third set the quickest lap; with the bonus now limited to the top two, nobody holds it."""
     from leaguebot.core.services.amendment_service import (
@@ -2190,7 +2183,6 @@ async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
         assert all(bonus == 0 for _points, bonus in points.values()), points
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_an_approved_amendment_rescores_qualifying(db_path):
     from leaguebot.core.services.amendment_service import approve_amendment
 
@@ -2240,7 +2232,6 @@ async def test_a_session_under_another_configuration_keeps_its_points(db_path):
         }
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_reposted(db_path):
     """What the owner asked for at Gate 2: two rounds of different formats, each scored under
     a configuration of its own, both paying 25 for a win.
@@ -2280,7 +2271,6 @@ async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_
     assert f"<@{_WINNER}> — **55 pts**" in standings[-1], standings[-1]
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_rescoring_keeps_the_sanctions(db_path):
     """The winner and the runner-up are paid the new table; the penalties stand.
 
@@ -2316,7 +2306,6 @@ async def test_rescoring_keeps_the_sanctions(db_path):
     assert points[1005] == (0, 0), "a driver who did not start was paid"
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2335,7 +2324,6 @@ async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db
     assert "**30 pts**" in posts[-1], posts[-1]
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_a_cancelled_division_is_rescored(db_path):
     """Beta was cancelled after two rounds; what it raced is scored under the new table too
     (decided 2026-09-26)."""
@@ -2353,7 +2341,6 @@ async def test_a_cancelled_division_is_rescored(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_a_finished_division_is_rescored_while_another_races(db_path):
     """Beta finished its season, its last round cancelled, while Alpha still has a round to
     race; what Beta raced is scored under the new table too."""
@@ -2398,7 +2385,6 @@ async def test_rescoring_leaves_another_season_alone(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 2000] == (25, 0)
 
 
-@pytest.mark.xfail(strict=True, reason="#443: an approved amendment scores no raced session again")
 async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     """Scoring the second session raises: the approval fails whole, and the season, the
     staged changes and the first session's points are exactly as they stood. Nothing is
