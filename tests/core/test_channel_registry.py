@@ -334,7 +334,6 @@ async def test_channel_refusal_holds_one_divisions_setting_against_another_s(db_
     assert message == refusal("<#500>", ChannelUse("results", "Pro"), same_setting=False)
 
 
-
 # ── The hub (issue #279) ──────────────────────────────────────────────────
 
 
