@@ -864,6 +864,17 @@ async def approve_amendment(
     one. A rule that bound only the approval would be a rule a league could step around
     by approving a good table and amending it afterwards.
 
+    **Every raced session is scored again before the commit, not after it.** Replacing the
+    tables changes no stored points by itself, and the cascade below only sums what is stored,
+    so without the rescoring every round would be reposted, and the championship recomputed,
+    with the points of the table just replaced. It runs on this transaction's connection
+    (`results_post_service.rescore_season`), so the new tables, the points they give, the
+    emptied modification store and the amending mode switched off land together: a rescoring
+    that fails part-way leaves the season exactly as it stood, reposts nothing and logs no
+    success, and the failure reaches the manager as any other would. Every division of the
+    season is rescored, a finished or cancelled one's raced rounds included, and no other
+    season is touched.
+
     **The attendance sanctions are the one thing returned rather than refused** (#239). They
     fall on drivers once the rescored championship is published, and a sanction that does not
     apply cannot un-publish it. Their failures come back as lines for the manager — each
@@ -917,6 +928,10 @@ async def approve_amendment(
             "UPDATE season_amendment_state SET amendment_active = 0, modified_flag = 0 WHERE season_id = ?",
             (season_id,),
         )
+        # Score every raced session again under the tables just written, in this same
+        # transaction, so the tables and the points they give commit together or not at all.
+        from leaguebot.results.services import results_post_service
+        await results_post_service.rescore_season(db, season_id)
         # Whether the bot is set up at all: there is no log channel to report to otherwise.
         # A packed bot keeps its row with the claim cleared (#247), so a row is not enough.
         cursor = await db.execute(
@@ -926,7 +941,6 @@ async def approve_amendment(
         await db.commit()
 
     # Cascade-recompute all divisions
-    from leaguebot.results.services import results_post_service
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id FROM divisions WHERE season_id = ?", (season_id,)

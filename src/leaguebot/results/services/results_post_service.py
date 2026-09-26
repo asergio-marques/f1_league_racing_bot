@@ -6,6 +6,7 @@ import json
 import logging
 from typing import NamedTuple
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
@@ -335,6 +336,54 @@ async def recompute_standings_from_round(
     await standings_service.cascade_recompute_from_round(
         db_path, division_id, from_round_id, names
     )
+
+
+async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
+    """Score every raced session of *season_id* again, under the season's points as they stand.
+
+    For an approved points amendment, which has just replaced the season's tables on *db*:
+    every ``ACTIVE`` session that was scored under a configuration is scored again under that
+    same configuration at its new values, in every round of every division of the season. A
+    finished division is reached while another still races, and a cancelled division's raced
+    rounds are reached too; a round in review is scored like a final one. A session under a
+    configuration the amendment left alone comes out with the points it had, and one scored
+    under no configuration is not touched. No other season is read.
+
+    **It works on the caller's connection and commits nothing**, so the amendment's new tables
+    and the points they give land together or not at all: a failure part-way leaves every
+    session as it stood once the caller's transaction is abandoned. It catches nothing for the
+    same reason — unlike the penalty path's `_recompute_session_points`, which logs a failed
+    session and moves on, a rescoring that skipped a session would publish a championship
+    scored under two tables.
+
+    **The scoring is `result_submission_service._apply_points_in_tx`**, reached through its
+    module rather than bound by name, and every write is its own: this only chooses the
+    sessions. The sanctions already committed survive because that function reads them from
+    the stored rows — a disqualified or non-starting driver scores nothing, a non-finisher no
+    position points, and a time penalty through the finishing position it already moved. It
+    waits on nothing but *db*: no Discord, no names, no connection of its own, so the caller's
+    transaction is held for the scoring alone.
+    """
+    from leaguebot.results.services import result_submission_service
+
+    cursor = await db.execute(
+        "SELECT sr.id AS session_result_id, sr.config_name, sr.session_type "
+        "FROM session_results sr "
+        "JOIN rounds r ON r.id = sr.round_id "
+        "JOIN divisions d ON d.id = r.division_id "
+        "WHERE d.season_id = ? AND sr.status = 'ACTIVE' AND sr.config_name IS NOT NULL "
+        "ORDER BY d.id, r.round_number, sr.id",
+        (season_id,),
+    )
+    sessions = await cursor.fetchall()
+    for row in sessions:
+        await result_submission_service._apply_points_in_tx(
+            db,
+            row["session_result_id"],
+            season_id,
+            row["config_name"],
+            SessionType(row["session_type"]),
+        )
 
 
 async def _get_heading_context(
