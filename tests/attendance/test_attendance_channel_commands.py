@@ -309,6 +309,35 @@ async def test_a_channel_already_doing_another_job_is_refused(tmp_path, which, m
     getattr(cog.bot.attendance_service, COMMANDS[which][2]).assert_not_awaited()
 
 
+#: The word a refusal gives each command's own setting, as a league reads it.
+REFUSAL_LABELS = {"rsvp": "check-in call", "attendance": "attendance"}
+
+
+@pytest.mark.parametrize("which", BOTH)
+async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, which, monkeypatch):
+    """Each body names its own setting to the check, so the channel the division already has
+    for it is refused in its own words, not as a clash a manager would go looking for.
+    Nothing is written or logged."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    async def _in_use(*_args, **_kwargs):
+        return ChannelUse(which, "Division 1")
+
+    monkeypatch.setattr("leaguebot.core.services.channel_registry_service.find_channel_use", _in_use)
+
+    await _run(cog, which, interaction)
+
+    assert _replied(interaction) == (
+        f"ℹ️ #notices is already the {REFUSAL_LABELS[which]} channel for **Division 1**. "
+        "Nothing was changed."
+    )
+    getattr(cog.bot.attendance_service, COMMANDS[which][2]).assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
+    assert await _audit_rows(db_path) == []
+
+
 # ---------------------------------------------------------------------------
 # The assignment
 # ---------------------------------------------------------------------------

@@ -596,6 +596,25 @@ async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path,
     assert await _audit(db_path) == []
 
 
+async def test_re_setting_the_verdicts_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
+    """The command's body names its own setting to the check, so the channel the division's
+    verdicts already go to is refused in its own words, not as a clash a manager would go
+    looking for. Nothing is written or logged."""
+    _in_use(monkeypatch, ChannelUse("verdicts", "Division 1"))
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _verdicts(cog, interaction)
+
+    assert _replied(interaction) == (
+        "ℹ️ #verdicts is already the verdicts channel for **Division 1**. Nothing was changed."
+    )
+    cog.bot.season_service.set_division_penalty_channel.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
+    assert await _audit(db_path) == []
+
+
 async def test_the_verdicts_channel_is_set_and_audited(tmp_path, monkeypatch):
     """The record the command wrote while core held it: `VERDICTS_CHANNEL_SET`, with the
     channel ids as integers."""
