@@ -40,7 +40,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.test_mode_cog import _RsvpBulkSetModal
+from leaguebot.attendance.cogs.attendance_cog import _RsvpBulkSetModal
 from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 10808
@@ -425,15 +425,12 @@ async def test_the_changes_are_logged(tmp_path):
     await _submit(bot, "900000001, accept")
 
     logged = str(bot.output_router.post_log.await_args.args[0])
-    assert "/test-mode rsvp set-status" in logged
+    assert "/attendance test rsvp" in logged
     assert "Pro" in logged
     assert str(ROUND_ID) in logged
     assert "900000001" in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#462: the modal still logs its changes as /test-mode rsvp set-status"
-)
 async def test_the_changes_are_logged_as_attendance_test_rsvp(tmp_path):
     """The log names the command a maintainer now types, the attendance module's test tool."""
     bot = _bot(await _make_db(tmp_path, name="bulk_log_name"))

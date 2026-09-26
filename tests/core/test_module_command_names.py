@@ -184,36 +184,12 @@ def _declared() -> dict[str, tuple[type, app_commands.Command | app_commands.Gro
 DECLARED = _declared()
 
 
-#: What #462 has still to move, by its old name and its new, and the groups it has still to
-#: empty: each is expected to fail until it has. It shrinks as each command moves.
-_NOT_YET_MOVED: frozenset[str] = frozenset({
-    "test-mode rsvp set-status", "attendance test rsvp",
-    "test-mode rsvp",
-})
-
-
-def _until_moved(value: str, what: str):
-    if value not in _NOT_YET_MOVED:
-        return value
-    return pytest.param(
-        value,
-        id=value,
-        marks=pytest.mark.xfail(strict=True, reason=f"#462: {what}"),
-    )
-
-
 def test_the_cogs_declare_commands_at_all():
     """A guard on the guard: an import that quietly found nothing would pass everything."""
     assert len(DECLARED) > 100
 
 
-@pytest.mark.parametrize(
-    "new",
-    [
-        _until_moved(moved.new, f"/{moved.old} has not yet moved to /{moved.new}")
-        for moved in MOVED
-    ],
-)
+@pytest.mark.parametrize("new", [moved.new for moved in MOVED])
 def test_each_moved_command_answers_to_its_new_name(new):
     """Declared by its own module's cog, under its new name, carrying what it carried before."""
     moved = next(m for m in MOVED if m.new == new)
@@ -236,13 +212,7 @@ def test_each_moved_command_answers_to_its_new_name(new):
     ) == moved.parameters
 
 
-@pytest.mark.parametrize(
-    "old",
-    [
-        *(_until_moved(moved.old, f"/{moved.old} is still declared") for moved in MOVED),
-        *(_until_moved(group, f"the /{group} group is still declared") for group in EMPTIED_GROUPS),
-    ],
-)
+@pytest.mark.parametrize("old", [*(moved.old for moved in MOVED), *EMPTIED_GROUPS])
 def test_no_old_name_is_left(old):
     """None of the eight answers to its old name, and the two groups emptied by the move go."""
     assert old not in DECLARED, f"/{old} is still declared, by {DECLARED[old][0].__name__}"

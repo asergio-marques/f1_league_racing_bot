@@ -185,6 +185,8 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "staged_penalties_warning"): (1, PASS["results"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.post_check_in"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
+    ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
+    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_call_stands"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (6, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
@@ -231,9 +233,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (2, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (2, PASS["signup"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (2, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "TestModeCog.rsvp_set_status"): (1, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.toggle"): (2, PASS["core"]),
-    ("core/cogs/test_mode_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["core"]),
     ("core/cogs/track_cog.py", "TrackCog.track_list"): (1, PASS["core"]),
 }
 
@@ -417,6 +417,7 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
 
 KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (1, TRACEBACKS),
+    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, TRACEBACKS),
     ("signup/cogs/admin_review_cog.py", "_may_review_signup"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._log"): (1, TRACEBACKS),
@@ -449,7 +450,6 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (2, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, TRACEBACKS),
-    ("core/cogs/test_mode_cog.py", "_RsvpBulkSetModal.on_submit"): (1, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_round_grid"): (2, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_seat_team_field"): (1, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_sheet_attachment"): (1, TRACEBACKS),
@@ -702,7 +702,6 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.results.services.result_submission_service._build_penalty_review_state"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.attendance.services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
-    ("core/cogs/test_mode_cog.py", "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round"): (1, COMMAND_GROUPS),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),

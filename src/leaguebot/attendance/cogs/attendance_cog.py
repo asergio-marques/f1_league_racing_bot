@@ -1,4 +1,4 @@
-"""AttendanceCog — /attendance config, sync, post-check-in and channel commands."""
+"""AttendanceCog — /attendance config, sync, post-check-in, channel and test commands."""
 from __future__ import annotations
 
 import logging
@@ -19,9 +19,10 @@ from leaguebot.attendance.services.attendance_service import (
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import as_text_channel, channel_refusal
 from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
-from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
+from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
-from leaguebot.core.utils.league_server import guild_of
+from leaguebot.core.utils.league_server import LeagueModal, guild_of
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,12 @@ class AttendanceCog(commands.Cog):
     channel_group = app_commands.Group(
         name="channel",
         description="Set the channels a division's check-in calls and attendance are posted to.",
+        parent=attendance,
+    )
+
+    test_group = app_commands.Group(
+        name="test",
+        description="Test-mode attendance utilities.",
         parent=attendance,
     )
 
@@ -870,6 +877,228 @@ class AttendanceCog(commands.Cog):
             f"  division: {name}\n"
             f"  channel: #{channel.name}",
         )
+
+    # ── /attendance test rsvp ─────────────────────────────────────────────
+
+    @test_group.command(
+        name="rsvp",
+        description="Bulk-set RSVP statuses for test drivers in a division via a modal.",
+    )
+    @app_commands.describe(
+        division="Division name whose active RSVP round to update.",
+    )
+    @league_admin_only
+    async def test_rsvp(
+        self,
+        interaction: discord.Interaction,
+        division: str,
+    ) -> None:
+        """Open the modal that sets fake drivers' check-in answers for a division's call.
+
+        Attendance's own test tool, under attendance's own group: it sat under core's
+        `/test-mode` until #462 moved it, and only its name changed. It is test mode's all the
+        same — a league admin's, like every test mode command, and **refused first while test
+        mode is off**, whatever else is off with it; then while the attendance module is off;
+        then for a division not in a season being raced, or with no call standing.
+        """
+        config = await self.bot.config_service.get_server_config()
+        if config is None or not config.test_mode_active:
+            await interaction.response.send_message(
+                "ℹ️ Test mode is not active.", ephemeral=True
+            )
+            return
+
+        # The attendance module gate (issue #114). A call posted while the module was on
+        # leaves its `rsvp_embed_messages` row behind, so without this the command finds that
+        # embed and writes check-in answers for a module the league has switched off.
+        if not await self.bot.module_service.is_attendance_enabled():
+            await interaction.response.send_message(
+                "❌ The Attendance module is not enabled, so there is no check-in to set.",
+                ephemeral=True,
+            )
+            return
+
+        from leaguebot.core.db.database import get_connection as _gc
+
+        # Validate the division is of a season being raced — one of the three ongoing stages,
+        # a check-in belonging to nothing else (issue #220) — and has an active RSVP embed.
+        from leaguebot.core.models.season import ONGOING_STAGES
+
+        ongoing = [stage.value for stage in ONGOING_STAGES]
+        async with _gc(self.bot.db_path) as db:
+            cur = await db.execute(
+                f"""
+                SELECT d.id AS division_id
+                  FROM divisions d
+                  JOIN seasons s ON s.id = d.season_id
+                 WHERE s.stage IN ({",".join("?" for _ in ongoing)})
+                   AND LOWER(d.name) = LOWER(?)
+                """,
+                (*ongoing, division),
+            )
+            div_row = await cur.fetchone()
+
+        if div_row is None:
+            await interaction.response.send_message(
+                f"❌ Division **{division}** not found in a season being raced.", ephemeral=True
+            )
+            return
+        division_id: int = div_row["division_id"]
+
+        target_embed = await self.bot.attendance_service.get_current_embed_message(division_id)
+        if target_embed is None:
+            await interaction.response.send_message(
+                f"❌ No active RSVP embed found for division **{division}**. "
+                "Run `/test-mode advance` to fire the RSVP notice first.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_modal(
+            _RsvpBulkSetModal(
+                division_name=division,
+                division_id=division_id,
+                round_id=target_embed.round_id,
+                embed_channel_id=int(target_embed.channel_id),
+                embed_message_id=int(target_embed.message_id),
+                bot=self.bot,
+            )
+        )
+
+
+# ── /attendance test rsvp: the bulk RSVP status setter ───────────────────
+
+_STATUS_MAP = {
+    "accept":   "ACCEPTED",
+    "accepted": "ACCEPTED",
+    "tentative": "TENTATIVE",
+    "decline":  "DECLINED",
+    "declined": "DECLINED",
+}
+
+
+class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
+    """Modal for bulk-setting test-driver RSVP statuses in a single division."""
+
+    entries: discord.ui.TextInput = discord.ui.TextInput(
+        label="ID, status — one entry per line",
+        style=discord.TextStyle.paragraph,
+        placeholder="900000001, accept\n900000002, tentative\n900000003, decline",
+        required=True,
+        max_length=4000,
+    )
+
+    def __init__(
+        self,
+        *,
+        division_name: str,
+        division_id: int,
+        round_id: int,
+        embed_channel_id: int,
+        embed_message_id: int,
+        bot: LeagueBot,
+    ) -> None:
+        super().__init__()
+        self._division_name = division_name
+        self._division_id = division_id
+        self._round_id = round_id
+        self._embed_channel_id = embed_channel_id
+        self._embed_message_id = embed_message_id
+        self._bot = bot
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        from leaguebot.core.db.database import get_connection as _gc
+        from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
+
+        applied: list[str] = []
+        errors: list[str] = []
+
+        for line_no, raw_line in enumerate(self.entries.value.splitlines(), start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(",", 1)]
+            if len(parts) != 2:
+                errors.append(f"Line {line_no}: expected `ID, status` — got `{line}`")
+                continue
+            id_str, status_str = parts
+            discord_uid = parse_user_id(id_str)
+            if discord_uid is None:
+                errors.append(f"Line {line_no}: `{id_str}` is not a valid numeric ID")
+                continue
+            new_status = _STATUS_MAP.get(status_str.lower())
+            if new_status is None:
+                errors.append(
+                    f"Line {line_no}: unknown status `{status_str}` "
+                    "(use accept, tentative, or decline)"
+                )
+                continue
+
+            async with _gc(self._bot.db_path) as db:
+                cur = await db.execute(
+                    "SELECT id FROM driver_profiles "
+                    "WHERE CAST(discord_user_id AS INTEGER) = ?",
+                    (discord_uid,),
+                )
+                profile_row = await cur.fetchone()
+
+            if profile_row is None:
+                errors.append(f"Line {line_no}: no driver profile for ID `{id_str}`")
+                continue
+            driver_profile_id: int = profile_row["id"]
+
+            dra = await self._bot.attendance_service.get_attendance_row_for_driver(
+                round_id=self._round_id,
+                division_id=self._division_id,
+                driver_profile_id=driver_profile_id,
+            )
+            if dra is None:
+                errors.append(
+                    f"Line {line_no}: driver `{id_str}` has no attendance row for this round"
+                )
+                continue
+
+            await self._bot.attendance_service.upsert_rsvp_status(
+                round_id=self._round_id,
+                division_id=self._division_id,
+                driver_profile_id=driver_profile_id,
+                status=new_status,
+            )
+            applied.append(f"`{id_str}` → {new_status.lower()}")
+
+        # Rebuild embed once after all updates
+        if applied:
+            channel = as_text_channel(self._bot.get_channel(self._embed_channel_id))
+            if channel is not None:
+                try:
+                    msg = await channel.fetch_message(self._embed_message_id)
+                    new_embed = await _rebuild_embed_for_round(
+                        self._round_id, self._division_id, self._bot
+                    )
+                    await msg.edit(embed=new_embed, view=RsvpView(round_id=self._round_id))
+                except Exception as exc:
+                    log.warning("_RsvpBulkSetModal: failed to edit embed: %s", exc)
+
+        lines: list[str] = []
+        if applied:
+            lines.append(
+                f"✅ Applied {len(applied)} update(s) in **{self._division_name}**:\n"
+                + "\n".join(f"  {a}" for a in applied)
+            )
+        if errors:
+            lines.append("⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        await interaction.followup.send("\n".join(lines) or "No valid entries.", ephemeral=True)
+
+        if applied:
+            await self._bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+                f"| /attendance test rsvp | {len(applied)} update(s)\n"
+                f"  division: {self._division_name}\n"
+                f"  round_id: {self._round_id}\n"
+                f"  changes: {', '.join(applied)}",
+            )
 
 
 # ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────
