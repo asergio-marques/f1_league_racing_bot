@@ -372,7 +372,25 @@ async def test_a_disabled_attendance_module_is_refused(tmp_path):
 
     await _set_status(cog, interaction)
 
-    assert "Attendance module is not enabled" in _replied(interaction)
+    # Word for word: the attendance cog's own gate is worded differently.
+    assert _replied(interaction) == (
+        "❌ The Attendance module is not enabled, so there is no check-in to set."
+    )
+    interaction.response.send_modal.assert_not_awaited()
+
+
+@pytest.mark.parametrize("kwargs", [{"test_mode": False}, {"config_missing": True}])
+async def test_test_mode_is_checked_before_the_module(tmp_path, kwargs):
+    """Every test mode command but the toggle is refused while test mode is off, whatever
+    else is off with it — so a league admin outside test mode is told that, not that the
+    attendance module is off."""
+    db_path = await _make_db(tmp_path, name="rsvp_both_off")
+    cog = _make_cog(db_path, attendance_enabled=False, **kwargs)
+    interaction = _interaction()
+
+    await _set_status(cog, interaction)
+
+    assert _replied(interaction) == "ℹ️ Test mode is not active."
     interaction.response.send_modal.assert_not_awaited()
 
 
