@@ -102,6 +102,12 @@ later polish phase.
   requests" and "Releases", and the required check `pr-label-check` refuses a pull request
   that breaks them. Label a pull request as you open it, not afterwards. Go-live is `v1.0.0`.
   `VERSION` holds a placeholder GitHub fills in on download (#258): never write a value into it.
+- **Every issue is built through the `work-issue` workflow** (decided 2026-09-26, #461): through
+  the `fix-issue` skill, `fix-issues` for a batch, or `design-review` for a design pass. It checks
+  the plan against `docs/design/architecture.md`, the design files and the wip-specs before the
+  user sees it, writes the failing tests first, then builds, reviews and tests in rounds until
+  they pass, and stops for the user at the plan, the tests and the result. Nothing is built by
+  hand around it. How it runs is the skills' to say.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
