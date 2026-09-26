@@ -702,6 +702,31 @@ async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     assert "re-run /round results amend" in logged
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#462: the notice still says to re-run /round results amend"
+)
+async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_path):
+    """The round was put back, so the amendment may be run again: the notice sends the manager
+    to the command they now type."""
+    db_path = await _base_db(tmp_path, "amend_revert_rerun")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ):
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    logged = "\n".join(
+        str(call.args[0]) for call in bot.output_router.post_log.await_args_list
+    )
+    assert (
+        "  Amendment channel deleted, and the round put back as it was. Please re-run "
+        "/results rounds amend."
+    ) in logged.splitlines()
+
+
 async def test_a_revert_that_fails_hands_the_round_to_the_sweep(tmp_path):
     """**The snapshot is the only way back, so a failed revert keeps it** (#345).
 
