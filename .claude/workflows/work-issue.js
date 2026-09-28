@@ -125,6 +125,25 @@ const QUESTION = {
 }
 const QUESTIONS = { type: 'array', items: QUESTION }
 
+// The issue and the approved plan fix the scope. What a checker finds that the work does not need
+// (the same fault elsewhere, a neighbouring gap, a rule the issue does not name) is drafted for the
+// tracker rather than asked: an answer to it would widen the work past what the owner approved, and
+// each widening raises more questions of its own.
+const FOLLOW_UPS = {
+  type: 'array',
+  items: {
+    type: 'object',
+    required: ['title', 'kind', 'why', 'evidence'],
+    properties: {
+      title: { type: 'string' },
+      kind: { type: 'string', enum: ['bug', 'feature-request', 'tech-debt'] },
+      why: { type: 'string', description: 'what a league sees, or what it costs, in plain terms' },
+      evidence: EVIDENCE,
+    },
+  },
+  description: 'what the plan does not need, drafted for the tracker rather than asked',
+}
+
 const ANSWER = {
   type: 'object',
   required: ['question', 'answer', 'source'],
@@ -138,7 +157,7 @@ const ANSWER = {
 
 const ARCHITECTURE_SCHEMA = {
   type: 'object',
-  required: ['rulesTouched', 'breachesRemoved', 'breachesAdded', 'notYetBuilt', 'planChanges', 'questions', 'raised', 'notes'],
+  required: ['rulesTouched', 'breachesRemoved', 'breachesAdded', 'notYetBuilt', 'planChanges', 'questions', 'raised', 'followUps', 'notes'],
   properties: {
     rulesTouched: {
       type: 'array',
@@ -182,13 +201,14 @@ const ARCHITECTURE_SCHEMA = {
     planChanges: { type: 'array', items: { type: 'string' }, description: 'every change the plan must make to keep to the architecture' },
     questions: { ...QUESTIONS, description: 'engineering questions for the owner that no written rule settles' },
     raised: { ...QUESTIONS, description: 'business questions met on the way, passed on to the product owner untouched' },
+    followUps: FOLLOW_UPS,
     notes: { type: 'array', items: { type: 'string' } },
   },
 }
 
 const DESIGN_SCHEMA = {
   type: 'object',
-  required: ['modules', 'questions', 'raised', 'notes'],
+  required: ['modules', 'questions', 'raised', 'followUps', 'notes'],
   properties: {
     modules: {
       type: 'array',
@@ -217,13 +237,14 @@ const DESIGN_SCHEMA = {
     },
     questions: { ...QUESTIONS, description: 'engineering questions for the owner that no written rule settles' },
     raised: { ...QUESTIONS, description: 'business questions met on the way, passed on to the product owner untouched' },
+    followUps: FOLLOW_UPS,
     notes: { type: 'array', items: { type: 'string' } },
   },
 }
 
 const PRODUCT_PLAN_SCHEMA = {
   type: 'object',
-  required: ['specRules', 'criteria', 'questions', 'citations', 'documentsOwed', 'raised', 'notes'],
+  required: ['specRules', 'criteria', 'questions', 'citations', 'documentsOwed', 'raised', 'followUps', 'notes'],
   properties: {
     specRules: {
       type: 'array',
@@ -246,13 +267,14 @@ const PRODUCT_PLAN_SCHEMA = {
         properties: { criterion: { type: 'string', description: 'one thing a league will see once the work lands' }, source: { type: 'string' } },
       },
     },
-    questions: { ...QUESTIONS, description: 'for the owner: every rule the plan would change, every spec silent, ambiguous or at odds with the code' },
+    questions: { ...QUESTIONS, description: 'for the owner: every rule the plan would change, every spec silent, ambiguous or at odds with the code, where the plan cannot be built without the answer' },
     citations: { type: 'array', items: ANSWER, description: 'questions the plan raises that a written rule settles' },
     documentsOwed: {
       type: 'array',
       items: { type: 'object', required: ['document', 'section', 'why'], properties: { document: { type: 'string' }, section: { type: 'string' }, why: { type: 'string' } } },
     },
     raised: { ...QUESTIONS, description: 'engineering questions met on the way, passed on to the issue reviewer untouched' },
+    followUps: FOLLOW_UPS,
     notes: { type: 'array', items: { type: 'string' } },
   },
 }
@@ -338,7 +360,7 @@ if (stage === 'check') {
   const branchNote = ARGS.worktree && ARGS.base
     ? ` This plan amends work already built: the branch is checked out at ${ARGS.worktree}, and its work since ${ARGS.base} is git -C ${ARGS.worktree} log ${ARGS.base}..HEAD. Check the amendment against the code as the branch has it, reading files under that path.`
     : ''
-  const head = `${ISSUE}. The plan was drafted at commit ${commit}.${branchNote} The modules it touches: ${modules.join(', ')}.${DESIGN_PASS}`
+  const head = `${ISSUE}. The plan was drafted at commit ${commit}.${branchNote} The modules it touches: ${modules.join(', ')}.${DESIGN_PASS} The issue and this plan fix the scope: ask only what the plan cannot be built without. The same fault elsewhere, a neighbouring gap or a rule the issue does not name is not a question: draft it in followUps[] for the tracker.`
   const context = `${section('The plan', plan)}${section('The owner\'s decisions so far', ARGS.decisions)}`
   // A re-check of an amended plan gives each checker the plan as it last checked it and its own
   // earlier result, and asks it to judge what the amendment changes: a checker starting over re-reads
@@ -366,6 +388,7 @@ if (stage === 'check') {
         modules: modules.map(m => ({ module: m, designFile: 'none', exists: false, sectionsTouched: [], designChanges: [] })),
         questions: [],
         raised: [],
+        followUps: [],
         notes: ['No module the plan touches has a design file yet, so no design agent ran: each is held to docs/design/architecture.md alone, which the architecture check covers, and no design document is owed.'],
       })
       : agent(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}${amended('design')}`,
@@ -405,6 +428,9 @@ if (stage === 'check') {
     specRulesToSettle,
     citations: [...(product ? product.citations : []), ...triaged.answers],
     planChanges: [...(architecture ? architecture.planChanges : []), ...triaged.findings.map(f => f.fix)],
+    // Drafts for the tracker, shown at Gate 1 beside the plan, never put to the owner as questions.
+    followUps: [['architecture', architecture], ['design', design], ['product', product]]
+      .flatMap(([lane, r]) => ((r && r.followUps) || []).map(f => ({ ...f, lane }))),
     failed,
   }
 }
@@ -497,7 +523,7 @@ const RUN_PYTEST = `How to run pytest here, for a handful of tests and the whole
 where LOG is a file under /tmp named for the run. Repeat the second line, each Bash call with a timeout of 600000 ms, until the exit code appears: another run may hold the lock for a quarter of an hour, and a shell call is cut off after ten minutes. Then read LOG. An exit code of 75 is flock giving up after an hour without the lock, which is the host's problem and not the code's. Never wait with sleep, pgrep or pkill; never read an exit code through a pipe such as | tail; never start a second pytest session while one of yours runs; and never edit a file while a run you started is going.`
 
 const BUILDER_RULES = `The rules of the work:
-- Stay inside the approved plan. A separate defect you notice goes in separateDefects[], as a draft for the owner; it is not fixed here.
+- Stay inside the approved plan. A separate defect you notice, or a change the work does not need, goes in separateDefects[], as a draft for the tracker; it is not made here.
 - Commit at the plan's commit points, one change per commit. Stage every path by name, from git -C ${worktree} status --porcelain; never git add -A, git add . or git commit -a. Give each commit a one-line subject in lower case and the past tense, as the branch's history does, with no trailer of any kind.
 - Move or rename a file with git mv, in a commit apart from any change to its content.
 - Every change to production code carries its tests (CLAUDE.md, "Testing"). Before each commit, run the tests that cover what you changed, as below; before each commit that touches src/, run ${BIN}/mypy from ${worktree}. Do not run the whole suite: the round's tester does.
@@ -620,6 +646,7 @@ const BUILDER_SCHEMA = {
     separateDefects: {
       type: 'array',
       items: { type: 'object', required: ['title', 'evidence', 'whatALeagueSees'], properties: { title: { type: 'string' }, evidence: EVIDENCE, whatALeagueSees: { type: 'string' } } },
+      description: 'a defect, or a change the work does not need, drafted for the tracker rather than made or asked',
     },
     notes: { type: 'array', items: { type: 'string' } },
   },
@@ -650,6 +677,7 @@ const REVIEW_SCHEMA = {
     separateDefects: {
       type: 'array',
       items: { type: 'object', required: ['title', 'evidence', 'whatALeagueSees'], properties: { title: { type: 'string' }, evidence: EVIDENCE, whatALeagueSees: { type: 'string' } } },
+      description: 'a defect, or a change the work does not need, drafted for the tracker rather than made or asked',
     },
     notes: { type: 'array', items: { type: 'string' } },
   },
@@ -777,7 +805,7 @@ const sinceReviewed = (k, lane) => {
 // `whole` asks for a review of the whole branch, however far the lane has reviewed it: the product
 // owner asked again for a summary it left out is a fresh agent that has read nothing of the branch,
 // and must read all of it to sum it up and to find what its findings still stop.
-const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(k, lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
+const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(k, lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>. The issue and the approved plan fix the scope: the same fault elsewhere, a neighbouring gap or a rule the issue does not name is neither a finding nor a question; draft it in separateDefects[] for the tracker.${DESIGN_PASS}`
 
 // `earlier` holds the results of the round's pieces before this one: a later piece carries on from
 // them, and leaves alone the findings they have already fixed or disputed.

@@ -65,6 +65,9 @@ alone misses most defects.
 - **It is new, or not fixed.** For each earlier finding, say whether it is fixed. Where the builder
   disputed one, judge the dispute on its evidence: accept it, or uphold the finding. An upheld
   dispute goes to the owner.
+- **It is in scope.** The issue and the approved plan fix the scope. A defect in code the branch
+  does not change, or the same fault in a place the plan does not touch, is not a finding: draft it
+  in `separateDefects` for the tracker.
 
 ## Rules of engagement
 
