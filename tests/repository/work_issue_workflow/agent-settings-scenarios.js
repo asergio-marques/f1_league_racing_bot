@@ -4,7 +4,7 @@
 // refused like any unknown model.
 const { q, builder, review, testsCheck, suite, base } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
-const C = { stage: 'check', issue: '#999', plan: 'PLAN', modules: ['results'], commit: 'abc123' }
+const C = { stage: 'check', issue: '#999', plan: 'PLAN', modules: ['steward'], commit: 'abc123' }
 
 // The role a call is made in, from its label and the stage.
 const roleOf = (label, stage) => {

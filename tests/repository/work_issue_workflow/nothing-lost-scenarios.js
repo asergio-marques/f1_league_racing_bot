@@ -40,7 +40,7 @@ const keptWordForWord = (since, support = []) => {
 
 // The check stage, re-checking an amended plan after the owner answered a question each checker
 // raised.
-const C = { stage: 'check', issue: '#999', plan: 'NEW PLAN', modules: ['results'], commit: 'abc123', decisions: 'Q-ANSWERED: yes, as the plan says' }
+const C = { stage: 'check', issue: '#999', plan: 'NEW PLAN', modules: ['steward'], commit: 'abc123', decisions: 'Q-ANSWERED: yes, as the plan says' }
 const asked = { kind: 'business', question: 'Q-ANSWERED', context: 'ctx', options: [{ label: 'yes', meaning: 'x' }], recommendation: 'yes' }
 const architecture = (questions = []) => ({ rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions, raised: [], notes: [] })
 const design = (questions = []) => ({ modules: [], questions, raised: [], notes: [] })
