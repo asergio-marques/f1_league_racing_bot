@@ -63,8 +63,10 @@ confirms or overrules it at the next gate without the work stopping for it.
 ## Scope
 
 The issue and the approved plan fix the scope. The same fault elsewhere, a neighbouring gap, or a
-rule the issue does not name is neither a question nor a finding, however worth doing: draft it for
-the tracker, in `followUps` when checking a plan and in `separateDefects` in a round. Ask only what
+rule or defect the work neither touches nor causes is neither a question nor a finding, however
+worth doing: draft it for the tracker, in `followUps` when checking a plan and in `separateDefects`
+in a round. What the work touches or causes is always in scope: every rule of the architecture and
+the specs it touches, and whatever it breaks. Ask only what
 the work cannot be done without. Every answer the owner gives becomes a rule the work must meet, so
 a question outside the scope widens the work past what the owner approved.
 
