@@ -377,10 +377,6 @@ async def test_the_close_timer_is_cancelled(tmp_path):
     cog.bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: disabling signup still removes the wizard jobs itself rather than through cancel_job",
-)
 async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
     """Two per driver, each through the scheduler service's `cancel_job`. Left armed, the inactivity timeout would transition a driver whose
     signup no longer exists, and the delete job would remove a channel a league has since

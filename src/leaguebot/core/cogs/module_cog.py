@@ -86,10 +86,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
         from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
         for job_id in (inactivity_job_id(uid), channel_delete_job_id(uid)):
-            try:
-                svc._scheduler.remove_job(job_id)
-            except Exception:
-                pass  # Job already fired or never existed
+            svc.cancel_job(job_id)
 
     # Post cancellation notice in each wizard channel and schedule deletion.
     # This mirrors the withdraw() path so drivers see a message and the channel
@@ -1025,7 +1022,7 @@ class ModuleCog(commands.Cog):
         # Cancel all wizard inactivity and channel-delete APScheduler jobs for this server
         if signup_cfg:
             active_wizards = await self.bot.signup_module_service.get_all_active_wizards()
-            scheduler = self.bot.scheduler_service._scheduler
+            scheduler = self.bot.scheduler_service
             for wiz in active_wizards:
                 from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
 
@@ -1033,10 +1030,7 @@ class ModuleCog(commands.Cog):
                     inactivity_job_id(wiz.discord_user_id),
                     channel_delete_job_id(wiz.discord_user_id),
                 ):
-                    try:
-                        scheduler.remove_job(job_id)
-                    except Exception:
-                        pass
+                    scheduler.cancel_job(job_id)
 
         # Forget the channel. The time slots and question settings are kept (issue #127).
         await self.bot.signup_module_service.delete_config()

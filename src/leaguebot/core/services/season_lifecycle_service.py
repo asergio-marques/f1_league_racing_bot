@@ -384,12 +384,9 @@ async def _close_driver_signups(
                     await bot.wizard_service._trigger_channel_hold(uid, guild, notice)
                 # The channel's own deletion job stays armed, and reads the wizard record
                 # when it fires; only the inactivity timeout is cancelled.
-                try:
-                    from leaguebot.signup.services.wizard_service import inactivity_job_id
+                from leaguebot.signup.services.wizard_service import inactivity_job_id
 
-                    bot.scheduler_service._scheduler.remove_job(inactivity_job_id(uid))
-                except Exception:  # noqa: BLE001 — a job already gone is the aim
-                    pass
+                bot.scheduler_service.cancel_job(inactivity_job_id(uid))
             except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
                 log.exception("closing signups: could not close the signup of %s", uid)
         if (

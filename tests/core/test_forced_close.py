@@ -157,10 +157,6 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     bot.wizard_service._trigger_channel_hold.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the forced close still removes the jobs itself rather than through cancel_job",
-)
 async def test_a_turned_away_drivers_jobs_are_removed(tmp_path):
     """Left armed they would fire against a signup that has already ended. Removed through the
     scheduler service's `cancel_job`: nothing but the scheduler service removes a job."""

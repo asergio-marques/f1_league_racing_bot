@@ -296,11 +296,7 @@ class WizardService:
     ) -> None:
         """Remove the inactivity APScheduler job if it exists."""
         job_id = self._inactivity_job_id(discord_user_id)
-        try:
-            self._scheduler._scheduler.remove_job(job_id)
-            log.debug("Cancelled inactivity job %s", job_id)
-        except Exception:
-            pass  # Job already fired or never existed
+        self._scheduler.cancel_job(job_id)
 
     async def _arm_channel_delete_job(
         self,
@@ -325,11 +321,7 @@ class WizardService:
         self, discord_user_id: str
     ) -> None:
         """Remove the channel-delete APScheduler job if it exists."""
-        job_id = self._channel_delete_job_id(discord_user_id)
-        try:
-            self._scheduler._scheduler.remove_job(job_id)
-        except Exception:
-            pass
+        self._scheduler.cancel_job(self._channel_delete_job_id(discord_user_id))
 
     # ------------------------------------------------------------------
     # A held channel follows the driver's current account (issue #243)

@@ -323,10 +323,6 @@ async def test_starting_again_deletes_the_abandoned_channel(tmp_path):
     old.delete.assert_awaited_once()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the wizard still removes its jobs itself rather than through cancel_job",
-)
 async def test_starting_again_cancels_the_abandoned_wizards_jobs(tmp_path):
     """Left behind, the old timeout would end the wizard the driver is halfway through. Each
     goes through the scheduler service's `cancel_job`."""
@@ -501,10 +497,6 @@ async def test_the_wizard_is_parked_and_its_answers_cleared(tmp_path):
     svc._bot.signup_module_service.save_wizard.assert_awaited_once_with(wizard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the wizard still removes its jobs itself rather than through cancel_job",
-)
 async def test_the_timeout_on_the_correction_is_cancelled(tmp_path):
     """Through the scheduler service's `cancel_job`."""
     svc = _service(record=_record())
