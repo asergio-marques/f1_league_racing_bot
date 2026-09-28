@@ -82,7 +82,23 @@ Draft the plan. It must carry:
    breaches it removes, with their ratchet lines deleted in the same commit, that it adds none, and
    the changes each touched module's design file needs, or that the module has none yet.
 
-**Then check the draft through the `work-issue` workflow** (`.claude/workflows/work-issue.js`).
+**Propose the light path where the change is mechanical.** It qualifies where all of these hold:
+no rule a league sees is added or changed; no reply, command or post is new or reworded; and the
+schema does not change. A traceback kept, a helper reused, a refactor, and a test-only or tooling
+change qualify. Say so in the plan, and the user chooses the path at Gate 1. On the light path:
+
+- no check runs: items 7 and 8 say "none: the change is mechanical", and the architecture's rules
+  are held by the tests that run with the suite;
+- after Gate 1 and the claim, the issue is built by hand in its worktree instead of through Phase
+  5: each change with its tests in the same commit, then the full suite behind the lock, and mypy;
+- one fresh `code-reviewer` agent, through the `Agent` tool, reviews the whole diff against the
+  plan, and what it finds is fixed, each in a commit of its own;
+- then Phase 6 and Phase 7, as for any issue.
+
+Where the build shows the change is not mechanical after all, because a league would see it, stop
+and tell the user: the issue goes back to the full workflow from Phase 3.
+
+**Otherwise, check the draft through the `work-issue` workflow** (`.claude/workflows/work-issue.js`).
 Invoking this skill is the user's opt-in to running it. Its checkers are read-only and cannot
 reach the user. **Do not enter plan mode while it runs:** plan mode reaches running agents and
 halts them.
