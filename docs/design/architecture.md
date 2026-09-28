@@ -524,9 +524,11 @@ refuses answers the member itself through `refuse` (`core/utils/log_lines.py`), 
 seen by the member alone, and writes the refusal's one line to the log channel; a confirmation
 cancelled or left to lapse is recorded through `record_abandoned`, beside it. Each standard line
 is formed there and nowhere else, so that every refusal, cancel and lapse names its member alike,
-as the core specification's "The record of what changed" asks. `refuse` lives apart from
-`report_failure` because it reaches the league's server through `league_guild`, and
-`core/utils/league_server.py`, which defines that, imports `interaction_errors`. Like
+as the core specification's "The record of what changed" asks. `log_lines` lives apart from
+`interaction_errors` because `record_abandoned`, which a scheduled lapse calls with no interaction
+to name its member from, reaches the league's server through `league_guild`, and
+`core/utils/league_server.py`, which defines that, imports `interaction_errors`. `refuse` sits
+beside it so that each standard line is formed in one place. Like
 `report_failure`, neither raises: each attempts the reply and the line on its own.
 
 **Every line for the log channel goes through `OutputRouter.post_log`**, which divides a record
