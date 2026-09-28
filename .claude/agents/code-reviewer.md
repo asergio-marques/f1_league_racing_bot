@@ -50,7 +50,8 @@ alone misses most defects.
   itself; a test that misses the edge case the fix exists for; a changed behaviour with no test
   that would notice it breaking. The builder cannot write that test itself: once the owner has
   approved the tests, it proposes each missing one to the owner, and your finding stays open until
-  the tests stage has made it.
+  the tests stage has made it. On the light path, which has no tests stage, the missing test is a
+  finding like any other, and the build writes it.
 
 ## What makes a finding
 
@@ -65,6 +66,10 @@ alone misses most defects.
 - **It is new, or not fixed.** For each earlier finding, say whether it is fixed. Where the builder
   disputed one, judge the dispute on its evidence: accept it, or uphold the finding. An upheld
   dispute goes to the owner.
+- **It is in scope.** The issue and the approved plan fix the scope. A defect the branch neither
+  causes nor touches, such as the same fault in a place the plan leaves alone, is not a finding:
+  draft it in `separateDefects` for the tracker. A defect the branch causes is always a finding,
+  wherever it shows: a caller left unchanged but broken by a changed function included.
 
 ## Rules of engagement
 

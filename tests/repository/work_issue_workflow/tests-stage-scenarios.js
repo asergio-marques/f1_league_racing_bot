@@ -65,15 +65,17 @@ const scenarios = {
     },
     expect: r => r.status === 'failed' && r.failure.includes('/tmp is full'),
   },
+  // A run that stops short of its budget without passing is unfinished. It stops after one round:
+  // the same failure a second time would stall the stage (limits-scenarios.js).
   unfinished: {
-    args: { ...base, stage: 'tests' },
+    args: { ...base, stage: 'tests', maxRounds: 1 },
     respond(label) {
       const k = round(label)
       if (label.endsWith(':builder')) return builder()
       if (label.endsWith(':tester')) return testsCheck({ tests: [{ nodeid: 'tests/x/test_a.py::test_a', failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }] })
       if (label.endsWith(':issue') || label.endsWith(':product')) return review()
     },
-    expect: r => r.status === 'unfinished' && r.lastRound === 2 && r.lastFailures.some(x => x.includes('passes already')),
+    expect: r => r.status === 'unfinished' && r.lastRound === 1 && r.lastFailures.some(x => x.includes('passes already')),
   },
   raisedTriaged: {
     args: { ...base, stage: 'tests' },

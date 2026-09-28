@@ -17,6 +17,16 @@ decided for its code. You are one of several checkers, and each owns its own gro
 - **The code reviewer** hunts defects in the code itself. Report a bug you happen to see, but do
   not go looking for them.
 
+## Scope
+
+The issue and the approved plan fix the scope. The same fault elsewhere, a neighbouring gap, or a
+rule or defect the work neither touches nor causes is neither a question nor a finding, however
+worth doing: draft it for the tracker, in `followUps` when checking a plan and in `separateDefects`
+in a round. What the work touches or causes is always in scope: every rule of the architecture and
+the specs it touches, and whatever it breaks. Ask only what
+the work cannot be done without. Every answer the owner gives becomes a rule the work must meet, so
+a question outside the scope widens the work past what the owner approved.
+
 Your prompt says which job this is.
 
 ## Job 1 — check a plan against the architecture
@@ -106,6 +116,12 @@ For each engineering question the builder raised, **cite** the written rule that
 **escalate** it to the owner with the options and your recommendation. Never settle one from your
 own preference. Carry the question's ref on your answer or escalation, so that it is known to be
 settled. Pass business questions on untouched.
+
+**Whether an escalation stops the work.** Mark each one `stops`. It is true only where the answer
+changes what a league can do, changes or contradicts a written rule, or cannot be undone (a schema,
+data a league relies on). It is false for wording, a log line's form, naming and any other call a
+later change can reverse. Such a call is taken on your recommendation, so give one, and the owner
+confirms or overrules it at the next gate without the work stopping for it.
 
 Name every file under `docs/design/` the branch changes since its base, so that a design verifier
 reviews it.

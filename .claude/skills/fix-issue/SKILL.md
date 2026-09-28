@@ -82,7 +82,25 @@ Draft the plan. It must carry:
    breaches it removes, with their ratchet lines deleted in the same commit, that it adds none, and
    the changes each touched module's design file needs, or that the module has none yet.
 
-**Then check the draft through the `work-issue` workflow** (`.claude/workflows/work-issue.js`).
+**Propose the light path where the change is mechanical.** It qualifies where all of these hold:
+no rule a league sees is added or changed; no reply, command or post is new or reworded; and the
+schema does not change. A traceback kept, a helper reused, a refactor, and a test-only or tooling
+change qualify. Say so in the plan, and the user chooses the path at Gate 1. On the light path:
+
+- no check runs: items 7 and 8 say "none: the change is mechanical", and the architecture's rules
+  are held by the tests that run with the suite;
+- after Gate 1 and the claim, the issue is built by hand in its checkout instead of through Phase
+  5: each change with its tests in the same commit, then the full suite behind the lock, and mypy;
+- one fresh `code-reviewer` agent, through the `Agent` tool, reviews the whole diff against the
+  plan, and what it finds is fixed, each in a commit of its own;
+- then Phase 6 and Phase 7, as for any issue.
+
+Where the user declines the light path at Gate 1, the plan has not been checked: run the check
+below, and hold Gate 1 again on the plan it returns. Where the build shows the change is not
+mechanical after all, because a league would see it, stop and tell the user: the issue goes back to
+the full workflow from Phase 3.
+
+**Otherwise, check the draft through the `work-issue` workflow** (`.claude/workflows/work-issue.js`).
 Invoking this skill is the user's opt-in to running it. Its checkers are read-only and cannot
 reach the user. **Do not enter plan mode while it runs:** plan mode reaches running agents and
 halts them.
@@ -116,12 +134,20 @@ Settle what it returns before the user sees the plan:
   the plan's substance, check the plan again, passing the last check's result as `previous`: each
   checker is given the plan as it last checked it and its own earlier result, and judges what the
   amendment changes rather than starting over. A checker whose earlier result was lost checks in
-  full.
+  full. **A plan is re-checked once at most.** Where a second amendment would need a third check,
+  the plan is still moving: ask the user instead whether to narrow the scope to the issue as filed,
+  and check once more only on their word.
 - **`specRulesToSettle`** lists every spec rule the plan would change, or that is unclear or at odds
   with the code. Each must reach the user as a question: where the product owner framed none for
   one, frame it yourself from the entry.
 - **`citations`**, the rules the product owner cited rather than ask, go into item 7, so that the
   user sees each one and can overrule it.
+- **`assumed`** are reversible calls (wording, a log line's form, naming) the checkers took on
+  their recommendation rather than ask. List them in the plan under "Assumed", each with what was
+  assumed, for the user to overrule at Gate 1; never ask them one by one.
+- **`followUps`** are what the plan does not need: the same fault elsewhere, a neighbouring gap, a
+  rule the issue does not name. They never widen the plan. Draft each for the tracker, show the
+  drafts beside the plan, and file only what the user approves.
 
 Keep the check's result, saved as "What a stage returns" says: the build is handed items 7 and 8
 from it, and a re-check is handed it as `previous`.
@@ -188,6 +214,8 @@ hand. Pass every stage the same arguments:
 - `decisions`: every answer the user has given on this issue, word for word, with its date. A
   spec change an answer calls for is written by the build, as a document owed;
 - `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on;
+- `provisional`: for the build, the tests stage's `provisional`, less any the user overruled, so that
+  the calls taken there bind the build too;
 - `testsHead`: for the build, the commit at which the user last approved the tests at a Gate 2:
   the last of the tests stage's `commits` then, in this pass or, where a pass after a rejection at
   Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
@@ -249,8 +277,8 @@ by side: the issue reviewer against the architecture, the design, the issue and 
 code reviewer for defects in the code; the product owner against the spec rules and the
 acceptance criteria; and the tester, who runs the whole suite and mypy behind the test lock. A
 design verifier follows the issue reviewer wherever the branch changes a design file. The rounds
-repeat until nothing material is open, no question is, and the suite and mypy are green, for at
-most three rounds a run. A builder carries out at most three commit points, or three findings, in
+repeat until nothing material is open, no question is, and the suite and mypy are green, within
+the stage's round budget (see `capped` below). A builder carries out at most three commit points, or three findings, in
 one piece, and hands the rest to a fresh builder, which carries on in the same round; the round is
 reviewed once, after its last piece. Tell the user it takes about ten agents for a fix that passes
 on its second round, and one more for each piece a builder hands off.
@@ -267,8 +295,8 @@ finding calls for, is proposed in `testChanges`, and the stage stops for the use
 result runs to tens of kilobytes, and whatever this session reads it re-reads at every later step,
 to the end of the issue. When a stage returns, copy its whole result from the task's output file to
 `.claude/gates/<N>-<stage>.json` in the main checkout (gitignored), a new name for each run, and
-print from it only what is acted on: `status` and `failure`; `escalations` and `testChanges`; the
-ids and titles of `openMaterial` and `minor`, with the `why` and `fix` of those put to the user;
+print from it only what is acted on: `status` and `failure`; `escalations`, `testChanges` and
+`provisional`; the ids and titles of `openMaterial` and `minor`, with the `why` and `fix` of those put to the user;
 `counts`; and `report` or `summary`, written straight to the gate's file. A result is too large to
 pass back inline, so where a run needs one as `previous`, or a tests stage's `citations`, copy the
 workflow script into `.claude/gates/`, write the saved JSON in place of `ARGS.previous` or
@@ -293,6 +321,21 @@ working directory.
     to make it; hold Gate 2 again on the file it writes, where the new entries are marked; and then
     run the build again with its last result as `previous` and the new `testsHead`;
   - where every one is refused, run the build again with its last result as `previous`.
+- **`provisional`** are the reversible calls the stage took on a checker's recommendation rather
+  than stop for: wording, a log line's form, naming. They bind the builder until overruled. Show
+  `provisionalNew`, the calls no gate has shown yet, at the next gate, where the Gate 2 report
+  already lists them by id, and let the user overrule any in the same answer. An overruled call's
+  answer goes into `decisions`, and its id into `overruled` on the stage's next run, which drops
+  it; the run always gets a round to apply it. Never ask them one by one.
+- **`capped`:** the stage has spent its round budget (`tests` 3, `build` 4, counted across all its
+  runs) without passing. **`stalled`:** it stopped early because it was not converging, two rounds
+  running opening as many material findings as they closed, or failing the same way twice; `failure`
+  says which. Either goes to the user as one question, with what is still open, and three choices:
+  finish on the light path by hand (recommended), allow one more round, or accept the branch as it
+  stands and draft what is open as follow-ups. One more round is a run with `previous` and, for a
+  capped stage, `roundBudget` one above its `lastRound`, which later runs keep; for a stalled one,
+  `maxRounds: 1`. Never raise the budget without the user's word. A run the user starts in any
+  other way, after answering its questions or asking for changes at its gate, always gets a round.
 - **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
   with `openMaterial` and `lastFailures`. A finding there that the user once wanted made, though
   it was found minor, can still be left: pass it as `"leave"` in `rulings`.
@@ -301,10 +344,11 @@ working directory.
   before anything runs again.
 - **`separateDefects`** are drafts for the tracker. Draft each in full, wait for an explicit
   yes, and file only what is approved.
-- **`minor`** findings go to the user before the next gate, as a short list. Those they want made
-  go back to the same stage, with this result as `previous` and each as
-  `rulings: { "<id>": "fix" }`, which makes it owed and has its checker confirm it; those they
-  leave are passed as `"leave"`. Nothing is fixed by hand, however small.
+- **`minor`** findings are left by default. List them once, in the next gate's question, and let
+  the user name any they want made: those go back to the same stage, with this result as
+  `previous` and each as `rulings: { "<id>": "fix" }`, which makes it owed and has its checker
+  confirm it. Pass every other as `"leave"` in that run, so that none is listed twice. Nothing is
+  fixed by hand, however small.
 - **An empty `summary`** on a `passed` result means the product owner left it out twice. Ask a
   `product-owner` agent for it through the `Agent` tool, with the branch and the criteria, before
   the gate. At Gate 2, give it the result's `tests` with their labels, and have it cite them.
@@ -318,10 +362,11 @@ output as PNG, never as SVG in a browser. CI deselects the marker, so nothing el
 
 ### Gate 3 — acceptance
 
-When the build returns `passed` and the minor findings are settled with the user, put the result to the user
-through `AskUserQuestion`. Show the product owner's acceptance `summary`: what a league will now
-see, criterion by criterion, with the test that proves each, and every rule it cited. The options
-are to accept it or to reject it.
+When the build returns `passed`, put the result to the user through `AskUserQuestion`. Show the
+product owner's acceptance `summary`: what a league will now see, criterion by criterion, with the
+test that proves each, and every rule it cited. List beside it, once, every `provisional` call and
+every `minor` finding, for the user to overrule or name in the same answer. The options are to
+accept it or to reject it.
 
 **On a rejection, ask what should change in terms of behaviour**, and take the answer in the
 user's own words. It is a decided rule. Add it to `decisions`, amend the plan with it, and go
