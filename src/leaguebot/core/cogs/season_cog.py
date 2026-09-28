@@ -55,7 +55,7 @@ from leaguebot.core.utils.channel_guard import (
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
-from leaguebot.core.services.output_router import _chunk_message
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
     ParsedRound,
@@ -409,7 +409,7 @@ async def _run_round_import(
             )
         )
 
-    for chunk in _chunk_message("\n".join(lines)):
+    for chunk in chunk_message("\n".join(lines)):
         await interaction.followup.send(chunk, ephemeral=True)
 
     await cog.bot.output_router.post_log(
@@ -516,7 +516,7 @@ async def _confirm_privately(
     2026-09-22).
     """
     try:
-        for chunk in _chunk_message(text):
+        for chunk in chunk_message(text):
             if interaction.response.is_done():
                 await interaction.followup.send(chunk, ephemeral=True)
             else:
@@ -1979,7 +1979,7 @@ class SeasonCog(commands.Cog):
                 body = "\n".join(section).strip()
                 if not body:
                     continue
-                for chunk in _chunk_message(body):
+                for chunk in chunk_message(body):
                     await poster.send(chunk, ephemeral=False)
 
             # ── Per-division blocks (4 messages each) ────────────────
@@ -2196,7 +2196,7 @@ class SeasonCog(commands.Cog):
                 cfg.season_id, interaction.guild
             )
             if unsettled:
-                for chunk in _chunk_message(
+                for chunk in chunk_message(
                     "\u26a0\ufe0f **Unsettled signups** — each is to be placed with "
                     "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
                     + "\n".join(f"\u2022 {line}" for line in unsettled)
@@ -2226,7 +2226,7 @@ class SeasonCog(commands.Cog):
                 # sixteen templates each with its reason can pass Discord's limit.
                 reasons = list(dict.fromkeys(approval_blockers))
                 body = "\n".join(f"• {reason}" for reason in reasons)
-                for chunk in _chunk_message(
+                for chunk in chunk_message(
                     "\u26d4 **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The season is **not** offered for approval while that stands. "
@@ -2457,7 +2457,7 @@ class SeasonCog(commands.Cog):
         One message for both reviews, each fault naming the command that puts it right.
         """
         body = "\n".join(f"• {line}" for line in channel_faults)
-        for chunk in _chunk_message(
+        for chunk in chunk_message(
             "⛔ **Every division needs every channel it posts to.**\n"
             f"{body}\n"
             "Set each with the command named, then run `/season placements-review` again."
@@ -2503,7 +2503,7 @@ class SeasonCog(commands.Cog):
             else:
                 lines.append("*No new placement to confirm.*")
             lines.append("")
-            for chunk in _chunk_message("\n".join(lines)):
+            for chunk in chunk_message("\n".join(lines)):
                 await poster.send(chunk, ephemeral=False)
 
             divisions = [
@@ -2538,7 +2538,7 @@ class SeasonCog(commands.Cog):
                         if seat["discord_user_id"] is not None
                     ]
                     block.append(f"  **{team['name']}**: {', '.join(seated) or '*(empty)*'}")
-                for chunk in _chunk_message("\n".join(block)):
+                for chunk in chunk_message("\n".join(block)):
                     await poster.send(chunk, ephemeral=False)
 
             unsettled, channel_faults = await self._placement_confirmation_faults(
@@ -2546,7 +2546,7 @@ class SeasonCog(commands.Cog):
             )
             configuration_faults = await self._mid_season_configuration_faults()
             if unsettled:
-                for chunk in _chunk_message(
+                for chunk in chunk_message(
                     "⚠️ **Unsettled signups** — each is to be placed with "
                     "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
                     + "\n".join(f"• {line}" for line in unsettled)
@@ -2562,7 +2562,7 @@ class SeasonCog(commands.Cog):
                 await self._send_channel_faults(poster, channel_faults)
             if configuration_faults:
                 body = "\n".join(f"• {fault}" for fault in configuration_faults)
-                for chunk in _chunk_message(
+                for chunk in chunk_message(
                     "⛔ **The image module is not correctly configured.**\n"
                     f"{body}\n"
                     "The placements are **not** offered for confirmation while that stands. "
@@ -2662,7 +2662,7 @@ class SeasonCog(commands.Cog):
         ]
         if faults:
             bullets = "\n".join(f"• {line}" for line in faults)
-            for chunk in _chunk_message(
+            for chunk in chunk_message(
                 f"⛔ Placements cannot be confirmed:\n{bullets}\n"
                 "**Nothing has been confirmed.**"
             ):
@@ -3055,13 +3055,13 @@ class SeasonCog(commands.Cog):
             body = "\n".join(section).strip()
             if not body:
                 continue
-            for chunk in _chunk_message(body):
+            for chunk in chunk_message(body):
                 await poster.send(chunk, ephemeral=False)
 
         faults = await self._configuration_faults(cfg.season_id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
-            for chunk in _chunk_message(
+            for chunk in chunk_message(
                 "⛔ **The configuration cannot be confirmed yet.**\n"
                 f"{body}\n"
                 "Put these right, then run `/season config-review` again."
@@ -5282,7 +5282,7 @@ class SeasonCog(commands.Cog):
         )
         if unsettled or channel_faults:
             bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])
-            for chunk in _chunk_message(
+            for chunk in chunk_message(
                 f"\u26d4 Season cannot be approved:\n{bullets}"
             ):
                 await interaction.followup.send(chunk, ephemeral=True)
@@ -5526,7 +5526,7 @@ class SeasonCog(commands.Cog):
             image_faults = await self._image_configuration_faults()
             if image_faults:
                 bullet_list = "\n• ".join(image_faults)
-                for chunk in _chunk_message(
+                for chunk in chunk_message(
                     f"❌ Season cannot be approved — the image module is not correctly "
                     f"configured:\n• {bullet_list}"
                 ):

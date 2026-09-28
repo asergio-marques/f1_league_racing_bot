@@ -18,7 +18,7 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView, league_guild
-from leaguebot.core.services.output_router import _chunk_message
+from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 
@@ -721,7 +721,7 @@ class ModuleCog(commands.Cog):
         else:
             reply = "✅ Results & Standings module disabled." + season_note
         # Split, because a season's worth of links can outrun Discord's limit on one message.
-        for chunk in _chunk_message(reply):
+        for chunk in chunk_message(reply):
             await interaction.followup.send(chunk, ephemeral=True)
 
     # ── Attendance enable ──────────────────────────────────────────────

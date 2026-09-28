@@ -143,8 +143,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     the log channel (T017); then mark_failed is called to increment the counter.
     The warning fires every cycle once the threshold is crossed.
     """
-    # Import here to avoid circular import: retry_service ← output_router
-    from leaguebot.core.services.output_router import _chunk_message
+    from leaguebot.core.utils.messages import chunk_message
 
     db_path: str = bot.db_path
 
@@ -182,7 +181,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 
     # --- Attempt send ---
     try:
-        for chunk in _chunk_message(entry.content):
+        for chunk in chunk_message(entry.content):
             await channel.send(chunk)
     except Exception as exc:
         log.warning(
