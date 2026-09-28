@@ -59,7 +59,7 @@ const ROLE_DEFAULTS = {
 const MODELS = ['opus', 'sonnet', 'haiku']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, and roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it). build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, and overruled, the ids of calls the owner has overruled. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -369,7 +369,7 @@ if (stage === 'check') {
   const branchNote = ARGS.worktree && ARGS.base
     ? ` This plan amends work already built: the branch is checked out at ${ARGS.worktree}, and its work since ${ARGS.base} is git -C ${ARGS.worktree} log ${ARGS.base}..HEAD. Check the amendment against the code as the branch has it, reading files under that path.`
     : ''
-  const head = `${ISSUE}. The plan was drafted at commit ${commit}.${branchNote} The modules it touches: ${modules.join(', ')}.${DESIGN_PASS} The issue and this plan fix the scope: ask only what the plan cannot be built without. The same fault elsewhere, a neighbouring gap or a rule the issue does not name is not a question: draft it in followUps[] for the tracker.`
+  const head = `${ISSUE}. The plan was drafted at commit ${commit}.${branchNote} The modules it touches: ${modules.join(', ')}.${DESIGN_PASS} The issue and this plan fix the scope: ask only what the plan cannot be built without. The same fault elsewhere, a neighbouring gap, or a rule or defect the plan neither touches nor causes is not a question: draft it in followUps[] for the tracker. What the plan touches or causes, every rule of the architecture and the specs included, is in scope.`
   const context = `${section('The plan', plan)}${section('The owner\'s decisions so far', ARGS.decisions)}`
   // A re-check of an amended plan gives each checker the plan as it last checked it and its own
   // earlier result, and asks it to judge what the amendment changes: a checker starting over re-reads
@@ -470,8 +470,13 @@ const LANE_NAMES = { issue: 'issue reviewer', code: 'code reviewer', product: 'p
 // owner's answers in `decisions`: its rounds, findings and citations carry on where it stopped.
 const previous = ARGS.previous || null
 const offset = previous ? previous.lastRound : 0
-const stageBudget = Number(ARGS.roundBudget) || ROUND_BUDGET[stage]
-const left = Math.max(0, stageBudget - offset)
+// A raised budget carries to the stage's later runs. A run the owner starts, after answering its
+// questions or asking for changes at its gate, always gets at least one round, so that their answer
+// is acted on rather than met with `capped`; where that round cannot pass, the stage stops as
+// `capped` again and the owner chooses once more.
+const stageBudget = Math.max(Number(ARGS.roundBudget) || 0, (previous && previous.roundBudget) || 0, ROUND_BUDGET[stage])
+const ownerRerun = !!previous && ['passed', 'question'].includes(previous.status)
+const left = Math.max(stageBudget - offset, ownerRerun ? 1 : 0)
 const maxRounds = Math.min(left, Number(ARGS.maxRounds) || left)
 const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f }]))
 // Rules cited in an earlier stage, such as the tests stage's for the build, arrive in `citations`.
@@ -495,8 +500,26 @@ const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 // The reversible calls taken on a checker's recommendation rather than asked (stopsTheStage): they
 // bind the builder until the owner overrules them at the gate, and no checker asks them again.
-const provisional = previous && previous.provisional ? [...previous.provisional] : []
-const takeProvisionally = (qs, k) => provisional.push(...qs.map(q => ({ ref: q.ref || '', kind: q.kind, question: q.question, recommendation: q.recommendation, round: k })))
+// Each has an id the owner overrules it by (`overruled`), which drops it: the owner's answer goes
+// into `decisions` in its place. The tests stage's calls reach the build through `provisional`, as
+// its citations do. A call is shown at one gate only: `atGate` marks those already shown.
+const sameCall = text => String(text).toLowerCase().replace(/\s+/g, ' ').trim()
+const provisional = []
+for (const p of [...(previous && previous.provisional ? previous.provisional : []), ...(ARGS.provisional || [])]) {
+  if (!provisional.some(x => sameCall(x.question) === sameCall(p.question))) provisional.push({ ...p })
+}
+const overruled = ARGS.overruled || []
+const unknownCalls = overruled.filter(id => !provisional.some(p => p.id === id))
+if (unknownCalls.length) throw new Error(`overruled names calls that are not among the provisional ones: ${unknownCalls.join(', ')}`)
+for (const id of overruled) provisional.splice(provisional.findIndex(p => p.id === id), 1)
+let nextCall = 1 + Math.max(0, ...provisional.map(p => Number(String(p.id || '').replace(/^p/, '')) || 0))
+// Takes the calls not already taken, and returns those it took: a checker asking one again is not a
+// new call, and does not hold the round back.
+const takeProvisionally = (qs, k) => {
+  const fresh = qs.filter((q, i) => !provisional.some(p => sameCall(p.question) === sameCall(q.question)) && qs.findIndex(x => sameCall(x.question) === sameCall(q.question)) === i)
+  provisional.push(...fresh.map(q => ({ id: `p${nextCall++}`, ref: q.ref || '', kind: q.kind, question: q.question, recommendation: q.recommendation, round: k })))
+  return fresh
+}
 const PROVISIONAL = 'Calls taken on a checker\'s recommendation, for the owner to confirm or overrule at the gate'
 let written = previous && previous.tests ? [...previous.tests] : []
 let supportWritten = previous && previous.support ? [...previous.support] : []
@@ -832,7 +855,7 @@ const sinceReviewed = (k, lane) => {
 // `whole` asks for a review of the whole branch, however far the lane has reviewed it: the product
 // owner asked again for a summary it left out is a fresh agent that has read nothing of the branch,
 // and must read all of it to sum it up and to find what its findings still stop.
-const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(k, lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>. The issue and the approved plan fix the scope: the same fault elsewhere, a neighbouring gap or a rule the issue does not name is neither a finding nor a question; draft it in separateDefects[] for the tracker.${DESIGN_PASS}`
+const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(k, lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>. The issue and the approved plan fix the scope: the same fault elsewhere, a neighbouring gap, or a rule or defect the branch neither touches nor causes is neither a finding nor a question; draft it in separateDefects[] for the tracker. What the branch touches or causes, a caller it breaks included, is in scope.${DESIGN_PASS}`
 
 // `earlier` holds the results of the round's pieces before this one: a later piece carries on from
 // them, and leaves alone the findings they have already fixed or disputed.
@@ -1150,7 +1173,8 @@ const gateReport = (test, summaryText) => {
   lines.push('', '## What a league will see, and the tests that pin it', '', filled(summaryText) ? summaryText : '*The product owner wrote no summary. Ask for it, and put it here, before the gate.*')
   if (citations.length) lines.push('', '## Rules cited', '', ...citations.map(c => `- **${c.source}:** ${c.answer}`))
   // The reversible calls the stage took rather than asked, for the owner to overrule together here.
-  if (provisional.length) lines.push('', '## Taken on a recommendation — overrule any', '', ...provisional.map(p => `- ${p.question} *Taken:* ${p.recommendation}`))
+  const unshown = provisional.filter(p => !p.atGate)
+  if (unshown.length) lines.push('', '## Taken on a recommendation — overrule any', '', ...unshown.map(p => `- **${p.id}** ${p.question} *Taken:* ${p.recommendation}`))
   return `${lines.join('\n')}\n`
 }
 
@@ -1355,11 +1379,14 @@ let lastTest = null
 // running. Both carry across runs, as the rounds do.
 let stallStreak = previous && previous.stallStreak ? previous.stallStreak : 0
 let lastRed = previous && previous.lastRed ? previous.lastRed : ''
-// What a red round failed on, compared by test and by check rather than by the tester's wording.
+// What a red round failed on: in the build, by failing test and by mypy error rather than by the
+// tester's wording; in the tests stage, by the problems as listed, where the tester's own wording of
+// a failure can make two rounds differ, which errs towards not stalling.
 const redKey = r => {
   if (r.green || !r.test) return ''
   if (stage === 'tests') return [...r.problems].sort().join(' | ')
-  return [...r.test.failures.map(f => f.test), ...(r.test.mypyClean ? [] : ['mypy'])].sort().join(' | ')
+  const mypy = r.test.mypyClean ? [] : r.test.mypyErrors.length ? r.test.mypyErrors : ['mypy']
+  return [...r.test.failures.map(f => f.test), ...mypy].sort().join(' | ')
 }
 
 for (let k = offset + 1; k <= offset + maxRounds; k++) {
@@ -1431,9 +1458,8 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   if (unheard.length) log(`Round ${k}: ${unheard.length} question(s) of the builder's went unanswered, and go to the owner.`)
   roundEscalations.push(...unheard.map(q => ({ ...q, unframed: true })))
   // A reversible call is taken on its recommendation, and only the rest stop the stage.
-  const taken = roundEscalations.filter(q => !stopsTheStage(q))
+  const taken = takeProvisionally(roundEscalations.filter(q => !stopsTheStage(q)), k)
   const stopping = roundEscalations.filter(stopsTheStage)
-  takeProvisionally(taken, k)
   if (taken.length) log(`Round ${k}: ${taken.length} reversible call(s) taken on a checker's recommendation, for the owner to confirm at the gate.`)
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
@@ -1486,9 +1512,8 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
         }
         const record = rounds[rounds.length - 1]
         record.openMaterial = [...ledger.values()].filter(materialPending).length
-        const lateTaken = late.filter(q => !stopsTheStage(q))
+        const lateTaken = takeProvisionally(late.filter(q => !stopsTheStage(q)), k)
         const lateStopping = late.filter(stopsTheStage)
-        takeProvisionally(lateTaken, k)
         record.questions = lateStopping.length
         record.provisional += lateTaken.length
         if (lateStopping.length) { status = 'question'; escalations = lateStopping; break }
@@ -1508,6 +1533,11 @@ if (status === 'unfinished' && offset + rounds.length >= stageBudget) {
 if (status === 'unfinished') log(`${maxRounds} round(s) used without passing. The calling session runs the stage again, with this result as previous, or asks the owner.`)
 if (status === 'capped' || status === 'stalled') log(`The stage stops as ${status}: ${failure}. The owner decides what next.`)
 
+// The calls this gate shows, before they are marked as shown.
+const provisionalNew = provisional.filter(p => !p.atGate)
+const report = stage === 'tests' ? gateReport(lastTest, summary) : undefined
+if (status === 'passed') for (const p of provisional) p.atGate = true
+
 return {
   stage,
   issue,
@@ -1521,13 +1551,14 @@ return {
   summary,
   tests: written,
   support: supportWritten,
-  ...(stage === 'tests' ? { shown, counts: counts(), report: gateReport(lastTest, summary), listSeen } : {}),
+  ...(stage === 'tests' ? { shown, counts: counts(), report, listSeen } : {}),
   lastTest,
   lastFailures,
   openMaterial: [...ledger.values()].filter(materialPending),
   minor: [...ledger.values()].filter(f => !f.material && f.status === 'open'),
   citations,
   provisional,
+  provisionalNew,
   separateDefects,
   commits,
   ledger: [...ledger.values()],

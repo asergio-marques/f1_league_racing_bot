@@ -135,4 +135,89 @@ module.exports = {
     },
     expect: r => r.status === 'passed' && r.report.includes('## Taken on a recommendation — overrule any') && r.report.includes('WORDING? *Taken:* SAY-X'),
   },
+  // A call the owner overrules is dropped: the builder is no longer bound by it.
+  overruledCallDropped: {
+    args: { ...BUILD, overruled: ['p1'], decisions: 'OVERRULED p1: say Y instead', previous: { stage: 'build', status: 'passed', lastRound: 1, ledger: [], citations: [], commits: [{ sha: 'c1', subject: 'x' }], separateDefects: [], lastFailures: [], tests: [], provisional: [{ id: 'p1', ref: '', kind: 'business', question: 'WORDING?', recommendation: 'SAY-X', round: 1, atGate: true }] } },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) {
+        if (prompt.includes('SAY-X')) throw new Error('builder still bound by an overruled call')
+        return builder({ tests: [] })
+      }
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.provisional.length === 0,
+  },
+  overruledUnknownRefused: {
+    args: { ...BUILD, overruled: ['p9'] },
+    respond() { throw new Error('no agent should run') },
+    expectThrow: 'overruled',
+  },
+  // The tests stage's calls bind the build, which is handed them as it is handed citations.
+  testsStageCallsReachTheBuild: {
+    args: { ...BUILD, provisional: [{ id: 'p1', ref: '', kind: 'business', question: 'FROM-TESTS?', recommendation: 'TESTS-REC', round: 1, atGate: true }] },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) {
+        if (!prompt.includes('TESTS-REC')) throw new Error('builder not given the tests stage call')
+        return builder({ tests: [] })
+      }
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.provisional.length === 1 && r.provisionalNew.length === 0,
+  },
+  // A checker asking a call already taken takes nothing new, and does not hold the round back.
+  repeatedCallNotTakenTwice: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':product')) return k === 1 ? review({ escalations: [rq('WORDING?', false)] }) : review({ summary: 'S', escalations: [rq('wording?', false)] })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 2 && r.provisional.length === 1,
+  },
+  // A call is shown at one gate only: one shown at the last gate is not listed again.
+  callShownAtOneGateOnly: {
+    args: { ...base, stage: 'tests', decisions: 'GATE 2: add a case', previous: { stage: 'tests', status: 'passed', lastRound: 1, ledger: [], citations: [], commits: [], separateDefects: [], lastFailures: [], tests: [], provisional: [{ id: 'p1', ref: '', kind: 'business', question: 'OLD-CALL?', recommendation: 'OLD-REC', round: 1, atGate: true }] } },
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':product')) return k === 2 ? review({ escalations: [rq('NEW-CALL?', false)] }) : review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.report.includes('**p2** NEW-CALL?') && !r.report.includes('OLD-CALL?')
+      && r.provisionalNew.map(p => p.id).join() === 'p2' && r.provisional.every(p => p.atGate),
+  },
+  // A reversible call raised when the product owner is asked again for its summary is taken, and the
+  // stage goes on a round to apply it rather than stop.
+  summaryReaskCallTaken: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':summary')) return review({ escalations: [rq('LATE?', false)] })
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':product')) return k === 1 ? review() : review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 2 && r.provisional.some(p => p.question === 'LATE?'),
+  },
+  // A question a checker raised outside its ground, which triage then lost, reaches the owner
+  // however it is marked.
+  lostTriageStillStops: {
+    args: BUILD,
+    respond(label) {
+      if (label === 'triage:r1:product') return undefined
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':code')) return review({ raised: [rq('RAISED?', false)] })
+      return review()
+    },
+    expect: r => r.status === 'question' && r.escalations.some(q => q.question === 'RAISED?' && q.unframed) && r.provisional.length === 0,
+  },
 }

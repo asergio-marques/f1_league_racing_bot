@@ -2,7 +2,7 @@
 // is not converging.
 const { builder, review, suite, testsCheck, finding, base, round } = require('./stubs')
 const BUILD = { ...base, stage: 'build' }
-const earlier = lastRound => ({ stage: 'build', status: 'question', lastRound, ledger: [], citations: [], commits: [{ sha: 'c1', subject: 'x' }], separateDefects: [], lastFailures: [], tests: [] })
+const earlier = (lastRound, o = {}) => ({ stage: 'build', status: 'question', lastRound, ...o, ledger: [], citations: [], commits: [{ sha: 'c1', subject: 'x' }], separateDefects: [], lastFailures: [], tests: [] })
 
 module.exports = {
   // A build run again after three rounds has one left, and stops as capped when it does not pass.
@@ -85,5 +85,69 @@ module.exports = {
       return review()
     },
     expect: r => r.status === 'passed' && r.lastRound === 3,
+  },
+  // A rerun the owner starts gets a round even with the budget spent, so that their answer is acted on.
+  ownerRerunGetsARound: {
+    args: { ...BUILD, decisions: 'GATE 3: reword the reply', previous: earlier(4, { status: 'passed' }) },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 5,
+  },
+  // Where that one round cannot pass, the stage stops as capped again after it.
+  ownerRerunThatCannotPassIsCapped: {
+    args: { ...BUILD, previous: earlier(4) },
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':code')) return review({ findings: [finding(`code-${k}-1`)] })
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'capped' && r.lastRound === 5 && !labels.some(l => l.startsWith('build:r6')),
+  },
+  // A budget the owner raised carries to the stage's later runs.
+  raisedBudgetCarries: {
+    args: { ...BUILD, previous: earlier(4, { status: 'unfinished', roundBudget: 6 }) },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [], clean: false })
+      if (label.endsWith(':tester')) return suite()
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'capped' && r.lastRound === 6 && r.roundBudget === 6 && !labels.some(l => l.startsWith('build:r7')),
+  },
+  // Two different type errors in a row are progress, not the same failure.
+  differentMypyErrorsDoNotStall: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return k === 3 ? suite() : suite({ mypyClean: false, mypyErrors: [k === 1 ? 'a.py:1: error X' : 'b.py:9: error Y'] })
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 3,
+  },
+  // Rounds that each close more material findings than they open are converging, however many open.
+  closingMoreThanOpeningConverges: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':code')) {
+        const fixed = ids => ids.map(id => ({ id, status: 'fixed', grounds: 'ok' }))
+        if (k === 1) return review({ findings: [finding('code-1-1'), finding('code-1-2'), finding('code-1-3')] })
+        if (k === 2) return review({ findings: [finding('code-2-1')], prior: fixed(['code-1-1', 'code-1-2']) })
+        if (k === 3) return review({ findings: [finding('code-3-1')], prior: fixed(['code-1-3', 'code-2-1']) })
+        return review({ prior: fixed(['code-3-1']) })
+      }
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 4,
   },
 }
