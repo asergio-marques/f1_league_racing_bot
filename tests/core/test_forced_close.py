@@ -157,8 +157,13 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     bot.wizard_service._trigger_channel_hold.assert_not_awaited()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: the forced close still removes the jobs itself rather than through cancel_job",
+)
 async def test_a_turned_away_drivers_jobs_are_removed(tmp_path):
-    """Left armed they would fire against a signup that has already ended."""
+    """Left armed they would fire against a signup that has already ended. Removed through the
+    scheduler service's `cancel_job`: nothing but the scheduler service removes a job."""
     db_path = await _make_db(
         tmp_path, name="fc_jobs", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
     )
@@ -166,7 +171,7 @@ async def test_a_turned_away_drivers_jobs_are_removed(tmp_path):
 
     await execute_forced_close(bot, audit_action="X")
 
-    removed = {c.args[0] for c in bot.scheduler_service._scheduler.remove_job.call_args_list}
+    removed = {c.args[0] for c in bot.scheduler_service.cancel_job.call_args_list}
     assert removed == {
         f"wizard_inactivity_101",
         f"wizard_channel_delete_101",
@@ -174,11 +179,20 @@ async def test_a_turned_away_drivers_jobs_are_removed(tmp_path):
 
 
 async def test_a_job_already_gone_is_stepped_over(tmp_path):
+    from apscheduler.jobstores.base import JobLookupError
+
+    from leaguebot.core.services.scheduler_service import SchedulerService
+
+    # The real scheduler service, over an APScheduler that no longer holds the job.
+    scheduler = SchedulerService.__new__(SchedulerService)
+    scheduler._scheduler = MagicMock()
+    scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
+
     db_path = await _make_db(
         tmp_path, name="fc_nojob", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
     )
     bot = _bot(db_path)
-    bot.scheduler_service._scheduler.remove_job = MagicMock(side_effect=Exception("no job"))
+    bot.scheduler_service = scheduler
 
     await execute_forced_close(bot, audit_action="X")
 

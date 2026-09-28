@@ -32,6 +32,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from apscheduler.jobstores.base import JobLookupError
 
 import leaguebot.core.services.scheduler_service as scheduler_module
 from leaguebot.core.services.scheduler_service import SchedulerService
@@ -348,7 +349,7 @@ def test_a_cancellation_removes_its_job(cancel, args, job_id):
 def test_cancelling_what_is_not_scheduled_is_not_an_error(cancel, args):
     """A job that has already fired, or was never armed, is the ordinary case."""
     service = _service()
-    service._scheduler.remove_job = MagicMock(side_effect=Exception("No job by the id"))
+    service._scheduler.remove_job = MagicMock(side_effect=JobLookupError("gone"))
 
     getattr(service, cancel)(*args)  # must not raise
 
@@ -372,6 +373,6 @@ def test_cancelling_the_season_end_removes_every_season_end_job_and_nothing_else
 def test_a_season_end_job_that_will_not_go_is_stepped_over():
     service = _service()
     service._scheduler.get_jobs = MagicMock(return_value=[SimpleNamespace(id="season_end_1")])
-    service._scheduler.remove_job = MagicMock(side_effect=Exception("No job by the id"))
+    service._scheduler.remove_job = MagicMock(side_effect=JobLookupError("season_end_1"))
 
     service.cancel_season_end()  # must not raise
