@@ -48,6 +48,10 @@ def test_every_scenario_file_is_run() -> None:
 @pytest.mark.parametrize(
     "scenario_file",
     [
+        pytest.param(
+            "agent-settings-scenarios.js",
+            marks=pytest.mark.xfail(strict=True, reason="#483: agents do not yet take a model and an effort set for their role"),
+        ),
         "build-stage-scenarios.js",
         "check-stage-scenarios.js",
         pytest.param(
