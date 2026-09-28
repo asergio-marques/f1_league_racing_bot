@@ -513,7 +513,9 @@ as its specification asks; a failure always is. A command that asks for a change
   carried out"), and to the log channel as the change's specification asks.
 - **Commands, buttons and forms** go through `report_failure` (`core/utils/interaction_errors.py`),
   called by the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes. What the member
-  and the log channel are told is the core specification's "When a command fails".
+  and the log channel are told is the core specification's "When a command fails". The one
+  exception is a results amendment, which reports its own failure once it has tried to put the
+  round back (the first place a catch-all is allowed, below).
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler on the bot.
 - **Background tasks** go through the helper that starts them.
@@ -554,7 +556,8 @@ to it would switch off the one failure path for every command.
    `outcome` (what became of a change it undid, in place of "may have been partly done"), and
    then returns.
    One failure still makes one line, and the base classes are spared a second report. A results
-   amendment is the other form: it puts the round back as it stood, then reports its own
+   amendment is not a form of these but a failure path of its own, the exception named above:
+   it puts the round back as it stood, then reports its own
    failure, naming the kind of fault in plain words (`describe_fault`), because the manager has
    to know whether the round was restored and what to do next, which the standard reply cannot
    say;
