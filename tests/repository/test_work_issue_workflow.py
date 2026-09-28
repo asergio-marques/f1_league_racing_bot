@@ -54,6 +54,13 @@ def test_every_scenario_file_is_run() -> None:
             "handoff-scenarios.js",
             marks=pytest.mark.xfail(strict=True, reason="#483: the builder is not yet handed off in pieces within a round"),
         ),
+        pytest.param(
+            "incremental-review-scenarios.js",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#483: later review rounds still re-review the whole branch, and the tests stage's list is given in full every round",
+            ),
+        ),
         "ledger-scenarios.js",
         "resume-scenarios.js",
         "tests-stage-scenarios.js",
