@@ -1,6 +1,7 @@
 // Each role's model and effort: by default Sonnet runs the build's builder and the tester, and Opus
 // every other role, each set explicitly; `models` and `efforts` override a role, and an unknown
-// role, model or effort is refused.
+// role, model or effort is refused. The models accepted are opus, sonnet and haiku alone: fable is
+// refused like any unknown model.
 const { q, builder, review, testsCheck, suite, base } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
 const C = { stage: 'check', issue: '#999', plan: 'PLAN', modules: ['results'], commit: 'abc123' }
@@ -91,5 +92,6 @@ module.exports = {
   },
   unknownRoleRefused: refused({ models: { wizard: 'opus' } }),
   unknownModelRefused: refused({ models: { builder: 'gpt-4' } }),
+  fableRefused: refused({ models: { tester: 'fable' } }),
   unknownEffortRefused: refused({ efforts: { tester: 'extreme' } }),
 }
