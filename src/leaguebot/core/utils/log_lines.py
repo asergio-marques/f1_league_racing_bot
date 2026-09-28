@@ -40,7 +40,7 @@ from leaguebot.core.utils.messages import chunk_message
 log = logging.getLogger(__name__)
 
 #: The marks a reply opens with, which the log line's own mark replaces.
-_REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠")
+_REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳")
 
 
 def member_named(display_name: str | None, member_id: int) -> str:
