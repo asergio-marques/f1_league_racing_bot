@@ -54,6 +54,7 @@ def test_every_scenario_file_is_run() -> None:
         pytest.param("handoff-scenarios.js"),
         pytest.param("incremental-review-scenarios.js"),
         "ledger-scenarios.js",
+        "limits-scenarios.js",
         pytest.param("nothing-lost-scenarios.js"),
         "question-scenarios.js",
         pytest.param("recheck-scenarios.js"),

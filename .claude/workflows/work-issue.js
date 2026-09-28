@@ -59,7 +59,7 @@ const ROLE_DEFAULTS = {
 const MODELS = ['opus', 'sonnet', 'haiku']
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass") and maxRounds. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, and roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it). build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -457,14 +457,22 @@ const { worktree, python, branch, base } = ARGS
 // change it needs goes to the owner as a proposal, and the tests stage makes it.
 const testsHead = stage === 'build' ? ARGS.testsHead || (ARGS.previous && ARGS.previous.testsHead) || null : null
 const BIN = python.slice(0, python.lastIndexOf('/'))
-const MAX_ROUNDS = { tests: 2, build: 3 }
-const maxRounds = Number(ARGS.maxRounds) || MAX_ROUNDS[stage]
+// Every round of a stage counts against its budget, across all its runs: a stage run again after
+// the owner's answers carries on from previous.lastRound instead of starting a fresh allowance, as
+// it did when #442's tests stage reached its seventh round over five runs. A stage that spends its
+// budget stops as `capped`, and the owner decides what next; only they raise it, through
+// roundBudget. maxRounds may lower what one run takes, never raise it.
+const ROUND_BUDGET = { tests: 3, build: 4 }
+if (ARGS.roundBudget !== undefined && !(Number.isInteger(Number(ARGS.roundBudget)) && Number(ARGS.roundBudget) > 0)) throw new Error(`roundBudget is a whole number of rounds. ${USAGE}`)
 const LANE_NAMES = { issue: 'issue reviewer', code: 'code reviewer', product: 'product owner', design: 'design verifier' }
 
 // A stage that stopped for the owner is run again with its last result as `previous` and the
 // owner's answers in `decisions`: its rounds, findings and citations carry on where it stopped.
 const previous = ARGS.previous || null
 const offset = previous ? previous.lastRound : 0
+const stageBudget = Number(ARGS.roundBudget) || ROUND_BUDGET[stage]
+const left = Math.max(0, stageBudget - offset)
+const maxRounds = Math.min(left, Number(ARGS.maxRounds) || left)
 const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f }]))
 // Rules cited in an earlier stage, such as the tests stage's for the build, arrive in `citations`.
 // Both the run's own and those passed in: a build resumed after a tests stage run again is given
@@ -1341,9 +1349,22 @@ let summary = ''
 // The test changes the build needs and did not make, for the owner to decide.
 let testChanges = []
 let lastTest = null
+// A loop that is not converging stops as `stalled` rather than spend the rest of its budget: two
+// rounds running that each open at least as many material findings as they close (the first round
+// of a stage, which finds what is there to find, excepted), or the same failures two rounds
+// running. Both carry across runs, as the rounds do.
+let stallStreak = previous && previous.stallStreak ? previous.stallStreak : 0
+let lastRed = previous && previous.lastRed ? previous.lastRed : ''
+// What a red round failed on, compared by test and by check rather than by the tester's wording.
+const redKey = r => {
+  if (r.green || !r.test) return ''
+  if (stage === 'tests') return [...r.problems].sort().join(' | ')
+  return [...r.test.failures.map(f => f.test), ...(r.test.mypyClean ? [] : ['mypy'])].sort().join(' | ')
+}
 
 for (let k = offset + 1; k <= offset + maxRounds; k++) {
   phase(stage === 'tests' ? 'Tests' : 'Build')
+  const pendingBefore = new Set([...ledger.values()].filter(materialPending).map(f => f.id))
   const { built, kept, missing } = await buildRound(k)
   if (missing) { if (kept) takeIn(kept); status = 'failed'; failure = missing; break }
   if (!built.onBranch) { status = 'failed'; failure = `the checkout at ${worktree} is not on ${branch}`; break }
@@ -1417,8 +1438,15 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
   const open = [...ledger.values()].filter(materialPending)
+  const openIds = new Set(open.map(f => f.id))
+  const opened = open.filter(f => !pendingBefore.has(f.id)).length
+  const closed = [...pendingBefore].filter(id => !openIds.has(id)).length
+  stallStreak = k > 1 && opened >= 1 && opened >= closed ? stallStreak + 1 : 0
+  const red = redKey(reviewed)
+  const sameRed = !!red && red === lastRed
+  lastRed = red
   const proposed = stage === 'build' ? built.testChanges || [] : []
-  rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: stopping.length, provisional: taken.length, testChanges: proposed.length, dead })
+  rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, opened, closed, green: reviewed.green, questions: stopping.length, provisional: taken.length, testChanges: proposed.length, dead })
   log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${stopping.length} question(s) for the owner; ${proposed.length} test change(s) proposed.`)
 
   // A host problem found in the same round is named beside the questions, to be repaired first.
@@ -1426,6 +1454,11 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   // build goes on, and the tests stage makes it.
   if (stopping.length || proposed.length) { status = 'question'; escalations = stopping; testChanges = proposed; failure = hostProblem(reviewed.test) ? `the host, not the code: ${hostProblem(reviewed.test)}` : ''; break }
   if (hostProblem(reviewed.test)) { status = 'failed'; failure = `the host, not the code: ${hostProblem(reviewed.test)}`; break }
+  if (sameRed || stallStreak >= 2) {
+    status = 'stalled'
+    failure = sameRed ? `the same failures two rounds running: ${red}` : `two rounds running opened as many material findings as they closed; open now: ${open.map(f => f.id).join(', ')}`
+    break
+  }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
   // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
   // reaches the builder only in the next round. Nor can one in which a call was just taken, which
@@ -1468,7 +1501,12 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     break
   }
 }
+if (status === 'unfinished' && offset + rounds.length >= stageBudget) {
+  status = 'capped'
+  failure = `the stage has used all ${stageBudget} of its rounds without passing`
+}
 if (status === 'unfinished') log(`${maxRounds} round(s) used without passing. The calling session runs the stage again, with this result as previous, or asks the owner.`)
+if (status === 'capped' || status === 'stalled') log(`The stage stops as ${status}: ${failure}. The owner decides what next.`)
 
 return {
   stage,
@@ -1495,4 +1533,7 @@ return {
   ledger: [...ledger.values()],
   designFiles: [...designFiles].sort(),
   reviewedAt,
+  roundBudget: stageBudget,
+  stallStreak,
+  lastRed,
 }

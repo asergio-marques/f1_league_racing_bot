@@ -1,0 +1,89 @@
+// How many rounds a stage may take: a budget counted across all its runs, and a stop where the loop
+// is not converging.
+const { builder, review, suite, testsCheck, finding, base, round } = require('./stubs')
+const BUILD = { ...base, stage: 'build' }
+const earlier = lastRound => ({ stage: 'build', status: 'question', lastRound, ledger: [], citations: [], commits: [{ sha: 'c1', subject: 'x' }], separateDefects: [], lastFailures: [], tests: [] })
+
+module.exports = {
+  // A build run again after three rounds has one left, and stops as capped when it does not pass.
+  budgetSpentAcrossRuns: {
+    args: { ...BUILD, previous: earlier(3) },
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':code')) return review({ findings: [finding(`code-${k}-1`)] })
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'capped' && r.lastRound === 4 && !labels.some(l => l.startsWith('build:r5')) && r.failure.includes('4'),
+  },
+  // maxRounds lowers what a run takes, but never raises the stage's budget.
+  maxRoundsCannotRaiseBudget: {
+    args: { ...base, stage: 'tests', maxRounds: 9 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ clean: false })
+      if (label.endsWith(':tester')) return testsCheck()
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'capped' && r.lastRound === 3 && !labels.some(l => l.startsWith('tests:r4')),
+  },
+  // The owner can raise a stage's budget.
+  roundBudgetRaises: {
+    args: { ...BUILD, previous: earlier(4), roundBudget: 5 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 5,
+  },
+  roundBudgetMustBeWhole: {
+    args: { ...BUILD, roundBudget: 'lots' },
+    respond() { throw new Error('no agent should run') },
+    expectThrow: 'roundBudget',
+  },
+  // Two rounds running that each open two material findings and close one stall the stage.
+  notConvergingStalls: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':code')) return review({
+        findings: [finding(`code-${k}-1`), finding(`code-${k}-2`)],
+        prior: k > 1 ? [{ id: `code-${k - 1}-1`, status: 'fixed', grounds: 'ok' }] : [],
+      })
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'stalled' && r.lastRound === 3 && r.failure.includes('opened as many material findings as they closed') && !labels.some(l => l.startsWith('build:r4')),
+  },
+  // The same failing test two rounds running stalls the stage, however the tester words the reason.
+  sameRedTwiceStalls: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite({ exitCode: 1, summary: '1 failed', failures: [{ test: 'tests/a.py::t', reason: k === 1 ? 'boom' : 'bang' }] })
+      return review()
+    },
+    expect: r => r.status === 'stalled' && r.lastRound === 2 && r.failure.includes('tests/a.py::t'),
+  },
+  // A round that closes more than it opens is converging, and the stage carries on to pass.
+  convergingCarriesOn: {
+    args: BUILD,
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return suite()
+      if (label.endsWith(':code')) {
+        if (k === 1) return review({ findings: [finding('code-1-1'), finding('code-1-2')] })
+        if (k === 2) return review({ findings: [finding('code-2-1')], prior: [{ id: 'code-1-1', status: 'fixed', grounds: 'ok' }, { id: 'code-1-2', status: 'fixed', grounds: 'ok' }] })
+        return review({ prior: [{ id: 'code-2-1', status: 'fixed', grounds: 'ok' }] })
+      }
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 3,
+  },
+}
