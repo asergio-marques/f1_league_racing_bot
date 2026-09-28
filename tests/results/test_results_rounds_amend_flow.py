@@ -1514,16 +1514,18 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
     assert "no channel" not in logged
 
 
-@pytest.mark.parametrize("case", ["cancel-revert-fails", "report-stage-fails"])
+@pytest.mark.parametrize(
+    "case", ["cancel-revert-fails", "cancel-revert-fails-for-another-manager", "report-stage-fails"]
+)
 async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path, case):
     """Cancel is pressed after stage one and the round cannot be put back: the presser is told
     the plain kind, that the round could not be put back and that restarting the bot retries
-    it, and one `AMEND_FAILED` line is
-    logged. And a report stage that cannot open, undone by the cancel path, still makes one
-    line and not two."""
+    it, and one `AMEND_FAILED` line is logged, naming the member who pressed Cancel — who may
+    be a league manager other than the opener. And a report stage that cannot open, undone by
+    the cancel path, still makes one line and not two."""
     import sqlite3
 
-    db_path = await _make_db(tmp_path, name=f"amend_{case}")
+    db_path = await _make_db(tmp_path, name=f"amend_{case.replace('-', '_')}")
     channel = _amend_channel()
     interaction = _interaction(channel, message=_message())
     cog = _make_cog(db_path)
@@ -1543,11 +1545,14 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
 
     await _amend(cog, interaction)
     view = channel.send.await_args_list[0].kwargs["view"]
-    press = _press(router=cog.bot.output_router)
+    presser = USER_ID if case == "cancel-revert-fails" else 88
+    press = _press(
+        presser, name="Admin" if presser == USER_ID else "Manager", router=cog.bot.output_router
+    )
     with patch(
         "leaguebot.results.services.result_submission_service.cancel_amendment",
         new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
-    ):
+    ), patch("leaguebot.results.cogs.results_cog.is_league_manager", return_value=True):
         await type(view).cancel_btn(view, press, MagicMock())
 
     told = "\n".join(str(c.args[0]) for c in press.followup.send.await_args_list if c.args)
@@ -1560,6 +1565,9 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
     assert "AMEND_FAILED" in line
     assert "OperationalError" in line
     assert "database is locked" not in line
+    assert f"<@{presser}>" in line.splitlines()[0], "the line does not name the presser"
+    if presser != USER_ID:
+        assert f"<@{USER_ID}>" not in line, "the line names the opener, not the presser"
 
 
 # ---------------------------------------------------------------------------
