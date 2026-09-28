@@ -231,6 +231,7 @@ async def test_signup_channel_refuses_early_without_both_permissions(
     )
     interaction = _interaction(guild)
     interaction.client = cog.bot
+    interaction.command.qualified_name = "signup channel"
 
     await _run(cog, interaction, channel)
 
@@ -252,6 +253,7 @@ async def test_a_signup_channel_the_bot_may_not_edit_is_refused(db_path):
     channel.edit = AsyncMock(side_effect=_forbidden())
     interaction = _interaction(_guild())
     interaction.client = cog.bot
+    interaction.command.qualified_name = "signup channel"
 
     await _run(cog, interaction, channel)
 
@@ -284,6 +286,7 @@ async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db
     channel.edit = AsyncMock(side_effect=_forbidden())
     interaction = _interaction(guild)
     interaction.client = cog.bot
+    interaction.command.qualified_name = "signup channel"
 
     await _run(cog, interaction, channel)
 
@@ -365,6 +368,7 @@ async def test_every_signup_channel_refusal_reaches_the_log_channel(
     cog = _cog(db_path)
     interaction = _interaction(_guild())
     interaction.client = cog.bot
+    interaction.command.qualified_name = named.lstrip("/")
 
     await undecorate(getattr(SignupCog, command))(cog, interaction, *args())
 

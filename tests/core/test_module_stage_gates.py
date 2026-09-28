@@ -164,6 +164,7 @@ async def test_the_module_stage_check_logs_its_refusal_unless_record_is_false(tm
     interaction.client = cog.bot
     interaction.user.id = 77
     interaction.user.display_name = "Admin"
+    interaction.command.qualified_name = "module enable"
 
     refused = await cog._refuse_module_change(interaction, "weather", "enable", record=record)
 
@@ -173,6 +174,7 @@ async def test_the_module_stage_check_logs_its_refusal_unless_record_is_false(tm
     if record:
         [line] = lines
         assert line.startswith("⛔ ")
+        assert "/module enable" in line
         assert "refused for Admin (<@77>)" in line
         assert "cannot be enabled" in line
     else:

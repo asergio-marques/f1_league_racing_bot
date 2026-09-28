@@ -236,6 +236,7 @@ async def test_the_fixed_configuration_check_logs_its_refusal_unless_record_is_f
     cog = _cog(db_path)
     interaction = _interaction()
     interaction.client = cog.bot
+    interaction.command.qualified_name = "signup time-slot add"
 
     refused = await cog._refuse_while_configuration_fixed(
         interaction, "/signup time-slot add", record=record

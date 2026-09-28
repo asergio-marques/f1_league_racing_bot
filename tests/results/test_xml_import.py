@@ -1,6 +1,8 @@
 """Unit tests for xml_import utility and xml_import_config service (T008, T014–T016)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -17,6 +19,13 @@ from leaguebot.results.utils.xml_import import (
     parse_xml_payload,
     validate_payload,
 )
+
+#: Who made the import, and when: the service records each change it makes (#442).
+ACTOR = {
+    "actor_id": 77,
+    "actor_name": "Manager#0001",
+    "now": datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc),
+}
 
 # ---------------------------------------------------------------------------
 # DB fixture (mirrors test_points_config_service.py)
@@ -353,6 +362,9 @@ def test_validate_empty_payload_no_errors():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
+)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_positions(db_path):
     """xml_import_config writes position rows to the database."""
@@ -360,12 +372,17 @@ async def test_xml_import_config_upserts_positions(db_path):
     payload = XmlImportPayload(
         positions={SessionType.FEATURE_RACE: {1: 25, 2: 18}},
     )
-    await xml_import_config(db_path, config_name="Test", payload=payload)
+    await xml_import_config(
+        db_path, config_name="Test", payload=payload, **ACTOR
+    )
     entries, _fl = await get_config_entries(db_path, config_name="Test")
     pts_by_pos = {e.position: e.points for e in entries if e.session_type == SessionType.FEATURE_RACE}
     assert pts_by_pos == {1: 25, 2: 18}
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
+)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_fl(db_path):
     """xml_import_config writes fastest-lap rows to the database."""
@@ -374,21 +391,31 @@ async def test_xml_import_config_upserts_fl(db_path):
         positions={SessionType.FEATURE_RACE: {1: 25}},
         fastest_laps={SessionType.FEATURE_RACE: (2, 10)},
     )
-    await xml_import_config(db_path, config_name="Test", payload=payload)
+    await xml_import_config(
+        db_path, config_name="Test", payload=payload, **ACTOR
+    )
     _entries, fl = await get_config_entries(db_path, config_name="Test")
     assert len(fl) == 1
     assert fl[0].fl_points == 2
     assert fl[0].fl_position_limit == 10
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
+)
 @pytest.mark.asyncio
 async def test_xml_import_config_not_found_raises(db_path):
     """xml_import_config raises ConfigNotFoundError for unknown config."""
     payload = XmlImportPayload(positions={SessionType.FEATURE_RACE: {1: 25}})
     with pytest.raises(ConfigNotFoundError):
-        await xml_import_config(db_path, config_name="Ghost", payload=payload)
+        await xml_import_config(
+            db_path, config_name="Ghost", payload=payload, **ACTOR
+        )
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
+)
 @pytest.mark.asyncio
 async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_path):
     """Partial import (only Feature Race) leaves Sprint Race rows untouched."""
@@ -404,7 +431,9 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     payload = XmlImportPayload(
         positions={SessionType.FEATURE_RACE: {1: 25, 2: 18}},
     )
-    await xml_import_config(db_path, config_name="Test", payload=payload)
+    await xml_import_config(
+        db_path, config_name="Test", payload=payload, **ACTOR
+    )
 
     entries, _ = await get_config_entries(db_path, config_name="Test")
     sprint_entries = [e for e in entries if e.session_type == SessionType.SPRINT_RACE]
@@ -416,6 +445,9 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     assert {e.position: e.points for e in feature_entries} == {1: 25, 2: 18}
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
+)
 @pytest.mark.asyncio
 async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     """When FL limit not in payload, existing fl_position_limit in DB is preserved."""
@@ -429,7 +461,9 @@ async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     payload = XmlImportPayload(
         fastest_laps={SessionType.FEATURE_RACE: (3, None)},
     )
-    await xml_import_config(db_path, config_name="Test", payload=payload)
+    await xml_import_config(
+        db_path, config_name="Test", payload=payload, **ACTOR
+    )
 
     _entries, fl = await get_config_entries(db_path, config_name="Test")
     assert fl[0].fl_points == 3

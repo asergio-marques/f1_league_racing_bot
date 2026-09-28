@@ -605,6 +605,7 @@ async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice_de
     cog = _cog(db_path)
     interaction = _interaction()
     interaction.client = cog.bot
+    interaction.command.qualified_name = "signup open"
     interaction._signup_channel.send = AsyncMock(side_effect=_forbidden())
 
     await _open(cog, interaction)
@@ -673,6 +674,7 @@ async def test_every_signup_open_refusal_reaches_the_log_channel(
     cog = _cog(db_path)
     interaction = _interaction(**built)
     interaction.client = cog.bot
+    interaction.command.qualified_name = "signup open"
 
     await _open(cog, interaction, **args)
 

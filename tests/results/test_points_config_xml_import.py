@@ -35,7 +35,10 @@ on both paths.
 """
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -301,21 +304,63 @@ async def test_importing_into_a_config_that_does_not_exist_is_refused(tmp_path):
     assert CONFIG in _replied(interaction)
 
 
-async def test_a_database_failure_is_reported_rather_than_raised(tmp_path, monkeypatch):
-    """A traceback at a manager is not actionable, and the import is a thing they can
-    reasonably retry."""
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a database failure is still answered with \"Database error\" and its text",
+)
+async def test_a_database_failure_is_reported_without_its_text(tmp_path, monkeypatch):
+    """Neither a traceback nor the database's own words are actionable at a manager. The
+    standard failure reply says the fault is the bot's, that nothing from the import was
+    saved, and that the import can be run again."""
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
 
     async def _boom(*_args, **_kwargs):
-        raise RuntimeError("database is locked")
+        raise sqlite3.OperationalError("database is locked")
 
     monkeypatch.setattr("leaguebot.results.services.points_config_service.xml_import_config", _boom)
 
     await _import(db_path, interaction)
 
-    assert "Database error" in _replied(interaction)
-    assert "database is locked" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert "Nothing from the import was saved." in replied
+    assert "Run the import again to retry." in replied
+    assert "Database error" not in replied
+    assert "database is locked" not in replied
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a database failure is still logged as \"FAILED (db error)\" with its text",
+)
+async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line(
+    tmp_path, monkeypatch
+):
+    """One failure makes one line: the member, the import, the configuration and the kind of
+    fault, and never the database's own words, which go to the host's log alone."""
+    db_path = await _make_db(tmp_path)
+    interaction = _interaction()
+    interaction.command.qualified_name = "results config xml-import"
+
+    async def _boom(*_args, **_kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr("leaguebot.results.services.points_config_service.xml_import_config", _boom)
+
+    await _import(db_path, interaction)
+
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot" in replied
+    assert "Nothing from the import was saved." in replied
+    assert "Database error" not in replied and "database is locked" not in replied
+    lines = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+    [line] = lines
+    assert f"<@{ACTOR_ID}>" in line
+    assert "/results config xml-import" in line
+    assert CONFIG in line
+    assert "OperationalError" in line
+    assert "database is locked" not in line
 
 
 # ---------------------------------------------------------------------------
@@ -324,45 +369,59 @@ async def test_a_database_failure_is_reported_rather_than_raised(tmp_path, monke
 
 
 @pytest.mark.parametrize(
-    "xml,fragment",
+    "xml,fragments",
     [
-        (VALID_XML, "SUCCESS"),
-        (MALFORMED_XML, "FAILED (parse error)"),
-        (UNORDERED_XML, "FAILED (monotonic violation)"),
+        pytest.param(VALID_XML, ["SUCCESS"], id="success"),
+        pytest.param(
+            MALFORMED_XML,
+            ["⛔ ", f"refused for Manager (<@{ACTOR_ID}>)", "XML syntax error"],
+            id="parse-error",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#442: a parse refusal is still logged as FAILED (parse error)"
+            ),
+        ),
+        pytest.param(
+            UNORDERED_XML,
+            ["⛔ ", f"refused for Manager (<@{ACTOR_ID}>)", "position 1 has 10 pts"],
+            id="ordering",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#442: an ordering refusal is still logged as FAILED (monotonic violation)",
+            ),
+        ),
     ],
 )
-async def test_the_outcome_reaches_the_log(tmp_path, xml, fragment):
+async def test_the_outcome_reaches_the_log(tmp_path, xml, fragments):
     """An import that failed is exactly the event a league asks about later — the points did
-    not change and nobody remembers why."""
+    not change and nobody remembers why. A refusal is written in the standard refusal form,
+    its detail as the reason."""
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
 
     await _import(db_path, interaction, xml)
 
-    assert fragment in _audited(interaction)
+    audited = _audited(interaction)
+    for fragment in fragments:
+        assert fragment in audited
+    assert "FAILED (" not in audited
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: a missing config is still logged as FAILED (config not found)"
+)
 async def test_an_import_into_a_missing_config_is_audited(tmp_path):
+    """In the standard refusal form, the configuration named."""
     db_path = await _make_db(tmp_path, name="xml_audit_missing", with_config=False)
     interaction = _interaction()
 
     await _import(db_path, interaction)
 
-    assert "FAILED (config not found)" in _audited(interaction)
-
-
-async def test_a_database_failure_is_audited(tmp_path, monkeypatch):
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
-
-    async def _boom(*_args, **_kwargs):
-        raise RuntimeError("disk full")
-
-    monkeypatch.setattr("leaguebot.results.services.points_config_service.xml_import_config", _boom)
-
-    await _import(db_path, interaction)
-
-    assert "FAILED (db error)" in _audited(interaction)
+    audited = _audited(interaction)
+    assert audited.startswith("⛔ ")
+    assert f"refused for Manager (<@{ACTOR_ID}>)" in audited
+    assert "not found" in audited
+    assert CONFIG in audited
+    assert "FAILED (" not in audited
 
 
 async def test_the_log_names_the_config_and_the_manager(tmp_path):
@@ -379,13 +438,21 @@ async def test_the_log_names_the_config_and_the_manager(tmp_path):
     assert "/results config xml-import" in audited
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: a successful import's log line counts its rows rather than listing them"
+)
 async def test_a_successful_import_counts_what_it_wrote_in_the_log(tmp_path):
+    """The line states beneath it the values that were set: each session, and each position's
+    points, and the fastest-lap bonus with its limit."""
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
 
     await _import(db_path, interaction)
 
-    assert "2 session(s), 1 FL row(s)" in _audited(interaction)
+    audited = _audited(interaction)
+    values = audited.split("\n", 1)[1] if "\n" in audited else ""
+    for expected in ("Feature Race", "Sprint Race", "25", "18", "8", "7", "10"):
+        assert expected in values, f"{expected!r} is not among the values logged"
 
 
 # ---------------------------------------------------------------------------
@@ -505,3 +572,154 @@ async def test_the_modal_defers_before_importing(tmp_path):
 
     interaction.response.defer.assert_awaited_once()
     assert ("FEATURE_RACE", 1, 25) in await _rows(db_path)
+
+
+# ---------------------------------------------------------------------------
+# Every refusal reaches the log channel, and every change is recorded (#442)
+# ---------------------------------------------------------------------------
+
+
+def _sent(interaction) -> str:
+    return "\n".join(
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    )
+
+
+#: Every refusal `/results config xml-import` makes: the file attached (None for the module
+#: gate, which refuses before any file is read), whether a config exists, and a fragment of
+#: the reply the line's reason carries.
+XML_IMPORT_REFUSALS = [
+    pytest.param(b"<config/>" + b"x" * 100_001, True, True, "too large", id="too-large"),
+    pytest.param(b"", True, True, "empty", id="empty"),
+    pytest.param(b"\xff\xfe<config/>", True, True, "UTF-8", id="not-utf8"),
+    pytest.param(VALID_XML.encode(), True, False, "not enabled", id="module-off"),
+    pytest.param(MALFORMED_XML.encode(), True, True, "XML syntax error", id="parse"),
+    pytest.param(UNORDERED_XML.encode(), True, True, "position 1 has 10 pts", id="ordering"),
+    pytest.param(VALID_XML.encode(), False, True, "not found", id="config-not-found"),
+]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: an xml-import refusal is not logged in the standard refusal form"
+)
+@pytest.mark.parametrize("raw, with_config, enabled, said", XML_IMPORT_REFUSALS)
+async def test_every_xml_import_refusal_reaches_the_log_channel(
+    tmp_path, raw, with_config, enabled, said
+):
+    """Each refusal answers the manager as before, saves nothing, and writes exactly one line
+    in the standard refusal form, its detail as the reason."""
+    db_path = await _make_db(tmp_path, name="xml_refusals", with_config=with_config)
+    cog = _cog(db_path, enabled=enabled)
+    interaction = _interaction()
+    interaction.command.qualified_name = "results config xml-import"
+    if not enabled:
+        interaction.response.is_done = MagicMock(return_value=False)
+        interaction.response.send_message = AsyncMock()
+
+    await _xml_import_command(cog, interaction, file=_attachment(raw))
+
+    assert said in _sent(interaction)
+    assert await _rows(db_path) == []
+    lines = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+    [line] = lines
+    assert line.startswith("⛔ ")
+    assert "/results config xml-import" in line
+    assert f"refused for Manager (<@{ACTOR_ID}>)" in line
+    assert said in line
+
+
+NOW = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
+
+
+async def _audit_rows(db_path) -> list[dict]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id, actor_name, old_value, new_value, timestamp FROM audit_entries "
+            "ORDER BY id"
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+
+def _values(text) -> list[str]:
+    """Every value a JSON audit value carries, as text, however it is nested."""
+    found: list[str] = []
+
+    def _walk(node):
+        if isinstance(node, dict):
+            for value in node.values():
+                _walk(value)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                _walk(value)
+        else:
+            found.append(str(node))
+
+    _walk(json.loads(text) if text else None)
+    return found
+
+
+FL_ONLY_XML = """
+<config>
+  <session>
+    <type>Feature Race</type>
+    <fastest-lap limit="10">2</fastest-lap>
+  </session>
+</config>
+"""
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: an XML import writes no audit entry for what it changed"
+)
+@pytest.mark.parametrize("case", ["positions", "fastest-lap", "log-line"])
+async def test_an_xml_import_records_each_change_from_what_to_what(tmp_path, case):
+    """An import changes a configuration, so each change is recorded as an audit entry: who,
+    when, and each position's points — or the fastest-lap bonus and its limit — from what to
+    what. The log line states the values set."""
+    from leaguebot.results.services.points_config_service import set_session_points
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services.points_config_service import xml_import_config
+    from leaguebot.results.utils.xml_import import parse_xml_payload
+
+    db_path = await _make_db(tmp_path, name=f"xml_audit_{case}")
+
+    if case == "log-line":
+        interaction = _interaction()
+        await _import(db_path, interaction)
+        audited = _audited(interaction)
+        values = audited.split("\n", 1)[1] if "\n" in audited else ""
+        for expected in ("Feature Race", "Sprint Race", "25", "18", "8", "7"):
+            assert expected in values
+        return
+
+    if case == "positions":
+        await set_session_points(db_path, CONFIG, SessionType.FEATURE_RACE, 1, 20)
+        payload, _ = parse_xml_payload(
+            VALID_XML.replace('<fastest-lap limit="10">2</fastest-lap>', "")
+        )
+    else:
+        payload, _ = parse_xml_payload(FL_ONLY_XML)
+
+    await xml_import_config(
+        db_path, CONFIG, payload, actor_id=ACTOR_ID, actor_name="Manager#0001", now=NOW
+    )
+
+    rows = await _audit_rows(db_path)
+    assert all(r["actor_id"] == ACTOR_ID for r in rows)
+    assert all(r["actor_name"] == "Manager#0001" for r in rows)
+    assert all(r["timestamp"] == NOW.isoformat() for r in rows)
+    if case == "positions":
+        # Feature Race P1 from 20 to 25, P2 new at 18; Sprint Race P1 new at 8, P2 new at 7.
+        assert len(rows) == 4
+        news = [_values(r["new_value"]) for r in rows]
+        olds = [_values(r["old_value"]) for r in rows]
+        changed = next(i for i, new in enumerate(news) if "25" in new)
+        assert "20" in olds[changed], "the change is recorded from what it was"
+        for points in ("18", "8", "7"):
+            assert any(points in new for new in news)
+    else:
+        [row] = rows
+        assert {"2", "10"} <= set(_values(row["new_value"]))

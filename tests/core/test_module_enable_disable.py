@@ -462,6 +462,7 @@ async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_
     cog = _make_cog(db_path)
     interaction = _interaction()
     interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
 
     await cog._enable_weather(interaction)
 
@@ -542,6 +543,7 @@ async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
     cog._refresh_hub = AsyncMock()
     interaction = _interaction()
     interaction.client = cog.bot
+    interaction.command.qualified_name = f"module {verb or 'enable'}"
 
     if verb is None:
         await getattr(cog, f"_enable_{module}")(interaction)
