@@ -2378,7 +2378,9 @@ async def test_an_appeal_stage_that_raises_while_opening_is_undone_too(tmp_path)
         await _run(finalize_penalty_review, state, interaction)
 
     revert.assert_awaited_once()
-    assert "gateway closed" in _logged(state)
+    notice = _failed_notice(state)
+    assert "RuntimeError" in notice
+    assert "gateway closed" not in notice
     assert await _deadline(db_path) is None
 
 
