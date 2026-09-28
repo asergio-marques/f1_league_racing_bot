@@ -101,12 +101,17 @@ it only to place it; the rules governing it belong to its own specification.
 ### The record of what changed
 - Every change to a league's configuration shall be recorded twice: as an entry stating who made it, when, in which division where one applies, what changed and from what to what; and as a line a person can read in the log channel.
 - A line in the log channel shall name the member, the command and its outcome, and shall state beneath it the values that were set.
+- Every command, button and form that changes something, or tries to, whoever uses it, shall record every outcome in the log channel: its success, its refusal and its failure, and, where it asks for a confirmation, that confirmation cancelled or left to lapse. A view, a list, a preview and the hub's About change nothing and shall record nothing. Decided 2026-09-28.
+    - A refusal shall be recorded as one line naming the member, what was refused and why. A cancel shall name the member who cancelled, and a lapse the member who started what lapsed, each with what became of the change and what to do next beneath it.
+    - The member shall be named by their display name on the server and their mention. A member no longer on the server shall be named by their mention alone.
 - A mention written into the log channel shall not notify anybody.
 - A record too long for one message shall be divided across as many as it requires.
 - A message the bot fails to post shall be kept and delivered later.
 
 ### When a command fails
 - A command, button or form that fails before it finishes shall tell the member who used it, seen by them alone, naming what failed, that the fault lies in the bot and not in anything the member entered, that it did not finish, and that it may have been partly done. The reply shall not name the exception.
+    - A command that undoes itself on failure shall say, in place of "may have been partly done", what became of the change and what to do next — that the module is still off, that nothing from the paste or the import was saved, that the test driver was not added. Decided 2026-09-28.
+    - A results amendment's failure reply may also name the kind of fault in plain words — that the bot could not read or write its database, that Discord refused or failed a request, that the bot hit an internal fault — but never the exception, and shall end with what to do next. Decided 2026-09-28.
 - The failure shall be recorded in the log channel, naming the member, the command, button or form, and the kind of fault. The full detail shall go to the host's log alone.
 - Either shall be made though the other cannot be.
 
