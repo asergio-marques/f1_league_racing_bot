@@ -323,7 +323,8 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
 
 
 async def test_the_revert_is_announced(tmp_path):
-    """An amendment quietly undone would be worse than one left hanging."""
+    """An amendment quietly undone would be worse than one left hanging. It is announced in the
+    standard lapse form; a row that recorded nobody names "a member", with no mention."""
     db_path = await _db(tmp_path, "sweep_announced")
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
@@ -336,14 +337,17 @@ async def test_the_revert_is_announced(tmp_path):
         await sweep_expired_amendments(bot, now=later)
 
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
-    assert "AMEND_REVERTED" in logged
-    assert "round: 4" in logged
-    assert "/results rounds amend" in logged
+    assert "AMEND_REVERTED" not in logged
+    head = next(line for line in logged.splitlines() if line.startswith("⌛ "))
+    assert "/results rounds amend" in head
+    assert "round 4" in logged or "round: 4" in logged
+    assert head.endswith("lapsed unconfirmed (started by a member)")
+    assert "<@" not in head
 
 
 async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     """The league is told the amendment lapsed and may be run again, so the notice sends the
-    manager to the command they now type."""
+    manager to the command they now type. The line beneath the standard lapse form says so."""
     db_path = await _db(tmp_path, "sweep_announced_rerun")
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
@@ -358,11 +362,11 @@ async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     notice = next(
         str(call.args[0])
         for call in bot.output_router.post_log.await_args_list
-        if "AMEND_REVERTED" in str(call.args[0])
+        if str(call.args[0]).startswith("⌛ ")
     )
     assert notice.splitlines()[-1] == (
         "  The amendment's report and appeal stages were not approved in time, so the round "
-        "has been put back as it was. Re-run /results rounds amend to try again."
+        "has been put back as it was. Re-run `/results rounds amend` to try again."
     )
 
 
@@ -606,9 +610,11 @@ async def test_cancelling_puts_the_round_back_and_closes_the_channel(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
     channel.delete.assert_awaited_once()
     assert (await _snapshot_row_or_none(db_path)) is None
+    # The cancel line is the button's to write, naming whoever pressed it; the service that
+    # puts the round back writes none of its own.
     logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
-    assert "AMEND_CANCELLED" in logged
-    assert "<@77>" in logged
+    assert "AMEND_CANCELLED" not in logged
+    assert "cancelled by" not in logged
 
 
 @pytest.mark.parametrize("reach", ["out of reach", "undeletable"])
@@ -728,3 +734,54 @@ async def test_cancel_hands_the_bot_to_the_revert(tmp_path):
         await _cancel(db_path, bot, _guild_holding(_deletable_channel()))
 
     revert.assert_awaited_once_with(db_path, ROUND_ID, bot)
+
+
+# ── The member who started a lapsed amendment is named (#442) ─────────────
+
+
+async def _lapse(tmp_path, name: str, *, member_name: str | None):
+    """An amendment opened by member 77 whose stages went unapproved, swept once it lapsed.
+
+    The league's server is reached either way. Member 77 is on it as *member_name*, or, where
+    that is None, has since left it and is not found there."""
+    db_path = await _db(tmp_path, name)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE round_amend_channels SET started_by = 77")
+        await db.commit()
+    await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
+    await _overwrite_the_classification(db_path)
+    bot = _bot(db_path)
+    member = None
+    if member_name is not None:
+        member = MagicMock()
+        member.display_name = member_name
+    guild = MagicMock()
+    guild.get_member = MagicMock(side_effect=lambda uid: member if uid == 77 else None)
+    # The amendment's channel is already gone, so closing its record deletes nothing.
+    guild.get_channel = MagicMock(return_value=None)
+    bot.get_guild = MagicMock(return_value=guild)
+    later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
+    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
+        await sweep_expired_amendments(bot, now=later)
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    return next(line for line in lines if line.startswith("⌛ "))
+
+
+async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path):
+    """The sweep names who started the amendment it reverts, by their server display name and
+    their mention."""
+    line = await _lapse(tmp_path, "sweep_names_starter", member_name="Alex")
+
+    assert line.splitlines()[0].endswith("lapsed unconfirmed (started by Alex (<@77>))")
+
+
+async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
+    """The timed revert of an amendment whose opener has since left the server, which the
+    sweep still reaches: the standard lapse form, naming them by mention alone, with what
+    became of the round beneath."""
+    line = await _lapse(tmp_path, "sweep_starter_left", member_name=None)
+
+    head, *beneath = line.splitlines()
+    assert head.endswith("lapsed unconfirmed (started by <@77>)")
+    assert "/results rounds amend" in head
+    assert any("put back as it was" in part for part in beneath)

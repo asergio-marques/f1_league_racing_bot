@@ -280,9 +280,21 @@ Every command is given in the interaction channel, except those same five and
 you so, and nobody else sees the reply: *"❌ `/round amend` stopped on a fault in the bot,
 not on anything you entered, and did not finish. It may have been partly done — check before
 running it again."* It also writes a line to the log channel naming who ran what and the kind
-of fault. Nothing is undone, so check what the command was meant to change before you run it
-again. If it keeps happening, give that log-channel line to whoever hosts the bot. The full
-detail is in the host's log.
+of fault. Most failed commands are not undone, so check what the command was meant to change
+before you run it again. A few undo themselves and say so in place of "may have been partly
+done", with what to do next: a module that could not be enabled is still off, a bulk points
+paste or an XML import saved nothing, a test driver was not added, and a results amendment
+says whether the round was put back. If it keeps happening, give that log-channel line to
+whoever hosts the bot. The full detail is in the host's log.
+
+**The log channel records everything that acts, whoever uses it.** Every command, button and
+form that changes something, or tries to, writes its outcome there: a success with the values
+it set, a refusal as *"⛔ `/signup open` refused for Alex (@Alex) — Signups are already
+open."*, a failure, and a confirmation cancelled (*"↩️ … cancelled by …"*) or left to lapse
+(*"⌛ … lapsed unconfirmed (started by …)"*). A refusal, a cancel or a lapse names the member
+by their display name on the server and their mention, which notifies nobody. Views, lists,
+previews and the hub's About change nothing and record nothing. Some commands do not yet record
+every outcome in this form; they are being brought in line.
 
 ### `/bot init` — One-time server setup
 *Access: League admin · Can be run from any channel, or by a server administrator*
@@ -977,6 +989,8 @@ Modules extend the bot beyond weather generation. Five modules are available: **
 
 The module name is the only parameter. A module that needs channels is configured by its own commands afterwards — the signup module by `/signup channel`, alongside the league's base role and driver role, which `/bot base-role` and `/bot driver-role` set.
 
+If the module cannot be switched on — the bot could not write its database — you get the standard failure reply ending *"The module is still off. Run `/module enable …` again once the fault is cleared."*, and the module stays off. Every refusal, such as a module already enabled, is written to the log channel.
+
 Ordering and timing constraints:
 
 | Module | Constraint |
@@ -1317,6 +1331,8 @@ All commands below require the signup module to be enabled (`/module enable sign
 
 Applies the channel's permission overwrites: `@everyone` cannot view, the league's base role can view but not send, and the interaction role and the league admin role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel. The signup channel may not be the interaction channel.
 
+**The bot needs both Manage Channels and Manage Roles on the channel**, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**. With either missing the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* If Discord refuses the change all the same, you get the same words and nothing is saved; and if you were moving the signup channel, the reply adds that the old channel has already had its permissions cleared, so put it right by hand if you do not retry.
+
 The two roles the module uses are the league's, set by [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). The channel and both roles must be set before `/signup open` will run, and — while the signup module is enabled — before a season's configuration can be confirmed. Both roles must also still be on the server, and the driver role must be one the bot can grant.
 
 #### `/signup config view` — View current signup configuration
@@ -1384,6 +1400,8 @@ No parameters.
 **A window belongs to a season.** It can be opened only while the season is **waiting** for its signup window (its configuration confirmed) or **ongoing** with no placements left to confirm; opening it moves the season to signups, or to ongoing with signups open. Refused in every other state, and with no season at all.
 
 **What drivers type is checked.** Each lap time is written `1:23.456` — a dot and exactly three digits after it (`58.123` and `1:02:03.456` are read too). `1:23:456` or `1:23.4` is refused and the time asked for again; the bot does not guess. A platform ID, preferred teammate or note holding a role mention, `@everyone` or `@here` is refused and asked again, because the review panel quoting it would otherwise notify everybody who can see the channel. Emoji and formatting in those answers are kept.
+
+**The "signups closed" notice stays until the "signups open" message is up.** The bot posts the Sign Up button first and only then takes the last close's notice down, so the channel always shows one or the other. If Discord refuses the post, the command is refused — *"❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on #channel to post the Sign Up button. Signups were not opened."* — the window stays closed, and the closed notice is still there.
 
 Also refused unless the signup channel, the league's base role and its driver role are all set and at least one availability time slot exists — and while either role has been deleted from the server, or the driver role is one the bot cannot grant. A base role gone would open a channel your members cannot see and ping nobody; a driver role gone or out of the bot's reach would let every approval of the window grant nothing. Every fault is named at once, with the command that puts it right. Also refused while test mode is active — no real driver may sign up under test mode, so the window would be one nobody could use. Opening with no `track_ids` collects no lap times, so approved drivers have no total to seed on.
 
@@ -1610,7 +1628,9 @@ Displays position-to-points mappings and fastest-lap settings.
 | `name` | String | ✅ | Config name |
 | `session` | Choice | ✅ | Session type |
 
-Opens a modal taking one `position, points` pair per line (up to 2 000 characters). Blank lines are skipped. `position` must be ≥ 1 and `points` ≥ 0; a repeated position takes its last value and the override is reported. Valid pairs are applied even when other lines fail, and every rejected line is listed back. Applied changes are written to the log channel.
+Opens a modal taking one `position, points` pair per line (up to 2 000 characters). Blank lines are skipped. `position` must be ≥ 1 and `points` ≥ 0; a repeated position takes its last value and the override is reported.
+
+**A paste is all or nothing.** If any line cannot be read, nothing is applied, and every rejected line is listed back — in several messages where the list is long — so correct them and paste the whole table again. A repeated position is not a rejected line. The paste is written in one step: if the bot hits a fault while writing it, nothing from the paste is saved and the reply says so. The log channel lists every value set, and each position changed is recorded from what to what.
 
 ##### `/results config xml-import` — Import a full points configuration from XML
 *Access: League manager · Results module required*
@@ -1621,6 +1641,8 @@ Opens a modal taking one `position, points` pair per line (up to 2 000 character
 | `file` | Attachment | — | `.xml` file to import; if omitted a modal is opened instead |
 
 Bulk-upserts position points and fastest-lap bonuses for one or more session types in a single operation. Existing rows not mentioned in the XML are **left untouched** (partial imports are safe). The entire import is applied atomically — any validation failure leaves the database unchanged.
+
+Each position and fastest-lap bonus the import changes is recorded from what to what, and the log channel's line lists every value set. A refused import — too large, empty, not UTF-8, malformed, out of order, or into a configuration that does not exist — is written to the log channel with the reason. If the bot cannot write its database, you get the standard failure reply ending *"Nothing from the import was saved. Run the import again to retry."*
 
 **Input methods:**
 - **Modal** (no `file` argument) — paste XML directly into the modal text field (up to 4 000 characters).
@@ -1844,7 +1866,7 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 2. **The reports.** The bot lists the penalties the chosen sessions already carry, all together. Keep them, change them, remove them, or add new ones — and the same for the round's attendance pardons, each of which has its own **Remove Pardon** button here. Approving without touching anything leaves every decision exactly as it stood. Once approved, neither the reports nor the pardons can be changed: the step's prompt comes down, and a button on it still showing is refused. The first pass's **🔄 Resubmit Initial Results** button is not offered: to redo the classification, cancel and run the command again.
 3. **The appeals.** The same again for their appeals. Approving this last stage is what commits the amendment.
 
-A **❌ Cancel Amendment** button is posted in the channel to abort at any time. Once the corrected classification has been recorded, cancelling puts the round back exactly as it was and says so in the log channel as `AMEND_CANCELLED`; from the moment you approve the appeals it is too late, and the button says so. If `session` is omitted you are asked to choose — one session or several — before the channel is created.
+A **❌ Cancel Amendment** button is posted in the channel to abort at any time. Once the corrected classification has been recorded, cancelling puts the round back exactly as it was and says so in the log channel — *"↩️ `/results rounds amend` of round 3 (Pro Division) cancelled by …"*, naming whoever pressed it, with what became of the round beneath; from the moment you approve the appeals it is too late, and the button says so. If `session` is omitted you are asked to choose — one session or several — before the channel is created.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
 
@@ -1852,7 +1874,9 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 > **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
 
-> **An amendment not carried through is undone.** Step one commits, so the bot does not leave a half-amended round standing: if the report and appeal steps go unapproved for half an hour, the round is put back exactly as it was and the log channel records an `AMEND_REVERTED` notice telling you it lapsed and can be run again. The half hour runs from when the corrected results are recorded and covers both steps — approving the reports does not restart it — so have your decisions worked out before you start. The same happens if the bot restarts mid-amendment, or if a step fails part-way (`AMEND_FAILED`). Nothing is reposted, because nothing was posted: the channels were still showing the round as it was raced.
+> **An amendment not carried through is undone.** Step one commits, so the bot does not leave a half-amended round standing: if the report and appeal steps go unapproved for half an hour, the round is put back exactly as it was and the log channel records that it *"lapsed unconfirmed (started by …)"*, naming who opened it, and that it can be run again. The half hour runs from when the corrected results are recorded and covers both steps — approving the reports does not restart it — so have your decisions worked out before you start. The same happens if the bot restarts mid-amendment, or if a step fails part-way (`AMEND_FAILED`). Nothing is reposted, because nothing was posted: the channels were still showing the round as it was raced.
+
+> **An amendment that stops on a fault says what kind, and what became of the round.** For example: *"❌ The amendment stopped on a fault in the bot, not on anything you entered: the bot could not read or write its database. The round was put back as it was. Re-run `/results rounds amend` to try again."* Where nothing had been written, it says that instead. Where the round could not be put back yet, it says that the bot retries putting it back, and to run `/results rounds amend` again once it has been: until then the amendment still holds the division, and a re-run is refused; the log channel's line then ends on the same step. The log channel's `AMEND_FAILED` line names the kind of fault and never its detail, which is in the host's log. Every refusal of the command, its Cancel button and its stages is written to the log channel too.
 
 > **What you approve is what the round carries.** Each stage rewrites the round's decisions rather than adding to them — keep a penalty and it stays as it was, remove one and it is gone, and amending the same round twice leaves it as the second amendment settled it rather than doubling the first.
 
@@ -1944,7 +1968,7 @@ Requires amendment mode to be active.
 | `name` | String | ✅ | Config name |
 | `session` | Choice | ✅ | Session type |
 
-Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), writing to the modification store instead of the server config.
+Same modal and same input rules as [`/results config bulk-session`](#results-config-bulk-session--set-many-positions-at-once-via-a-modal), all or nothing on the same terms, writing to the modification store instead of the server config.
 
 ##### `/results amend review` — Review and approve modification store changes
 *Access: League admin*

@@ -768,7 +768,7 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
         except Exception as exc:
             log.warning(
                 "_recover_rsvp_views_and_deadlines: could not re-arm view for msg %s: %s",
-                row.message_id, exc,
+                row.message_id, exc, exc_info=True,
             )
 
     # Check for missed deadline jobs

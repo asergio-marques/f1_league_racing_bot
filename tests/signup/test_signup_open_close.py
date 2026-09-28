@@ -551,15 +551,159 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
 
 async def test_a_failed_post_leaves_signups_closed(tmp_path):
     """The button is how a driver signs up. Recording the window as open without one would
-    leave a league believing signups were running with no way in."""
+    leave a league believing signups were running with no way in. A fault in the post is the
+    bot's, so it goes to the command's failure path rather than being answered here."""
     db_path = await _seed(tmp_path)
     interaction = _interaction()
     interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("no perms"))
 
-    await _open(_cog(db_path), interaction)
+    with pytest.raises(RuntimeError):
+        await _open(_cog(db_path), interaction)
 
     assert not await _is_open(db_path)
-    assert "Failed to post" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# /signup open — what the bot may not do, and every refusal, reach the log channel (#442)
+# ---------------------------------------------------------------------------
+
+#: The hub's words for a signup channel the bot may not post the button in.
+MAY_NOT_POST = (
+    "❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on #signups to "
+    "post the Sign Up button. Signups were not opened."
+)
+
+
+def _lines(cog) -> list[str]:
+    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+
+
+def _forbidden():
+    return discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+
+
+async def _with_a_closed_notice(db_path) -> None:
+    """The "signups closed" notice the last close posted, still standing in the channel."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE signup_module_config SET signup_closed_message_id = 9001")
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "notice", [False, True], ids=["no-closed-notice", "closed-notice-in-place"]
+)
+async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice):
+    """Discord refuses the post: the hub's words, no error text, the window left closed, and
+    the refusal logged. The "signups closed" notice is taken down only once the open message
+    is posted, so it still stands, and the refusal need say nothing about it."""
+    db_path = await _seed(tmp_path)
+    if notice:
+        await _with_a_closed_notice(db_path)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "signup open"
+    interaction._signup_channel.send = AsyncMock(side_effect=_forbidden())
+
+    await _open(cog, interaction)
+
+    replied = _replied(interaction)
+    assert MAY_NOT_POST in replied
+    assert "Missing Access" not in replied
+    assert "Failed to post" not in replied
+    assert "closed" not in replied.replace(MAY_NOT_POST, "")
+    interaction._signup_channel.fetch_message.return_value.delete.assert_not_awaited()
+    assert not await _is_open(db_path)
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/signup open" in line
+    assert "refused for Manager (<@42>)" in line
+
+
+async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
+    """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
+    path, the window stays closed, the "signups closed" notice still stands, and no reply
+    carries the error's text."""
+    db_path = await _seed(tmp_path)
+    await _with_a_closed_notice(db_path)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
+
+    with pytest.raises(RuntimeError):
+        await _open(cog, interaction)
+
+    assert "gateway closed" not in _replied(interaction)
+    interaction._signup_channel.fetch_message.return_value.delete.assert_not_awaited()
+    assert not await _is_open(db_path)
+    assert not any("Success" in line for line in _lines(cog))
+
+
+async def test_the_closed_notice_is_taken_down_only_once_the_open_message_is_posted(tmp_path):
+    """So that the channel always shows one notice or the other: the open message and its
+    Sign Up button go up first, and the "signups closed" notice comes down after."""
+    db_path = await _seed(tmp_path)
+    await _with_a_closed_notice(db_path)
+    interaction = _interaction()
+    order: list[str] = []
+    posted = interaction._signup_channel.send.return_value
+
+    async def _post(*_a, **_k):
+        order.append("post")
+        return posted
+
+    async def _take_down(*_a, **_k):
+        order.append("take down")
+
+    interaction._signup_channel.send = AsyncMock(side_effect=_post)
+    interaction._signup_channel.fetch_message.return_value.delete = AsyncMock(
+        side_effect=_take_down
+    )
+
+    await _open(_cog(db_path), interaction)
+
+    assert order == ["post", "take down"]
+    assert await _is_open(db_path)
+
+
+#: Every refusal `/signup open` makes: how the server is seeded, how the interaction is built,
+#: the arguments, and a fragment of the reply.
+SIGNUP_OPEN_REFUSALS = [
+    pytest.param({"test_mode": True}, {}, {}, "test mode", id="test-mode"),
+    pytest.param({"config": False}, {}, {}, "not configured", id="not-configured"),
+    pytest.param({"signups_open": True}, {}, {}, "already open", id="already-open"),
+    pytest.param({"stage": "PLACEMENTS"}, {}, {}, "can only be opened", id="wrong-stage"),
+    pytest.param({"channel": None}, {}, {}, "put right", id="configuration-incomplete"),
+    pytest.param({"slots": 0}, {}, {}, "time slot", id="no-time-slots"),
+    pytest.param(
+        {}, {}, {"close_time": "next tuesday-ish"}, "not a valid ISO 8601 datetime",
+        id="unparseable-close-time",
+    ),
+    pytest.param({}, {}, {"track_ids": "1, 99999"}, "99999", id="unknown-track"),
+    pytest.param({}, {"channel_found": False}, {}, "not found", id="channel-gone"),
+]
+
+
+@pytest.mark.parametrize("seed, built, args, said", SIGNUP_OPEN_REFUSALS)
+async def test_every_signup_open_refusal_reaches_the_log_channel(
+    tmp_path, seed, built, args, said
+):
+    """Each refusal answers the manager as before, opens nothing, and writes one line in the
+    standard form."""
+    db_path = await _seed(tmp_path, **seed)
+    cog = _cog(db_path)
+    interaction = _interaction(**built)
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "signup open"
+
+    await _open(cog, interaction, **args)
+
+    assert said in _replied(interaction)
+    interaction._signup_channel.send.assert_not_awaited()
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/signup open" in line
+    assert "refused for Manager (<@42>)" in line
 
 
 # ---------------------------------------------------------------------------

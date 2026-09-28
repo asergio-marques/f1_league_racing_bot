@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -366,6 +367,19 @@ def prepare_jobstore(jobstore_path: str) -> None:
 
 
 class SchedulerService:
+    """The one place a job is made, found or removed (`docs/design/architecture.md`, "Timed
+    work and restarts").
+
+    Every cancel is a clean-up, and none of them raises. A job that has already fired, or was
+    never armed, is the ordinary case and what the caller wanted: APScheduler says so with
+    `JobLookupError`, which is caught by name and passed over in silence. Any other failure —
+    a job store that cannot be read or written — is a real fault, and is logged as a warning
+    with its traceback and then swallowed. That broad handler is the second place
+    architecture.md's "Errors and failures" allows one: the callers are teardown lists
+    (a season cancelled, a module switched off, signups closed, a pack), where one job that
+    will not go must not stop the rest. `cancel_all` counts only the jobs that went.
+    """
+
     def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
         self._db_path = db_path
         self._jobstore_path = jobstore_path or default_jobstore_path(db_path)
@@ -702,11 +716,8 @@ class SchedulerService:
                 event_type = _job_event_type(job.id)
                 if event_type is None or event_type not in only:
                     continue
-            try:
-                self._scheduler.remove_job(job.id)
+            if self._remove_job(job.id):
                 log.info("Removed job %s", job.id)
-            except Exception:
-                pass  # Already fired or removed concurrently
 
     async def cancel_all_weather(self) -> None:
         """Cancel the weather module's jobs for every round in active/setup seasons.
@@ -804,13 +815,25 @@ class SchedulerService:
             )
             log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
 
-    def cancel_job(self, job_id: str) -> None:
-        """Remove a single job from the scheduler by ID (no-op if not found)."""
+    def _remove_job(self, job_id: str) -> bool:
+        """Remove *job_id*, and say whether it went; never raises (see the class docstring).
+
+        A job already gone is passed over in silence. Any other failure is logged as a warning
+        with its traceback, so that a real job-store fault can be found.
+        """
         try:
             self._scheduler.remove_job(job_id)
+        except JobLookupError:
+            return False  # Already fired, or never scheduled
+        except Exception:  # noqa: BLE001 — a teardown list goes on past one job that will not go
+            log.warning("Could not remove scheduled job %s", job_id, exc_info=True)
+            return False
+        return True
+
+    def cancel_job(self, job_id: str) -> None:
+        """Remove a single job from the scheduler by ID (no-op if not found)."""
+        if self._remove_job(job_id):
             log.info("Removed job %s", job_id)
-        except Exception:
-            pass  # Already fired or never scheduled
 
     def cancel_all(self, *, keep: frozenset[str] = frozenset()) -> int:
         """Remove every job but those whose ids are in *keep*, and return how many went.
@@ -825,11 +848,8 @@ class SchedulerService:
         for job in list(self._scheduler.get_jobs()):
             if job.id in keep:
                 continue
-            try:
-                self._scheduler.remove_job(job.id)
-            except Exception:  # noqa: BLE001 — fired or removed in the meantime
-                continue
-            removed += 1
+            if self._remove_job(job.id):
+                removed += 1
         log.info("Removed %d scheduled job(s), keeping %s", removed, sorted(keep) or "none")
         return removed
 
@@ -939,11 +959,8 @@ class SchedulerService:
         """
         for job in list(self._scheduler.get_jobs()):
             if job.id.startswith("season_end"):
-                try:
-                    self._scheduler.remove_job(job.id)
+                if self._remove_job(job.id):
                     log.info("Removed %s job", job.id)
-                except Exception:
-                    pass  # Already fired or removed
 
     # ------------------------------------------------------------------
     # Signup auto-close scheduling
@@ -1013,11 +1030,8 @@ class SchedulerService:
     def cancel_portrait_refresh(self) -> None:
         """Remove the daily portrait refresh if it exists."""
         job_id = PORTRAIT_REFRESH_JOB_ID
-        try:
-            self._scheduler.remove_job(job_id)
+        if self._remove_job(job_id):
             log.info("Removed %s", job_id)
-        except Exception:
-            pass  # Never scheduled, or already removed
 
     def register_signup_close_callback(self, callback: Callable) -> None:
         """Register the async callable invoked when the signup close timer fires.
@@ -1044,8 +1058,5 @@ class SchedulerService:
 
     def cancel_signup_close_timer(self) -> None:
         """Remove the signup close timer if it exists."""
-        try:
-            self._scheduler.remove_job(SIGNUP_CLOSE_JOB_ID)
+        if self._remove_job(SIGNUP_CLOSE_JOB_ID):
             log.info("Removed the %s job", SIGNUP_CLOSE_JOB_ID)
-        except Exception:
-            pass  # Already fired or never scheduled

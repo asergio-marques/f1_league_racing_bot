@@ -15,6 +15,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.season_service import SeasonImmutableError
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
@@ -669,19 +670,55 @@ async def modify_session_points(
     season_id: int,
     config_name: str,
     session_type: str,
-    position: int,
-    points: int,
+    pairs: list[tuple[int, int]],
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
 ) -> None:
+    """Stage every ``(position, points)`` of *pairs* in the modification store, in one
+    transaction, recording each staged change.
+
+    `/results amend session` stages one pair and `/results amend bulk-session` a whole paste,
+    which is all or nothing: every pair is staged, with an audit entry by *actor_id* at *now*
+    for each position whose staged points changed, from what to what, or — where anything
+    fails before the commit — none is, and no entry either. Raises
+    :class:`AmendmentNotActiveError` where the season is not in amendment mode.
+    """
     await _require_amendment_active(db_path, season_id)
     async with get_connection(db_path) as db:
-        await db.execute(
-            """
-            INSERT OR REPLACE INTO season_modification_entries
-                (season_id, config_name, session_type, position, points)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (season_id, config_name, session_type, position, points),
-        )
+        for position, points in pairs:
+            cursor = await db.execute(
+                "SELECT points FROM season_modification_entries "
+                "WHERE season_id = ? AND config_name = ? AND session_type = ? AND position = ?",
+                (season_id, config_name, session_type, position),
+            )
+            row = await cursor.fetchone()
+            old = None if row is None else row["points"]
+            await db.execute(
+                """
+                INSERT OR REPLACE INTO season_modification_entries
+                    (season_id, config_name, session_type, position, points)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (season_id, config_name, session_type, position, points),
+            )
+            if old != points:
+                await record_change_on(
+                    db,
+                    actor_id=actor_id,
+                    actor_name=actor_name,
+                    change_type="POINTS_AMENDMENT_STAGED",
+                    old_value={
+                        "season_id": season_id, "config": config_name,
+                        "session_type": session_type, "position": position, "points": old,
+                    },
+                    new_value={
+                        "season_id": season_id, "config": config_name,
+                        "session_type": session_type, "position": position, "points": points,
+                    },
+                    now=now,
+                )
         await db.execute(
             "UPDATE season_amendment_state SET modified_flag = 1 WHERE season_id = ?",
             (season_id,),

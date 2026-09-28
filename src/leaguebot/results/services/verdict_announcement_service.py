@@ -144,7 +144,7 @@ async def _graphic_name(
 
         names = await _driver_names(bot, guild, [int(discord_user_id)])
     except Exception as exc:  # noqa: BLE001 — a name is not worth a failed announcement
-        log.warning("verdicts: driver name unreadable for %s: %s", discord_user_id, exc)
+        log.warning("verdicts: driver name unreadable for %s: %s", discord_user_id, exc, exc_info=True)
     else:
         resolved = names.get(int(discord_user_id))
         if resolved and str(resolved).strip():

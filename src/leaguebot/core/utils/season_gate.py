@@ -34,6 +34,7 @@ from __future__ import annotations
 import discord
 
 from leaguebot.core.models.season import STAGES_OF_STATUS, Season, SeasonStage, SeasonStatus
+from leaguebot.core.utils.log_lines import refuse
 
 #: Every stage of a season the server still holds live — the four under SETUP and the four
 #: under ACTIVE. Completed and Cancelled are the archive and are in none of them.
@@ -77,6 +78,7 @@ async def season_for_command(
     *,
     stages: frozenset[SeasonStage] = BEFORE_PENDING_COMPLETION,
     refusal: str | None = None,
+    record: bool = True,
 ) -> Season | None:
     """The live season *command* may act upon, or ``None`` having refused and said why.
 
@@ -97,11 +99,21 @@ async def season_for_command(
     A completed or cancelled season is refused by construction: this reads only the live
     season, so an archived one is never returned and never named. The caller gets ``None`` and
     must return without doing anything — the refusal has already been sent.
+
+    The refusal is recorded in the log channel, naming *command*, as every refusal of a command
+    that acts is — unless *record* is False, which a view passes: it changes nothing and
+    records nothing.
     """
+
+    async def _refuse(message: str) -> None:
+        if record:
+            await refuse(interaction, message, what=f"`/{command}`")
+        else:
+            await _reply(interaction, message)
+
     season = await season_service.get_setup_or_active_season()
     if season is None:
-        await _reply(
-            interaction,
+        await _refuse(
             refusal
             or (
                 f"❌ `/{command}` acts on the season this server is building or racing, "
@@ -113,17 +125,15 @@ async def season_for_command(
 
     if season.stage not in stages:
         if refusal is not None:
-            await _reply(interaction, refusal)
+            await _refuse(refusal)
         elif season.stage is SeasonStage.PENDING_COMPLETION:
-            await _reply(
-                interaction,
+            await _refuse(
                 f"❌ Every division of this season is done, so `/{command}` no longer has "
                 f"anything to act on. What is left is repairing a division's channels, "
                 f"amending the results of a round already final, and `/season complete`.",
             )
         else:
-            await _reply(
-                interaction,
+            await _refuse(
                 f"❌ `/{command}` is not available while the season stands at "
                 f"**{stage_label(season.stage)}**.",
             )

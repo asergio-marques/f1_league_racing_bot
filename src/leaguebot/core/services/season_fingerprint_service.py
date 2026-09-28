@@ -383,7 +383,7 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
 
         areas["artwork"] = _digest(await _artwork_signature(bot))
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one
-        log.error("season fingerprint: could not be taken: %s", exc)
+        log.error("season fingerprint: could not be taken: %s", exc, exc_info=True)
         return SeasonFingerprint({})
 
     # Every area, every time. A query that silently stopped matching the schema would
@@ -422,6 +422,10 @@ async def _artwork_signature(bot: LeagueBot) -> list:
                 if filename:
                     signature.append([column, _path_signature(root / filename)])
         except Exception:  # noqa: BLE001 — an unresolvable directory is itself a state
+            log.warning(
+                "season fingerprint: the template directory %s could not be read", directory,
+                exc_info=True,
+            )
             signature.append(["template_directory", directory, "unresolvable"])
 
     for column in sorted(ASSET_DIRECTORIES):
@@ -430,7 +434,11 @@ async def _artwork_signature(bot: LeagueBot) -> list:
             continue
         try:
             signature.append([column, _directory_signature(resolve_within_project_root(value))])
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — an unresolvable directory is itself a state
+            log.warning(
+                "season fingerprint: the %s directory %s could not be read", column, value,
+                exc_info=True,
+            )
             signature.append([column, value, "unresolvable"])
 
     return signature

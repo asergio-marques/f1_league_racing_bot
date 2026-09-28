@@ -169,7 +169,7 @@ def resolve_configured_directories(
                 image_type,
                 asset_class,
                 configured,
-                reason,
+                reason, exc_info=True,
             )
 
     return directories, faults
@@ -315,7 +315,7 @@ def discard_attachment(*files) -> None:
         try:
             file.close()
         except Exception as exc:  # noqa: BLE001 - closing must not break a posting
-            log.debug("discard_attachment: could not close a file: %s", exc)
+            log.debug("discard_attachment: could not close a file: %s", exc, exc_info=True)
         name = getattr(getattr(file, "fp", None), "name", None)
         if isinstance(name, (str, os.PathLike)):
             discard_render(Path(name))
@@ -829,7 +829,7 @@ class ImageRenderService:
                 ImageRenderService.format_notices(notices, subject=subject)
             )
         except Exception as exc:  # noqa: BLE001
-            log.error("report_notices: log write failed: %s", exc)
+            log.error("report_notices: log write failed: %s", exc, exc_info=True)
             return None
 
     # ── Posting: the commanded / uncommanded split (Constitution XIV.7) ────

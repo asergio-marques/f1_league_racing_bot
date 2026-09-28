@@ -513,11 +513,31 @@ as its specification asks; a failure always is. A command that asks for a change
   carried out"), and to the log channel as the change's specification asks.
 - **Commands, buttons and forms** go through `report_failure` (`core/utils/interaction_errors.py`),
   called by the `LeagueCommandTree`, `LeagueView` and `LeagueModal` base classes. What the member
-  and the log channel are told is the core specification's "When a command fails".
+  and the log channel are told is the core specification's "When a command fails". The one
+  exception is a results amendment, which reports its own failure itself, saying what became of
+  the round (the first place a catch-all is allowed, below).
 - **Scheduled jobs and repeating loops** go through one job runner.
 - **Discord events** (a message, a member leaving) go through one error handler on the bot.
 - **Background tasks** go through the helper that starts them.
 - **The start-up sweep** goes through the job runner, one step at a time, like a scheduled job.
+
+**A refusal is not a failure, and has helpers of its own.** A command, button or form that
+refuses answers the member itself through `refuse` (`core/utils/log_lines.py`), which replies,
+seen by the member alone, and writes the refusal's one line to the log channel; a confirmation
+cancelled or left to lapse is recorded through `record_abandoned`, beside it. Each standard line
+is formed there and nowhere else, so that every refusal, cancel and lapse names its member alike,
+as the core specification's "The record of what changed" asks. `log_lines` lives apart from
+`interaction_errors` because `record_abandoned`, which a scheduled lapse calls with no interaction
+to name its member from, reaches the league's server through `league_guild`, and
+`core/utils/league_server.py`, which defines that, imports `interaction_errors`. `refuse` sits
+beside it so that each standard line is formed in one place. Like
+`report_failure`, neither raises, and `refuse` attempts its reply and its line each on its own.
+
+**Every line for the log channel goes through `OutputRouter.post_log`**, which divides a record
+too long for one message on its line breaks where it can, and at the limit where one line alone
+is too long; a reply too long for one message is sent in parts through `chunk_message`
+(`core/utils/messages.py`), which does the dividing for both. That is how a record meets the core
+specification's "The record of what changed" on length.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps
@@ -530,7 +550,17 @@ to it would switch off the one failure path for every command.
 
 **A catch-all error handler** (`except Exception`) is allowed in only four places:
 
-1. on one of the failure paths above;
+1. on one of the failure paths above. That includes a command, button or form that catches
+   everything around its own work only to hand the error to `report_failure` itself, adding
+   context to `what` (the round a `/round amend` confirmation was amending) or stating
+   `outcome` (what became of a change it undid, in place of "may have been partly done"), and
+   then returns. One failure still makes one line, and the base classes are spared a second
+   report. A results amendment is not a form of these but a failure path of its own, the
+   exception named above:
+   where it has written anything it first tries to put the round back, then reports its own
+   failure and says what became of the round, for example that it was put back as it was, that
+   it is not put back yet, or that there was nothing to put back. Its reply may name the kind of fault in plain words (`describe_fault`), which the standard reply
+   never does, as the core specification's "When a command fails" allows an amendment alone;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a step: a Discord failure is retried, and a fault
    stops the change, so items that must each go ahead whatever befalls the others are queued as
@@ -540,8 +570,10 @@ to it would switch off the one failure path for every command.
 3. around reporting a failure, where the report itself might fail;
 4. around a clean-up that then raises the error again.
 
-In every case it keeps the full error details for the host's log. A command catches only the errors
-it expects by name, and only to turn them into a refusal the member can act on.
+In every case it keeps the full error details for the host's log. Beyond the first place's own
+catch-all, a command catches only the errors it expects by name, and only to turn them into a
+refusal the member can act on, or to hand them to `report_failure` itself with context or an
+outcome, as the XML import does with a database fault, naming the configuration it was writing.
 
 ---
 

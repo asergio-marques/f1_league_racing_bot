@@ -587,7 +587,7 @@ async def post_session_results(
             if outcome.applicable and outcome.message_id is not None:
                 return outcome.message_id
         except Exception as exc:  # noqa: BLE001 — never block a posting on the image path
-            log.error("results: image path failed for session %s: %s", session_result.id, exc)
+            log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
 
     sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
 

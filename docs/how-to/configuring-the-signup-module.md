@@ -78,6 +78,8 @@ The module does nothing at all until it has a channel, and the league's two role
 
 **The channel** is where the Sign Up button gets posted. Setting it rewrites the channel's permissions: everyone loses sight of it, the base role can see it but cannot type in it, and holders of either league role can see and type. That is deliberate — the only thing a driver should be doing in there is pressing the button.
 
+**Give the bot Manage Channels and Manage Roles on it first** — on a channel, Discord calls them **Manage Channel** and **Manage Permissions**. Without both the command is refused before anything changes. Moving the signup channel clears the old channel's permissions before the new one is set, so if Discord then refuses the new one, the reply tells you the old channel needs putting right by hand unless you fix the permission and run it again.
+
 **The two roles are your league's, not this module's**, and are set in the [core guide](configuring-the-core-bot.md#step-1--tell-the-bot-who-is-in-charge). Here is what signups do with them. **The base role** is who the signups are for: it decides who can see the channel, and it is the role that gets pinged when you open the window. Change it and the bot moves the channel's permissions to the new role. **The driver role** is the reward: the bot grants it the moment you approve a driver, so it is the badge that says someone is through the door. That means the bot has to be able to grant it — its own role must sit above the driver role in your server's role list, and it needs **Manage Roles** — and `/bot driver-role` refuses one it cannot. If either role is later deleted from the server, you can replace it even mid-season; the core guide says how.
 
 > **Use a channel of its own, and nothing else.** Setting the signup channel replaces every permission override on it, and moving the signup channel elsewhere strips the old one bare on the way out. Any permissions you had set up by hand go with them.
@@ -156,6 +158,8 @@ Both parameters are optional.
 **`close_time`** shuts the window automatically. It is UTC, in the format `2026-09-01T20:00:00`, and it must be in the future.
 
 **The window belongs to a season.** You can open it once the season's configuration is confirmed and it is waiting for its signup window, or mid-season while it is ongoing with no placements left to confirm. Opening it moves the season on — to signups, or mid-season to ongoing, signups.
+
+**The Sign Up button goes up before the "signups closed" notice comes down**, so the channel always shows one or the other. The bot needs **View Channel**, **Send Messages** and **Embed Links** in the signup channel to post it; without them the command is refused, signups stay closed and the closed notice stays where it is.
 
 The bot checks things in order and stops at the first problem: test mode must be off, the module must be configured, the window must not already be open, the season must be waiting or ongoing, all three of channel and roles must be set — with both roles still on the server and the driver role one the bot can grant, every fault among these named together — there must be at least one slot, the close time must parse and be in the future, and every track ID must exist.
 
@@ -369,6 +373,8 @@ Worth running through before you confirm the season's configuration, which fixes
 | `/signup open` refused | Something in the chain is missing — the channel, one of the roles, or any time slot at all — or the season is not waiting for a window: its configuration is unconfirmed, or it is mid-way through placements. The reply names it |
 | `/signup open` refused, naming a role no longer on the server | That role was deleted. Replace it with `/bot base-role` or `/bot driver-role` — allowed mid-season for a deleted role — and the bot gives the new one to every driver |
 | `/signup open` refused, saying the driver role sits above the bot's | Move the bot's own role above the driver role in your server's role list, then open again |
+| `/signup open` refused, saying the bot needs View Channel, Send Messages and Embed Links | Discord would not let the bot post the Sign Up button. Grant those three in the signup channel and open again — signups are still closed, and the closed notice is still up |
+| `/signup channel` refused, saying the bot needs Manage Channel and Manage Permissions | Grant the bot both on that channel. If you were moving the signup channel and the reply says the old one was already cleared, that old channel has lost its permissions: fix the new one and run the command again, or put the old one right by hand |
 | `/season config-review` offers no button | The signup module is on but missing its channel or a role, a role has been deleted, or the bot cannot grant the driver role. The review names which |
 | `/season placements-review` offers no button, naming drivers | Those signups are unsettled. Place or reject each driver, or finish reviewing their signup |
 | Drivers press the button and nothing happens after | The Message Content intent is off, so the bot cannot see anything they type |

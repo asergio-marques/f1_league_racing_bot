@@ -1079,7 +1079,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                     )
                     await msg.edit(embed=new_embed, view=RsvpView(round_id=self._round_id))
                 except Exception as exc:
-                    log.warning("_RsvpBulkSetModal: failed to edit embed: %s", exc)
+                    log.warning("_RsvpBulkSetModal: failed to edit embed: %s", exc, exc_info=True)
 
         lines: list[str] = []
         if applied:

@@ -74,7 +74,7 @@ async def results_enabled(bot: LeagueBot, template_key: str) -> bool:
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("results: enablement check failed: %s", exc)
+        log.error("results: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -111,6 +111,10 @@ async def _nationality_collected(db_path: str) -> bool:
                 )
             ).fetchone()
     except Exception:  # noqa: BLE001 — an unreadable switch is not a reason to fail a render
+        log.warning(
+            "results image: the nationality switch could not be read, so flags are drawn",
+            exc_info=True,
+        )
         return True
     if row is None:
         return True
@@ -384,7 +388,7 @@ async def try_post(
 
         template_key = template_key_for(session_result.session_type)
     except Exception as exc:  # noqa: BLE001
-        log.error("results: unknown session type %s: %s", session_result.session_type, exc)
+        log.error("results: unknown session type %s: %s", session_result.session_type, exc, exc_info=True)
         return ResultsPostOutcome()
 
     if not await results_enabled(bot, template_key):
@@ -410,7 +414,7 @@ async def try_post(
         )
         decision = await render_png(bot, drawing, origin)
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("results: render failed for session %s: %s", session_result.id, exc)
+        log.error("results: render failed for session %s: %s", session_result.id, exc, exc_info=True)
         await report(bot, drawing_label(drawing=None, fallback=session_label), str(exc))
         if origin is PostingOrigin.COMMANDED:
             return ResultsPostOutcome(action=REJECTED, message=f"❌ {exc}")
@@ -517,7 +521,7 @@ async def report(bot: LeagueBot, what: str, detail: str) -> None:
             f"⚠️ Results image — {what}: {detail}"
         )
     except Exception as exc:  # noqa: BLE001
-        log.error("results: could not report to the log channel: %s", exc)
+        log.error("results: could not report to the log channel: %s", exc, exc_info=True)
 
 
 async def report_notices(bot: LeagueBot, what: str, notices) -> None:
@@ -533,4 +537,4 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
 
         await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001
-        log.error("results: could not report notices: %s", exc)
+        log.error("results: could not report notices: %s", exc, exc_info=True)

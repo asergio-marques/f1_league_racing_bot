@@ -255,3 +255,46 @@ async def test_config_exists_answers_by_name(db_path):
 
     assert await config_exists(db_path, "Standard") is True
     assert await config_exists(db_path, "Standrad") is False
+
+
+# ---------------------------------------------------------------------------
+# set_session_points_many — a bulk paste, written whole (#442)
+# ---------------------------------------------------------------------------
+
+
+async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_path):
+    """Every pair lands, and each position it changed is recorded as an audit entry, from
+    what it was to what it became, by whom and when."""
+    import json
+    from datetime import datetime, timezone
+
+    from leaguebot.results.services.points_config_service import set_session_points_many
+
+    now = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
+    await create_config(db_path, config_name="Standard")
+    await set_session_points(db_path, "Standard", SessionType.FEATURE_RACE, 1, 20)
+
+    await set_session_points_many(
+        db_path,
+        "Standard",
+        SessionType.FEATURE_RACE,
+        [(1, 25), (2, 18), (3, 15)],
+        actor_id=77,
+        actor_name="Manager#0001",
+        now=now,
+    )
+
+    entries, _fl = await get_config_entries(db_path, config_name="Standard")
+    assert {e.position: e.points for e in entries} == {1: 25, 2: 18, 3: 15}
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id, actor_name, old_value, new_value, timestamp FROM audit_entries "
+            "ORDER BY id"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+    assert len(rows) == 3
+    assert {(r["actor_id"], r["actor_name"], r["timestamp"]) for r in rows} == {
+        (77, "Manager#0001", now.isoformat())
+    }
+    first = next(r for r in rows if "25" in r["new_value"])
+    assert "20" in json.dumps(json.loads(first["old_value"]))

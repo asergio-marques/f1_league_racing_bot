@@ -748,7 +748,7 @@ class PlacementService:
             seated = (row["seated"] if row else 0) or 0
             problem = reserve_capacity_problem(load_svg(report.resolved_path), seated + adding)
         except Exception as exc:  # noqa: BLE001
-            log.error("reserve capacity guard could not run: %s", exc)
+            log.error("reserve capacity guard could not run: %s", exc, exc_info=True)
             return
 
         if problem is not None:
@@ -812,7 +812,7 @@ class PlacementService:
                 "attendance_template", load_svg(report.resolved_path), seated + adding
             )
         except Exception as exc:  # noqa: BLE001
-            log.error("attendance sheet capacity guard could not run: %s", exc)
+            log.error("attendance sheet capacity guard could not run: %s", exc, exc_info=True)
             return
 
         if problem is not None:
@@ -886,7 +886,7 @@ class PlacementService:
                 DRIVERS_TEMPLATE_KEY, load_svg(report.resolved_path), seated + adding
             )
         except Exception as exc:  # noqa: BLE001
-            log.error("standings capacity guard could not run: %s", exc)
+            log.error("standings capacity guard could not run: %s", exc, exc_info=True)
             return
 
         if problem is not None:
@@ -977,7 +977,7 @@ class PlacementService:
                 row = await cursor.fetchone()
             seated = (row["seated"] if row else 0) or 0
         except Exception as exc:  # noqa: BLE001
-            log.error("image capacity guard could not run: %s", exc)
+            log.error("image capacity guard could not run: %s", exc, exc_info=True)
             return
 
         if seated + 1 <= smallest:
@@ -1991,7 +1991,7 @@ class PlacementService:
                 if outcome.applicable:
                     return
             except Exception as exc:  # noqa: BLE001 — never block a placement on this
-                log.error("_refresh_lineup_post: image path failed: %s", exc)
+                log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
 
         async with get_connection(self._db_path) as db:
             cur = await db.execute(

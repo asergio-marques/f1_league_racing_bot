@@ -205,9 +205,18 @@ async def test_a_signup_channel_that_cannot_be_closed_does_not_stop_the_pass(db_
 
 
 async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
+    from apscheduler.jobstores.base import JobLookupError
+
+    from leaguebot.core.services.scheduler_service import SchedulerService
+
+    # The real scheduler service, over an APScheduler that no longer holds the job.
+    scheduler = SchedulerService.__new__(SchedulerService)
+    scheduler._scheduler = MagicMock()
+    scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
+
     bot = MagicMock()
     bot.wizard_service._trigger_channel_hold = AsyncMock()
-    bot.scheduler_service._scheduler.remove_job = MagicMock(side_effect=LookupError("no job"))
+    bot.scheduler_service = scheduler
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 

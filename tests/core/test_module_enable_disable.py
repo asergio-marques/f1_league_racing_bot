@@ -403,7 +403,8 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
 
 async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):
     """The configuration and its audit entry are one write: where the second fails, the
-    first is not kept either, and the league is told the module is still off."""
+    first is not kept either, and the league is told, in the standard failure reply, that the
+    module is still off and what to do next. The error's own text is not shown."""
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -411,11 +412,150 @@ async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off
             "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
         )
         await db.commit()
+    cog = _make_cog(db_path, results_enabled=True)
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
 
-    await _make_cog(db_path, results_enabled=True)._enable_attendance(interaction)
+    await cog._enable_attendance(interaction)
 
-    assert "Module remains disabled" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot" in replied
+    assert "The module is still off." in replied
+    assert "again once the fault is cleared" in replied
+    assert "disk I/O error" not in replied
+    assert "Module remains disabled" not in replied
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM attendance_config")
         assert (await cursor.fetchone())[0] == 0
+    # One failure line: the command, the member and the kind of fault, never its words.
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert "/module enable" in line
+    assert f"failed for <@{ACTOR_ID}>" in line
+    assert "IntegrityError" in line
+    assert "disk I/O error" not in line
+
+
+# ---------------------------------------------------------------------------
+# A failed enable, and every refusal, reach the log channel (#442)
+# ---------------------------------------------------------------------------
+
+
+def _lines(cog) -> list[str]:
+    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+
+
+async def _refuse_the_audit(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+
+async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
+    """The flag and its audit entry are one write, so the module stays off. The member gets
+    the standard failure reply, saying the module is still off and what to do next, with no
+    error text; the log channel gets the one failure line, and no success."""
+    db_path = await _make_db(tmp_path)
+    await _refuse_the_audit(db_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
+
+    await cog._enable_weather(interaction)
+
+    assert await _weather_flag(db_path) == 0
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert "The module is still off." in replied
+    assert "again once the fault is cleared" in replied
+    assert "disk I/O error" not in replied
+    assert "Module remains disabled" not in replied
+    [line] = _lines(cog)
+    assert "/module enable" in line
+    assert f"failed for <@{ACTOR_ID}>" in line
+    assert "IntegrityError" in line
+    assert "disk I/O error" not in line
+
+
+async def _stage(db_path: str, stage: str, status: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-09-17', ?, 5, ?)",
+            (status, stage),
+        )
+        await db.commit()
+
+
+#: Every refusal `/module enable` makes, and the one it shares with `/module disable`: the
+#: verb, the module, how the cog is set up, the stage the season stands in, and a fragment of
+#: the reply. A case whose verb is None calls the enable handler directly, the command's own
+#: stage check standing in front of it otherwise.
+MODULE_REFUSALS = [
+    pytest.param("enable", "weather", {"weather_enabled": True}, None, "already enabled",
+                 id="weather-already-enabled"),
+    pytest.param("enable", "results", {"results_enabled": True}, None, "already enabled",
+                 id="results-already-enabled"),
+    pytest.param(None, "results", {"season": "confirmed"}, None,
+                 "once a season's placements are confirmed", id="results-mid-season"),
+    pytest.param("enable", "attendance", {"results_enabled": False}, None,
+                 "requires the Results & Standings module", id="attendance-needs-results"),
+    pytest.param(None, "attendance", {"results_enabled": True, "season": "confirmed"}, None,
+                 "once a season's placements are confirmed", id="attendance-mid-season"),
+    pytest.param("enable", "attendance",
+                 {"results_enabled": True, "attendance_enabled": True}, None,
+                 "already enabled", id="attendance-already-enabled"),
+    pytest.param("enable", "images", {"images_enabled": True}, None, "already enabled",
+                 id="images-already-enabled"),
+    pytest.param("enable", "signup", {"signup_enabled": True}, None, "already enabled",
+                 id="signup-already-enabled"),
+    pytest.param("enable", "weather", {"season": "confirmed"}, None, "cannot be enabled once",
+                 id="enable-once-placements-are-confirmed"),
+    pytest.param("enable", "signup", {}, ("WAITING", "SETUP"), "fixed for Season 5",
+                 id="enable-signup-once-fixed"),
+    pytest.param("disable", "signup", {}, ("WAITING", "SETUP"), "fixed for Season 5",
+                 id="disable-signup-once-fixed"),
+    pytest.param("disable", "weather", {}, ("PENDING_COMPLETION", "ACTIVE"),
+                 "pending completion", id="disable-in-pending-completion"),
+]
+
+
+@pytest.mark.parametrize("verb, module, setup, stage, said", MODULE_REFUSALS)
+async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
+    tmp_path, verb, module, setup, stage, said
+):
+    """Every outcome of a command that changes something is recorded, a refusal included: the
+    member is answered as before, and the log channel gets one line in the standard form."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+
+    db_path = await _make_db(tmp_path)
+    if stage is not None:
+        await _stage(db_path, *stage)
+    setup = dict(setup)
+    season = _season() if setup.pop("season", None) == "confirmed" else None
+    images_enabled = setup.pop("images_enabled", False)
+    signup_enabled = setup.pop("signup_enabled", False)
+    cog = _make_cog(db_path, season=season, **setup)
+    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
+    cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
+    cog._refresh_hub = AsyncMock()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = f"module {verb or 'enable'}"
+
+    if verb is None:
+        await getattr(cog, f"_enable_{module}")(interaction)
+    else:
+        choice = SimpleNamespace(name=module.title(), value=module)
+        await undecorate(getattr(ModuleCog, verb))(cog, interaction, choice)
+
+    assert said in _replied(interaction)
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert f"/module {verb or 'enable'}" in line
+    assert f"refused for Admin (<@{ACTOR_ID}>)" in line
+    assert said in line

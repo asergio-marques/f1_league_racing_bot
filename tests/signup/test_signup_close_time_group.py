@@ -414,6 +414,8 @@ class TestOneRuleForTheCloseTime:
         cog.bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
 
         interaction = _interaction()
+        # Nothing has answered it yet, as with any interaction Discord delivers.
+        interaction.response.is_done = MagicMock(return_value=False)
         # Both roles on the server and grantable: the roles are not what this pins (#374).
         role = MagicMock(managed=False)
         role.is_default.return_value = False

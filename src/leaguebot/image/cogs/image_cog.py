@@ -576,7 +576,7 @@ class ImageCog(commands.Cog):
                 normalised
             )
         except Exception as exc:  # the setting is stored; recovery re-arms it on restart
-            log.error("could not arm the daily portrait refresh: %s", exc)
+            log.error("could not arm the daily portrait refresh: %s", exc, exc_info=True)
         await self._reply(
             interaction,
             f"✅ **Daily driver-portrait updates** enabled, running at "
@@ -664,7 +664,7 @@ class ImageCog(commands.Cog):
                 f"| /images config | {detail}",
             )
         except Exception as exc:  # logging must never break a configuration command
-            log.error("image config log write failed: %s", exc)
+            log.error("image config log write failed: %s", exc, exc_info=True)
 
     # ── /images config template-directory ─────────────────────────────────
 
@@ -1845,6 +1845,7 @@ class ImageCog(commands.Cog):
                 timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
             )
         except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
+            log.warning("images test: the divisions could not be offered", exc_info=True)
             return []
 
         typed = (current or "").strip().casefold()
@@ -1904,15 +1905,10 @@ class ImageCog(commands.Cog):
             await interaction.followup.send(refusal.message, ephemeral=True)
             return
 
-        try:
-            requests = await build(context)
-        except Exception as exc:  # noqa: BLE001 — reported, never raised at a manager
-            log.exception("images test: could not assemble %s", title)
-            await interaction.followup.send(
-                f"⛔ The data for this preview could not be assembled — {exc}",
-                ephemeral=True,
-            )
-            return
+        # A preview whose data cannot be assembled is a fault in the bot, and goes to the
+        # command's failure path, which names `/images test …` to the member and the log
+        # channel alike. A preview changes nothing, so it records nothing else.
+        requests = await build(context)
 
         # A preview is named exactly as a posting is, and for the same reason: a manager
         # running several of them collects several files, and `standings_drivers.png`

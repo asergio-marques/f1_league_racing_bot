@@ -1,6 +1,8 @@
 """Unit tests for amendment_service (T034) — points-amendment workflow."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -13,6 +15,14 @@ from leaguebot.core.services.amendment_service import (
     modify_session_points,
     revert_modification_store,
 )
+
+
+#: Who staged each change, and when: the modification store records each change it stages (#442).
+ACTOR = {
+    "actor_id": 99,
+    "actor_name": "Admin#0001",
+    "now": datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +112,9 @@ async def test_revert_modification_store(db_path):
     await enable_amendment_mode(path, season_id)
 
     # Modify something in the modification store
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
     # Confirm flag is set
     state = await get_amendment_state(path, season_id)
@@ -136,7 +148,9 @@ async def test_revert_modification_store(db_path):
 async def test_modify_raises_when_not_active(db_path):
     path, season_id = db_path
     with pytest.raises(AmendmentNotActiveError):
-        await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+        await modify_session_points(
+            path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1028,7 +1042,9 @@ async def test_approve_amendment_reposts_every_raced_round(db_path):
     division_id, raced, _unraced = await _seed_division_with_rounds(path, season_id)
 
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
     reposted: list[tuple] = []
     await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
@@ -1053,7 +1069,9 @@ async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
     await _seed_division_with_rounds(path, season_id)
 
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
     reposted: list[tuple] = []
     await approve_amendment(path, season_id, 99, _bot_recording_reposts(reposted))
@@ -1073,7 +1091,9 @@ async def test_approve_amendment_still_overwrites_the_points(db_path):
     await _seed_division_with_rounds(path, season_id)
 
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
     await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
 
@@ -1143,7 +1163,9 @@ async def test_an_approved_amendment_empties_the_modification_store(db_path):
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
     await modify_fl_bonus(path, season_id, "STD", "FEATURE_RACE", 3)
 
     await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
@@ -1169,7 +1191,9 @@ async def test_an_approved_amendment_empties_the_modification_store(db_path):
 async def _staged_amendment(path: str, season_id: int) -> None:
     """Amendment mode on, with one sound change staged and ready to approve."""
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
 
 async def _season_state(path: str, season_id: int):
@@ -1579,8 +1603,12 @@ async def test_the_ordering_refusal_still_comes_first(db_path):
     await _seed_season_points(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 25)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 25)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 25)], **ACTOR
+    )
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(2, 25)], **ACTOR
+    )
 
     with pytest.raises(NonMonotonicAmendmentError):
         await approve_amendment(
@@ -1626,7 +1654,9 @@ async def test_validate_modification_ordering_passes_a_table_running_down(db_pat
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
     from leaguebot.core.services.amendment_service import validate_modification_ordering
 
@@ -1638,7 +1668,9 @@ async def test_validate_modification_ordering_names_a_staged_inversion(db_path):
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
+    )
 
     from leaguebot.core.services.amendment_service import validate_modification_ordering
 
@@ -1655,8 +1687,12 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(db_
     path, season_id = db_path
     await _seed_two_position_table(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 1, 1)
-    await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 2, 3)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_QUALIFYING", [(1, 1)], **ACTOR
+    )
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_QUALIFYING", [(2, 3)], **ACTOR
+    )
 
     from leaguebot.core.services.amendment_service import validate_modification_ordering
 
@@ -1675,7 +1711,9 @@ async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
+    )
 
     with pytest.raises(NonMonotonicAmendmentError) as raised:
         await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
@@ -1702,7 +1740,9 @@ async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_orderi
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
+    )
 
     before = await _season_state(path, season_id)
     reposted: list[tuple] = []
@@ -1730,7 +1770,9 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
+    )
 
     reposted: list[tuple] = []
     with pytest.raises(NonMonotonicAmendmentError):
@@ -1765,7 +1807,9 @@ async def test_a_well_ordered_amendment_still_applies(db_path):
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
 
     await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
 
@@ -1781,8 +1825,12 @@ async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_pat
     await _seed_two_position_table(path, season_id)
     await _seed_division_with_rounds(path, season_id)
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 3, 0)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 4, 0)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(3, 0)], **ACTOR
+    )
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(4, 0)], **ACTOR
+    )
 
     await approve_amendment(path, season_id, 99, _bot_recording_reposts([]))
 
@@ -2027,7 +2075,9 @@ async def _approve_raised_win(path: str, season_id: int, reposted: list[tuple] |
     from leaguebot.core.services.amendment_service import approve_amendment
 
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
     await approve_amendment(
         path, season_id, 99, _scoring_bot(path, [] if reposted is None else reposted)
     )
@@ -2193,7 +2243,9 @@ async def test_an_approved_amendment_rescores_qualifying(db_path):
         qualifying=((_WINNER, 1, 3), (_RUNNER_UP, 2, 0)),
     )
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_QUALIFYING", 1, 5)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_QUALIFYING", [(1, 5)], **ACTOR
+    )
 
     await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
 
@@ -2293,8 +2345,12 @@ async def test_rescoring_keeps_the_sanctions(db_path):
         ),
     )
     await enable_amendment_mode(path, season_id)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 1, 30)
-    await modify_session_points(path, season_id, "STD", "FEATURE_RACE", 2, 20)
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
+    )
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(2, 20)], **ACTOR
+    )
 
     await approve_amendment(path, season_id, 99, _scoring_bot(path, []))
 
@@ -2432,3 +2488,36 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
         assert (await _race_points(path, session_id))[_WINNER] == (25, 0), (
             "a failed approval kept part of its rescoring"
         )
+
+
+# ---------------------------------------------------------------------------
+# modify_session_points stages a whole paste at once (#442)
+# ---------------------------------------------------------------------------
+
+
+async def test_modify_session_points_stages_every_pair_in_one_transaction(db_path):
+    """Every pair is staged, the store is marked modified, and each staged change is recorded
+    as an audit entry, by whom and when."""
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await enable_amendment_mode(path, season_id)
+
+    await modify_session_points(
+        path, season_id, "STD", "FEATURE_RACE", [(1, 30), (2, 20), (3, 10)], **ACTOR
+    )
+
+    async with get_connection(path) as db:
+        cursor = await db.execute(
+            "SELECT position, points FROM season_modification_entries "
+            "WHERE season_id = ? AND session_type = 'FEATURE_RACE' ORDER BY position",
+            (season_id,),
+        )
+        staged = [tuple(r) for r in await cursor.fetchall()]
+        cursor = await db.execute(
+            "SELECT actor_id, actor_name, timestamp FROM audit_entries ORDER BY id"
+        )
+        audited = [tuple(r) for r in await cursor.fetchall()]
+    assert staged == [(1, 30), (2, 20), (3, 10)]
+    state = await get_amendment_state(path, season_id)
+    assert state is not None and state.modified_flag
+    assert audited == [(99, "Admin#0001", ACTOR["now"].isoformat())] * 3

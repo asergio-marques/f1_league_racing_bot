@@ -650,6 +650,10 @@ CREATE TABLE "round_amend_channels" (
     -- verdict records and writes the approved set back, so the message ids of the announcements
     -- to be taken down are gone by the time the final stage re-announces — noted here first.
     superseded_announcements TEXT,
+    -- started_by: the Discord user id of the member who opened the amendment, so that the sweep
+    -- reverting one that lapsed can name them in the log channel. NULL only where a row was
+    -- written without it, which the command never does.
+    started_by   INTEGER,
     -- One amendment of a round at a time; the command allows one per division besides.
     UNIQUE (round_id)
 );

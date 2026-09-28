@@ -22,6 +22,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.results.services import points_config_service, season_points_service
+from tests.support.undecorate import undecorate
 
 SERVER_ID = 7700
 SEASON_ID = 21
@@ -285,3 +286,86 @@ async def test_a_plain_points_configuration_name_is_still_created(db_path):
 
     assert await points_config_service.config_exists(db_path, "100%")
 
+
+
+# ---------------------------------------------------------------------------
+# The module gate's refusal is recorded, save for a view (#442)
+# ---------------------------------------------------------------------------
+
+
+def _gate_interaction(bot, command: str):
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.user.id = 77
+    interaction.user.display_name = "Manager"
+    interaction.client = bot
+    interaction.command.qualified_name = command
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+def _gate_bot(*, results_on: bool):
+    bot = MagicMock()
+    bot.module_service.is_results_enabled = AsyncMock(return_value=results_on)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock()
+    return bot
+
+
+def _gate_replies(interaction) -> str:
+    return "\n".join(
+        str(c.args[0])
+        for c in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if c.args
+    )
+
+
+@pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
+async def test_the_results_module_gate_logs_its_refusal_unless_record_is_false(record):
+    """The gate answers the member either way. With `record` left at its default it writes one
+    line in the standard refusal form, naming the command; with `record=False` it writes none."""
+    bot = _gate_bot(results_on=False)
+    cog = ResultsCog.__new__(ResultsCog)
+    cog.bot = bot
+    interaction = _gate_interaction(bot, "results config add")
+
+    allowed = await cog._module_gate(interaction, record=record)
+
+    assert allowed is False
+    assert "not enabled" in _gate_replies(interaction)
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    if record:
+        [line] = lines
+        assert line.startswith("⛔ ")
+        assert "/results config add" in line
+        assert "refused for Manager (<@77>)" in line
+        assert "not enabled" in line
+    else:
+        assert lines == []
+
+
+@pytest.mark.parametrize(
+    "command, name, args, results_on",
+    [
+        pytest.param("config_list", "results config list", 1, False, id="config-list-module-off"),
+        pytest.param("config_view", "results config view", 3, False, id="config-view-module-off"),
+        pytest.param("amend_review", "results amend review", 0, False, id="amend-review-module-off"),
+        pytest.param("amend_review", "results amend review", 0, True, id="amend-review-no-season"),
+    ],
+)
+async def test_a_view_refused_by_a_shared_check_writes_no_log_line(command, name, args, results_on):
+    """Views, lists and previews change nothing and record nothing: a view the module gate or
+    the season gate turns away is answered, and the log channel is not written."""
+    bot = _gate_bot(results_on=results_on)
+    cog = ResultsCog.__new__(ResultsCog)
+    cog.bot = bot
+    interaction = _gate_interaction(bot, name)
+
+    await undecorate(getattr(ResultsCog, command))(cog, interaction, *[MagicMock()] * args)
+
+    assert _gate_replies(interaction), "the member was not answered"
+    bot.output_router.post_log.assert_not_awaited()

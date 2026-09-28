@@ -37,6 +37,7 @@ from leaguebot.core.utils.channel_guard import (
     league_manager_only,
 )
 from leaguebot.core.utils.input_validator import NAME
+from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -45,6 +46,8 @@ from leaguebot.core.utils.league_server import (
     LeagueView,
     guild_of,
 )
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -120,19 +123,22 @@ def _ordering_notice(
 # Bulk-parse helper (T012)
 # ---------------------------------------------------------------------------
 
-def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
+def _parse_bulk_lines(
+    text: str,
+) -> tuple[list[tuple[int, int]], list[str], list[str]]:
     """Parse multi-line '<position>, <points>' text.
 
     Rules:
     - Blank lines are skipped.
     - position must be a positive integer (>= 1).
     - points must be a non-negative integer (>= 0).
-    - If a position appears more than once the last value wins; the duplicate
-      is noted in the error list.
-    - Returns (valid_pairs_in_input_order_deduped, error_messages).
+    - If a position appears more than once the last value wins; the duplicate is noted
+      among the overrides, which are not errors: an override never refuses a paste.
+    - Returns (valid_pairs_in_input_order_deduped, error_messages, override_notes).
     """
     seen: dict[int, int] = {}  # position -> points (last-wins tracking)
     errors: list[str] = []
+    overrides: list[str] = []
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -164,21 +170,56 @@ def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
             errors.append(f"Points must be >= 0, got {points} on line: {line!r}")
             continue
         if position in seen:
-            errors.append(
+            overrides.append(
                 f"Duplicate position {position}: previous value {seen[position]} overridden by {points}"
             )
         seen[position] = points
 
     valid = list(seen.items())
-    return valid, errors
+    return valid, errors, overrides
 
 
 # ---------------------------------------------------------------------------
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
+#: What a bulk paste that could not be written tells its member: nothing was saved, and how to retry.
+_PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
+#: A form's refusal when the results module has been switched off since it was shown.
+_MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
+
+
+def _bulk_refusal(errors: list[str]) -> tuple[str, str]:
+    """The reply refusing a paste with bad lines, listing every one, and the line's reason."""
+    listed = "\n".join(f"  • {e}" for e in errors)
+    reply = (
+        f"\u274c Nothing was applied: {len(errors)} line(s) of the paste could not be read. "
+        f"Correct them and paste the whole table again.\n{listed}"
+    )
+    reason = f"{len(errors)} line(s) of the paste could not be read:\n{listed}"
+    return reply, reason
+
+
+def _bulk_values(valid: list[tuple[int, int]]) -> str:
+    """The values a paste set, one per line, for its log line."""
+    return "".join(f"\n  P{position} \u2192 {points} pts" for position, points in valid)
+
+
+async def _send_in_parts(interaction: discord.Interaction, text: str) -> None:
+    """Follow up with *text*, in as many messages as it needs."""
+    for part in chunk_message(text):
+        await interaction.followup.send(part, ephemeral=True)
+
+
 class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
-    """Modal for bulk-setting session points in a named config."""
+    """Modal for bulk-setting session points in a named config.
+
+    **All or nothing.** Every line is parsed, and the module and the configuration checked,
+    before anything is written. One bad line refuses the paste whole, every bad line listed
+    back; a repeated position is not a bad line, and takes its last value with the override
+    reported. What is written is written in one transaction, with an audit entry for each
+    position changed, so a fault part-way saves nothing, and the member is told so.
+    """
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
         label="position, points — one per line",
@@ -201,65 +242,80 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        valid, errors = _parse_bulk_lines(self.entries.value)
-        if not valid and not errors:
-            await interaction.followup.send("No entries provided.", ephemeral=True)
+        bot = bot_of(interaction)
+        what = "`/results config bulk-session`"
+        session_type = SessionType(self._session.value)
+
+        # Checked again at the submit: the form may be submitted long after it was shown.
+        if not await bot.module_service.is_results_enabled():
+            await refuse(interaction, _MODULE_OFF, what=what)
             return
 
-        applied: list[str] = []
-        for position, points in valid:
-            try:
-                await points_config_service.set_session_points(
-                    self._db_path,
-                    self._config_name,
-                    SessionType(self._session.value),
-                    position,
-                    points,
-                )
-                applied.append(f"P{position} → {points} pts")
-            except ConfigNotFoundError:
-                await interaction.followup.send(
-                    f"\u274c Config **{self._config_name}** not found.", ephemeral=True
-                )
-                return
-            except Exception as exc:
-                errors.append(f"P{position}: unexpected error — {exc}")
-
-        lines: list[str] = []
-        if applied:
-            lines.append(
-                f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
-                + "\n".join(f"  {a}" for a in applied)
-            )
+        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
+        if not valid and not errors:
+            await refuse(interaction, "\u274c No entries provided.", what=what)
+            return
         if errors:
-            lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+            reply, reason = _bulk_refusal(errors)
+            await refuse(interaction, reply, what=what, reason=reason)
+            return
+        not_found = f"\u274c Config **{self._config_name}** not found."
+        if not await points_config_service.config_exists(self._db_path, self._config_name):
+            await refuse(interaction, not_found, what=what)
+            return
+
+        try:
+            await points_config_service.set_session_points_many(
+                self._db_path,
+                self._config_name,
+                session_type,
+                valid,
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
+                now=datetime.now(timezone.utc),
+            )
+        except ConfigNotFoundError:
+            await refuse(interaction, not_found, what=what)
+            return
+        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
+            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
+            return
+
+        lines = [
+            f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
+            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
+        ]
+        if overrides:
+            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
         # The ordering is judged once, on the table the whole paste has left behind,
         # rather than line by line. A bulk paste is one act of authorship, and a
         # complaint per line would bury the reply under restatements of one fault.
-        if applied:
-            notice = _ordering_notice(
-                self._config_name,
-                self._session.name,
-                await points_config_service.ordering_warnings(
-                    self._db_path,
-                    self._config_name,
-                    SessionType(self._session.value),
-                ),
-            )
-            if notice:
-                lines.append(notice.lstrip("\n"))
-        await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
+        notice = _ordering_notice(
+            self._config_name,
+            self._session.name,
+            await points_config_service.ordering_warnings(
+                self._db_path, self._config_name, session_type
+            ),
+        )
+        if notice:
+            lines.append(notice.lstrip("\n"))
+        await _send_in_parts(interaction, "\n".join(lines))
 
-        if applied:
-            await bot_of(interaction).output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /results config bulk-session | {len(applied)} change(s)\n"
-                f"  config: {self._config_name}, session: {self._session.name}",
-            )
+        await bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /results config bulk-session | {len(valid)} change(s)\n"
+            f"  config: {self._config_name}, session: {self._session.name}"
+            + _bulk_values(valid),
+        )
 
 
 class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
-    """Modal for bulk-amending session points in the modification store."""
+    """Modal for bulk-amending session points in the modification store.
+
+    All or nothing, on the same terms as `BulkConfigSessionModal`: every line is parsed, and
+    the module, the season and amendment mode checked, before anything is staged, and the
+    paste is staged in one transaction.
+    """
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
         label="position, points — one per line",
@@ -288,71 +344,76 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         )
 
         await interaction.response.defer(ephemeral=True)
+        bot = bot_of(interaction)
+        what = "`/results amend bulk-session`"
+
+        if not await bot.module_service.is_results_enabled():
+            await refuse(interaction, _MODULE_OFF, what=what)
+            return
 
         # Gated here as well as on the command that opened it (issue #224). A modal can be
         # submitted long after it was shown, and the season can reach Pending completion in
         # between — a window that writes to the store is exactly the one worth closing twice.
         season = await season_for_command(
-            interaction, bot_of(interaction).season_service, "results amend bulk-session"
+            interaction, bot.season_service, "results amend bulk-session"
         )
         if season is None:
             return
 
-        valid, errors = _parse_bulk_lines(self.entries.value)
+        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
         if not valid and not errors:
-            await interaction.followup.send("No entries provided.", ephemeral=True)
+            await refuse(interaction, "\u274c No entries provided.", what=what)
+            return
+        if errors:
+            reply, reason = _bulk_refusal(errors)
+            await refuse(interaction, reply, what=what, reason=reason)
             return
 
-        applied: list[str] = []
-        for position, points in valid:
-            try:
-                await modify_session_points(
-                    self._db_path,
-                    season.id,
-                    self._config_name,
-                    self._session.value,
-                    position,
-                    points,
-                )
-                applied.append(f"P{position} → {points} pts")
-            except AmendmentNotActiveError:
-                await interaction.followup.send(
-                    "\u274c Amendment mode is not active.", ephemeral=True
-                )
-                return
-            except Exception as exc:
-                errors.append(f"P{position}: unexpected error — {exc}")
-
-        lines: list[str] = []
-        if applied:
-            lines.append(
-                f"\u2705 Amended in modification store for config **{self._config_name}** "
-                f"({self._session.name}):\n"
-                + "\n".join(f"  {a}" for a in applied)
+        try:
+            await modify_session_points(
+                self._db_path,
+                season.id,
+                self._config_name,
+                self._session.value,
+                valid,
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
+                now=datetime.now(timezone.utc),
             )
-        if errors:
-            lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        except AmendmentNotActiveError:
+            await refuse(interaction, "\u274c Amendment mode is not active.", what=what)
+            return
+        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
+            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
+            return
+
+        lines = [
+            f"\u2705 Amended in modification store for config **{self._config_name}** "
+            f"({self._session.name}):\n"
+            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
+        ]
+        if overrides:
+            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
         # Judged once, on the table the whole paste has left staged — as the config
         # modal above does, and for the same reason.
-        if applied:
-            notice = _ordering_notice(
-                self._config_name,
-                self._session.name,
-                await modification_ordering_warnings(
-                    self._db_path, season.id, self._config_name, self._session.value
-                ),
-                BLOCKS_AMENDMENT,
-            )
-            if notice:
-                lines.append(notice.lstrip("\n"))
-        await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
+        notice = _ordering_notice(
+            self._config_name,
+            self._session.name,
+            await modification_ordering_warnings(
+                self._db_path, season.id, self._config_name, self._session.value
+            ),
+            BLOCKS_AMENDMENT,
+        )
+        if notice:
+            lines.append(notice.lstrip("\n"))
+        await _send_in_parts(interaction, "\n".join(lines))
 
-        if applied:
-            await bot_of(interaction).output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /results amend bulk-session | {len(applied)} change(s)\n"
-                f"  config: {self._config_name}, session: {self._session.name}",
-            )
+        await bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /results amend bulk-session | {len(valid)} change(s)\n"
+            f"  config: {self._config_name}, session: {self._session.name}"
+            + _bulk_values(valid),
+        )
 
 
 class XmlImportModal(LeagueModal, title="XML Points Config Import"):
@@ -385,6 +446,11 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
         )
 
 
+def xml_import_named(config_name: str) -> str:
+    """`/results config xml-import` as its log lines name it: with the configuration it writes."""
+    return f"`/results config xml-import` into configuration {config_name}"
+
+
 async def _run_xml_import(
     interaction: discord.Interaction,
     xml_text: str,
@@ -393,11 +459,21 @@ async def _run_xml_import(
 ) -> None:
     """Shared logic for modal and file-attachment XML import paths.
 
-    Parses, validates, persists, and replies with an ephemeral summary.
-    Posts an audit log entry on both success and failure.
+    Parses, validates, persists, and replies with an ephemeral summary. Every outcome is
+    recorded in the log channel: a success with the values it set, a refusal (a payload that
+    does not parse, points out of order, a configuration that does not exist) in the standard
+    refusal form with its detail as the reason, and a failure in the standard failure form.
+
+    **A database fault is caught by name and reported here**, through `report_failure`, rather
+    than left to the form's or the command's failure path, so that its one line names the
+    configuration the import was writing, and its reply says that nothing from the import was
+    saved: the import is one transaction, so a fault leaves the configuration as it was. Any
+    other error propagates to the failure path.
     """
     from leaguebot.results.services.points_config_service import ConfigNotFoundError, xml_import_config
     from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
+
+    what = xml_import_named(config_name)
 
     async def _audit(msg: str) -> None:
         await bot_of(interaction).output_router.post_log(
@@ -410,36 +486,46 @@ async def _run_xml_import(
         payload, warnings = parse_xml_payload(xml_text)
     except XmlImportError as exc:
         error_text = "\n".join(f"  • {e}" for e in exc.errors)
-        await interaction.followup.send(
-            f"❌ XML parse/validation failed:\n{error_text}", ephemeral=True
+        await refuse(
+            interaction,
+            f"❌ XML parse/validation failed:\n{error_text}",
+            what=what,
+            reason=f"XML parse/validation failed: {'; '.join(exc.errors)}",
         )
-        await _audit(f"FAILED (parse error): {'; '.join(exc.errors)}")
         return
 
     # --- semantic validation (monotonic ordering) -------------------------
     mono_errors = validate_payload(payload)
     if mono_errors:
         error_text = "\n".join(f"  • {e}" for e in mono_errors)
-        await interaction.followup.send(
-            f"❌ Points ordering validation failed:\n{error_text}", ephemeral=True
+        await refuse(
+            interaction,
+            f"❌ Points ordering validation failed:\n{error_text}",
+            what=what,
+            reason=f"points ordering validation failed: {'; '.join(mono_errors)}",
         )
-        await _audit(f"FAILED (monotonic violation): {'; '.join(mono_errors)}")
         return
 
     # --- persist ----------------------------------------------------------
     try:
-        await xml_import_config(db_path, config_name, payload)
+        await xml_import_config(
+            db_path,
+            config_name,
+            payload,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            now=datetime.now(timezone.utc),
+        )
     except ConfigNotFoundError:
-        await interaction.followup.send(
-            f"❌ Config **{config_name}** not found.", ephemeral=True
-        )
-        await _audit("FAILED (config not found)")
+        await refuse(interaction, f"❌ Config **{config_name}** not found.", what=what)
         return
-    except Exception as exc:
-        await interaction.followup.send(
-            f"❌ Database error: {exc}", ephemeral=True
+    except sqlite3.Error as exc:
+        await report_failure(
+            interaction,
+            exc,
+            what=what,
+            outcome="Nothing from the import was saved. Run the import again to retry.",
         )
-        await _audit(f"FAILED (db error): {exc}")
         return
 
     # --- success reply ----------------------------------------------------
@@ -457,7 +543,17 @@ async def _run_xml_import(
     await interaction.followup.send(
         f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
     )
-    await _audit(f"SUCCESS: {len(payload.positions)} session(s), {len(payload.fastest_laps)} FL row(s)")
+    # The values set, beneath the line, as "The record of what changed" asks.
+    values: list[str] = []
+    for session_type, pos_dict in payload.positions.items():
+        values.append(
+            f"  {session_type.label()}: "
+            + ", ".join(f"P{position} {points}" for position, points in sorted(pos_dict.items()))
+        )
+    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
+        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
+        values.append(f"  {session_type.label()} fastest lap: {fl_pts} pts{limit_text}")
+    await _audit("SUCCESS" + "".join(f"\n{line}" for line in values))
 
 
 # ---------------------------------------------------------------------------
@@ -615,12 +711,21 @@ class ResultsCog(commands.Cog):
     # Gate helpers
     # ------------------------------------------------------------------
 
-    async def _module_gate(self, interaction: discord.Interaction) -> bool:
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Whether the results module is on; where it is not, refuse and return False.
+
+        The refusal is recorded in the log channel, as every refusal of a command that acts
+        is, unless *record* is False — which the views and lists pass, since they change
+        nothing and record nothing.
+        """
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled on this server.",
-                ephemeral=True,
-            )
+            reply = "\u274c The Results & Standings module is not enabled on this server."
+            if record:
+                await refuse(interaction, reply, what=describe(interaction))
+            else:
+                await interaction.response.send_message(reply, ephemeral=True)
             return False
         return True
 
@@ -987,7 +1092,7 @@ class ResultsCog(commands.Cog):
         the case the issue was raised for, a league between seasons wanting to know what it
         already holds before building the next one.
         """
-        if not await self._module_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1042,7 +1147,7 @@ class ResultsCog(commands.Cog):
         got shown figures the running season does not score by. Naming the store is the whole
         of the fix, and it is why the parameter has no default to fall back to.
         """
-        if not await self._module_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1166,25 +1271,20 @@ class ResultsCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
 
             raw = await file.read()
+            what = xml_import_named(name)
 
             if len(raw) > 100_000:
-                await interaction.followup.send(
-                    "❌ File is too large (max 100 KB).", ephemeral=True
-                )
+                await refuse(interaction, "❌ File is too large (max 100 KB).", what=what)
                 return
 
             if not raw:
-                await interaction.followup.send(
-                    "❌ The attached file is empty.", ephemeral=True
-                )
+                await refuse(interaction, "❌ The attached file is empty.", what=what)
                 return
 
             try:
                 xml_text = raw.decode("utf-8")
             except UnicodeDecodeError:
-                await interaction.followup.send(
-                    "❌ File could not be decoded as UTF-8.", ephemeral=True
-                )
+                await refuse(interaction, "❌ File could not be decoded as UTF-8.", what=what)
                 return
 
             await _run_xml_import(
@@ -1331,7 +1431,14 @@ class ResultsCog(commands.Cog):
 
         try:
             await modify_session_points(
-                self.bot.db_path, season.id, name, session.value, position, points
+                self.bot.db_path,
+                season.id,
+                name,
+                session.value,
+                [(position, points)],
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
+                now=datetime.now(timezone.utc),
             )
         except AmendmentNotActiveError:
             await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
@@ -1481,7 +1588,7 @@ class ResultsCog(commands.Cog):
         need the panel made public, on the model of the season-approval question, and that
         is a larger change than this one.
         """
-        if not await self._module_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1496,7 +1603,7 @@ class ResultsCog(commands.Cog):
         )
 
         season = await season_for_command(
-            interaction, self.bot.season_service, "results amend review"
+            interaction, self.bot.season_service, "results amend review", record=False
         )
         if season is None:
             return
@@ -1888,20 +1995,26 @@ class ResultsCog(commands.Cog):
             await self._amend_round_results(
                 interaction, division_name, round_number, session, opened
             )
-        except Exception:
+        except Exception as exc:
             if opened.round_id is None or opened.stage_one_started:
                 raise
             log.exception("amend: round %s failed before anything was written", opened.round_id)
-            await self._let_go_of_unwritten_amendment(interaction, opened)
+            await self._let_go_of_unwritten_amendment(interaction, opened, exc)
 
     async def _let_go_of_unwritten_amendment(
-        self, interaction: discord.Interaction, opened: _OpenedAmendment
+        self, interaction: discord.Interaction, opened: _OpenedAmendment, error: BaseException
     ) -> None:
         """Forget an amendment that failed before stage one, and delete its channel.
 
-        As every amendment's channel goes: see `_close_amend_channel_record`.
+        As every amendment's channel goes: see `_close_amend_channel_record`. The admin is told
+        the plain kind of *error* and that nothing was written, and the log channel gets one
+        `AMEND_FAILED` line naming its type alone; the traceback is the host's log's.
         """
-        from leaguebot.results.services.result_submission_service import _close_amend_channel_record
+        from leaguebot.results.services.result_submission_service import (
+            AMENDMENT_RE_RUN,
+            _close_amend_channel_record,
+            amendment_fault_reply,
+        )
 
         # Its one caller lets an amendment go only once its record is in.
         assert opened.round_id is not None
@@ -1918,14 +2031,17 @@ class ResultsCog(commands.Cog):
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
                 f"round {opened.round_number}\n"
+                f"  fault: {type(error).__name__}. The details are in the host's log.\n"
                 "  Failed before the corrected results were recorded; nothing was written."
             )
         except Exception:  # noqa: BLE001
             log.exception("amend: could not log the failure of round %s", opened.round_id)
         try:
             await interaction.followup.send(
-                "\u274c Amendment failed due to an internal error before anything was "
-                "written. Check the log channel, then re-run `/results rounds amend`.",
+                amendment_fault_reply(
+                    describe_fault(error),
+                    f"Nothing was written. {AMENDMENT_RE_RUN}",
+                ),
                 ephemeral=True,
             )
         except discord.HTTPException:
@@ -1939,11 +2055,21 @@ class ResultsCog(commands.Cog):
         session: app_commands.Choice[str] | None,
         opened: _OpenedAmendment,
     ) -> None:
-        """The body of `/results rounds amend`, filling in *opened* as it goes."""
+        """The body of `/results rounds amend`, filling in *opened* as it goes.
+
+        **A fault while stage one writes is reported here and not raised again.** The write is
+        undone first — a real clean-up, putting the round back as it stood — and the amendment
+        then reports its own failure: the admin is told the plain kind of fault and what became
+        of the round, and the log channel gets one `AMEND_FAILED` line naming the fault's type,
+        the traceback going to the host's log. Raised again, the command tree would report it a
+        second time, and in words that cannot say the round was put back.
+        """
         guild = guild_of(interaction)
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Results & Standings module is not enabled.",
+                what=describe(interaction),
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -1973,25 +2099,30 @@ class ResultsCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.followup.send(
-                f"\u274c Division `{division_name}` not found.", ephemeral=True
+            await refuse(
+                interaction,
+                f"\u274c Division `{division_name}` not found.",
+                what=describe(interaction),
             )
             return
 
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.followup.send(
-                f"\u274c Round {round_number} not found.", ephemeral=True
+            await refuse(
+                interaction,
+                f"\u274c Round {round_number} not found.",
+                what=describe(interaction),
             )
             return
 
         # T009: amend is only permitted on FINAL rounds
         if rnd.status != "FINAL":
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c This round cannot be amended yet. Round results must reach **FINAL** status "
                 "(approved through the full penalty review and appeals process) before they can be amended.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -2004,8 +2135,10 @@ class ResultsCog(commands.Cog):
             sr_rows = await cursor.fetchall()
 
         if not sr_rows:
-            await interaction.followup.send(
-                "\u274c No results found for this round.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c No results found for this round.",
+                what=describe(interaction),
             )
             return
 
@@ -2027,8 +2160,10 @@ class ResultsCog(commands.Cog):
         if session is not None:
             chosen: list[SessionType] = [SessionType(session.value)]
             if chosen[0] not in session_types_present:
-                await interaction.followup.send(
-                    f"❌ No {chosen[0].value} session found for this round.", ephemeral=True
+                await refuse(
+                    interaction,
+                    f"❌ No {chosen[0].value} session found for this round.",
+                    what=describe(interaction),
                 )
                 return
         else:
@@ -2084,11 +2219,12 @@ class ResultsCog(commands.Cog):
                     pass
                 except discord.HTTPException:
                     log.exception("amend: could not delete stale channel %s", _closed["channel_id"])
-                    await interaction.followup.send(
+                    await refuse(
+                        interaction,
                         f"❌ An earlier amendment of this round left its channel "
                         f"<#{_closed['channel_id']}> behind, and it could not be removed. "
                         "Delete it, then run this command again.",
-                        ephemeral=True,
+                        what=describe(interaction),
                     )
                     return
             async with get_connection(self.bot.db_path) as _odb:
@@ -2099,8 +2235,10 @@ class ResultsCog(commands.Cog):
                 )
                 await _odb.commit()
         if _open is not None:
-            await interaction.followup.send(
-                _amendment_open_refusal(div.name, _open), ephemeral=True
+            await refuse(
+                interaction,
+                _amendment_open_refusal(div.name, _open),
+                what=describe(interaction),
             )
             return
 
@@ -2162,11 +2300,12 @@ class ResultsCog(commands.Cog):
                 _ins = await _adb.execute(
                     """
                     INSERT INTO round_amend_channels
-                        (round_id, channel_id, session_types, created_at)
-                    VALUES (?, ?, ?, ?)
+                        (round_id, channel_id, session_types, created_at, started_by)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     (rnd.id, amend_channel.id,
-                     json.dumps([st.value for st in chosen]), _amend_created_at),
+                     json.dumps([st.value for st in chosen]), _amend_created_at,
+                     interaction.user.id),
                 )
                 await _adb.commit()
                 _cur = await _adb.execute(
@@ -2189,8 +2328,10 @@ class ResultsCog(commands.Cog):
                 await amend_channel.delete(reason="An amendment is already open in this division")
             except discord.HTTPException:
                 log.exception("amend: could not delete the duplicate channel for round %s", rnd.id)
-            await interaction.followup.send(
-                _amendment_open_refusal(div.name, _earlier), ephemeral=True
+            await refuse(
+                interaction,
+                _amendment_open_refusal(div.name, _earlier),
+                what=describe(interaction),
             )
             return
 
@@ -2216,6 +2357,63 @@ class ResultsCog(commands.Cog):
         stage_one_writing: list[bool] = [False]
         # The round, for the view below: a check made out here does not reach inside it.
         amended_round_id = rnd.id
+        # Who pressed Cancel, which may be a league manager other than the opener: the cancel
+        # line names whoever pressed it.
+        cancelled_by: list[discord.abc.User | None] = [None]
+        #: The amendment as its log lines name it.
+        what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
+        from leaguebot.results.services.result_submission_service import (
+            AMENDMENT_RE_RUN,
+            AMENDMENT_RE_RUN_ONCE_PUT_BACK,
+            ROUND_NOT_PUT_BACK_YET,
+            ROUND_PUT_BACK,
+            amendment_fault_reply,
+        )
+
+        async def _log_amend_failed(
+            error: BaseException,
+            where: str,
+            *,
+            member: discord.abc.User | None = None,
+            not_put_back: str | None = None,
+        ) -> None:
+            """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words.
+
+            It names *member*, whoever pressed what failed: a Cancel Amendment press may be a
+            league manager's other than the opener's. Left out, it is the member who ran the
+            command.
+
+            *not_put_back* is what the reply says became of a round that could not be put back
+            yet, given where that is so: the line ends on it, in plain text, so that whoever
+            reads the log rather than the reply also waits for the round to be put back before
+            running the command again, a re-run until then being refused.
+            """
+            who = member if member is not None else interaction.user
+            became = f"\n  {not_put_back.replace('`', '')}" if not_put_back else ""
+            try:
+                await self.bot.output_router.post_log(
+                    f"{who.display_name} (<@{who.id}>) | AMEND_FAILED | "
+                    f"round {rnd.round_number} session {sessions_text}\n"
+                    f"  {where}; fault: {type(error).__name__}. The details are in the host's log."
+                    + became
+                )
+            except Exception:  # noqa: BLE001 — the failure is still in the host's log
+                log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
+
+        async def _tell_of_failure(reply: str) -> None:
+            """Tell the admin of a failure already logged, without raising.
+
+            The interaction's token lapses fifteen minutes after the command, which several
+            pastes can outlast. Raised, a refused send would reach the command tree, which
+            would log the one failure a second time and name the wrong fault.
+            """
+            try:
+                await interaction.followup.send(reply, ephemeral=True)
+            except discord.HTTPException:
+                log.warning(
+                    "amend: could not tell the admin of round %s of a failure", rnd.id,
+                    exc_info=True,
+                )
 
         class _CancelView(LeagueView):
             def __init__(self_v) -> None:
@@ -2236,10 +2434,11 @@ class ResultsCog(commands.Cog):
                     )
                     return
                 if stage_one_writing[0]:
-                    await bi.response.send_message(
+                    await refuse(
+                        bi,
                         "⏳ The corrected results are being recorded — press **Cancel "
                         "Amendment** again in a moment to undo them.",
-                        ephemeral=True,
+                        what=f"the Cancel Amendment button of {what_amended}",
                     )
                     return
                 if stage_one_done[0]:
@@ -2255,23 +2454,34 @@ class ResultsCog(commands.Cog):
                         undone = await cancel_amendment(
                             self.bot, amended_round_id, cancelled_by=bi.user.id
                         )
-                    except Exception:
+                    except Exception as exc:  # noqa: BLE001 — reported to the presser, and logged
                         log.exception("amend: cancelling round %s failed", amended_round_id)
+                        await _log_amend_failed(
+                            exc,
+                            "cancelled, but the round could not be put back",
+                            member=bi.user,
+                            not_put_back=ROUND_NOT_PUT_BACK_YET,
+                        )
                         await bi.followup.send(
-                            "❌ The round could not be put back just now. The bot will "
-                            "retry within a few minutes and say so in the log channel.",
+                            amendment_fault_reply(describe_fault(exc), ROUND_NOT_PUT_BACK_YET),
                             ephemeral=True,
                         )
                         return
                     if undone:
                         self_v.stop()
+                        await record_abandoned(
+                            self.bot, bi.user, what=what_amended, lapsed=False,
+                            detail=ROUND_PUT_BACK,
+                        )
                     else:
-                        await bi.followup.send(
+                        await refuse(
+                            bi,
                             "ℹ️ Too late to cancel — the amendment is already being "
                             "committed, or is no longer open.",
-                            ephemeral=True,
+                            what=f"the Cancel Amendment button of {what_amended}",
                         )
                     return
+                cancelled_by[0] = bi.user
                 cancelled_flag[0] = True
                 cancelled_event.set()
                 await bi.response.send_message("Amendment cancelled.", ephemeral=True)
@@ -2318,23 +2528,33 @@ class ResultsCog(commands.Cog):
                 reason="Results amend complete",
             )
 
-        async def _end(event: str, *, session_type: SessionType | None = None,
-                       detail: str = "", reply: str | None = None) -> None:
-            """Log why the amendment ended before anything was written, and tidy up."""
-            what = session_type.value if session_type is not None else sessions_text
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | {event} | "
-                f"round {rnd.round_number} session {what}" + (f"\n  {detail}" if detail else ""),
+        async def _refused(reply: str, *, reason: str) -> None:
+            """Refuse the amendment before anything was written, recording why, and tidy up.
+
+            **Best effort** (#345): `refuse` never raises. The interaction's token lapses after
+            fifteen minutes, which several pastes can outlast; raised here, the refusal would be
+            taken for a fault and logged a second time as `AMEND_FAILED`.
+            """
+            await refuse(interaction, reply, what=what_amended, reason=reason)
+            await _cleanup_channel()
+
+        async def _abandoned(*, lapsed: bool, reply: str) -> None:
+            """Record an amendment cancelled, or lapsed, before anything was written, and tidy up.
+
+            A lapse names who started it; a cancel, who pressed Cancel.
+            """
+            await record_abandoned(
+                self.bot,
+                interaction.user if lapsed else (cancelled_by[0] or interaction.user),
+                what=what_amended,
+                lapsed=lapsed,
+                detail=f"Nothing was written. {AMENDMENT_RE_RUN}",
             )
             await _cleanup_channel()
-            if reply is not None:
-                # **Best effort** (#345). The interaction's token lapses after fifteen minutes,
-                # which several pastes can outlast; raised here, the ending just logged would be
-                # taken for a fault and logged a second time as `AMEND_FAILED`.
-                try:
-                    await interaction.followup.send(reply, ephemeral=True)
-                except discord.HTTPException:
-                    log.warning("amend: could not reply to the admin of round %s", rnd.id)
+            try:
+                await interaction.followup.send(reply, ephemeral=True)
+            except discord.HTTPException:
+                log.warning("amend: could not reply to the admin of round %s", rnd.id)
 
         import asyncio as _asyncio
         _AMEND_TIMEOUT_S = 300  # 5 minutes, for each paste and each choice of configuration
@@ -2375,15 +2595,13 @@ class ResultsCog(commands.Cog):
                 t.cancel()
 
             if not done:
-                await _end(
-                    "AMEND_TIMEOUT", session_type=st, reply=_expired("no results were pasted")
-                )
+                await _abandoned(lapsed=True, reply=_expired("no results were pasted"))
                 return
             if cancel_task in done:
                 # The button was pressed: it sets the flag before the event, so both hold.
                 cancelled_flag[0] = True
             if cancelled_flag[0]:
-                await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
+                await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
                 return
 
             msg = done_task.result()
@@ -2417,19 +2635,22 @@ class ResultsCog(commands.Cog):
             ))
             try:
                 await msg.delete()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — a paste left standing never stops the amendment
+                log.warning(
+                    "results rounds amend: could not delete the pasted classification",
+                    exc_info=True,
+                )
 
             if validation_errors:
                 # **The whole amendment ends, earlier pastes and all** (decided 2026-09-21).
                 # The session is not asked for again: a league amending a round prepares every
                 # classification before it starts, and nothing has been written to undo.
-                await _end(
-                    "AMEND_REJECTED", session_type=st,
-                    detail=f"errors: {'; '.join(validation_errors[:10])}",
-                    reply=(
-                        "❌ Amendment rejected — validation errors were found. "
-                        "Check the log channel for details, then re-run `/results rounds amend`."
+                await _refused(
+                    "❌ Amendment rejected — validation errors were found. "
+                    "Check the log channel for details, then re-run `/results rounds amend`.",
+                    reason=(
+                        f"session {st.value} failed validation: "
+                        f"{'; '.join(validation_errors[:10])}"
                     ),
                 )
                 return
@@ -2440,12 +2661,11 @@ class ResultsCog(commands.Cog):
                 if fl_amend_override not in submitted_driver_ids:
                     fl_member = amend_channel.guild.get_member(int(fl_amend_override)) if amend_channel.guild else None
                     fl_name = fl_member.display_name if fl_member else str(fl_amend_override)
-                    await _end(
-                        "AMEND_REJECTED", session_type=st,
-                        detail=f"error: FL override {fl_name} not in submitted results",
-                        reply=(
-                            f"❌ Amendment rejected — FL override **{fl_name}** is not in the "
-                            "submitted results. Re-run `/results rounds amend` to try again."
+                    await _refused(
+                        f"❌ Amendment rejected — FL override **{fl_name}** is not in the "
+                        "submitted results. Re-run `/results rounds amend` to try again.",
+                        reason=(
+                            f"session {st.value}: FL override {fl_name} not in submitted results"
                         ),
                     )
                     return
@@ -2476,13 +2696,12 @@ class ResultsCog(commands.Cog):
                 for _t in _pending:
                     _t.cancel()
                 if not _done:
-                    await _end(
-                        "AMEND_TIMEOUT", session_type=st,
-                        reply=_expired("no points configuration was chosen"),
+                    await _abandoned(
+                        lapsed=True, reply=_expired("no points configuration was chosen")
                     )
                     return
                 if cancelled_flag[0]:
-                    await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
+                    await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
                     return
                 config_name = cfg_view.selected or config_names[0]
 
@@ -2496,13 +2715,15 @@ class ResultsCog(commands.Cog):
             )
 
         from leaguebot.results.services.result_submission_service import (
+            ROUND_PUT_BACK,
             AmendmentWouldOrphanVerdictError,
             amend_round_results,
+            amendment_fault_reply,
         )
         # **Cancelled at the last moment** (#345). Read again here, the last point at which
         # stopping costs nothing: from the next line the write is under way.
         if cancelled_flag[0]:
-            await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
+            await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
             return
 
         stage_one_writing[0] = True
@@ -2524,41 +2745,40 @@ class ResultsCog(commands.Cog):
             # than a traceback in a channel they may not have open, because this one is theirs
             # to act on: include the driver, or withdraw the verdict (#345).
             stage_one_writing[0] = False
-            await _end("AMEND_REFUSED", detail=str(exc), reply=f"❌ {exc}")
+            await _refused(f"❌ {exc}", reason=str(exc))
             return
-        except Exception as exc:
-            import traceback as _tb
-            error_summary = f"{type(exc).__name__}: {exc}"
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
-                f"round {rnd.round_number} session {sessions_text}\n"
-                f"  error: {error_summary}\n"
-                f"```\n{_tb.format_exc()[-1500:]}\n```",
-            )
+        except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
+            log.exception("amend: stage one of round %s failed", rnd.id)
             # **Put back whatever stage one committed before the channel goes** (#345). The
             # classifications are written in one transaction, but the points and the standings
             # after it are not; a failure there left the round half-amended, and deleting the
             # channel's record took the snapshot that could undo it.
             from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
 
+            # The line is written once the revert has been tried, so that it can say where the
+            # round could not be put back yet. It never raises, so the reply goes ahead whatever
+            # becomes of the post.
             try:
                 await revert_abandoned_amendment(self.bot.db_path, rnd.id, self.bot)
             except Exception:
-                stage_one_writing[0] = False
                 log.exception("amend: could not revert round %s after a failure", rnd.id)
-                await interaction.followup.send(
-                    "❌ Amendment failed due to an internal error, and the round could "
-                    "not be put back. Restarting the bot retries that; check the log "
-                    "channel for details.",
-                    ephemeral=True,
+                unrestored = (
+                    "The round could not be put back yet. Restarting the bot retries "
+                    f"that. {AMENDMENT_RE_RUN_ONCE_PUT_BACK}"
                 )
+                await _log_amend_failed(
+                    exc, "the corrected results could not be recorded", not_put_back=unrestored
+                )
+                stage_one_writing[0] = False
+                await _tell_of_failure(amendment_fault_reply(describe_fault(exc), unrestored))
                 return
+            # The writing flag stays raised until the line is written, so that a Cancel pressed
+            # meanwhile is refused as "being recorded", and logged, rather than told the
+            # amendment was cancelled with nothing to record it.
+            await _log_amend_failed(exc, "the corrected results could not be recorded")
             stage_one_writing[0] = False
             await _cleanup_channel()
-            await interaction.followup.send(
-                "❌ Amendment failed due to an internal error. Check the log channel for details.",
-                ephemeral=True,
-            )
+            await _tell_of_failure(amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK))
             return
 
         stage_one_writing[0] = False
@@ -2587,20 +2807,28 @@ class ResultsCog(commands.Cog):
                 division_name=div.name,
                 session_types=chosen,
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
             # With no report stage on screen there is no way to finish the amendment, so it is
-            # undone now rather than left half-applied until the sweep (#345).
+            # undone now rather than left half-applied until the sweep (#345). One failure
+            # makes one line: `cancel_amendment` writes none of its own.
             log.exception("amend: could not open the report stage of round %s", rnd.id)
+            not_put_back: str | None = None
             try:
-                await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
-            except Exception:
+                undone = await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
+            except Exception:  # noqa: BLE001 — left to the sweep, with the snapshot intact
                 log.exception("amend: could not revert round %s", rnd.id)
-            await interaction.followup.send(
-                "❌ The corrected results were recorded, but the report stage could not "
-                "be opened, so the amendment has been undone. Check the log channel, then "
-                "re-run `/results rounds amend`.",
-                ephemeral=True,
+                became = not_put_back = ROUND_NOT_PUT_BACK_YET
+            else:
+                became = (
+                    "The report stage could not be opened, so the amendment has been undone "
+                    f"and the round put back as it was. {AMENDMENT_RE_RUN}"
+                    if undone
+                    else f"The amendment had already ended, so nothing more was undone. {AMENDMENT_RE_RUN}"
+                )
+            await _log_amend_failed(
+                exc, "the report stage could not be opened", not_put_back=not_put_back
             )
+            await _tell_of_failure(amendment_fault_reply(describe_fault(exc), became))
             return
         await interaction.followup.send(
             f"✅ Corrected results recorded. Review the reports and appeals of "

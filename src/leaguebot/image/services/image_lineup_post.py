@@ -75,7 +75,7 @@ async def lineup_enabled(bot: LeagueBot) -> bool:
         report = reports.get(LINEUP_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("lineup: enablement check failed: %s", exc)
+        log.error("lineup: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -318,7 +318,7 @@ async def try_post(
     try:
         decision = await render_png(bot, guild, division_id, origin)
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("lineup: render failed for division %s: %s", division_id, exc)
+        log.error("lineup: render failed for division %s: %s", division_id, exc, exc_info=True)
         await _report(bot, row["name"], str(exc))
         if origin is PostingOrigin.COMMANDED:
             return LineupPostOutcome(action=REJECTED, message=f"❌ {exc}")
@@ -435,7 +435,7 @@ async def render_for_command(
             obtain_missing_portraits=obtain_missing_portraits,
         )
     except Exception as exc:  # noqa: BLE001
-        log.error("lineup: command render failed for division %s: %s", division_id, exc)
+        log.error("lineup: command render failed for division %s: %s", division_id, exc, exc_info=True)
         return LineupPostOutcome(action=REJECTED, message=f"❌ {exc}")
 
     if decision.posts_image:
@@ -461,4 +461,4 @@ async def _report(bot: LeagueBot, division_name: str, detail: str) -> None:
             f"Lineup image | {division_name} | {detail}",
         )
     except Exception as exc:  # noqa: BLE001
-        log.error("lineup: could not report to the log channel: %s", exc)
+        log.error("lineup: could not report to the log channel: %s", exc, exc_info=True)

@@ -129,7 +129,7 @@ class SignupModuleService:
                 use_application_commands=True,
             )
         except Exception:  # noqa: BLE001 — see the docstring
-            log.warning("move_base_role_overwrite: could not update the signup channel")
+            log.warning("move_base_role_overwrite: could not update the signup channel", exc_info=True)
 
     # ── Settings ──────────────────────────────────────────────────────
 

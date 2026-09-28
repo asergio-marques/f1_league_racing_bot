@@ -45,8 +45,6 @@ PASS = {
     "weather": "#287",
     "image": "#288",
 }
-#: Keeping the full error details in every catch-all handler.
-TRACEBACKS = "#442"
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
 #: The handlers for each kind of post, which move core's own posts onto them.
@@ -331,9 +329,7 @@ def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
-}
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_nothing_else_is_awaited_while_a_write_is_open():
@@ -413,117 +409,7 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_rsvp_views_and_deadlines"): (1, TRACEBACKS),
-    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, TRACEBACKS),
-    ("signup/cogs/admin_review_cog.py", "_may_review_signup"): (1, TRACEBACKS),
-    ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, TRACEBACKS),
-    ("image/cogs/image_cog.py", "ImageCog._log"): (1, TRACEBACKS),
-    ("image/cogs/image_cog.py", "ImageCog.commit_daily_portraits"): (1, TRACEBACKS),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, TRACEBACKS),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, TRACEBACKS),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, TRACEBACKS),
-    ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, TRACEBACKS),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (1, TRACEBACKS),
-    ("results/cogs/results_cog.py", "BulkAmendSessionModal.on_submit"): (1, TRACEBACKS),
-    ("results/cogs/results_cog.py", "BulkConfigSessionModal.on_submit"): (1, TRACEBACKS),
-    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (1, TRACEBACKS),
-    ("results/cogs/results_cog.py", "_run_xml_import"): (1, TRACEBACKS),
-    ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._attendance_capacity_warning"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._calendar_capacity_warning"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._calendar_round_overflow"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._colour_shortfall_problems"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._image_configuration_faults"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._lineup_problems"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._portrait_configuration_blocker"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._portrait_review_lines"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._prerender_review_images"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._safe_render"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (1, TRACEBACKS),
-    ("core/cogs/season_cog.py", "_channel_on_server"): (1, TRACEBACKS),
-    ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (2, TRACEBACKS),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, TRACEBACKS),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, TRACEBACKS),
-    ("attendance/services/attendance_service.py", "_round_grid"): (2, TRACEBACKS),
-    ("attendance/services/attendance_service.py", "_seat_team_field"): (1, TRACEBACKS),
-    ("attendance/services/attendance_service.py", "_sheet_attachment"): (1, TRACEBACKS),
-    ("core/services/cancellation_notice_service.py", "_send"): (1, TRACEBACKS),
-    ("image/services/image_attendance_post.py", "attendance_enabled"): (1, TRACEBACKS),
-    ("image/services/image_attendance_post.py", "render_sheet"): (1, TRACEBACKS),
-    ("image/services/image_lineup_post.py", "_report"): (1, TRACEBACKS),
-    ("image/services/image_lineup_post.py", "lineup_enabled"): (1, TRACEBACKS),
-    ("image/services/image_lineup_post.py", "render_for_command"): (1, TRACEBACKS),
-    ("image/services/image_lineup_post.py", "try_post"): (1, TRACEBACKS),
-    ("image/services/image_preview_service.py", "build_rsvp_preview"): (1, TRACEBACKS),
-    ("image/services/image_render_service.py", "ImageRenderService.report_notices"): (1, TRACEBACKS),
-    ("image/services/image_render_service.py", "discard_attachment"): (1, TRACEBACKS),
-    ("image/services/image_render_service.py", "resolve_configured_directories"): (1, TRACEBACKS),
-    ("image/services/image_results_post.py", "_nationality_collected"): (1, TRACEBACKS),
-    ("image/services/image_results_post.py", "report"): (1, TRACEBACKS),
-    ("image/services/image_results_post.py", "report_notices"): (1, TRACEBACKS),
-    ("image/services/image_results_post.py", "results_enabled"): (1, TRACEBACKS),
-    ("image/services/image_results_post.py", "try_post"): (2, TRACEBACKS),
-    ("image/services/image_rsvp_post.py", "rsvp_enabled"): (1, TRACEBACKS),
-    ("image/services/image_rsvp_post.py", "try_attach"): (1, TRACEBACKS),
-    ("image/services/image_standings_post.py", "_post_one"): (1, TRACEBACKS),
-    ("image/services/image_standings_post.py", "report"): (1, TRACEBACKS),
-    ("image/services/image_standings_post.py", "report_notices"): (1, TRACEBACKS),
-    ("image/services/image_standings_post.py", "standings_enabled"): (1, TRACEBACKS),
-    ("image/services/image_standings_post.py", "try_post"): (1, TRACEBACKS),
-    ("image/services/image_validity_service.py", "aspect_attaches_files"): (1, TRACEBACKS),
-    ("image/services/image_verdict_banner_post.py", "banner_enabled"): (1, TRACEBACKS),
-    ("image/services/image_verdict_banner_post.py", "render_banner"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "_driver_nationality"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "_mention_names"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "_round_context"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "render_verdict"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "team_key_for_entry"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "team_name_for_entry"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "verdicts_enabled"): (1, TRACEBACKS),
-    ("image/services/image_weather_post.py", "attach_forecast"): (1, TRACEBACKS),
-    ("image/services/image_weather_post.py", "render_forecast"): (1, TRACEBACKS),
-    ("image/services/image_weather_post.py", "weather_enabled"): (1, TRACEBACKS),
-    ("core/services/placement_service.py", "PlacementService._guard_image_capacity"): (1, TRACEBACKS),
-    ("core/services/placement_service.py", "PlacementService._guard_reserve_capacity"): (1, TRACEBACKS),
-    ("core/services/placement_service.py", "PlacementService._guard_sheet_capacity"): (1, TRACEBACKS),
-    ("core/services/placement_service.py", "PlacementService._guard_standings_capacity"): (1, TRACEBACKS),
-    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, TRACEBACKS),
-    ("results/services/results_post_service.py", "post_session_results"): (1, TRACEBACKS),
-    ("core/services/retry_service.py", "_safe_post_log._post"): (1, TRACEBACKS),
-    ("core/services/retry_service.py", "attempt_delivery"): (2, TRACEBACKS),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, TRACEBACKS),
-    ("core/services/scheduler_service.py", "SchedulerService.cancel_all"): (1, TRACEBACKS),
-    ("core/services/scheduler_service.py", "SchedulerService.cancel_job"): (1, TRACEBACKS),
-    ("core/services/scheduler_service.py", "SchedulerService.cancel_portrait_refresh"): (1, TRACEBACKS),
-    ("core/services/scheduler_service.py", "SchedulerService.cancel_round"): (1, TRACEBACKS),
-    ("core/services/scheduler_service.py", "SchedulerService.cancel_season_end"): (1, TRACEBACKS),
-    ("core/services/scheduler_service.py", "SchedulerService.cancel_signup_close_timer"): (1, TRACEBACKS),
-    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (2, TRACEBACKS),
-    ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, TRACEBACKS),
-    ("core/services/season_lifecycle_service.py", "_close_driver_signups"): (2, TRACEBACKS),
-    ("core/services/season_lifecycle_service.py", "wind_down_ongoing"): (1, TRACEBACKS),
-    ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"): (1, TRACEBACKS),
-    ("core/services/test_mode_service.py", "build_review_summary"): (1, TRACEBACKS),
-    ("core/services/test_roster_service.py", "add_test_driver"): (1, TRACEBACKS),
-    ("results/services/verdict_announcement_service.py", "_graphic_name"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService._cancel_inactivity_job"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService._correction_timeout_callback"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService.handle_inactivity_timeout"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (2, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService.reject_signup"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService.withdraw"): (1, TRACEBACKS),
-    ("image/utils/font_metrics.py", "_faces_of"): (3, TRACEBACKS),
-    ("image/utils/font_metrics.py", "_families_of"): (4, TRACEBACKS),
-    ("image/utils/font_metrics.py", "measure"): (1, TRACEBACKS),
-    ("core/utils/interaction_errors.py", "report_failure"): (2, TRACEBACKS),
-    ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, TRACEBACKS),
-    ("image/utils/svg_fill.py", "_mandatory_ids"): (1, TRACEBACKS),
-}
+KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_a_catch_all_handler_keeps_the_error_details():
@@ -580,16 +466,13 @@ def _scheduler_reached_around() -> Counter[tuple[str, str]]:
 KNOWN_SCHEDULER_REACHED_AROUND: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "_BackupBeforeApprovalView.save"): (3, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.backup_save"): (3, PASS["core"]),
-    ("core/services/season_lifecycle_service.py", "_close_driver_signups"): (1, PASS["core"]),
     ("signup/services/wizard_service.py", "WizardService.__init__"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._arm_channel_delete_job"): (2, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._arm_inactivity_job"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._cancel_inactivity_job"): (2, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._cancel_channel_delete_job"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._cancel_inactivity_job"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.move_held_channel"): (2, PASS["signup"]),
 }
 

@@ -37,7 +37,7 @@ from leaguebot.results.cogs.results_cog import _parse_bulk_lines
 
 
 def test_a_clean_table_is_read_in_full():
-    valid, errors = _parse_bulk_lines("1, 25\n2, 18\n3, 15")
+    valid, errors, _overrides = _parse_bulk_lines("1, 25\n2, 18\n3, 15")
 
     assert valid == [(1, 25), (2, 18), (3, 15)]
     assert errors == []
@@ -45,7 +45,7 @@ def test_a_clean_table_is_read_in_full():
 
 def test_whitespace_around_the_comma_is_forgiven():
     """A pasted table carries it, and refusing over spacing would refuse most real input."""
-    valid, errors = _parse_bulk_lines("  1 ,   25  \n2,18")
+    valid, errors, _overrides = _parse_bulk_lines("  1 ,   25  \n2,18")
 
     assert valid == [(1, 25), (2, 18)]
     assert errors == []
@@ -53,7 +53,7 @@ def test_whitespace_around_the_comma_is_forgiven():
 
 def test_blank_lines_are_skipped():
     """A paste picks up trailing newlines and blank separators between blocks."""
-    valid, errors = _parse_bulk_lines("\n1, 25\n\n\n2, 18\n\n")
+    valid, errors, _overrides = _parse_bulk_lines("\n1, 25\n\n\n2, 18\n\n")
 
     assert valid == [(1, 25), (2, 18)]
     assert errors == []
@@ -62,7 +62,7 @@ def test_blank_lines_are_skipped():
 def test_points_of_zero_are_accepted():
     """Most of a table is zero — only the top positions score — so refusing zero would
     make the common case impossible."""
-    valid, errors = _parse_bulk_lines("11, 0")
+    valid, errors, _overrides = _parse_bulk_lines("11, 0")
 
     assert valid == [(11, 0)]
     assert errors == []
@@ -72,7 +72,7 @@ def test_a_line_with_more_than_one_comma_keeps_the_rest_as_points():
     """Split on the first comma only. A trailing comment after the points is a manager's
     note, and it earns an error about the points rather than a malformed-line error that
     would send them looking at the position."""
-    valid, errors = _parse_bulk_lines("1, 25, fastest lap")
+    valid, errors, _overrides = _parse_bulk_lines("1, 25, fastest lap")
 
     assert valid == []
     assert any("points" in e.lower() for e in errors)
@@ -84,7 +84,7 @@ def test_a_line_with_more_than_one_comma_keeps_the_rest_as_points():
 
 
 def test_a_line_with_no_comma_is_malformed():
-    valid, errors = _parse_bulk_lines("1 25")
+    valid, errors, _overrides = _parse_bulk_lines("1 25")
 
     assert valid == []
     assert "Malformed line" in errors[0]
@@ -94,7 +94,7 @@ def test_a_line_with_no_comma_is_malformed():
 @pytest.mark.parametrize("position", ["first", "1.5", "one", "", "+1"])
 def test_a_position_that_is_not_a_plain_integer_is_refused(position):
     """The round-trip check catches what `int()` alone would accept or truncate."""
-    valid, errors = _parse_bulk_lines(f"{position}, 25")
+    valid, errors, _overrides = _parse_bulk_lines(f"{position}, 25")
 
     assert valid == []
     assert any("position" in e.lower() for e in errors)
@@ -102,7 +102,7 @@ def test_a_position_that_is_not_a_plain_integer_is_refused(position):
 
 @pytest.mark.parametrize("points", ["twenty-five", "25.5", "", "+25"])
 def test_points_that_are_not_a_plain_integer_are_refused(points):
-    valid, errors = _parse_bulk_lines(f"1, {points}")
+    valid, errors, _overrides = _parse_bulk_lines(f"1, {points}")
 
     assert valid == []
     assert any("points" in e.lower() for e in errors)
@@ -111,14 +111,14 @@ def test_points_that_are_not_a_plain_integer_are_refused(points):
 def test_a_float_position_is_refused_rather_than_truncated():
     """`int(1.5)` would be 1 — silently scoring position 1 from a line that said 1.5, with
     the manager never knowing which line had been reinterpreted."""
-    valid, errors = _parse_bulk_lines("1.5, 25")
+    valid, errors, _overrides = _parse_bulk_lines("1.5, 25")
 
     assert valid == []
 
 
 def test_a_position_below_one_is_refused():
     """There is no position zero, and a negative one would sort above the winner."""
-    valid, errors = _parse_bulk_lines("0, 25\n-1, 25")
+    valid, errors, _overrides = _parse_bulk_lines("0, 25\n-1, 25")
 
     assert valid == []
     assert len(errors) == 2
@@ -127,7 +127,7 @@ def test_a_position_below_one_is_refused():
 
 def test_negative_points_are_refused():
     """A championship does not take points away for finishing."""
-    valid, errors = _parse_bulk_lines("1, -5")
+    valid, errors, _overrides = _parse_bulk_lines("1, -5")
 
     assert valid == []
     assert ">= 0" in errors[0]
@@ -136,7 +136,7 @@ def test_negative_points_are_refused():
 def test_every_error_quotes_the_line_it_came_from():
     """A manager staring at twenty lines and the words "invalid position" has no way to
     find it."""
-    _, errors = _parse_bulk_lines("1, 25\nbroken line\n3, 15")
+    _, errors, _overrides = _parse_bulk_lines("1, 25\nbroken line\n3, 15")
 
     assert "broken line" in errors[0]
 
@@ -147,9 +147,9 @@ def test_every_error_quotes_the_line_it_came_from():
 
 
 def test_a_bad_line_does_not_discard_the_good_ones():
-    """A paste with one bad line still carries nineteen good ones, and refusing the lot
-    would have the manager retype everything to fix one typo."""
-    valid, errors = _parse_bulk_lines("1, 25\nnonsense\n3, 15")
+    """The parser reads every line, so a bad one does not stop the good ones being read and
+    every fault can be reported at once. Whether any of it is applied is the caller's rule."""
+    valid, errors, _overrides = _parse_bulk_lines("1, 25\nnonsense\n3, 15")
 
     assert valid == [(1, 25), (3, 15)]
     assert len(errors) == 1
@@ -157,7 +157,7 @@ def test_a_bad_line_does_not_discard_the_good_ones():
 
 def test_several_bad_lines_are_all_reported():
     """One fix at a time, twenty lines deep, is how a manager comes to give up."""
-    _, errors = _parse_bulk_lines("bad\n0, 5\n2, -1")
+    _, errors, _overrides = _parse_bulk_lines("bad\n0, 5\n2, -1")
 
     assert len(errors) == 3
 
@@ -171,39 +171,40 @@ def test_a_repeated_position_keeps_the_last_value_and_says_so():
     """A manager correcting themselves mid-paste means the second value — and discarding
     both would be the one outcome neither reading supports. The note is what stops the
     change being silent."""
-    valid, errors = _parse_bulk_lines("1, 25\n1, 30")
+    valid, errors, overrides = _parse_bulk_lines("1, 25\n1, 30")
 
     assert valid == [(1, 30)]
-    assert len(errors) == 1
-    assert "Duplicate position 1" in errors[0]
+    assert errors == [], "an override is reported, never counted as a bad line"
+    assert len(overrides) == 1
+    assert "Duplicate position 1" in overrides[0]
 
 
 def test_the_duplicate_note_names_both_values():
     """So a manager can tell which of their two lines won without re-reading the paste."""
-    _, errors = _parse_bulk_lines("1, 25\n1, 30")
+    _, _errors, overrides = _parse_bulk_lines("1, 25\n1, 30")
 
-    assert "25" in errors[0]
-    assert "30" in errors[0]
+    assert "25" in overrides[0]
+    assert "30" in overrides[0]
 
 
 def test_a_duplicate_does_not_move_the_position_in_the_table():
     """The row keeps the place its first mention gave it, so a correction does not
     reorder the table underneath the manager."""
-    valid, _ = _parse_bulk_lines("1, 25\n2, 18\n1, 30")
+    valid, _errors, _overrides = _parse_bulk_lines("1, 25\n2, 18\n1, 30")
 
     assert valid == [(1, 30), (2, 18)]
 
 
 def test_an_empty_paste_yields_nothing_and_complains_about_nothing():
     """A manager who opened the modal and thought better of it."""
-    valid, errors = _parse_bulk_lines("")
+    valid, errors, _overrides = _parse_bulk_lines("")
 
     assert valid == []
     assert errors == []
 
 
 def test_a_paste_of_only_whitespace_is_the_same():
-    valid, errors = _parse_bulk_lines("\n   \n\t\n")
+    valid, errors, _overrides = _parse_bulk_lines("\n   \n\t\n")
 
     assert valid == []
     assert errors == []

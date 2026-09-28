@@ -296,11 +296,7 @@ class WizardService:
     ) -> None:
         """Remove the inactivity APScheduler job if it exists."""
         job_id = self._inactivity_job_id(discord_user_id)
-        try:
-            self._scheduler._scheduler.remove_job(job_id)
-            log.debug("Cancelled inactivity job %s", job_id)
-        except Exception:
-            pass  # Job already fired or never existed
+        self._scheduler.cancel_job(job_id)
 
     async def _arm_channel_delete_job(
         self,
@@ -325,11 +321,7 @@ class WizardService:
         self, discord_user_id: str
     ) -> None:
         """Remove the channel-delete APScheduler job if it exists."""
-        job_id = self._channel_delete_job_id(discord_user_id)
-        try:
-            self._scheduler._scheduler.remove_job(job_id)
-        except Exception:
-            pass
+        self._scheduler.cancel_job(self._channel_delete_job_id(discord_user_id))
 
     # ------------------------------------------------------------------
     # A held channel follows the driver's current account (issue #243)
@@ -638,7 +630,7 @@ class WizardService:
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
-            log.warning("withdraw: driver transition failed for %s", discord_user_id)
+            log.warning("withdraw: driver transition failed for %s", discord_user_id, exc_info=True)
 
         # Post cancellation notice and hold channel
         await self._trigger_channel_hold(
@@ -728,7 +720,7 @@ class WizardService:
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
-            log.warning("reject_signup: driver transition failed for %s", discord_user_id)
+            log.warning("reject_signup: driver transition failed for %s", discord_user_id, exc_info=True)
 
         await self._trigger_channel_hold(
             discord_user_id, guild,
@@ -947,7 +939,7 @@ class WizardService:
         except Exception:
             log.warning(
                 "handle_inactivity_timeout: transition failed for %s",
-                discord_user_id,
+                discord_user_id, exc_info=True,
             )
 
         if guild is not None:
@@ -1001,7 +993,7 @@ class WizardService:
         except Exception:
             log.warning(
                 "handle_member_remove: transition failed for %s",
-                discord_user_id,
+                discord_user_id, exc_info=True,
             )
 
         # Delete channel immediately (no hold)
@@ -1027,7 +1019,11 @@ class WizardService:
                 if signup_record is not None
                 else discord_user_id
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — the line is posted under the member's id instead
+            log.warning(
+                "handle_member_remove: could not read the signup record of %s", discord_user_id,
+                exc_info=True,
+            )
             display_name = discord_user_id
 
         await self._output_router.post_log(
@@ -1781,7 +1777,7 @@ class WizardService:
         except Exception:
             log.warning(
                 "_correction_timeout_callback: transition failed for %s",
-                discord_user_id,
+                discord_user_id, exc_info=True,
             )
             return
 

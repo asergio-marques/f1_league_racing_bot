@@ -255,6 +255,10 @@ async def _amend(
             return False
 
         patches.append(patch.object(_AmendSessionsView, "wait", new=_choose_them))
+    # A refusal reaches the log channel through the interaction's bot, as a failure does: the
+    # same router the cog writes to, and the command named as Discord names it (#442).
+    interaction.client.output_router = cog.bot.output_router
+    interaction.command.qualified_name = "results rounds amend"
     for p in patches:
         p.start()
     try:
@@ -285,6 +289,38 @@ async def _amend_rows(db_path) -> int:
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
         return (await cursor.fetchone())[0]
+
+
+def _assert_cancelled(
+    cog, by: int = USER_ID, became: str = "nothing was written"
+) -> None:
+    """One line, in the standard cancel form, naming who pressed Cancel, with beneath it what
+    became of the round and the next step."""
+    posts = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [post] = [p for p in posts if p.startswith("↩️ ")]
+    head, *beneath = post.splitlines()
+    below = "\n".join(beneath)
+    assert "/results rounds amend" in head
+    assert "cancelled by " in head and f"(<@{by}>)" in head
+    assert became in below.lower(), f"the line does not say beneath it that {became}"
+    assert "Re-run `/results rounds amend` to try again" in below
+    assert "AMEND_CANCELLED" not in "\n".join(posts)
+
+
+def _assert_lapsed(
+    cog, started_by: int = USER_ID, became: str = "nothing was written"
+) -> None:
+    """One line, in the standard lapse form, naming who started it, with beneath it what
+    became of the round and the next step."""
+    posts = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [post] = [p for p in posts if p.startswith("⌛ ")]
+    head, *beneath = post.splitlines()
+    below = "\n".join(beneath)
+    assert "/results rounds amend" in head
+    assert "lapsed unconfirmed (started by " in head and f"(<@{started_by}>)" in head
+    assert became in below.lower(), f"the line does not say beneath it that {became}"
+    assert "Re-run `/results rounds amend` to try again" in below
+    assert "AMEND_TIMEOUT" not in "\n".join(posts)
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +530,8 @@ async def test_a_paste_that_fails_validation_writes_nothing(tmp_path):
 
 
 async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(tmp_path):
-    """It would award a bonus to somebody who did not race."""
+    """It would award a bonus to somebody who did not race. The refusal is logged in the
+    standard refusal form, its detail as the reason."""
     db_path = await _make_db(tmp_path, name="amend_fl_bad")
     interaction = _interaction(_amend_channel(), message=_message())
     cog = _make_cog(db_path)
@@ -503,7 +540,11 @@ async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(t
 
     stubs["amend"].assert_not_awaited()
     assert "FL override **999** is not in the submitted results" in _replied(interaction)
-    assert "AMEND_REJECTED" in _logged(cog)
+    logged = _logged(cog)
+    assert logged.startswith("⛔ ")
+    assert f"refused for Admin (<@{USER_ID}>)" in logged
+    assert "FL override" in logged
+    assert "AMEND_REJECTED" not in logged
 
 
 @pytest.mark.parametrize(
@@ -530,7 +571,10 @@ async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(tmp_path, re
     assert _replied(interaction).endswith(told)
 
 
-async def test_a_failed_write_is_reported_and_logged_with_its_trace(tmp_path):
+async def test_a_failed_write_is_reported_and_tidied_up(tmp_path):
+    """The manager is told the kind of fault in plain words, never its message, and the
+    channel still goes. What the log channel gets is
+    `test_a_failed_amendment_write_names_only_the_kind_of_fault`'s."""
     db_path = await _make_db(tmp_path, name="amend_fail")
     channel = _amend_channel()
     interaction = _interaction(channel, message=_message())
@@ -538,10 +582,9 @@ async def test_a_failed_write_is_reported_and_logged_with_its_trace(tmp_path):
 
     await _amend(cog, interaction, amend_error=RuntimeError("database is locked"))
 
-    assert "internal error" in _replied(interaction)
-    logged = _logged(cog)
-    assert "AMEND_FAILED" in logged
-    assert "RuntimeError: database is locked" in logged
+    replied = _replied(interaction)
+    assert "the bot hit an internal fault" in replied
+    assert "database is locked" not in replied
     channel.delete.assert_awaited_once()
 
 
@@ -559,7 +602,7 @@ async def test_a_timed_out_amendment_writes_nothing_and_tidies_up(tmp_path):
     stubs = await _amend(cog, interaction, timeout=True)
 
     stubs["amend"].assert_not_awaited()
-    assert "AMEND_TIMEOUT" in _logged(cog)
+    _assert_lapsed(cog)
     channel.delete.assert_awaited_once()
     assert await _amend_rows(db_path) == 0
 
@@ -604,7 +647,7 @@ async def test_cancelling_writes_nothing_and_tidies_up(tmp_path):
     stubs = await _amend(cog, interaction)
 
     stubs["amend"].assert_not_awaited()
-    assert "AMEND_CANCELLED" in _logged(cog)
+    _assert_cancelled(cog)
     assert "Amendment cancelled" in _replied(interaction)
     channel.delete.assert_awaited_once()
 
@@ -812,6 +855,8 @@ async def test_cancelling_while_the_paste_is_being_written_is_refused_not_swallo
         press = MagicMock()
         press.user = SimpleNamespace(id=USER_ID)
         press.response = MagicMock()
+        # A fresh press: nothing has answered it yet.
+        press.response.is_done = MagicMock(return_value=False)
         press.response.send_message = AsyncMock()
         press.followup = MagicMock()
         press.followup.send = AsyncMock()
@@ -828,6 +873,50 @@ async def test_cancelling_while_the_paste_is_being_written_is_refused_not_swallo
     cancel.assert_not_awaited()
     # The amendment carried on: its channel is still open for the review stages.
     assert await _amend_rows(db_path) == 1
+
+
+async def test_cancelling_while_a_failed_write_is_being_reported_is_refused_and_logged(tmp_path):
+    """**The window between a failed write and its line.** The write stops on a fault, and a
+    Cancel pressed while its `AMEND_FAILED` line is being written is refused as "being recorded"
+    and logged, rather than told the amendment was cancelled with nothing to record it."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name="amend_cancel_mid_failure")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    pressed: dict = {}
+    posted: list[str] = []
+
+    async def _post(line, *_a, **_kw):
+        posted.append(str(line))
+        if "AMEND_FAILED" in str(line) and "said" not in pressed:
+            view = channel.send.await_args_list[0].kwargs["view"]
+            press = MagicMock()
+            press.user = SimpleNamespace(id=USER_ID)
+            press.response = MagicMock()
+            press.response.is_done = MagicMock(return_value=False)
+            press.response.send_message = AsyncMock()
+            press.followup = MagicMock()
+            press.followup.send = AsyncMock()
+            press.client = cog.bot
+            await type(view).cancel_btn(view, press, MagicMock())
+            pressed["said"] = str(press.response.send_message.await_args.args[0])
+
+    cog.bot.output_router.post_log = AsyncMock(side_effect=_post)
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "leaguebot.results.services.result_submission_service.cancel_amendment", new=AsyncMock()
+    ) as cancel:
+        await _amend(cog, interaction, amend_error=sqlite3.OperationalError("database is locked"))
+
+    assert "being recorded" in pressed["said"]
+    assert "cancelled" not in pressed["said"].lower()
+    cancel.assert_not_awaited()
+    assert any(line.startswith("⛔ ") and "being recorded" in line for line in posted)
 
 
 async def test_a_channel_created_for_a_second_amendment_is_not_left_behind(tmp_path):
@@ -906,7 +995,7 @@ async def test_cancelling_while_the_configuration_is_being_chosen_stops_the_amen
     stubs = await _amend(cog, interaction, config_names=("A", "B"))
 
     stubs["amend"].assert_not_awaited()
-    assert "AMEND_CANCELLED" in _logged(cog)
+    _assert_cancelled(cog)
     assert await _amend_rows(db_path) == 0
 
 
@@ -960,7 +1049,7 @@ async def test_a_configuration_nobody_chooses_times_out_like_a_paste_nobody_send
         stubs = await _amend(cog, interaction, config_names=("A", "B"))
 
     stubs["amend"].assert_not_awaited()
-    assert "AMEND_TIMEOUT" in _logged(cog)
+    _assert_lapsed(cog)
     assert await _amend_rows(db_path) == 0
 
 
@@ -1183,7 +1272,11 @@ async def test_a_rejected_second_paste_writes_nothing_at_all(tmp_path):
     )
 
     stubs["amend"].assert_not_awaited()
-    assert "AMEND_REJECTED | round 3 session FEATURE_RACE" in _logged(cog)
+    logged = _logged(cog)
+    assert logged.startswith("⛔ ")
+    assert "FEATURE_RACE" in logged, "the refused session is named in the reason"
+    assert "Row 1: Position must be a positive integer" in logged
+    assert "AMEND_REJECTED" not in logged
     assert await _amend_rows(db_path) == 0
 
 
@@ -1202,7 +1295,8 @@ def _gone():
 
 async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     """The review's case: the channel is deleted after the first paste, and asking for the
-    second session fails."""
+    second session fails. The manager is told the plain kind of fault, a request Discord
+    refused, and that nothing was written, said once."""
     db_path = await _make_db(tmp_path, name="amend_fault_between")
     await _add_qualifying(db_path)
     channel = _amend_channel()
@@ -1221,7 +1315,12 @@ async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     assert await _amend_rows(db_path) == 0
     channel.delete.assert_awaited_once()
     assert "AMEND_FAILED" in _logged(cog)
-    assert "before anything was written" in _replied(interaction)
+    replied = _replied(interaction)
+    assert (
+        f"Discord refused or failed a request from the bot. Nothing was written. {RE_RUN}"
+        in replied
+    )
+    assert "before anything was written" not in replied
 
 
 async def test_a_channel_that_cannot_be_deleted_keeps_its_record_closed(tmp_path):
@@ -1300,7 +1399,637 @@ async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp
 
     await _amend(cog, interaction, parsed=["Line 1: driver not in division"])
 
-    logged = _logged(cog)
-    assert "AMEND_REJECTED" in logged
+    [logged] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert logged.startswith("⛔ ")
+    assert f"refused for Admin (<@{USER_ID}>)" in logged
+    assert "AMEND_REJECTED" not in logged
     assert "AMEND_FAILED" not in logged
     assert await _amend_rows(db_path) == 0
+
+
+# ---------------------------------------------------------------------------
+# A failure names the kind of fault in plain words, and never its message (#442)
+#
+# An amendment that stops on a fault tells the admin that the fault is the bot's and not
+# anything they entered, the plain kind of fault, what became of the round, and what to do
+# next. Its `AMEND_FAILED` line names the fault's type alone; the traceback goes to the host's
+# log. One failure makes one line.
+# ---------------------------------------------------------------------------
+
+PLAIN_DATABASE = "the bot could not read or write its database"
+PLAIN_INTERNAL = "the bot hit an internal fault"
+RE_RUN = "Re-run `/results rounds amend` to try again."
+#: The next step of an amendment whose round could not be put back yet.
+ONCE_PUT_BACK = "Run `/results rounds amend` again once it has been put back."
+
+
+def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
+    """A press of the Cancel Amendment button, by the server member *user_id*, shown on the
+    server as *name* — as every press Discord delivers in a server is.
+
+    Its response reports itself answered once the button has answered it, as Discord's does,
+    so a reply that picks its route by `is_done()` goes where it would against Discord."""
+    press = MagicMock()
+    press.user = MagicMock(spec=discord.Member)
+    press.user.id = user_id
+    press.user.display_name = name
+    press.response = MagicMock()
+    answered = {"done": False}
+
+    async def _answer(*_a, **_k):
+        answered["done"] = True
+
+    press.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    press.response.send_message = AsyncMock(side_effect=_answer)
+    press.response.defer = AsyncMock(side_effect=_answer)
+    press.followup = MagicMock()
+    press.followup.send = AsyncMock()
+    if router is not None:
+        press.client.output_router = router
+    press.command = None
+    return press
+
+
+@pytest.mark.parametrize(
+    "post_fails",
+    [
+        pytest.param(
+            False,
+            id="logged",
+        ),
+        pytest.param(
+            True,
+            id="log-channel-unwritable",
+        ),
+    ],
+)
+async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, caplog, post_fails):
+    """The write stops on a database fault. The reply carries every element and neither the
+    database's message nor the exception's type; the `AMEND_FAILED` line names the type and
+    neither the message nor a code block; the host's log keeps the exception. Where the log
+    channel cannot be written, the round is still put back and the admin still told."""
+    import logging
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name="amend_fail_kind")
+    interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
+    error = sqlite3.OperationalError("database is locked")
+    if post_fails:
+        cog.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("log channel gone"))
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ) as revert, caplog.at_level(logging.ERROR):
+        await _amend(cog, interaction, amend_error=error)
+
+    revert.assert_awaited_once()
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert PLAIN_DATABASE in replied
+    assert "put back as it was" in replied
+    assert RE_RUN in replied
+    assert "database is locked" not in replied
+    assert "OperationalError" not in replied
+    if post_fails:
+        return
+    logged = _logged(cog)
+    assert "AMEND_FAILED" in logged
+    assert "OperationalError" in logged
+    assert "database is locked" not in logged
+    assert "```" not in logged
+    assert any(r.exc_info and r.exc_info[1] is error for r in caplog.records)
+
+
+async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tmp_path):
+    """A database fault while the pastes are collected: the admin is told the plain kind,
+    that nothing was written, said once, and to re-run; the line names the fault's type
+    alone."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name="amend_fail_unwritten_kind")
+    interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.current_accounts",
+        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+    ):
+        stubs = await _amend(cog, interaction)
+
+    stubs["amend"].assert_not_awaited()
+    assert await _amend_rows(db_path) == 0
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert f"{PLAIN_DATABASE}. Nothing was written. {RE_RUN}" in replied
+    assert "before anything was written" not in replied
+    assert "database is locked" not in replied
+    logged = _logged(cog)
+    assert "AMEND_FAILED" in logged
+    assert "OperationalError" in logged
+    assert "database is locked" not in logged
+
+
+async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
+    """Stage one is written, and the report stage cannot be opened. The amendment is undone,
+    the admin told the plain kind, that the round was put back, and to re-run, and the log
+    channel gets one `AMEND_FAILED` line naming the fault's type."""
+    db_path = await _make_db(tmp_path, name="amend_report_stage_kind")
+    interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
+        new=AsyncMock(side_effect=RuntimeError("no channel")),
+    ), patch(
+        "leaguebot.results.services.result_submission_service.cancel_amendment",
+        new=AsyncMock(return_value=True),
+    ):
+        await _amend(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert PLAIN_INTERNAL in replied
+    assert "put back as it was" in replied
+    assert RE_RUN in replied
+    assert "no channel" not in replied
+    logged = _logged(cog)
+    assert "AMEND_FAILED" in logged
+    assert "RuntimeError" in logged
+    assert "no channel" not in logged
+
+
+@pytest.mark.parametrize(
+    "case", ["cancel-revert-fails", "cancel-revert-fails-for-another-manager", "report-stage-fails"]
+)
+async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path, case):
+    """Cancel is pressed after stage one and the round cannot be put back: the presser is told
+    the plain kind, that the round could not be put back and that restarting the bot retries
+    it, and one `AMEND_FAILED` line is logged, naming the member who pressed Cancel — who may
+    be a league manager other than the opener. And a report stage that cannot open, undone by
+    the cancel path, still makes one line and not two."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name=f"amend_{case.replace('-', '_')}")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+
+    if case == "report-stage-fails":
+        with patch(
+            "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
+            new=AsyncMock(side_effect=RuntimeError("no channel")),
+        ), patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(return_value=True),
+        ):
+            await _amend(cog, interaction)
+        [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+        assert "AMEND_FAILED" in line
+        return
+
+    await _amend(cog, interaction)
+    view = channel.send.await_args_list[0].kwargs["view"]
+    presser = USER_ID if case == "cancel-revert-fails" else 88
+    press = _press(
+        presser, name="Admin" if presser == USER_ID else "Manager", router=cog.bot.output_router
+    )
+    with patch(
+        "leaguebot.results.services.result_submission_service.cancel_amendment",
+        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+    ), patch("leaguebot.results.cogs.results_cog.is_league_manager", return_value=True):
+        await type(view).cancel_btn(view, press, MagicMock())
+
+    told = "\n".join(str(c.args[0]) for c in press.followup.send.await_args_list if c.args)
+    assert "stopped on a fault in the bot, not on anything you entered" in told
+    assert PLAIN_DATABASE in told
+    assert "could not be put back" in told
+    assert "Restarting the bot retries that." in told, "the presser is not told what to do next"
+    assert "database is locked" not in told
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert "AMEND_FAILED" in line
+    assert "OperationalError" in line
+    assert "database is locked" not in line
+    assert f"<@{presser}>" in line.splitlines()[0], "the line does not name the presser"
+    if presser != USER_ID:
+        assert f"<@{USER_ID}>" not in line, "the line names the opener, not the presser"
+
+
+@pytest.mark.parametrize("case", ["write-fails", "report-stage-fails"])
+async def test_a_failed_amendment_reply_that_cannot_be_sent_writes_one_line(tmp_path, case):
+    """An interaction's token lapses fifteen minutes after the command, which several pastes
+    can outlast. Where the failure reply can no longer be sent, the command still ends without
+    raising, and the one failure is one `AMEND_FAILED` line — never a second line naming the
+    refused reply."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name=f"amend_reply_gone_{case.replace('-', '_')}")
+    interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
+    expired = discord.HTTPException(
+        MagicMock(status=401, reason="Unauthorized"), "Invalid Webhook Token"
+    )
+
+    async def _send(content=None, *_a, **_k):
+        if content is not None and "stopped on a fault" in str(content):
+            raise expired
+
+    interaction.followup.send = AsyncMock(side_effect=_send)
+
+    if case == "write-fails":
+        with patch(
+            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+            new=AsyncMock(return_value=True),
+        ):
+            await _amend(
+                cog, interaction, amend_error=sqlite3.OperationalError("database is locked")
+            )
+        kind = "OperationalError"
+    else:
+        with patch(
+            "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
+            new=AsyncMock(side_effect=RuntimeError("no channel")),
+        ), patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(return_value=True),
+        ):
+            await _amend(cog, interaction)
+        kind = "RuntimeError"
+
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert "AMEND_FAILED" in line
+    assert f"<@{USER_ID}>" in line.splitlines()[0]
+    assert kind in line
+    assert "HTTPException" not in line
+
+
+@pytest.mark.parametrize(
+    "case, where",
+    [
+        pytest.param(case, where, id=f"{case}-{where.replace(' ', '-')}")
+        for case in ("write-revert-fails", "report-stage-undo-fails", "cancel-revert-fails")
+        for where in ("reply", "log line")
+    ],
+)
+async def test_an_amendment_not_yet_put_back_says_to_run_it_again_once_it_has_been(
+    tmp_path, case, where
+):
+    """Where the round could not be put back yet, a re-run is refused until it has been, the
+    amendment still holding its division. So the reply ends on running the command again once
+    it has been put back, and so does the `AMEND_FAILED` line: whoever reads the log rather
+    than the reply is told the same."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name=f"amend_not_put_back_{case.replace('-', '_')}")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    locked = sqlite3.OperationalError("database is locked")
+
+    if case == "write-revert-fails":
+        with patch(
+            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+            new=AsyncMock(side_effect=RuntimeError("still locked")),
+        ):
+            await _amend(cog, interaction, amend_error=locked)
+        told = _replied(interaction)
+    elif case == "report-stage-undo-fails":
+        with patch(
+            "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
+            new=AsyncMock(side_effect=RuntimeError("no channel")),
+        ), patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(side_effect=locked),
+        ):
+            await _amend(cog, interaction)
+        told = _replied(interaction)
+    else:
+        await _amend(cog, interaction)
+        view = channel.send.await_args_list[0].kwargs["view"]
+        press = _press(router=cog.bot.output_router)
+        with patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(side_effect=locked),
+        ):
+            await type(view).cancel_btn(view, press, MagicMock())
+        told = "\n".join(str(c.args[0]) for c in press.followup.send.await_args_list if c.args)
+
+    if where == "reply":
+        assert told.endswith(ONCE_PUT_BACK)
+        return
+    # The fault that stopped the amendment, not the revert's after it.
+    kind = "RuntimeError" if case == "report-stage-undo-fails" else "OperationalError"
+    [line] = [
+        str(c.args[0])
+        for c in cog.bot.output_router.post_log.await_args_list
+        if "AMEND_FAILED" in str(c.args[0])
+    ]
+    assert f"<@{USER_ID}>" in line.splitlines()[0]
+    assert kind in line
+    assert "database is locked" not in line and "still locked" not in line
+    # In code or in plain text, as the line's other steps are: the words are what is pinned.
+    last = line.splitlines()[-1]
+    assert last.startswith("  ")
+    assert last.replace("`", "").endswith(ONCE_PUT_BACK.replace("`", ""))
+
+
+# ---------------------------------------------------------------------------
+# Every refusal of the command and its Cancel button reaches the log channel (#442)
+# ---------------------------------------------------------------------------
+
+
+async def _refused_by(case: str, tmp_path):
+    """Run `/results rounds amend` into the refusal *case* names; return the cog and what the
+    admin was told."""
+    from leaguebot.results.services.result_submission_service import AmendmentWouldOrphanVerdictError
+
+    db_path = await _make_db(tmp_path, name=f"amend_refused_{case.replace('-', '_')}")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    kwargs: dict = {}
+    press_router = cog.bot.output_router
+
+    if case == "module-off":
+        # Refused before anything defers, so the refusal is the interaction's response.
+        cog.bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+        interaction.response.is_done = MagicMock(return_value=False)
+        interaction.response.send_message = AsyncMock()
+    elif case == "no-season":
+        cog.bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
+    elif case == "unknown-division":
+        cog.bot.season_service.get_divisions = AsyncMock(
+            return_value=[SimpleNamespace(id=DIVISION_ID, name="Rookie Division", tier=1)]
+        )
+    elif case == "unknown-round":
+        cog.bot.season_service.get_division_rounds = AsyncMock(
+            return_value=[
+                SimpleNamespace(id=ROUND_ID, division_id=DIVISION_ID, round_number=4,
+                                status="FINAL")
+            ]
+        )
+    elif case == "not-final":
+        cog.bot.season_service.get_division_rounds = AsyncMock(
+            return_value=[
+                SimpleNamespace(id=ROUND_ID, division_id=DIVISION_ID, round_number=3,
+                                status="AWAITING_REPORT_VERDICTS")
+            ]
+        )
+    elif case in ("no-results", "session-missing"):
+        async with get_connection(db_path) as db:
+            if case == "no-results":
+                await db.execute("DELETE FROM session_results")
+            else:
+                await db.execute("UPDATE session_results SET session_type = 'SPRINT_RACE'")
+            await db.commit()
+    elif case == "open-elsewhere":
+        await _open_elsewhere(db_path, division_id=DIVISION_ID, round_id=22, channel_id=5151)
+    elif case == "stale-channel-stuck":
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                "created_at, closed_at) VALUES (?, 4444, '[\"FEATURE_RACE\"]', "
+                "'2026-02-02T00:00:00', '2026-02-02T01:00:00')",
+                (ROUND_ID,),
+            )
+            await db.commit()
+        stale = MagicMock()
+        stale.delete = AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no"))
+        command_channel = interaction.guild.get_channel.return_value
+        interaction.guild.get_channel = MagicMock(
+            side_effect=lambda cid: stale if cid == 4444 else command_channel
+        )
+    elif case == "raced":
+        async def _claim_it_first(*_a, **_kw):
+            async with get_connection(db_path) as db:
+                await db.execute(
+                    "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                    "created_at) VALUES (?, 4321, '[\"FEATURE_RACE\"]', '2026-02-02T00:00:00')",
+                    (ROUND_ID,),
+                )
+                await db.commit()
+            return channel
+
+        interaction.guild.create_text_channel = AsyncMock(side_effect=_claim_it_first)
+    elif case == "validation":
+        kwargs["parsed"] = ["Line 1: driver not in division"]
+    elif case == "fastest-lap-override":
+        kwargs["fl_override"] = 999
+    elif case == "would-orphan-a-verdict":
+        kwargs["amend_error"] = AmendmentWouldOrphanVerdictError(
+            "Driver 101 carries a verdict in this round and is not in the corrected results."
+        )
+
+    if case == "cancel-while-writing":
+        said: dict = {}
+
+        async def _press_during_the_write(*_a, **_kw):
+            view = channel.send.await_args_list[0].kwargs["view"]
+            press = _press(router=press_router)
+            await type(view).cancel_btn(view, press, MagicMock())
+            said["reply"] = str(press.response.send_message.await_args.args[0])
+
+        with patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(),
+        ):
+            await _amend(cog, interaction, amend_error=_press_during_the_write)
+        return cog, said["reply"]
+
+    await _amend(cog, interaction, **kwargs)
+
+    if case == "cancel-too-late":
+        view = channel.send.await_args_list[0].kwargs["view"]
+        press = _press(router=press_router)
+        with patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(return_value=False),
+        ):
+            await type(view).cancel_btn(view, press, MagicMock())
+        told = "\n".join(
+            str(c.args[0])
+            for c in press.response.send_message.await_args_list
+            + press.followup.send.await_args_list
+            if c.args
+        )
+        return cog, told
+    if case == "module-off":
+        return cog, "\n".join(
+            str(c.args[0])
+            for c in interaction.response.send_message.await_args_list
+            + interaction.followup.send.await_args_list
+            if c.args
+        )
+    return cog, _replied(interaction)
+
+
+AMEND_REFUSALS = [
+    pytest.param("module-off", "not enabled", id="module-off"),
+    pytest.param("no-season", "there is none", id="no-live-season"),
+    pytest.param("unknown-division", "not found", id="unknown-division"),
+    pytest.param("unknown-round", "not found", id="unknown-round"),
+    pytest.param("not-final", "FINAL", id="round-not-final"),
+    pytest.param("no-results", "No results found", id="no-results"),
+    pytest.param("session-missing", "No FEATURE_RACE session found", id="session-missing"),
+    pytest.param("open-elsewhere", "<#5151>", id="open-elsewhere-in-the-division"),
+    pytest.param("raced", "already has an amendment open", id="lost-the-race"),
+    pytest.param("stale-channel-stuck", "<#4444>", id="stale-channel-undeletable"),
+    pytest.param("validation", "validation errors were found", id="paste-fails-validation"),
+    pytest.param("fastest-lap-override", "FL override", id="fastest-lap-override"),
+    pytest.param("would-orphan-a-verdict", "carries a verdict", id="would-orphan-a-verdict"),
+    pytest.param("cancel-while-writing", "being recorded", id="cancel-while-writing"),
+    pytest.param("cancel-too-late", "Too late", id="cancel-too-late"),
+]
+
+
+@pytest.mark.parametrize("case, said", AMEND_REFUSALS)
+async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case, said):
+    """Each refusal answers as before and writes exactly one line in the standard refusal form,
+    its detail as the reason. `AMEND_REJECTED` and `AMEND_REFUSED` are gone."""
+    cog, told = await _refused_by(case, tmp_path)
+
+    assert said in told
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [line] = lines
+    assert line.startswith("⛔ ")
+    assert "/results rounds amend" in line
+    assert f"refused for Admin (<@{USER_ID}>)" in line
+    assert "AMEND_REJECTED" not in line and "AMEND_REFUSED" not in line
+
+
+# ---------------------------------------------------------------------------
+# Every cancel and every lapse is written in the standard form (#442)
+# ---------------------------------------------------------------------------
+
+
+async def _cancelled_or_lapsed(case: str, tmp_path):
+    db_path = await _make_db(tmp_path, name=f"amend_ended_{case.replace('-', '_')}")
+    channel = _amend_channel()
+    cog = _make_cog(db_path)
+    by = USER_ID
+
+    if case == "paste-lapses":
+        interaction = _interaction(channel, wait_forever=True)
+        await _amend(cog, interaction, timeout=True)
+        return cog, "lapsed", by
+
+    if case == "configuration-lapses":
+        interaction = _interaction(channel, message=_message())
+        real_wait = asyncio.wait
+        calls = {"n": 0}
+
+        async def _wait(tasks, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return await real_wait(tasks, **kwargs)
+            return set(), set(tasks)
+
+        with patch("asyncio.wait", new=_wait):
+            await _amend(cog, interaction, config_names=("A", "B"))
+        return cog, "lapsed", by
+
+    if case in ("cancelled-during-the-paste", "cancelled-by-another-manager"):
+        interaction = _interaction(channel, wait_forever=True)
+        presser = USER_ID if case == "cancelled-during-the-paste" else 88
+
+        async def _press_cancel(*args, **kwargs):
+            view = kwargs.get("view")
+            if view is not None:
+                press = _press(
+                    presser,
+                    name="Admin" if presser == USER_ID else "Manager",
+                    router=cog.bot.output_router,
+                )
+                await type(view).cancel_btn(view, press, MagicMock())
+            return MagicMock()
+
+        channel.send = AsyncMock(side_effect=_press_cancel)
+        with patch("leaguebot.results.cogs.results_cog.is_league_manager", return_value=True):
+            await _amend(cog, interaction)
+        return cog, "cancelled", presser
+
+    if case == "cancelled-while-the-configuration-is-chosen":
+        interaction = _interaction(channel, message=_message())
+        cancel_view: list = []
+
+        async def _send(content=None, **kwargs):
+            if kwargs.get("view") is not None and cancel_view:
+                press = _press(router=cog.bot.output_router)
+                await type(cancel_view[0]).cancel_btn(cancel_view[0], press, MagicMock())
+                kwargs["view"].stop()
+            elif kwargs.get("view") is not None:
+                cancel_view.append(kwargs["view"])
+            return MagicMock()
+
+        channel.send = AsyncMock(side_effect=_send)
+        await _amend(cog, interaction, config_names=("A", "B"))
+        return cog, "cancelled", by
+
+    if case == "cancelled-at-the-last-moment":
+        interaction = _interaction(channel, message=_message())
+
+        async def _accounts_then_cancel(*_a, **_kw):
+            view = channel.send.await_args_list[0].kwargs["view"]
+            await type(view).cancel_btn(view, _press(router=cog.bot.output_router), MagicMock())
+            return {}
+
+        with patch(
+            "leaguebot.results.services.result_submission_service.current_accounts",
+            new=AsyncMock(side_effect=_accounts_then_cancel),
+        ):
+            await _amend(cog, interaction)
+        return cog, "cancelled", by
+
+    # The Cancel Amendment button once stage one has written, the round put back.
+    interaction = _interaction(channel, message=_message())
+    await _amend(cog, interaction)
+    view = channel.send.await_args_list[0].kwargs["view"]
+    with patch(
+        "leaguebot.results.services.result_submission_service.cancel_amendment",
+        new=AsyncMock(return_value=True),
+    ):
+        await type(view).cancel_btn(view, _press(router=cog.bot.output_router), MagicMock())
+    return cog, "cancelled", by
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "paste-lapses",
+        "configuration-lapses",
+        "cancelled-during-the-paste",
+        "cancelled-while-the-configuration-is-chosen",
+        "cancelled-at-the-last-moment",
+        "cancelled-after-stage-one",
+        "cancelled-by-another-manager",
+    ],
+)
+async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, case):
+    """Each is one line in the standard form — naming who pressed Cancel, or who started what
+    lapsed — with beneath it what became of the round and what to do next: nothing was
+    written, or, cancelled once stage one had written, the round was put back as it was. The
+    old event names are gone."""
+    cog, how, member = await _cancelled_or_lapsed(case, tmp_path)
+
+    became = "put back as it was" if case == "cancelled-after-stage-one" else "nothing was written"
+    if how == "cancelled":
+        _assert_cancelled(cog, by=member, became=became)
+    else:
+        _assert_lapsed(cog, started_by=member, became=became)
+    if case == "cancelled-by-another-manager":
+        line = next(c for c in _logged(cog).split("\n") if c.startswith("↩️ "))
+        assert f"(<@{USER_ID}>)" not in line, "the line names the opener, not the presser"
+
+
+async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path):
+    """So that the sweep which reverts it later can name them, the member who opened an
+    amendment is recorded on its row when it opens."""
+    db_path = await _make_db(tmp_path, name="amend_started_by")
+    interaction = _interaction(_amend_channel(), message=_message())
+
+    await _amend(_make_cog(db_path), interaction)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT started_by FROM round_amend_channels")
+        assert (await cursor.fetchone())["started_by"] == USER_ID

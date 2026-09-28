@@ -238,10 +238,7 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
             if signup_cfg is not None and signup_cfg.signups_open:
                 from leaguebot.core.cogs.module_cog import execute_forced_close
 
-                try:
-                    bot.scheduler_service.cancel_signup_close_timer()
-                except Exception:  # noqa: BLE001 — a timer already gone is the aim
-                    pass
+                bot.scheduler_service.cancel_signup_close_timer()
                 await execute_forced_close(
                     bot, audit_action="SIGNUP_DIVISIONS_DONE_CLOSE"
                 )
@@ -384,12 +381,9 @@ async def _close_driver_signups(
                     await bot.wizard_service._trigger_channel_hold(uid, guild, notice)
                 # The channel's own deletion job stays armed, and reads the wizard record
                 # when it fires; only the inactivity timeout is cancelled.
-                try:
-                    from leaguebot.signup.services.wizard_service import inactivity_job_id
+                from leaguebot.signup.services.wizard_service import inactivity_job_id
 
-                    bot.scheduler_service._scheduler.remove_job(inactivity_job_id(uid))
-                except Exception:  # noqa: BLE001 — a job already gone is the aim
-                    pass
+                bot.scheduler_service.cancel_job(inactivity_job_id(uid))
             except Exception:  # noqa: BLE001 — a signup channel is never worth the pass
                 log.exception("closing signups: could not close the signup of %s", uid)
         if (
@@ -404,7 +398,7 @@ async def _close_driver_signups(
                 try:
                     await member.remove_roles(role, reason=reason)
                 except Exception:  # noqa: BLE001 — a role is never worth the pass
-                    log.warning("closing signups: could not revoke the driver role of %s", uid)
+                    log.warning("closing signups: could not revoke the driver role of %s", uid, exc_info=True)
 
 
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:

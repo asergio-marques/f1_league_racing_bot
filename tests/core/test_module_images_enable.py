@@ -255,7 +255,8 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
 
 async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     """The configuration write and the flag are separate calls, so a failure between them
-    would leave the module reading as on with nothing configured."""
+    would leave the module reading as on with nothing configured. The flag goes back down, and
+    the standard failure reply says the module is still off, without the error's text."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, create_error=RuntimeError("disk full"))
     interaction = _interaction()
@@ -263,24 +264,83 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     await _enable(cog, interaction)
 
     cog.bot.module_service.set_images_enabled.assert_awaited_with(False)
-    assert "remains disabled" in _replied(interaction)
-
-
-async def test_a_failed_enable_names_the_fault(tmp_path):
-    """An administrator cannot fix a failure they are not told the shape of."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, create_error=RuntimeError("disk full"))
-    interaction = _interaction()
-
-    await _enable(cog, interaction)
-
-    assert "disk full" in _replied(interaction)
+    replied = _replied(interaction)
+    assert "The module is still off." in replied
+    assert "disk full" not in replied
 
 
 async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
+    """It is logged as the failure it is, once, and never as a success."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, create_error=RuntimeError("disk full"))
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
 
-    await _enable(cog, _interaction())
+    await _enable(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert not any("Success" in line for line in lines)
+    [line] = lines
+    assert "/module enable" in line
+    assert f"failed for <@{ACTOR_ID}>" in line
+    assert "RuntimeError" in line
+    assert "disk full" not in line
+
+
+@pytest.mark.parametrize(
+    "switch_off_fails",
+    [
+        pytest.param(
+            False,
+            id="the-write-fails",
+        ),
+        pytest.param(True, id="the-switch-off-also-fails"),
+    ],
+)
+async def test_an_image_enable_that_cannot_be_written_is_switched_back_off_and_says_so(
+    tmp_path, switch_off_fails
+):
+    """The audit write fails after the flag went up. The flag is put back down, and the
+    member told in the standard failure reply that the module is still off — with one failure
+    line in the log channel and no error text anywhere a league reads.
+
+    Where putting the flag back down fails as well, the bot cannot say the module is off: that
+    error goes to the command's own failure path, and no reply says the module is still off."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+    cog = _make_cog(db_path)
+    switch_off_error = RuntimeError("the flag will not go down")
+    if switch_off_fails:
+        cog.bot.module_service.set_images_enabled = AsyncMock(
+            side_effect=[None, switch_off_error]
+        )
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
+
+    if switch_off_fails:
+        with pytest.raises(RuntimeError) as raised:
+            await _enable(cog, interaction)
+        assert raised.value is switch_off_error
+        assert "The module is still off" not in _replied(interaction)
+        return
+
+    await _enable(cog, interaction)
+
+    cog.bot.module_service.set_images_enabled.assert_awaited_with(False)
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot" in replied
+    assert "The module is still off." in replied
+    assert "again once the fault is cleared" in replied
+    assert "disk I/O error" not in replied
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert "/module enable" in line
+    assert f"failed for <@{ACTOR_ID}>" in line
+    assert "IntegrityError" in line
+    assert "disk I/O error" not in line

@@ -378,7 +378,7 @@ async def test_the_close_timer_is_cancelled(tmp_path):
 
 
 async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
-    """Two per driver. Left armed, the inactivity timeout would transition a driver whose
+    """Two per driver, each through the scheduler service's `cancel_job`. Left armed, the inactivity timeout would transition a driver whose
     signup no longer exists, and the delete job would remove a channel a league has since
     repurposed."""
     db_path = await _make_db(tmp_path, name="disable_jobs")
@@ -392,9 +392,7 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
 
     await _disable(cog, _interaction())
 
-    removed = {
-        call.args[0] for call in cog.bot.scheduler_service._scheduler.remove_job.call_args_list
-    }
+    removed = {call.args[0] for call in cog.bot.scheduler_service.cancel_job.call_args_list}
     assert removed == {
         f"wizard_inactivity_101",
         f"wizard_channel_delete_101",
@@ -406,11 +404,18 @@ async def test_every_open_wizards_jobs_are_cancelled(tmp_path):
 async def test_a_job_that_has_already_fired_is_stepped_over(tmp_path):
     """APScheduler raises for a job id it does not hold, and a wizard whose timeout fired
     an hour ago is ordinary."""
+    from apscheduler.jobstores.base import JobLookupError
+
+    from leaguebot.core.services.scheduler_service import SchedulerService
+
+    # The real scheduler service, over an APScheduler that no longer holds the job.
+    scheduler = SchedulerService.__new__(SchedulerService)
+    scheduler._scheduler = MagicMock()
+    scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
+
     db_path = await _make_db(tmp_path, name="disable_jobgone")
     cog = _make_cog(db_path, wizards=[SimpleNamespace(discord_user_id="101")])
-    cog.bot.scheduler_service._scheduler.remove_job = MagicMock(
-        side_effect=Exception("no such job")
-    )
+    cog.bot.scheduler_service = scheduler
 
     await _disable(cog, _interaction())
 

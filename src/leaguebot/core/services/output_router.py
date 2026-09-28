@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Optional, Protocol
 import discord
 
 from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
+from leaguebot.core.utils.messages import chunk_message
 
 #: Every mention a log line can carry, wrapped whole as code so it names without notifying.
 #: Built from the shared forms (#362), so ``<@!123>`` is wrapped as ``<@123>`` is.
@@ -175,7 +176,7 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
-            for chunk in _chunk_message(content):
+            for chunk in chunk_message(content):
                 last_msg = await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
                 if first_msg is None:
                     first_msg = last_msg
@@ -211,21 +212,4 @@ class OutputRouter:
                 from leaguebot.core.services.retry_service import enqueue
                 await enqueue(self._retry_db_path, channel_id, content, failure_reason)
             except Exception as exc:
-                log.error("_enqueue_if_configured: failed to enqueue: %s", exc)
-
-
-def _chunk_message(content: str, limit: int = 1990) -> list[str]:
-    """Split *content* into chunks that fit within Discord's message limit."""
-    if len(content) <= limit:
-        return [content]
-    chunks: list[str] = []
-    while content:
-        if len(content) <= limit:
-            chunks.append(content)
-            break
-        split_at = content.rfind("\n", 0, limit)
-        if split_at == -1:
-            split_at = limit
-        chunks.append(content[:split_at])
-        content = content[split_at:].lstrip("\n")
-    return chunks
+                log.error("_enqueue_if_configured: failed to enqueue: %s", exc, exc_info=True)

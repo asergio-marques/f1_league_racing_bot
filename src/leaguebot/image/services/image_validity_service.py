@@ -1342,7 +1342,7 @@ async def aspect_attaches_files(bot: LeagueBot | None, aspect: str) -> bool:
     except Exception as exc:  # noqa: BLE001 — never refuse a posting's pre-flight on this
         log.error(
             "aspect_attaches_files: image enablement check failed: %s",
-            exc,
+            exc, exc_info=True,
         )
         return False
 

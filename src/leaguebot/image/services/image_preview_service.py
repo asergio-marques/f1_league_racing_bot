@@ -844,7 +844,10 @@ async def build_rsvp_preview(bot: LeagueBot, context: PreviewContext):
         if division_config is not None:
             deadline_hours = getattr(division_config, "rsvp_deadline_hours", 24)
     except Exception:  # noqa: BLE001 — a league without the attendance module still previews
-        pass
+        log.warning(
+            "rsvp preview: the division's RSVP deadline could not be read, so %d hours is drawn",
+            deadline_hours, exc_info=True,
+        )
 
     scheduled_at = round_obj.scheduled_at
     drawing = resolve_drawing(

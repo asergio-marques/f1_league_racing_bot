@@ -17,8 +17,11 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+from apscheduler.jobstores.base import JobLookupError
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 from leaguebot.signup.services.wizard_service import WizardService
 
@@ -29,7 +32,10 @@ DUE = datetime(2026, 9, 19, 12, 0, tzinfo=timezone.utc)
 
 
 class _Scheduler:
-    """APScheduler's add_job / remove_job / get_job, keeping what they were given."""
+    """APScheduler's add_job / remove_job / get_job, keeping what they were given.
+
+    A job it does not hold is refused as APScheduler refuses it, with `JobLookupError`, which
+    the scheduler service's `cancel_job` passes over."""
 
     def __init__(self) -> None:
         self.jobs: dict[str, SimpleNamespace] = {}
@@ -38,6 +44,8 @@ class _Scheduler:
         self.jobs[id] = SimpleNamespace(next_run_time=trigger.run_date, kwargs=kwargs)
 
     def remove_job(self, job_id):
+        if job_id not in self.jobs:
+            raise JobLookupError(job_id)
         del self.jobs[job_id]
 
     def get_job(self, job_id):
@@ -62,7 +70,10 @@ async def _service(tmp_path, *, held: dict[str, int]) -> tuple[WizardService, _S
             )
         await db.commit()
     scheduler = _Scheduler()
-    service = WizardService(db_path, SimpleNamespace(_scheduler=scheduler), MagicMock())
+    # The real scheduler service over the recording stand-in, so `cancel_job` is its own.
+    scheduler_service = SchedulerService.__new__(SchedulerService)
+    scheduler_service._scheduler = scheduler
+    service = WizardService(db_path, scheduler_service, MagicMock())
     service.set_bot(SimpleNamespace(
         signup_module_service=SignupModuleService(db_path),
         config_service=ConfigService(db_path),

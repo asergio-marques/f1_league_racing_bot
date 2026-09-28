@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
@@ -375,17 +377,104 @@ def group_sessions_by_config(rows) -> list[tuple[str, list[SessionType]]]:
     ]
 
 
+async def _position_points(
+    db: aiosqlite.Connection, config_id: int, session_type: SessionType, position: int
+) -> int | None:
+    """What *position* of *session_type* pays in configuration *config_id*, or None if unset."""
+    cursor = await db.execute(
+        "SELECT points FROM points_config_entries "
+        "WHERE config_id = ? AND session_type = ? AND position = ?",
+        (config_id, session_type.value, position),
+    )
+    row = await cursor.fetchone()
+    return None if row is None else row["points"]
+
+
+async def _record_position_change(
+    db: aiosqlite.Connection,
+    config_name: str,
+    session_type: SessionType,
+    position: int,
+    old: int | None,
+    new: int,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> None:
+    """Record one position's points changing, from what to what, inside the caller's write."""
+    await record_change_on(
+        db,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        change_type="POINTS_CONFIG_SESSION_SET",
+        old_value={
+            "config": config_name, "session_type": session_type.value,
+            "position": position, "points": old,
+        },
+        new_value={
+            "config": config_name, "session_type": session_type.value,
+            "position": position, "points": new,
+        },
+        now=now,
+    )
+
+
+async def set_session_points_many(
+    db_path: str,
+    config_name: str,
+    session_type: SessionType,
+    pairs: list[tuple[int, int]],
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> None:
+    """Set every ``(position, points)`` of *pairs* in one transaction, recording each change.
+
+    A bulk paste is all or nothing: either every pair is written, with an audit entry for each
+    position whose points changed, from what to what, or — where anything fails before the
+    commit — none is, and no entry either. A position repeated in *pairs* takes its last
+    value. Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
+    """
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, config_name)
+        for position, points in pairs:
+            old = await _position_points(db, config_id, session_type, position)
+            await db.execute(
+                """
+                INSERT INTO points_config_entries (config_id, session_type, position, points)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(config_id, session_type, position)
+                DO UPDATE SET points = excluded.points
+                """,
+                (config_id, session_type.value, position, points),
+            )
+            if old != points:
+                await _record_position_change(
+                    db, config_name, session_type, position, old, points,
+                    actor_id=actor_id, actor_name=actor_name, now=now,
+                )
+        await db.commit()
+
+
 async def xml_import_config(
     db_path: str,
     config_name: str,
     payload: "XmlImportPayload",
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
 ) -> None:
-    """Atomically upsert all position and fastest-lap rows from *payload*.
+    """Atomically upsert all position and fastest-lap rows from *payload*, recording each change.
 
     Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
     All writes happen inside a single DB connection; the
     aiosqlite context manager rolls back automatically on any exception before
-    ``db.commit()``.
+    ``db.commit()``. Each position whose points change, and each fastest-lap bonus that
+    changes, gets an audit entry from what to what by *actor_id* at *now*, on the same
+    connection, so the import and its record land together or not at all.
     """
     async with get_connection(db_path) as db:
         config_id = await _get_config_id(db, config_name)
@@ -393,6 +482,7 @@ async def xml_import_config(
         # --- position rows ------------------------------------------------
         for session_type, pos_dict in payload.positions.items():
             for position, points in pos_dict.items():
+                old = await _position_points(db, config_id, session_type, position)
                 await db.execute(
                     """
                     INSERT INTO points_config_entries (config_id, session_type, position, points)
@@ -402,18 +492,26 @@ async def xml_import_config(
                     """,
                     (config_id, session_type.value, position, points),
                 )
+                if old != points:
+                    await _record_position_change(
+                        db, config_name, session_type, position, old, points,
+                        actor_id=actor_id, actor_name=actor_name, now=now,
+                    )
 
         # --- fastest-lap rows ---------------------------------------------
         for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
+            cursor = await db.execute(
+                "SELECT fl_points, fl_position_limit FROM points_config_fl "
+                "WHERE config_id = ? AND session_type = ?",
+                (config_id, session_type.value),
+            )
+            existing = await cursor.fetchone()
             if fl_limit is None:
                 # Preserve existing fl_position_limit if row already exists
-                cursor = await db.execute(
-                    "SELECT fl_position_limit FROM points_config_fl "
-                    "WHERE config_id = ? AND session_type = ?",
-                    (config_id, session_type.value),
-                )
-                existing = await cursor.fetchone()
                 fl_limit = existing["fl_position_limit"] if existing else None
+            old_fl = (
+                (existing["fl_points"], existing["fl_position_limit"]) if existing else (None, None)
+            )
 
             await db.execute(
                 """
@@ -426,5 +524,21 @@ async def xml_import_config(
                 """,
                 (config_id, session_type.value, fl_pts, fl_limit),
             )
+            if old_fl != (fl_pts, fl_limit):
+                await record_change_on(
+                    db,
+                    actor_id=actor_id,
+                    actor_name=actor_name,
+                    change_type="POINTS_CONFIG_FL_SET",
+                    old_value={
+                        "config": config_name, "session_type": session_type.value,
+                        "fl_points": old_fl[0], "fl_position_limit": old_fl[1],
+                    },
+                    new_value={
+                        "config": config_name, "session_type": session_type.value,
+                        "fl_points": fl_pts, "fl_position_limit": fl_limit,
+                    },
+                    now=now,
+                )
 
         await db.commit()

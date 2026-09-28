@@ -7,9 +7,11 @@ modal call instead.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 from discord import app_commands
 
 from leaguebot.core.utils.interaction_errors import (
@@ -257,3 +259,48 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
     line = interaction.client.output_router.post_log.await_args.args[0]
     assert line.startswith("❌ the “Edit round” form failed")
     assert "ValueError" in line
+
+
+# ── A command that undoes itself says what became of the change (#442) ────
+
+
+async def test_report_failure_states_the_outcome_in_place_of_partly_done():
+    """A command that undoes itself on failure does not say it may have been partly done: it
+    says what became of the change, and what to do next. The rest of the reply is kept."""
+    interaction = _interaction()
+    outcome = (
+        "The module is still off. Run `/module enable weather` again once the fault is cleared."
+    )
+
+    await report_failure(
+        interaction, KeyError("x"), what="`/module enable weather`", outcome=outcome
+    )
+
+    reply = interaction.response.send_message.await_args.args[0]
+    assert reply == (
+        "❌ `/module enable weather` stopped on a fault in the bot, not on anything you "
+        f"entered, and did not finish. {outcome} The fault is recorded in the log channel."
+    )
+    assert "partly done" not in reply
+
+
+# ── The plain kind of fault, for an amendment's reply (#442) ──────────────
+
+
+@pytest.mark.parametrize(
+    "error, kind",
+    [
+        (sqlite3.OperationalError("database is locked"), "the bot could not read or write its database"),
+        (
+            discord.HTTPException(MagicMock(status=503, reason="Service Unavailable"), "busy"),
+            "Discord refused or failed a request from the bot",
+        ),
+        (RuntimeError("no such thing"), "the bot hit an internal fault"),
+    ],
+    ids=["database", "discord", "anything else"],
+)
+def test_describe_fault_names_the_kind_in_plain_words(error, kind):
+    """Never the exception: a league manager is told what kind of fault it was, in words."""
+    from leaguebot.core.utils.interaction_errors import describe_fault
+
+    assert describe_fault(error) == kind

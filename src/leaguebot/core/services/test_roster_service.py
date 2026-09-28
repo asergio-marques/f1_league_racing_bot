@@ -156,7 +156,9 @@ async def add_test_driver(
     *driver_name* is drawn on graphics as a real driver's name is, so it is held to the rules
     every name a league types is held to (#362).
 
-    Returns a TestDriverInfo dict on success, or an error string on failure.
+    Returns a TestDriverInfo dict on success, or a refusal the member can act on, as a string.
+    A fault in writing the driver is not a refusal: it raises, and the one transaction the
+    driver is written in leaves nothing behind.
     """
     refusal = NAME.check("driver name", driver_name).refusal
     if refusal is not None:
@@ -183,6 +185,11 @@ async def add_test_driver(
     reference = await resolve_division_team(db_path, division_id, team_name)
     if reference.team is None:
         return f"{reference.refusal} (division '{division_name}')"
+
+    # Read before the write opens: it takes a connection of its own, which must not be
+    # awaited while this one holds a write.
+    synthetic_uid = await _next_synthetic_id(db_path)
+    uid_str = str(synthetic_uid)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -231,22 +238,15 @@ async def add_test_driver(
         else:
             seat_id = seat_row["id"]
 
-        # Generate synthetic ID
-        synthetic_uid = await _next_synthetic_id(db_path)
-        uid_str = str(synthetic_uid)
-
         # Create driver profile
-        try:
-            profile_cursor = await db.execute(
-                "INSERT INTO driver_profiles "
-                "(discord_user_id, current_state, former_driver, is_test_driver, "
-                " test_display_name, test_nationality) "
-                "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
-                (uid_str, driver_name, canonical_nationality),
-            )
-            profile_id: int = inserted_id(profile_cursor)
-        except Exception as exc:
-            return f"Failed to create driver profile: {exc}"
+        profile_cursor = await db.execute(
+            "INSERT INTO driver_profiles "
+            "(discord_user_id, current_state, former_driver, is_test_driver, "
+            " test_display_name, test_nationality) "
+            "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
+            (uid_str, driver_name, canonical_nationality),
+        )
+        profile_id: int = inserted_id(profile_cursor)
         await _reattach_history(db, uid_str, profile_id)
 
         # Occupy the seat

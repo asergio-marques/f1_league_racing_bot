@@ -243,7 +243,7 @@ def test_season_review_posts_the_image_in_place_of_the_text():
 def test_season_review_sends_one_message_per_subsection():
     """The review outgrew a single Discord message and is split by subject.
 
-    Six subsections, in the order a manager reads them. `_chunk_message` stays beneath
+    Six subsections, in the order a manager reads them. `chunk_message` stays beneath
     them because the image subsection can pass 2000 characters on its own, and an
     over-long send loses the whole message rather than its tail.
     """
@@ -261,7 +261,7 @@ def test_season_review_sends_one_message_per_subsection():
     positions = [block.index(name) for name in order]
     assert positions == sorted(positions), "the subsections must be sent in order"
 
-    assert "_chunk_message" in block, "each subsection must still be chunked"
+    assert "chunk_message(" in block, "each subsection must still be chunked"
     assert "if not body:" in block, "an empty subsection must not be sent"
 
 

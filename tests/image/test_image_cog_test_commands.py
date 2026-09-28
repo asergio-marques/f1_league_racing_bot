@@ -783,3 +783,41 @@ class TestThePreviewDiscardsItsPictures:
             )
 
         assert not png.exists()
+
+
+# ── A preview that cannot be assembled (#442) ─────────────────────────────
+
+
+async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
+    """A fault while the preview's data is gathered is the bot's. It is not answered here with
+    the error's text: it goes on to the command tree, whose failure report names the command
+    it came from."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from leaguebot.core.utils.interaction_errors import describe
+
+    cog = ImageCog(
+        SimpleNamespace(module_service=SimpleNamespace(is_images_enabled=AsyncMock(return_value=True)))
+    )
+    interaction = _Interaction()
+    interaction.command = SimpleNamespace(qualified_name="images test lineup")
+    fault = RuntimeError("no such division row")
+
+    async def _build(_context):
+        raise fault
+
+    with patch(
+        "leaguebot.image.services.image_render_service.converter_available",
+        new=MagicMock(return_value=True),
+    ), patch(
+        "leaguebot.image.services.image_preview_service.resolve_context",
+        new=AsyncMock(return_value=_context()),
+    ):
+        with pytest.raises(RuntimeError) as raised:
+            await cog._run_preview(
+                interaction, title="Lineup", kind="lineup", division="Division 1", build=_build
+            )
+
+    assert raised.value is fault
+    assert not any("no such division row" in m for m in interaction.followup.messages)
+    assert describe(interaction) == "`/images test lineup`"

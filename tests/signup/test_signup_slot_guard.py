@@ -88,10 +88,12 @@ def _cog(db_path):
 
 
 def _interaction():
+    """Nothing has answered it yet, so a refusal goes out as its response."""
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.id = 42
     interaction.user.display_name = "Manager"
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
     return interaction
 
@@ -212,3 +214,38 @@ class TestPermittedWhileFree:
         await _add(_cog(db_path), _interaction())
 
         assert "Friday 21:00 UTC" in await _slot_labels(db_path)
+
+
+# ---------------------------------------------------------------------------
+# The refusal is recorded (#442)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
+async def test_the_fixed_configuration_check_logs_its_refusal_unless_record_is_false(
+    tmp_path, record
+):
+    """The check answers the manager either way. With `record` left at its default it writes
+    one line in the standard refusal form, naming the command; with `record=False` it writes
+    none."""
+    db_path = await _seed(tmp_path, unassigned=0, stage="WAITING")
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "signup time-slot add"
+
+    refused = await cog._refuse_while_configuration_fixed(
+        interaction, "/signup time-slot add", record=record
+    )
+
+    assert refused is True
+    assert "fixed for Season 3" in _reply(interaction)
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    if record:
+        [line] = lines
+        assert line.startswith("⛔ ")
+        assert "/signup time-slot add" in line
+        assert "refused for Manager (<@42>)" in line
+        assert "fixed for Season 3" in line
+    else:
+        assert lines == []

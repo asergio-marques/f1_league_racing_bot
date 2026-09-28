@@ -324,14 +324,15 @@ async def test_starting_again_deletes_the_abandoned_channel(tmp_path):
 
 
 async def test_starting_again_cancels_the_abandoned_wizards_jobs(tmp_path):
-    """Left behind, the old timeout would end the wizard the driver is halfway through."""
+    """Left behind, the old timeout would end the wizard the driver is halfway through. Each
+    goes through the scheduler service's `cancel_job`."""
     svc = _service(existing=_wizard())
     task = MagicMock()
     svc._correction_tasks[DRIVER] = task
 
     await svc.start_wizard(_interaction(_guild(old_channel=_channel(OLD_CHANNEL))))
 
-    removed = {c.args[0] for c in svc._scheduler._scheduler.remove_job.call_args_list}
+    removed = {c.args[0] for c in svc._scheduler.cancel_job.call_args_list}
     assert f"wizard_inactivity_{DRIVER}" in removed
     assert f"wizard_channel_delete_{DRIVER}" in removed
     task.cancel.assert_called_once()
@@ -497,11 +498,12 @@ async def test_the_wizard_is_parked_and_its_answers_cleared(tmp_path):
 
 
 async def test_the_timeout_on_the_correction_is_cancelled(tmp_path):
+    """Through the scheduler service's `cancel_job`."""
     svc = _service(record=_record())
 
     await svc._commit_correction(_wizard(draft={"notes": "hi"}), _guild(old_channel=_channel(OLD_CHANNEL)))
 
-    removed = {c.args[0] for c in svc._scheduler._scheduler.remove_job.call_args_list}
+    removed = {c.args[0] for c in svc._scheduler.cancel_job.call_args_list}
     assert f"wizard_inactivity_{DRIVER}" in removed
 
 

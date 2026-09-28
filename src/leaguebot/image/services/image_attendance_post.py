@@ -60,7 +60,7 @@ async def attendance_enabled(bot: LeagueBot) -> bool:
         report = reports.get(ATTENDANCE_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("attendance: enablement check failed: %s", exc)
+        log.error("attendance: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -104,7 +104,7 @@ async def render_sheet(
             filename_stem=stem_for_drawing(drawing, ATTENDANCE_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("attendance: render failed: %s", exc)
+        log.error("attendance: render failed: %s", exc, exc_info=True)
         return SheetRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
 
     if decision.rejects:

@@ -129,10 +129,17 @@ def face_index() -> dict[tuple[str, bool], list[tuple[int, int, Path]]]:
 
 
 def _faces_of(path: Path) -> list[tuple[str, int, int, bool]]:
-    """(family, OS/2 weight class, OS/2 width class, italic) per family name declared."""
+    """(family, OS/2 weight class, OS/2 width class, italic) per family name declared.
+
+    A font that cannot be read is skipped, and logged as a warning with its traceback. That
+    is not noise: this is read only while `font_index` and `face_index` are built, and each is
+    built once a run, so an unreadable font is logged once for each index it is read for, and
+    never again while the bot runs.
+    """
     try:
         font = TTFont(path, fontNumber=0, lazy=True)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — a bad font must not break the index
+        log.warning("face_index: could not open the font %s", path, exc_info=True)
         return []
 
     weight, width, italic = _WEIGHT_REGULAR, _WIDTH_NORMAL, False
@@ -146,22 +153,24 @@ def _faces_of(path: Path) -> list[tuple[str, int, int, bool]]:
         italic = bool(selection & 0x01)
         if selection & 0x20:
             weight = max(weight, _WEIGHT_BOLD)
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 — the face is indexed as regular, normal and upright
+        log.warning("face_index: could not read the OS/2 table of %s", path, exc_info=True)
     finally:
         try:
             font.close()
         except Exception:  # noqa: BLE001
-            pass
+            log.warning("face_index: could not close the font %s", path, exc_info=True)
 
     return [(family, weight, width, italic) for family in _families_of(path)]
 
 
 def _families_of(path: Path) -> list[str]:
-    """Read the family names a font file declares. Unreadable files are skipped."""
+    """Read the family names a font file declares. Unreadable files are skipped, and logged
+    as `_faces_of` says: once for each index they are read for."""
     try:
         font = TTFont(str(path), fontNumber=0, lazy=True)
     except (TTLibError, OSError, Exception):  # noqa: BLE001 - a bad font must not break the index
+        log.warning("font_index: could not open the font %s", path, exc_info=True)
         return []
 
     families: list[str] = []
@@ -172,17 +181,21 @@ def _families_of(path: Path) -> list[str]:
             if record.nameID in (1, 16):
                 try:
                     value = record.toUnicode()
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 — the other names of the font still count
+                    log.warning(
+                        "font_index: could not decode a family name of %s", path, exc_info=True
+                    )
                     continue
                 if value and value not in families:
                     families.append(value)
     except Exception:  # noqa: BLE001
+        log.warning("font_index: could not read the name table of %s", path, exc_info=True)
         return []
     finally:
         try:
             font.close()
         except Exception:  # noqa: BLE001
-            pass
+            log.warning("font_index: could not close the font %s", path, exc_info=True)
 
     return families
 
@@ -280,7 +293,7 @@ def measure(text: str, resolved: ResolvedFont, size: float) -> float:
         widths, upem, fallback = _metrics(str(resolved.path))
         cmap = _cmap(str(resolved.path))
     except Exception as exc:  # noqa: BLE001
-        log.warning("measure: unreadable metrics for %s: %s", resolved.path, exc)
+        log.warning("measure: unreadable metrics for %s: %s", resolved.path, exc, exc_info=True)
         return len(text) * size * _FALLBACK_ADVANCE_RATIO
 
     total = 0

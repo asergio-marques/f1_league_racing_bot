@@ -55,8 +55,10 @@ def _cog(db_path: str, stage: SeasonStage | None) -> ModuleCog:
 
 
 def _interaction():
+    """Nothing has answered it yet, so a refusal goes out as its response."""
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
     return interaction
 
@@ -144,3 +146,35 @@ async def test_no_module_is_disabled_in_pending_completion(tmp_path, module):
 
     handler.assert_not_awaited()
     assert "pending completion" in interaction.response.send_message.await_args.args[0]
+
+
+# ── The refusal is recorded (#442) ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
+async def test_the_module_stage_check_logs_its_refusal_unless_record_is_false(tmp_path, record):
+    """The check answers the member either way. With `record` left at its default it writes
+    one line in the standard refusal form to the log channel; with `record=False` it writes
+    none."""
+    stage = SeasonStage.ONGOING
+    cog = _cog(await _db(tmp_path, stage), stage)
+    cog.bot.output_router.post_log = AsyncMock()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.user.id = 77
+    interaction.user.display_name = "Admin"
+    interaction.command.qualified_name = "module enable"
+
+    refused = await cog._refuse_module_change(interaction, "weather", "enable", record=record)
+
+    assert refused is True
+    assert "cannot be enabled" in interaction.response.send_message.await_args.args[0]
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    if record:
+        [line] = lines
+        assert line.startswith("⛔ ")
+        assert "/module enable" in line
+        assert "refused for Admin (<@77>)" in line
+        assert "cannot be enabled" in line
+    else:
+        assert lines == []
