@@ -2761,7 +2761,6 @@ class ResultsCog(commands.Cog):
             try:
                 await revert_abandoned_amendment(self.bot.db_path, rnd.id, self.bot)
             except Exception:
-                stage_one_writing[0] = False
                 log.exception("amend: could not revert round %s after a failure", rnd.id)
                 unrestored = (
                     "The round could not be put back yet. Restarting the bot retries "
@@ -2770,10 +2769,14 @@ class ResultsCog(commands.Cog):
                 await _log_amend_failed(
                     exc, "the corrected results could not be recorded", not_put_back=unrestored
                 )
+                stage_one_writing[0] = False
                 await _tell_of_failure(amendment_fault_reply(describe_fault(exc), unrestored))
                 return
-            stage_one_writing[0] = False
+            # The writing flag stays raised until the line is written, so that a Cancel pressed
+            # meanwhile is refused as "being recorded", and logged, rather than told the
+            # amendment was cancelled with nothing to record it.
             await _log_amend_failed(exc, "the corrected results could not be recorded")
+            stage_one_writing[0] = False
             await _cleanup_channel()
             await _tell_of_failure(amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK))
             return

@@ -875,6 +875,50 @@ async def test_cancelling_while_the_paste_is_being_written_is_refused_not_swallo
     assert await _amend_rows(db_path) == 1
 
 
+async def test_cancelling_while_a_failed_write_is_being_reported_is_refused_and_logged(tmp_path):
+    """**The window between a failed write and its line.** The write stops on a fault, and a
+    Cancel pressed while its `AMEND_FAILED` line is being written is refused as "being recorded"
+    and logged, rather than told the amendment was cancelled with nothing to record it."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name="amend_cancel_mid_failure")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    pressed: dict = {}
+    posted: list[str] = []
+
+    async def _post(line, *_a, **_kw):
+        posted.append(str(line))
+        if "AMEND_FAILED" in str(line) and "said" not in pressed:
+            view = channel.send.await_args_list[0].kwargs["view"]
+            press = MagicMock()
+            press.user = SimpleNamespace(id=USER_ID)
+            press.response = MagicMock()
+            press.response.is_done = MagicMock(return_value=False)
+            press.response.send_message = AsyncMock()
+            press.followup = MagicMock()
+            press.followup.send = AsyncMock()
+            press.client = cog.bot
+            await type(view).cancel_btn(view, press, MagicMock())
+            pressed["said"] = str(press.response.send_message.await_args.args[0])
+
+    cog.bot.output_router.post_log = AsyncMock(side_effect=_post)
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "leaguebot.results.services.result_submission_service.cancel_amendment", new=AsyncMock()
+    ) as cancel:
+        await _amend(cog, interaction, amend_error=sqlite3.OperationalError("database is locked"))
+
+    assert "being recorded" in pressed["said"]
+    assert "cancelled" not in pressed["said"].lower()
+    cancel.assert_not_awaited()
+    assert any(line.startswith("⛔ ") and "being recorded" in line for line in posted)
+
+
 async def test_a_channel_created_for_a_second_amendment_is_not_left_behind(tmp_path):
     """The check for an open amendment is a read, so two commands can both pass it. The unique
     constraint settles it — and the loser's channel has to go, or it is an orphan nothing can
