@@ -12,8 +12,10 @@ quietly started refusing edits.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -34,6 +36,8 @@ SERVER_ID = 4400
 USER_ID = 88
 _BOT_USER_ID = 4242
 _FEATURE_RACE = SimpleNamespace(name="Feature Race", value="FEATURE_RACE")
+#: When a staged change is made, handed to the service rather than read off the clock.
+NOW = datetime(2026, 9, 28, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
@@ -59,6 +63,12 @@ def _interaction():
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
     interaction.client.output_router.post_log = AsyncMock()
+    # A bulk form checks everything before it writes anything (#442): the module is on, and
+    # the season is one being raced.
+    interaction.client.module_service.is_results_enabled = AsyncMock(return_value=True)
+    interaction.client.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(id=1, season_number=1, stage=SeasonStage.ONGOING)
+    )
     return interaction
 
 
@@ -321,14 +331,21 @@ async def test_a_bulk_paste_is_judged_on_the_table_it_leaves_not_the_lines_it_ca
     assert "out of order" not in _replies(interaction)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: a bulk paste that applies nothing is not refused through refuse"
+)
 @pytest.mark.asyncio
 async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(db_path):
-    """Every line malformed: there is a complaint to make and this is not it."""
+    """Every line malformed: the paste is refused, every bad line is listed back, and the
+    refusal is logged. There is a complaint to make and the ordering is not it."""
     interaction = await _submit_bulk(db_path, "nonsense\nalso nonsense")
 
     replies = _replies(interaction)
-    assert "Errors" in replies
+    assert "nonsense" in replies and "also nonsense" in replies
     assert "out of order" not in replies
+    [line] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ ")
+    assert "refused for Manager" in line
 
 
 # ---------------------------------------------------------------------------
@@ -435,12 +452,18 @@ async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_pat
     assert await _staged(db_path, season, 2) == 25
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet"
+)
 @pytest.mark.asyncio
 async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path, season):
     """A manager deciding whether to approve should see the fault while deciding."""
     from leaguebot.core.services.amendment_service import modify_session_points
 
-    await modify_session_points(db_path, season, "100%", "FEATURE_RACE", 2, 30)
+    await modify_session_points(
+        db_path, season, "100%", "FEATURE_RACE", [(2, 30)],
+        actor_id=USER_ID, actor_name="Manager#0001", now=NOW,
+    )
     cog = _cog_with_season(db_path, season)
     interaction = _interaction()
     interaction.followup.send = AsyncMock(side_effect=_stop_view)
@@ -467,6 +490,9 @@ def _stop_view(*_args, **kwargs) -> None:
         view.stop()
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet"
+)
 @pytest.mark.asyncio
 async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_nothing(
     db_path, season
@@ -474,7 +500,10 @@ async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_not
     """The guard is asked again at the press — the panel has no timeout."""
     from leaguebot.core.services.amendment_service import modify_session_points
 
-    await modify_session_points(db_path, season, "100%", "FEATURE_RACE", 2, 30)
+    await modify_session_points(
+        db_path, season, "100%", "FEATURE_RACE", [(2, 30)],
+        actor_id=USER_ID, actor_name="Manager#0001", now=NOW,
+    )
     cog = _cog_with_season(db_path, season)
     interaction = _interaction()
 
@@ -503,3 +532,331 @@ async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_not
         )
         points = {r["position"]: r["points"] for r in await cursor.fetchall()}
     assert points == {1: 25, 2: 18}, "the season's own points were changed by a refusal"
+
+
+# ---------------------------------------------------------------------------
+# A bulk paste is all or nothing, and every outcome is recorded (#442)
+#
+# Every line is parsed and every check made before anything is written. A bad line refuses
+# the whole paste, every fault listed back; a repeated position is not a bad line, and takes
+# its last value with the override reported. What is written is written in one transaction,
+# so a fault part-way saves nothing. Each form is driven here through its own harness: the
+# config form writes the server's store, the amend form the season's modification store.
+# ---------------------------------------------------------------------------
+
+
+def _logged(interaction) -> list[str]:
+    return [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+
+
+async def _submit_amend(db_path, season_id, text: str, *, config: str = "100%"):
+    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal
+
+    modal = BulkAmendSessionModal(config, _FEATURE_RACE, db_path)
+    modal.entries._value = text
+    interaction = _interaction()
+    interaction.client.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(id=season_id, season_number=1, stage=SeasonStage.ONGOING)
+    )
+    await modal.on_submit(interaction)
+    return interaction
+
+
+async def _submit(form: str, db_path, season_id, text: str):
+    if form == "config":
+        return await _submit_bulk(db_path, text)
+    return await _submit_amend(db_path, season_id, text)
+
+
+async def _table(form: str, db_path, season_id) -> dict[int, int]:
+    """What the form's store holds for the Feature Race, by position."""
+    if form == "config":
+        entries, _ = await points_config_service.get_config_entries(db_path, "100%")
+        return {
+            e.position: e.points for e in entries if e.session_type is SessionType.FEATURE_RACE
+        }
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT position, points FROM season_modification_entries "
+            "WHERE season_id = ? AND session_type = 'FEATURE_RACE'",
+            (season_id,),
+        )
+        return {r["position"]: r["points"] for r in await cursor.fetchall()}
+
+
+FORMS = ["config", "amend"]
+
+
+@pytest.mark.xfail(strict=True, reason="#442: a bulk paste still applies its good lines past a bad one")
+@pytest.mark.parametrize("form", FORMS)
+async def test_a_bulk_paste_with_a_bad_line_applies_nothing(db_path, season, form):
+    """One bad line refuses the paste whole: nothing is written, every bad line is listed
+    back, and the refusal is logged."""
+    before = await _table(form, db_path, season)
+
+    interaction = await _submit(form, db_path, season, "1, 30\nnonsense\n3, -1")
+
+    assert await _table(form, db_path, season) == before
+    replies = _replies(interaction)
+    assert "nonsense" in replies
+    assert "-1" in replies
+    [line] = _logged(interaction)
+    assert line.startswith("⛔ ")
+    assert f"refused for Manager (<@{USER_ID}>)" in line
+    assert "nonsense" in line
+
+
+@pytest.mark.parametrize("form", FORMS)
+async def test_a_bulk_paste_with_a_repeated_position_and_no_bad_line_is_applied(
+    db_path, season, form
+):
+    """A repeated position is a correction, not a fault: the last value is kept, the whole
+    paste applied, and the override reported."""
+    interaction = await _submit(form, db_path, season, "1, 25\n1, 30\n2, 18")
+
+    table = await _table(form, db_path, season)
+    assert table[1] == 30
+    assert table[2] == 18
+    assert "Duplicate position 1" in _replies(interaction)
+
+
+def _fail_the_second_position(table: str) -> str:
+    return (
+        f"CREATE TRIGGER fail_position_two BEFORE INSERT ON {table} "
+        "WHEN NEW.position = 2 BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a fault part-way through a bulk paste keeps the lines before it"
+)
+@pytest.mark.parametrize("form", FORMS)
+async def test_a_bulk_paste_fault_undoes_the_whole_paste(db_path, season, form):
+    """The paste is written in one transaction, so a fault on its second line saves nothing.
+    The member gets the standard failure reply saying nothing from the paste was saved and
+    how to retry, with no error text, and one failure line is logged."""
+    before = await _table(form, db_path, season)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            _fail_the_second_position(
+                "points_config_entries" if form == "config" else "season_modification_entries"
+            )
+        )
+        await db.commit()
+
+    interaction = await _submit(form, db_path, season, "1, 30\n2, 20\n3, 10")
+
+    assert await _table(form, db_path, season) == before
+    replies = _replies(interaction)
+    assert "stopped on a fault in the bot" in replies
+    assert "Nothing from the paste was saved." in replies
+    assert "Paste it again to retry." in replies
+    assert "disk I/O error" not in replies
+    [line] = _logged(interaction)
+    assert f"failed for <@{USER_ID}>" in line
+    assert "disk I/O error" not in line
+
+
+@pytest.mark.xfail(strict=True, reason="#442: a bulk paste does not yet record its changes")
+@pytest.mark.parametrize("form", FORMS)
+async def test_a_bulk_paste_records_each_change_from_what_to_what(db_path, season, form):
+    """The log line states beneath it every value set. The config form, which changes the
+    server's store, also writes an audit entry for each position it changed, from what to what,
+    by whom and when."""
+    await _set(db_path, 1, 20)
+
+    interaction = await _submit(form, db_path, season, "1, 26\n2, 19")
+
+    [line] = _logged(interaction)
+    values = line.split("\n", 1)[1] if "\n" in line else ""
+    assert "26" in values and "19" in values, "the values set are not listed"
+    if form == "amend":
+        return
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT actor_id, old_value, new_value, timestamp FROM audit_entries ORDER BY id"
+        )
+        rows = [dict(r) for r in await cursor.fetchall()]
+    assert len(rows) == 2
+    assert all(r["actor_id"] == USER_ID for r in rows)
+    assert all(datetime.fromisoformat(r["timestamp"]).utcoffset() is not None for r in rows)
+    first = next(r for r in rows if "26" in r["new_value"])
+    assert "20" in json.dumps(json.loads(first["old_value"]))
+
+
+# ── Every refusal of the two commands, the two forms, and the shared checks behind them ──
+
+
+def _gated_bot(db_path, *, results_on: bool):
+    """A bot whose results module is on or off, and whose server holds no live season."""
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.module_service.is_results_enabled = AsyncMock(return_value=results_on)
+    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock()
+    return bot
+
+
+def _gated_interaction(bot, command: str):
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.user.id = USER_ID
+    interaction.user.display_name = "Manager"
+    interaction.client = bot
+    interaction.command.qualified_name = command
+    state = {"done": False}
+
+    async def _answer(*_a, **_k):
+        state["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+async def _run_command(cls_path: str, attr: str, bot, interaction, nargs: int) -> None:
+    import importlib
+
+    module_name, cls_name = cls_path.rsplit(".", 1)
+    cls = getattr(importlib.import_module(module_name), cls_name)
+    cog = cls.__new__(cls)
+    cog.bot = bot
+    await undecorate(getattr(cls, attr))(cog, interaction, *[MagicMock()] * nargs)
+
+
+_RESULTS = "leaguebot.results.cogs.results_cog.ResultsCog"
+
+#: Every acting `/results` command behind `_module_gate`: its attribute, its name, and how many
+#: arguments it takes. The three views — `config list`, `config view` and `amend review` — are
+#: refused without a line, and are `test_a_view_refused_by_a_shared_check_writes_no_log_line`'s.
+MODULE_GATED = [
+    ("config_add", "results config add", 1),
+    ("config_remove", "results config remove", 1),
+    ("config_session", "results config session", 4),
+    ("config_fl", "results config fl", 3),
+    ("config_fl_plimit", "results config fl-plimit", 3),
+    ("config_append", "results config append", 1),
+    ("config_detach", "results config detach", 1),
+    ("bulk_config_session", "results config bulk-session", 2),
+    ("config_xml_import", "results config xml-import", 2),
+    ("amend_toggle", "results amend toggle", 0),
+    ("amend_revert", "results amend revert", 0),
+    ("amend_session", "results amend session", 4),
+    ("amend_fl", "results amend fl", 3),
+    ("amend_fl_plimit", "results amend fl-plimit", 3),
+    ("bulk_amend_session", "results amend bulk-session", 2),
+    ("reserves_toggle", "results reserves toggle", 1),
+    ("standings_sync", "results standings sync", 1),
+    ("rounds_sync", "results rounds sync", 1),
+]
+
+#: Every acting command behind `season_for_command`: its cog, its attribute, its name, and how
+#: many arguments it takes. The bulk amend form is the fourteenth, and is its own case below.
+SEASON_GATED = [
+    (_RESULTS, "amend_toggle", "results amend toggle", 0),
+    (_RESULTS, "amend_revert", "results amend revert", 0),
+    (_RESULTS, "amend_session", "results amend session", 4),
+    (_RESULTS, "amend_fl", "results amend fl", 3),
+    (_RESULTS, "amend_fl_plimit", "results amend fl-plimit", 3),
+    (_RESULTS, "bulk_amend_session", "results amend bulk-session", 2),
+    (_RESULTS, "reserves_toggle", "results reserves toggle", 1),
+    (_RESULTS, "standings_sync", "results standings sync", 1),
+    (_RESULTS, "rounds_sync", "results rounds sync", 1),
+    (_RESULTS, "rounds_amend", "results rounds amend", 3),
+    ("leaguebot.core.cogs.driver_cog.DriverCog", "reassign", "driver reassign", 3),
+    ("leaguebot.core.cogs.season_cog.SeasonCog", "division_calendar_sync",
+     "division calendar-sync", 1),
+]
+
+BULK_REFUSALS = [
+    pytest.param("config form", "", "No entries", id="config-form-no-entries"),
+    pytest.param("config form missing", "1, 25", "not found", id="config-form-config-not-found"),
+    pytest.param("config form off", "1, 25", "not enabled", id="config-form-module-off"),
+    pytest.param("amend form", "", "No entries", id="amend-form-no-entries"),
+    pytest.param("amend form inactive", "1, 25", "not active", id="amend-form-amendment-mode-off"),
+    pytest.param("amend form no season", "1, 25", "there is none", id="amend-form-season-gate"),
+    pytest.param("amend form off", "1, 25", "not enabled", id="amend-form-module-off"),
+    *[
+        pytest.param(
+            f"module gate:{attr}:{nargs}", name, "not enabled", id=f"module-gate-{attr}"
+        )
+        for attr, name, nargs in MODULE_GATED
+    ],
+    *[
+        pytest.param(
+            f"season gate:{cls}:{attr}:{nargs}", name, "", id=f"season-gate-{attr}"
+        )
+        for cls, attr, name, nargs in SEASON_GATED
+    ],
+]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a bulk-session or shared-check refusal writes no log line"
+)
+@pytest.mark.parametrize("case, given, said", BULK_REFUSALS)
+async def test_every_bulk_session_refusal_reaches_the_log_channel(
+    db_path, season, case, given, said
+):
+    """Each refusal answers the member as before, writes nothing, and writes one line in the
+    standard refusal form. The shared checks' refusals reach every acting command they guard,
+    each named in its line."""
+    from leaguebot.core.services.amendment_service import disable_amendment_mode
+
+    if case.startswith("module gate:") or case.startswith("season gate:"):
+        if case.startswith("module gate:"):
+            _, attr, nargs = case.split(":")
+            cls_path = _RESULTS
+        else:
+            _, cls_path, attr, nargs = case.split(":")
+        bot = _gated_bot(db_path, results_on=case.startswith("season gate:"))
+        interaction = _gated_interaction(bot, given)
+        await _run_command(cls_path, attr, bot, interaction, int(nargs))
+        command = given
+        replies = "\n".join(
+            str(c.args[0])
+            for c in interaction.response.send_message.await_args_list
+            + interaction.followup.send.await_args_list
+            if c.args
+        )
+        lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    else:
+        form = "config" if case.startswith("config form") else "amend"
+        command = "results config bulk-session" if form == "config" else (
+            "results amend bulk-session"
+        )
+        if case == "amend form inactive":
+            await disable_amendment_mode(db_path, season)
+        from leaguebot.results.cogs.results_cog import (
+            BulkAmendSessionModal,
+            BulkConfigSessionModal,
+        )
+
+        config = "GHOST" if case == "config form missing" else "100%"
+        cls = BulkConfigSessionModal if form == "config" else BulkAmendSessionModal
+        modal = cls(config, _FEATURE_RACE, db_path)
+        modal.entries._value = given
+        interaction = _interaction()
+        interaction.command = None
+        if case.endswith(" off"):
+            interaction.client.module_service.is_results_enabled = AsyncMock(return_value=False)
+        season_row = SimpleNamespace(id=season, season_number=1, stage=SeasonStage.ONGOING)
+        interaction.client.season_service.get_setup_or_active_season = AsyncMock(
+            return_value=None if case == "amend form no season" else season_row
+        )
+        before = await _table(form, db_path, season)
+        await modal.on_submit(interaction)
+        assert await _table(form, db_path, season) == before
+        replies = _replies(interaction)
+        lines = _logged(interaction)
+
+    assert said in replies
+    [line] = lines
+    assert line.startswith("⛔ ")
+    # A form's refusal may name the form rather than the command that opened it.
+    named = [f"/{command}", "Bulk Set Session Points", "Bulk Amend Session Points"]
+    assert any(name in line for name in (named if "form" in case else named[:1]))
+    assert f"refused for Manager (<@{USER_ID}>)" in line
