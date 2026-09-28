@@ -957,12 +957,17 @@ class SignupCog(commands.Cog):
             await channel.edit(overwrites=overwrites)
         except discord.Forbidden:
             reply = may_not_edit
+            reason = None
             if old_cleared is not None:
-                reply += (
-                    f"\nThe old signup channel {old_cleared.mention} has already had its "
+                # The whole reply is the line's reason: the old channel left bare is what
+                # whoever reads the log later most needs to know.
+                cleared = (
+                    f"The old signup channel {old_cleared.mention} has already had its "
                     "permissions cleared, so it needs putting right by hand if you do not retry."
                 )
-            await refuse(interaction, reply, what=describe(interaction))
+                reply += f"\n{cleared}"
+                reason = f"{may_not_edit.removeprefix('❌ ')}\n{cleared}"
+            await refuse(interaction, reply, what=describe(interaction), reason=reason)
             return
 
         # Persist
