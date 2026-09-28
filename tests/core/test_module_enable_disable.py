@@ -416,9 +416,12 @@ async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off
             "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
         )
         await db.commit()
+    cog = _make_cog(db_path, results_enabled=True)
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
 
-    await _make_cog(db_path, results_enabled=True)._enable_attendance(interaction)
+    await cog._enable_attendance(interaction)
 
     replied = _replied(interaction)
     assert "stopped on a fault in the bot" in replied
@@ -429,6 +432,12 @@ async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM attendance_config")
         assert (await cursor.fetchone())[0] == 0
+    # One failure line: the command, the member and the kind of fault, never its words.
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert "/module enable" in line
+    assert f"failed for <@{ACTOR_ID}>" in line
+    assert "IntegrityError" in line
+    assert "disk I/O error" not in line
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +483,9 @@ async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_
     assert "disk I/O error" not in replied
     assert "Module remains disabled" not in replied
     [line] = _lines(cog)
+    assert "/module enable" in line
     assert f"failed for <@{ACTOR_ID}>" in line
+    assert "IntegrityError" in line
     assert "disk I/O error" not in line
 
 

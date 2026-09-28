@@ -283,13 +283,17 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
     cog = _make_cog(db_path, create_error=RuntimeError("disk full"))
     interaction = _interaction()
     interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
 
     await _enable(cog, interaction)
 
     lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert not any("Success" in line for line in lines)
     [line] = lines
+    assert "/module enable" in line
     assert f"failed for <@{ACTOR_ID}>" in line
+    assert "RuntimeError" in line
+    assert "disk full" not in line
 
 
 @pytest.mark.parametrize(
@@ -330,6 +334,7 @@ async def test_an_image_enable_that_cannot_be_written_is_switched_back_off_and_s
         )
     interaction = _interaction()
     interaction.client = cog.bot
+    interaction.command.qualified_name = "module enable"
 
     if switch_off_fails:
         with pytest.raises(RuntimeError) as raised:
@@ -347,5 +352,7 @@ async def test_an_image_enable_that_cannot_be_written_is_switched_back_off_and_s
     assert "again once the fault is cleared" in replied
     assert "disk I/O error" not in replied
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert "/module enable" in line
     assert f"failed for <@{ACTOR_ID}>" in line
+    assert "IntegrityError" in line
     assert "disk I/O error" not in line
