@@ -148,7 +148,11 @@ plan. That is a success, not a failure.
 
 **Check each returned plan before the user sees it**, through the `work-issue` workflow's check
 stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
-product owner's questions to the user first, and items 7 and 8 added to the plan from its result.
+product owner's questions to the user first, the checkers' assumptions listed in the plan and their
+follow-ups drafted beside it, never asked, and items 7 and 8 added to the plan from its result. A
+plan is re-checked once at most, as `fix-issue` says. A plan that proposes the light path, and that
+the user sends down it at Gate 1, skips the check and is built by hand in its own worktree, as
+`fix-issue` Phase 3 describes, rather than through Stage 4.
 Keep each check's result for the issue's build, and for its next check, saved to a file as
 `fix-issue`'s "What a stage returns" says: a batch's session reads every issue's results, so what it
 leaves out of the conversation it saves many times over. A check of an amended plan
@@ -218,8 +222,11 @@ default, as `fix-issue` names them: by default Sonnet runs the build's builder, 
 effort, and Opus runs every other role; the next issue's per-agent figures and findings confirm the
 Sonnet builder, or put it back on Opus. Every stage's result is saved to
 `.claude/gates/<N>-<stage>.json` and read as `fix-issue` says, never pasted into the conversation.
-The issues' runs go on concurrently, one run per issue at a time. Tell the user each build takes about ten agents, and one more for each piece a builder hands
-off, and that the Pi runs two of a workflow's agents at once.
+Its calls taken on a recommendation and its minor findings are shown once at the issue's next gate,
+and a stage that returns `capped` or `stalled` goes to the user as one question, all as `fix-issue`
+says. The issues' runs go on concurrently, one run per issue at a time. Tell the user each build
+takes about ten agents, and one more for each piece a builder hands off, and that the Pi runs two of
+a workflow's agents at once.
 
 **Each issue's Gate 2 file is written to the main checkout's `.claude/gates/<N>-gate-2.md`,** never
 to the issue's worktree, so that every gate file stands in one place in the user's workspace, and a
