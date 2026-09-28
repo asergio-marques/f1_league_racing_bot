@@ -26,6 +26,10 @@ class _Response:
     def __init__(self) -> None:
         self.messages: list[str] = []
 
+    def is_done(self) -> bool:
+        """Whether the interaction has been answered, as Discord's response reports it."""
+        return bool(self.messages)
+
     async def defer(self, **kwargs):
         pass
 
