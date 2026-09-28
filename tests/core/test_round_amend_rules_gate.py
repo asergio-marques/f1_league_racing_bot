@@ -565,3 +565,29 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tm
     assert f"failed for <@{USER_ID}>" in line
     assert "OperationalError" in line
     assert "database is locked" not in line
+
+
+async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_view(tmp_path):
+    """The Confirm press cannot even be acknowledged — the defer fails. It is reported as any
+    other fault in the press, and the buttons stop, so no lapse line follows the failure."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path, attendance=False)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
+    interaction = _interaction()
+    interaction.response.defer = AsyncMock(side_effect=RuntimeError("gateway closed"))
+    _recording(cog, interaction)
+    view = _view(cog, [("scheduled_at", later)])
+
+    try:
+        await view.confirm.callback(interaction)
+    except Exception as exc:  # noqa: BLE001 — handed on as the library hands it on
+        await view.on_error(interaction, exc, view.confirm)
+
+    assert view.is_finished(), "the buttons are still live, so the view will lapse as well"
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    [line] = _lines(cog)
+    assert line.startswith("❌ ")
+    assert f"failed for <@{USER_ID}>" in line
+    assert "RuntimeError" in line
+    assert "gateway closed" not in line

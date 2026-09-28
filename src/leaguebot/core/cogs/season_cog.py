@@ -6483,14 +6483,14 @@ class _ConfirmView(LeagueView):
             await refuse(interaction, "\u26d4 Not your action.", what=what)
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        # A fault anywhere after the defer is reported here rather than left to the view's
-        # failure path, so that the reply and the line name the round (see `report_failure`).
-        # Every way out stops the buttons, a fault included: left running, the view would lapse
-        # two minutes later and record that nothing was changed, beside the failure already
-        # recorded for the same press, even where the round had been amended before the fault.
+        # A fault anywhere in the press, the defer included, is reported here rather than left to
+        # the view's failure path, so that the reply and the line name the round (see
+        # `report_failure`). Every way out stops the buttons, a fault included: left running, the
+        # view would lapse two minutes later and record that nothing was changed, beside the
+        # failure already recorded for the same press, even where the round had been amended
+        # before the fault.
         try:
+            await interaction.response.defer(ephemeral=True)
             scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
 
             # Judged again, with a fresh moment, rather than trusting the verdict the summary was
