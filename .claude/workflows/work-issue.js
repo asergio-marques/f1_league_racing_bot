@@ -737,19 +737,26 @@ const priorSection = lane => {
 
 // What a checker that has reviewed before reads this time. Earlier work the new commits make wrong
 // stays in scope: each checker's duty covers the branch at its tip, not only its newest commits.
-const sinceReviewed = lane => {
+// So does earlier work the owner's decisions make wrong. A run carried on from an earlier one may
+// be given decisions and answers its checkers never saw, and work built before them on the
+// builder's own guess can conflict with them however untouched it is since: in the first round of
+// such a run, each checker holds the whole branch to the decisions once.
+const sinceReviewed = (k, lane) => {
   const at = reviewedAt[lane]
   if (at === undefined || at > commits.length) return ''
-  if (at === commits.length) return ' Nothing has been committed since you last reviewed the branch: judge only your earlier findings and the questions given below.'
+  const decided = previous && k === offset + 1
+    ? ' This run carries on from an earlier one, and the owner\'s decisions and answers below may have grown since you last reviewed: earlier work they make wrong is in scope too, wherever on the branch it sits.'
+    : ''
+  if (at === commits.length) return ` Nothing has been committed since you last reviewed the branch: judge only your earlier findings and the questions given below.${decided}`
   if (!at) return ''
   const sha = commits[at - 1].sha
-  return ` You reviewed the branch up to ${sha} already, in an earlier round. Read git -C ${worktree} log ${sha}..HEAD and git -C ${worktree} diff ${sha}..HEAD, and judge your earlier findings. Read the rest of the branch only to confirm something, and do not review it again; but a document, test or piece of code written earlier and made wrong by the new commits is still in scope. Where git does not know ${sha}, review the whole branch.`
+  return ` You reviewed the branch up to ${sha} already, in an earlier round. Read git -C ${worktree} log ${sha}..HEAD and git -C ${worktree} diff ${sha}..HEAD, and judge your earlier findings. Read the rest of the branch only to confirm something, and do not review it again; but a document, test or piece of code written earlier and made wrong by the new commits is still in scope. Where git does not know ${sha}, review the whole branch.${decided}`
 }
 
 // `whole` asks for a review of the whole branch, however far the lane has reviewed it: the product
 // owner asked again for a summary it left out is a fresh agent that has read nothing of the branch,
 // and must read all of it to sum it up and to find what its findings still stop.
-const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
+const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(k, lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
 
 // `earlier` holds the results of the round's pieces before this one: a later piece carries on from
 // them, and leaves alone the findings they have already fixed or disputed.
@@ -845,7 +852,7 @@ ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (
 
 const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
 
-const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed('design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
+const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed(k, 'design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
 
 const buildTesterPrompt = k => {
   const logFile = `/tmp/work-issue-${issue}-build-r${k}.log`
