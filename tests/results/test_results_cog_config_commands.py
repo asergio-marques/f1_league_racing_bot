@@ -324,9 +324,6 @@ def _gate_replies(interaction) -> str:
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the results module gate writes no log line and takes no record switch"
-)
 @pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
 async def test_the_results_module_gate_logs_its_refusal_unless_record_is_false(record):
     """The gate answers the member either way. With `record` left at its default it writes one

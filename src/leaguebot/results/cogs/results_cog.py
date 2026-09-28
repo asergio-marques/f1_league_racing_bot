@@ -37,6 +37,7 @@ from leaguebot.core.utils.channel_guard import (
     league_manager_only,
 )
 from leaguebot.core.utils.input_validator import NAME
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -45,6 +46,7 @@ from leaguebot.core.utils.league_server import (
     LeagueView,
     guild_of,
 )
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -615,12 +617,21 @@ class ResultsCog(commands.Cog):
     # Gate helpers
     # ------------------------------------------------------------------
 
-    async def _module_gate(self, interaction: discord.Interaction) -> bool:
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Whether the results module is on; where it is not, refuse and return False.
+
+        The refusal is recorded in the log channel, as every refusal of a command that acts
+        is, unless *record* is False — which the views and lists pass, since they change
+        nothing and record nothing.
+        """
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled on this server.",
-                ephemeral=True,
-            )
+            reply = "\u274c The Results & Standings module is not enabled on this server."
+            if record:
+                await refuse(interaction, reply, what=describe(interaction))
+            else:
+                await interaction.response.send_message(reply, ephemeral=True)
             return False
         return True
 
@@ -987,7 +998,7 @@ class ResultsCog(commands.Cog):
         the case the issue was raised for, a league between seasons wanting to know what it
         already holds before building the next one.
         """
-        if not await self._module_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1042,7 +1053,7 @@ class ResultsCog(commands.Cog):
         got shown figures the running season does not score by. Naming the store is the whole
         of the fix, and it is why the parameter has no default to fall back to.
         """
-        if not await self._module_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1481,7 +1492,7 @@ class ResultsCog(commands.Cog):
         need the panel made public, on the model of the season-approval question, and that
         is a larger change than this one.
         """
-        if not await self._module_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1496,7 +1507,7 @@ class ResultsCog(commands.Cog):
         )
 
         season = await season_for_command(
-            interaction, self.bot.season_service, "results amend review"
+            interaction, self.bot.season_service, "results amend review", record=False
         )
         if season is None:
             return

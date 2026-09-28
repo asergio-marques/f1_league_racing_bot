@@ -151,7 +151,6 @@ async def test_no_module_is_disabled_in_pending_completion(tmp_path, module):
 # ── The refusal is recorded (#442) ─────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#442: the module stage check writes no log line and takes no record switch")
 @pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
 async def test_the_module_stage_check_logs_its_refusal_unless_record_is_false(tmp_path, record):
     """The check answers the member either way. With `record` left at its default it writes

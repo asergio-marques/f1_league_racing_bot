@@ -41,6 +41,7 @@ from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -1090,7 +1091,7 @@ class SignupCog(commands.Cog):
     )
 
     async def _refuse_while_configuration_fixed(
-        self, interaction: discord.Interaction, command: str
+        self, interaction: discord.Interaction, command: str, *, record: bool = True
     ) -> bool:
         """Refuse a change to the signup module's settings once a season has fixed them.
 
@@ -1100,19 +1101,23 @@ class SignupCog(commands.Cog):
         the window was open or drivers awaited placement — both only ever happen inside a
         season whose configuration is already fixed.
 
-        Returns True when the command replied and must stop.
+        Returns True when the command replied and must stop, having recorded the refusal in
+        the log channel unless *record* is False.
         """
         from leaguebot.core.services.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         if season_number is None:
             return False
-        await interaction.response.send_message(
+        reply = (
             f"❌ The signup module's settings are fixed for Season {season_number} now that "
             f"its configuration has been confirmed. `{command}` is available again once the "
-            "season has ended, or while a new season is in configuration.",
-            ephemeral=True,
+            "season has ended, or while a new season is in configuration."
         )
+        if record:
+            await refuse(interaction, reply, what=f"`{command}`")
+        else:
+            await interaction.response.send_message(reply, ephemeral=True)
         return True
 
     @time_slot_group.command(name="add", description="Add an availability time slot.")

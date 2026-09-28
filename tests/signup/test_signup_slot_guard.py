@@ -221,10 +221,6 @@ class TestPermittedWhileFree:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the fixed-configuration check writes no log line and takes no record switch",
-)
 @pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
 async def test_the_fixed_configuration_check_logs_its_refusal_unless_record_is_false(
     tmp_path, record

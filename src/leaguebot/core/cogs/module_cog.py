@@ -17,7 +17,9 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import LeagueView, league_guild
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
@@ -357,6 +359,8 @@ class ModuleCog(commands.Cog):
         interaction: discord.Interaction,
         module: str,
         action: str,
+        *,
+        record: bool = True,
     ) -> bool:
         """Refuse enabling or disabling a module where the season's stage forbids it.
 
@@ -368,41 +372,43 @@ class ModuleCog(commands.Cog):
         - no module is disabled while the season is in Pending completion.
 
         Checked here, before the module's own handler, so every module answers alike. Returns
-        True where the command was refused, having answered the interaction.
+        True where the command was refused, having answered the interaction and, unless
+        *record* is False, recorded the refusal in the log channel.
         """
         from leaguebot.core.services.season_lifecycle_service import (
             modules_frozen_for_completion,
             configuration_fixed,
         )
 
+        async def _refused(reply: str) -> bool:
+            if record:
+                await refuse(interaction, reply, what=describe(interaction))
+            else:
+                await interaction.response.send_message(reply, ephemeral=True)
+            return True
+
         if module == "signup":
             season_number = await configuration_fixed(self.bot.db_path)
             if season_number is not None:
-                await interaction.response.send_message(
+                return await _refused(
                     f"❌ The signup module is fixed for Season {season_number} now that its "
                     f"configuration has been confirmed. It can be {action}d again once the "
-                    "season has ended, or while a new season is in configuration.",
-                    ephemeral=True,
+                    "season has ended, or while a new season is in configuration."
                 )
-                return True
         elif action == "enable":
             if await self.bot.season_service.get_confirmed_season() is not None:
-                await interaction.response.send_message(
+                return await _refused(
                     "❌ A module cannot be enabled once the season's placements have been "
-                    "confirmed. Enable it before then, or once the season has ended.",
-                    ephemeral=True,
+                    "confirmed. Enable it before then, or once the season has ended."
                 )
-                return True
 
         if action == "disable" and await modules_frozen_for_completion(
             self.bot.db_path
         ):
-            await interaction.response.send_message(
+            return await _refused(
                 "❌ No module can be disabled while the season is pending completion. "
-                "Complete it with `/season complete` first.",
-                ephemeral=True,
+                "Complete it with `/season complete` first."
             )
-            return True
         return False
 
     # ── Weather enable (T011) ──────────────────────────────────────────

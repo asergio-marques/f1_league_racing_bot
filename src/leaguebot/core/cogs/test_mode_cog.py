@@ -42,9 +42,11 @@ from leaguebot.core.services import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.input_validator import parse_user_id
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.weather.utils.message_builder import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -670,9 +672,10 @@ class TestModeCog(commands.Cog):
     )
 
     async def _refuse_roster_change_outside_placements(
-        self, interaction: discord.Interaction
+        self, interaction: discord.Interaction, *, record: bool = True
     ) -> bool:
-        """Reply and return True where the season is not in Placements (issue #220).
+        """Reply and return True where the season is not in Placements (issue #220), having
+        recorded the refusal in the log channel unless *record* is False.
 
         Fake drivers are seated, removed and cleared only while the season is in Placements,
         which is where real drivers are placed too: test mode replicates the live flow rather
@@ -683,10 +686,11 @@ class TestModeCog(commands.Cog):
         live = await live_season_stage(self.bot.db_path)
         if live is not None and live[1] is SeasonStage.PLACEMENTS:
             return False
-        await interaction.response.send_message(
-            "⛔ The test roster can only be changed while the season is in placements.",
-            ephemeral=True,
-        )
+        reply = "⛔ The test roster can only be changed while the season is in placements."
+        if record:
+            await refuse(interaction, reply, what=describe(interaction))
+        else:
+            await interaction.response.send_message(reply, ephemeral=True)
         return True
 
     async def _refuse_outside_test_mode(self, interaction: discord.Interaction) -> bool:

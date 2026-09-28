@@ -113,9 +113,6 @@ def _lines(cog) -> list[str]:
     return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the placements check writes no log line and takes no record switch"
-)
 @pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
 async def test_the_placements_check_logs_its_refusal_unless_record_is_false(tmp_path, record):
     """The check answers the member either way. With `record` left at its default it writes

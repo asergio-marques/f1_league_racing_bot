@@ -263,9 +263,6 @@ def test_a_season_with_no_stage_at_all_still_gets_a_readable_label():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the season gate writes no log line and takes no record switch"
-)
 @pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
 async def test_the_season_gate_logs_its_refusal_unless_record_is_false(record):
     """The gate answers the member either way. With `record` left at its default it writes one
