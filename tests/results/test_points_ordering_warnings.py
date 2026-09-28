@@ -452,9 +452,6 @@ async def test_a_bulk_amend_out_of_order_warns_once_and_stages_every_line(db_pat
     assert await _staged(db_path, season, 2) == 25
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet"
-)
 @pytest.mark.asyncio
 async def test_the_review_panel_shows_the_ordering_problem_with_the_diff(db_path, season):
     """A manager deciding whether to approve should see the fault while deciding."""
@@ -490,9 +487,6 @@ def _stop_view(*_args, **kwargs) -> None:
         view.stop()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet"
-)
 @pytest.mark.asyncio
 async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_nothing(
     db_path, season

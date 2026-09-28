@@ -420,6 +420,44 @@ async def _record_position_change(
     )
 
 
+async def set_session_points_many(
+    db_path: str,
+    config_name: str,
+    session_type: SessionType,
+    pairs: list[tuple[int, int]],
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> None:
+    """Set every ``(position, points)`` of *pairs* in one transaction, recording each change.
+
+    A bulk paste is all or nothing: either every pair is written, with an audit entry for each
+    position whose points changed, from what to what, or — where anything fails before the
+    commit — none is, and no entry either. A position repeated in *pairs* takes its last
+    value. Raises :class:`ConfigNotFoundError` if *config_name* does not exist.
+    """
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, config_name)
+        for position, points in pairs:
+            old = await _position_points(db, config_id, session_type, position)
+            await db.execute(
+                """
+                INSERT INTO points_config_entries (config_id, session_type, position, points)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(config_id, session_type, position)
+                DO UPDATE SET points = excluded.points
+                """,
+                (config_id, session_type.value, position, points),
+            )
+            if old != points:
+                await _record_position_change(
+                    db, config_name, session_type, position, old, points,
+                    actor_id=actor_id, actor_name=actor_name, now=now,
+                )
+        await db.commit()
+
+
 async def xml_import_config(
     db_path: str,
     config_name: str,

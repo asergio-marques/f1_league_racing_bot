@@ -262,7 +262,6 @@ async def test_config_exists_answers_by_name(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: set_session_points_many is not written yet")
 async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_path):
     """Every pair lands, and each position it changed is recorded as an audit entry, from
     what it was to what it became, by whom and when."""

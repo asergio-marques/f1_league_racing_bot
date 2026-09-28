@@ -318,8 +318,10 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
                     season.id,
                     self._config_name,
                     self._session.value,
-                    position,
-                    points,
+                    [(position, points)],
+                    actor_id=interaction.user.id,
+                    actor_name=str(interaction.user),
+                    now=datetime.now(timezone.utc),
                 )
                 applied.append(f"P{position} → {points} pts")
             except AmendmentNotActiveError:
@@ -1377,7 +1379,14 @@ class ResultsCog(commands.Cog):
 
         try:
             await modify_session_points(
-                self.bot.db_path, season.id, name, session.value, position, points
+                self.bot.db_path,
+                season.id,
+                name,
+                session.value,
+                [(position, points)],
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
+                now=datetime.now(timezone.utc),
             )
         except AmendmentNotActiveError:
             await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)

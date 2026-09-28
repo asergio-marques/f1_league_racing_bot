@@ -105,7 +105,6 @@ async def test_disable_succeeds_when_not_modified(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_revert_modification_store(db_path):
     path, season_id = db_path
@@ -145,7 +144,6 @@ async def test_revert_modification_store(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_modify_raises_when_not_active(db_path):
     path, season_id = db_path
@@ -1028,7 +1026,6 @@ def _bot_recording_reposts(reposted: list[tuple], *, missing: tuple[int, ...] = 
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_approve_amendment_reposts_every_raced_round(db_path):
     """Approving an amendment must repost what it rescored, not only write it (#130).
@@ -1062,7 +1059,6 @@ async def test_approve_amendment_reposts_every_raced_round(db_path):
         )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
     """The cascade walks every non-cancelled round; only the raced ones are reposted (#130)."""
@@ -1085,7 +1081,6 @@ async def test_approve_amendment_does_not_post_for_unraced_rounds(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_approve_amendment_still_overwrites_the_points(db_path):
     """The rescore and the repost are one operation — calling it for real proves both."""
@@ -1155,7 +1150,6 @@ async def test_approve_amendment_overwrites_the_fastest_lap_points(db_path):
     assert row is not None and row["fl_points"] == 3
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_an_approved_amendment_empties_the_modification_store(db_path):
     """The staging tables are cleared, so the next amendment starts from the season.
@@ -1227,7 +1221,6 @@ async def _season_state(path: str, season_id: int):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
     """The headline of #187: a deleted standings channel refuses the approval outright.
@@ -1259,7 +1252,6 @@ async def test_an_amendment_is_refused_when_a_division_channel_is_gone(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_refused_amendment_keeps_the_season_points(db_path):
     """The points are what the refusal exists to protect: after the DELETE nothing
@@ -1286,7 +1278,6 @@ async def test_a_refused_amendment_keeps_the_season_points(db_path):
     assert row is not None and row["points"] == 25, "the season's own points were lost"
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
     """A manager repairs the channel and approves again; the work must still be there."""
@@ -1316,7 +1307,6 @@ async def test_a_refused_amendment_leaves_the_staged_changes_to_repair(db_path):
     assert row is not None and row["points"] == 30
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
     """Nothing happened, so the log must not say anything did (#187)."""
@@ -1337,7 +1327,6 @@ async def test_a_refused_amendment_is_not_logged_as_a_success(db_path):
     assert "AMENDMENT_APPROVED" not in logged, logged
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
     """The issue's other reproduction path: Send Messages revoked on a live channel."""
@@ -1369,7 +1358,6 @@ async def test_an_amendment_is_refused_when_the_bot_cannot_post(db_path):
     assert "Send Messages" in "; ".join(excinfo.value.faults)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
     """Today this overwrites the points and then silently reposts nothing at all (#187)."""
@@ -1397,7 +1385,6 @@ async def test_an_amendment_is_refused_when_the_guild_is_not_in_cache(db_path):
     assert row is not None and row["points"] == 25
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path):
     """The guard against over-refusing: an unconfigured channel is ordinary (#187)."""
@@ -1430,7 +1417,6 @@ async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path
     assert row is not None and row["points"] == 30, "a sound amendment was refused"
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_path):
     """The approval recalculates attendance too, so its channels are part of the gate."""
@@ -1481,7 +1467,6 @@ async def _approve_with_attendance(db_path, recalc):
     return failures, bot
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_approval_reports_sanctions_that_did_not_apply(db_path):
     """#239. A sanction the recalculation could not apply used to vanish into the host's
@@ -1500,7 +1485,6 @@ async def test_approval_reports_sanctions_that_did_not_apply(db_path):
     assert failures[1].endswith("round:2`.")
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_recalculation_that_raises_is_reported_and_logged(db_path):
     from unittest.mock import AsyncMock
@@ -1514,7 +1498,6 @@ async def test_a_recalculation_that_raises_is_reported_and_logged(db_path):
     assert "ATTENDANCE_SANCTIONS | Incomplete" in logged
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_clean_recalculation_reports_nothing(db_path):
     from unittest.mock import AsyncMock
@@ -1528,7 +1511,6 @@ async def test_a_clean_recalculation_reports_nothing(db_path):
     assert failures == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
     """A league without the attendance module must not be refused for a channel it has
@@ -1563,7 +1545,6 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
     assert row is not None and row["points"] == 30, "a sound amendment was refused"
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     """The log records the approval once the reposting it claims has been done (#187).
@@ -1612,7 +1593,6 @@ async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     assert order[-1] == "log", f"the approval was not the last thing logged: {order}"
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_the_ordering_refusal_still_comes_first(db_path):
     """A table out of order is refused as such, not as an undeliverable one — the two
@@ -1669,7 +1649,6 @@ async def _season_points(db_path: str, season_id: int) -> dict[int, int]:
         return {r["position"]: r["points"] for r in await cursor.fetchall()}
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_validate_modification_ordering_passes_a_table_running_down(db_path):
     path, season_id = db_path
@@ -1684,7 +1663,6 @@ async def test_validate_modification_ordering_passes_a_table_running_down(db_pat
     assert await validate_modification_ordering(path, season_id) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_validate_modification_ordering_names_a_staged_inversion(db_path):
     path, season_id = db_path
@@ -1703,7 +1681,6 @@ async def test_validate_modification_ordering_names_a_staged_inversion(db_path):
     assert "FEATURE_RACE" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_validate_modification_ordering_judges_each_session_on_its_own(db_path):
     """A qualifying table worth 1, 2, 3 is wrong; it does not make the race table wrong."""
@@ -1725,7 +1702,6 @@ async def test_validate_modification_ordering_judges_each_session_on_its_own(db_
     assert "FEATURE_QUALIFYING" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
     """The regression. Before the fix this amendment was applied without a word."""
@@ -1746,7 +1722,6 @@ async def test_approve_amendment_refuses_a_table_out_of_order(db_path):
     assert "STD" in raised.value.errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_ordering(db_path):
     """Both checks apply; the ordering one is reached first, and nothing is written (#187).
@@ -1782,7 +1757,6 @@ async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_orderi
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path):
     """Nothing written: not the points, not the store, not the mode, and nothing reposted.
@@ -1824,7 +1798,6 @@ async def test_a_refused_amendment_leaves_the_season_exactly_as_it_stood(db_path
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_a_well_ordered_amendment_still_applies(db_path):
     """The other half: a guard that refuses everything is no better than none at all."""
@@ -1843,7 +1816,6 @@ async def test_a_well_ordered_amendment_still_applies(db_path):
     assert await _season_points(path, season_id) == {1: 30, 2: 18}
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 @pytest.mark.asyncio
 async def test_an_amendment_paying_nothing_below_the_points_still_applies(db_path):
     """Trailing zeros are the ordinary shape of a table, mid-season as at the start."""
@@ -2111,7 +2083,6 @@ async def _approve_raised_win(path: str, season_id: int, reposted: list[tuple] |
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_an_approved_amendment_rescores_every_raced_session(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2127,7 +2098,6 @@ async def test_an_approved_amendment_rescores_every_raced_session(db_path):
         assert points[_RUNNER_UP] == (18, 0), points
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_an_approved_amendment_moves_the_standings(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2147,7 +2117,6 @@ async def test_an_approved_amendment_moves_the_standings(db_path):
     assert row is not None and row["total_points"] == 60, "the standings kept the old points"
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_an_approved_amendment_reposts_every_standings_with_the_new_points(db_path):
     """What the owner asked for at Gate 1: every standings, of every division, reposted with
     the new totals, and none for a round not yet raced.
@@ -2176,7 +2145,6 @@ async def test_an_approved_amendment_reposts_every_standings_with_the_new_points
         )
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_an_approved_amendment_reposts_every_results_table_with_the_new_points(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2265,7 +2233,6 @@ async def test_an_approved_position_limit_moves_the_fastest_lap_bonus(db_path):
         assert all(bonus == 0 for _points, bonus in points.values()), points
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_an_approved_amendment_rescores_qualifying(db_path):
     from leaguebot.core.services.amendment_service import approve_amendment
 
@@ -2292,7 +2259,6 @@ async def test_an_approved_amendment_rescores_qualifying(db_path):
             assert (await cursor.fetchone())["points_awarded"] == 5
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_a_session_under_another_configuration_keeps_its_points(db_path):
     """Beta races under ALT, 12-8-6 with no fastest-lap bonus; amending STD leaves it alone."""
     path, season_id = db_path
@@ -2318,7 +2284,6 @@ async def test_a_session_under_another_configuration_keeps_its_points(db_path):
         }
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_reposted(db_path):
     """What the owner asked for at Gate 2: two rounds of different formats, each scored under
     a configuration of its own, both paying 25 for a win.
@@ -2358,7 +2323,6 @@ async def test_a_round_under_an_unchanged_configuration_keeps_its_points_and_is_
     assert f"<@{_WINNER}> — **55 pts**" in standings[-1], standings[-1]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_rescoring_keeps_the_sanctions(db_path):
     """The winner and the runner-up are paid the new table; the penalties stand.
 
@@ -2398,7 +2362,6 @@ async def test_rescoring_keeps_the_sanctions(db_path):
     assert points[1005] == (0, 0), "a driver who did not start was paid"
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db_path):
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2417,7 +2380,6 @@ async def test_a_round_in_review_is_rescored_and_reposted_under_its_own_label(db
     assert "**30 pts**" in posts[-1], posts[-1]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_a_cancelled_division_is_rescored(db_path):
     """Beta was cancelled after two rounds; what it raced is scored under the new table too
     (decided 2026-09-26)."""
@@ -2435,7 +2397,6 @@ async def test_a_cancelled_division_is_rescored(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_a_finished_division_is_rescored_while_another_races(db_path):
     """Beta finished its season, its last round cancelled, while Alpha still has a round to
     race; what Beta raced is scored under the new table too."""
@@ -2453,7 +2414,6 @@ async def test_a_finished_division_is_rescored_while_another_races(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 1000] == (30, 0)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_rescoring_leaves_another_season_alone(db_path):
     """A completed season keeps the points it was scored with.
 
@@ -2481,7 +2441,6 @@ async def test_rescoring_leaves_another_season_alone(db_path):
         assert (await _race_points(path, session_id))[_WINNER + 2000] == (25, 0)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet")
 async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     """Scoring the second session raises: the approval fails whole, and the season, the
     staged changes and the first session's points are exactly as they stood. Nothing is
@@ -2536,9 +2495,6 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: modify_session_points takes no pairs, actor or time yet"
-)
 async def test_modify_session_points_stages_every_pair_in_one_transaction(db_path):
     """Every pair is staged, the store is marked modified, and each staged change is recorded
     as an audit entry, by whom and when."""

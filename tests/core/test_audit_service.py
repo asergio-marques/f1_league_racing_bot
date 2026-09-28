@@ -175,9 +175,6 @@ async def _written(db_path: str) -> dict[str, int]:
     return counts
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the three points writers do not yet record their changes"
-)
 @pytest.mark.parametrize("writer", ["bulk config", "xml import", "bulk amend"])
 async def test_a_fault_after_the_audit_write_undoes_both_the_entries_and_the_points(
     tmp_path, writer
