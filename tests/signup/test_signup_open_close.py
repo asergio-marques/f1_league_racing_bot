@@ -586,22 +586,27 @@ def _forbidden():
     return discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
 
 
+async def _with_a_closed_notice(db_path) -> None:
+    """The "signups closed" notice the last close posted, still standing in the channel."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE signup_module_config SET signup_closed_message_id = 9001")
+        await db.commit()
+
+
 @pytest.mark.xfail(
     strict=True,
     reason="#442: a post Discord refuses is still answered with the error's text, and not logged",
 )
 @pytest.mark.parametrize(
-    "notice_deleted", [False, True], ids=["no-closed-notice", "closed-notice-already-deleted"]
+    "notice", [False, True], ids=["no-closed-notice", "closed-notice-in-place"]
 )
-async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice_deleted):
+async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice):
     """Discord refuses the post: the hub's words, no error text, the window left closed, and
-    the refusal logged. Where the "signups closed" notice had already been taken down to make
-    way for the button, the manager is told that too."""
+    the refusal logged. The "signups closed" notice is taken down only once the open message
+    is posted, so it still stands, and the refusal need say nothing about it."""
     db_path = await _seed(tmp_path)
-    if notice_deleted:
-        async with get_connection(db_path) as db:
-            await db.execute("UPDATE signup_module_config SET signup_closed_message_id = 9001")
-            await db.commit()
+    if notice:
+        await _with_a_closed_notice(db_path)
     cog = _cog(db_path)
     interaction = _interaction()
     interaction.client = cog.bot
@@ -614,13 +619,8 @@ async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice_de
     assert MAY_NOT_POST in replied
     assert "Missing Access" not in replied
     assert "Failed to post" not in replied
-    extra = replied.replace(MAY_NOT_POST, "")
-    if notice_deleted:
-        assert "closed" in extra and any(
-            word in extra for word in ("deleted", "taken down", "removed")
-        ), "the manager was not told the closed notice was already taken down"
-    else:
-        assert "closed" not in extra
+    assert "closed" not in replied.replace(MAY_NOT_POST, "")
+    interaction._signup_channel.fetch_message.return_value.delete.assert_not_awaited()
     assert not await _is_open(db_path)
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
@@ -630,12 +630,15 @@ async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice_de
 
 @pytest.mark.xfail(
     strict=True,
-    reason="#442: any other fault from the post is still caught and its text shown",
+    reason="#442: any other fault from the post is still caught and its text shown, after "
+    "the closed notice was taken down",
 )
 async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
     """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
-    path, the window stays closed, and no reply carries the error's text."""
+    path, the window stays closed, the "signups closed" notice still stands, and no reply
+    carries the error's text."""
     db_path = await _seed(tmp_path)
+    await _with_a_closed_notice(db_path)
     cog = _cog(db_path)
     interaction = _interaction()
     interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
@@ -644,8 +647,40 @@ async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
         await _open(cog, interaction)
 
     assert "gateway closed" not in _replied(interaction)
+    interaction._signup_channel.fetch_message.return_value.delete.assert_not_awaited()
     assert not await _is_open(db_path)
     assert not any("Success" in line for line in _lines(cog))
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: the closed notice is taken down before the Sign Up button is posted",
+)
+async def test_the_closed_notice_is_taken_down_only_once_the_open_message_is_posted(tmp_path):
+    """So that the channel always shows one notice or the other: the open message and its
+    Sign Up button go up first, and the "signups closed" notice comes down after."""
+    db_path = await _seed(tmp_path)
+    await _with_a_closed_notice(db_path)
+    interaction = _interaction()
+    order: list[str] = []
+    posted = interaction._signup_channel.send.return_value
+
+    async def _post(*_a, **_k):
+        order.append("post")
+        return posted
+
+    async def _take_down(*_a, **_k):
+        order.append("take down")
+
+    interaction._signup_channel.send = AsyncMock(side_effect=_post)
+    interaction._signup_channel.fetch_message.return_value.delete = AsyncMock(
+        side_effect=_take_down
+    )
+
+    await _open(_cog(db_path), interaction)
+
+    assert order == ["post", "take down"]
+    assert await _is_open(db_path)
 
 
 #: Every refusal `/signup open` makes: how the server is seeded, how the interaction is built,
