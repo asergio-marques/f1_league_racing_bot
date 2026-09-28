@@ -280,7 +280,7 @@ def measure(text: str, resolved: ResolvedFont, size: float) -> float:
         widths, upem, fallback = _metrics(str(resolved.path))
         cmap = _cmap(str(resolved.path))
     except Exception as exc:  # noqa: BLE001
-        log.warning("measure: unreadable metrics for %s: %s", resolved.path, exc)
+        log.warning("measure: unreadable metrics for %s: %s", resolved.path, exc, exc_info=True)
         return len(text) * size * _FALLBACK_ADVANCE_RATIO
 
     total = 0

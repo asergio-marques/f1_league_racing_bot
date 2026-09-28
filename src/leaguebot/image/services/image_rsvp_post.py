@@ -43,7 +43,7 @@ async def rsvp_enabled(bot: LeagueBot) -> bool:
         report = reports.get(RSVP_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("rsvp: enablement check failed: %s", exc)
+        log.error("rsvp: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -147,7 +147,7 @@ async def try_attach(
     except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
         log.error(
             "rsvp: the check-in graphic could not be drawn: %s",
-            exc,
+            exc, exc_info=True,
         )
         return None
 

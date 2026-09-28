@@ -576,7 +576,7 @@ class ImageCog(commands.Cog):
                 normalised
             )
         except Exception as exc:  # the setting is stored; recovery re-arms it on restart
-            log.error("could not arm the daily portrait refresh: %s", exc)
+            log.error("could not arm the daily portrait refresh: %s", exc, exc_info=True)
         await self._reply(
             interaction,
             f"✅ **Daily driver-portrait updates** enabled, running at "
@@ -664,7 +664,7 @@ class ImageCog(commands.Cog):
                 f"| /images config | {detail}",
             )
         except Exception as exc:  # logging must never break a configuration command
-            log.error("image config log write failed: %s", exc)
+            log.error("image config log write failed: %s", exc, exc_info=True)
 
     # ── /images config template-directory ─────────────────────────────────
 

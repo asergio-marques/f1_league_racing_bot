@@ -67,7 +67,7 @@ async def verdicts_enabled(bot: LeagueBot) -> bool:
         report = reports.get(VERDICTS_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("verdicts: enablement check failed: %s", exc)
+        log.error("verdicts: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -92,7 +92,7 @@ async def _round_context(db_path: str, round_id: int) -> dict:
             )
             row = await cursor.fetchone()
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
-        log.warning("verdicts: round context unreadable for round %s: %s", round_id, exc)
+        log.warning("verdicts: round context unreadable for round %s: %s", round_id, exc, exc_info=True)
         return {}
     if row is None:
         return {}
@@ -171,7 +171,7 @@ async def team_name_for_entry(
 
         names = await _team_names(bot, guild, division_id, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
-        log.warning("verdicts: team name unreadable for team %s: %s", team_id, exc)
+        log.warning("verdicts: team name unreadable for team %s: %s", team_id, exc, exc_info=True)
         return None
     return names.get(int(team_id))
 
@@ -185,7 +185,7 @@ async def team_key_for_entry(bot: LeagueBot, *, team_id: int | None) -> str | No
 
         keys = await _team_keys(bot, [int(team_id)])
     except Exception as exc:  # noqa: BLE001 — an optional field is not worth a failed render
-        log.warning("verdicts: team shorthand unreadable for team %s: %s", team_id, exc)
+        log.warning("verdicts: team shorthand unreadable for team %s: %s", team_id, exc, exc_info=True)
         return None
     return keys.get(int(team_id))
 
@@ -230,7 +230,7 @@ async def _mention_names(
 
         resolved = await _driver_names(bot, guild, [int(user_id) for user_id in wanted])
     except Exception as exc:  # noqa: BLE001 — a name is not worth a failed render
-        log.warning("verdicts: mention names unreadable: %s", exc)
+        log.warning("verdicts: mention names unreadable: %s", exc, exc_info=True)
         return names
 
     for user_id in wanted:
@@ -356,7 +356,7 @@ async def render_verdict(
             filename_stem=stem_for_drawing(drawing, VERDICTS_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("verdicts: render failed: %s", exc)
+        log.error("verdicts: render failed: %s", exc, exc_info=True)
         return VerdictRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
 
     if decision.rejects:

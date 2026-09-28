@@ -96,7 +96,7 @@ async def banner_enabled(bot: LeagueBot) -> bool:
         report = reports.get(BANNER_TEMPLATE_KEY)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("verdict banner: enablement check failed: %s", exc)
+        log.error("verdict banner: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -161,7 +161,7 @@ async def render_banner(
             filename_stem=stem_for_drawing(drawing, BANNER_TEMPLATE_KEY),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("verdict banner: render failed: %s", exc)
+        log.error("verdict banner: render failed: %s", exc, exc_info=True)
         return BannerRender(problem=str(exc))
 
     if not decision.posts_image:

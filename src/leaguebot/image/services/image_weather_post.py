@@ -67,7 +67,7 @@ async def weather_enabled(bot: LeagueBot, template_key: str) -> bool:
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("weather: enablement check failed: %s", exc)
+        log.error("weather: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -200,7 +200,7 @@ async def render_forecast(
             filename_stem=stem_for_drawing(drawing),
         )
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("weather: render failed: %s", exc)
+        log.error("weather: render failed: %s", exc, exc_info=True)
         return ForecastRender(problem=str(exc), rejects=origin is PostingOrigin.COMMANDED)
 
     if decision.rejects:
@@ -284,5 +284,5 @@ async def attach_forecast(bot: LeagueBot, round_id: int, phase: int):
 
         return discord.File(str(render.png), filename=Path(render.png).name)
     except Exception as exc:  # noqa: BLE001 — a graphic never breaks a forecast
-        log.error("weather: could not attach a graphic to round %s: %s", round_id, exc)
+        log.error("weather: could not attach a graphic to round %s: %s", round_id, exc, exc_info=True)
         return None

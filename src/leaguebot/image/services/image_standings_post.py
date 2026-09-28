@@ -160,7 +160,7 @@ async def standings_enabled(bot: LeagueBot, template_key: str) -> bool:
         report = reports.get(template_key)
         return report is not None and report.valid
     except Exception as exc:  # noqa: BLE001 — never break a posting on this reader
-        log.error("standings: enablement check failed: %s", exc)
+        log.error("standings: enablement check failed: %s", exc, exc_info=True)
         return False
 
 
@@ -507,7 +507,7 @@ async def _post_one(
     try:
         decision = await render_png(bot, drawing, origin)
     except Exception as exc:  # noqa: BLE001 — a resolution fault, reported like any other
-        log.error("standings: %s render failed: %s", championship, exc)
+        log.error("standings: %s render failed: %s", championship, exc, exc_info=True)
         await report(bot, what, str(exc))
         if origin is PostingOrigin.COMMANDED:
             return ChampionshipOutcome(action=REJECTED, message=f"❌ {exc}")
@@ -650,7 +650,7 @@ async def try_post(
             occasion=occasion,
         )
     except Exception as exc:  # noqa: BLE001 — the data behind both, so both answer for it
-        log.error("standings: the drawings could not be resolved: %s", exc)
+        log.error("standings: the drawings could not be resolved: %s", exc, exc_info=True)
         await report(bot, subject, str(exc))
         if origin is PostingOrigin.COMMANDED:
             return StandingsPostOutcome(
@@ -719,7 +719,7 @@ async def report(bot: LeagueBot, what: str, detail: str) -> None:
             f"⚠️ Standings image — {what}: {detail}"
         )
     except Exception as exc:  # noqa: BLE001
-        log.error("standings: could not report to the log channel: %s", exc)
+        log.error("standings: could not report to the log channel: %s", exc, exc_info=True)
 
 
 async def report_notices(bot: LeagueBot, what: str, notices) -> None:
@@ -737,4 +737,4 @@ async def report_notices(bot: LeagueBot, what: str, notices) -> None:
 
         await ImageRenderService.report_notices(bot, notices, subject=what)
     except Exception as exc:  # noqa: BLE001
-        log.error("standings: could not report notices: %s", exc)
+        log.error("standings: could not report notices: %s", exc, exc_info=True)
