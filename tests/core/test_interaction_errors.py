@@ -304,3 +304,66 @@ def test_describe_fault_names_the_kind_in_plain_words(error, kind):
     from leaguebot.core.utils.interaction_errors import describe_fault
 
     assert describe_fault(error) == kind
+
+
+# ── An amendment names its fault, and its line carries detail beneath (#442) ──
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: report_failure takes no fault, and its reply does not end on the outcome",
+)
+async def test_report_failure_with_a_fault_names_it_and_ends_on_the_outcome():
+    """The results amendment is the one caller that names the kind of fault, worked out by the
+    caller in plain words. Its reply keeps the standard wording, names the fault after "did not
+    finish", and ends on what became of the round and what to do next."""
+    interaction = _interaction(done=True)
+    outcome = "The round was put back as it was. Re-run `/results rounds amend` to try again."
+
+    await report_failure(
+        interaction,
+        sqlite3.OperationalError("database is locked"),
+        what="`/results rounds amend` of round 3 (Pro)",
+        outcome=outcome,
+        fault="the bot could not read or write its database",
+    )
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert reply == (
+        "❌ `/results rounds amend` of round 3 (Pro) stopped on a fault in the bot, not on "
+        "anything you entered, and did not finish: the bot could not read or write its "
+        "database. The fault is recorded in the log channel. The round was put back as it "
+        "was. Re-run `/results rounds amend` to try again."
+    )
+    assert "database is locked" not in reply
+    assert "OperationalError" not in reply
+
+
+@pytest.mark.xfail(strict=True, reason="#442: report_failure takes no detail to put beneath its line")
+async def test_report_failure_puts_the_detail_beneath_its_line():
+    """The log line stays the standard one, naming the member by mention alone and the fault's
+    type; each line of the detail sits beneath it, indented two spaces. The reply carries none
+    of the detail."""
+    interaction = _interaction(done=True)
+    detail = (
+        "sessions: Feature Race, stage: report\n"
+        "The round was put back as it was. Re-run /results rounds amend to try again."
+    )
+
+    await report_failure(
+        interaction,
+        _invoke_error(sqlite3.OperationalError("database is locked")),
+        what="`/results rounds amend` of round 3 (Pro)",
+        detail=detail,
+    )
+
+    [line] = [c.args[0] for c in interaction.client.output_router.post_log.await_args_list]
+    assert line == (
+        f"❌ `/results rounds amend` of round 3 (Pro) failed for <@{USER}> — OperationalError. "
+        "The details are in the host's log.\n"
+        "  sessions: Feature Race, stage: report\n"
+        "  The round was put back as it was. Re-run /results rounds amend to try again."
+    )
+    assert "database is locked" not in line
+    reply = interaction.followup.send.await_args.args[0]
+    assert "sessions: Feature Race" not in reply
