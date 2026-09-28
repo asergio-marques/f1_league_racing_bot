@@ -549,10 +549,6 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
     assert await _is_open(db_path)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failed post is still caught and answered with the error's text",
-)
 async def test_a_failed_post_leaves_signups_closed(tmp_path):
     """The button is how a driver signs up. Recording the window as open without one would
     leave a league believing signups were running with no way in. A fault in the post is the
@@ -593,10 +589,6 @@ async def _with_a_closed_notice(db_path) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a post Discord refuses is still answered with the error's text, and not logged",
-)
 @pytest.mark.parametrize(
     "notice", [False, True], ids=["no-closed-notice", "closed-notice-in-place"]
 )
@@ -628,11 +620,6 @@ async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice):
     assert "refused for Manager (<@42>)" in line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: any other fault from the post is still caught and its text shown, after "
-    "the closed notice was taken down",
-)
 async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
     """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
     path, the window stays closed, the "signups closed" notice still stands, and no reply
@@ -652,10 +639,6 @@ async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
     assert not any("Success" in line for line in _lines(cog))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the closed notice is taken down before the Sign Up button is posted",
-)
 async def test_the_closed_notice_is_taken_down_only_once_the_open_message_is_posted(tmp_path):
     """So that the channel always shows one notice or the other: the open message and its
     Sign Up button go up first, and the "signups closed" notice comes down after."""
@@ -701,7 +684,6 @@ SIGNUP_OPEN_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a /signup open refusal writes no log line")
 @pytest.mark.parametrize("seed, built, args, said", SIGNUP_OPEN_REFUSALS)
 async def test_every_signup_open_refusal_reaches_the_log_channel(
     tmp_path, seed, built, args, said

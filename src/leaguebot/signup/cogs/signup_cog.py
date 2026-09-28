@@ -1457,24 +1457,25 @@ class SignupCog(commands.Cog):
         # would be one nobody could use.
         server_cfg = await self.bot.config_service.get_server_config()
         if server_cfg is not None and server_cfg.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Signups cannot be opened while test mode is active. "
                 "Turn it off with `/test-mode toggle` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
-            await interaction.response.send_message(
-                "❌ Signup module is not configured.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ Signup module is not configured.",
+                what=describe(interaction),
             )
             return
 
         if cfg.signups_open:
-            await interaction.response.send_message(
-                "❌ Signups are already open.", ephemeral=True
-            )
+            await refuse(interaction, "❌ Signups are already open.", what=describe(interaction))
             return
 
         # A window opens only while the season waits for one, or while it is being raced
@@ -1483,11 +1484,12 @@ class SignupCog(commands.Cog):
 
         live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] not in WINDOW_OPENS_FROM:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Signups can only be opened while the season is waiting for its signup "
                 "window, once its configuration is confirmed, or while it is ongoing with "
                 "no placements left to confirm.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1506,20 +1508,23 @@ class SignupCog(commands.Cog):
             missing.append("`driver role` (use `/bot driver-role`)")
         missing += league_role_faults(interaction.guild, base_role_id, driver_role_id)
         if missing:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Signups cannot be opened until the signup module's configuration is "
                 "put right:\n"
                 + "\n".join(f"  • {m}" for m in missing),
-                ephemeral=True,
+                what=describe(interaction),
+                reason="the signup module's configuration is not put right: " + "; ".join(missing),
             )
             return
 
         # Guard: at least one slot configured
         slots = await self.bot.signup_module_service.get_slots()
         if not slots:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ At least one availability time slot must be configured before opening signups.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1528,7 +1533,7 @@ class SignupCog(commands.Cog):
         if close_time and close_time.strip():
             close_at_iso, close_error = _parse_close_time(close_time)
             if close_error is not None:
-                await interaction.response.send_message(close_error, ephemeral=True)
+                await refuse(interaction, close_error, what=describe(interaction))
                 return
 
         # Parse track_ids
@@ -1541,9 +1546,10 @@ class SignupCog(commands.Cog):
             unknown = [t for t in parts if t not in track_name_map]
             if unknown:
                 bad = ", ".join(f"'{t}'" for t in unknown)
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     f"❌ Unknown track ID(s): {bad}. Valid IDs are 1\u2013{len(track_name_map)}.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
             track_list = parts
@@ -1557,20 +1563,12 @@ class SignupCog(commands.Cog):
         signup_channel = guild.get_channel(cfg.signup_channel_id) if cfg.signup_channel_id else None
         base_role = guild.get_role(base_role_id) if base_role_id else None
         if signup_channel is None or not isinstance(signup_channel, discord.TextChannel):
-            await interaction.followup.send(
-                "❌ Configured signup channel not found.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ Configured signup channel not found.",
+                what=describe(interaction),
             )
             return
-
-        # Delete any existing "signups closed" status message
-        if cfg.signup_closed_message_id:
-            try:
-                old_msg = await signup_channel.fetch_message(cfg.signup_closed_message_id)
-                await old_msg.delete()
-            except discord.NotFound:
-                pass
-            except Exception:
-                log.warning("signup_open: could not delete closed status message", exc_info=True)
 
         if track_list:
             track_names = [track_name_map[t] for t in track_list]
@@ -1607,13 +1605,30 @@ class SignupCog(commands.Cog):
 
         view = SignupButtonView()
         allowed_mentions = discord.AllowedMentions(roles=[base_role]) if base_role else discord.AllowedMentions.none()
+        # Discord refusing the post is a refusal the manager can act on. Any other error is a
+        # fault in the bot, and goes to the command's failure path. Either way nothing has been
+        # changed: the window stays closed, and the "signups closed" notice still stands.
         try:
             posted_msg = await signup_channel.send(embed=info_embed, view=view, allowed_mentions=allowed_mentions)
-        except Exception as exc:
-            await interaction.followup.send(
-                f"❌ Failed to post signup message: {exc}", ephemeral=True
+        except discord.Forbidden:
+            await refuse(
+                interaction,
+                f"❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on "
+                f"{signup_channel.mention} to post the Sign Up button. Signups were not opened.",
+                what=describe(interaction),
             )
             return
+
+        # The "signups closed" notice comes down only once the open message is up, so the
+        # channel always shows one or the other. Signups are open whether or not it goes.
+        if cfg.signup_closed_message_id:
+            try:
+                old_msg = await signup_channel.fetch_message(cfg.signup_closed_message_id)
+                await old_msg.delete()
+            except discord.NotFound:
+                pass
+            except Exception:
+                log.warning("signup_open: could not delete closed status message", exc_info=True)
 
         await self.bot.signup_module_service.set_window_open(
             posted_msg.id, track_list
