@@ -27,6 +27,7 @@ const bothRun = (o = {}) => testsCheck({ tests: [ran(A), ran(Bt)], changes: chan
 const bothRunSince = (since = changes([], [], [], 'h2'), error = '') => bothRun({ changedSince: since, changedSinceError: error })
 // Whether the tester was asked to list what has changed since a commit, and its answer required to.
 const askedSince = (prompt, opts, sha) => prompt.includes(`--base ${sha}`) && opts.schema.required.includes('changedSince')
+const full = (prompt, ...marks) => marks.every(m => prompt.includes(m))
 // A1 given compactly: its label and node id, but not its scenario or what it expects.
 const compactA = prompt => prompt.includes('A1') && prompt.includes(A) && prompt.includes('CRIT-A') && !prompt.includes('SCEN-A') && !prompt.includes('EXP-A')
 
@@ -173,5 +174,36 @@ module.exports = {
       if (label.endsWith(':product')) return review({ summary: 'S' })
     },
     expect: r => r.status === 'passed' && r.lastRound === 1,
+  },
+  // The product owner leaves its summary out and is asked again: the second call is a fresh agent,
+  // so it reviews the whole branch, and in the tests stage is given the whole list, however far the
+  // product lane reviewed in the round.
+  summaryReaskReviewsWholeBranch: {
+    args: B,
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label === 'build:r1:product') return review()
+      if (label === 'build:r1:summary') {
+        if (!noNote(prompt)) throw new Error('the product owner asked again for the summary is told it has reviewed the branch already')
+        return review({ summary: 'LATE SUMMARY' })
+      }
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 1 && r.summary === 'LATE SUMMARY' && labels.includes('build:r1:summary'),
+  },
+  summaryReaskReviewsWholeList: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ tests: [entryA, entryB] })
+      if (label.endsWith(':tester')) return bothRun()
+      if (label.endsWith(':issue')) return review()
+      if (label === 'tests:r1:product') return review()
+      if (label === 'tests:r1:summary') {
+        if (!noNote(prompt)) throw new Error('the product owner asked again for the summary is told it has reviewed the branch already')
+        if (!full(prompt, 'SCEN-A', 'EXP-A', 'SCEN-B', 'EXP-B')) throw new Error('the product owner asked again for the summary is not given the whole list')
+        return review({ summary: 'LATE SUMMARY' })
+      }
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 1 && r.summary === 'LATE SUMMARY' && labels.includes('tests:r1:summary'),
   },
 }
