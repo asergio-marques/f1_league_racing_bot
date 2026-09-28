@@ -2681,8 +2681,9 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
 )
 async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case):
     """The stages of an amendment refuse a press they cannot act on, and each refusal writes
-    one line in the standard refusal form. The ordinary first-pass review's refusals are no
-    part of the amendment and still write nothing."""
+    one line in the standard refusal form, naming `/results rounds amend` or the stage it
+    refused. The ordinary first-pass review's refusals are no part of the amendment and still
+    write nothing."""
     first_pass = case == "a-first-pass-refusal"
     db_path = await _make_db(
         tmp_path, name=f"amend_stage_refused_{case.replace('-', '_')}",
@@ -2709,3 +2710,7 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     [line] = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
     assert line.startswith("⛔ ")
     assert f"refused for Steward (<@{STEWARD}>)" in line
+    what = line.split(" refused for ", 1)[0]
+    assert "/results rounds amend" in what or "stage" in what.lower(), (
+        "the line does not name what was refused"
+    )
