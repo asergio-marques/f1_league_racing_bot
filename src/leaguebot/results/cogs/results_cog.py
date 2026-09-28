@@ -2269,11 +2269,12 @@ class ResultsCog(commands.Cog):
                 _ins = await _adb.execute(
                     """
                     INSERT INTO round_amend_channels
-                        (round_id, channel_id, session_types, created_at)
-                    VALUES (?, ?, ?, ?)
+                        (round_id, channel_id, session_types, created_at, started_by)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     (rnd.id, amend_channel.id,
-                     json.dumps([st.value for st in chosen]), _amend_created_at),
+                     json.dumps([st.value for st in chosen]), _amend_created_at,
+                     interaction.user.id),
                 )
                 await _adb.commit()
                 _cur = await _adb.execute(

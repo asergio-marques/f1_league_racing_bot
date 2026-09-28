@@ -1895,9 +1895,6 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
         assert f"(<@{USER_ID}>)" not in line, "the line names the opener, not the presser"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the amendment's record does not yet name the member who opened it"
-)
 async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path):
     """So that the sweep which reverts it later can name them, the member who opened an
     amendment is recorded on its row when it opens."""
