@@ -291,10 +291,10 @@ whoever hosts the bot. The full detail is in the host's log.
 form that changes something, or tries to, writes its outcome there: a success with the values
 it set, a refusal as *"⛔ `/signup open` refused for Alex (@Alex) — Signups are already
 open."*, a failure, and a confirmation cancelled (*"↩️ … cancelled by …"*) or left to lapse
-(*"⌛ … lapsed unconfirmed (started by …)"*). A member is named by their display name on the
-server and their mention, which notifies nobody. Views, lists, previews and the hub's About
-change nothing and record nothing. Some commands do not record their refusals yet; they are
-being brought in line.
+(*"⌛ … lapsed unconfirmed (started by …)"*). A refusal, a cancel or a lapse names the member
+by their display name on the server and their mention, which notifies nobody. Views, lists,
+previews and the hub's About change nothing and record nothing. Some commands do not yet record
+every outcome in this form; they are being brought in line.
 
 ### `/bot init` — One-time server setup
 *Access: League admin · Can be run from any channel, or by a server administrator*
