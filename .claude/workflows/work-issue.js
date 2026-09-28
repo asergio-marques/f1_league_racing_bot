@@ -411,6 +411,11 @@ const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f 
 const citations = [...(previous ? previous.citations : []), ...(ARGS.citations || [])]
   .filter((c, i, all) => all.findIndex(d => d.question === c.question && d.source === c.source && d.answer === c.answer) === i)
 const commits = previous ? [...previous.commits] : []
+// How far each checker has reviewed the branch: for each lane, how many of the stage's commits there
+// were when it last returned a result. A later review is limited to the commits since, since an
+// agent re-reading the whole branch every round pays for it every round. A lane that returned
+// nothing is dropped from the map, and reviews in full next time, as one that has never run does.
+const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt : {}) }
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 let written = previous && previous.tests ? [...previous.tests] : []
@@ -712,7 +717,18 @@ const priorSection = lane => {
     + section('Recorded already, and not to be raised again', known)
 }
 
-const shared = (k, lane) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
+// What a checker that has reviewed before reads this time. Earlier work the new commits make wrong
+// stays in scope: each checker's duty covers the branch at its tip, not only its newest commits.
+const sinceReviewed = lane => {
+  const at = reviewedAt[lane]
+  if (at === undefined || at > commits.length) return ''
+  if (at === commits.length) return ' Nothing has been committed since you last reviewed the branch: judge only your earlier findings and the questions given below.'
+  if (!at) return ''
+  const sha = commits[at - 1].sha
+  return ` You reviewed the branch up to ${sha} already, in an earlier round. Read git -C ${worktree} log ${sha}..HEAD and git -C ${worktree} diff ${sha}..HEAD, and judge your earlier findings. Read the rest of the branch only to confirm something, and do not review it again; but a document, test or piece of code written earlier and made wrong by the new commits is still in scope. Where git does not know ${sha}, review the whole branch.`
+}
+
+const shared = (k, lane) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${sinceReviewed(lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
 
 // `earlier` holds the results of the round's pieces before this one: a later piece carries on from
 // them, and leaves alone the findings they have already fixed or disputed.
@@ -762,10 +778,12 @@ const COPY_QUESTION = 'giving each answer or escalation the ref of every questio
 
 const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}${section('The tester\'s report', testReport)}`
 
+// The summary covers the whole work, however little of it a later round reviews.
 const summaryAsk = () => {
-  if (stage === 'tests') return 'If you find nothing material and escalate nothing, write summary: for the owner to review before any code is written, in plain terms, each acceptance criterion and each spec rule the work touches, numbered, with the labels of the tests that pin it (A1, M1 and so on). The report lists every test with its scenario beside your summary, so do not repeat them. Otherwise leave summary empty.'
-  if (kind === 'design-pass') return 'If you find nothing material and escalate nothing, write summary: a short confirmation that nothing a league sees has changed, and what you checked to be sure. Otherwise leave summary empty.'
-  return 'If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. Otherwise leave summary empty.'
+  const whole = `The summary covers the whole work since ${base}, not only what is new since you last reviewed.`
+  if (stage === 'tests') return `If you find nothing material and escalate nothing, write summary: for the owner to review before any code is written, in plain terms, each acceptance criterion and each spec rule the work touches, numbered, with the labels of the tests that pin it (A1, M1 and so on). The report lists every test with its scenario beside your summary, so do not repeat them. ${whole} Otherwise leave summary empty.`
+  if (kind === 'design-pass') return `If you find nothing material and escalate nothing, write summary: a short confirmation that nothing a league sees has changed, and what you checked to be sure. ${whole} Otherwise leave summary empty.`
+  return `If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. ${whole} Otherwise leave summary empty.`
 }
 
 const productPrompt = (k, questions, testReport, tests, support) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}${section('The tester\'s report', testReport)}`
@@ -785,7 +803,7 @@ ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (
 
 const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
 
-const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks. Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
+const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed('design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
 
 const buildTesterPrompt = k => {
   const logFile = `/tmp/work-issue-${issue}-build-r${k}.log`
@@ -1195,6 +1213,10 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     if (result) addFindings(lane, result.findings)
   }
   if (reviewed.test === null) dead.push('tester')
+  for (const [lane, result] of Object.entries(reviewed.lanes)) {
+    if (result === null) delete reviewedAt[lane]
+    else if (result) reviewedAt[lane] = commits.length
+  }
   lastTest = reviewed.test
 
   const got = Object.values(reviewed.lanes).filter(Boolean)
@@ -1299,4 +1321,5 @@ return {
   commits,
   ledger: [...ledger.values()],
   designFiles: [...designFiles].sort(),
+  reviewedAt,
 }
