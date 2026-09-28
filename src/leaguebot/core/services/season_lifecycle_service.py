@@ -238,10 +238,7 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
             if signup_cfg is not None and signup_cfg.signups_open:
                 from leaguebot.core.cogs.module_cog import execute_forced_close
 
-                try:
-                    bot.scheduler_service.cancel_signup_close_timer()
-                except Exception:  # noqa: BLE001 — a timer already gone is the aim
-                    pass
+                bot.scheduler_service.cancel_signup_close_timer()
                 await execute_forced_close(
                     bot, audit_action="SIGNUP_DIVISIONS_DONE_CLOSE"
                 )

@@ -703,10 +703,7 @@ async def build_review_summary(
             rid = row["round_id"]
             rnum = row["round_number"]
             track = row["track_name"] or "TBA"
-            try:
-                date_str = str(row["scheduled_at"])[:10]
-            except Exception:
-                date_str = str(row["scheduled_at"])
+            date_str = str(row["scheduled_at"])[:10]
 
             fmt = str(row["format"]).upper()
             is_mystery = fmt == "MYSTERY"
