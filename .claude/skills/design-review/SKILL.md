@@ -248,6 +248,9 @@ branch's final commit, not at the survey's.
   test. The file holds the shape.
 - **No register of shortfalls, and no issue numbers.** What still diverges after the pass is
   held by the ratchet lists and the tracker, not the file.
+- **Register it with the `work-issue` workflow** in the same commit: add the module and its file to
+  `DESIGN_FILES` in `.claude/workflows/work-issue.js`. Until it is there, the check stage runs no
+  design agent for the module's plans, and holds them to `architecture.md` alone.
 
 ## Phase 9 — The divergence batch
 

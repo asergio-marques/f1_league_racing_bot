@@ -19,7 +19,7 @@ export const meta = {
 const ARGS = typeof args === 'string' ? (() => { try { return JSON.parse(args) } catch (e) { return args } })() : args
 
 // Each module's wip-spec, the product owner's to judge, and its design file, the issue
-// reviewer's. Stats has a spec but no code yet, so no design file.
+// reviewer's.
 const SPECS = {
   core: 'docs/wip-specs/core_specification.md',
   results: 'docs/wip-specs/results_module_specification.md',
@@ -30,13 +30,10 @@ const SPECS = {
   steward: 'docs/wip-specs/steward_module_specification.md',
   stats: 'docs/wip-specs/stats_module_specification.md',
 }
+// Only the design files that exist: the design-review skill adds a module here in the commit that
+// lands its file. A check whose modules have none runs no design agent, since there is nothing to
+// hold the plan to beyond architecture.md, which the architecture check already covers.
 const DESIGN_FILES = {
-  core: 'docs/design/core.md',
-  results: 'docs/design/results_module.md',
-  attendance: 'docs/design/attendance_module.md',
-  signup: 'docs/design/signup_module.md',
-  weather: 'docs/design/weather_module.md',
-  image: 'docs/design/image_module.md',
   steward: 'docs/design/steward_module.md',
 }
 
@@ -102,7 +99,7 @@ const section = (title, v) => { const t = asText(v); return t ? `\n\n## ${title}
 
 const ISSUE = `issue #${issue} (read it with: gh issue view ${issue} --json title,body,labels,comments)`
 const SPEC_LIST = modules.map(m => `${m}: ${SPECS[m]}`).join('; ')
-const DESIGN_LIST = modules.map(m => `${m}: ${DESIGN_FILES[m] || 'none, since the module has no code yet'}`).join('; ')
+const DESIGN_LIST = modules.map(m => `${m}: ${DESIGN_FILES[m] || 'none yet, so architecture.md alone governs it'}`).join('; ')
 const DESIGN_PASS = kind === 'design-pass'
   ? '\n\nThis is a design pass\'s correction, not a fix: it must change nothing a league sees.'
   : ''
@@ -357,11 +354,22 @@ if (stage === 'check') {
 
   phase('Check')
   log(`Checking the plan for #${issue} against the architecture, the design files (${DESIGN_LIST}) and the specs (${SPEC_LIST}).`)
+  // With no design file among the modules there is nothing for a design agent to check: the result
+  // it would give is written here instead, and says so.
+  const noDesignFile = !modules.some(m => DESIGN_FILES[m])
+  if (noDesignFile) log('No module the plan touches has a design file yet, so no design agent runs.')
   const [architecture, design, product] = await parallel([
     () => agent(`Job 1 — check a plan against the architecture. ${head}${context}${amended('architecture')}`,
       { ...settingsFor('issue'), label: 'check:architecture', phase: 'Check', agentType: 'issue-reviewer', schema: ARCHITECTURE_SCHEMA }),
-    () => agent(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}${amended('design')}`,
-      { ...settingsFor('issue'), label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
+    () => noDesignFile
+      ? Promise.resolve({
+        modules: modules.map(m => ({ module: m, designFile: 'none', exists: false, sectionsTouched: [], designChanges: [] })),
+        questions: [],
+        raised: [],
+        notes: ['No module the plan touches has a design file yet, so no design agent ran: each is held to docs/design/architecture.md alone, which the architecture check covers, and no design document is owed.'],
+      })
+      : agent(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}${amended('design')}`,
+        { ...settingsFor('issue'), label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
     () => agent(`Job 1 — a plan. ${head} The specs: ${SPEC_LIST}, and the core specification wherever the plan touches core's rules.${context}${amended('product')}`,
       { ...settingsFor('product'), label: 'check:product', phase: 'Check', agentType: 'product-owner', schema: PRODUCT_PLAN_SCHEMA }),
   ])

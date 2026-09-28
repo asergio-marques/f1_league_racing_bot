@@ -15,6 +15,11 @@ the workflow, close out, and open the pull request — labelled — once the use
 The issue number is `$ARGUMENTS`. Strip a leading `#`. If no number was given, ask for one
 before doing anything else — do not guess from the tracker.
 
+**One issue per session.** This session re-reads everything it has read at every step, so an
+issue started here carries the whole of the last one's stages with it. If this session has already
+worked an issue, tell the user and suggest a fresh session before starting; and once this issue's
+pull request is open, say that the next one belongs in a fresh session too.
+
 `CLAUDE.md` governs how the work itself is done — testing, British English, the documentation
 layout. Follow it; this skill does not restate it. Two of its rules bear directly on this job:
 
@@ -118,7 +123,8 @@ Settle what it returns before the user sees the plan:
 - **`citations`**, the rules the product owner cited rather than ask, go into item 7, so that the
   user sees each one and can overrule it.
 
-Keep the check's result: the build is handed items 7 and 8 from it.
+Keep the check's result, saved as "What a stage returns" says: the build is handed items 7 and 8
+from it, and a re-check is handed it as `previous`.
 
 **Then present the plan through plan mode: this is Gate 1.** The approval dialog does not always
 show the plan, so also send the plan file with `SendUserFile` and paste it. Nothing is created on
@@ -256,6 +262,18 @@ change goes back to the builder to revert. A test change the build needs, includ
 finding calls for, is proposed in `testChanges`, and the stage stops for the user.
 
 ### What a stage returns
+
+**Save every result to a file, and read into the conversation only what the next step needs.** A
+result runs to tens of kilobytes, and whatever this session reads it re-reads at every later step,
+to the end of the issue. When a stage returns, copy its whole result from the task's output file to
+`.claude/gates/<N>-<stage>.json` in the main checkout (gitignored), a new name for each run, and
+print from it only what is acted on: `status` and `failure`; `escalations` and `testChanges`; the
+ids and titles of `openMaterial` and `minor`, with the `why` and `fix` of those put to the user;
+`counts`; and `report` or `summary`, written straight to the gate's file. A result is too large to
+pass back inline, so where a run needs one as `previous`, or a tests stage's `citations`, copy the
+workflow script into `.claude/gates/`, write the saved JSON in place of `ARGS.previous` or
+`ARGS.citations`, and run the copy by `scriptPath`: the Workflow tool runs a script only from the
+working directory.
 
 - **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
   the product owner framed them, its recommendation first. Merge any two that ask the same thing.

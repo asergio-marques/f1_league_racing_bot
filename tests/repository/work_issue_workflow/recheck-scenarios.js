@@ -1,7 +1,7 @@
 // A re-check of an amended plan: each checker is given the plan as it last checked it and its own
 // earlier result, and judges what the amendment changes. A checker whose earlier result was lost
 // checks in full, and the result carries the plan it checked, for the next re-check.
-const C = { stage: 'check', issue: '#999', plan: 'NEW PLAN', modules: ['results'], commit: 'abc123' }
+const C = { stage: 'check', issue: '#999', plan: 'NEW PLAN', modules: ['steward'], commit: 'abc123' }
 const architecture = (notes = []) => ({ rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [], notes })
 const design = (notes = []) => ({ modules: [], questions: [], raised: [], notes })
 const product = (notes = []) => ({ specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], notes })
