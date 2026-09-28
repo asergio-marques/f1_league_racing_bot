@@ -30,6 +30,30 @@ const askedSince = (prompt, opts, sha) => prompt.includes(`--base ${sha}`) && op
 const full = (prompt, ...marks) => marks.every(m => prompt.includes(m))
 // A1 given compactly: its label and node id, but not its scenario or what it expects.
 const compactA = prompt => prompt.includes('A1') && prompt.includes(A) && prompt.includes('CRIT-A') && !prompt.includes('SCEN-A') && !prompt.includes('EXP-A')
+const compactB = prompt => prompt.includes('A2') && prompt.includes(Bt) && prompt.includes('CRIT-B') && !prompt.includes('SCEN-B') && !prompt.includes('EXP-B')
+// A tests stage of two rounds: round 1 adds A1 and A2, and the issue reviewer finds issue-1-1;
+// round 2 fixes it in c2 and keeps both entries word for word. `tester2` answers for round 2's
+// tester, and `reviewed2` checks each round-2 reviewer's prompt.
+const twoRoundsKeptWordForWord = (tester2, reviewed2) => ({
+  args: { ...base, stage: 'tests' },
+  respond(label, prompt, opts) {
+    const k = round(label)
+    if (label.endsWith(':builder')) return k === 1
+      ? builder({ tests: [entryA, entryB] })
+      : builder({ commits: [{ sha: 'c2', subject: 'rewrote test a' }], tests: [entryA, entryB], fixed: [{ id: 'issue-1-1', commit: 'c2' }] })
+    if (label.endsWith(':tester')) {
+      if (k === 1 && opts.schema.required.includes('changedSince')) throw new Error('round 1\'s tester is asked what has changed since a review nobody has made')
+      if (k === 2 && !askedSince(prompt, opts, 'c1')) throw new Error('round 2\'s tester is not asked what has changed under tests/ since c1')
+      return k === 1 ? bothRun() : tester2()
+    }
+    if (/:(issue|product)$/.test(label)) {
+      if (k === 2 && !reviewed2(prompt)) throw new Error(`${label} is not given the list as it should be in round 2`)
+      if (label.endsWith(':issue')) return k === 1 ? review({ findings: [finding('issue-1-1')] }) : review({ prior: [{ id: 'issue-1-1', status: 'fixed', grounds: 'ok' }] })
+      return review({ summary: 'S' })
+    }
+  },
+  expect: r => r.status === 'passed' && r.lastRound === 2,
+})
 
 module.exports = {
   laterRoundReviewsOnlyNewCommits: {
@@ -206,4 +230,16 @@ module.exports = {
     },
     expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 1 && r.summary === 'LATE SUMMARY' && labels.includes('tests:r1:summary'),
   },
+  // A test whose code the commits since changed, under an entry kept word for word, is given in full,
+  // so that the issue reviewer can hold the new code to its scenario. The short form does not ask the
+  // reviewer to hold an entry to a description it is not given.
+  testsStageCodeChangedEntryGivenInFull: twoRoundsKeptWordForWord(
+    () => bothRunSince(changes([[A, 'modified']], [], [], 'h2')),
+    prompt => full(prompt, 'SCEN-A', 'EXP-A') && compactB(prompt) && !/that description|when you last saw it/i.test(prompt),
+  ),
+  // Where the tester could not list what has changed since, every entry is given in full.
+  testsStageChangedSinceErrorGivesAllInFull: twoRoundsKeptWordForWord(
+    () => bothRunSince(changes([], [], [], ''), 'boom'),
+    prompt => full(prompt, 'SCEN-A', 'EXP-A', 'SCEN-B', 'EXP-B'),
+  ),
 }
