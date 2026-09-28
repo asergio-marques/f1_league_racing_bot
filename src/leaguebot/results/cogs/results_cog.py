@@ -2364,6 +2364,8 @@ class ResultsCog(commands.Cog):
         what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
         from leaguebot.results.services.result_submission_service import (
             AMENDMENT_RE_RUN,
+            AMENDMENT_RE_RUN_ONCE_PUT_BACK,
+            ROUND_NOT_PUT_BACK_YET,
             ROUND_PUT_BACK,
             amendment_fault_reply,
         )
@@ -2447,11 +2449,7 @@ class ResultsCog(commands.Cog):
                             exc, "cancelled, but the round could not be put back", member=bi.user
                         )
                         await bi.followup.send(
-                            amendment_fault_reply(
-                                describe_fault(exc),
-                                "The round could not be put back yet; the bot tries again "
-                                "within a few minutes. Restarting the bot retries that.",
-                            ),
+                            amendment_fault_reply(describe_fault(exc), ROUND_NOT_PUT_BACK_YET),
                             ephemeral=True,
                         )
                         return
@@ -2754,7 +2752,8 @@ class ResultsCog(commands.Cog):
                 await _tell_of_failure(
                     amendment_fault_reply(
                         describe_fault(exc),
-                        "The round could not be put back. Restarting the bot retries that.",
+                        "The round could not be put back yet. Restarting the bot retries "
+                        f"that. {AMENDMENT_RE_RUN_ONCE_PUT_BACK}",
                     )
                 )
                 return
@@ -2798,10 +2797,7 @@ class ResultsCog(commands.Cog):
                 undone = await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
             except Exception:  # noqa: BLE001 — left to the sweep, with the snapshot intact
                 log.exception("amend: could not revert round %s", rnd.id)
-                became = (
-                    "The round could not be put back yet; the bot tries again within a few "
-                    "minutes."
-                )
+                became = ROUND_NOT_PUT_BACK_YET
             else:
                 became = (
                     "The report stage could not be opened, so the amendment has been undone "
