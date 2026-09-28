@@ -264,7 +264,6 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
 # ── A command that undoes itself says what became of the change (#442) ────
 
 
-@pytest.mark.xfail(strict=True, reason="#442: report_failure takes no outcome yet")
 async def test_report_failure_states_the_outcome_in_place_of_partly_done():
     """A command that undoes itself on failure does not say it may have been partly done: it
     says what became of the change, and what to do next. The rest of the reply is kept."""
@@ -288,7 +287,6 @@ async def test_report_failure_states_the_outcome_in_place_of_partly_done():
 # ── The plain kind of fault, for an amendment's reply (#442) ──────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#442: describe_fault is not written yet")
 @pytest.mark.parametrize(
     "error, kind",
     [

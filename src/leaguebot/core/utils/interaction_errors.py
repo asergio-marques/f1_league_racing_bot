@@ -20,9 +20,21 @@ token may have expired, or the fault may be the database `post_log` reads its ch
 The reply and the log line are therefore each attempted on their own, and a failure of
 either is logged and leaves the other to go ahead (decided 2026-09-19).
 
-Only the tier guards' refusals are *not* failures, and they never reach this. The guards
-run inside each command's body and answer the member themselves, rather than raising
+**Two kinds of caller.** Almost every failure reaches this through the base classes: the
+command lets the error propagate, and one failure makes one line. A command, button or form
+calls it directly only to say more than the base classes can — to add context to `what` ("the
+import into configuration Standard"), or to state `outcome`, what became of a change the command
+undid itself ("The module is still off." in place of "It may have been partly done"). Having
+called it, the command returns without raising again, so that one failure still makes one line.
+That catch-all is a form of the first place `docs/design/architecture.md`'s "Errors and
+failures" allows one.
+
+Refusals are *not* failures, and they never reach this. A command that refuses answers the
+member itself, through `refuse` in `core/utils/log_lines.py`, rather than raising
 `app_commands.CheckFailure`, so everything that arrives here is a real fault.
+
+`describe_fault` names the kind of fault in plain words, for the one reply that may: a results
+amendment's, which undoes itself and tells the manager what kind of fault stopped it.
 
 Autocomplete does not reach this either. `CommandTree._call` logs an autocomplete failure
 and returns before any `on_error` runs; see `core/utils/log_filters.py`.
@@ -31,6 +43,7 @@ and returns before any `on_error` runs; see `core/utils/log_filters.py`.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from typing import Any
 
 import discord
@@ -38,17 +51,34 @@ from discord import app_commands
 
 log = logging.getLogger(__name__)
 
-#: What the member who ran a failed command, button or form is told; `{what}` is `describe`'s.
+#: What the member who ran a failed command, button or form is told; `{what}` is `describe`'s,
+#: and `{outcome}` what became of the change.
 FAILURE_REPLY = (
     "❌ {what} stopped on a fault in the bot, not on anything you entered, and did not "
-    "finish. It may have been partly done — check before running it again. The fault is "
-    "recorded in the log channel."
+    "finish. {outcome} The fault is recorded in the log channel."
 )
+#: The outcome of a failure the command did not undo.
+PARTLY_DONE = "It may have been partly done — check before running it again."
 
 
-def failure_reply(what: str) -> str:
-    """The reply for *what*, its first letter raised to open the sentence."""
-    return FAILURE_REPLY.format(what=what[:1].upper() + what[1:])
+def failure_reply(what: str, outcome: str | None = None) -> str:
+    """The reply for *what*, its first letter raised to open the sentence.
+
+    *outcome*, where given, replaces `PARTLY_DONE`: a command that undid itself says what
+    became of the change, and what to do next, rather than that it may have been partly done.
+    """
+    return FAILURE_REPLY.format(what=what[:1].upper() + what[1:], outcome=outcome or PARTLY_DONE)
+
+
+def describe_fault(error: BaseException) -> str:
+    """The kind of fault *error* is, in plain words, never the exception itself."""
+    if isinstance(error, app_commands.CommandInvokeError):
+        error = error.original
+    if isinstance(error, sqlite3.Error):
+        return "the bot could not read or write its database"
+    if isinstance(error, discord.HTTPException):
+        return "Discord refused or failed a request from the bot"
+    return "the bot hit an internal fault"
 
 
 def describe(interaction: discord.Interaction, item: Any = None) -> str:
@@ -77,15 +107,24 @@ def describe_form(modal: Any) -> str:
 
 
 async def report_failure(
-    interaction: discord.Interaction, error: BaseException, *, what: str
+    interaction: discord.Interaction,
+    error: BaseException,
+    *,
+    what: str,
+    outcome: str | None = None,
 ) -> None:
-    """Tell the host, the member and the log channel that *what* failed with *error*."""
+    """Tell the host, the member and the log channel that *what* failed with *error*.
+
+    *outcome*, where given, is what became of the change, in place of "It may have been partly
+    done". A command that calls this itself, to add context to *what* or to state *outcome*,
+    returns without raising again (see the module docstring).
+    """
     if isinstance(error, app_commands.CommandInvokeError):
         error = error.original
     user_id = getattr(interaction.user, "id", None)
     log.error("%s failed for user %s", what, user_id, exc_info=error)
 
-    reply = failure_reply(what)
+    reply = failure_reply(what, outcome)
     try:
         if interaction.response.is_done():
             await interaction.followup.send(reply, ephemeral=True)

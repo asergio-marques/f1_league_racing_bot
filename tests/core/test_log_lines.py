@@ -54,7 +54,6 @@ def _http_error() -> discord.HTTPException:
     return discord.HTTPException(MagicMock(status=404, reason="Not Found"), "Unknown interaction")
 
 
-@pytest.mark.xfail(strict=True, reason="#442: refuse is not written yet")
 @pytest.mark.parametrize(
     "case",
     ["answered", "deferred", "reason given", "reply fails", "post fails", "over long"],
@@ -124,7 +123,6 @@ def _lines(bot) -> list[str]:
     return [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: record_abandoned is not written yet")
 @pytest.mark.parametrize(
     "case",
     ["cancelled", "lapsed", "member has left", "nobody recorded", "detail beneath", "post fails"],
