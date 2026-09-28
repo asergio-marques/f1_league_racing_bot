@@ -331,9 +331,6 @@ async def test_a_bulk_paste_is_judged_on_the_table_it_leaves_not_the_lines_it_ca
     assert "out of order" not in _replies(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a bulk paste that applies nothing is not refused through refuse"
-)
 @pytest.mark.asyncio
 async def test_a_bulk_paste_that_applies_nothing_is_not_warned_about(db_path):
     """Every line malformed: the paste is refused, every bad line is listed back, and the
@@ -581,7 +578,6 @@ async def _table(form: str, db_path, season_id) -> dict[int, int]:
 FORMS = ["config", "amend"]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a bulk paste still applies its good lines past a bad one")
 @pytest.mark.parametrize("form", FORMS)
 async def test_a_bulk_paste_with_a_bad_line_applies_nothing(db_path, season, form):
     """One bad line refuses the paste whole: nothing is written, every bad line is listed
@@ -600,11 +596,6 @@ async def test_a_bulk_paste_with_a_bad_line_applies_nothing(db_path, season, for
     assert "nonsense" in line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a bulk paste's list of bad lines is sent as one message, longer than "
-    "Discord accepts",
-)
 @pytest.mark.parametrize("form", FORMS)
 async def test_a_long_list_of_bad_lines_reaches_the_manager_in_parts(db_path, season, form):
     """A paste as long as the form takes, every line of it bad, lists back every bad line: in
@@ -653,9 +644,6 @@ def _fail_the_second_position(table: str) -> str:
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a fault part-way through a bulk paste keeps the lines before it"
-)
 @pytest.mark.parametrize("form", FORMS)
 async def test_a_bulk_paste_fault_undoes_the_whole_paste(db_path, season, form):
     """The paste is written in one transaction, so a fault on its second line saves nothing.
@@ -683,7 +671,6 @@ async def test_a_bulk_paste_fault_undoes_the_whole_paste(db_path, season, form):
     assert "disk I/O error" not in line
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a bulk paste does not yet record its changes")
 @pytest.mark.parametrize("form", FORMS)
 async def test_a_bulk_paste_records_each_change_from_what_to_what(db_path, season, form):
     """The log line states beneath it every value set. The config form, which changes the
@@ -823,9 +810,6 @@ BULK_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a bulk-session or shared-check refusal writes no log line"
-)
 @pytest.mark.parametrize("case, given, said", BULK_REFUSALS)
 async def test_every_bulk_session_refusal_reaches_the_log_channel(
     db_path, season, case, given, said

@@ -47,6 +47,7 @@ from leaguebot.core.utils.league_server import (
     guild_of,
 )
 from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
@@ -182,8 +183,43 @@ def _parse_bulk_lines(
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
+#: What a bulk paste that could not be written tells its member: nothing was saved, and how to retry.
+_PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
+#: A form's refusal when the results module has been switched off since it was shown.
+_MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
+
+
+def _bulk_refusal(errors: list[str]) -> tuple[str, str]:
+    """The reply refusing a paste with bad lines, listing every one, and the line's reason."""
+    listed = "\n".join(f"  • {e}" for e in errors)
+    reply = (
+        f"\u274c Nothing was applied: {len(errors)} line(s) of the paste could not be read. "
+        f"Correct them and paste the whole table again.\n{listed}"
+    )
+    reason = f"{len(errors)} line(s) of the paste could not be read:\n{listed}"
+    return reply, reason
+
+
+def _bulk_values(valid: list[tuple[int, int]]) -> str:
+    """The values a paste set, one per line, for its log line."""
+    return "".join(f"\n  P{position} \u2192 {points} pts" for position, points in valid)
+
+
+async def _send_in_parts(interaction: discord.Interaction, text: str) -> None:
+    """Follow up with *text*, in as many messages as it needs."""
+    for part in chunk_message(text):
+        await interaction.followup.send(part, ephemeral=True)
+
+
 class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
-    """Modal for bulk-setting session points in a named config."""
+    """Modal for bulk-setting session points in a named config.
+
+    **All or nothing.** Every line is parsed, and the module and the configuration checked,
+    before anything is written. One bad line refuses the paste whole, every bad line listed
+    back; a repeated position is not a bad line, and takes its last value with the override
+    reported. What is written is written in one transaction, with an audit entry for each
+    position changed, so a fault part-way saves nothing, and the member is told so.
+    """
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
         label="position, points — one per line",
@@ -206,66 +242,80 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
-        errors = errors + overrides
-        if not valid and not errors:
-            await interaction.followup.send("No entries provided.", ephemeral=True)
+        bot = bot_of(interaction)
+        what = "`/results config bulk-session`"
+        session_type = SessionType(self._session.value)
+
+        # Checked again at the submit: the form may be submitted long after it was shown.
+        if not await bot.module_service.is_results_enabled():
+            await refuse(interaction, _MODULE_OFF, what=what)
             return
 
-        applied: list[str] = []
-        for position, points in valid:
-            try:
-                await points_config_service.set_session_points(
-                    self._db_path,
-                    self._config_name,
-                    SessionType(self._session.value),
-                    position,
-                    points,
-                )
-                applied.append(f"P{position} → {points} pts")
-            except ConfigNotFoundError:
-                await interaction.followup.send(
-                    f"\u274c Config **{self._config_name}** not found.", ephemeral=True
-                )
-                return
-            except Exception as exc:
-                errors.append(f"P{position}: unexpected error — {exc}")
-
-        lines: list[str] = []
-        if applied:
-            lines.append(
-                f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
-                + "\n".join(f"  {a}" for a in applied)
-            )
+        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
+        if not valid and not errors:
+            await refuse(interaction, "\u274c No entries provided.", what=what)
+            return
         if errors:
-            lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+            reply, reason = _bulk_refusal(errors)
+            await refuse(interaction, reply, what=what, reason=reason)
+            return
+        not_found = f"\u274c Config **{self._config_name}** not found."
+        if not await points_config_service.config_exists(self._db_path, self._config_name):
+            await refuse(interaction, not_found, what=what)
+            return
+
+        try:
+            await points_config_service.set_session_points_many(
+                self._db_path,
+                self._config_name,
+                session_type,
+                valid,
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
+                now=datetime.now(timezone.utc),
+            )
+        except ConfigNotFoundError:
+            await refuse(interaction, not_found, what=what)
+            return
+        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
+            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
+            return
+
+        lines = [
+            f"\u2705 Applied to config **{self._config_name}** ({self._session.name}):\n"
+            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
+        ]
+        if overrides:
+            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
         # The ordering is judged once, on the table the whole paste has left behind,
         # rather than line by line. A bulk paste is one act of authorship, and a
         # complaint per line would bury the reply under restatements of one fault.
-        if applied:
-            notice = _ordering_notice(
-                self._config_name,
-                self._session.name,
-                await points_config_service.ordering_warnings(
-                    self._db_path,
-                    self._config_name,
-                    SessionType(self._session.value),
-                ),
-            )
-            if notice:
-                lines.append(notice.lstrip("\n"))
-        await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
+        notice = _ordering_notice(
+            self._config_name,
+            self._session.name,
+            await points_config_service.ordering_warnings(
+                self._db_path, self._config_name, session_type
+            ),
+        )
+        if notice:
+            lines.append(notice.lstrip("\n"))
+        await _send_in_parts(interaction, "\n".join(lines))
 
-        if applied:
-            await bot_of(interaction).output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /results config bulk-session | {len(applied)} change(s)\n"
-                f"  config: {self._config_name}, session: {self._session.name}",
-            )
+        await bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /results config bulk-session | {len(valid)} change(s)\n"
+            f"  config: {self._config_name}, session: {self._session.name}"
+            + _bulk_values(valid),
+        )
 
 
 class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
-    """Modal for bulk-amending session points in the modification store."""
+    """Modal for bulk-amending session points in the modification store.
+
+    All or nothing, on the same terms as `BulkConfigSessionModal`: every line is parsed, and
+    the module, the season and amendment mode checked, before anything is staged, and the
+    paste is staged in one transaction.
+    """
 
     entries: discord.ui.TextInput = discord.ui.TextInput(
         label="position, points — one per line",
@@ -294,74 +344,76 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         )
 
         await interaction.response.defer(ephemeral=True)
+        bot = bot_of(interaction)
+        what = "`/results amend bulk-session`"
+
+        if not await bot.module_service.is_results_enabled():
+            await refuse(interaction, _MODULE_OFF, what=what)
+            return
 
         # Gated here as well as on the command that opened it (issue #224). A modal can be
         # submitted long after it was shown, and the season can reach Pending completion in
         # between — a window that writes to the store is exactly the one worth closing twice.
         season = await season_for_command(
-            interaction, bot_of(interaction).season_service, "results amend bulk-session"
+            interaction, bot.season_service, "results amend bulk-session"
         )
         if season is None:
             return
 
         valid, errors, overrides = _parse_bulk_lines(self.entries.value)
-        errors = errors + overrides
         if not valid and not errors:
-            await interaction.followup.send("No entries provided.", ephemeral=True)
+            await refuse(interaction, "\u274c No entries provided.", what=what)
+            return
+        if errors:
+            reply, reason = _bulk_refusal(errors)
+            await refuse(interaction, reply, what=what, reason=reason)
             return
 
-        applied: list[str] = []
-        for position, points in valid:
-            try:
-                await modify_session_points(
-                    self._db_path,
-                    season.id,
-                    self._config_name,
-                    self._session.value,
-                    [(position, points)],
-                    actor_id=interaction.user.id,
-                    actor_name=str(interaction.user),
-                    now=datetime.now(timezone.utc),
-                )
-                applied.append(f"P{position} → {points} pts")
-            except AmendmentNotActiveError:
-                await interaction.followup.send(
-                    "\u274c Amendment mode is not active.", ephemeral=True
-                )
-                return
-            except Exception as exc:
-                errors.append(f"P{position}: unexpected error — {exc}")
-
-        lines: list[str] = []
-        if applied:
-            lines.append(
-                f"\u2705 Amended in modification store for config **{self._config_name}** "
-                f"({self._session.name}):\n"
-                + "\n".join(f"  {a}" for a in applied)
+        try:
+            await modify_session_points(
+                self._db_path,
+                season.id,
+                self._config_name,
+                self._session.value,
+                valid,
+                actor_id=interaction.user.id,
+                actor_name=str(interaction.user),
+                now=datetime.now(timezone.utc),
             )
-        if errors:
-            lines.append("\u26a0\ufe0f Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+        except AmendmentNotActiveError:
+            await refuse(interaction, "\u274c Amendment mode is not active.", what=what)
+            return
+        except Exception as exc:  # noqa: BLE001 — reported here, to say nothing was saved
+            await report_failure(interaction, exc, what=what, outcome=_PASTE_NOT_SAVED)
+            return
+
+        lines = [
+            f"\u2705 Amended in modification store for config **{self._config_name}** "
+            f"({self._session.name}):\n"
+            + "\n".join(f"  P{position} \u2192 {points} pts" for position, points in valid)
+        ]
+        if overrides:
+            lines.append("\u26a0\ufe0f Notes:\n" + "\n".join(f"  • {o}" for o in overrides))
         # Judged once, on the table the whole paste has left staged — as the config
         # modal above does, and for the same reason.
-        if applied:
-            notice = _ordering_notice(
-                self._config_name,
-                self._session.name,
-                await modification_ordering_warnings(
-                    self._db_path, season.id, self._config_name, self._session.value
-                ),
-                BLOCKS_AMENDMENT,
-            )
-            if notice:
-                lines.append(notice.lstrip("\n"))
-        await interaction.followup.send("\n".join(lines) or "Done.", ephemeral=True)
+        notice = _ordering_notice(
+            self._config_name,
+            self._session.name,
+            await modification_ordering_warnings(
+                self._db_path, season.id, self._config_name, self._session.value
+            ),
+            BLOCKS_AMENDMENT,
+        )
+        if notice:
+            lines.append(notice.lstrip("\n"))
+        await _send_in_parts(interaction, "\n".join(lines))
 
-        if applied:
-            await bot_of(interaction).output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /results amend bulk-session | {len(applied)} change(s)\n"
-                f"  config: {self._config_name}, session: {self._session.name}",
-            )
+        await bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            f"| /results amend bulk-session | {len(valid)} change(s)\n"
+            f"  config: {self._config_name}, session: {self._session.name}"
+            + _bulk_values(valid),
+        )
 
 
 class XmlImportModal(LeagueModal, title="XML Points Config Import"):
