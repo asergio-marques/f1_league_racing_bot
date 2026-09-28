@@ -606,6 +606,38 @@ async def test_a_bulk_paste_with_a_bad_line_applies_nothing(db_path, season, for
     assert "nonsense" in line
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a bulk paste's list of bad lines is sent as one message, longer than "
+    "Discord accepts",
+)
+@pytest.mark.parametrize("form", FORMS)
+async def test_a_long_list_of_bad_lines_reaches_the_manager_in_parts(db_path, season, form):
+    """A paste as long as the form takes, every line of it bad, lists back every bad line: in
+    as many replies as it needs, none longer than Discord accepts, and none cut off. Nothing is
+    applied, and the refusal is logged once."""
+    bad = [f"q{n:03d}" for n in range(1, 400)]
+    paste = "\n".join(bad)
+    assert len(paste) <= 2000, "longer than the form accepts"
+    before = await _table(form, db_path, season)
+
+    interaction = await _submit(form, db_path, season, paste)
+
+    assert await _table(form, db_path, season) == before
+    parts = [
+        str(c.args[0] if c.args else c.kwargs.get("content", ""))
+        for c in interaction.followup.send.await_args_list
+    ]
+    assert parts, "the manager was told nothing"
+    assert all(len(part) <= 2000 for part in parts), "a reply is longer than Discord accepts"
+    told = "\n".join(parts)
+    missing = [line for line in bad if line not in told]
+    assert not missing, f"{len(missing)} bad lines were not listed back"
+    [line] = _logged(interaction)
+    assert line.startswith("⛔ ")
+    assert f"refused for Manager (<@{USER_ID}>)" in line
+
+
 @pytest.mark.parametrize("form", FORMS)
 async def test_a_bulk_paste_with_a_repeated_position_and_no_bad_line_is_applied(
     db_path, season, form
