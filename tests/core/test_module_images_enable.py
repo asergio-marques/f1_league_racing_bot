@@ -269,6 +269,7 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     assert "disk full" not in replied
 
 
+@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
     """It is logged as the failure it is, once, and never as a success."""
     db_path = await _make_db(tmp_path)
@@ -283,7 +284,7 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
     assert not any("Success" in line for line in lines)
     [line] = lines
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "RuntimeError" in line
     assert "disk full" not in line
 
@@ -294,6 +295,9 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
         pytest.param(
             False,
             id="the-write-fails",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#482: report_failure still names the member by mention alone"
+            ),
         ),
         pytest.param(True, id="the-switch-off-also-fails"),
     ],
@@ -341,6 +345,6 @@ async def test_an_image_enable_that_cannot_be_written_is_switched_back_off_and_s
     assert "disk I/O error" not in replied
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "IntegrityError" in line
     assert "disk I/O error" not in line

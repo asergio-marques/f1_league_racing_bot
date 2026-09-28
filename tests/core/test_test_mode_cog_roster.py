@@ -356,6 +356,7 @@ class TestRosterListShowsIt:
 # ── A driver that cannot be written (#442) ────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added(cog):
     """The service raises on a database fault. The command answers with the standard failure
     reply, saying the test driver was not added and how to retry, with no error text, and one
@@ -378,4 +379,4 @@ async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added
     assert "Run `/test-mode roster add` again to retry." in reply
     assert "database is locked" not in reply
     [line] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
-    assert "failed for <@1>" in line
+    assert "failed for Tester (<@1>)" in line

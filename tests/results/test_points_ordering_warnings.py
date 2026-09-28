@@ -645,6 +645,7 @@ def _fail_the_second_position(table: str) -> str:
 
 
 @pytest.mark.parametrize("form", FORMS)
+@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_bulk_paste_fault_undoes_the_whole_paste(db_path, season, form):
     """The paste is written in one transaction, so a fault on its second line saves nothing.
     The member gets the standard failure reply saying nothing from the paste was saved and
@@ -667,7 +668,7 @@ async def test_a_bulk_paste_fault_undoes_the_whole_paste(db_path, season, form):
     assert "Paste it again to retry." in replies
     assert "disk I/O error" not in replies
     [line] = _logged(interaction)
-    assert f"failed for <@{USER_ID}>" in line
+    assert f"failed for Manager (<@{USER_ID}>)" in line
     assert "disk I/O error" not in line
 
 

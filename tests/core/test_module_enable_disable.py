@@ -401,6 +401,7 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     assert cfg.autosack_threshold is None
 
 
+@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):
     """The configuration and its audit entry are one write: where the second fails, the
     first is not kept either, and the league is told, in the standard failure reply, that the
@@ -431,7 +432,7 @@ async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off
     # One failure line: the command, the member and the kind of fault, never its words.
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "IntegrityError" in line
     assert "disk I/O error" not in line
 
@@ -454,6 +455,7 @@ async def _refuse_the_audit(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The flag and its audit entry are one write, so the module stays off. The member gets
     the standard failure reply, saying the module is still off and what to do next, with no
@@ -476,7 +478,7 @@ async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_
     assert "Module remains disabled" not in replied
     [line] = _lines(cog)
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "IntegrityError" in line
     assert "disk I/O error" not in line
 

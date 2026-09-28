@@ -101,6 +101,35 @@ async def test_a_failure_is_written_to_the_log_channel():
     assert "Traceback" not in line
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#482: report_failure still names the member by mention alone"
+)
+async def test_a_failure_names_the_member_by_display_name_and_mention():
+    """As every line in the log channel does: the name for the reader, the mention for the
+    account it was."""
+    interaction = _interaction()
+    interaction.user.display_name = "Alex"
+
+    await report_failure(interaction, KeyError("x"), what="`/season approve`")
+
+    interaction.client.output_router.post_log.assert_awaited_once_with(
+        f"❌ `/season approve` failed for Alex (<@{USER}>) — KeyError. "
+        "The details are in the host's log."
+    )
+
+
+async def test_a_failure_names_a_member_without_a_display_name_by_mention_alone():
+    interaction = _interaction()
+    interaction.user.display_name = None
+
+    await report_failure(interaction, KeyError("x"), what="`/season approve`")
+
+    interaction.client.output_router.post_log.assert_awaited_once_with(
+        f"❌ `/season approve` failed for <@{USER}> — KeyError. "
+        "The details are in the host's log."
+    )
+
+
 async def test_a_failure_still_reaches_the_host_log_with_its_traceback(caplog):
     interaction = _interaction()
     error = KeyError("x")
