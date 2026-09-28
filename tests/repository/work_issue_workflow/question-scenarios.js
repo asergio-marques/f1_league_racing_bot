@@ -1,7 +1,7 @@
 // What reaches the owner, and what does not: the scope a checker keeps to, and the questions it
 // raises. A reversible call with a recommendation is taken on it and listed at the gate; the rest
 // stop the stage.
-const { builder, review, suite, base, round } = require('./stubs')
+const { builder, review, suite, testsCheck, base, round } = require('./stubs')
 // A question with its recommendation, stopping or not as `stops` says; left out where undefined.
 const rq = (text, stops, kind = 'business') => ({ kind, question: text, context: 'the spec says nothing', options: [{ label: 'a', meaning: 'x' }], recommendation: 'SAY-X', ...(stops === undefined ? {} : { stops }) })
 const BUILD = { ...base, stage: 'build' }
@@ -122,5 +122,17 @@ module.exports = {
       throw new Error('unexpected agent ' + label)
     },
     expect: r => r.questions.map(q => q.question).join() === 'MUST-ASK?' && r.assumed.map(q => q.question).join() === 'WORDING?',
+  },
+  // The Gate 2 report lists every call taken, for the owner to overrule at the gate.
+  reversibleCallListedAtGate2: {
+    args: { ...base, stage: 'tests' },
+    respond(label) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':product')) return k === 1 ? review({ escalations: [rq('WORDING?', false)] }) : review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed' && r.report.includes('## Taken on a recommendation — overrule any') && r.report.includes('WORDING? *Taken:* SAY-X'),
   },
 }

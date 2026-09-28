@@ -1141,6 +1141,8 @@ const gateReport = (test, summaryText) => {
   }
   lines.push('', '## What a league will see, and the tests that pin it', '', filled(summaryText) ? summaryText : '*The product owner wrote no summary. Ask for it, and put it here, before the gate.*')
   if (citations.length) lines.push('', '## Rules cited', '', ...citations.map(c => `- **${c.source}:** ${c.answer}`))
+  // The reversible calls the stage took rather than asked, for the owner to overrule together here.
+  if (provisional.length) lines.push('', '## Taken on a recommendation — overrule any', '', ...provisional.map(p => `- ${p.question} *Taken:* ${p.recommendation}`))
   return `${lines.join('\n')}\n`
 }
 
