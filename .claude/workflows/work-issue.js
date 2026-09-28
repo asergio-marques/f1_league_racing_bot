@@ -1236,21 +1236,24 @@ const mergePieces = parts => {
 // question and proposed no test change: anything the owner must see goes to the round's review at
 // once, as a round without pieces would. The commits of every piece that returned on the branch
 // are recorded, so that the result says what the branch carries even where a later piece returns
-// nothing.
+// nothing; and what those pieces fixed, disputed and unmarked is handed back as `kept`, to be taken
+// in before the stage fails, so that a run resumed from the failure does not give the next builder
+// as still open a finding the branch has fixed.
 const buildRound = async k => {
   const parts = []
   const record = () => {
     const on = parts.filter(p => p.onBranch)
-    if (!on.length) return
+    if (!on.length) return null
     const merged = mergePieces(on)
     commits.push(...merged.commits)
     separateDefects.push(...merged.separateDefects)
+    return merged
   }
   for (let n = 1; ; n++) {
     const got = await agent(builderPrompt(k, parts), { ...settingsFor(stage === 'tests' ? 'testsBuilder' : 'builder'), label: n === 1 ? `${stage}:r${k}:builder` : `${stage}:r${k}:p${n}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
     if (!got) {
-      record()
-      return { missing: n === 1 ? `the builder returned nothing in round ${k}` : `the builder returned nothing in round ${k}, piece ${n}` }
+      const kept = record()
+      return { kept, missing: n === 1 ? `the builder returned nothing in round ${k}` : `the builder returned nothing in round ${k}, piece ${n}` }
     }
     parts.push(got)
     // A later piece is given the list as it stands, under its labels.
@@ -1264,6 +1267,15 @@ const buildRound = async k => {
   return { built: mergePieces(parts) }
 }
 
+// What the round's builder changed, taken into the list and the ledger. A claim counts only on a
+// finding the builder still owes: a settled or minor one stays as it is.
+const takeIn = built => {
+  if (stage === 'tests') ({ tests: written, support: supportWritten } = labelled(built.tests, built.support || []))
+  else written = [...written, ...built.tests]
+  for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }
+  for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason; f.notFixedBecause = '' } }
+}
+
 const rounds = []
 let status = 'unfinished'
 let failure = ''
@@ -1275,14 +1287,10 @@ let lastTest = null
 
 for (let k = offset + 1; k <= offset + maxRounds; k++) {
   phase(stage === 'tests' ? 'Tests' : 'Build')
-  const { built, missing } = await buildRound(k)
-  if (missing) { status = 'failed'; failure = missing; break }
+  const { built, kept, missing } = await buildRound(k)
+  if (missing) { if (kept) takeIn(kept); status = 'failed'; failure = missing; break }
   if (!built.onBranch) { status = 'failed'; failure = `the checkout at ${worktree} is not on ${branch}`; break }
-  if (stage === 'tests') ({ tests: written, support: supportWritten } = labelled(built.tests, built.support || []))
-  else written = [...written, ...built.tests]
-  // A claim counts only on a finding the builder still owes: a settled or minor one stays as it is.
-  for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }
-  for (const x of built.disputed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'disputed'; f.dispute = x.reason; f.notFixedBecause = '' } }
+  takeIn(built)
   if (stage === 'tests' && !previous && built.planComplete && !built.tests.length && !(built.support || []).length) {
     status = 'failed'
     failure = 'the builder changed no test: the tests stage is only for a plan that changes one'
