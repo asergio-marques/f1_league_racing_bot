@@ -746,7 +746,10 @@ const sinceReviewed = lane => {
   return ` You reviewed the branch up to ${sha} already, in an earlier round. Read git -C ${worktree} log ${sha}..HEAD and git -C ${worktree} diff ${sha}..HEAD, and judge your earlier findings. Read the rest of the branch only to confirm something, and do not review it again; but a document, test or piece of code written earlier and made wrong by the new commits is still in scope. Where git does not know ${sha}, review the whole branch.`
 }
 
-const shared = (k, lane) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${sinceReviewed(lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
+// `whole` asks for a review of the whole branch, however far the lane has reviewed it: the product
+// owner asked again for a summary it left out is a fresh agent that has read nothing of the branch,
+// and must read all of it to sum it up and to find what its findings still stop.
+const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
 
 // `earlier` holds the results of the round's pieces before this one: a later piece carries on from
 // them, and leaves alone the findings they have already fixed or disputed.
@@ -799,10 +802,10 @@ const changedSince = (entry, before, keyOf) => {
   const was = before.find(b => keyOf(b) === keyOf(entry))
   return !was || was.change !== entry.change || DESCRIBED.some(f => described(was, f) !== described(entry, f))
 }
-const listFor = (lane, tests, support) => {
+const listFor = (lane, tests, support, whole = false) => {
   if (!tests) return ''
   const seen = listSeen[lane]
-  if (!seen) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
+  if (!seen || whole) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
   const testKey = t => bareId(t.nodeid)
   const newTests = tests.filter(t => changedSince(t, seen.tests || [], testKey))
   const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey))
@@ -825,7 +828,7 @@ const summaryAsk = () => {
   return `If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. ${whole} Otherwise leave summary empty.`
 }
 
-const productPrompt = (k, questions, testReport, tests, support) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport, tests, support, whole = false) => `Job 2 — a round of the branch. ${shared(k, 'product', whole)} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support, whole)}${section('The tester\'s report', testReport)}`
 
 const testsTesterPrompt = (k, tests) => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
@@ -1313,9 +1316,12 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     const product = reviewed.lanes.product
     summary = product.summary
     // The product owner found nothing but left its summary out: ask again. Whatever else the
-    // second call finds counts, so a finding or a question it raises stops the pass.
+    // second call finds counts, so a finding or a question it raises stops the pass. The round has
+    // already recorded the product lane as having reviewed the branch and seen the list, but the
+    // second call is a fresh agent that has seen neither: it reviews the whole branch, and in the
+    // tests stage is given the whole list.
     if (!summary) {
-      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null, true)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
       if (asked) {
         addFindings('product', asked.findings)
         citations.push(...asked.answers)
