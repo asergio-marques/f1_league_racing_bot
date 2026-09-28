@@ -1386,10 +1386,13 @@ PLAIN_INTERNAL = "the bot hit an internal fault"
 RE_RUN = "Re-run `/results rounds amend` to try again."
 
 
-def _press(user_id: int = USER_ID, *, router=None):
-    """A press of the Cancel Amendment button, by *user_id*."""
+def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
+    """A press of the Cancel Amendment button, by the server member *user_id*, shown on the
+    server as *name* — as every press Discord delivers in a server is."""
     press = MagicMock()
-    press.user = SimpleNamespace(id=user_id)
+    press.user = MagicMock(spec=discord.Member)
+    press.user.id = user_id
+    press.user.display_name = name
     press.response = MagicMock()
     press.response.is_done = MagicMock(return_value=False)
     press.response.send_message = AsyncMock()
@@ -1738,7 +1741,7 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     [line] = lines
     assert line.startswith("⛔ ")
     assert "/results rounds amend" in line
-    assert f"refused for " in line and f"(<@{USER_ID}>)" in line
+    assert f"refused for Admin (<@{USER_ID}>)" in line
     assert "AMEND_REJECTED" not in line and "AMEND_REFUSED" not in line
 
 
@@ -1780,10 +1783,11 @@ async def _cancelled_or_lapsed(case: str, tmp_path):
         async def _press_cancel(*args, **kwargs):
             view = kwargs.get("view")
             if view is not None:
-                press = _press(presser, router=cog.bot.output_router)
-                if presser != USER_ID:
-                    press.user = MagicMock(spec=discord.Member)
-                    press.user.id = presser
+                press = _press(
+                    presser,
+                    name="Admin" if presser == USER_ID else "Manager",
+                    router=cog.bot.output_router,
+                )
                 await type(view).cancel_btn(view, press, MagicMock())
             return MagicMock()
 
