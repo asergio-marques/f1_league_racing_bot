@@ -107,7 +107,8 @@ later polish phase.
   the plan against `docs/design/architecture.md`, the design files and the wip-specs before the
   user sees it, writes the failing tests first, then builds, reviews and tests in rounds until
   they pass, and stops for the user at the plan, the tests and the result. Nothing is built by
-  hand around it. How it runs is the skills' to say.
+  hand around it, unless the user chooses the light path at Gate 1 for a mechanical change, which
+  `fix-issue` describes. How it runs is the skills' to say.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
@@ -126,8 +127,8 @@ the tests and the settings files that pin them.
   measured duration or test count belongs in this file: measure when you need to know, and keep the
   answer somewhere cheap to correct.
 - **Never run two pytest sessions at once.** They race on the shared schema template and fake a mass
-  failure across unrelated modules. Where agents work in parallel, every run goes behind `flock -w
-  3600 /tmp/f1-pytest.lock`, as the `fix-issues` skill gives it.
+  failure across unrelated modules. Where agents work in parallel, every run goes behind
+  `flock -w 3600 /tmp/f1-pytest.lock`, as the `fix-issues` skill gives it.
 - **Every change to production code carries its unit tests,** updated or added in the same change,
   and the suite is run. A change reported complete without a run, or leaving tests that no longer
   exercise the new behaviour, is not complete. Every implementation task is covered by a test that
@@ -155,8 +156,9 @@ the tests and the settings files that pin them.
 
 - **Only `src/` is measured, and `.coveragerc` alone scopes it** — never `pyproject.toml` or
   `setup.cfg`, which coverage ignores while `.coveragerc` exists (`test_coverage_scope.py`).
-- **Before speeding up the Windows job,** read `python3 tools/compare_test_timings.py --run <run
-  id>`, which pairs every test across both jobs' JUnit reports (kept 30 days).
+- **Before speeding up the Windows job,** read
+  `python3 tools/compare_test_timings.py --run <run id>`, which pairs every test across both jobs'
+  JUnit reports (kept 30 days).
 - **The architecture's rules are tests** (`test_import_contracts.py`, `test_architecture_rules.py`),
   run with the suite, so CI needs no step of its own for them. Each lists today's breaches with the
   issue that fixes them, and fails on a new breach and on a fixed one still listed: fix a breach and
@@ -195,8 +197,8 @@ the tests and the settings files that pin them.
 - **The suite keeps no scratch:** `pytest.ini`'s retention settings drop a passing test's `tmp_path`
   as it finishes and keep a failing one's until the session ends, and `tests/conftest.py` sweeps the
   template scratch (`test_scratch_retention.py`). **A mass failure across unrelated modules is a
-  full `/tmp` until proved otherwise:** check `df -h /tmp`, and never read an exit code through `|
-  tail`.
+  full `/tmp` until proved otherwise:** check `df -h /tmp`, and never read an exit code through
+  `| tail`.
 - **The schema is built once:** `tests/conftest.py` substitutes `run_migrations` with one that
   copies a finished template, migrating in earnest only where the target holds data or the
   migrations have changed. Keep calling `run_migrations`; never run the SQL yourself or loop over
