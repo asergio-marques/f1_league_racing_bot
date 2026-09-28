@@ -3,9 +3,11 @@
 // Usage: node harness.js <scenario file> [scenario name]
 //
 // A scenario file exports scenarios by name. Each has `args` for the workflow, `respond(label,
-// prompt)` standing in for the agent the workflow calls under that label (returning undefined
-// stands for an agent that returned nothing), and `expect(result)`, true when the workflow did
-// what the scenario pins. A scenario whose run must be refused sets `expectThrow` to part of the
+// prompt, opts)` standing in for the agent the workflow calls under that label (returning undefined
+// stands for an agent that returned nothing), and `expect(result, run)`, true when the workflow did
+// what the scenario pins. `run` holds what the workflow did on the way: `labels`, every agent's
+// label in the order it was called; `calls`, each call's label with the options it was given; and
+// `logs`, every line it logged. A scenario whose run must be refused sets `expectThrow` to part of the
 // error instead. The process exits 1 if any scenario fails, printing what the workflow logged and
 // returned.
 //
@@ -26,9 +28,11 @@ const only = process.argv[3]
   for (const [name, s] of Object.entries(scenarios)) {
     if (only && name !== only) continue
     const labels = []
+    const calls = []
     const logs = []
     const agent = async (prompt, opts) => {
       labels.push(opts.label)
+      calls.push({ label: opts.label, opts })
       const answer = s.respond(opts.label, prompt, opts)
       if (answer && opts.label.startsWith('triage:') && !answer.duplicates) answer.duplicates = []
       return answer === undefined ? null : answer
@@ -40,7 +44,7 @@ const only = process.argv[3]
     const run = new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'budget', 'workflow', source)
     try {
       const result = await run(s.args, agent, parallel, null, () => {}, m => logs.push(m), { total: null }, null)
-      const ok = !s.expectThrow && s.expect(result) && !logs.some(l => l.startsWith('THUNK THREW'))
+      const ok = !s.expectThrow && s.expect(result, { labels, calls, logs }) && !logs.some(l => l.startsWith('THUNK THREW'))
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: status=${result.status} lastRound=${result.lastRound} agents=[${labels.join(' ')}]`)
       if (!ok) console.log('  logs:', logs, '\n  result:', JSON.stringify(result, null, 1).slice(0, 4000))

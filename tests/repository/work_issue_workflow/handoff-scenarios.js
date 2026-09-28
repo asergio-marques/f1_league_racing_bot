@@ -1,0 +1,137 @@
+// A builder handed off in pieces within a round: a piece that commits part of the plan and is not
+// finished is followed by another, told what the first did and what is left, and the round is
+// reviewed once, after the last piece. A piece that asks, proposes a test change, or commits
+// nothing ends the hand-off, so that nothing the owner must see is held back.
+const { q, builder, review, testsCheck, suite, finding, base, round, changes } = require('./stubs')
+const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
+// The piece an agent's label names: `build:r1:p2:builder` is piece 2, and `build:r1:builder` piece 1.
+const piece = label => Number((label.match(/:p(\d+):/) || [])[1] || 1)
+const pieces = (labels, k) => labels.filter(l => new RegExp(`^[a-z]+:r${k}:(p\\d+:)?builder$`).test(l))
+const lanesClean = label => {
+  if (label.endsWith(':issue')) return review()
+  if (label.endsWith(':code')) return review()
+  if (label.endsWith(':product')) return review({ summary: 'ACCEPTANCE' })
+  if (label.endsWith(':tester')) return suite()
+}
+const unfinished = (o = {}) => builder({ tests: [], planComplete: false, remaining: ['commit point 4'], ...o })
+const A = 'tests/x/test_a.py::test_a'
+const Bt = 'tests/x/test_a.py::test_b'
+const entry = (nodeid, o = {}) => ({ nodeid, change: 'added', scenario: 'SCEN ' + nodeid, expects: 'EXP ' + nodeid, ...o })
+const ran = nodeid => ({ nodeid, failsWithRunxfail: true, realFailure: 'AssertionError', outcomeAsCommitted: 'xfailed' })
+
+module.exports = {
+  builderHandedOffInPieces: {
+    args: B,
+    respond(label, prompt) {
+      if (label === 'build:r1:builder') return unfinished({ commits: [{ sha: 'c1', subject: 'did commit points 1 to 3' }] })
+      if (label === 'build:r1:p2:builder') {
+        if (!prompt.includes('c1') || !prompt.includes('commit point 4')) throw new Error('the second piece is not told what the first committed and what is left')
+        return builder({ tests: [], commits: [{ sha: 'c2', subject: 'did commit point 4' }] })
+      }
+      if (label.endsWith(':builder')) throw new Error('unexpected builder ' + label)
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => {
+      const reviews = labels.filter(l => /^build:r1:(issue|code|product|tester)$/.test(l))
+      return r.status === 'passed' && r.lastRound === 1
+        && pieces(labels, 1).join() === 'build:r1:builder,build:r1:p2:builder'
+        && reviews.length === 4 && reviews.every(l => labels.indexOf(l) > labels.indexOf('build:r1:p2:builder'))
+        && r.commits.map(c => c.sha).join() === 'c1,c2'
+    },
+  },
+  handOffStopsOnQuestion: {
+    args: B,
+    respond(label) {
+      if (label.endsWith(':builder')) { if (label !== 'build:r1:builder') throw new Error('a piece followed one that asked a question: ' + label); return unfinished({ questions: [q('business', 'what should the reply say?')] }) }
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'question' && r.lastRound === 1 && pieces(labels, 1).length === 1
+      && labels.includes('build:r1:product') && r.escalations.some(e => e.question === 'what should the reply say?'),
+  },
+  handOffStopsOnTestChange: {
+    args: { ...B, testsHead: 't0' },
+    respond(label) {
+      if (label.endsWith(':builder')) {
+        if (label !== 'build:r1:builder') throw new Error('a piece followed one that proposed a test change: ' + label)
+        return unfinished({ testChanges: [{ nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      }
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1
+      && r.testChanges.length === 1 && r.testChanges[0].nodeid === 'tests/x/test_a.py::test_empty_division',
+  },
+  handOffStopsWithoutCommit: {
+    args: { ...B, maxRounds: 1 },
+    respond(label) {
+      if (label.endsWith(':builder')) { if (label !== 'build:r1:builder') throw new Error('a piece followed one that committed nothing: ' + label); return unfinished({ commits: [] }) }
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'unfinished' && pieces(labels, 1).length === 1 && labels.includes('build:r1:code'),
+  },
+  handOffCapped: {
+    args: { ...B, maxRounds: 1 },
+    respond(label) {
+      if (label.endsWith(':builder')) return unfinished({ commits: [{ sha: `c${piece(label)}`, subject: 'part of the plan' }] })
+      return lanesClean(label)
+    },
+    expect: (r, { labels, logs }) => r.status === 'unfinished'
+      && pieces(labels, 1).length === 8 && pieces(labels, 1)[7] === 'build:r1:p8:builder'
+      && logs.some(l => /\bpieces?\b/i.test(l) && /\b(8|eight)\b/i.test(l))
+      && labels.includes('build:r1:code') && labels.indexOf('build:r1:code') > labels.indexOf('build:r1:p8:builder')
+      && r.commits.length === 8,
+  },
+  testsStageHandOffKeepsLastList: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      if (label === 'tests:r1:builder') return builder({ commits: [{ sha: 'c1', subject: 'added test a' }], tests: [entry(A)], planComplete: false, remaining: ['test b'] })
+      if (label === 'tests:r1:p2:builder') {
+        const at = prompt.indexOf('The list as it stands')
+        if (at < 0 || !prompt.slice(at).includes(A) || !prompt.slice(at).includes('A1')) throw new Error('the second piece is not given the list as it stands, under its labels')
+        return builder({ commits: [{ sha: 'c2', subject: 'added test b' }], tests: [entry(A), entry(Bt)] })
+      }
+      if (label.endsWith(':builder')) throw new Error('unexpected builder ' + label)
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Bt)], changes: changes([[A, 'added'], [Bt, 'added']]) })
+      if (label.endsWith(':issue')) return review()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 1
+      && r.tests.map(t => `${t.label} ${t.nodeid}`).join() === `A1 ${A},A2 ${Bt}`
+      && r.report.includes('**A1** `test_a`') && r.report.includes('**A2** `test_b`')
+      && labels.filter(l => l === 'tests:r1:tester').length === 1 && labels.indexOf('tests:r1:tester') > labels.indexOf('tests:r1:p2:builder'),
+  },
+  laterPieceReturnsNothing: {
+    args: B,
+    respond(label) {
+      if (label === 'build:r1:builder') return unfinished()
+      if (label === 'build:r1:p2:builder') return undefined
+      if (label.endsWith(':builder')) throw new Error('unexpected builder ' + label)
+      return lanesClean(label)
+    },
+    expect: r => r.status === 'failed' && /round 1\b/.test(r.failure) && /piece 2\b/.test(r.failure),
+  },
+  piecesMergeFixesAndDisputes: {
+    args: { ...B, maxRounds: 2 },
+    respond(label, prompt) {
+      const k = round(label)
+      if (label === 'build:r1:builder') return builder({ tests: [] })
+      if (label === 'build:r2:builder') {
+        if (!prompt.includes('code-1-1') || !prompt.includes('code-1-2')) throw new Error('the round 2 builder is not given both findings')
+        return unfinished({ commits: [{ sha: 'c2', subject: 'fixed code-1-1' }], fixed: [{ id: 'code-1-1', commit: 'c2' }], remaining: ['answer code-1-2'] })
+      }
+      if (label === 'build:r2:p2:builder') return builder({ tests: [], commits: [], disputed: [{ id: 'code-1-2', reason: 'DISPUTE REASON', evidence: [] }] })
+      if (label.endsWith(':builder')) throw new Error('unexpected builder ' + label)
+      if (label.endsWith(':code')) {
+        if (k === 1) return review({ findings: [finding('code-1-1'), finding('code-1-2')] })
+        if (!prompt.includes('says it is fixed in c2') || !prompt.includes('disputes it: DISPUTE REASON')) throw new Error('the code reviewer is not asked to judge the fix and the dispute')
+        return review()
+      }
+      return lanesClean(label)
+    },
+    expect: r => {
+      const byId = new Map(r.ledger.map(f => [f.id, f]))
+      return byId.get('code-1-1').status === 'fixed' && byId.get('code-1-1').fixedIn === 'c2'
+        && byId.get('code-1-2').status === 'disputed' && byId.get('code-1-2').dispute === 'DISPUTE REASON'
+        && r.commits.map(c => c.sha).join() === 'c1,c2'
+    },
+  },
+}
