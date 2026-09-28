@@ -22,6 +22,8 @@ read.
 """
 from __future__ import annotations
 
+import logging
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -119,6 +121,27 @@ def _reply(interaction: MagicMock) -> str:
 def _logged(interaction: MagicMock) -> list[str]:
     """Every line written to the league's log channel."""
     return [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+
+
+_GUARD_LOG = "leaguebot.core.utils.channel_guard"
+
+
+def _host_records_refusal(
+    caplog: pytest.LogCaptureFixture, command: str, *, guild: int | None
+) -> bool:
+    """Whether the guards wrote one line to the host's log naming *command* as the member
+    typed it, the member's id (7) and, where there is one, the server's id."""
+    for record in caplog.records:
+        if record.name != _GUARD_LOG or record.levelno < logging.INFO:
+            continue
+        line = record.getMessage()
+        if (
+            command in line
+            and re.search(r"(?<!\d)7(?!\d)", line)
+            and (guild is None or str(guild) in line)
+        ):
+            return True
+    return False
 
 
 # ── The predicates ────────────────────────────────────────────────────────
@@ -342,6 +365,10 @@ async def test_a_refusal_describes_a_role_that_has_been_deleted():
 # ── A refusal is recorded in the log channel (#482) ───────────────────────
 
 _NOT_RECORDED = "#482: a guard refusal is not yet recorded in the log channel"
+_NOT_IN_HOST_LOG = (
+    "#482: a refusal kept out of the log channel does not yet write a host-log line naming "
+    "the command, the user id and the server"
+)
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
@@ -403,13 +430,16 @@ async def test_an_admin_command_refused_for_want_of_an_admin_role_is_recorded():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
 @pytest.mark.parametrize(
     "decorator", [league_admin_only, league_manager_only],
     ids=["league_admin_only", "league_manager_only"],
 )
-async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(decorator):
+async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(decorator, caplog):
     """With no configuration there is no log channel to write to (owner decision on #482,
-    2026-09-29: host log only). The member is still told to run `/bot init`."""
+    2026-09-29: host log only). The member is still told to run `/bot init`, and the host's
+    log records the refusal."""
+    caplog.set_level(logging.INFO, logger=_GUARD_LOG)
     command, _ = _guarded(decorator)
     interaction = _interaction(_member(roles=(MANAGER_ROLE,)))
 
@@ -417,13 +447,17 @@ async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(dec
 
     assert "/bot init" in _reply(interaction)
     interaction.client.output_router.post_log.assert_not_awaited()
+    assert _host_records_refusal(caplog, "round add", guild=SERVER_ID)
 
 
-async def test_a_command_used_in_a_direct_message_goes_to_the_host_log_alone():
+@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
+async def test_a_command_used_in_a_direct_message_goes_to_the_host_log_alone(caplog):
     """A direct message to a manager's command in a group not limited to servers: it arrives
     with no guild and the direct message's own channel id, so it meets the wrong-channel
     refusal first. The bot cannot tell from a direct message whether the person belongs to the
-    league, so nothing is written to the league's log channel (#482, assumed A1)."""
+    league, so nothing is written to the league's log channel (#482, assumed A1); the host's
+    log records it instead."""
+    caplog.set_level(logging.INFO, logger=_GUARD_LOG)
     command, ran = _guarded(league_manager_only)
     user = MagicMock(spec=discord.User)
     user.id = 7
@@ -439,6 +473,7 @@ async def test_a_command_used_in_a_direct_message_goes_to_the_host_log_alone():
         "⛔ This command can only be used in the configured interaction channel.", ephemeral=True
     )
     interaction.client.output_router.post_log.assert_not_awaited()
+    assert _host_records_refusal(caplog, "round add", guild=None)
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
@@ -455,7 +490,11 @@ async def test_a_setup_command_refused_on_a_set_up_server_is_recorded():
     ]
 
 
-async def test_a_setup_command_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone():
+@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
+async def test_a_setup_command_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone(
+    caplog,
+):
+    caplog.set_level(logging.INFO, logger=_GUARD_LOG)
     command, ran = _guarded(bot_setup_only)
     interaction = _interaction(_member(roles=(MANAGER_ROLE,)), command="bot init")
 
@@ -464,6 +503,7 @@ async def test_a_setup_command_refused_before_the_bot_is_set_up_goes_to_the_host
     assert ran == []
     assert "Administrator" in _reply(interaction)
     interaction.client.output_router.post_log.assert_not_awaited()
+    assert _host_records_refusal(caplog, "bot init", guild=SERVER_ID)
 
 
 def _not_the_owner() -> MagicMock:
@@ -486,7 +526,11 @@ async def test_a_factory_reset_refused_on_a_set_up_server_is_recorded():
     ]
 
 
-async def test_a_factory_reset_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone():
+@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
+async def test_a_factory_reset_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone(
+    caplog,
+):
+    caplog.set_level(logging.INFO, logger=_GUARD_LOG)
     command, ran = _guarded(server_owner_only)
     interaction = _not_the_owner()
 
@@ -495,6 +539,7 @@ async def test_a_factory_reset_refused_before_the_bot_is_set_up_goes_to_the_host
     assert ran == []
     assert "owner" in _reply(interaction)
     interaction.client.output_router.post_log.assert_not_awaited()
+    assert _host_records_refusal(caplog, "bot factory-reset", guild=SERVER_ID)
 
 
 async def test_the_owner_s_factory_reset_reads_no_setting():
