@@ -150,9 +150,10 @@ plan. That is a success, not a failure.
 stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
 product owner's questions to the user first, the checkers' assumptions listed in the plan and their
 follow-ups drafted beside it, never asked, and items 7 and 8 added to the plan from its result. A
-plan is re-checked once at most, as `fix-issue` says. A plan that proposes the light path, and that
-the user sends down it at Gate 1, skips the check and is built by hand in its own worktree, as
-`fix-issue` Phase 3 describes, rather than through Stage 4.
+plan is re-checked once at most, as `fix-issue` says. A plan that proposes the light path skips the
+check and goes straight to Gate 1, as `fix-issue` Phase 3 describes. Where the user sends it down
+the light path, it is built by hand in its own worktree rather than through Stage 4; where they
+decline it, it is checked now and brought to Gate 1 again.
 Keep each check's result for the issue's build, and for its next check, saved to a file as
 `fix-issue`'s "What a stage returns" says: a batch's session reads every issue's results, so what it
 leaves out of the conversation it saves many times over. A check of an amended plan

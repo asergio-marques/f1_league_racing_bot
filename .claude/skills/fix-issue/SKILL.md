@@ -89,14 +89,16 @@ change qualify. Say so in the plan, and the user chooses the path at Gate 1. On 
 
 - no check runs: items 7 and 8 say "none: the change is mechanical", and the architecture's rules
   are held by the tests that run with the suite;
-- after Gate 1 and the claim, the issue is built by hand in its worktree instead of through Phase
+- after Gate 1 and the claim, the issue is built by hand in its checkout instead of through Phase
   5: each change with its tests in the same commit, then the full suite behind the lock, and mypy;
 - one fresh `code-reviewer` agent, through the `Agent` tool, reviews the whole diff against the
   plan, and what it finds is fixed, each in a commit of its own;
 - then Phase 6 and Phase 7, as for any issue.
 
-Where the build shows the change is not mechanical after all, because a league would see it, stop
-and tell the user: the issue goes back to the full workflow from Phase 3.
+Where the user declines the light path at Gate 1, the plan has not been checked: run the check
+below, and hold Gate 1 again on the plan it returns. Where the build shows the change is not
+mechanical after all, because a league would see it, stop and tell the user: the issue goes back to
+the full workflow from Phase 3.
 
 **Otherwise, check the draft through the `work-issue` workflow** (`.claude/workflows/work-issue.js`).
 Invoking this skill is the user's opt-in to running it. Its checkers are read-only and cannot
@@ -212,6 +214,8 @@ hand. Pass every stage the same arguments:
 - `decisions`: every answer the user has given on this issue, word for word, with its date. A
   spec change an answer calls for is written by the build, as a document owed;
 - `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on;
+- `provisional`: for the build, the tests stage's `provisional`, less any the user overruled, so that
+  the calls taken there bind the build too;
 - `testsHead`: for the build, the commit at which the user last approved the tests at a Gate 2:
   the last of the tests stage's `commits` then, in this pass or, where a pass after a rejection at
   Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
@@ -273,8 +277,8 @@ by side: the issue reviewer against the architecture, the design, the issue and 
 code reviewer for defects in the code; the product owner against the spec rules and the
 acceptance criteria; and the tester, who runs the whole suite and mypy behind the test lock. A
 design verifier follows the issue reviewer wherever the branch changes a design file. The rounds
-repeat until nothing material is open, no question is, and the suite and mypy are green, for at
-most three rounds a run. A builder carries out at most three commit points, or three findings, in
+repeat until nothing material is open, no question is, and the suite and mypy are green, within
+the stage's round budget (see `capped` below). A builder carries out at most three commit points, or three findings, in
 one piece, and hands the rest to a fresh builder, which carries on in the same round; the round is
 reviewed once, after its last piece. Tell the user it takes about ten agents for a fix that passes
 on its second round, and one more for each piece a builder hands off.
@@ -319,16 +323,19 @@ working directory.
   - where every one is refused, run the build again with its last result as `previous`.
 - **`provisional`** are the reversible calls the stage took on a checker's recommendation rather
   than stop for: wording, a log line's form, naming. They bind the builder until overruled. Show
-  them at the next gate, where the Gate 2 report already lists them, and let the user overrule any
-  in the same answer: an overruled call goes into `decisions`, and the stage runs again to apply
-  it. Never ask them one by one.
+  `provisionalNew`, the calls no gate has shown yet, at the next gate, where the Gate 2 report
+  already lists them by id, and let the user overrule any in the same answer. An overruled call's
+  answer goes into `decisions`, and its id into `overruled` on the stage's next run, which drops
+  it; the run always gets a round to apply it. Never ask them one by one.
 - **`capped`:** the stage has spent its round budget (`tests` 3, `build` 4, counted across all its
   runs) without passing. **`stalled`:** it stopped early because it was not converging, two rounds
   running opening as many material findings as they closed, or failing the same way twice; `failure`
   says which. Either goes to the user as one question, with what is still open, and three choices:
-  finish on the light path by hand (recommended), allow one more round (run again with `previous`
-  and `roundBudget` one higher), or accept the branch as it stands and draft what is open as
-  follow-ups. Never raise the budget without the user's word.
+  finish on the light path by hand (recommended), allow one more round, or accept the branch as it
+  stands and draft what is open as follow-ups. One more round is a run with `previous` and, for a
+  capped stage, `roundBudget` one above its `lastRound`, which later runs keep; for a stalled one,
+  `maxRounds: 1`. Never raise the budget without the user's word. A run the user starts in any
+  other way, after answering its questions or asking for changes at its gate, always gets a round.
 - **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
   with `openMaterial` and `lastFailures`. A finding there that the user once wanted made, though
   it was found minor, can still be left: pass it as `"leave"` in `rulings`.
