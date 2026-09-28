@@ -45,8 +45,6 @@ PASS = {
     "weather": "#287",
     "image": "#288",
 }
-#: Keeping the full error details in every catch-all handler.
-TRACEBACKS = "#442"
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
 #: The handlers for each kind of post, which move core's own posts onto them.
@@ -411,8 +409,7 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
-}
+KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_a_catch_all_handler_keeps_the_error_details():
