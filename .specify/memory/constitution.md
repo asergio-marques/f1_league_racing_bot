@@ -1,6 +1,50 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-28 — v14.6.3 → v14.7.0: MINOR — every outcome of a command that acts is recorded (issue #442)]
+  Version change    : 14.6.3 → 14.7.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0: guidance is added inside two existing
+                      principles and none is removed or redefined. Principle V already required
+                      that no command be silently accepted or silently discarded, and an audit
+                      entry for every configuration mutation; it now says, in as many words,
+                      that every command, button and form that changes something, or tries to,
+                      records every outcome in the log channel — its success, its refusal and
+                      its failure — whoever uses it. Principle VII.2 names those lines among
+                      what the log channel receives. MAJOR was not in question: nothing a
+                      compliant implementation did becomes non-compliant, save a refusal left
+                      unrecorded, which the old "MUST NOT silently discard" already reached.
+
+  Modified sections :
+    - Principle V, Observability & Change Audit Trail — new paragraph: every command, button
+      and form that changes something, or tries to, records every outcome in the log channel,
+      whoever uses it; a view, a list, a preview and the hub's About record nothing.
+    - Principle VII, Output Channel Discipline, item 2 (the calculation log channel) — also
+      receives the record of every outcome of a command, button or form that acts: its
+      successes, its refusals, its failures, and a confirmation's cancel or lapse.
+
+  Why the constitution is the document that moved:
+    - `docs/wip-specs/core_specification.md`, "The record of what changed", gains the same rule
+      on the same branch, and remains the governing statement of it; this document states the
+      principle it serves.
+    - The owner decided on 2026-09-28 that the log channel is an audit record of everything
+      done by everyone, successful or not, and that the rule is written now while the commands
+      not yet in line with it are brought in by a separate sweep.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none. The commands, buttons and forms not yet recording every outcome are
+                      the sweep's, tracked apart from this branch.
+
+  Rationale trail   : Branch fix/442-keep-catch-all-error-details.
+
+  Templates / docs  : none. The core specification, the README and the guides are corrected on
+                      the same branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-25 — v14.6.2 → v14.6.3: PATCH — three paths follow the code into the leaguebot package (issue #438)]
   Version change    : 14.6.2 → 14.6.3
   Bump rationale    : PATCH. The bot moved into one installed package, `leaguebot`, with a folder
@@ -5274,6 +5318,12 @@ identifier, division, and UTC timestamp.
 All mutations that affect a published schedule MUST post a human-readable confirmation to the
 calculation log channel. The bot MUST NOT silently accept or silently discard any command.
 
+Every command, button and form that changes something, or tries to — whoever uses it — MUST
+record every outcome in the calculation log channel: its success, its refusal and its
+failure, and, where it asks for a confirmation, that confirmation cancelled or left to lapse.
+Each line MUST name the member and what they used. A view, a list, a preview and the hub's
+About change nothing and record nothing.
+
 **Rationale**: A league's managers, its admins and its drivers need an unambiguous,
 channel-visible record of computations and changes, especially when disputing weather
 outcomes or schedule alterations.
@@ -5352,7 +5402,9 @@ unless explicitly permitted by an active module (see below):
    cancellation note is posted silently, pinging nobody, and only while the weather module is
    enabled.
 2. **Calculation log channel** (one for the league, configured at bot setup): receives all phase
-   computation logs, configuration mutation confirmations, and audit trail entries.
+   computation logs, configuration mutation confirmations, and audit trail entries, and the
+   record of every outcome of a command, button or form that acts — its successes, its
+   refusals, its failures, and a confirmation's cancel or lapse (Principle V).
 3. **Hub channel** (one for the league, optional, set by a league manager with
    `/bot hub-channel`): receives only the hub's panel, which the bot edits in place and posts
    again where it has been deleted. It is a core channel, not one a module introduces, and no
@@ -8561,4 +8613,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.6.3 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-25
+**Version**: 14.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-28
