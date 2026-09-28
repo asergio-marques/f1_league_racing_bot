@@ -6423,10 +6423,19 @@ def _field_text(value: object) -> str:
     return str(getattr(value, "value", value))
 
 
+#: A round's field as `/round amend` names it, where its column is named otherwise.
+_AMEND_PARAMETER_OF = {"track_name": "track"}
+
+
 def _changed_values(before: Mapping[str, object], after: Mapping[str, object]) -> str:
-    """Each field of *before* whose value *after* differs, from what to what, one per line."""
+    """Each field of *before* whose value *after* differs, from what to what, one per line.
+
+    Each is named as the command's parameter is — `track`, `scheduled_at`, `format` — and not
+    by its column.
+    """
     return "".join(
-        f"\n  {field}: {_field_text(old)} \u2192 {_field_text(after[field])}"
+        f"\n  {_AMEND_PARAMETER_OF.get(field, field)}: {_field_text(old)} "
+        f"\u2192 {_field_text(after[field])}"
         for field, old in before.items()
         if after[field] != old
     )
