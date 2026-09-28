@@ -550,8 +550,9 @@ to it would switch off the one failure path for every command.
 
 1. on one of the failure paths above. That includes a command, button or form that catches
    everything around its own work only to hand the error to `report_failure` itself, adding
-   context to `what` (which configuration an import was writing) or stating `outcome` (what
-   became of a change it undid, in place of "may have been partly done"), and then returns.
+   context to `what` (the round a `/round amend` confirmation was amending) or stating
+   `outcome` (what became of a change it undid, in place of "may have been partly done"), and
+   then returns.
    One failure still makes one line, and the base classes are spared a second report. A results
    amendment is the other form: it puts the round back as it stood, then reports its own
    failure, naming the kind of fault in plain words (`describe_fault`), because the manager has
@@ -568,7 +569,8 @@ to it would switch off the one failure path for every command.
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
-refusal the member can act on.
+refusal the member can act on, or to hand them to `report_failure` itself with context or an
+outcome, as the XML import does with a database fault, naming the configuration it was writing.
 
 ---
 
