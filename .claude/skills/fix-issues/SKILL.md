@@ -149,8 +149,10 @@ plan. That is a success, not a failure.
 **Check each returned plan before the user sees it**, through the `work-issue` workflow's check
 stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
 product owner's questions to the user first, and items 7 and 8 added to the plan from its result.
-Keep each check's result for the issue's build. Run the checks one at a time, as the plans come
-back: each is three read-only agents, and the Pi runs two at once.
+Keep each check's result for the issue's build, and for its next check: a check of an amended plan
+passes the last result as `previous`, so that each checker judges what the amendment changes rather
+than starting over. Run the checks one at a time, as the plans come back: each is three read-only
+agents, and the Pi runs two at once.
 
 Bring each checked plan to the user in plan mode, singly: that is its Gate 1. Bring each question
 through `AskUserQuestion`. Relay the answers to the owning agent with `SendMessage`, which resumes
@@ -209,9 +211,12 @@ After a rebase onto `origin/main`, it is `git -C <worktree> merge-base HEAD orig
 the tests stage, Gate 2, the build stage and Gate 3, with the arguments listed there. The
 `worktree` is the issue's own `.claude/worktrees/fix-<N>`, by absolute path; the `python` is the
 main checkout's `.venv/bin/python`; `criteria` and `checks` come from its Stage 2 check; and
-`testsHead` is as `fix-issue` names it. The issues' runs go on concurrently, one run per issue at a
-time. Tell the user each build takes about ten agents, and that the Pi runs two of a workflow's
-agents at once.
+`testsHead` is as `fix-issue` names it. `models` and `efforts` are passed only to override a role's
+default, as `fix-issue` names them: by default Sonnet runs the build's builder, and the tester at low
+effort, and Opus runs every other role; the next issue's per-agent figures and findings confirm the
+Sonnet builder, or put it back on Opus. The issues' runs go on concurrently, one run per issue at a
+time. Tell the user each build takes about ten agents, and one more for each piece a builder hands
+off, and that the Pi runs two of a workflow's agents at once.
 
 **Each issue's Gate 2 file is written to the main checkout's `.claude/gates/<N>-gate-2.md`,** never
 to the issue's worktree, so that every gate file stands in one place in the user's workspace, and a
@@ -220,8 +225,8 @@ own tests stage and Gate 2, as `fix-issue` says, while the other issues' runs ca
 
 **Every gate and every question goes to the user through `AskUserQuestion`, one issue at a
 time,** never through plan mode, which would halt every other issue's build. A rejection at Gate 3,
-or an answer that amends a plan, sends that issue back to the Stage 2 check. Its amended plan
-waits for plan mode until no build is running.
+or an answer that amends a plan, sends that issue back to the Stage 2 check, with its last check's
+result as `previous`. Its amended plan waits for plan mode until no build is running.
 
 The workflow's builders and testers keep two rules the whole batch depends on.
 

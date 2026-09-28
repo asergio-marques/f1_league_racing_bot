@@ -108,7 +108,10 @@ Settle what it returns before the user sees the plan:
   owner's first, as it framed them, with its recommendation first. Two checkers can meet the same
   question and ask it twice: merge those into one before the user sees them. Every answer is a project rule
   from that moment, and a spec correction it calls for is a document owed. Where an answer changes
-  the plan's substance, check the plan again.
+  the plan's substance, check the plan again, passing the last check's result as `previous`: each
+  checker is given the plan as it last checked it and its own earlier result, and judges what the
+  amendment changes rather than starting over. A checker whose earlier result was lost checks in
+  full.
 - **`specRulesToSettle`** lists every spec rule the plan would change, or that is unclear or at odds
   with the code. Each must reach the user as a question: where the product owner framed none for
   one, frame it yourself from the entry.
@@ -183,7 +186,14 @@ hand. Pass every stage the same arguments:
   the last of the tests stage's `commits` then, in this pass or, where a pass after a rejection at
   Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
   branch at all. After a rebase it is that commit as the branch now carries it. From it the build
-  changes no test.
+  changes no test;
+- `models` and `efforts`, each `{role: value}`, only to override a role's default. Every stage,
+  the check included, takes them. The roles are `testsBuilder` (the tests stage's builder),
+  `builder` (the build's), `issue`, `code`, `product`, `design`, `tester` and `triage`. By default
+  Sonnet runs the build's builder, and the tester at low effort, and Opus runs every other role. A
+  model is `opus`, `sonnet` or `haiku`, and `fable` is refused; an effort is `low`, `medium`,
+  `high`, `xhigh` or `max`. The next issue's per-agent figures and findings confirm the Sonnet
+  builder, or put it back on Opus.
 
 **Leave the checkout alone while a stage runs:** its builder is working in it.
 
@@ -234,8 +244,10 @@ code reviewer for defects in the code; the product owner against the spec rules 
 acceptance criteria; and the tester, who runs the whole suite and mypy behind the test lock. A
 design verifier follows the issue reviewer wherever the branch changes a design file. The rounds
 repeat until nothing material is open, no question is, and the suite and mypy are green, for at
-most three rounds a run. Tell the user it takes about ten agents for a fix that passes on its
-second round.
+most three rounds a run. A builder carries out at most three commit points, or three findings, in
+one piece, and hands the rest to a fresh builder, which carries on in the same round; the round is
+reviewed once, after its last piece. Tell the user it takes about ten agents for a fix that passes
+on its second round, and one more for each piece a builder hands off.
 
 **The build changes no test the user did not approve at Gate 2.** From `testsHead` it may remove the
 issue's markers, delete the ratchet lines the plan names, and rewrite the imports and patched
@@ -296,7 +308,8 @@ are to accept it or to reject it.
 **On a rejection, ask what should change in terms of behaviour**, and take the answer in the
 user's own words. It is a decided rule. Add it to `decisions`, amend the plan with it, and go
 back to Phase 3's check, passing `worktree` and `base` as well, so that the amendment is checked
-against the branch as built. Then come Gate 1, the tests stage, Gate 2, the build and Gate 3
+against the branch as built, and the last check's result as `previous`, so that each checker judges
+what the amendment changes. Then come Gate 1, the tests stage, Gate 2, the build and Gate 3
 again. The claim is not repeated, and the commits already made stay.
 
 On acceptance, go on to Phase 6.

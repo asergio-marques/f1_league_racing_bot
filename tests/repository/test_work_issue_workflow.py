@@ -33,18 +33,33 @@ needs_node = pytest.mark.skipif(NODE is None, reason="node is not installed on t
 
 
 def test_every_scenario_file_is_run() -> None:
-    """A renamed or deleted scenario file would otherwise drop its tests without a word."""
-    assert SCENARIO_FILES == [
-        "build-stage-scenarios.js",
-        "check-stage-scenarios.js",
-        "ledger-scenarios.js",
-        "resume-scenarios.js",
-        "tests-stage-scenarios.js",
-    ]
+    """A scenario file the list below leaves out would drop its tests without a word, and a case
+    whose file is renamed or deleted would run nothing.
+
+    The list is written into the scenario test's own decorator, so that each case can carry its own
+    expected-failure marker, and it names exactly the files the glob finds.
+    """
+    (parametrize,) = [mark for mark in test_workflow_scenarios_hold.pytestmark if mark.name == "parametrize"]
+    listed = sorted(case if isinstance(case, str) else case.values[0] for case in parametrize.args[1])
+    assert SCENARIO_FILES == listed
 
 
 @needs_node
-@pytest.mark.parametrize("scenario_file", SCENARIO_FILES)
+@pytest.mark.parametrize(
+    "scenario_file",
+    [
+        pytest.param("agent-settings-scenarios.js"),
+        "build-stage-scenarios.js",
+        "check-stage-scenarios.js",
+        pytest.param("handoff-scenarios.js"),
+        pytest.param("incremental-review-scenarios.js"),
+        "ledger-scenarios.js",
+        pytest.param("nothing-lost-scenarios.js"),
+        pytest.param("recheck-scenarios.js"),
+        "resume-scenarios.js",
+        "tests-stage-scenarios.js",
+    ],
+)
 def test_workflow_scenarios_hold(scenario_file: str) -> None:
     assert NODE is not None
     result = subprocess.run(
