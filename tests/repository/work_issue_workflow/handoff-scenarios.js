@@ -57,7 +57,7 @@ module.exports = {
       }
       return lanesClean(label)
     },
-    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1
+    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1 && labels.includes('build:r1:code')
       && r.testChanges.length === 1 && r.testChanges[0].nodeid === 'tests/x/test_a.py::test_empty_division',
   },
   handOffStopsWithoutCommit: {
