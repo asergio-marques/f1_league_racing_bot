@@ -549,17 +549,139 @@ async def test_a_closed_notice_already_deleted_does_not_stop_the_open(tmp_path):
     assert await _is_open(db_path)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a failed post is still caught and answered with the error's text",
+)
 async def test_a_failed_post_leaves_signups_closed(tmp_path):
     """The button is how a driver signs up. Recording the window as open without one would
-    leave a league believing signups were running with no way in."""
+    leave a league believing signups were running with no way in. A fault in the post is the
+    bot's, so it goes to the command's failure path rather than being answered here."""
     db_path = await _seed(tmp_path)
     interaction = _interaction()
     interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("no perms"))
 
-    await _open(_cog(db_path), interaction)
+    with pytest.raises(RuntimeError):
+        await _open(_cog(db_path), interaction)
 
     assert not await _is_open(db_path)
-    assert "Failed to post" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# /signup open — what the bot may not do, and every refusal, reach the log channel (#442)
+# ---------------------------------------------------------------------------
+
+#: The hub's words for a signup channel the bot may not post the button in.
+MAY_NOT_POST = (
+    "❌ The bot needs **View Channel**, **Send Messages** and **Embed Links** on #signups to "
+    "post the Sign Up button. Signups were not opened."
+)
+
+
+def _lines(cog) -> list[str]:
+    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+
+
+def _forbidden():
+    return discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Access")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a post Discord refuses is still answered with the error's text, and not logged",
+)
+@pytest.mark.parametrize(
+    "notice_deleted", [False, True], ids=["no-closed-notice", "closed-notice-already-deleted"]
+)
+async def test_a_signup_post_the_bot_may_not_make_is_refused(tmp_path, notice_deleted):
+    """Discord refuses the post: the hub's words, no error text, the window left closed, and
+    the refusal logged. Where the "signups closed" notice had already been taken down to make
+    way for the button, the manager is told that too."""
+    db_path = await _seed(tmp_path)
+    if notice_deleted:
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE signup_module_config SET signup_closed_message_id = 9001")
+            await db.commit()
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction._signup_channel.send = AsyncMock(side_effect=_forbidden())
+
+    await _open(cog, interaction)
+
+    replied = _replied(interaction)
+    assert MAY_NOT_POST in replied
+    assert "Missing Access" not in replied
+    assert "Failed to post" not in replied
+    extra = replied.replace(MAY_NOT_POST, "")
+    if notice_deleted:
+        assert "closed" in extra and any(
+            word in extra for word in ("deleted", "taken down", "removed")
+        ), "the manager was not told the closed notice was already taken down"
+    else:
+        assert "closed" not in extra
+    assert not await _is_open(db_path)
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/signup open" in line
+    assert "refused for Manager (<@42>)" in line
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: any other fault from the post is still caught and its text shown",
+)
+async def test_a_signup_post_fault_goes_to_the_failure_path(tmp_path):
+    """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
+    path, the window stays closed, and no reply carries the error's text."""
+    db_path = await _seed(tmp_path)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    interaction._signup_channel.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
+
+    with pytest.raises(RuntimeError):
+        await _open(cog, interaction)
+
+    assert "gateway closed" not in _replied(interaction)
+    assert not await _is_open(db_path)
+    assert not any("Success" in line for line in _lines(cog))
+
+
+#: Every refusal `/signup open` makes: how the server is seeded, how the interaction is built,
+#: the arguments, and a fragment of the reply.
+SIGNUP_OPEN_REFUSALS = [
+    pytest.param({"test_mode": True}, {}, {}, "test mode", id="test-mode"),
+    pytest.param({"config": False}, {}, {}, "not configured", id="not-configured"),
+    pytest.param({"signups_open": True}, {}, {}, "already open", id="already-open"),
+    pytest.param({"stage": "PLACEMENTS"}, {}, {}, "can only be opened", id="wrong-stage"),
+    pytest.param({"channel": None}, {}, {}, "put right", id="configuration-incomplete"),
+    pytest.param({"slots": 0}, {}, {}, "time slot", id="no-time-slots"),
+    pytest.param({}, {}, {"close_time": "next tuesday-ish"}, "", id="unparseable-close-time"),
+    pytest.param({}, {}, {"track_ids": "1, 99999"}, "99999", id="unknown-track"),
+    pytest.param({}, {"channel_found": False}, {}, "not found", id="channel-gone"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason="#442: a /signup open refusal writes no log line")
+@pytest.mark.parametrize("seed, built, args, said", SIGNUP_OPEN_REFUSALS)
+async def test_every_signup_open_refusal_reaches_the_log_channel(
+    tmp_path, seed, built, args, said
+):
+    """Each refusal answers the manager as before, opens nothing, and writes one line in the
+    standard form."""
+    db_path = await _seed(tmp_path, **seed)
+    cog = _cog(db_path)
+    interaction = _interaction(**built)
+    interaction.client = cog.bot
+
+    await _open(cog, interaction, **args)
+
+    assert said in _replied(interaction)
+    interaction._signup_channel.send.assert_not_awaited()
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/signup open" in line
+    assert "refused for Manager (<@42>)" in line
 
 
 # ---------------------------------------------------------------------------
