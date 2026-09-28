@@ -2698,6 +2698,33 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
     assert "render failed" not in reply and "disk full" not in reply
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: an amendment channel that cannot be reached raises no named results error, "
+    "and is reported by the amendment's own AMEND_FAILED line",
+)
+async def test_an_unreachable_amendment_channel_is_reported_as_a_named_results_error(tmp_path):
+    """The appeals stage is posted into the amendment's one channel. Where that channel cannot
+    be reached, results raises its own named error, so the one failure path carries it: the
+    reply gives results' own words as the fault, and the standard failure line names the
+    error's type, as every failure line does."""
+    db_path = await _make_db(tmp_path, name="amend_channel_unreachable_named")
+    state = _state(db_path, staged=[_penalty()])
+    await _open_amendment(state)
+    # No guild, so the amendment's channel cannot be reached to post the appeals stage in.
+    interaction = _interaction(guild=False, state=state)
+    revert, close = _undone()
+
+    with revert, close:
+        await _run(finalize_penalty_review, state, interaction)
+
+    reply = str(interaction.followup.send.await_args.args[0])
+    assert reply == _fault_reply(UNREACHABLE, f"The round was put back as it was. {RE_RUN}")
+    notice = _failed_notice(state)
+    assert notice.splitlines()[0] == _failure_head("AmendmentChannelUnreachableError")
+    assert "RuntimeError" not in notice
+
+
 def _not_yet_put_back(where: str):
     """Mark the log-line half of a case: the reply already says it."""
     if where == "log line":
