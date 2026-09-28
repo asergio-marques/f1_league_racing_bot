@@ -531,3 +531,42 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     assert "Bahrain International Circuit" in values, "the old value is not stated"
     assert NEW_TRACK in values, "the new value is not stated"
 
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a /round amend confirmation that fails outside amend_round leaves its view "
+    "running, so its lapse is recorded as well",
+)
+@pytest.mark.parametrize("where", ["after amending", "before amending"])
+async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tmp_path, where):
+    """A fault in the Confirm press anywhere but the amendment itself — putting the rounds back
+    in order after the round was moved, or reading the round before it — still stops the
+    buttons. Left running, the view would lapse two minutes later and record that nothing was
+    changed, beside the failure it already recorded, even where the round was changed."""
+    import sqlite3
+
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path, attendance=False)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
+    fault = sqlite3.OperationalError("database is locked")
+    if where == "after amending":
+        cog.bot.season_service.renumber_rounds = AsyncMock(side_effect=fault)
+    else:
+        cog.bot.season_service.get_round = AsyncMock(side_effect=fault)
+    interaction = _interaction()
+    _recording(cog, interaction)
+    view = _view(cog, [("scheduled_at", later)])
+
+    # As discord.py runs a press: a callback that raises goes to the view's `on_error`.
+    try:
+        await view.confirm.callback(interaction)
+    except Exception as exc:  # noqa: BLE001 — handed on as the library hands it on
+        await view.on_error(interaction, exc, view.confirm)
+
+    assert view.is_finished(), "the buttons are still live, so the view will lapse as well"
+    [line] = _lines(cog)
+    assert line.startswith("❌ ")
+    assert f"failed for <@{USER_ID}>" in line
+    assert "OperationalError" in line
+    assert "database is locked" not in line
