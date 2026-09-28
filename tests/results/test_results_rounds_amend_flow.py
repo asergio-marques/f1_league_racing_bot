@@ -596,9 +596,6 @@ async def test_a_failed_write_is_reported_and_tidied_up(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a paste nobody sent is still logged as AMEND_TIMEOUT"
-)
 async def test_a_timed_out_amendment_writes_nothing_and_tidies_up(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_timeout")
     channel = _amend_channel()
@@ -632,9 +629,6 @@ async def test_a_paste_nobody_sends_tells_the_manager_it_expired(tmp_path):
     _told_it_expired(interaction, "no results were pasted within 5 minutes")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a cancel is still logged as AMEND_CANCELLED"
-)
 async def test_cancelling_writes_nothing_and_tidies_up(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_cancel")
     channel = _amend_channel()
@@ -927,9 +921,6 @@ async def test_the_cancel_button_still_listens_once_the_paste_is_in(tmp_path):
     assert view.is_finished() is False
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a cancel is still logged as AMEND_CANCELLED"
-)
 async def test_cancelling_while_the_configuration_is_being_chosen_stops_the_amendment(tmp_path):
     """**The last window in which stopping costs nothing** (#345). The press set its flag after
     the loop had read it, so the amendment went on to commit while the manager was told it had
@@ -995,9 +986,6 @@ async def test_a_finished_amendment_whose_channel_survived_does_not_block_the_ne
         assert [r[0] for r in await cursor.fetchall()] == [AMEND_CHANNEL]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a choice nobody made is still logged as AMEND_TIMEOUT"
-)
 async def test_a_configuration_nobody_chooses_times_out_like_a_paste_nobody_sends(tmp_path):
     """The picker has no timeout of its own, so a manager who walked away held the channel and
     its row — and every later amendment of the session — until the bot restarted."""
@@ -1500,9 +1488,6 @@ async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tm
     assert "database is locked" not in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a report stage that cannot open is not reported as a failure"
-)
 async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
     """Stage one is written, and the report stage cannot be opened. The amendment is undone,
     the admin told the plain kind, that the round was put back, and to re-run, and the log
@@ -1532,9 +1517,6 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
     assert "no channel" not in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed cancel writes no line, and a failed report stage two"
-)
 @pytest.mark.parametrize("case", ["cancel-revert-fails", "report-stage-fails"])
 async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path, case):
     """Cancel is pressed after stage one and the round cannot be put back: the presser is told
@@ -1845,9 +1827,6 @@ async def _cancelled_or_lapsed(case: str, tmp_path):
     return cog, "cancelled", by
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: an amendment's cancels and lapses are not in the standard forms"
-)
 @pytest.mark.parametrize(
     "case",
     [

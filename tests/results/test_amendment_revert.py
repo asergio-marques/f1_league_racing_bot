@@ -605,9 +605,6 @@ async def _cancel(db_path, bot, guild):
         return await cancel_amendment(bot, ROUND_ID, cancelled_by=77)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: cancel_amendment still posts the cancel line itself"
-)
 async def test_cancelling_puts_the_round_back_and_closes_the_channel(tmp_path):
     db_path = await _db(tmp_path, "cancel_reverts")
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])

@@ -46,7 +46,7 @@ from leaguebot.core.utils.league_server import (
     LeagueView,
     guild_of,
 )
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.season_gate import season_for_command
 
@@ -2341,6 +2341,27 @@ class ResultsCog(commands.Cog):
         stage_one_writing: list[bool] = [False]
         # The round, for the view below: a check made out here does not reach inside it.
         amended_round_id = rnd.id
+        # Who pressed Cancel, which may be a league manager other than the opener: the cancel
+        # line names whoever pressed it.
+        cancelled_by: list[discord.abc.User | None] = [None]
+        #: The amendment as its log lines name it.
+        what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
+        from leaguebot.results.services.result_submission_service import (
+            AMENDMENT_RE_RUN,
+            ROUND_PUT_BACK,
+            amendment_fault_reply,
+        )
+
+        async def _log_amend_failed(error: BaseException, where: str) -> None:
+            """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words."""
+            try:
+                await self.bot.output_router.post_log(
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
+                    f"round {rnd.round_number} session {sessions_text}\n"
+                    f"  {where}; fault: {type(error).__name__}. The details are in the host's log."
+                )
+            except Exception:  # noqa: BLE001 — the failure is still in the host's log
+                log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
 
         class _CancelView(LeagueView):
             def __init__(self_v) -> None:
@@ -2380,16 +2401,24 @@ class ResultsCog(commands.Cog):
                         undone = await cancel_amendment(
                             self.bot, amended_round_id, cancelled_by=bi.user.id
                         )
-                    except Exception:
+                    except Exception as exc:  # noqa: BLE001 — reported to the presser, and logged
                         log.exception("amend: cancelling round %s failed", amended_round_id)
+                        await _log_amend_failed(exc, "cancelled, but the round could not be put back")
                         await bi.followup.send(
-                            "❌ The round could not be put back just now. The bot will "
-                            "retry within a few minutes and say so in the log channel.",
+                            amendment_fault_reply(
+                                describe_fault(exc),
+                                "The round could not be put back yet; the bot tries again "
+                                "within a few minutes. Restarting the bot retries that.",
+                            ),
                             ephemeral=True,
                         )
                         return
                     if undone:
                         self_v.stop()
+                        await record_abandoned(
+                            self.bot, bi.user, what=what_amended, lapsed=False,
+                            detail=ROUND_PUT_BACK,
+                        )
                     else:
                         await bi.followup.send(
                             "ℹ️ Too late to cancel — the amendment is already being "
@@ -2397,6 +2426,7 @@ class ResultsCog(commands.Cog):
                             ephemeral=True,
                         )
                     return
+                cancelled_by[0] = bi.user
                 cancelled_flag[0] = True
                 cancelled_event.set()
                 await bi.response.send_message("Amendment cancelled.", ephemeral=True)
@@ -2461,6 +2491,24 @@ class ResultsCog(commands.Cog):
                 except discord.HTTPException:
                     log.warning("amend: could not reply to the admin of round %s", rnd.id)
 
+        async def _abandoned(*, lapsed: bool, reply: str) -> None:
+            """Record an amendment cancelled, or lapsed, before anything was written, and tidy up.
+
+            A lapse names who started it; a cancel, who pressed Cancel.
+            """
+            await record_abandoned(
+                self.bot,
+                interaction.user if lapsed else (cancelled_by[0] or interaction.user),
+                what=what_amended,
+                lapsed=lapsed,
+                detail=f"Nothing was written. {AMENDMENT_RE_RUN}",
+            )
+            await _cleanup_channel()
+            try:
+                await interaction.followup.send(reply, ephemeral=True)
+            except discord.HTTPException:
+                log.warning("amend: could not reply to the admin of round %s", rnd.id)
+
         import asyncio as _asyncio
         _AMEND_TIMEOUT_S = 300  # 5 minutes, for each paste and each choice of configuration
 
@@ -2500,15 +2548,13 @@ class ResultsCog(commands.Cog):
                 t.cancel()
 
             if not done:
-                await _end(
-                    "AMEND_TIMEOUT", session_type=st, reply=_expired("no results were pasted")
-                )
+                await _abandoned(lapsed=True, reply=_expired("no results were pasted"))
                 return
             if cancel_task in done:
                 # The button was pressed: it sets the flag before the event, so both hold.
                 cancelled_flag[0] = True
             if cancelled_flag[0]:
-                await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
+                await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
                 return
 
             msg = done_task.result()
@@ -2604,13 +2650,12 @@ class ResultsCog(commands.Cog):
                 for _t in _pending:
                     _t.cancel()
                 if not _done:
-                    await _end(
-                        "AMEND_TIMEOUT", session_type=st,
-                        reply=_expired("no points configuration was chosen"),
+                    await _abandoned(
+                        lapsed=True, reply=_expired("no points configuration was chosen")
                     )
                     return
                 if cancelled_flag[0]:
-                    await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
+                    await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
                     return
                 config_name = cfg_view.selected or config_names[0]
 
@@ -2632,7 +2677,7 @@ class ResultsCog(commands.Cog):
         # **Cancelled at the last moment** (#345). Read again here, the last point at which
         # stopping costs nothing: from the next line the write is under way.
         if cancelled_flag[0]:
-            await _end("AMEND_CANCELLED", reply="ℹ️ Amendment cancelled.")
+            await _abandoned(lapsed=False, reply="ℹ️ Amendment cancelled.")
             return
 
         stage_one_writing[0] = True
@@ -2719,19 +2764,29 @@ class ResultsCog(commands.Cog):
                 division_name=div.name,
                 session_types=chosen,
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
             # With no report stage on screen there is no way to finish the amendment, so it is
-            # undone now rather than left half-applied until the sweep (#345).
+            # undone now rather than left half-applied until the sweep (#345). One failure
+            # makes one line: `cancel_amendment` writes none of its own.
             log.exception("amend: could not open the report stage of round %s", rnd.id)
             try:
-                await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
-            except Exception:
+                undone = await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
+            except Exception:  # noqa: BLE001 — left to the sweep, with the snapshot intact
                 log.exception("amend: could not revert round %s", rnd.id)
+                became = (
+                    "The round could not be put back yet; the bot tries again within a few "
+                    "minutes."
+                )
+            else:
+                became = (
+                    "The report stage could not be opened, so the amendment has been undone "
+                    f"and the round put back as it was. {AMENDMENT_RE_RUN}"
+                    if undone
+                    else f"The amendment had already ended, so nothing more was undone. {AMENDMENT_RE_RUN}"
+                )
+            await _log_amend_failed(exc, "the report stage could not be opened")
             await interaction.followup.send(
-                "❌ The corrected results were recorded, but the report stage could not "
-                "be opened, so the amendment has been undone. Check the log channel, then "
-                "re-run `/results rounds amend`.",
-                ephemeral=True,
+                amendment_fault_reply(describe_fault(exc), became), ephemeral=True
             )
             return
         await interaction.followup.send(

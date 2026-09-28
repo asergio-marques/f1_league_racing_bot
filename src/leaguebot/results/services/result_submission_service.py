@@ -2871,9 +2871,13 @@ async def cancel_amendment(bot: LeagueBot, round_id: int, *, cancelled_by) -> bo
     Returns False where it was too late — the appeal stage is already committing it — or the
     amendment is otherwise no longer open; nothing is done then. Raises where the revert itself
     failed, having handed the amendment to the sweep with the snapshot intact.
+
+    **It writes no line to the log channel.** Its callers do: the Cancel Amendment button
+    records the cancel in the standard form, naming whoever pressed it, and a report stage that
+    could not open records the one failure it was. Written here too, either would make two
+    lines of one outcome. *cancelled_by* is kept for the host's log.
     """
     db_path: str = bot.db_path
-    session_types = await _amendment_sessions_of(db_path, round_id)
     deadline = await _claim_amendment(db_path, round_id)
     if deadline is None:
         return False
@@ -2885,16 +2889,7 @@ async def cancel_amendment(bot: LeagueBot, round_id: int, *, cancelled_by) -> bo
 
     guild = await league_guild(bot)
     await _close_amendment_channel(db_path, guild, round_id, reason="Amendment cancelled")
-    try:
-        rctx = await _get_round_context(db_path, round_id)
-        await bot.output_router.post_log(
-            f"<@{cancelled_by}> | AMEND_CANCELLED | Notice\n"
-            f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-            f"  round: {rctx['round_number']}, sessions: {_sessions_text(session_types)}\n"
-            "  The round has been put back as it was."
-        )
-    except Exception:  # noqa: BLE001 — the revert stands whether or not it was announced
-        log.exception("cancel_amendment: could not announce the revert of round %s", round_id)
+    log.info("cancel_amendment: round %s put back, cancelled by %s", round_id, cancelled_by)
     return True
 
 

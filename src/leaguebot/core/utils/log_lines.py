@@ -120,25 +120,31 @@ async def refuse(
 
 async def record_abandoned(
     bot: Any,
-    member_id: int | None,
+    member: int | discord.abc.User | None,
     *,
     what: str,
     lapsed: bool,
     detail: str | None = None,
 ) -> None:
-    """Record that *what* was cancelled by *member_id*, or lapsed unconfirmed, having been
-    started by them.
+    """Record that *what* was cancelled by *member*, or lapsed unconfirmed, having been started
+    by them.
 
-    *detail*, where given, goes beneath the line — what became of the change and what to do
-    next. The member is found on the league's server (`name_of_member`), so a scheduled lapse
-    names them as a press does. Never raises.
+    *member* is the member who pressed or started it: the interaction's own member where there
+    is one, named by the display name it carries, or their id — a scheduled lapse has only
+    that — found on the league's server (`name_of_member`). *detail*, where given, goes beneath
+    the line: what became of the change and what to do next. Never raises.
     """
     try:
-        member = await name_of_member(bot, member_id)
+        if member is None or isinstance(member, int):
+            named = await name_of_member(bot, member)
+        elif isinstance(getattr(member, "display_name", None), str):
+            named = member_named(member.display_name, member.id)
+        else:
+            named = await name_of_member(bot, member.id)
         line = (
-            f"⌛ {what} lapsed unconfirmed (started by {member})"
+            f"⌛ {what} lapsed unconfirmed (started by {named})"
             if lapsed
-            else f"↩️ {what} cancelled by {member}"
+            else f"↩️ {what} cancelled by {named}"
         )
         if detail:
             line += "".join(f"\n  {text}" for text in detail.splitlines())
