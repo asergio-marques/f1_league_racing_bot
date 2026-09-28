@@ -532,9 +532,10 @@ beside it so that each standard line is formed in one place. Like
 `report_failure`, neither raises, and `refuse` attempts its reply and its line each on its own.
 
 **Every line for the log channel goes through `OutputRouter.post_log`**, which divides a record
-too long for one message on its line breaks; a reply too long for one message is sent in parts
-through `chunk_message` (`core/utils/messages.py`). A list of refused lines is never cut off,
-nor refused by Discord for its length.
+too long for one message on its line breaks where it can, and at the limit where one line alone
+is too long; a reply too long for one message is sent in parts through `chunk_message`
+(`core/utils/messages.py`), which does the dividing for both. That is how a record meets the core
+specification's "The record of what changed" on length.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
 command does not catch itself reaches `report_failure` through the command tree. The tree steps
