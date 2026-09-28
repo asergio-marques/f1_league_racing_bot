@@ -291,3 +291,220 @@ async def test_a_confirmation_the_rules_still_allow_goes_through(tmp_path):
     cog.bot.amendment_service.amend_round.assert_awaited_once()
     # And the whole change set went in one call, not one call per field.
     assert cog.bot.amendment_service.amend_round.await_args.args[2] == [("track_name", NEW_TRACK)]
+
+
+# ---------------------------------------------------------------------------
+# A failed confirmation, and every outcome, reach the log channel (#442)
+# ---------------------------------------------------------------------------
+
+
+def _recording(cog, interaction):
+    """Let the refusal, the cancel and the failure reach a log channel, naming the member."""
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "round amend"
+    cog.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    member = MagicMock()
+    member.display_name = "Manager"
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=member)
+    cog.bot.get_guild = MagicMock(return_value=guild)
+
+
+def _lines(cog) -> list[str]:
+    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+
+
+def _answered(interaction) -> MagicMock:
+    """A button press nothing has answered yet."""
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+def _all_replies(interaction) -> str:
+    calls = interaction.followup.send.await_args_list
+    if isinstance(interaction.response.send_message, AsyncMock):
+        calls = interaction.response.send_message.await_args_list + calls
+    return "\n".join(str(call.args[0]) for call in calls if call.args)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a failed /round amend confirmation still replies with the error"
+)
+async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path):
+    """A fault while the amendment is applied is the bot's: the standard failure reply naming
+    `/round amend` and the round, one line in the log channel, and the buttons stopped."""
+    import sqlite3
+
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock(
+        side_effect=sqlite3.OperationalError("database is locked")
+    )
+    interaction = _interaction()
+    _recording(cog, interaction)
+    view = _view(cog, [("track_name", NEW_TRACK)])
+
+    await view.confirm.callback(interaction)
+
+    reply = _reply(interaction)
+    assert "❌ `/round amend` of round 1 stopped on a fault in the bot" in reply
+    assert "partly done" in reply
+    assert "database is locked" not in reply
+    assert "The amendment failed" not in reply
+    [line] = _lines(cog)
+    assert "`/round amend` of round 1 failed for <@88>" in line
+    assert "OperationalError" in line
+    assert view.is_finished()
+
+
+def _pending(track: str | None = "Bahrain International Circuit"):
+    from leaguebot.core.models.round import RoundFormat
+
+    return SimpleNamespace(
+        divisions=[
+            SimpleNamespace(
+                name=DIVISION,
+                rounds=[
+                    {
+                        "round_number": 1,
+                        "format": RoundFormat.NORMAL,
+                        "track_name": track,
+                        "scheduled_at": datetime(2026, 12, 1, 18, 0),
+                    }
+                ],
+            )
+        ]
+    )
+
+
+#: Every refusal `/round amend` makes, on either path, and each of its Confirm button's: the
+#: case, the arguments, and a fragment of the reply.
+ROUND_AMEND_REFUSALS = [
+    pytest.param("command", {}, "Provide at least one field", id="no-field-given"),
+    pytest.param("no season", {"track": NEW_TRACK}, "No season is being raced", id="no-season"),
+    pytest.param("command", {"division": "Nowhere", "track": NEW_TRACK}, "not found",
+                 id="unknown-division"),
+    pytest.param("command", {"round_number": 9, "track": NEW_TRACK}, "not found",
+                 id="unknown-round"),
+    pytest.param("command", {"track": "Nowhere Ring"}, "Unknown track", id="unknown-track"),
+    pytest.param("command", {"scheduled_at": "soon"}, "Invalid datetime", id="bad-datetime"),
+    pytest.param("command", {"format": "DRAG"}, "Invalid format", id="bad-format"),
+    pytest.param("started", {"track": NEW_TRACK}, "already started", id="the-rules-refuse"),
+    pytest.param("pending", {"division": "Nowhere", "track": NEW_TRACK}, "pending setup",
+                 id="pending-unknown-division"),
+    pytest.param("pending", {"round_number": 9, "track": NEW_TRACK}, "pending setup",
+                 id="pending-unknown-round"),
+    pytest.param("pending", {"track": "Nowhere Ring"}, "Unknown track",
+                 id="pending-unknown-track"),
+    pytest.param("pending", {"scheduled_at": "soon"}, "Invalid datetime",
+                 id="pending-bad-datetime"),
+    pytest.param("pending", {"format": "DRAG"}, "Invalid format", id="pending-bad-format"),
+    pytest.param("pending no track", {"format": "NORMAL"}, "requires a track",
+                 id="pending-format-needs-a-track"),
+    pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
+    pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
+    pytest.param("confirm window passed", {}, "can no longer be amended",
+                 id="confirm-no-longer-allowed"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason="#442: a /round amend refusal writes no log line")
+@pytest.mark.parametrize("case, kwargs, said", ROUND_AMEND_REFUSALS)
+async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case, kwargs, said):
+    """Each refusal answers the manager as before, changes nothing, and writes one line in the
+    standard refusal form."""
+    started = case == "started"
+    soon = case == "confirm window passed"
+    when = datetime.now(timezone.utc) + (
+        timedelta(hours=-1) if started else timedelta(hours=1) if soon else timedelta(days=30)
+    )
+    path = await _db(tmp_path, scheduled_at=when)
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    if case.startswith("confirm"):
+        _answered(interaction)
+        if case == "confirm by another":
+            interaction.user.id = USER_ID + 1
+        if case == "confirm round gone":
+            cog.bot.season_service.get_round = AsyncMock(return_value=None)
+        await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+    else:
+        if case == "no season":
+            cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
+        if case.startswith("pending"):
+            cog._get_pending = MagicMock(
+                return_value=_pending(track=None if case == "pending no track" else "Bahrain")
+            )
+            cog._snapshot_pending = AsyncMock()
+        kwargs = dict(kwargs)
+        division = kwargs.pop("division", DIVISION)
+        round_number = kwargs.pop("round_number", 1)
+        await SeasonCog.round_amend.callback.__wrapped__(
+            cog, interaction, division, round_number, **kwargs
+        )
+
+    assert said in _all_replies(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "/round amend" in line
+    assert f"refused for Manager (<@{USER_ID}>)" in line
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a /round amend cancelled or left to lapse writes no log line"
+)
+@pytest.mark.parametrize("how", ["cancelled", "lapsed"])
+async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, how):
+    """`/round amend`'s confirmation, cancelled with its button or left for its two minutes:
+    one line in the standard form, naming the member who ran it, and nothing amended."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _answered(_interaction())
+    _recording(cog, interaction)
+    view = _view(cog, [("track_name", NEW_TRACK)])
+
+    if how == "cancelled":
+        await view.cancel.callback(interaction)
+    else:
+        await view.on_timeout()
+
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    [line] = _lines(cog)
+    head = line.splitlines()[0]
+    if how == "cancelled":
+        assert head.startswith("↩️ ")
+        assert "/round amend" in head
+        assert f"cancelled by Manager (<@{USER_ID}>)" in head
+    else:
+        assert head.startswith("⌛ ")
+        assert "/round amend" in head
+        assert f"lapsed unconfirmed (started by Manager (<@{USER_ID}>))" in head
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: the /round amend success line names the fields but not their values"
+)
+async def test_a_round_amend_logs_the_values_it_set(tmp_path):
+    """The success line names the member, `/round amend` and the round, and states beneath it
+    each field changed, from its old value to its new one."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+
+    [line] = _lines(cog)
+    assert "/round amend" in line
+    assert f"<@{USER_ID}>" in line
+    assert "round 1" in line.lower()
+    values = line.split("\n", 1)[1] if "\n" in line else ""
+    assert "Bahrain International Circuit" in values, "the old value is not stated"
+    assert NEW_TRACK in values, "the new value is not stated"
