@@ -253,10 +253,6 @@ async def test_the_rasteriser_check_is_not_cached(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failed image enable still names the error rather than the standard reply",
-)
 async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     """The configuration write and the flag are separate calls, so a failure between them
     would leave the module reading as on with nothing configured. The flag goes back down, and
@@ -273,10 +269,6 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     assert "disk full" not in replied
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failed image enable writes no failure line to the log channel",
-)
 async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
     """It is logged as the failure it is, once, and never as a success."""
     db_path = await _make_db(tmp_path)
@@ -302,10 +294,6 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
         pytest.param(
             False,
             id="the-write-fails",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#442: a failed image enable still names the error in its reply",
-            ),
         ),
         pytest.param(True, id="the-switch-off-also-fails"),
     ],

@@ -17,12 +17,18 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe
+from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import LeagueView, league_guild
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
+
+
+def _still_off(module: str) -> str:
+    """What a failed `/module enable` tells the member: the enable undid itself, and the next step."""
+    return f"The module is still off. Run `/module enable {module}` again once the fault is cleared."
+
 
 _MODULE_CHOICES = [
     app_commands.Choice(name="weather", value="weather"),
@@ -418,8 +424,8 @@ class ModuleCog(commands.Cog):
     ) -> None:
         # 1. Guard already-enabled
         if await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "⚠️ Weather module is already enabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Weather module is already enabled.", what=describe(interaction)
             )
             return
 
@@ -429,7 +435,8 @@ class ModuleCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        # 3. Atomically set flag + audit
+        # 3. Atomically set flag + audit. The two are one write, so a fault leaves the
+        # module off, and the command says so itself (see `report_failure`).
         now = datetime.now(timezone.utc).isoformat()
         try:
             async with get_connection(self.bot.db_path) as db:
@@ -444,10 +451,9 @@ class ModuleCog(commands.Cog):
                      json.dumps({"module": "weather"}), now),
                 )
                 await db.commit()
-        except Exception as exc:
-            await interaction.followup.send(
-                f"❌ Weather module enable failed: {exc}. Module remains disabled.",
-                ephemeral=True,
+        except Exception as exc:  # noqa: BLE001 — reported here, to say the module is still off
+            await report_failure(
+                interaction, exc, what=describe(interaction), outcome=_still_off("weather")
             )
             return
 
@@ -499,17 +505,20 @@ class ModuleCog(commands.Cog):
     ) -> None:
         # 1. Guard already-enabled
         if await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "⚠️ Results & Standings module is already enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "⚠️ Results & Standings module is already enabled.",
+                what=describe(interaction),
             )
             return
 
         # 2. Block if ACTIVE season exists (FR-003)
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Results & Standings module cannot be enabled once a season's placements are confirmed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -737,31 +746,34 @@ class ModuleCog(commands.Cog):
     ) -> None:
         # 1. Guard: R&S must be enabled first
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ The Attendance module requires the Results & Standings module to be enabled first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         # 2. Guard: no ACTIVE season
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Attendance module cannot be enabled once a season's placements are confirmed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         # 3. Guard: already enabled
         if await self.bot.module_service.is_attendance_enabled():
-            await interaction.response.send_message(
-                "⚠️ Attendance module is already enabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Attendance module is already enabled.", what=describe(interaction)
             )
             return
 
         await interaction.response.defer(ephemeral=True)
 
-        # 4. Atomically insert config row with defaults + audit entry
+        # 4. Atomically insert config row with defaults + audit entry. One write, so a fault
+        # leaves the module off, and the command says so itself (see `report_failure`).
         now = datetime.now(timezone.utc).isoformat()
         try:
             async with get_connection(self.bot.db_path) as db:
@@ -779,10 +791,9 @@ class ModuleCog(commands.Cog):
                     (interaction.user.id, str(interaction.user), now),
                 )
                 await db.commit()
-        except Exception as exc:
-            await interaction.followup.send(
-                f"❌ Attendance module enable failed: {exc}. Module remains disabled.",
-                ephemeral=True,
+        except Exception as exc:  # noqa: BLE001 — reported here, to say the module is still off
+            await report_failure(
+                interaction, exc, what=describe(interaction), outcome=_still_off("attendance")
             )
             return
 
@@ -802,8 +813,8 @@ class ModuleCog(commands.Cog):
         )
 
         if await self.bot.module_service.is_images_enabled():
-            await interaction.response.send_message(
-                "⚠️ Image module is already enabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Image module is already enabled.", what=describe(interaction)
             )
             return
 
@@ -823,11 +834,12 @@ class ModuleCog(commands.Cog):
                     (interaction.user.id, str(interaction.user), now),
                 )
                 await db.commit()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — undone, then reported to say the module is still off
+            # The flag goes back down first. Where that fails too the module cannot be said to be
+            # off, and the second fault goes to the command's failure path instead.
             await self.bot.module_service.set_images_enabled(False)
-            await interaction.followup.send(
-                f"❌ Image module enable failed: {exc}. Module remains disabled.",
-                ephemeral=True,
+            await report_failure(
+                interaction, exc, what=describe(interaction), outcome=_still_off("images")
             )
             return
 
@@ -929,8 +941,8 @@ class ModuleCog(commands.Cog):
     ) -> None:
         # Guard already-enabled
         if await self.bot.module_service.is_signup_enabled():
-            await interaction.response.send_message(
-                "⚠️ Signup module is already enabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Signup module is already enabled.", what=describe(interaction)
             )
             return
 

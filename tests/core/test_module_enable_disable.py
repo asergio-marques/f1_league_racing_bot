@@ -401,10 +401,6 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     assert cfg.autosack_threshold is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failed attendance enable still names the error rather than the standard reply",
-)
 async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):
     """The configuration and its audit entry are one write: where the second fails, the
     first is not kept either, and the league is told, in the standard failure reply, that the
@@ -458,10 +454,6 @@ async def _refuse_the_audit(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a weather enable that cannot be written still replies with the error's text",
-)
 async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The flag and its audit entry are one write, so the module stays off. The member gets
     the standard failure reply, saying the module is still off and what to do next, with no
@@ -532,7 +524,6 @@ MODULE_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a module enable or disable refusal writes no log line")
 @pytest.mark.parametrize("verb, module, setup, stage, said", MODULE_REFUSALS)
 async def test_every_module_enable_and_disable_refusal_reaches_the_log_channel(
     tmp_path, verb, module, setup, stage, said
