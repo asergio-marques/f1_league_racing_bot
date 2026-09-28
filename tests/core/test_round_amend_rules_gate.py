@@ -448,10 +448,12 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
     if case.startswith("pending"):
         # The season being set up is written through its snapshot, not the amendment service.
         cog._snapshot_pending.assert_not_awaited()
+    # The member refused is the one who pressed: on another's Confirm, member 89, not 88.
+    refused = USER_ID + 1 if case == "confirm by another" else USER_ID
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "/round amend" in line
-    assert f"refused for Manager (<@{USER_ID}>)" in line
+    assert f"refused for Manager (<@{refused}>)" in line
 
 
 @pytest.mark.parametrize("how", ["cancelled", "lapsed"])
