@@ -459,7 +459,8 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
 @pytest.mark.parametrize("how", ["cancelled", "lapsed"])
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, how):
     """`/round amend`'s confirmation, cancelled with its button or left for its two minutes:
-    one line in the standard form, naming the member who ran it, and nothing amended."""
+    one line in the standard form, naming the member who ran it, and nothing amended. Beneath
+    it the line says what became of the round, and what to do next."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     cog = _cog(path)
     cog.bot.amendment_service.amend_round = AsyncMock()
@@ -474,7 +475,8 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
 
     cog.bot.amendment_service.amend_round.assert_not_awaited()
     [line] = _lines(cog)
-    head = line.splitlines()[0]
+    head, *beneath = line.splitlines()
+    assert beneath == ["  Nothing was changed. Run `/round amend` again to start over."]
     if how == "cancelled":
         assert head.startswith("↩️ ")
         assert "/round amend" in head
@@ -525,3 +527,4 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     values = line.split("\n", 1)[1] if "\n" in line else ""
     assert "Bahrain International Circuit" in values, "the old value is not stated"
     assert NEW_TRACK in values, "the new value is not stated"
+
