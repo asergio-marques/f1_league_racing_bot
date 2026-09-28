@@ -54,6 +54,15 @@ def test_every_scenario_file_is_run() -> None:
         pytest.param("handoff-scenarios.js"),
         pytest.param("incremental-review-scenarios.js"),
         "ledger-scenarios.js",
+        pytest.param(
+            "nothing-lost-scenarios.js",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#483: a tester that does not show its changes since, or a changed fixture, still leaves"
+                " test entries in short; a re-check carries over questions the owner has answered; and a later"
+                " builder piece that returns nothing loses the earlier pieces' fixes, disputes and markers removed",
+            ),
+        ),
         pytest.param("recheck-scenarios.js"),
         "resume-scenarios.js",
         "tests-stage-scenarios.js",
