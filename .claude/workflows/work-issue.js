@@ -416,6 +416,12 @@ const commits = previous ? [...previous.commits] : []
 // agent re-reading the whole branch every round pays for it every round. A lane that returned
 // nothing is dropped from the map, and reviews in full next time, as one that has never run does.
 const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt : {}) }
+// The tests stage's lists as each of its reviewers, the issue reviewer and the product owner, was
+// last given them. A reviewer is given every entry with its scenario the first time, and after that
+// only the entries new or changed since in full, the rest in short: the long descriptions are most
+// of a round's prompt, and re-reading them every round is paid for every round. A lane that
+// returned nothing is dropped, and is given the whole list again.
+const listSeen = { ...(previous && previous.listSeen ? previous.listSeen : {}) }
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 let written = previous && previous.tests ? [...previous.tests] : []
@@ -774,9 +780,30 @@ ${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the p
 
 const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with the scenario and expectation it gives the owner. Name a test by its node id in a finding: a label can change before the gate. One marked alreadyPasses passes already: it is unmarked and must pass. A deleted one is gone, and says why. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
 const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ the builder changed, each under its label'
+// The tests stage's lists as a reviewer is given them: in full where it has not seen them, and
+// otherwise each entry new or changed since it last did in full, and the rest in short. An entry is
+// compared as the Gate 2 report compares it, on what it says.
+const changedSince = (entry, before, keyOf) => {
+  const was = before.find(b => keyOf(b) === keyOf(entry))
+  return !was || was.change !== entry.change || DESCRIBED.some(f => described(was, f) !== described(entry, f))
+}
+const listFor = (lane, tests, support) => {
+  if (!tests) return ''
+  const seen = listSeen[lane]
+  if (!seen) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
+  const testKey = t => bareId(t.nodeid)
+  const newTests = tests.filter(t => changedSince(t, seen.tests || [], testKey))
+  const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey))
+  const short = [
+    ...tests.filter(t => !newTests.includes(t)).map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(filled(t.criterion) ? { criterion: t.criterion } : {}) })),
+    ...support.filter(x => !newSupport.includes(x)).map(x => ({ label: x.label, file: x.file, name: x.name, change: x.change })),
+  ]
+  return `${section(`${TESTS_WRITTEN}. You have reviewed the list before: these are the tests new or changed since`, newTests)}${section(`${SUPPORT_WRITTEN}, new or changed since you last reviewed the list`, newSupport)}${section('Unchanged since you last reviewed the list, and given in short: each says what it did when you last saw it. Where the commits since change the code of one, hold it to that description still', short)}`
+}
+
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
-const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}${section('The tester\'s report', testReport)}`
+const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
 
 // The summary covers the whole work, however little of it a later round reviews.
 const summaryAsk = () => {
@@ -786,7 +813,7 @@ const summaryAsk = () => {
   return `If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. ${whole} Otherwise leave summary empty.`
 }
 
-const productPrompt = (k, questions, testReport, tests, support) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport, tests, support) => `Job 2 — a round of the branch. ${shared(k, 'product')} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support)}${section('The tester\'s report', testReport)}`
 
 const testsTesterPrompt = (k, tests) => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
@@ -1035,19 +1062,24 @@ const testsProblems = t => {
   return [...problems, ...listProblems(t, written, supportWritten), ...t.otherFailures, ...t.uncommitted.map(u => `not committed: ${u}`)]
 }
 
-// A builder with no test changed yet has nothing for the tester to check. The tester runs no
+// A builder with no test changed yet has nothing for the tester to check. The tester is given each
+// test's node id, change and whether it passes already, which is all it runs from. The tester runs no
 // deleted test, and runs none at all where every change is a deletion: an empty list of targets
 // would be the whole suite.
 const reviewTests = async (k, questions) => {
   const run = written.filter(w => w.change !== 'deleted')
   const test = written.length || supportWritten.length
-    ? await agent(testsTesterPrompt(k, run), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: TESTS_CHECK_SCHEMA })
+    ? await agent(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) }))), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: TESTS_CHECK_SCHEMA })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const [issueResult, productResult] = await parallel([
     () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, test, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
+  for (const [lane, result] of [['issue', issueResult], ['product', productResult]]) {
+    if (result) listSeen[lane] = { tests: written, support: supportWritten }
+    else delete listSeen[lane]
+  }
   const problems = testsProblems(test)
   return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && !problems.length }
 }
@@ -1311,7 +1343,7 @@ return {
   summary,
   tests: written,
   support: supportWritten,
-  ...(stage === 'tests' ? { shown, counts: counts(), report: gateReport(lastTest, summary) } : {}),
+  ...(stage === 'tests' ? { shown, counts: counts(), report: gateReport(lastTest, summary), listSeen } : {}),
   lastTest,
   lastFailures,
   openMaterial: [...ledger.values()].filter(materialPending),

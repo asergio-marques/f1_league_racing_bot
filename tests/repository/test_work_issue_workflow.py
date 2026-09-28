@@ -52,13 +52,7 @@ def test_every_scenario_file_is_run() -> None:
         "build-stage-scenarios.js",
         "check-stage-scenarios.js",
         pytest.param("handoff-scenarios.js"),
-        pytest.param(
-            "incremental-review-scenarios.js",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#483: later review rounds still re-review the whole branch, and the tests stage's list is given in full every round",
-            ),
-        ),
+        pytest.param("incremental-review-scenarios.js"),
         "ledger-scenarios.js",
         pytest.param(
             "recheck-scenarios.js",
