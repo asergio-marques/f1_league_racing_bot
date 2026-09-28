@@ -242,4 +242,31 @@ module.exports = {
     () => bothRunSince(changes([], [], [], ''), 'boom'),
     prompt => full(prompt, 'SCEN-A', 'EXP-A', 'SCEN-B', 'EXP-B'),
   ),
+  // A run carried on after the owner answered questions holds the whole branch to the answers in its
+  // first round, and only then limits its review to the commits since.
+  resumedRunHoldsBranchToNewDecisions: {
+    args: {
+      ...B,
+      decisions: 'ANSWERS',
+      previous: {
+        stage: 'build', status: 'question', lastRound: 1, ledger: [], citations: [], separateDefects: [], lastFailures: [], tests: [],
+        commits: ['c1', 'c2', 'c3', 'c4', 'c5'].map(sha => ({ sha, subject: 's' })),
+        reviewedAt: { issue: 5, code: 5, product: 5 },
+      },
+    },
+    respond(label, prompt) {
+      const k = round(label)
+      if (label.endsWith(':builder')) return k === 2
+        ? builder({ tests: [], commits: [{ sha: 'c6', subject: 'answered' }] })
+        : builder({ tests: [], commits: [{ sha: 'c7', subject: 'fixed code-2-1' }], fixed: [{ id: 'code-2-1', commit: 'c7' }] })
+      if (/:(issue|code|product)$/.test(label)) {
+        const decided = /decisions[^.]*make wrong[^.]*wherever on the branch/i.test(prompt)
+        if (k === 2 && !(incremental(prompt, 'c5') && decided)) throw new Error(`${label} is not told that earlier work the owner's decisions make wrong is in scope wherever it sits`)
+        if (k === 3 && !(incremental(prompt, 'c6') && !/wherever on the branch/i.test(prompt))) throw new Error(`${label} is told again to hold the whole branch to the decisions`)
+        if (label.endsWith(':code')) return k === 2 ? review({ findings: [finding('code-2-1')] }) : review({ prior: [{ id: 'code-2-1', status: 'fixed', grounds: 'ok' }] })
+      }
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 3 && labels.includes('build:r3:code'),
+  },
 }
