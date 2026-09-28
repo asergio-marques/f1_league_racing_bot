@@ -78,7 +78,6 @@ async def _audit_count(db_path: str) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: record_change_on is not written yet")
 async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
     """A change and its record land together: the row is written on the caller's connection,
     inside the caller's transaction, and is not committed by the record — so it goes if the
