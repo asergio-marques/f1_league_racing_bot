@@ -630,7 +630,7 @@ class WizardService:
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
-            log.warning("withdraw: driver transition failed for %s", discord_user_id)
+            log.warning("withdraw: driver transition failed for %s", discord_user_id, exc_info=True)
 
         # Post cancellation notice and hold channel
         await self._trigger_channel_hold(
@@ -720,7 +720,7 @@ class WizardService:
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
         except Exception:
-            log.warning("reject_signup: driver transition failed for %s", discord_user_id)
+            log.warning("reject_signup: driver transition failed for %s", discord_user_id, exc_info=True)
 
         await self._trigger_channel_hold(
             discord_user_id, guild,
@@ -939,7 +939,7 @@ class WizardService:
         except Exception:
             log.warning(
                 "handle_inactivity_timeout: transition failed for %s",
-                discord_user_id,
+                discord_user_id, exc_info=True,
             )
 
         if guild is not None:
@@ -993,7 +993,7 @@ class WizardService:
         except Exception:
             log.warning(
                 "handle_member_remove: transition failed for %s",
-                discord_user_id,
+                discord_user_id, exc_info=True,
             )
 
         # Delete channel immediately (no hold)
@@ -1773,7 +1773,7 @@ class WizardService:
         except Exception:
             log.warning(
                 "_correction_timeout_callback: transition failed for %s",
-                discord_user_id,
+                discord_user_id, exc_info=True,
             )
             return
 

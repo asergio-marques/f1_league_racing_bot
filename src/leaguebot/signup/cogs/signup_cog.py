@@ -770,7 +770,7 @@ class SignupCog(commands.Cog):
         except Exception:
             log.warning(
                 "on_member_remove: failed to post log for %s/%s",
-                member.guild.id, member.id,
+                member.guild.id, member.id, exc_info=True,
             )
 
     # ── /signup (root group) ───────────────────────────────────────────
@@ -902,7 +902,7 @@ class SignupCog(commands.Cog):
                 try:
                     await old_channel.edit(overwrites={})
                 except Exception:
-                    log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id)
+                    log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id, exc_info=True)
 
         # Apply overwrites to new channel. The server config is read here for the
         # interaction role; it used to be read further up, by the guard against reusing
@@ -1550,7 +1550,7 @@ class SignupCog(commands.Cog):
             except discord.NotFound:
                 pass
             except Exception:
-                log.warning("signup_open: could not delete closed status message")
+                log.warning("signup_open: could not delete closed status message", exc_info=True)
 
         if track_list:
             track_names = [track_name_map[t] for t in track_list]
