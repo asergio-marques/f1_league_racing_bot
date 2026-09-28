@@ -1622,12 +1622,6 @@ async def test_a_failed_amendment_reply_that_cannot_be_sent_writes_one_line(tmp_
 
 def _not_yet_put_back(where: str):
     """Mark the log-line half of a case: the reply already says it."""
-    if where == "log line":
-        return pytest.mark.xfail(
-            strict=True,
-            reason="#442: the AMEND_FAILED line of an amendment not yet put back does not end on "
-            "running it again once it has been",
-        )
     return ()
 
 

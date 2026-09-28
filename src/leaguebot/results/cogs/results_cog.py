@@ -2371,20 +2371,31 @@ class ResultsCog(commands.Cog):
         )
 
         async def _log_amend_failed(
-            error: BaseException, where: str, *, member: discord.abc.User | None = None
+            error: BaseException,
+            where: str,
+            *,
+            member: discord.abc.User | None = None,
+            not_put_back: str | None = None,
         ) -> None:
             """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words.
 
             It names *member*, whoever pressed what failed: a Cancel Amendment press may be a
             league manager's other than the opener's. Left out, it is the member who ran the
             command.
+
+            *not_put_back* is what the reply says became of a round that could not be put back
+            yet, given where that is so: the line ends on it, in plain text, so that whoever
+            reads the log rather than the reply also waits for the round to be put back before
+            running the command again, a re-run until then being refused.
             """
             who = member if member is not None else interaction.user
+            became = f"\n  {not_put_back.replace('`', '')}" if not_put_back else ""
             try:
                 await self.bot.output_router.post_log(
                     f"{who.display_name} (<@{who.id}>) | AMEND_FAILED | "
                     f"round {rnd.round_number} session {sessions_text}\n"
                     f"  {where}; fault: {type(error).__name__}. The details are in the host's log."
+                    + became
                 )
             except Exception:  # noqa: BLE001 — the failure is still in the host's log
                 log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
@@ -2446,7 +2457,10 @@ class ResultsCog(commands.Cog):
                     except Exception as exc:  # noqa: BLE001 — reported to the presser, and logged
                         log.exception("amend: cancelling round %s failed", amended_round_id)
                         await _log_amend_failed(
-                            exc, "cancelled, but the round could not be put back", member=bi.user
+                            exc,
+                            "cancelled, but the round could not be put back",
+                            member=bi.user,
+                            not_put_back=ROUND_NOT_PUT_BACK_YET,
                         )
                         await bi.followup.send(
                             amendment_fault_reply(describe_fault(exc), ROUND_NOT_PUT_BACK_YET),
@@ -2735,29 +2749,31 @@ class ResultsCog(commands.Cog):
             return
         except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
             log.exception("amend: stage one of round %s failed", rnd.id)
-            # It never raises, so that the revert and the reply below go ahead whatever becomes
-            # of the post.
-            await _log_amend_failed(exc, "the corrected results could not be recorded")
             # **Put back whatever stage one committed before the channel goes** (#345). The
             # classifications are written in one transaction, but the points and the standings
             # after it are not; a failure there left the round half-amended, and deleting the
             # channel's record took the snapshot that could undo it.
             from leaguebot.results.services.result_submission_service import revert_abandoned_amendment
 
+            # The line is written once the revert has been tried, so that it can say where the
+            # round could not be put back yet. It never raises, so the reply goes ahead whatever
+            # becomes of the post.
             try:
                 await revert_abandoned_amendment(self.bot.db_path, rnd.id, self.bot)
             except Exception:
                 stage_one_writing[0] = False
                 log.exception("amend: could not revert round %s after a failure", rnd.id)
-                await _tell_of_failure(
-                    amendment_fault_reply(
-                        describe_fault(exc),
-                        "The round could not be put back yet. Restarting the bot retries "
-                        f"that. {AMENDMENT_RE_RUN_ONCE_PUT_BACK}",
-                    )
+                unrestored = (
+                    "The round could not be put back yet. Restarting the bot retries "
+                    f"that. {AMENDMENT_RE_RUN_ONCE_PUT_BACK}"
                 )
+                await _log_amend_failed(
+                    exc, "the corrected results could not be recorded", not_put_back=unrestored
+                )
+                await _tell_of_failure(amendment_fault_reply(describe_fault(exc), unrestored))
                 return
             stage_one_writing[0] = False
+            await _log_amend_failed(exc, "the corrected results could not be recorded")
             await _cleanup_channel()
             await _tell_of_failure(amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK))
             return
@@ -2793,11 +2809,12 @@ class ResultsCog(commands.Cog):
             # undone now rather than left half-applied until the sweep (#345). One failure
             # makes one line: `cancel_amendment` writes none of its own.
             log.exception("amend: could not open the report stage of round %s", rnd.id)
+            not_put_back: str | None = None
             try:
                 undone = await cancel_amendment(self.bot, rnd.id, cancelled_by=interaction.user.id)
             except Exception:  # noqa: BLE001 — left to the sweep, with the snapshot intact
                 log.exception("amend: could not revert round %s", rnd.id)
-                became = ROUND_NOT_PUT_BACK_YET
+                became = not_put_back = ROUND_NOT_PUT_BACK_YET
             else:
                 became = (
                     "The report stage could not be opened, so the amendment has been undone "
@@ -2805,7 +2822,9 @@ class ResultsCog(commands.Cog):
                     if undone
                     else f"The amendment had already ended, so nothing more was undone. {AMENDMENT_RE_RUN}"
                 )
-            await _log_amend_failed(exc, "the report stage could not be opened")
+            await _log_amend_failed(
+                exc, "the report stage could not be opened", not_put_back=not_put_back
+            )
             await _tell_of_failure(amendment_fault_reply(describe_fault(exc), became))
             return
         await interaction.followup.send(
