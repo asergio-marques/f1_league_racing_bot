@@ -2722,15 +2722,9 @@ class ResultsCog(commands.Cog):
             return
         except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
             log.exception("amend: stage one of round %s failed", rnd.id)
-            # Guarded, so that the revert and the reply below go ahead whatever becomes of it.
-            try:
-                await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
-                    f"round {rnd.round_number} session {sessions_text}\n"
-                    f"  fault: {type(exc).__name__}. The details are in the host's log.",
-                )
-            except Exception:  # noqa: BLE001
-                log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
+            # It never raises, so that the revert and the reply below go ahead whatever becomes
+            # of the post.
+            await _log_amend_failed(exc, "the corrected results could not be recorded")
             # **Put back whatever stage one committed before the channel goes** (#345). The
             # classifications are written in one transaction, but the points and the standings
             # after it are not; a failure there left the round half-amended, and deleting the
