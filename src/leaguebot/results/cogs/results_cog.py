@@ -449,7 +449,14 @@ async def _run_xml_import(
 
     # --- persist ----------------------------------------------------------
     try:
-        await xml_import_config(db_path, config_name, payload)
+        await xml_import_config(
+            db_path,
+            config_name,
+            payload,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            now=datetime.now(timezone.utc),
+        )
     except ConfigNotFoundError:
         await refuse(interaction, f"❌ Config **{config_name}** not found.", what=what)
         return
@@ -477,7 +484,17 @@ async def _run_xml_import(
     await interaction.followup.send(
         f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
     )
-    await _audit(f"SUCCESS: {len(payload.positions)} session(s), {len(payload.fastest_laps)} FL row(s)")
+    # The values set, beneath the line, as "The record of what changed" asks.
+    values: list[str] = []
+    for session_type, pos_dict in payload.positions.items():
+        values.append(
+            f"  {session_type.label()}: "
+            + ", ".join(f"P{position} {points}" for position, points in sorted(pos_dict.items()))
+        )
+    for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
+        limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
+        values.append(f"  {session_type.label()} fastest lap: {fl_pts} pts{limit_text}")
+    await _audit("SUCCESS" + "".join(f"\n{line}" for line in values))
 
 
 # ---------------------------------------------------------------------------

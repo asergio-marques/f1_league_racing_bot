@@ -420,9 +420,6 @@ async def test_the_log_names_the_config_and_the_manager(tmp_path):
     assert "/results config xml-import" in audited
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a successful import's log line counts its rows rather than listing them"
-)
 async def test_a_successful_import_counts_what_it_wrote_in_the_log(tmp_path):
     """The line states beneath it the values that were set: each session, and each position's
     points, and the fastest-lap bonus with its limit."""
@@ -656,20 +653,11 @@ FL_ONLY_XML = """
         *[
             pytest.param(
                 case,
-                marks=pytest.mark.xfail(
-                    strict=True,
-                    reason="#442: an XML import writes no audit entry for what it changed",
-                ),
             )
             for case in ("positions", "fastest-lap")
         ],
         pytest.param(
             "log-line",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#442: a successful import's log line counts its rows rather than "
-                "listing the values set",
-            ),
         ),
     ],
 )

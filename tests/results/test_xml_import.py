@@ -362,9 +362,6 @@ def test_validate_empty_payload_no_errors():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
-)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_positions(db_path):
     """xml_import_config writes position rows to the database."""
@@ -380,9 +377,6 @@ async def test_xml_import_config_upserts_positions(db_path):
     assert pts_by_pos == {1: 25, 2: 18}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
-)
 @pytest.mark.asyncio
 async def test_xml_import_config_upserts_fl(db_path):
     """xml_import_config writes fastest-lap rows to the database."""
@@ -400,9 +394,6 @@ async def test_xml_import_config_upserts_fl(db_path):
     assert fl[0].fl_position_limit == 10
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
-)
 @pytest.mark.asyncio
 async def test_xml_import_config_not_found_raises(db_path):
     """xml_import_config raises ConfigNotFoundError for unknown config."""
@@ -413,9 +404,6 @@ async def test_xml_import_config_not_found_raises(db_path):
         )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
-)
 @pytest.mark.asyncio
 async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_path):
     """Partial import (only Feature Race) leaves Sprint Race rows untouched."""
@@ -445,9 +433,6 @@ async def test_xml_import_config_partial_session_leaves_other_rows_unchanged(db_
     assert {e.position: e.points for e in feature_entries} == {1: 25, 2: 18}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: xml_import_config takes no actor and no time yet"
-)
 @pytest.mark.asyncio
 async def test_xml_import_config_fl_preserves_limit_when_not_specified(db_path):
     """When FL limit not in payload, existing fl_position_limit in DB is preserved."""
