@@ -62,6 +62,10 @@ def test_every_scenario_file_is_run() -> None:
             ),
         ),
         "ledger-scenarios.js",
+        pytest.param(
+            "recheck-scenarios.js",
+            marks=pytest.mark.xfail(strict=True, reason="#483: a re-check is not yet given the earlier plan and each checker's earlier result"),
+        ),
         "resume-scenarios.js",
         "tests-stage-scenarios.js",
     ],
