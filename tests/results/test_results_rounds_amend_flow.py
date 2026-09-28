@@ -291,24 +291,36 @@ async def _amend_rows(db_path) -> int:
         return (await cursor.fetchone())[0]
 
 
-def _assert_cancelled(cog, by: int = USER_ID) -> None:
-    """One line, in the standard cancel form, naming who pressed Cancel, with the next step."""
-    logged = _logged(cog)
-    [line] = [c for c in logged.split("\n") if c.startswith("↩️ ")]
-    assert "/results rounds amend" in line
-    assert f"cancelled by " in line and f"(<@{by}>)" in line
-    assert "Re-run `/results rounds amend` to try again" in logged
-    assert "AMEND_CANCELLED" not in logged
+def _assert_cancelled(
+    cog, by: int = USER_ID, became: str = "nothing was written"
+) -> None:
+    """One line, in the standard cancel form, naming who pressed Cancel, with beneath it what
+    became of the round and the next step."""
+    posts = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [post] = [p for p in posts if p.startswith("↩️ ")]
+    head, *beneath = post.splitlines()
+    below = "\n".join(beneath)
+    assert "/results rounds amend" in head
+    assert "cancelled by " in head and f"(<@{by}>)" in head
+    assert became in below.lower(), f"the line does not say beneath it that {became}"
+    assert "Re-run `/results rounds amend` to try again" in below
+    assert "AMEND_CANCELLED" not in "\n".join(posts)
 
 
-def _assert_lapsed(cog, started_by: int = USER_ID) -> None:
-    """One line, in the standard lapse form, naming who started it, with the next step."""
-    logged = _logged(cog)
-    [line] = [c for c in logged.split("\n") if c.startswith("⌛ ")]
-    assert "/results rounds amend" in line
-    assert "lapsed unconfirmed (started by " in line and f"(<@{started_by}>)" in line
-    assert "Re-run `/results rounds amend` to try again" in logged
-    assert "AMEND_TIMEOUT" not in logged
+def _assert_lapsed(
+    cog, started_by: int = USER_ID, became: str = "nothing was written"
+) -> None:
+    """One line, in the standard lapse form, naming who started it, with beneath it what
+    became of the round and the next step."""
+    posts = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [post] = [p for p in posts if p.startswith("⌛ ")]
+    head, *beneath = post.splitlines()
+    below = "\n".join(beneath)
+    assert "/results rounds amend" in head
+    assert "lapsed unconfirmed (started by " in head and f"(<@{started_by}>)" in head
+    assert became in below.lower(), f"the line does not say beneath it that {became}"
+    assert "Re-run `/results rounds amend` to try again" in below
+    assert "AMEND_TIMEOUT" not in "\n".join(posts)
 
 
 # ---------------------------------------------------------------------------
@@ -1859,13 +1871,16 @@ async def _cancelled_or_lapsed(case: str, tmp_path):
 )
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, case):
     """Each is one line in the standard form — naming who pressed Cancel, or who started what
-    lapsed — with what to do next beneath it. The old event names are gone."""
+    lapsed — with beneath it what became of the round and what to do next: nothing was
+    written, or, cancelled once stage one had written, the round was put back as it was. The
+    old event names are gone."""
     cog, how, member = await _cancelled_or_lapsed(case, tmp_path)
 
+    became = "put back as it was" if case == "cancelled-after-stage-one" else "nothing was written"
     if how == "cancelled":
-        _assert_cancelled(cog, by=member)
+        _assert_cancelled(cog, by=member, became=became)
     else:
-        _assert_lapsed(cog, started_by=member)
+        _assert_lapsed(cog, started_by=member, became=became)
     if case == "cancelled-by-another-manager":
         line = next(c for c in _logged(cog).split("\n") if c.startswith("↩️ "))
         assert f"(<@{USER_ID}>)" not in line, "the line names the opener, not the presser"
