@@ -2870,13 +2870,17 @@ async def _abandon_failed_amendment(
         outcome = (
             "The round could not be put back yet; the bot tries again within a few minutes."
         )
+        # A re-run is refused until the sweep has put the round back, so the line says to wait
+        # for it, as the reply does.
+        next_step = AMENDMENT_RE_RUN_ONCE_PUT_BACK
         became = ROUND_NOT_PUT_BACK_YET
     else:
         await _close_amendment_channel(
             db_path, interaction.guild, round_id, reason="Amendment failed"
         )
         outcome = "The round was put back as it was." if reverted else "Nothing was changed."
-        became = f"{outcome} {AMENDMENT_RE_RUN}"
+        next_step = AMENDMENT_RE_RUN
+        became = f"{outcome} {next_step}"
 
     if error is not None:
         kind = describe_fault(error)
@@ -2893,7 +2897,7 @@ async def _abandon_failed_amendment(
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}, stage: {stage}\n"
             f"  reason: {reason}\n"
-            f"  {outcome} Re-run /results rounds amend to try again."
+            f"  {outcome} {next_step.replace('`', '')}"
         )
     except Exception:  # noqa: BLE001
         log.exception("amendment: could not log the failure of round %s", round_id)

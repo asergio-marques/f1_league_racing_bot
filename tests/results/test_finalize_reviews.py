@@ -2644,12 +2644,6 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
 
 def _not_yet_put_back(where: str):
     """Mark the log-line half of a case: the reply already says it."""
-    if where == "log line":
-        return pytest.mark.xfail(
-            strict=True,
-            reason="#442: the AMEND_FAILED line of an amendment stage not yet put back does not "
-            "end on running it again once it has been",
-        )
     return ()
 
 
