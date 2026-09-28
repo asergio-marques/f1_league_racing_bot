@@ -419,7 +419,6 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "BulkAmendSessionModal.on_submit"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "BulkConfigSessionModal.on_submit"): (1, TRACEBACKS),
-    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "_run_xml_import"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, TRACEBACKS),

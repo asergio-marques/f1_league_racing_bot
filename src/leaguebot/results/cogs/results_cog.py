@@ -2417,8 +2417,11 @@ class ResultsCog(commands.Cog):
             ))
             try:
                 await msg.delete()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 — a paste left standing never stops the amendment
+                log.warning(
+                    "results rounds amend: could not delete the pasted classification",
+                    exc_info=True,
+                )
 
             if validation_errors:
                 # **The whole amendment ends, earlier pastes and all** (decided 2026-09-21).
