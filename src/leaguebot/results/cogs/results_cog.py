@@ -2368,11 +2368,19 @@ class ResultsCog(commands.Cog):
             amendment_fault_reply,
         )
 
-        async def _log_amend_failed(error: BaseException, where: str) -> None:
-            """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words."""
+        async def _log_amend_failed(
+            error: BaseException, where: str, *, member: discord.abc.User | None = None
+        ) -> None:
+            """The one `AMEND_FAILED` line a failure makes: the fault's type, never its words.
+
+            It names *member*, whoever pressed what failed: a Cancel Amendment press may be a
+            league manager's other than the opener's. Left out, it is the member who ran the
+            command.
+            """
+            who = member if member is not None else interaction.user
             try:
                 await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
+                    f"{who.display_name} (<@{who.id}>) | AMEND_FAILED | "
                     f"round {rnd.round_number} session {sessions_text}\n"
                     f"  {where}; fault: {type(error).__name__}. The details are in the host's log."
                 )
@@ -2420,7 +2428,9 @@ class ResultsCog(commands.Cog):
                         )
                     except Exception as exc:  # noqa: BLE001 — reported to the presser, and logged
                         log.exception("amend: cancelling round %s failed", amended_round_id)
-                        await _log_amend_failed(exc, "cancelled, but the round could not be put back")
+                        await _log_amend_failed(
+                            exc, "cancelled, but the round could not be put back", member=bi.user
+                        )
                         await bi.followup.send(
                             amendment_fault_reply(
                                 describe_fault(exc),
