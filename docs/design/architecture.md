@@ -554,13 +554,12 @@ to it would switch off the one failure path for every command.
    everything around its own work only to hand the error to `report_failure` itself, adding
    context to `what` (the round a `/round amend` confirmation was amending) or stating
    `outcome` (what became of a change it undid, in place of "may have been partly done"), and
-   then returns.
-   One failure still makes one line, and the base classes are spared a second report. A results
-   amendment is not a form of these but a failure path of its own, the exception named above:
-   it puts the round back as it stood, then reports its own
-   failure, naming the kind of fault in plain words (`describe_fault`), because the manager has
-   to know whether the round was restored and what to do next, which the standard reply cannot
-   say;
+   then returns. One failure still makes one line, and the base classes are spared a second
+   report. A results amendment is not a form of these but a failure path of its own, the
+   exception named above:
+   it tries to put the round back, then reports its own failure and says whether it did. Its
+   reply may name the kind of fault in plain words (`describe_fault`), which the standard reply
+   never does, as the core specification's "When a command fails" allows an amendment alone;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a step: a Discord failure is retried, and a fault
    stops the change, so items that must each go ahead whatever befalls the others are queued as
