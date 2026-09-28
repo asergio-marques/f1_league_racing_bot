@@ -279,12 +279,16 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: a /test-mode roster add refusal writes no log line"
+)
 async def test_the_command_refuses_it_in_placements(tmp_path):
     """Through the cog, in the one stage the roster may change in (issue #220).
 
     Nothing about the stage is stubbed: the season is in Placements, the roster change is
     allowed there, and it is the template that refuses it — with the bot's own placement
-    service, as the cog is wired in production.
+    service, as the cog is wired in production. The refusal is logged, as every refusal of a
+    command that changes something is.
     """
     from types import SimpleNamespace
 
@@ -305,6 +309,11 @@ async def test_the_command_refuses_it_in_placements(tmp_path):
     cog = TestModeCog.__new__(TestModeCog)
     cog.bot = bot
     interaction = MagicMock()
+    interaction.user.id = 77
+    interaction.user.display_name = "Admin"
+    interaction.client = bot
+    interaction.command.qualified_name = "test-mode roster add"
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
 
     await undecorate(TestModeCog.roster_add)(cog, interaction, "Mock", TEAMS[0], "Alpha")
@@ -313,7 +322,10 @@ async def test_the_command_refuses_it_in_placements(tmp_path):
     assert reply.startswith("⛔")
     assert "**not** assigned" in reply
     assert await _seated(path) == 1
-    bot.output_router.post_log.assert_not_awaited()
+    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ ")
+    assert "/test-mode roster add" in line
+    assert "refused for Admin (<@77>)" in line
 
 
 # ── /test-mode roster add-bulk ────────────────────────────────────────────

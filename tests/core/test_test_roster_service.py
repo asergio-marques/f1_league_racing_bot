@@ -319,3 +319,32 @@ class TestRemovingOneDriver:
             )
             rows = [tuple(r) for r in await cursor.fetchall()]
         assert rows == [(uid, None)]
+
+
+# ── A profile that cannot be written (#442) ───────────────────────────────
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: a profile that cannot be written is still returned as a refusal string",
+)
+async def test_a_test_driver_profile_that_cannot_be_written_raises(db_path):
+    """A fault in the database is the bot's, not a refusal the manager can act on: it is
+    raised, so the command's failure path reports it, and nothing is seated."""
+    import sqlite3
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_profile BEFORE INSERT ON driver_profiles "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+    with pytest.raises(sqlite3.Error):
+        await _add(db_path)
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM team_seats WHERE driver_profile_id IS NOT NULL"
+        )
+        assert (await cursor.fetchone())[0] == 0

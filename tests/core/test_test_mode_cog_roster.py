@@ -62,6 +62,9 @@ class _Interaction:
         self.response = _Response()
         self.followup = _Followup()
         self.user = SimpleNamespace(display_name="Tester", id=1)
+        # The bot a refusal or a failure reaches the log channel through, as Discord's
+        # interaction carries its client.
+        self.client = SimpleNamespace(output_router=SimpleNamespace(post_log=AsyncMock()))
 
     @property
     def sent(self) -> list[str]:
@@ -348,3 +351,34 @@ class TestRosterListShowsIt:
         whole = "\n".join(interaction.sent)
         for i in range(25):
             assert f"Mock Driver {i:02d}" in whole
+
+
+# ── A driver that cannot be written (#442) ────────────────────────────────
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a failed roster add is still raised or answered with its text"
+)
+async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added(cog):
+    """The service raises on a database fault. The command answers with the standard failure
+    reply, saying the test driver was not added and how to retry, with no error text, and one
+    failure line is logged."""
+    import sqlite3
+    from unittest.mock import patch
+
+    interaction = _Interaction()
+    with patch(
+        "leaguebot.core.services.test_roster_service.add_test_driver",
+        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+    ):
+        await _unwrap(test_mode_cog.TestModeCog.roster_add)(
+            cog, interaction, "Mock Alpha", "Redline", DIVISION, None
+        )
+
+    reply = interaction.reply
+    assert "stopped on a fault in the bot, not on anything you entered" in reply
+    assert "The test driver was not added." in reply
+    assert "Run `/test-mode roster add` again to retry." in reply
+    assert "database is locked" not in reply
+    [line] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+    assert "failed for <@1>" in line

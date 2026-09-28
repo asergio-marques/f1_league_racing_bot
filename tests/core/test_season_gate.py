@@ -256,3 +256,38 @@ def test_the_two_ongoing_sub_stages_read_as_prose_not_as_identifiers():
 
 def test_a_season_with_no_stage_at_all_still_gets_a_readable_label():
     assert stage_label(None) == "no stage"
+
+
+# ---------------------------------------------------------------------------
+# The refusal is recorded (#442)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: the season gate writes no log line and takes no record switch"
+)
+@pytest.mark.parametrize("record", [True, False], ids=["recorded", "not-recorded"])
+async def test_the_season_gate_logs_its_refusal_unless_record_is_false(record):
+    """The gate answers the member either way. With `record` left at its default it writes one
+    line in the standard refusal form to the log channel, naming the command; with
+    `record=False`, as a view passes it, it writes none."""
+    interaction = _interaction()
+    interaction.user.id = 77
+    interaction.user.display_name = "Manager"
+    interaction.client.output_router.post_log = AsyncMock()
+
+    season = await season_for_command(
+        interaction, _service(None), "results amend toggle", record=record
+    )
+
+    assert season is None
+    assert "there is none" in _said(interaction)
+    lines = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+    if record:
+        [line] = lines
+        assert line.startswith("⛔ ")
+        assert "/results amend toggle" in line
+        assert "refused for Manager (<@77>)" in line
+        assert "there is none" in line
+    else:
+        assert lines == []
