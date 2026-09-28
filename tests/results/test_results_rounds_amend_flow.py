@@ -1620,17 +1620,10 @@ async def test_a_failed_amendment_reply_that_cannot_be_sent_writes_one_line(tmp_
     assert "HTTPException" not in line
 
 
-def _not_yet_put_back(where: str):
-    """Mark the log-line half of a case: the reply already says it."""
-    return ()
-
-
 @pytest.mark.parametrize(
     "case, where",
     [
-        pytest.param(
-            case, where, marks=_not_yet_put_back(where), id=f"{case}-{where.replace(' ', '-')}"
-        )
+        pytest.param(case, where, id=f"{case}-{where.replace(' ', '-')}")
         for case in ("write-revert-fails", "report-stage-undo-fails", "cancel-revert-fails")
         for where in ("reply", "log line")
     ],

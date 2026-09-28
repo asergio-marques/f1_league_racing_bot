@@ -2642,15 +2642,10 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
     assert "render failed" not in reply and "disk full" not in reply
 
 
-def _not_yet_put_back(where: str):
-    """Mark the log-line half of a case: the reply already says it."""
-    return ()
-
-
 @pytest.mark.parametrize(
     "where",
     [
-        pytest.param(where, marks=_not_yet_put_back(where), id=where.replace(" ", "-"))
+        pytest.param(where, id=where.replace(" ", "-"))
         for where in ("reply", "log line")
     ],
 )
