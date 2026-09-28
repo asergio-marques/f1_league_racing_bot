@@ -2645,21 +2645,12 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
     [
         pytest.param(
             "reports-already-approved",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#442: an amendment stage refusal writes no log line"
-            ),
         ),
         pytest.param(
             "report-stage-not-open",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#442: an amendment stage refusal writes no log line"
-            ),
         ),
         pytest.param(
             "appeals-stage-not-open",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#442: an amendment stage refusal writes no log line"
-            ),
         ),
         "a-first-pass-refusal",
     ],

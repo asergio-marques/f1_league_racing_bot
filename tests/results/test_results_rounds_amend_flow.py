@@ -529,9 +529,6 @@ async def test_a_paste_that_fails_validation_writes_nothing(tmp_path):
     assert await _amend_rows(db_path) == 0
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the rejection is still logged as AMEND_REJECTED"
-)
 async def test_a_fastest_lap_override_for_a_driver_not_in_the_paste_is_refused(tmp_path):
     """It would award a bonus to somebody who did not race. The refusal is logged in the
     standard refusal form, its detail as the reason."""
@@ -1210,9 +1207,6 @@ async def test_a_later_paste_is_checked_against_the_earlier_one_not_the_old_rows
     }
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the rejection is still logged as AMEND_REJECTED"
-)
 async def test_a_rejected_second_paste_writes_nothing_at_all(tmp_path):
     """Nothing is written while the pastes are collected, so the first session's accepted paste
     goes with the amendment rather than being half-applied.
@@ -1343,9 +1337,6 @@ async def test_a_rejected_paste_whose_channel_cannot_be_deleted_keeps_its_row_cl
     assert await open_amendment_in_division(db_path, DIVISION_ID) is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the rejection is still logged as AMEND_REJECTED"
-)
 async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp_path):
     """An interaction's token lapses after fifteen minutes, which several pastes outlast. The
     rejection was logged and tidied up, and the reply failing afterwards had it logged a second
@@ -1714,9 +1705,6 @@ AMEND_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a /results rounds amend refusal is not logged in the standard form"
-)
 @pytest.mark.parametrize("case, said", AMEND_REFUSALS)
 async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case, said):
     """Each refusal answers as before and writes exactly one line in the standard refusal form,

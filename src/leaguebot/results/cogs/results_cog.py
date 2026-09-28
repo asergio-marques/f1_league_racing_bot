@@ -2066,8 +2066,10 @@ class ResultsCog(commands.Cog):
         """
         guild = guild_of(interaction)
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Results & Standings module is not enabled.",
+                what=describe(interaction),
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -2097,25 +2099,30 @@ class ResultsCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.followup.send(
-                f"\u274c Division `{division_name}` not found.", ephemeral=True
+            await refuse(
+                interaction,
+                f"\u274c Division `{division_name}` not found.",
+                what=describe(interaction),
             )
             return
 
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.followup.send(
-                f"\u274c Round {round_number} not found.", ephemeral=True
+            await refuse(
+                interaction,
+                f"\u274c Round {round_number} not found.",
+                what=describe(interaction),
             )
             return
 
         # T009: amend is only permitted on FINAL rounds
         if rnd.status != "FINAL":
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c This round cannot be amended yet. Round results must reach **FINAL** status "
                 "(approved through the full penalty review and appeals process) before they can be amended.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -2128,8 +2135,10 @@ class ResultsCog(commands.Cog):
             sr_rows = await cursor.fetchall()
 
         if not sr_rows:
-            await interaction.followup.send(
-                "\u274c No results found for this round.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c No results found for this round.",
+                what=describe(interaction),
             )
             return
 
@@ -2151,8 +2160,10 @@ class ResultsCog(commands.Cog):
         if session is not None:
             chosen: list[SessionType] = [SessionType(session.value)]
             if chosen[0] not in session_types_present:
-                await interaction.followup.send(
-                    f"❌ No {chosen[0].value} session found for this round.", ephemeral=True
+                await refuse(
+                    interaction,
+                    f"❌ No {chosen[0].value} session found for this round.",
+                    what=describe(interaction),
                 )
                 return
         else:
@@ -2208,11 +2219,12 @@ class ResultsCog(commands.Cog):
                     pass
                 except discord.HTTPException:
                     log.exception("amend: could not delete stale channel %s", _closed["channel_id"])
-                    await interaction.followup.send(
+                    await refuse(
+                        interaction,
                         f"❌ An earlier amendment of this round left its channel "
                         f"<#{_closed['channel_id']}> behind, and it could not be removed. "
                         "Delete it, then run this command again.",
-                        ephemeral=True,
+                        what=describe(interaction),
                     )
                     return
             async with get_connection(self.bot.db_path) as _odb:
@@ -2223,8 +2235,10 @@ class ResultsCog(commands.Cog):
                 )
                 await _odb.commit()
         if _open is not None:
-            await interaction.followup.send(
-                _amendment_open_refusal(div.name, _open), ephemeral=True
+            await refuse(
+                interaction,
+                _amendment_open_refusal(div.name, _open),
+                what=describe(interaction),
             )
             return
 
@@ -2314,8 +2328,10 @@ class ResultsCog(commands.Cog):
                 await amend_channel.delete(reason="An amendment is already open in this division")
             except discord.HTTPException:
                 log.exception("amend: could not delete the duplicate channel for round %s", rnd.id)
-            await interaction.followup.send(
-                _amendment_open_refusal(div.name, _earlier), ephemeral=True
+            await refuse(
+                interaction,
+                _amendment_open_refusal(div.name, _earlier),
+                what=describe(interaction),
             )
             return
 
@@ -2382,10 +2398,11 @@ class ResultsCog(commands.Cog):
                     )
                     return
                 if stage_one_writing[0]:
-                    await bi.response.send_message(
+                    await refuse(
+                        bi,
                         "⏳ The corrected results are being recorded — press **Cancel "
                         "Amendment** again in a moment to undo them.",
-                        ephemeral=True,
+                        what=f"the Cancel Amendment button of {what_amended}",
                     )
                     return
                 if stage_one_done[0]:
@@ -2420,10 +2437,11 @@ class ResultsCog(commands.Cog):
                             detail=ROUND_PUT_BACK,
                         )
                     else:
-                        await bi.followup.send(
+                        await refuse(
+                            bi,
                             "ℹ️ Too late to cancel — the amendment is already being "
                             "committed, or is no longer open.",
-                            ephemeral=True,
+                            what=f"the Cancel Amendment button of {what_amended}",
                         )
                     return
                 cancelled_by[0] = bi.user
@@ -2473,23 +2491,15 @@ class ResultsCog(commands.Cog):
                 reason="Results amend complete",
             )
 
-        async def _end(event: str, *, session_type: SessionType | None = None,
-                       detail: str = "", reply: str | None = None) -> None:
-            """Log why the amendment ended before anything was written, and tidy up."""
-            what = session_type.value if session_type is not None else sessions_text
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | {event} | "
-                f"round {rnd.round_number} session {what}" + (f"\n  {detail}" if detail else ""),
-            )
+        async def _refused(reply: str, *, reason: str) -> None:
+            """Refuse the amendment before anything was written, recording why, and tidy up.
+
+            **Best effort** (#345): `refuse` never raises. The interaction's token lapses after
+            fifteen minutes, which several pastes can outlast; raised here, the refusal would be
+            taken for a fault and logged a second time as `AMEND_FAILED`.
+            """
+            await refuse(interaction, reply, what=what_amended, reason=reason)
             await _cleanup_channel()
-            if reply is not None:
-                # **Best effort** (#345). The interaction's token lapses after fifteen minutes,
-                # which several pastes can outlast; raised here, the ending just logged would be
-                # taken for a fault and logged a second time as `AMEND_FAILED`.
-                try:
-                    await interaction.followup.send(reply, ephemeral=True)
-                except discord.HTTPException:
-                    log.warning("amend: could not reply to the admin of round %s", rnd.id)
 
         async def _abandoned(*, lapsed: bool, reply: str) -> None:
             """Record an amendment cancelled, or lapsed, before anything was written, and tidy up.
@@ -2598,12 +2608,12 @@ class ResultsCog(commands.Cog):
                 # **The whole amendment ends, earlier pastes and all** (decided 2026-09-21).
                 # The session is not asked for again: a league amending a round prepares every
                 # classification before it starts, and nothing has been written to undo.
-                await _end(
-                    "AMEND_REJECTED", session_type=st,
-                    detail=f"errors: {'; '.join(validation_errors[:10])}",
-                    reply=(
-                        "❌ Amendment rejected — validation errors were found. "
-                        "Check the log channel for details, then re-run `/results rounds amend`."
+                await _refused(
+                    "❌ Amendment rejected — validation errors were found. "
+                    "Check the log channel for details, then re-run `/results rounds amend`.",
+                    reason=(
+                        f"session {st.value} failed validation: "
+                        f"{'; '.join(validation_errors[:10])}"
                     ),
                 )
                 return
@@ -2614,12 +2624,11 @@ class ResultsCog(commands.Cog):
                 if fl_amend_override not in submitted_driver_ids:
                     fl_member = amend_channel.guild.get_member(int(fl_amend_override)) if amend_channel.guild else None
                     fl_name = fl_member.display_name if fl_member else str(fl_amend_override)
-                    await _end(
-                        "AMEND_REJECTED", session_type=st,
-                        detail=f"error: FL override {fl_name} not in submitted results",
-                        reply=(
-                            f"❌ Amendment rejected — FL override **{fl_name}** is not in the "
-                            "submitted results. Re-run `/results rounds amend` to try again."
+                    await _refused(
+                        f"❌ Amendment rejected — FL override **{fl_name}** is not in the "
+                        "submitted results. Re-run `/results rounds amend` to try again.",
+                        reason=(
+                            f"session {st.value}: FL override {fl_name} not in submitted results"
                         ),
                     )
                     return
@@ -2699,7 +2708,7 @@ class ResultsCog(commands.Cog):
             # than a traceback in a channel they may not have open, because this one is theirs
             # to act on: include the driver, or withdraw the verdict (#345).
             stage_one_writing[0] = False
-            await _end("AMEND_REFUSED", detail=str(exc), reply=f"❌ {exc}")
+            await _refused(f"❌ {exc}", reason=str(exc))
             return
         except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
             log.exception("amend: stage one of round %s failed", rnd.id)

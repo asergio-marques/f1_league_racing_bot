@@ -35,7 +35,7 @@ from leaguebot.image.utils.tyre_compound import (
 )
 from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
-from leaguebot.core.utils.log_lines import record_abandoned
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 
 if TYPE_CHECKING:
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
@@ -2330,6 +2330,14 @@ def amendment_fault_reply(kind: str, became: str) -> str:
     )
 
 
+def _amendment_stage_named(state, stage: str) -> str:
+    """A stage of an amendment as its refusal lines name it."""
+    return (
+        f"the {stage} stage of `/results rounds amend` of round {state.round_number} "
+        f"({state.division_name})"
+    )
+
+
 def _amended_sessions(state) -> list[SessionType]:
     """The sessions an amendment's review state replays — see
     :func:`run_amendment_review_stages`, which is what puts them there."""
@@ -2580,16 +2588,16 @@ async def _approve_amendment_reports(interaction, state) -> None:
     session_types = _amended_sessions(state)
 
     if state.reports_approved:
-        await interaction.followup.send(
-            "ℹ️ This amendment's reports are already approved; its appeals follow "
-            "below.",
-            ephemeral=True,
+        await refuse(
+            interaction,
+            "ℹ️ This amendment's reports are already approved; its appeals follow below.",
+            what=_amendment_stage_named(state, "report"),
         )
         return
 
     deadline = await _claim_amendment(db_path, round_id)
     if deadline is None:
-        await interaction.followup.send(_AMENDMENT_NOT_OPEN, ephemeral=True)
+        await refuse(interaction, _AMENDMENT_NOT_OPEN, what=_amendment_stage_named(state, "report"))
         return
 
     try:
@@ -2685,7 +2693,7 @@ async def _approve_amendment_appeals(interaction, state) -> None:
     session_types = _amended_sessions(state)
 
     if await _claim_amendment(db_path, round_id) is None:
-        await interaction.followup.send(_AMENDMENT_NOT_OPEN, ephemeral=True)
+        await refuse(interaction, _AMENDMENT_NOT_OPEN, what=_amendment_stage_named(state, "appeals"))
         return
 
     try:
