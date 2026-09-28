@@ -2387,6 +2387,21 @@ class ResultsCog(commands.Cog):
             except Exception:  # noqa: BLE001 — the failure is still in the host's log
                 log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
 
+        async def _tell_of_failure(reply: str) -> None:
+            """Tell the admin of a failure already logged, without raising.
+
+            The interaction's token lapses fifteen minutes after the command, which several
+            pastes can outlast. Raised, a refused send would reach the command tree, which
+            would log the one failure a second time and name the wrong fault.
+            """
+            try:
+                await interaction.followup.send(reply, ephemeral=True)
+            except discord.HTTPException:
+                log.warning(
+                    "amend: could not tell the admin of round %s of a failure", rnd.id,
+                    exc_info=True,
+                )
+
         class _CancelView(LeagueView):
             def __init__(self_v) -> None:
                 super().__init__(timeout=None)
@@ -2736,19 +2751,16 @@ class ResultsCog(commands.Cog):
             except Exception:
                 stage_one_writing[0] = False
                 log.exception("amend: could not revert round %s after a failure", rnd.id)
-                await interaction.followup.send(
+                await _tell_of_failure(
                     amendment_fault_reply(
                         describe_fault(exc),
                         "The round could not be put back. Restarting the bot retries that.",
-                    ),
-                    ephemeral=True,
+                    )
                 )
                 return
             stage_one_writing[0] = False
             await _cleanup_channel()
-            await interaction.followup.send(
-                amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK), ephemeral=True
-            )
+            await _tell_of_failure(amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK))
             return
 
         stage_one_writing[0] = False
@@ -2798,9 +2810,7 @@ class ResultsCog(commands.Cog):
                     else f"The amendment had already ended, so nothing more was undone. {AMENDMENT_RE_RUN}"
                 )
             await _log_amend_failed(exc, "the report stage could not be opened")
-            await interaction.followup.send(
-                amendment_fault_reply(describe_fault(exc), became), ephemeral=True
-            )
+            await _tell_of_failure(amendment_fault_reply(describe_fault(exc), became))
             return
         await interaction.followup.send(
             f"✅ Corrected results recorded. Review the reports and appeals of "
