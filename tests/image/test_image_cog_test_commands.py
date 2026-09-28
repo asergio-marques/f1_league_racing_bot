@@ -788,10 +788,6 @@ class TestThePreviewDiscardsItsPictures:
 # ── A preview that cannot be assembled (#442) ─────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a preview that cannot be assembled is still caught and its error shown",
-)
 async def test_a_preview_that_cannot_be_assembled_goes_to_the_failure_path():
     """A fault while the preview's data is gathered is the bot's. It is not answered here with
     the error's text: it goes on to the command tree, whose failure report names the command

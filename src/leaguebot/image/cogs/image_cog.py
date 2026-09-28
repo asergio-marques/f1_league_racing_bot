@@ -1905,15 +1905,10 @@ class ImageCog(commands.Cog):
             await interaction.followup.send(refusal.message, ephemeral=True)
             return
 
-        try:
-            requests = await build(context)
-        except Exception as exc:  # noqa: BLE001 — reported, never raised at a manager
-            log.exception("images test: could not assemble %s", title)
-            await interaction.followup.send(
-                f"⛔ The data for this preview could not be assembled — {exc}",
-                ephemeral=True,
-            )
-            return
+        # A preview whose data cannot be assembled is a fault in the bot, and goes to the
+        # command's failure path, which names `/images test …` to the member and the log
+        # channel alike. A preview changes nothing, so it records nothing else.
+        requests = await build(context)
 
         # A preview is named exactly as a posting is, and for the same reason: a manager
         # running several of them collects several files, and `standings_drivers.png`
