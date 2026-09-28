@@ -489,7 +489,8 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
 
 async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     """The success line names the member, `/round amend` and the round, and states beneath it
-    each field changed, from its old value to its new one."""
+    each field changed, from its old value to its new one, named as the command's parameter
+    (`track`) rather than by its column."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     cog = _cog(path)
     cog.bot.amendment_service.amend_round = AsyncMock()
@@ -505,6 +506,8 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     values = line.split("\n", 1)[1] if "\n" in line else ""
     assert "Bahrain International Circuit" in values, "the old value is not stated"
     assert NEW_TRACK in values, "the new value is not stated"
+    assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in values.splitlines()
+    assert "track_name" not in values
 
 
 async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
