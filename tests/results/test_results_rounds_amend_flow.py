@@ -1401,10 +1401,28 @@ def _press(user_id: int = USER_ID, *, router=None):
     return press
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed write still posts its traceback and a generic reply"
+@pytest.mark.parametrize(
+    "post_fails",
+    [
+        pytest.param(
+            False,
+            id="logged",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#442: a failed write still posts its traceback and a generic reply",
+            ),
+        ),
+        pytest.param(
+            True,
+            id="log-channel-unwritable",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#442: a failed write's log post is unguarded, so a log channel that "
+                "cannot be written stops the revert and the reply",
+            ),
+        ),
+    ],
 )
-@pytest.mark.parametrize("post_fails", [False, True], ids=["logged", "log-channel-unwritable"])
 async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, caplog, post_fails):
     """The write stops on a database fault. The reply carries every element and neither the
     database's message nor the exception's type; the `AMEND_FAILED` line names the type and
