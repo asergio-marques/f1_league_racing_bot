@@ -6566,5 +6566,5 @@ class _ConfirmView(LeagueView):
             interaction.user,
             what=_round_amend_named(self._round_number),
             lapsed=False,
-            detail="Nothing was changed.",
+            detail="Nothing was changed. Run `/round amend` again to start over.",
         )
