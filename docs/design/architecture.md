@@ -529,7 +529,7 @@ as the core specification's "The record of what changed" asks. `log_lines` lives
 to name its member from, reaches the league's server through `league_guild`, and
 `core/utils/league_server.py`, which defines that, imports `interaction_errors`. `refuse` sits
 beside it so that each standard line is formed in one place. Like
-`report_failure`, neither raises: each attempts the reply and the line on its own.
+`report_failure`, neither raises, and `refuse` attempts its reply and its line each on its own.
 
 **Every line for the log channel goes through `OutputRouter.post_log`**, which divides a record
 too long for one message on its line breaks; a reply too long for one message is sent in parts
