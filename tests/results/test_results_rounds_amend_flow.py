@@ -574,9 +574,6 @@ async def test_a_rejected_paste_says_to_re_run_results_rounds_amend(tmp_path, re
     assert _replied(interaction).endswith(told)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed write is still answered as an internal error, without the plain kind"
-)
 async def test_a_failed_write_is_reported_and_tidied_up(tmp_path):
     """The manager is told the kind of fault in plain words, never its message, and the
     channel still goes. What the log channel gets is
@@ -1268,9 +1265,6 @@ def _gone():
     return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failure before writing does not yet name the plain kind of fault"
-)
 async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     """The review's case: the channel is deleted after the first paste, and asking for the
     second session fails. The manager is told the plain kind of fault, a request Discord
@@ -1431,19 +1425,10 @@ def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
         pytest.param(
             False,
             id="logged",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#442: a failed write still posts its traceback and a generic reply",
-            ),
         ),
         pytest.param(
             True,
             id="log-channel-unwritable",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#442: a failed write's log post is unguarded, so a log channel that "
-                "cannot be written stops the revert and the reply",
-            ),
         ),
     ],
 )
@@ -1486,9 +1471,6 @@ async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, c
     assert any(r.exc_info and r.exc_info[1] is error for r in caplog.records)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failure before writing does not yet name the plain kind of fault"
-)
 async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tmp_path):
     """A database fault while the pastes are collected: the admin is told the plain kind,
     that nothing was written, and to re-run; the line names the fault's type alone."""

@@ -2308,6 +2308,26 @@ _AMENDMENT_NOT_OPEN = (
 )
 
 
+#: The next step an amendment that stopped tells its manager.
+AMENDMENT_RE_RUN = "Re-run `/results rounds amend` to try again."
+#: What an amendment put back as it was says became of the round.
+ROUND_PUT_BACK = "The round was put back as it was. " + AMENDMENT_RE_RUN
+
+
+def amendment_fault_reply(kind: str, became: str) -> str:
+    """The reply to an amendment that stopped on a fault in the bot.
+
+    It says the fault is the bot's and not anything the manager entered, names the *kind* of
+    fault in plain words — `describe_fault`'s, never the exception — and says what *became* of
+    the round and what to do next. An amendment undoes itself, so it says that rather than the
+    standard "may have been partly done" (the core specification's "When a command fails").
+    """
+    return (
+        "❌ The amendment stopped on a fault in the bot, not on anything you entered: "
+        f"{kind}. {became}"
+    )
+
+
 def _amended_sessions(state) -> list[SessionType]:
     """The sessions an amendment's review state replays — see
     :func:`run_amendment_review_stages`, which is what puts them there."""

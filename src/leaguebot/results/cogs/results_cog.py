@@ -37,7 +37,7 @@ from leaguebot.core.utils.channel_guard import (
     league_manager_only,
 )
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -1995,20 +1995,26 @@ class ResultsCog(commands.Cog):
             await self._amend_round_results(
                 interaction, division_name, round_number, session, opened
             )
-        except Exception:
+        except Exception as exc:
             if opened.round_id is None or opened.stage_one_started:
                 raise
             log.exception("amend: round %s failed before anything was written", opened.round_id)
-            await self._let_go_of_unwritten_amendment(interaction, opened)
+            await self._let_go_of_unwritten_amendment(interaction, opened, exc)
 
     async def _let_go_of_unwritten_amendment(
-        self, interaction: discord.Interaction, opened: _OpenedAmendment
+        self, interaction: discord.Interaction, opened: _OpenedAmendment, error: BaseException
     ) -> None:
         """Forget an amendment that failed before stage one, and delete its channel.
 
-        As every amendment's channel goes: see `_close_amend_channel_record`.
+        As every amendment's channel goes: see `_close_amend_channel_record`. The admin is told
+        the plain kind of *error* and that nothing was written, and the log channel gets one
+        `AMEND_FAILED` line naming its type alone; the traceback is the host's log's.
         """
-        from leaguebot.results.services.result_submission_service import _close_amend_channel_record
+        from leaguebot.results.services.result_submission_service import (
+            AMENDMENT_RE_RUN,
+            _close_amend_channel_record,
+            amendment_fault_reply,
+        )
 
         # Its one caller lets an amendment go only once its record is in.
         assert opened.round_id is not None
@@ -2025,14 +2031,17 @@ class ResultsCog(commands.Cog):
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
                 f"round {opened.round_number}\n"
+                f"  fault: {type(error).__name__}. The details are in the host's log.\n"
                 "  Failed before the corrected results were recorded; nothing was written."
             )
         except Exception:  # noqa: BLE001
             log.exception("amend: could not log the failure of round %s", opened.round_id)
         try:
             await interaction.followup.send(
-                "\u274c Amendment failed due to an internal error before anything was "
-                "written. Check the log channel, then re-run `/results rounds amend`.",
+                amendment_fault_reply(
+                    describe_fault(error),
+                    f"It stopped before anything was written. Nothing was written. {AMENDMENT_RE_RUN}",
+                ),
                 ephemeral=True,
             )
         except discord.HTTPException:
@@ -2046,7 +2055,15 @@ class ResultsCog(commands.Cog):
         session: app_commands.Choice[str] | None,
         opened: _OpenedAmendment,
     ) -> None:
-        """The body of `/results rounds amend`, filling in *opened* as it goes."""
+        """The body of `/results rounds amend`, filling in *opened* as it goes.
+
+        **A fault while stage one writes is reported here and not raised again.** The write is
+        undone first — a real clean-up, putting the round back as it stood — and the amendment
+        then reports its own failure: the admin is told the plain kind of fault and what became
+        of the round, and the log channel gets one `AMEND_FAILED` line naming the fault's type,
+        the traceback going to the host's log. Raised again, the command tree would report it a
+        second time, and in words that cannot say the round was put back.
+        """
         guild = guild_of(interaction)
         if not await self.bot.module_service.is_results_enabled():
             await interaction.response.send_message(
@@ -2607,8 +2624,10 @@ class ResultsCog(commands.Cog):
             )
 
         from leaguebot.results.services.result_submission_service import (
+            ROUND_PUT_BACK,
             AmendmentWouldOrphanVerdictError,
             amend_round_results,
+            amendment_fault_reply,
         )
         # **Cancelled at the last moment** (#345). Read again here, the last point at which
         # stopping costs nothing: from the next line the write is under way.
@@ -2637,15 +2656,17 @@ class ResultsCog(commands.Cog):
             stage_one_writing[0] = False
             await _end("AMEND_REFUSED", detail=str(exc), reply=f"❌ {exc}")
             return
-        except Exception as exc:
-            import traceback as _tb
-            error_summary = f"{type(exc).__name__}: {exc}"
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
-                f"round {rnd.round_number} session {sessions_text}\n"
-                f"  error: {error_summary}\n"
-                f"```\n{_tb.format_exc()[-1500:]}\n```",
-            )
+        except Exception as exc:  # noqa: BLE001 — undone, then reported: see the docstring
+            log.exception("amend: stage one of round %s failed", rnd.id)
+            # Guarded, so that the revert and the reply below go ahead whatever becomes of it.
+            try:
+                await self.bot.output_router.post_log(
+                    f"{interaction.user.display_name} (<@{interaction.user.id}>) | AMEND_FAILED | "
+                    f"round {rnd.round_number} session {sessions_text}\n"
+                    f"  fault: {type(exc).__name__}. The details are in the host's log.",
+                )
+            except Exception:  # noqa: BLE001
+                log.warning("amend: could not log the failure of round %s", rnd.id, exc_info=True)
             # **Put back whatever stage one committed before the channel goes** (#345). The
             # classifications are written in one transaction, but the points and the standings
             # after it are not; a failure there left the round half-amended, and deleting the
@@ -2658,17 +2679,17 @@ class ResultsCog(commands.Cog):
                 stage_one_writing[0] = False
                 log.exception("amend: could not revert round %s after a failure", rnd.id)
                 await interaction.followup.send(
-                    "❌ Amendment failed due to an internal error, and the round could "
-                    "not be put back. Restarting the bot retries that; check the log "
-                    "channel for details.",
+                    amendment_fault_reply(
+                        describe_fault(exc),
+                        "The round could not be put back. Restarting the bot retries that.",
+                    ),
                     ephemeral=True,
                 )
                 return
             stage_one_writing[0] = False
             await _cleanup_channel()
             await interaction.followup.send(
-                "❌ Amendment failed due to an internal error. Check the log channel for details.",
-                ephemeral=True,
+                amendment_fault_reply(describe_fault(exc), ROUND_PUT_BACK), ephemeral=True
             )
             return
 
