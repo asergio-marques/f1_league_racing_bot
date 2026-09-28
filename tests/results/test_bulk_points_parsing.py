@@ -36,7 +36,6 @@ from leaguebot.results.cogs.results_cog import _parse_bulk_lines
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_clean_table_is_read_in_full():
     valid, errors, _overrides = _parse_bulk_lines("1, 25\n2, 18\n3, 15")
 
@@ -44,7 +43,6 @@ def test_a_clean_table_is_read_in_full():
     assert errors == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_whitespace_around_the_comma_is_forgiven():
     """A pasted table carries it, and refusing over spacing would refuse most real input."""
     valid, errors, _overrides = _parse_bulk_lines("  1 ,   25  \n2,18")
@@ -53,7 +51,6 @@ def test_whitespace_around_the_comma_is_forgiven():
     assert errors == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_blank_lines_are_skipped():
     """A paste picks up trailing newlines and blank separators between blocks."""
     valid, errors, _overrides = _parse_bulk_lines("\n1, 25\n\n\n2, 18\n\n")
@@ -62,7 +59,6 @@ def test_blank_lines_are_skipped():
     assert errors == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_points_of_zero_are_accepted():
     """Most of a table is zero — only the top positions score — so refusing zero would
     make the common case impossible."""
@@ -72,7 +68,6 @@ def test_points_of_zero_are_accepted():
     assert errors == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_line_with_more_than_one_comma_keeps_the_rest_as_points():
     """Split on the first comma only. A trailing comment after the points is a manager's
     note, and it earns an error about the points rather than a malformed-line error that
@@ -88,7 +83,6 @@ def test_a_line_with_more_than_one_comma_keeps_the_rest_as_points():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_line_with_no_comma_is_malformed():
     valid, errors, _overrides = _parse_bulk_lines("1 25")
 
@@ -97,7 +91,6 @@ def test_a_line_with_no_comma_is_malformed():
     assert "1 25" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 @pytest.mark.parametrize("position", ["first", "1.5", "one", "", "+1"])
 def test_a_position_that_is_not_a_plain_integer_is_refused(position):
     """The round-trip check catches what `int()` alone would accept or truncate."""
@@ -107,7 +100,6 @@ def test_a_position_that_is_not_a_plain_integer_is_refused(position):
     assert any("position" in e.lower() for e in errors)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 @pytest.mark.parametrize("points", ["twenty-five", "25.5", "", "+25"])
 def test_points_that_are_not_a_plain_integer_are_refused(points):
     valid, errors, _overrides = _parse_bulk_lines(f"1, {points}")
@@ -116,7 +108,6 @@ def test_points_that_are_not_a_plain_integer_are_refused(points):
     assert any("points" in e.lower() for e in errors)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_float_position_is_refused_rather_than_truncated():
     """`int(1.5)` would be 1 — silently scoring position 1 from a line that said 1.5, with
     the manager never knowing which line had been reinterpreted."""
@@ -125,7 +116,6 @@ def test_a_float_position_is_refused_rather_than_truncated():
     assert valid == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_position_below_one_is_refused():
     """There is no position zero, and a negative one would sort above the winner."""
     valid, errors, _overrides = _parse_bulk_lines("0, 25\n-1, 25")
@@ -135,7 +125,6 @@ def test_a_position_below_one_is_refused():
     assert all(">= 1" in e for e in errors)
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_negative_points_are_refused():
     """A championship does not take points away for finishing."""
     valid, errors, _overrides = _parse_bulk_lines("1, -5")
@@ -144,7 +133,6 @@ def test_negative_points_are_refused():
     assert ">= 0" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_every_error_quotes_the_line_it_came_from():
     """A manager staring at twenty lines and the words "invalid position" has no way to
     find it."""
@@ -158,7 +146,6 @@ def test_every_error_quotes_the_line_it_came_from():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_bad_line_does_not_discard_the_good_ones():
     """The parser reads every line, so a bad one does not stop the good ones being read and
     every fault can be reported at once. Whether any of it is applied is the caller's rule."""
@@ -168,7 +155,6 @@ def test_a_bad_line_does_not_discard_the_good_ones():
     assert len(errors) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_several_bad_lines_are_all_reported():
     """One fix at a time, twenty lines deep, is how a manager comes to give up."""
     _, errors, _overrides = _parse_bulk_lines("bad\n0, 5\n2, -1")
@@ -181,7 +167,6 @@ def test_several_bad_lines_are_all_reported():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_repeated_position_keeps_the_last_value_and_says_so():
     """A manager correcting themselves mid-paste means the second value — and discarding
     both would be the one outcome neither reading supports. The note is what stops the
@@ -194,7 +179,6 @@ def test_a_repeated_position_keeps_the_last_value_and_says_so():
     assert "Duplicate position 1" in overrides[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_the_duplicate_note_names_both_values():
     """So a manager can tell which of their two lines won without re-reading the paste."""
     _, _errors, overrides = _parse_bulk_lines("1, 25\n1, 30")
@@ -203,7 +187,6 @@ def test_the_duplicate_note_names_both_values():
     assert "30" in overrides[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_duplicate_does_not_move_the_position_in_the_table():
     """The row keeps the place its first mention gave it, so a correction does not
     reorder the table underneath the manager."""
@@ -212,7 +195,6 @@ def test_a_duplicate_does_not_move_the_position_in_the_table():
     assert valid == [(1, 30), (2, 18)]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_an_empty_paste_yields_nothing_and_complains_about_nothing():
     """A manager who opened the modal and thought better of it."""
     valid, errors, _overrides = _parse_bulk_lines("")
@@ -221,7 +203,6 @@ def test_an_empty_paste_yields_nothing_and_complains_about_nothing():
     assert errors == []
 
 
-@pytest.mark.xfail(strict=True, reason="#442: _parse_bulk_lines does not yet return the overrides apart from the errors")
 def test_a_paste_of_only_whitespace_is_the_same():
     valid, errors, _overrides = _parse_bulk_lines("\n   \n\t\n")
 

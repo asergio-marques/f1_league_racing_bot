@@ -122,19 +122,22 @@ def _ordering_notice(
 # Bulk-parse helper (T012)
 # ---------------------------------------------------------------------------
 
-def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
+def _parse_bulk_lines(
+    text: str,
+) -> tuple[list[tuple[int, int]], list[str], list[str]]:
     """Parse multi-line '<position>, <points>' text.
 
     Rules:
     - Blank lines are skipped.
     - position must be a positive integer (>= 1).
     - points must be a non-negative integer (>= 0).
-    - If a position appears more than once the last value wins; the duplicate
-      is noted in the error list.
-    - Returns (valid_pairs_in_input_order_deduped, error_messages).
+    - If a position appears more than once the last value wins; the duplicate is noted
+      among the overrides, which are not errors: an override never refuses a paste.
+    - Returns (valid_pairs_in_input_order_deduped, error_messages, override_notes).
     """
     seen: dict[int, int] = {}  # position -> points (last-wins tracking)
     errors: list[str] = []
+    overrides: list[str] = []
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -166,13 +169,13 @@ def _parse_bulk_lines(text: str) -> tuple[list[tuple[int, int]], list[str]]:
             errors.append(f"Points must be >= 0, got {points} on line: {line!r}")
             continue
         if position in seen:
-            errors.append(
+            overrides.append(
                 f"Duplicate position {position}: previous value {seen[position]} overridden by {points}"
             )
         seen[position] = points
 
     valid = list(seen.items())
-    return valid, errors
+    return valid, errors, overrides
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +206,8 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        valid, errors = _parse_bulk_lines(self.entries.value)
+        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
+        errors = errors + overrides
         if not valid and not errors:
             await interaction.followup.send("No entries provided.", ephemeral=True)
             return
@@ -300,7 +304,8 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         if season is None:
             return
 
-        valid, errors = _parse_bulk_lines(self.entries.value)
+        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
+        errors = errors + overrides
         if not valid and not errors:
             await interaction.followup.send("No entries provided.", ephemeral=True)
             return
