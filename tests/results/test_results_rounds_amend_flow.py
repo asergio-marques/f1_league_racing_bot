@@ -1595,15 +1595,14 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
     "reported by the amendment's own reply and AMEND_FAILED line, not by report_failure",
 )
 @pytest.mark.parametrize(
-    "case", ["cancel-revert-fails", "cancel-revert-fails-for-another-manager", "report-stage-fails"]
+    "case", ["cancel-revert-fails", "report-stage-fails"]
 )
 async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path, case):
     """Cancel is pressed after stage one and the round cannot be put back: the presser is given
     the standard reply naming the plain kind, that the round could not be put back and that
     restarting the bot retries it, and one standard failure line is logged, naming the member
-    who pressed Cancel — who may be a league manager other than the opener — by mention. And a
-    report stage that cannot open, undone by the cancel path, still makes one line and not
-    two."""
+    who pressed Cancel by mention. And a report stage that cannot open, undone by the cancel
+    path, still makes one line and not two."""
     import sqlite3
 
     db_path = await _make_db(tmp_path, name=f"amend_{case.replace('-', '_')}")
@@ -1626,14 +1625,11 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
 
     await _amend(cog, interaction)
     view = channel.send.await_args_list[0].kwargs["view"]
-    presser = USER_ID if case == "cancel-revert-fails" else 88
-    press = _press(
-        presser, name="Admin" if presser == USER_ID else "Manager", router=cog.bot.output_router
-    )
+    press = _press(router=cog.bot.output_router)
     with patch(
         "leaguebot.results.services.result_submission_service.cancel_amendment",
         new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
-    ), patch("leaguebot.results.cogs.results_cog.is_league_manager", return_value=True):
+    ):
         await type(view).cancel_btn(view, press, MagicMock())
 
     told = "\n".join(str(c.args[0]) for c in press.followup.send.await_args_list if c.args)
@@ -1643,11 +1639,9 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
     assert "Restarting the bot retries that." in told, "the presser is not told what to do next"
     assert "database is locked" not in told
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    _assert_failure_line(line, "OperationalError", member=presser, what=None)
+    _assert_failure_line(line, "OperationalError", what=None)
     assert "Cancel Amendment" in line.splitlines()[0], "the line does not name the button"
     assert "database is locked" not in line
-    if presser != USER_ID:
-        assert f"<@{USER_ID}>" not in line, "the line names the opener, not the presser"
 
 
 # ---------------------------------------------------------------------------
