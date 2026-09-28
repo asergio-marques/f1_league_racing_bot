@@ -414,7 +414,6 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
 
 
 KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
-    ("signup/cogs/admin_review_cog.py", "_may_review_signup"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, TRACEBACKS),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, TRACEBACKS),
     ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, TRACEBACKS),
@@ -423,18 +422,12 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/cogs/results_cog.py", "BulkConfigSessionModal.on_submit"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "_run_xml_import"): (1, TRACEBACKS),
-    ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, TRACEBACKS),
-    ("attendance/services/attendance_service.py", "_seat_team_field"): (1, TRACEBACKS),
-    ("core/services/cancellation_notice_service.py", "_send"): (1, TRACEBACKS),
     ("image/services/image_preview_service.py", "build_rsvp_preview"): (1, TRACEBACKS),
     ("image/services/image_results_post.py", "_nationality_collected"): (1, TRACEBACKS),
     ("image/services/image_verdict_post.py", "_driver_nationality"): (1, TRACEBACKS),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, TRACEBACKS),
-    ("core/services/season_fingerprint_service.py", "_artwork_signature"): (2, TRACEBACKS),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, TRACEBACKS),
-    ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, TRACEBACKS),
     ("image/utils/font_metrics.py", "_faces_of"): (3, TRACEBACKS),
     ("image/utils/font_metrics.py", "_families_of"): (4, TRACEBACKS),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, TRACEBACKS),

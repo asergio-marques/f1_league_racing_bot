@@ -397,7 +397,10 @@ async def _checkin_attachment(
             config = await bot.attendance_service.get_config()
             deadline_hours = getattr(config, "rsvp_deadline_hours", None)
         except Exception:  # noqa: BLE001 — the deadline is optional on the graphic
-            pass
+            log.warning(
+                "run_rsvp_notice: the RSVP deadline could not be read for division %d, so the "
+                "check-in graphic is drawn without it", division_id, exc_info=True,
+            )
 
         return await try_attach(
             bot,

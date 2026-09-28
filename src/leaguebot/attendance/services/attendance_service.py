@@ -1454,6 +1454,10 @@ async def _seat_team_field(
                 )
             ).fetchall()
     except Exception:  # noqa: BLE001 — a nameless team is drawn empty, never fatal
+        log.warning(
+            "post_attendance_sheet: the teams of division %s could not be read, so they are "
+            "drawn without names", division_id, exc_info=True,
+        )
         return {}
     return {int(row["uid"]): row["name"] for row in rows if row["name"]}
 

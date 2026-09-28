@@ -422,6 +422,10 @@ async def _artwork_signature(bot: LeagueBot) -> list:
                 if filename:
                     signature.append([column, _path_signature(root / filename)])
         except Exception:  # noqa: BLE001 — an unresolvable directory is itself a state
+            log.warning(
+                "season fingerprint: the template directory %s could not be read", directory,
+                exc_info=True,
+            )
             signature.append(["template_directory", directory, "unresolvable"])
 
     for column in sorted(ASSET_DIRECTORIES):
@@ -430,7 +434,11 @@ async def _artwork_signature(bot: LeagueBot) -> list:
             continue
         try:
             signature.append([column, _directory_signature(resolve_within_project_root(value))])
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — an unresolvable directory is itself a state
+            log.warning(
+                "season fingerprint: the %s directory %s could not be read", column, value,
+                exc_info=True,
+            )
             signature.append([column, value, "unresolvable"])
 
     return signature

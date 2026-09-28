@@ -1019,7 +1019,11 @@ class WizardService:
                 if signup_record is not None
                 else discord_user_id
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — the line is posted under the member's id instead
+            log.warning(
+                "handle_member_remove: could not read the signup record of %s", discord_user_id,
+                exc_info=True,
+            )
             display_name = discord_user_id
 
         await self._output_router.post_log(

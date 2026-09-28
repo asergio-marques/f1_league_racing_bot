@@ -234,6 +234,7 @@ async def _send(guild, channel_id, content: str, **kwargs) -> str | None:
     try:
         await channel.send(content, **kwargs)
     except Exception as exc:  # noqa: BLE001 — one notice never stops another
+        log.warning("cancellation notice: could not post to channel %s", channel_id, exc_info=True)
         return f"the message could not be posted ({exc})"
     return None
 

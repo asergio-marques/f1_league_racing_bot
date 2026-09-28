@@ -46,7 +46,8 @@ async def _may_review_signup(interaction: discord.Interaction) -> bool:
     bot = bot_of(interaction)
     try:
         server_cfg = await bot.config_service.get_server_config()
-    except Exception:
+    except Exception:  # noqa: BLE001 — see the docstring: a fault refuses, never grants
+        log.warning("signup review: the server configuration could not be read", exc_info=True)
         return False
     if server_cfg is None:
         return False

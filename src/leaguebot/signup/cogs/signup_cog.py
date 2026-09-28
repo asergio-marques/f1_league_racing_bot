@@ -762,7 +762,11 @@ class SignupCog(commands.Cog):
                     if rec is not None
                     else (member.display_name or str(member.id))
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 — the line is posted under the server's name instead
+                log.warning(
+                    "on_member_remove: could not read the signup record of %s", member.id,
+                    exc_info=True,
+                )
                 display_name = member.display_name or str(member.id)
             await self.bot.output_router.post_log(
                 f"Driver left server: **{display_name}** (<@{member.id}>) | state: {state}",
