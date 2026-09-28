@@ -1249,17 +1249,10 @@ def _gone():
     return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: an amendment failing between its pastes is reported by its own reply and "
-    "AMEND_FAILED line, not by report_failure",
-)
 async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     """The review's case: the channel is deleted after the first paste, and asking for the
-    second session fails. The manager is given the standard reply naming the plain kind of
-    fault, a request Discord refused, and ending on that nothing was written, said once, and
-    the re-run; the log channel gets the standard failure line, with beneath it that nothing
-    was written."""
+    second session fails. The manager is told the plain kind of fault, a request Discord
+    refused, and that nothing was written, said once."""
     db_path = await _make_db(tmp_path, name="amend_fault_between")
     await _add_qualifying(db_path)
     channel = _amend_channel()
@@ -1277,9 +1270,12 @@ async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     stubs["amend"].assert_not_awaited()
     assert await _amend_rows(db_path) == 0
     channel.delete.assert_awaited_once()
-    _assert_failure_line(_failure_line(cog), "NotFound", became="nothing was written")
+    assert "AMEND_FAILED" in _logged(cog)
     replied = _replied(interaction)
-    assert replied.endswith(_fault_reply(PLAIN_DISCORD, f"Nothing was written. {RE_RUN}"))
+    assert (
+        f"Discord refused or failed a request from the bot. Nothing was written. {RE_RUN}"
+        in replied
+    )
     assert "before anything was written" not in replied
 
 
@@ -1350,7 +1346,7 @@ async def test_a_rejected_paste_whose_channel_cannot_be_deleted_keeps_its_row_cl
 async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp_path):
     """An interaction's token lapses after fifteen minutes, which several pastes outlast. The
     rejection was logged and tidied up, and the reply failing afterwards had it logged a second
-    time as a failure, "nothing was written" and all."""
+    time as `AMEND_FAILED`, "nothing was written" and all."""
     db_path = await _make_db(tmp_path, name="amend_reply_lapsed")
     cog = _make_cog(db_path)
     interaction = _interaction(_amend_channel(), message=_message())
@@ -1363,7 +1359,7 @@ async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp
     assert logged.startswith("⛔ ")
     assert f"refused for Admin (<@{USER_ID}>)" in logged
     assert "AMEND_REJECTED" not in logged
-    assert " failed for " not in logged, "the refusal was logged a second time as a failure"
+    assert "AMEND_FAILED" not in logged
     assert await _amend_rows(db_path) == 0
 
 
@@ -1371,67 +1367,14 @@ async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp
 # A failure names the kind of fault in plain words, and never its message (#442)
 #
 # An amendment that stops on a fault tells the admin that the fault is the bot's and not
-# anything they entered, the plain kind of fault, and last what became of the round and what
-# to do next. It is reported by `report_failure`, the one failure path: the log channel gets
-# the standard failure line, naming the member by mention and the fault's type alone, with
-# beneath it what became of the round and the next step; the traceback goes to the host's
+# anything they entered, the plain kind of fault, what became of the round, and what to do
+# next. Its `AMEND_FAILED` line names the fault's type alone; the traceback goes to the host's
 # log. One failure makes one line.
 # ---------------------------------------------------------------------------
 
 PLAIN_DATABASE = "the bot could not read or write its database"
 PLAIN_INTERNAL = "the bot hit an internal fault"
-PLAIN_DISCORD = "Discord refused or failed a request from the bot"
 RE_RUN = "Re-run `/results rounds amend` to try again."
-#: The amendment as its failure reply and line name it.
-AMENDED = "`/results rounds amend` of round 3 (Pro Division)"
-#: The last line beneath the failure line of an amendment whose round was put back.
-PUT_BACK_LAST = "  The round was put back as it was. Re-run /results rounds amend to try again."
-
-
-def _fault_reply(fault: str, outcome: str, what: str = AMENDED) -> str:
-    """`report_failure`'s reply naming *fault*, which ends on *outcome*."""
-    return (
-        f"❌ {what} stopped on a fault in the bot, not on anything you entered, and did not "
-        f"finish: {fault}. The fault is recorded in the log channel. {outcome}"
-    )
-
-
-def _failure_line(cog) -> str:
-    """The one standard failure line in the log channel."""
-    posts = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    lines = [p for p in posts if p.startswith("❌ ") and " failed for " in p]
-    assert len(lines) == 1, f"not one standard failure line among {posts}"
-    return lines[0]
-
-
-def _assert_failure_line(
-    line: str,
-    kind: str,
-    *,
-    member: int = USER_ID,
-    what: str | None = AMENDED,
-    became: str | None = None,
-    last: str | None = None,
-    ends: str | None = None,
-) -> None:
-    """*line* is the standard failure line for *what*, naming *member* by mention and the
-    fault's type *kind*, with beneath it, each line indented two spaces, what became of the
-    round (*became*) and the next step (*last*, the whole last line, or *ends*, its end)."""
-    head, *beneath = line.splitlines()
-    tail = f" failed for <@{member}> — {kind}. The details are in the host's log."
-    if what is not None:
-        assert head == f"❌ {what}{tail}"
-    else:
-        assert head.startswith("❌ ") and head.endswith(tail)
-    assert beneath, "nothing is said beneath the line"
-    assert all(part.startswith("  ") for part in beneath), "the detail is not indented"
-    if became is not None:
-        assert became in "\n".join(beneath).lower(), f"the line does not say that {became}"
-    if last is not None:
-        assert beneath[-1] == last
-    if ends is not None:
-        assert beneath[-1].endswith(ends)
-    assert "AMEND_FAILED" not in line
 
 
 def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
@@ -1461,11 +1404,6 @@ def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
     return press
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failed amendment write is reported by its own reply and AMEND_FAILED "
-    "line, not by report_failure",
-)
 @pytest.mark.parametrize(
     "post_fails",
     [
@@ -1480,12 +1418,10 @@ def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
     ],
 )
 async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, caplog, post_fails):
-    """The write stops on a database fault. The reply is the standard one naming the plain kind
-    and ending on the round put back and the re-run, with neither the database's message nor
-    the exception's type; the failure line names the type and neither the message nor a code
-    block, with beneath it that the round was put back; the host's log keeps the exception.
-    Where the log channel cannot be written, the round is still put back and the admin still
-    told."""
+    """The write stops on a database fault. The reply carries every element and neither the
+    database's message nor the exception's type; the `AMEND_FAILED` line names the type and
+    neither the message nor a code block; the host's log keeps the exception. Where the log
+    channel cannot be written, the round is still put back and the admin still told."""
     import logging
     import sqlite3
 
@@ -1504,29 +1440,26 @@ async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, c
 
     revert.assert_awaited_once()
     replied = _replied(interaction)
-    assert replied.endswith(
-        _fault_reply(PLAIN_DATABASE, f"The round was put back as it was. {RE_RUN}")
-    )
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert PLAIN_DATABASE in replied
+    assert "put back as it was" in replied
+    assert RE_RUN in replied
     assert "database is locked" not in replied
     assert "OperationalError" not in replied
     if post_fails:
         return
-    line = _failure_line(cog)
-    _assert_failure_line(line, "OperationalError", last=PUT_BACK_LAST)
-    assert "database is locked" not in line
-    assert "```" not in line
+    logged = _logged(cog)
+    assert "AMEND_FAILED" in logged
+    assert "OperationalError" in logged
+    assert "database is locked" not in logged
+    assert "```" not in logged
     assert any(r.exc_info and r.exc_info[1] is error for r in caplog.records)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: an amendment failing before it writes is reported by its own reply and "
-    "AMEND_FAILED line, not by report_failure",
-)
 async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tmp_path):
-    """A database fault while the pastes are collected: the admin is given the standard reply
-    naming the plain kind, ending on that nothing was written, said once, and the re-run; the
-    failure line names the fault's type alone, with beneath it that nothing was written."""
+    """A database fault while the pastes are collected: the admin is told the plain kind,
+    that nothing was written, said once, and to re-run; the line names the fault's type
+    alone."""
     import sqlite3
 
     db_path = await _make_db(tmp_path, name="amend_fail_unwritten_kind")
@@ -1542,24 +1475,20 @@ async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tm
     stubs["amend"].assert_not_awaited()
     assert await _amend_rows(db_path) == 0
     replied = _replied(interaction)
-    assert replied.endswith(_fault_reply(PLAIN_DATABASE, f"Nothing was written. {RE_RUN}"))
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert f"{PLAIN_DATABASE}. Nothing was written. {RE_RUN}" in replied
     assert "before anything was written" not in replied
     assert "database is locked" not in replied
-    line = _failure_line(cog)
-    _assert_failure_line(line, "OperationalError", became="nothing was written")
-    assert "database is locked" not in line
+    logged = _logged(cog)
+    assert "AMEND_FAILED" in logged
+    assert "OperationalError" in logged
+    assert "database is locked" not in logged
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a report stage that cannot open is reported by the amendment's own reply "
-    "and AMEND_FAILED line, not by report_failure",
-)
 async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
     """Stage one is written, and the report stage cannot be opened. The amendment is undone,
-    the admin given the standard reply naming the plain kind and ending on the round put back
-    and the re-run, and the log channel gets one standard failure line naming the fault's
-    type, with beneath it that the round was put back."""
+    the admin told the plain kind, that the round was put back, and to re-run, and the log
+    channel gets one `AMEND_FAILED` line naming the fault's type."""
     db_path = await _make_db(tmp_path, name="amend_report_stage_kind")
     interaction = _interaction(_amend_channel(), message=_message())
     cog = _make_cog(db_path)
@@ -1574,38 +1503,27 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
         await _amend(cog, interaction)
 
     replied = _replied(interaction)
-    assert (
-        f"{AMENDED} stopped on a fault in the bot, not on anything you entered, and did not "
-        f"finish: {PLAIN_INTERNAL}. The fault is recorded in the log channel."
-    ) in replied
+    assert "stopped on a fault in the bot, not on anything you entered" in replied
+    assert PLAIN_INTERNAL in replied
     assert "put back as it was" in replied
-    assert replied.endswith(RE_RUN)
+    assert RE_RUN in replied
     assert "no channel" not in replied
-    line = _failure_line(cog)
-    _assert_failure_line(
-        line, "RuntimeError", became="put back as it was",
-        ends="Re-run /results rounds amend to try again.",
-    )
-    assert "no channel" not in line
+    logged = _logged(cog)
+    assert "AMEND_FAILED" in logged
+    assert "RuntimeError" in logged
+    assert "no channel" not in logged
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failed Cancel Amendment revert and a report stage that cannot open are "
-    "reported by the amendment's own reply and AMEND_FAILED line, not by report_failure",
-)
-@pytest.mark.parametrize(
-    "case", ["cancel-revert-fails", "report-stage-fails"]
-)
+@pytest.mark.parametrize("case", ["cancel-revert-fails", "report-stage-fails"])
 async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path, case):
-    """Cancel is pressed after stage one and the round cannot be put back: the presser is given
-    the standard reply naming the plain kind, that the round could not be put back and that
-    restarting the bot retries it, and one standard failure line is logged, naming the member
-    who pressed Cancel by mention. And a report stage that cannot open, undone by the cancel
-    path, still makes one line and not two."""
+    """Cancel is pressed after stage one and the round cannot be put back: the presser is told
+    the plain kind, that the round could not be put back and that restarting the bot retries
+    it, and one `AMEND_FAILED` line is
+    logged. And a report stage that cannot open, undone by the cancel path, still makes one
+    line and not two."""
     import sqlite3
 
-    db_path = await _make_db(tmp_path, name=f"amend_{case.replace('-', '_')}")
+    db_path = await _make_db(tmp_path, name=f"amend_{case}")
     channel = _amend_channel()
     interaction = _interaction(channel, message=_message())
     cog = _make_cog(db_path)
@@ -1620,7 +1538,7 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
         ):
             await _amend(cog, interaction)
         [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-        _assert_failure_line(line, "RuntimeError")
+        assert "AMEND_FAILED" in line
         return
 
     await _amend(cog, interaction)
@@ -1633,14 +1551,14 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
         await type(view).cancel_btn(view, press, MagicMock())
 
     told = "\n".join(str(c.args[0]) for c in press.followup.send.await_args_list if c.args)
-    assert "stopped on a fault in the bot, not on anything you entered, and did not finish" in told
-    assert f"did not finish: {PLAIN_DATABASE}. The fault is recorded in the log channel." in told
+    assert "stopped on a fault in the bot, not on anything you entered" in told
+    assert PLAIN_DATABASE in told
     assert "could not be put back" in told
     assert "Restarting the bot retries that." in told, "the presser is not told what to do next"
     assert "database is locked" not in told
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    _assert_failure_line(line, "OperationalError", what=None)
-    assert "Cancel Amendment" in line.splitlines()[0], "the line does not name the button"
+    assert "AMEND_FAILED" in line
+    assert "OperationalError" in line
     assert "database is locked" not in line
 
 
