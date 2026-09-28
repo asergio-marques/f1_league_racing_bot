@@ -110,8 +110,9 @@ const EVIDENCE = { type: 'array', items: { type: 'string' }, description: 'file:
 
 const QUESTION = {
   type: 'object',
-  required: ['kind', 'question', 'context', 'options', 'recommendation'],
+  required: ['kind', 'question', 'context', 'options', 'recommendation', 'stops'],
   properties: {
+    stops: { type: 'boolean', description: 'true only where the answer changes what a league can do, changes or contradicts a written rule, or cannot be undone (a schema, data a league relies on); false for wording, a log line\'s form, naming and any other call a later change can reverse, which the work then takes on your recommendation until the owner overrules it' },
     kind: { type: 'string', enum: ['business', 'engineering'], description: 'business: what the bot does, what a league sees, what a spec says; engineering: anything else' },
     question: { type: 'string', description: 'in plain terms, leading with what a league sees or what the code does' },
     context: { type: 'string', description: 'what the documents say, quoted with where, or that they say nothing' },
@@ -124,6 +125,14 @@ const QUESTION = {
   },
 }
 const QUESTIONS = { type: 'array', items: QUESTION }
+
+// A question stops the stage only where its answer changes what a league can do, changes or
+// contradicts a written rule, or cannot be undone. Any other, a reversible call with a
+// recommendation, is taken on that recommendation and listed at the next gate, where the owner
+// overrules what they will: stopping the stage for each one cost a run, a Gate 2 and hours apiece.
+// A question that does not say, one no checker framed, an upheld dispute and one with no
+// recommendation to take all stop, since asking the owner is the safe way to fail.
+const stopsTheStage = q => q.stops !== false || !!q.unframed || !!q.finding || !String(q.recommendation || '').trim()
 
 // The issue and the approved plan fix the scope. What a checker finds that the work does not need
 // (the same fault elsewhere, a neighbouring gap, a rule the issue does not name) is drafted for the
@@ -323,7 +332,7 @@ const triage = async (questions, tag, where, context, handled = []) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => agent(
-    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], keeping the question's ref on what settles it, and copying the question word for word into answers[].question. A question that asks the same as one already handled, listed below, goes in duplicates[] with its ref, and is neither answered nor escalated. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
+    `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], marked stops as your instructions say, keeping the question's ref on what settles it, and copying the question word for word into answers[].question. A question that asks the same as one already handled, listed below, goes in duplicates[] with its ref, and is neither answered nor escalated. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
     { ...settingsFor('triage'), label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
@@ -405,16 +414,20 @@ if (stage === 'check') {
       [...(product ? product.questions : []), ...(architecture ? architecture.questions : []), ...(design ? design.questions : [])].map(q => q.question))
     : { answers: [], escalations: [], duplicates: [], findings: [] }
 
-  const questions = [
+  const asked = [
     ...(product ? product.questions : []),
     ...(architecture ? architecture.questions : []),
     ...(design ? design.questions : []),
     ...triaged.escalations,
   ]
+  // A reversible call is assumed on its recommendation and listed in the plan for the owner to
+  // overrule at Gate 1, rather than asked on its own.
+  const questions = asked.filter(stopsTheStage)
+  const assumed = asked.filter(q => !stopsTheStage(q))
   // Every spec rule the plan does not simply follow is the owner's to settle; the calling session
   // makes sure each one reaches them as a question.
   const specRulesToSettle = product ? product.specRules.filter(r => r.status !== 'follows') : []
-  log(`Questions for the owner: ${questions.length}. Spec rules to settle: ${specRulesToSettle.length}. Breaches the plan would add: ${architecture ? architecture.breachesAdded.length : '?'}.`)
+  log(`Questions for the owner: ${questions.length}. Assumed on a recommendation: ${assumed.length}. Spec rules to settle: ${specRulesToSettle.length}. Breaches the plan would add: ${architecture ? architecture.breachesAdded.length : '?'}.`)
   return {
     stage,
     issue,
@@ -425,6 +438,7 @@ if (stage === 'check') {
     design,
     product,
     questions,
+    assumed,
     specRulesToSettle,
     citations: [...(product ? product.citations : []), ...triaged.answers],
     planChanges: [...(architecture ? architecture.planChanges : []), ...triaged.findings.map(f => f.fix)],
@@ -471,6 +485,11 @@ const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt :
 const listSeen = { ...(previous && previous.listSeen ? previous.listSeen : {}) }
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
+// The reversible calls taken on a checker's recommendation rather than asked (stopsTheStage): they
+// bind the builder until the owner overrules them at the gate, and no checker asks them again.
+const provisional = previous && previous.provisional ? [...previous.provisional] : []
+const takeProvisionally = (qs, k) => provisional.push(...qs.map(q => ({ ref: q.ref || '', kind: q.kind, question: q.question, recommendation: q.recommendation, round: k })))
+const PROVISIONAL = 'Calls taken on a checker\'s recommendation, for the owner to confirm or overrule at the gate'
 let written = previous && previous.tests ? [...previous.tests] : []
 let supportWritten = previous && previous.support ? [...previous.support] : []
 // The tests stage's lists as the owner last saw them at Gate 2, so that the report can mark what
@@ -846,7 +865,7 @@ ${stage === 'tests' ? TESTS_JOB : BUILD_JOB}${DESIGN_PASS}
 
 ${start}${answered}${stage === 'tests' ? section('The list as it stands, under its labels', written.length || supportWritten.length ? { tests: written, support: supportWritten } : '') : ''}
 
-${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
+${BUILDER_RULES}${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section(`${PROVISIONAL}: they bind you until the owner overrules them`, provisional)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
 
 const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with the scenario and expectation it gives the owner. Name a test by its node id in a finding: a label can change before the gate. One marked alreadyPasses passes already: it is unmarked and must pass. A deleted one is gone, and says why. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
@@ -884,7 +903,7 @@ const listFor = (lane, tests, support, whole = false) => {
 
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
-const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
+const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${section('The checks the plan passed', ARGS.checks)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
 
 // The summary covers the whole work, however little of it a later round reviews.
 const summaryAsk = () => {
@@ -894,7 +913,7 @@ const summaryAsk = () => {
   return `If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. ${whole} Otherwise leave summary empty.`
 }
 
-const productPrompt = (k, questions, testReport, tests, support, whole = false) => `Job 2 — a round of the branch. ${shared(k, 'product', whole)} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support, whole)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport, tests, support, whole = false) => `Job 2 — a round of the branch. ${shared(k, 'product', whole)} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support, whole)}${section('The tester\'s report', testReport)}`
 
 const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
@@ -910,9 +929,9 @@ Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (a deleted test is not among them)', tests)}`
 
-const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('code')}`
+const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('code')}`
 
-const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed(k, 'design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${priorSection('design')}`
+const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed(k, 'design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('design')}`
 
 const buildTesterPrompt = k => {
   const logFile = `/tmp/work-issue-${issue}-build-r${k}.log`
@@ -1363,13 +1382,13 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   separateDefects.push(...got.flatMap(r => r.separateDefects))
   const roundEscalations = got.flatMap(r => r.escalations)
   // A checker that returned nothing answered none of the builder's questions routed to it: they
-  // go to the owner, as a failed triage's do.
-  if (reviewed.lanes.product === null) roundEscalations.push(...questions.business)
-  if (reviewed.lanes.issue === null) roundEscalations.push(...questions.engineering)
+  // go to the owner, as a failed triage's do, and as unframed, since no checker has judged them.
+  if (reviewed.lanes.product === null) roundEscalations.push(...questions.business.map(q => ({ ...q, unframed: true })))
+  if (reviewed.lanes.issue === null) roundEscalations.push(...questions.engineering.map(q => ({ ...q, unframed: true })))
   const raised = got.flatMap(r => r.raised).map((q, i) => ({ ...q, ref: refsIn(q)[0] || `r${k}-${i + 1}` }))
   const duplicates = []
   if (raised.length) {
-    const handled = [...roundAnswers.map(a => a.question), ...roundEscalations.map(q => q.question)]
+    const handled = [...roundAnswers.map(a => a.question), ...roundEscalations.map(q => q.question), ...provisional.map(p => p.question)]
     const t = await triage(raised, `r${k}`, BRANCH_READ, TRIAGE_CONTEXT, handled)
     citations.push(...t.answers)
     roundAnswers.push(...t.answers)
@@ -1388,22 +1407,28 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   const unheard = builderQuestions.filter(q => !heardRefs.has(q.ref) && !said.has(sameQuestion(q.question)))
   if (unheard.length) log(`Round ${k}: ${unheard.length} question(s) of the builder's went unanswered, and go to the owner.`)
   roundEscalations.push(...unheard.map(q => ({ ...q, unframed: true })))
+  // A reversible call is taken on its recommendation, and only the rest stop the stage.
+  const taken = roundEscalations.filter(q => !stopsTheStage(q))
+  const stopping = roundEscalations.filter(stopsTheStage)
+  takeProvisionally(taken, k)
+  if (taken.length) log(`Round ${k}: ${taken.length} reversible call(s) taken on a checker's recommendation, for the owner to confirm at the gate.`)
 
   lastFailures = [...reviewed.problems, ...(built.clean ? [] : ['the builder left uncommitted changes in the checkout'])]
   const open = [...ledger.values()].filter(materialPending)
   const proposed = stage === 'build' ? built.testChanges || [] : []
-  rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: roundEscalations.length, testChanges: proposed.length, dead })
-  log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${roundEscalations.length} question(s) for the owner; ${proposed.length} test change(s) proposed.`)
+  rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, green: reviewed.green, questions: stopping.length, provisional: taken.length, testChanges: proposed.length, dead })
+  log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${stopping.length} question(s) for the owner; ${proposed.length} test change(s) proposed.`)
 
   // A host problem found in the same round is named beside the questions, to be repaired first.
   // A test change the build needs stops it as a question does: the owner decides it before the
   // build goes on, and the tests stage makes it.
-  if (roundEscalations.length || proposed.length) { status = 'question'; escalations = roundEscalations; testChanges = proposed; failure = hostProblem(reviewed.test) ? `the host, not the code: ${hostProblem(reviewed.test)}` : ''; break }
+  if (stopping.length || proposed.length) { status = 'question'; escalations = stopping; testChanges = proposed; failure = hostProblem(reviewed.test) ? `the host, not the code: ${hostProblem(reviewed.test)}` : ''; break }
   if (hostProblem(reviewed.test)) { status = 'failed'; failure = `the host, not the code: ${hostProblem(reviewed.test)}`; break }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
   // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
-  // reaches the builder only in the next round.
-  if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean && !built.questions.length) {
+  // reaches the builder only in the next round. Nor can one in which a call was just taken, which
+  // the builder has yet to apply.
+  if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean && !built.questions.length && !taken.length) {
     const product = reviewed.lanes.product
     summary = product.summary
     // The product owner found nothing but left its summary out: ask again. Whatever else the
@@ -1419,16 +1444,20 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
         separateDefects.push(...asked.separateDefects)
         const late = [...asked.escalations]
         if (asked.raised.length) {
-          const t = await triage(asked.raised.map((q, i) => ({ ...q, ref: refsIn(q)[0] || `r${k}s-${i + 1}` })), `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...roundAnswers, ...asked.answers, ...asked.escalations].map(x => x.question))
+          const t = await triage(asked.raised.map((q, i) => ({ ...q, ref: refsIn(q)[0] || `r${k}s-${i + 1}` })), `r${k}s`, BRANCH_READ, TRIAGE_CONTEXT, [...roundAnswers, ...asked.answers, ...asked.escalations, ...provisional].map(x => x.question))
           citations.push(...t.answers)
           late.push(...t.escalations)
           for (const f of t.findings) addFindings(f.lane, [f])
         }
         const record = rounds[rounds.length - 1]
         record.openMaterial = [...ledger.values()].filter(materialPending).length
-        record.questions = late.length
-        if (late.length) { status = 'question'; escalations = late; break }
-        if (record.openMaterial) continue
+        const lateTaken = late.filter(q => !stopsTheStage(q))
+        const lateStopping = late.filter(stopsTheStage)
+        takeProvisionally(lateTaken, k)
+        record.questions = lateStopping.length
+        record.provisional += lateTaken.length
+        if (lateStopping.length) { status = 'question'; escalations = lateStopping; break }
+        if (record.openMaterial || lateTaken.length) continue
         summary = asked.summary
       }
       if (!summary) log('The product owner wrote no summary. The calling session asks the product-owner agent for it before the gate.')
@@ -1458,6 +1487,7 @@ return {
   openMaterial: [...ledger.values()].filter(materialPending),
   minor: [...ledger.values()].filter(f => !f.material && f.status === 'open'),
   citations,
+  provisional,
   separateDefects,
   commits,
   ledger: [...ledger.values()],

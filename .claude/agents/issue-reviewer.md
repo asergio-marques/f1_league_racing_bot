@@ -115,6 +115,12 @@ For each engineering question the builder raised, **cite** the written rule that
 own preference. Carry the question's ref on your answer or escalation, so that it is known to be
 settled. Pass business questions on untouched.
 
+**Whether an escalation stops the work.** Mark each one `stops`. It is true only where the answer
+changes what a league can do, changes or contradicts a written rule, or cannot be undone (a schema,
+data a league relies on). It is false for wording, a log line's form, naming and any other call a
+later change can reverse. Such a call is taken on your recommendation, so give one, and the owner
+confirms or overrules it at the next gate without the work stopping for it.
+
 Name every file under `docs/design/` the branch changes since its base, so that a design verifier
 reviews it.
 

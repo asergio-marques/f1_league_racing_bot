@@ -54,6 +54,12 @@ or be told. Then give what the documents say, quoted, or that they say nothing; 
 with what it means for a league; and your recommendation. Keep it short, with no file paths or
 issue lists beyond what the owner needs to decide.
 
+**Whether an escalation stops the work.** Mark each one `stops`. It is true only where the answer
+changes what a league can do, changes or contradicts a written rule, or cannot be undone (a schema,
+data a league relies on). It is false for wording, a log line's form, naming and any other call a
+later change can reverse. Such a call is taken on your recommendation, so give one, and the owner
+confirms or overrules it at the next gate without the work stopping for it.
+
 ## Scope
 
 The issue and the approved plan fix the scope. The same fault elsewhere, a neighbouring gap, or a
