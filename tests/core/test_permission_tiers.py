@@ -39,6 +39,7 @@ from leaguebot.core.utils.channel_guard import (
     league_admin_only,
     league_manager_only,
     may_set_up_bot,
+    server_owner_only,
 )
 
 SERVER_ID = 4242
@@ -71,19 +72,26 @@ _ROLES = {MANAGER_ROLE: _role(MANAGER_ROLE, "Stewards"), ADMIN_ROLE: _role(ADMIN
 def _member(*, roles: tuple[int, ...] = (), administrator: bool = False) -> MagicMock:
     member = MagicMock(spec=discord.Member)
     member.id = 7
+    member.display_name = "Alex"
     member.roles = [_ROLES[r] for r in roles]
     member.guild_permissions = MagicMock()
     member.guild_permissions.administrator = administrator
     return member
 
 
-def _interaction(member: MagicMock, *, channel_id: int = CHANNEL) -> MagicMock:
+def _interaction(
+    member: MagicMock, *, channel_id: int = CHANNEL, command: str = "round add"
+) -> MagicMock:
+    """*member* using `/<command>` on the league's server, before anything has answered it."""
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.channel_id = channel_id
     interaction.user = member
+    interaction.command.qualified_name = command
     interaction.guild.get_role = lambda role_id: _ROLES.get(role_id)
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
     return interaction
 
 
@@ -106,6 +114,11 @@ def _guarded(decorator):
 
 def _reply(interaction: MagicMock) -> str:
     return interaction.response.send_message.call_args.args[0]
+
+
+def _logged(interaction: MagicMock) -> list[str]:
+    """Every line written to the league's log channel."""
+    return [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
 
 
 # ── The predicates ────────────────────────────────────────────────────────
@@ -324,6 +337,179 @@ async def test_a_refusal_describes_a_role_that_has_been_deleted():
     interaction.guild.get_role = lambda role_id: None
     await command(_cog(_config()), interaction)
     assert "the league admin role" in _reply(interaction)
+
+
+# ── A refusal is recorded in the log channel (#482) ───────────────────────
+
+_NOT_RECORDED = "#482: a guard refusal is not yet recorded in the log channel"
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
+async def test_a_wrong_channel_refusal_is_recorded():
+    """A manager's command used outside the interaction channel: the member is told, as ever,
+    and the log channel records who was refused what and why."""
+    command, ran = _guarded(league_manager_only)
+    interaction = _interaction(_member(roles=(MANAGER_ROLE,)), channel_id=CHANNEL + 1)
+
+    await command(_cog(_config()), interaction)
+
+    assert ran == []
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ This command can only be used in the configured interaction channel.", ephemeral=True
+    )
+    assert _logged(interaction) == [
+        "⛔ `/round add` refused for Alex (<@7>) — "
+        "This command can only be used in the configured interaction channel."
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
+async def test_a_member_of_neither_tier_is_recorded_by_name_and_mention():
+    """The line names the member by display name and mention, and the roles by name alone."""
+    command, _ = _guarded(league_manager_only)
+    interaction = _interaction(_member())
+
+    await command(_cog(_config()), interaction)
+
+    assert _logged(interaction) == [
+        "⛔ `/round add` refused for Alex (<@7>) — You don't have permission to use this "
+        "command. You need **Stewards**, or **Owners**."
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
+async def test_a_league_manager_refused_an_admin_command_is_recorded():
+    command, _ = _guarded(league_admin_only)
+    interaction = _interaction(_member(roles=(MANAGER_ROLE,)), command="module enable")
+
+    await command(_cog(_config()), interaction)
+
+    assert _logged(interaction) == [
+        "⛔ `/module enable` refused for Alex (<@7>) — "
+        "This command is a league admin's. You need **Owners**."
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
+async def test_an_admin_command_refused_for_want_of_an_admin_role_is_recorded():
+    command, _ = _guarded(league_admin_only)
+    interaction = _interaction(_member(administrator=True), command="module enable")
+
+    await command(_cog(_config(admin_role=None)), interaction)
+
+    [line] = _logged(interaction)
+    assert line.startswith(
+        "⛔ `/module enable` refused for Alex (<@7>) — No league admin role is configured"
+    )
+
+
+@pytest.mark.parametrize(
+    "decorator", [league_admin_only, league_manager_only],
+    ids=["league_admin_only", "league_manager_only"],
+)
+async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(decorator):
+    """With no configuration there is no log channel to write to (owner decision on #482,
+    2026-09-29: host log only). The member is still told to run `/bot init`."""
+    command, _ = _guarded(decorator)
+    interaction = _interaction(_member(roles=(MANAGER_ROLE,)))
+
+    await command(_cog(None), interaction)
+
+    assert "/bot init" in _reply(interaction)
+    interaction.client.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_command_used_in_a_direct_message_goes_to_the_host_log_alone():
+    """A direct message to a manager's command in a group not limited to servers: it arrives
+    with no guild and the direct message's own channel id, so it meets the wrong-channel
+    refusal first. The bot cannot tell from a direct message whether the person belongs to the
+    league, so nothing is written to the league's log channel (#482, assumed A1)."""
+    command, ran = _guarded(league_manager_only)
+    user = MagicMock(spec=discord.User)
+    user.id = 7
+    user.display_name = "Alex"
+    interaction = _interaction(user, channel_id=987654321)
+    interaction.guild = None
+    interaction.guild_id = None
+
+    await command(_cog(_config()), interaction)
+
+    assert ran == []
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ This command can only be used in the configured interaction channel.", ephemeral=True
+    )
+    interaction.client.output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
+async def test_a_setup_command_refused_on_a_set_up_server_is_recorded():
+    command, ran = _guarded(bot_setup_only)
+    interaction = _interaction(_member(roles=(MANAGER_ROLE,)), command="bot admin-role")
+
+    await command(_cog(_config()), interaction)
+
+    assert ran == []
+    assert _logged(interaction) == [
+        "⛔ `/bot admin-role` refused for Alex (<@7>) — You need **Owners**, or Discord's "
+        "**Administrator** permission, to change the bot's settings."
+    ]
+
+
+async def test_a_setup_command_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone():
+    command, ran = _guarded(bot_setup_only)
+    interaction = _interaction(_member(roles=(MANAGER_ROLE,)), command="bot init")
+
+    await command(_cog(None), interaction)
+
+    assert ran == []
+    assert "Administrator" in _reply(interaction)
+    interaction.client.output_router.post_log.assert_not_awaited()
+
+
+def _not_the_owner() -> MagicMock:
+    interaction = _interaction(_member(administrator=True), command="bot factory-reset")
+    interaction.guild.owner_id = 1
+    return interaction
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
+async def test_a_factory_reset_refused_on_a_set_up_server_is_recorded():
+    command, ran = _guarded(server_owner_only)
+    interaction = _not_the_owner()
+
+    await command(_cog(_config()), interaction)
+
+    assert ran == []
+    assert _logged(interaction) == [
+        "⛔ `/bot factory-reset` refused for Alex (<@7>) — Only this server's owner may "
+        "factory-reset the bot, whatever roles or permissions anyone else holds."
+    ]
+
+
+async def test_a_factory_reset_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone():
+    command, ran = _guarded(server_owner_only)
+    interaction = _not_the_owner()
+
+    await command(_cog(None), interaction)
+
+    assert ran == []
+    assert "owner" in _reply(interaction)
+    interaction.client.output_router.post_log.assert_not_awaited()
+
+
+async def test_the_owner_s_factory_reset_reads_no_setting():
+    """A factory reset may be the way out of a configuration past repair, so the owner's path
+    reads none of it: the configuration is read only once the owner check has failed, to
+    decide whether the refusal is recorded."""
+    command, ran = _guarded(server_owner_only)
+    interaction = _interaction(_member(), command="bot factory-reset")
+    interaction.guild.owner_id = 7
+    cog = _cog(_config())
+
+    await command(cog, interaction)
+
+    assert ran == [True]
+    cog.bot.config_service.get_server_config.assert_not_awaited()
 
 
 # ── The tier is readable off the decorator ────────────────────────────────
