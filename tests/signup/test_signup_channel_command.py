@@ -259,7 +259,8 @@ async def test_a_signup_channel_the_bot_may_not_edit_is_refused(db_path):
 
 async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db_path):
     """The old channel's permissions are cleared before the new one is tried. Where Discord
-    then refuses the new one, the manager is told the old one needs putting right by hand."""
+    then refuses the new one, the manager is told the old one needs putting right by hand, and
+    the log line says so too, for whoever reads the log later."""
     async with get_connection(db_path) as db:
         await db.execute("UPDATE signup_module_config SET signup_channel_id = 650")
         await db.commit()
@@ -287,6 +288,12 @@ async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db
     ) in replied
     assert await _stored(db_path) == 650
     _assert_one_refusal_line(cog, "/signup channel", "Manage Permissions")
+    _assert_one_refusal_line(
+        cog,
+        "/signup channel",
+        "The old signup channel <#650> has already had its permissions cleared, so it needs "
+        "putting right by hand if you do not retry.",
+    )
 
 
 async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(db_path):
