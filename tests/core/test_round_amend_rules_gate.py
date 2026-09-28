@@ -511,3 +511,30 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     values = line.split("\n", 1)[1] if "\n" in line else ""
     assert "Bahrain International Circuit" in values, "the old value is not stated"
     assert NEW_TRACK in values, "the new value is not stated"
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: the pending-setup /round amend success line names the division and round "
+    "but not the values set",
+)
+async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
+    """On a season still being set up, the success line likewise names the member and
+    `/round amend`, and states beneath it each field changed, from its old value to its new
+    one."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    cog._get_pending = MagicMock(return_value=_pending())
+    cog._snapshot_pending = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    await _amend(cog, interaction, track=NEW_TRACK)
+
+    cog._snapshot_pending.assert_awaited_once()
+    [line] = _lines(cog)
+    assert "/round amend" in line
+    assert f"<@{USER_ID}>" in line
+    values = line.split("\n", 1)[1] if "\n" in line else ""
+    assert "Bahrain International Circuit" in values, "the old value is not stated"
+    assert NEW_TRACK in values, "the new value is not stated"
