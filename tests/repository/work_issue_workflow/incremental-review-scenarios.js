@@ -21,7 +21,12 @@ const Bt = 'tests/x/test_a.py::test_b'
 const entryA = { nodeid: A, change: 'added', scenario: 'SCEN-A', expects: 'EXP-A', criterion: 'CRIT-A' }
 const entryB = { nodeid: Bt, change: 'added', scenario: 'SCEN-B', expects: 'EXP-B', criterion: 'CRIT-B' }
 const ran = (nodeid, o = {}) => ({ nodeid, failsWithRunxfail: true, realFailure: 'AssertionError', outcomeAsCommitted: 'xfailed', ...o })
-const bothRun = () => testsCheck({ tests: [ran(A), ran(Bt)], changes: changes([[A, 'added'], [Bt, 'added']]) })
+const bothRun = (o = {}) => testsCheck({ tests: [ran(A), ran(Bt)], changes: changes([[A, 'added'], [Bt, 'added']]), ...o })
+// A later round's tester, which also lists what has changed under tests/ since the reviewers last
+// saw the list: by default it ran, and found no test's code changed.
+const bothRunSince = (since = changes([], [], [], 'h2'), error = '') => bothRun({ changedSince: since, changedSinceError: error })
+// Whether the tester was asked to list what has changed since a commit, and its answer required to.
+const askedSince = (prompt, opts, sha) => prompt.includes(`--base ${sha}`) && opts.schema.required.includes('changedSince')
 // A1 given compactly: its label and node id, but not its scenario or what it expects.
 const compactA = prompt => prompt.includes('A1') && prompt.includes(A) && prompt.includes('CRIT-A') && !prompt.includes('SCEN-A') && !prompt.includes('EXP-A')
 
@@ -112,7 +117,7 @@ module.exports = {
       if (label.endsWith(':builder')) return k === 1
         ? builder({ tests: [entryA, entryB] })
         : builder({ commits: [{ sha: 'c2', subject: 'reworded test b' }], tests: [entryA, { ...entryB, scenario: 'SCEN-B2' }], fixed: [{ id: 'issue-1-1', commit: 'c2' }] })
-      if (label.endsWith(':tester')) return bothRun()
+      if (label.endsWith(':tester')) return k === 1 ? bothRun() : bothRunSince()
       if (/:(issue|product)$/.test(label)) {
         const ok = k === 1
           ? ['SCEN-A', 'EXP-A', 'SCEN-B', 'EXP-B'].every(x => prompt.includes(x))
@@ -134,15 +139,19 @@ module.exports = {
         commits: [{ sha: 'c1', subject: 'added the tests' }],
         tests: [{ ...entryA, label: 'A1' }, { ...entryB, label: 'A2' }],
         support: [],
+        reviewedAt: { issue: 1, product: 1 },
         listSeen: {
           issue: { tests: [{ ...entryA, label: 'A1' }, { ...entryB, label: 'A2' }], support: [] },
           product: { tests: [{ ...entryA, label: 'A1' }, { ...entryB, label: 'A2' }], support: [] },
         },
       },
     },
-    respond(label, prompt) {
+    respond(label, prompt, opts) {
       if (label.endsWith(':builder')) return builder({ commits: [{ sha: 'c2', subject: 'answered' }], tests: [entryA, { ...entryB, scenario: 'SCEN-B2' }] })
-      if (label.endsWith(':tester')) return bothRun()
+      if (label.endsWith(':tester')) {
+        if (!askedSince(prompt, opts, 'c1')) throw new Error('the tester is not asked what has changed under tests/ since the reviewers last saw the list, at c1')
+        return bothRunSince()
+      }
       if (/:(issue|product)$/.test(label)) {
         if (!compactA(prompt) || !prompt.includes('SCEN-B2')) throw new Error(`${label} is not given the unchanged entry compactly in the first round of the new run`)
         return label.endsWith(':product') ? review({ summary: 'S' }) : review()
