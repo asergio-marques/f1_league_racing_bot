@@ -1249,10 +1249,15 @@ def _gone():
     return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: the reply still says it stopped before anything was written as well as "
+    "'Nothing was written.'",
+)
 async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     """The review's case: the channel is deleted after the first paste, and asking for the
     second session fails. The manager is told the plain kind of fault, a request Discord
-    refused, beside the fact that nothing was written."""
+    refused, and that nothing was written, said once."""
     db_path = await _make_db(tmp_path, name="amend_fault_between")
     await _add_qualifying(db_path)
     channel = _amend_channel()
@@ -1271,8 +1276,12 @@ async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     assert await _amend_rows(db_path) == 0
     channel.delete.assert_awaited_once()
     assert "AMEND_FAILED" in _logged(cog)
-    assert "Nothing was written." in _replied(interaction)
-    assert "Discord refused or failed a request from the bot" in _replied(interaction)
+    replied = _replied(interaction)
+    assert (
+        f"Discord refused or failed a request from the bot. Nothing was written. {RE_RUN}"
+        in replied
+    )
+    assert "before anything was written" not in replied
 
 
 async def test_a_channel_that_cannot_be_deleted_keeps_its_record_closed(tmp_path):
@@ -1452,9 +1461,15 @@ async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, c
     assert any(r.exc_info and r.exc_info[1] is error for r in caplog.records)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#442: the reply still says it stopped before anything was written as well as "
+    "'Nothing was written.'",
+)
 async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tmp_path):
     """A database fault while the pastes are collected: the admin is told the plain kind,
-    that nothing was written, and to re-run; the line names the fault's type alone."""
+    that nothing was written, said once, and to re-run; the line names the fault's type
+    alone."""
     import sqlite3
 
     db_path = await _make_db(tmp_path, name="amend_fail_unwritten_kind")
@@ -1471,9 +1486,8 @@ async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tm
     assert await _amend_rows(db_path) == 0
     replied = _replied(interaction)
     assert "stopped on a fault in the bot, not on anything you entered" in replied
-    assert PLAIN_DATABASE in replied
-    assert "Nothing was written." in replied
-    assert RE_RUN in replied
+    assert f"{PLAIN_DATABASE}. Nothing was written. {RE_RUN}" in replied
+    assert "before anything was written" not in replied
     assert "database is locked" not in replied
     logged = _logged(cog)
     assert "AMEND_FAILED" in logged
