@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
 from types import EllipsisType
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, Mapping, cast, overload
 
 import discord
 from discord import app_commands
@@ -54,7 +54,9 @@ from leaguebot.core.utils.channel_guard import (
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
+from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
@@ -4613,9 +4615,10 @@ class SeasonCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         if not any([track, scheduled_at, format]):
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c Provide at least one field to amend: `track`, `scheduled_at`, or `format`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4627,9 +4630,10 @@ class SeasonCog(commands.Cog):
                 None,
             )
             if pend_div is None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Division `{division_name}` not found in pending setup.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
@@ -4638,9 +4642,10 @@ class SeasonCog(commands.Cog):
                 None,
             )
             if pend_rnd is None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Round {round_number} not found in division `{division_name}` of the pending setup.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
@@ -4649,9 +4654,10 @@ class SeasonCog(commands.Cog):
                 async with get_connection(self.bot.db_path) as _tdb:
                     _resolved = await track_service.resolve_track_name(_tdb, track)
                 if _resolved is None:
-                    await interaction.followup.send(
+                    await refuse(
+                        interaction,
                         f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
-                        ephemeral=True,
+                        what=describe(interaction),
                     )
                     return
                 new_track = _resolved
@@ -4660,9 +4666,10 @@ class SeasonCog(commands.Cog):
             if scheduled_at:
                 new_dt = parse_datetime(scheduled_at)
                 if new_dt is None:
-                    await interaction.followup.send(
+                    await refuse(
+                        interaction,
                         "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
-                        ephemeral=True,
+                        what=describe(interaction),
                     )
                     return
 
@@ -4671,22 +4678,30 @@ class SeasonCog(commands.Cog):
                 try:
                     new_fmt = RoundFormat(format.upper())
                 except ValueError:
-                    await interaction.followup.send(
+                    await refuse(
+                        interaction,
                         f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
-                        ephemeral=True,
+                        what=describe(interaction),
                     )
                     return
 
             effective_fmt = new_fmt if new_fmt is not ... else pend_rnd["format"]
             effective_track = new_track if new_track is not ... else pend_rnd["track_name"]
             if effective_fmt != RoundFormat.MYSTERY and not effective_track:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Format `{effective_fmt.value}` requires a track. "
                     "Supply a `track` value or change format to MYSTERY.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
+            # What each field was, for the log line's "from what to what".
+            before = {
+                "format": pend_rnd["format"],
+                "scheduled_at": pend_rnd["scheduled_at"],
+                "track_name": pend_rnd["track_name"],
+            }
             if new_fmt is not ...:
                 pend_rnd["format"] = new_fmt
             if new_dt is not ...:
@@ -4725,30 +4740,38 @@ class SeasonCog(commands.Cog):
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round amend (pending) | Success\n"
                 f"  division: {pend_div.name}\n"
-                f"  round: {round_number}",
+                f"  round: {round_number}"
+                + _changed_values(before, pend_rnd),
             )
             return
 
         # Active-season DB path
         season = await self.bot.season_service.get_confirmed_season()
         if season is None:
-            await interaction.followup.send("\u274c No season is being raced.", ephemeral=True)
+            await refuse(
+                interaction,
+                "\u274c No season is being raced.",
+                what=describe(interaction),
+            )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.followup.send(
-                f"\u274c Division `{division_name}` not found.", ephemeral=True
+            await refuse(
+                interaction,
+                f"\u274c Division `{division_name}` not found.",
+                what=describe(interaction),
             )
             return
 
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Round {round_number} not found in division `{division_name}`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4758,9 +4781,10 @@ class SeasonCog(commands.Cog):
             async with get_connection(self.bot.db_path) as _tdb:
                 _resolved = await track_service.resolve_track_name(_tdb, track)
             if _resolved is None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Unknown track `{track}`. Use autocomplete to pick a valid track.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
             amendments.append(("track_name", _resolved))
@@ -4768,9 +4792,10 @@ class SeasonCog(commands.Cog):
         if scheduled_at:
             new_dt = parse_datetime(scheduled_at)
             if new_dt is None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     "\u274c Invalid datetime. Use `YYYY-MM-DDTHH:MM:SS`.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
             amendments.append(("scheduled_at", new_dt))
@@ -4779,9 +4804,10 @@ class SeasonCog(commands.Cog):
             try:
                 new_fmt = RoundFormat(format.upper())
             except ValueError:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Invalid format `{format}`. Use NORMAL, SPRINT, MYSTERY, or ENDURANCE.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
             amendments.append(("format", new_fmt))
@@ -4793,11 +4819,13 @@ class SeasonCog(commands.Cog):
             now=datetime.now(timezone.utc),
         )
         if not _verdict.allowed:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u26d4 **Round {rnd.round_number}** in **{div.name}** cannot be amended:\n"
                 + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
                 + "\n\n**Nothing has been changed.**",
-                ephemeral=True,
+                what=_round_amend_named(rnd.round_number, div.name),
+                reason="\n".join(_verdict.refusals),
             )
             return
 
@@ -4822,6 +4850,7 @@ class SeasonCog(commands.Cog):
             interaction_user_id=interaction.user.id,
             round_id=rnd.id,
             amendments=amendments,
+            round_number=rnd.round_number,
         )
         await interaction.followup.send("\n".join(summary_lines), view=view, ephemeral=True)
 
@@ -6379,26 +6408,70 @@ class _ConfirmConfigurationView(_ApproveView):
         self.stop()
 
 
+def _round_amend_named(round_number: int | None, division_name: str | None = None) -> str:
+    """`/round amend` as its log lines name it: with the round, where it is known."""
+    if round_number is None:
+        return "`/round amend`"
+    where = f" in {division_name}" if division_name else ""
+    return f"`/round amend` of round {round_number}{where}"
+
+
+def _field_text(value: object) -> str:
+    """A round's field as a log line states it."""
+    if value is None:
+        return "none"
+    return str(getattr(value, "value", value))
+
+
+def _changed_values(before: Mapping[str, object], after: Mapping[str, object]) -> str:
+    """Each field of *before* whose value *after* differs, from what to what, one per line."""
+    return "".join(
+        f"\n  {field}: {_field_text(old)} \u2192 {_field_text(after[field])}"
+        for field, old in before.items()
+        if after[field] != old
+    )
+
+
 class _ConfirmView(LeagueView):
+    """The confirmation `/round amend` offers, for two minutes, before it amends anything.
+
+    Every outcome is recorded in the log channel: a confirmation the rules or the round refuse,
+    a Cancel, a confirmation left to lapse, a failure, and the success with each field it
+    changed from its old value to its new one.
+    """
+
     def __init__(
         self,
         cog: SeasonCog,
         interaction_user_id: int,
         round_id: int,
         amendments: list[tuple[str, object]],
+        round_number: int | None = None,
     ) -> None:
         super().__init__(timeout=120)
         self._cog = cog
         self._user_id = interaction_user_id
         self._round_id = round_id
         self._amendments = amendments
+        self._round_number = round_number
+
+    async def on_timeout(self) -> None:
+        """Nobody confirmed within the two minutes: nothing was amended, and that is recorded."""
+        await record_abandoned(
+            self._cog.bot,
+            self._user_id,
+            what=_round_amend_named(self._round_number),
+            lapsed=True,
+            detail="Nothing was changed. Run `/round amend` again to start over.",
+        )
 
     @discord.ui.button(label="\u2705 Confirm", style=discord.ButtonStyle.danger)
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        what = _round_amend_named(self._round_number)
         if interaction.user.id != self._user_id:
-            await interaction.response.send_message("\u26d4 Not your action.", ephemeral=True)
+            await refuse(interaction, "\u26d4 Not your action.", what=what)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -6413,11 +6486,14 @@ class _ConfirmView(LeagueView):
         # reason, a round being able to cross a window while the review stands.
         _rnd_now = await self._cog.bot.season_service.get_round(self._round_id)
         if _rnd_now is None:
-            await interaction.followup.send(
-                "\u26d4 That round no longer exists. **Nothing has been changed.**", ephemeral=True
+            await refuse(
+                interaction,
+                "\u26d4 That round no longer exists. **Nothing has been changed.**",
+                what=what,
             )
             self.stop()
             return
+        what = _round_amend_named(_rnd_now.round_number)
 
         _verdict = await _judge_round_amendment(
             self._cog.bot,
@@ -6426,18 +6502,26 @@ class _ConfirmView(LeagueView):
             now=datetime.now(timezone.utc),
         )
         if not _verdict.allowed:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u26d4 This round can no longer be amended:\n"
                 + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
                 + "\n\n**Nothing has been changed.** Run `/round amend` again to start over.",
-                ephemeral=True,
+                what=what,
+                reason="it can no longer be amended:\n" + "\n".join(_verdict.refusals),
             )
             self.stop()
             return
 
+        # What each field was, for the success line's "from what to what".
+        before = {field: getattr(_rnd_now, field, None) for field, _ in self._amendments}
+
         # One call carrying every field, not one call per field. Amending a round's track and
         # its date used to run the whole amendment twice \u2014 two invalidation notices, two
         # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
+        #
+        # A fault is reported here rather than left to the view's failure path, so that the
+        # reply and the line name the round (see `report_failure`); the buttons stop either way.
         try:
             await self._cog.bot.amendment_service.amend_round(
                 self._round_id,
@@ -6445,12 +6529,8 @@ class _ConfirmView(LeagueView):
                 self._amendments,
                 self._cog.bot,
             )
-        except Exception as exc:
-            log.exception("Amendment failed for round %s: %s", self._round_id, exc)
-            await interaction.followup.send(
-                f"\u26a0\ufe0f The amendment failed: {exc}",
-                ephemeral=True,
-            )
+        except Exception as exc:  # noqa: BLE001 — reported here, naming the round
+            await report_failure(interaction, exc, what=what)
             self.stop()
             return
 
@@ -6470,8 +6550,8 @@ class _ConfirmView(LeagueView):
         await interaction.followup.send(msg, ephemeral=True)
         await self._cog.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round amend | Success\n"
-            f"  round_id: {self._round_id}\n"
-            f"  fields: {', '.join(f for f, _ in self._amendments)}",
+            f"  round {_rnd_now.round_number} (round_id: {self._round_id})"
+            + _changed_values(before, dict(self._amendments)),
         )
         self.stop()
 
@@ -6481,3 +6561,10 @@ class _ConfirmView(LeagueView):
     ) -> None:
         await interaction.response.send_message("Amendment cancelled.", ephemeral=True)
         self.stop()
+        await record_abandoned(
+            self._cog.bot,
+            interaction.user,
+            what=_round_amend_named(self._round_number),
+            lapsed=False,
+            detail="Nothing was changed.",
+        )

@@ -328,9 +328,6 @@ def _all_replies(interaction) -> str:
     return "\n".join(str(call.args[0]) for call in calls if call.args)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed /round amend confirmation still replies with the error"
-)
 async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path):
     """A fault while the amendment is applied is the bot's: the standard failure reply naming
     `/round amend` and the round, one line in the log channel, and the buttons stopped."""
@@ -409,7 +406,6 @@ ROUND_AMEND_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a /round amend refusal writes no log line")
 @pytest.mark.parametrize("case, kwargs, said", ROUND_AMEND_REFUSALS)
 async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case, kwargs, said):
     """Each refusal answers the manager as before, changes nothing, and writes one line in the
@@ -458,9 +454,6 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
     assert f"refused for Manager (<@{USER_ID}>)" in line
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a /round amend cancelled or left to lapse writes no log line"
-)
 @pytest.mark.parametrize("how", ["cancelled", "lapsed"])
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, how):
     """`/round amend`'s confirmation, cancelled with its button or left for its two minutes:
@@ -490,9 +483,6 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
         assert f"lapsed unconfirmed (started by Manager (<@{USER_ID}>))" in head
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the /round amend success line names the fields but not their values"
-)
 async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     """The success line names the member, `/round amend` and the round, and states beneath it
     each field changed, from its old value to its new one."""
@@ -513,11 +503,6 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     assert NEW_TRACK in values, "the new value is not stated"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the pending-setup /round amend success line names the division and round "
-    "but not the values set",
-)
 async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     """On a season still being set up, the success line likewise names the member and
     `/round amend`, and states beneath it each field changed, from its old value to its new
