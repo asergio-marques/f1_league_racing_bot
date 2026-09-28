@@ -346,12 +346,13 @@ if (stage === 'check') {
   // A re-check of an amended plan gives each checker the plan as it last checked it and its own
   // earlier result, and asks it to judge what the amendment changes: a checker starting over re-reads
   // everything the amendment left alone. A checker whose earlier result was lost, or a check with no
-  // earlier plan recorded, checks in full.
+  // earlier plan recorded, checks in full. A question the owner has answered since is not carried
+  // over, even where the answer lands in the decisions alone and leaves the plan's text as it was.
   const earlier = ARGS.previous || null
   const amended = lane => {
     const was = earlier && earlier.plan ? earlier[lane] : null
     if (!was) return ''
-    return `${section('This plan amends one checked before. The plan as it was then checked', earlier.plan)}${section('Your earlier result on it', was)}\n\nJudge what the amendment changes: carry over each entry of your earlier result that the amendment leaves as it was, and re-examine each entry it touches, checking in full whatever it adds.`
+    return `${section('This plan amends one checked before. The plan as it was then checked', earlier.plan)}${section('Your earlier result on it', was)}\n\nJudge what the amendment changes: carry over each entry of your earlier result that the amendment leaves as it was, and re-examine each entry it touches, checking in full whatever it adds. A question of your earlier result that the owner's decisions above answer is settled, and is not carried over, whether or not the amendment changes the plan's text.`
   }
 
   phase('Check')
