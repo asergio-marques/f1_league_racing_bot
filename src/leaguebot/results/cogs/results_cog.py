@@ -2040,7 +2040,7 @@ class ResultsCog(commands.Cog):
             await interaction.followup.send(
                 amendment_fault_reply(
                     describe_fault(error),
-                    f"It stopped before anything was written. Nothing was written. {AMENDMENT_RE_RUN}",
+                    f"Nothing was written. {AMENDMENT_RE_RUN}",
                 ),
                 ephemeral=True,
             )

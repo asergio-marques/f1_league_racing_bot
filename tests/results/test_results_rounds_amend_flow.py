@@ -1249,11 +1249,6 @@ def _gone():
     return discord.NotFound(MagicMock(status=404, reason="Not Found"), "Unknown Channel")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the reply still says it stopped before anything was written as well as "
-    "'Nothing was written.'",
-)
 async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     """The review's case: the channel is deleted after the first paste, and asking for the
     second session fails. The manager is told the plain kind of fault, a request Discord
@@ -1461,11 +1456,6 @@ async def test_a_failed_amendment_write_names_only_the_kind_of_fault(tmp_path, c
     assert any(r.exc_info and r.exc_info[1] is error for r in caplog.records)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the reply still says it stopped before anything was written as well as "
-    "'Nothing was written.'",
-)
 async def test_an_amendment_that_fails_before_writing_names_the_kind_of_fault(tmp_path):
     """A database fault while the pastes are collected: the admin is told the plain kind,
     that nothing was written, said once, and to re-run; the line names the fault's type
