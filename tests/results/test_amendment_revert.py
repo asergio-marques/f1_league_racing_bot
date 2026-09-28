@@ -349,7 +349,8 @@ async def test_the_revert_is_announced(tmp_path):
 
 
 @pytest.mark.xfail(
-    strict=True, reason="#442: a timed revert is still announced as AMEND_REVERTED"
+    strict=True,
+    reason="#442: a timed revert is still announced as AMEND_REVERTED, its re-run step not in code",
 )
 async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     """The league is told the amendment lapsed and may be run again, so the notice sends the
@@ -372,7 +373,7 @@ async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     )
     assert notice.splitlines()[-1] == (
         "  The amendment's report and appeal stages were not approved in time, so the round "
-        "has been put back as it was. Re-run /results rounds amend to try again."
+        "has been put back as it was. Re-run `/results rounds amend` to try again."
     )
 
 
