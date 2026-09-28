@@ -1375,6 +1375,8 @@ async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp
 PLAIN_DATABASE = "the bot could not read or write its database"
 PLAIN_INTERNAL = "the bot hit an internal fault"
 RE_RUN = "Re-run `/results rounds amend` to try again."
+#: The next step of an amendment whose round could not be put back yet.
+ONCE_PUT_BACK = "Run `/results rounds amend` again once it has been put back."
 
 
 def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
@@ -1616,6 +1618,89 @@ async def test_a_failed_amendment_reply_that_cannot_be_sent_writes_one_line(tmp_
     assert f"<@{USER_ID}>" in line.splitlines()[0]
     assert kind in line
     assert "HTTPException" not in line
+
+
+def _not_yet_put_back(where: str):
+    """Mark the log-line half of a case: the reply already says it."""
+    if where == "log line":
+        return pytest.mark.xfail(
+            strict=True,
+            reason="#442: the AMEND_FAILED line of an amendment not yet put back does not end on "
+            "running it again once it has been",
+        )
+    return ()
+
+
+@pytest.mark.parametrize(
+    "case, where",
+    [
+        pytest.param(
+            case, where, marks=_not_yet_put_back(where), id=f"{case}-{where.replace(' ', '-')}"
+        )
+        for case in ("write-revert-fails", "report-stage-undo-fails", "cancel-revert-fails")
+        for where in ("reply", "log line")
+    ],
+)
+async def test_an_amendment_not_yet_put_back_says_to_run_it_again_once_it_has_been(
+    tmp_path, case, where
+):
+    """Where the round could not be put back yet, a re-run is refused until it has been, the
+    amendment still holding its division. So the reply ends on running the command again once
+    it has been put back, and so does the `AMEND_FAILED` line: whoever reads the log rather
+    than the reply is told the same."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name=f"amend_not_put_back_{case.replace('-', '_')}")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    locked = sqlite3.OperationalError("database is locked")
+
+    if case == "write-revert-fails":
+        with patch(
+            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+            new=AsyncMock(side_effect=RuntimeError("still locked")),
+        ):
+            await _amend(cog, interaction, amend_error=locked)
+        told = _replied(interaction)
+    elif case == "report-stage-undo-fails":
+        with patch(
+            "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
+            new=AsyncMock(side_effect=RuntimeError("no channel")),
+        ), patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(side_effect=locked),
+        ):
+            await _amend(cog, interaction)
+        told = _replied(interaction)
+    else:
+        await _amend(cog, interaction)
+        view = channel.send.await_args_list[0].kwargs["view"]
+        press = _press(router=cog.bot.output_router)
+        with patch(
+            "leaguebot.results.services.result_submission_service.cancel_amendment",
+            new=AsyncMock(side_effect=locked),
+        ):
+            await type(view).cancel_btn(view, press, MagicMock())
+        told = "\n".join(str(c.args[0]) for c in press.followup.send.await_args_list if c.args)
+
+    if where == "reply":
+        assert told.endswith(ONCE_PUT_BACK)
+        return
+    # The fault that stopped the amendment, not the revert's after it.
+    kind = "RuntimeError" if case == "report-stage-undo-fails" else "OperationalError"
+    [line] = [
+        str(c.args[0])
+        for c in cog.bot.output_router.post_log.await_args_list
+        if "AMEND_FAILED" in str(c.args[0])
+    ]
+    assert f"<@{USER_ID}>" in line.splitlines()[0]
+    assert kind in line
+    assert "database is locked" not in line and "still locked" not in line
+    # In code or in plain text, as the line's other steps are: the words are what is pinned.
+    last = line.splitlines()[-1]
+    assert last.startswith("  ")
+    assert last.replace("`", "").endswith(ONCE_PUT_BACK.replace("`", ""))
 
 
 # ---------------------------------------------------------------------------
