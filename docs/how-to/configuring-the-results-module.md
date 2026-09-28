@@ -100,7 +100,7 @@ A configuration starts with **every position in every session worth nothing**. F
 | Command | Use it for |
 |---|---|
 | `/results config session` | One position in one session type. Fine for a correction, tedious for a whole table |
-| `/results config bulk-session` | A whole session's table pasted into a box, one `position, points` per line |
+| `/results config bulk-session` | A whole session's table pasted into a box, one `position, points` per line. All or nothing: one bad line and nothing is applied, every bad line listed back for you to correct and paste again |
 | `/results config xml-import` | Several sessions at once, as pasted text or an attached file |
 | `/results config fl` and `/results config fl-plimit` | The fastest-lap bonus, and how far down the order it can be won |
 
@@ -488,7 +488,8 @@ Worth knowing so you do not go looking for the setting.
 | Attendance charged later than expected | It is charged when the penalty stage is approved, never at provisional results |
 | `/results rounds amend` refused | The round has not reached Final Results yet — or the division already has an amendment open, whose round and channel the refusal names |
 | A paste, an approval or a sync refused, naming a round being amended | A round of the division has an amendment open. Try again once it has finished — it ends when approved, or is undone a little over half an hour after its corrections were pasted |
-| An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel, and the bot tells you privately which it was; the log channel holds a rejection's reason. Past the paste, half an hour without approval undoes it (`AMEND_REVERTED`) |
+| An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel, and the bot tells you privately which it was; the log channel holds a rejection's reason. Past the paste, half an hour without approval undoes it, and the log channel says it *lapsed unconfirmed*, naming who started it |
+| "❌ The amendment stopped on a fault in the bot" | The bot hit a fault of its own, and the reply names the kind — its database, Discord, or an internal fault — and what became of the round: put back as it was, not put back yet (the bot tries again within minutes), or nothing written. Run `/results rounds amend` again once it is put back. The log channel's `AMEND_FAILED` line names the kind of fault for whoever hosts the bot |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |
 | `/results amend review` refuses, naming a division and a channel | That channel has been deleted, or the bot can no longer post in it. Nothing was changed — set it again with `/results channel results` or `/results channel standings` and review again |
 | `/results amend review` refuses, naming a round being amended | A `/results rounds amend` is open. Nothing was changed — review again once it has finished |
