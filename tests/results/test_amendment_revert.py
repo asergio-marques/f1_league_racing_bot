@@ -749,7 +749,10 @@ async def test_cancel_hands_the_bot_to_the_revert(tmp_path):
 
 
 async def _lapse(tmp_path, name: str, *, member_name: str | None):
-    """An amendment opened by member 77 whose stages went unapproved, swept once it lapsed."""
+    """An amendment opened by member 77 whose stages went unapproved, swept once it lapsed.
+
+    The league's server is reached either way. Member 77 is on it as *member_name*, or, where
+    that is None, has since left it and is not found there."""
     db_path = await _db(tmp_path, name)
     async with get_connection(db_path) as db:
         await db.execute("UPDATE round_amend_channels SET started_by = 77")
@@ -757,12 +760,15 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     await snapshot_before_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
     await _overwrite_the_classification(db_path)
     bot = _bot(db_path)
+    member = None
     if member_name is not None:
         member = MagicMock()
         member.display_name = member_name
-        guild = MagicMock()
-        guild.get_member = MagicMock(side_effect=lambda uid: member if uid == 77 else None)
-        bot.get_guild = MagicMock(return_value=guild)
+    guild = MagicMock()
+    guild.get_member = MagicMock(side_effect=lambda uid: member if uid == 77 else None)
+    # The amendment's channel is already gone, so closing its record deletes nothing.
+    guild.get_channel = MagicMock(return_value=None)
+    bot.get_guild = MagicMock(return_value=guild)
     later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
     with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()):
         await sweep_expired_amendments(bot, now=later)
@@ -782,11 +788,14 @@ async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path
 
 
 @pytest.mark.xfail(
-    strict=True, reason="#442: a timed revert is still announced as AMEND_REVERTED"
+    strict=True,
+    reason="#442: the amendment's record has no started_by, and a timed revert is still "
+    "announced as AMEND_REVERTED",
 )
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
-    """The timed revert of an amendment whose opener has since left the server: the standard
-    lapse form, naming them by mention alone, with what became of the round beneath."""
+    """The timed revert of an amendment whose opener has since left the server, which the
+    sweep still reaches: the standard lapse form, naming them by mention alone, with what
+    became of the round beneath."""
     line = await _lapse(tmp_path, "sweep_starter_left", member_name=None)
 
     head, *beneath = line.splitlines()
