@@ -1112,7 +1112,9 @@ const testsProblems = t => {
 // Where a reviewer has seen the list before and commits have been made since, the tester also lists
 // what has changed under tests/ since the earlier of the two reviewers last saw it: from the base
 // where that is not known, which gives every entry in full. Its schema then requires the list, so an
-// answer that lacks it is not one the runtime passes on.
+// answer that lacks it is not one the runtime passes on. An answer whose list carries no head, and no
+// error either, does not show that the step ran, as with `changes`: what changed is then unknown,
+// and every entry is given in full.
 const reviewTests = async (k, questions) => {
   const run = written.filter(w => w.change !== 'deleted')
   const seenAt = ['issue', 'product'].filter(l => listSeen[l]).map(l => reviewedAt[l])
@@ -1126,7 +1128,7 @@ const reviewTests = async (k, questions) => {
   const nothing = { tests: new Set(), support: new Set() }
   const found = t => t.changedSince || { tests: [], support: [] }
   listTouched = !since ? nothing
-    : !test || filled(test.changedSinceError) ? null
+    : !test || filled(test.changedSinceError) || !filled(found(test).head) ? null
       : { tests: new Set(found(test).tests.map(x => bareId(x.nodeid))), support: new Set(found(test).support.map(supportKey)) }
   const [issueResult, productResult] = await parallel([
     () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
