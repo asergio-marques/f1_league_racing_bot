@@ -855,6 +855,8 @@ async def test_cancelling_while_the_paste_is_being_written_is_refused_not_swallo
         press = MagicMock()
         press.user = SimpleNamespace(id=USER_ID)
         press.response = MagicMock()
+        # A fresh press: nothing has answered it yet.
+        press.response.is_done = MagicMock(return_value=False)
         press.response.send_message = AsyncMock()
         press.followup = MagicMock()
         press.followup.send = AsyncMock()
