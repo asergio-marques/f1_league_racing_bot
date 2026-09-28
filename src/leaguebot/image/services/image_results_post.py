@@ -111,6 +111,10 @@ async def _nationality_collected(db_path: str) -> bool:
                 )
             ).fetchone()
     except Exception:  # noqa: BLE001 — an unreadable switch is not a reason to fail a render
+        log.warning(
+            "results image: the nationality switch could not be read, so flags are drawn",
+            exc_info=True,
+        )
         return True
     if row is None:
         return True

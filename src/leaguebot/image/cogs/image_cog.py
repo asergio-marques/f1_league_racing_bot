@@ -1845,6 +1845,7 @@ class ImageCog(commands.Cog):
                 timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
             )
         except Exception:  # noqa: BLE001 — an autocomplete never breaks the command
+            log.warning("images test: the divisions could not be offered", exc_info=True)
             return []
 
         typed = (current or "").strip().casefold()

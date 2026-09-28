@@ -147,7 +147,11 @@ async def _driver_nationality(
                 (season_id, str(discord_user_id)),
             )
             row = await cursor.fetchone()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — the verdict is drawn without the driver's flag
+        log.warning(
+            "verdict image: the nationality of %s could not be read", discord_user_id,
+            exc_info=True,
+        )
         return None
     return (row["nationality"] or None) if row else None
 

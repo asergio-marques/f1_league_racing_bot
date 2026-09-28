@@ -414,7 +414,6 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
 
 
 KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
-    ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, TRACEBACKS),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, TRACEBACKS),
     ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, TRACEBACKS),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, TRACEBACKS),
@@ -424,13 +423,7 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/cogs/results_cog.py", "_run_xml_import"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, TRACEBACKS),
-    ("image/services/image_preview_service.py", "build_rsvp_preview"): (1, TRACEBACKS),
-    ("image/services/image_results_post.py", "_nationality_collected"): (1, TRACEBACKS),
-    ("image/services/image_verdict_post.py", "_driver_nationality"): (1, TRACEBACKS),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, TRACEBACKS),
-    ("image/utils/font_metrics.py", "_faces_of"): (3, TRACEBACKS),
-    ("image/utils/font_metrics.py", "_families_of"): (4, TRACEBACKS),
-    ("image/utils/svg_fill.py", "_mandatory_ids"): (1, TRACEBACKS),
 }
 
 

@@ -219,6 +219,7 @@ def _mandatory_ids(spec: FillSpec) -> frozenset[str]:
     try:
         return frozenset(catalogue.all_mandatory_ids(spec.root))
     except Exception:  # noqa: BLE001 — an uncountable template is reported elsewhere
+        log.warning("fill: the template's mandatory fields could not be counted", exc_info=True)
         return frozenset()
 
 
