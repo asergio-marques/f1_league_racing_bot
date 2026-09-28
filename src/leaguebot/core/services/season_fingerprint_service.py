@@ -383,7 +383,7 @@ async def take_fingerprint(bot: LeagueBot, season_id: int) -> SeasonFingerprint:
 
         areas["artwork"] = _digest(await _artwork_signature(bot))
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one
-        log.error("season fingerprint: could not be taken: %s", exc)
+        log.error("season fingerprint: could not be taken: %s", exc, exc_info=True)
         return SeasonFingerprint({})
 
     # Every area, every time. A query that silently stopped matching the schema would

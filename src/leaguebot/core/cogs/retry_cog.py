@@ -36,7 +36,7 @@ class RetryCog(commands.Cog):
         try:
             pending = await get_all_pending(self._bot.db_path)
         except Exception as exc:
-            log.error("retry_loop: failed to load pending messages: %s", exc)
+            log.error("retry_loop: failed to load pending messages: %s", exc, exc_info=True)
             return
 
         if not pending:

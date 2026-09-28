@@ -398,7 +398,7 @@ async def _close_driver_signups(
                 try:
                     await member.remove_roles(role, reason=reason)
                 except Exception:  # noqa: BLE001 — a role is never worth the pass
-                    log.warning("closing signups: could not revoke the driver role of %s", uid)
+                    log.warning("closing signups: could not revoke the driver role of %s", uid, exc_info=True)
 
 
 async def delete_driver_profiles(db, profile_ids: list[int], *, keep_history: bool) -> list[str]:

@@ -92,7 +92,7 @@ async def report_failure(
         else:
             await interaction.response.send_message(reply, ephemeral=True)
     except Exception as exc:  # noqa: BLE001 — the handler must never raise
-        log.error("could not tell user %s that %s failed: %s", user_id, what, exc)
+        log.error("could not tell user %s that %s failed: %s", user_id, what, exc, exc_info=True)
 
     router = getattr(interaction.client, "output_router", None)
     if router is None:
@@ -103,4 +103,4 @@ async def report_failure(
             f"The details are in the host's log."
         )
     except Exception as exc:  # noqa: BLE001 — the handler must never raise
-        log.error("could not record in the log channel that %s failed: %s", what, exc)
+        log.error("could not record in the log channel that %s failed: %s", what, exc, exc_info=True)

@@ -166,7 +166,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
         except Exception as exc:
             log.warning(
                 "attempt_delivery: cannot fetch channel id=%s for entry id=%s: %s",
-                entry.channel_id, entry.id, exc,
+                entry.channel_id, entry.id, exc, exc_info=True,
             )
             await mark_failed(db_path, entry.id)
             return False
@@ -187,7 +187,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     except Exception as exc:
         log.warning(
             "attempt_delivery: send failed for entry id=%s channel=%s: %s",
-            entry.id, entry.channel_id, exc,
+            entry.id, entry.channel_id, exc, exc_info=True,
         )
         await mark_failed(db_path, entry.id)
         return False
@@ -224,6 +224,6 @@ def _safe_post_log(bot: "LeagueBot", message: str) -> None:
         try:
             await bot.output_router.post_log(message)
         except Exception as exc:
-            log.warning("_safe_post_log: failed to post log notification: %s", exc)
+            log.warning("_safe_post_log: failed to post log notification: %s", exc, exc_info=True)
 
     asyncio.ensure_future(_post())

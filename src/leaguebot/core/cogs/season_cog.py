@@ -485,7 +485,7 @@ async def _channel_on_server(guild, channel_id: int) -> bool:
     except discord.NotFound:
         return False
     except Exception as exc:  # noqa: BLE001 — cannot tell, so not a fault
-        log.warning("channel check: could not fetch channel %s: %s", channel_id, exc)
+        log.warning("channel check: could not fetch channel %s: %s", channel_id, exc, exc_info=True)
     return True
 
 
@@ -691,7 +691,7 @@ class SeasonCog(commands.Cog):
 
             )
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
-            log.error("season: per-tier colour check failed: %s", exc)
+            log.error("season: per-tier colour check failed: %s", exc, exc_info=True)
             return []
         return [
             f"`{template_key}` — {line}"
@@ -828,7 +828,7 @@ class SeasonCog(commands.Cog):
                         if key:
                             seen.setdefault(key, name)
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
-            log.error("season: team name check failed: %s", exc)
+            log.error("season: team name check failed: %s", exc, exc_info=True)
             return []
         return problems
 
@@ -890,7 +890,7 @@ class SeasonCog(commands.Cog):
             draws_calendar = await image_calendar_wanted(self.bot)
             draws_lineup = await lineup_enabled(self.bot)
         except Exception as exc:  # noqa: BLE001 — never break a review on this
-            log.error("season review: could not read the image gates: %s", exc)
+            log.error("season review: could not read the image gates: %s", exc, exc_info=True)
             return prepared
 
         if not (draws_calendar or draws_lineup):
@@ -937,7 +937,7 @@ class SeasonCog(commands.Cog):
         try:
             return await render(*args, **kwargs)
         except Exception as exc:  # noqa: BLE001 — the posting helper will draw it again
-            log.error("season review: pre-render failed: %s", exc)
+            log.error("season review: pre-render failed: %s", exc, exc_info=True)
             return None
 
     @staticmethod
@@ -1030,7 +1030,7 @@ class SeasonCog(commands.Cog):
                 discard_render(outcome.png_path)
             return REVIEW_IMAGE_DREW
         except Exception as exc:  # noqa: BLE001 — never break a review on this
-            log.error("season review: lineup image failed: %s", exc)
+            log.error("season review: lineup image failed: %s", exc, exc_info=True)
             return REVIEW_IMAGE_FAULT
 
     async def _post_approval_prompt(
@@ -1112,7 +1112,7 @@ class SeasonCog(commands.Cog):
                 discard_render(outcome.png_path)
             return REVIEW_IMAGE_DREW
         except Exception as exc:  # noqa: BLE001 — never break a review on this
-            log.error("season review: calendar image failed: %s", exc)
+            log.error("season review: calendar image failed: %s", exc, exc_info=True)
             return REVIEW_IMAGE_FAULT
 
     async def _lineup_problems(self, season_id: int) -> list[str]:
@@ -1192,7 +1192,7 @@ class SeasonCog(commands.Cog):
                         )
             return problems
         except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
-            log.error("season: lineup template check failed: %s", exc)
+            log.error("season: lineup template check failed: %s", exc, exc_info=True)
             return []
 
     async def _calendar_round_overflow(
@@ -1229,7 +1229,7 @@ class SeasonCog(commands.Cog):
                 load_svg(report.resolved_path)
             )
         except Exception as exc:  # noqa: BLE001
-            log.error("round add: calendar capacity guard could not run: %s", exc)
+            log.error("round add: calendar capacity guard could not run: %s", exc, exc_info=True)
             return None
 
         if not capacity or would_hold <= capacity:
@@ -1297,7 +1297,7 @@ class SeasonCog(commands.Cog):
         except CapacityError:
             return []  # an uncountable template is Layer 2's to report, not this
         except Exception as exc:  # noqa: BLE001 — a review must never fail on this
-            log.error("season review: calendar capacity check failed: %s", exc)
+            log.error("season review: calendar capacity check failed: %s", exc, exc_info=True)
             return []
 
     async def _attendance_capacity_warning(
@@ -1397,7 +1397,7 @@ class SeasonCog(commands.Cog):
         except CapacityError:
             return []  # an uncountable template is Layer 2's to report, not this
         except Exception as exc:  # noqa: BLE001 — a review must never fail on this
-            log.error("season review: attendance capacity check failed: %s", exc)
+            log.error("season review: attendance capacity check failed: %s", exc, exc_info=True)
             return []
 
     async def _standings_capacity_lines(self, season_id: int, reports) -> list[str]:
@@ -1515,7 +1515,7 @@ class SeasonCog(commands.Cog):
             directories = await self.bot.image_validity_service.directory_reports()
             config = await self.bot.image_config_service.get_config()
         except Exception as exc:  # a review must never fail because of this section
-            log.error("season review: image section failed: %s", exc)
+            log.error("season review: image section failed: %s", exc, exc_info=True)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]
 
         icons = {STATE_ENABLED: "✅", STATE_DISABLED: "❌"}
@@ -1614,7 +1614,7 @@ class SeasonCog(commands.Cog):
                 return None
             config = await self.bot.image_config_service.get_config()
         except Exception as exc:  # never block a season because this could not be read
-            log.error("season review: portrait blocker failed: %s", exc)
+            log.error("season review: portrait blocker failed: %s", exc, exc_info=True)
             return None
         return portrait_configuration_fault(config)
 
@@ -1630,7 +1630,7 @@ class SeasonCog(commands.Cog):
         try:
             config = await self.bot.image_config_service.get_config()
         except Exception as exc:  # a review must never fail because of this section
-            log.error("season review: portrait settings failed: %s", exc)
+            log.error("season review: portrait settings failed: %s", exc, exc_info=True)
             return ["  ⚠️ Driver portraits: could not be read."]
 
         if config is None or not getattr(config, "use_pfp", False):
@@ -2960,7 +2960,7 @@ class SeasonCog(commands.Cog):
                 await self.bot.image_config_service.get_toggles()
             )
         except Exception as exc:  # noqa: BLE001 — a check that never ran is not a pass
-            log.error("config review: the templates could not be read: %s", exc)
+            log.error("config review: the templates could not be read: %s", exc, exc_info=True)
             return [*faults, "The image templates could not be read."]
         for key in sorted(reports):
             report = reports[key]

@@ -211,7 +211,7 @@ class OutputRouter:
                 from leaguebot.core.services.retry_service import enqueue
                 await enqueue(self._retry_db_path, channel_id, content, failure_reason)
             except Exception as exc:
-                log.error("_enqueue_if_configured: failed to enqueue: %s", exc)
+                log.error("_enqueue_if_configured: failed to enqueue: %s", exc, exc_info=True)
 
 
 def _chunk_message(content: str, limit: int = 1990) -> list[str]:
