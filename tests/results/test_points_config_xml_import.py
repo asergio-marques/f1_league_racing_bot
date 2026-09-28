@@ -671,10 +671,29 @@ FL_ONLY_XML = """
 """
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: an XML import writes no audit entry for what it changed"
+@pytest.mark.parametrize(
+    "case",
+    [
+        *[
+            pytest.param(
+                case,
+                marks=pytest.mark.xfail(
+                    strict=True,
+                    reason="#442: an XML import writes no audit entry for what it changed",
+                ),
+            )
+            for case in ("positions", "fastest-lap")
+        ],
+        pytest.param(
+            "log-line",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#442: a successful import's log line counts its rows rather than "
+                "listing the values set",
+            ),
+        ),
+    ],
 )
-@pytest.mark.parametrize("case", ["positions", "fastest-lap", "log-line"])
 async def test_an_xml_import_records_each_change_from_what_to_what(tmp_path, case):
     """An import changes a configuration, so each change is recorded as an audit entry: who,
     when, and each position's points — or the fastest-lap bonus and its limit — from what to
