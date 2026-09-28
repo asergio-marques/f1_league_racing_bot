@@ -91,9 +91,10 @@ async def test_a_refused_command_never_runs():
     interaction.response.send_message.assert_awaited_once_with(REFUSAL, ephemeral=True)
 
 
-async def test_a_command_from_another_server_is_not_recorded_in_the_log_channel():
+async def test_a_command_from_another_server_is_not_recorded_in_the_log_channel(caplog):
     """Someone on another server is no member of the league: their refusal goes to the host's
     log alone (owner decision on #482, 2026-09-29: host log only)."""
+    caplog.set_level(logging.INFO, logger="leaguebot.core.utils.league_server")
     bot = _bot(LEAGUE)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
@@ -103,6 +104,10 @@ async def test_a_command_from_another_server_is_not_recorded_in_the_log_channel(
     assert await bot.tree.interaction_check(interaction) is False
     interaction.response.send_message.assert_awaited_once_with(REFUSAL, ephemeral=True)
     bot.output_router.post_log.assert_not_awaited()
+    [line] = [
+        r.getMessage() for r in caplog.records if r.name == "leaguebot.core.utils.league_server"
+    ]
+    assert str(ELSEWHERE) in line and "user 7" in line
 
 
 async def test_autocomplete_in_another_server_offers_nothing_and_sends_nothing():
