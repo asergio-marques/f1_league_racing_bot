@@ -417,7 +417,6 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/cogs/results_cog.py", "BulkAmendSessionModal.on_submit"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "BulkConfigSessionModal.on_submit"): (1, TRACEBACKS),
     ("results/cogs/results_cog.py", "_run_xml_import"): (1, TRACEBACKS),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, TRACEBACKS),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, TRACEBACKS),
 }

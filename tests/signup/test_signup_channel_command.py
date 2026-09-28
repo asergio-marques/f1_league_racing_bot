@@ -206,10 +206,6 @@ def _assert_one_refusal_line(cog, command: str, said: str) -> None:
     assert said in line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the early check still passes with either permission alone, and logs nothing",
-)
 @pytest.mark.parametrize(
     "manage_channels, manage_roles",
     [(True, False), (False, True)],
@@ -241,10 +237,6 @@ async def test_signup_channel_refuses_early_without_both_permissions(
     _assert_one_refusal_line(cog, "/signup channel", "Manage Permissions")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a channel Discord refuses to edit is still answered with the error's text",
-)
 async def test_a_signup_channel_the_bot_may_not_edit_is_refused(db_path):
     """Discord refuses the edit on a first setting: the hub's words, no error text, nothing
     saved, and the refusal logged."""
@@ -265,10 +257,6 @@ async def test_a_signup_channel_the_bot_may_not_edit_is_refused(db_path):
     _assert_one_refusal_line(cog, "/signup channel", "Manage Permissions")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a refused move does not say the old channel's permissions were already cleared",
-)
 async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db_path):
     """The old channel's permissions are cleared before the new one is tried. Where Discord
     then refuses the new one, the manager is told the old one needs putting right by hand."""
@@ -301,10 +289,6 @@ async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db
     _assert_one_refusal_line(cog, "/signup channel", "Manage Permissions")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: any other fault from the edit is still caught and its text shown",
-)
 async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(db_path):
     """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
     path, which gives the standard reply, and nothing is saved."""
@@ -350,7 +334,6 @@ SIGNUP_CHANNEL_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a /signup channel refusal writes no log line")
 @pytest.mark.parametrize("command, args, setup, named, said", SIGNUP_CHANNEL_REFUSALS)
 async def test_every_signup_channel_refusal_reaches_the_log_channel(
     db_path, command, args, setup, named, said

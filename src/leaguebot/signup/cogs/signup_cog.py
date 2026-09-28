@@ -41,6 +41,7 @@ from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.weather.utils.message_builder import discord_ts
 
@@ -861,8 +862,8 @@ class SignupCog(commands.Cog):
 
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None:
-            await interaction.response.send_message(
-                "❌ Signup module is not configured.", ephemeral=True
+            await refuse(
+                interaction, "❌ Signup module is not configured.", what=describe(interaction)
             )
             return
 
@@ -877,35 +878,39 @@ class SignupCog(commands.Cog):
 
         use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
-            await interaction.response.send_message(
-                refusal(
-                    channel.mention, use, same_setting=(use == ChannelUse("signup"))
-                ),
-                ephemeral=True,
+            await refuse(
+                interaction,
+                refusal(channel.mention, use, same_setting=(use == ChannelUse("signup"))),
+                what=describe(interaction),
             )
             return
 
-        # Check bot perms
+        # Setting who may see the channel needs both Manage Channels and Manage Roles, which
+        # Discord shows on a channel as Manage Channel and Manage Permissions. Either alone is
+        # refused here, before anything is edited, in the hub's words.
+        may_not_edit = (
+            f"❌ The bot needs **Manage Channel** and **Manage Permissions** on {channel.mention} "
+            "to set who may see it. The signup channel was not changed."
+        )
         bot_user = self.bot.user
         bot_member = guild.get_member(bot_user.id) if bot_user is not None else None
         if bot_member:
             perms = channel.permissions_for(bot_member)
-            if not (perms.manage_channels or perms.manage_roles):
-                await interaction.response.send_message(
-                    f"❌ Bot is missing `manage_roles` permission on {channel.mention}.",
-                    ephemeral=True,
-                )
+            if not (perms.manage_channels and perms.manage_roles):
+                await refuse(interaction, may_not_edit, what=describe(interaction))
                 return
 
         await interaction.response.defer(ephemeral=True)
         old_channel_id = cfg.signup_channel_id
 
         # Revert bot-applied overwrites on old channel (if changing)
+        old_cleared: discord.TextChannel | None = None
         if old_channel_id and old_channel_id != channel.id:
             old_channel = guild.get_channel(old_channel_id)
             if old_channel and isinstance(old_channel, discord.TextChannel):
                 try:
                     await old_channel.edit(overwrites={})
+                    old_cleared = old_channel
                 except Exception:
                     log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id, exc_info=True)
 
@@ -946,12 +951,18 @@ class SignupCog(commands.Cog):
                 overwrites[role] = discord.PermissionOverwrite(
                     view_channel=True, send_messages=True
                 )
+        # Discord refusing the edit is the refusal above, met late. Any other error is a fault
+        # in the bot, and goes to the command's failure path with nothing saved.
         try:
             await channel.edit(overwrites=overwrites)
-        except Exception as exc:
-            await interaction.followup.send(
-                f"❌ Failed to apply channel permission overwrites: {exc}", ephemeral=True
-            )
+        except discord.Forbidden:
+            reply = may_not_edit
+            if old_cleared is not None:
+                reply += (
+                    f"\nThe old signup channel {old_cleared.mention} has already had its "
+                    "permissions cleared, so it needs putting right by hand if you do not retry."
+                )
+            await refuse(interaction, reply, what=describe(interaction))
             return
 
         # Persist
