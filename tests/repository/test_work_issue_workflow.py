@@ -54,10 +54,7 @@ def test_every_scenario_file_is_run() -> None:
         pytest.param("handoff-scenarios.js"),
         pytest.param("incremental-review-scenarios.js"),
         "ledger-scenarios.js",
-        pytest.param(
-            "recheck-scenarios.js",
-            marks=pytest.mark.xfail(strict=True, reason="#483: a re-check is not yet given the earlier plan and each checker's earlier result"),
-        ),
+        pytest.param("recheck-scenarios.js"),
         "resume-scenarios.js",
         "tests-stage-scenarios.js",
     ],
