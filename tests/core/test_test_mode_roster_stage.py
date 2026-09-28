@@ -162,7 +162,6 @@ ROSTER_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason="#442: a test roster refusal writes no log line")
 @pytest.mark.parametrize("command, args, stage, config, said", ROSTER_REFUSALS)
 async def test_every_test_roster_refusal_reaches_the_log_channel(
     tmp_path, command, args, stage, config, said

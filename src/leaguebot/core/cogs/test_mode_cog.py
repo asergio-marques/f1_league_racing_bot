@@ -42,7 +42,7 @@ from leaguebot.core.services import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.input_validator import parse_user_id
-from leaguebot.core.utils.interaction_errors import describe
+from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.weather.utils.message_builder import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
@@ -902,9 +902,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ This command is only available when test mode is enabled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if await self._refuse_roster_change_outside_placements(interaction):
@@ -913,26 +914,38 @@ class TestModeCog(commands.Cog):
         # A nationality cannot be recorded while the switch is off, as the signup wizard
         # drops the question entirely rather than collecting an answer it will not keep.
         if nationality is not None and not config.test_mode_nationality_required:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Nationality is switched off for test mode, so one cannot be recorded. "
                 "Turn it on with `/test-mode nationality`, or leave the parameter out.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         from leaguebot.core.services.test_roster_service import add_test_driver
 
-        result = await add_test_driver(
-            driver_name=driver_name,
-            team_name=team_name,
-            division_name=division,
-            db_path=self.bot.db_path,
-            nationality=nationality,
-            placement_service=self.bot.placement_service,
-        )
+        # The driver is written in one transaction, so a fault leaves the roster as it was,
+        # and the command says so itself (see `report_failure`).
+        try:
+            result = await add_test_driver(
+                driver_name=driver_name,
+                team_name=team_name,
+                division_name=division,
+                db_path=self.bot.db_path,
+                nationality=nationality,
+                placement_service=self.bot.placement_service,
+            )
+        except Exception as exc:  # noqa: BLE001 — reported here, to say the driver was not added
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction),
+                outcome="The test driver was not added. Run `/test-mode roster add` again to retry.",
+            )
+            return
 
         if isinstance(result, str):
-            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
             return
 
         mention_str = f"<@{result['discord_user_id']}>"

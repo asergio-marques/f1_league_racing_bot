@@ -331,9 +331,7 @@ def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
     return found
 
 
-KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
-}
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_nothing_else_is_awaited_while_a_write_is_open():
@@ -414,7 +412,6 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
 
 
 KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/test_roster_service.py", "add_test_driver"): (1, TRACEBACKS),
 }
 
 

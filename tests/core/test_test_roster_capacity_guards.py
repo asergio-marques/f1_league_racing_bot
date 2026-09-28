@@ -279,9 +279,6 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a /test-mode roster add refusal writes no log line"
-)
 async def test_the_command_refuses_it_in_placements(tmp_path):
     """Through the cog, in the one stage the roster may change in (issue #220).
 

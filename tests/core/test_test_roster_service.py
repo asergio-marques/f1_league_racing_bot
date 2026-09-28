@@ -324,10 +324,6 @@ class TestRemovingOneDriver:
 # ── A profile that cannot be written (#442) ───────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a profile that cannot be written is still returned as a refusal string",
-)
 async def test_a_test_driver_profile_that_cannot_be_written_raises(db_path):
     """A fault in the database is the bot's, not a refusal the manager can act on: it is
     raised, so the command's failure path reports it, and nothing is seated."""
