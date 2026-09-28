@@ -56,7 +56,10 @@ def _http_error() -> discord.HTTPException:
 
 @pytest.mark.parametrize(
     "case",
-    ["answered", "deferred", "reason given", "reply fails", "post fails", "over long"],
+    [
+        "answered", "deferred", "reason given", "reply fails", "post fails", "over long",
+        "info mark", "hourglass mark",
+    ],
 )
 async def test_refuse_replies_to_the_member_and_logs_one_line(case):
     from leaguebot.core.utils.log_lines import refuse
@@ -72,6 +75,10 @@ async def test_refuse_replies_to_the_member_and_logs_one_line(case):
         interaction.client.output_router.post_log.side_effect = RuntimeError("database is locked")
     if case == "over long":
         reply = "\n".join(f"  • Line {n}: position must be a positive integer" for n in range(90))
+    if case == "info mark":
+        reply = "ℹ️ Signups are already open.\nClose them with `/signup close` first."
+    if case == "hourglass mark":
+        reply = "⏳ Signups are already open.\nClose them with `/signup close` first."
 
     await refuse(interaction, reply, what="`/signup open`", reason=reason)  # must not raise
 
@@ -102,6 +109,10 @@ async def test_refuse_replies_to_the_member_and_logs_one_line(case):
     elif case != "over long":
         assert "Signups are already open." in line
         assert "Close them with" not in line, "the reason defaults to the reply's first line"
+    if case in ("info mark", "hourglass mark"):
+        # A reply's own mark is the member's, not the line's: the line carries its own ⛔.
+        assert line == f"⛔ `/signup open` refused for Alex (<@{USER}>) — Signups are already open."
+        assert "ℹ" not in line and "⏳" not in line
 
 
 def _bot(member_name: str | None = "Alex"):
