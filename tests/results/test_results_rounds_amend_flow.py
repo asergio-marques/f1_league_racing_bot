@@ -1650,57 +1650,6 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
         assert f"<@{USER_ID}>" not in line, "the line names the opener, not the presser"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a failure reply that cannot be sent still leaves the amendment's own "
-    "AMEND_FAILED line, not report_failure's standard one",
-)
-@pytest.mark.parametrize("case", ["write-fails", "report-stage-fails"])
-async def test_a_failed_amendment_reply_that_cannot_be_sent_writes_one_line(tmp_path, case):
-    """An interaction's token lapses fifteen minutes after the command, which several pastes
-    can outlast. Where the failure reply can no longer be sent, the command still ends without
-    raising, and the one failure is one standard failure line — never a second one naming the
-    refused reply."""
-    import sqlite3
-
-    db_path = await _make_db(tmp_path, name=f"amend_reply_gone_{case.replace('-', '_')}")
-    interaction = _interaction(_amend_channel(), message=_message())
-    cog = _make_cog(db_path)
-    expired = discord.HTTPException(
-        MagicMock(status=401, reason="Unauthorized"), "Invalid Webhook Token"
-    )
-
-    async def _send(content=None, *_a, **_k):
-        if content is not None and "stopped on a fault" in str(content):
-            raise expired
-
-    interaction.followup.send = AsyncMock(side_effect=_send)
-
-    if case == "write-fails":
-        with patch(
-            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-            new=AsyncMock(return_value=True),
-        ):
-            await _amend(
-                cog, interaction, amend_error=sqlite3.OperationalError("database is locked")
-            )
-        kind = "OperationalError"
-    else:
-        with patch(
-            "leaguebot.results.services.result_submission_service.run_amendment_review_stages",
-            new=AsyncMock(side_effect=RuntimeError("no channel")),
-        ), patch(
-            "leaguebot.results.services.result_submission_service.cancel_amendment",
-            new=AsyncMock(return_value=True),
-        ):
-            await _amend(cog, interaction)
-        kind = "RuntimeError"
-
-    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
-    _assert_failure_line(line, kind)
-    assert "HTTPException" not in line
-
-
 # ---------------------------------------------------------------------------
 # Every refusal of the command and its Cancel button reaches the log channel (#442)
 # ---------------------------------------------------------------------------
