@@ -1535,7 +1535,8 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
 @pytest.mark.parametrize("case", ["cancel-revert-fails", "report-stage-fails"])
 async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path, case):
     """Cancel is pressed after stage one and the round cannot be put back: the presser is told
-    the plain kind and that the round could not be put back, and one `AMEND_FAILED` line is
+    the plain kind, that the round could not be put back and that restarting the bot retries
+    it, and one `AMEND_FAILED` line is
     logged. And a report stage that cannot open, undone by the cancel path, still makes one
     line and not two."""
     import sqlite3
@@ -1571,6 +1572,7 @@ async def test_a_failed_amendment_cancel_revert_is_reported_and_logged(tmp_path,
     assert "stopped on a fault in the bot, not on anything you entered" in told
     assert PLAIN_DATABASE in told
     assert "could not be put back" in told
+    assert "Restarting the bot retries that." in told, "the presser is not told what to do next"
     assert "database is locked" not in told
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert "AMEND_FAILED" in line
