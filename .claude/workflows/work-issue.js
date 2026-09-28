@@ -693,6 +693,18 @@ const TESTS_CHECK_SCHEMA = {
   },
 }
 
+// Where the reviewers have seen the list before, the tester also lists what has changed under tests/
+// since, which decides the entries each is given in full again.
+const TESTS_CHECK_SINCE_SCHEMA = {
+  ...TESTS_CHECK_SCHEMA,
+  required: [...TESTS_CHECK_SCHEMA.required, 'changedSince', 'changedSinceError'],
+  properties: {
+    ...TESTS_CHECK_SCHEMA.properties,
+    changedSince: { ...CHANGES, description: 'what tools/changed_tests.py printed from the commit named in step 7, copied exactly; empty lists where it failed' },
+    changedSinceError: { type: 'string', description: 'empty unless step 7\'s run of tools/changed_tests.py exited non-zero: what it printed on stderr' },
+  },
+}
+
 const SUITE_SCHEMA = {
   type: 'object',
   required: ['exitCode', 'summary', 'failures', 'mypyClean', 'mypyErrors', 'xfailMarkersLeft', 'uncommitted', 'tmpFree', 'environmentProblem', 'log', 'changes', 'changesError'],
@@ -804,7 +816,13 @@ const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with
 const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ the builder changed, each under its label'
 // The tests stage's lists as a reviewer is given them: in full where it has not seen them, and
 // otherwise each entry new or changed since it last did in full, and the rest in short. An entry is
-// compared as the Gate 2 report compares it, on what it says.
+// compared as the Gate 2 report compares it, on what it says, and is changed too where the commits
+// since change its code: a builder keeps an entry word for word where the test's meaning is
+// unchanged, so its code can change under an unchanged entry, and the issue reviewer holds the code
+// to the scenario, which the short form leaves out. `listTouched` holds the node ids and support
+// keys whose code has changed since, as the round's tester found them; where that is not known,
+// every entry is given in full.
+let listTouched = null
 const changedSince = (entry, before, keyOf) => {
   const was = before.find(b => keyOf(b) === keyOf(entry))
   return !was || was.change !== entry.change || DESCRIBED.some(f => described(was, f) !== described(entry, f))
@@ -812,15 +830,16 @@ const changedSince = (entry, before, keyOf) => {
 const listFor = (lane, tests, support, whole = false) => {
   if (!tests) return ''
   const seen = listSeen[lane]
-  if (!seen || whole) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
+  if (!seen || whole || !listTouched) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
   const testKey = t => bareId(t.nodeid)
-  const newTests = tests.filter(t => changedSince(t, seen.tests || [], testKey))
-  const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey))
+  const touched = listTouched
+  const newTests = tests.filter(t => changedSince(t, seen.tests || [], testKey) || touched.tests.has(testKey(t)))
+  const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey) || touched.support.has(supportKey(x)))
   const short = [
     ...tests.filter(t => !newTests.includes(t)).map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(filled(t.criterion) ? { criterion: t.criterion } : {}) })),
     ...support.filter(x => !newSupport.includes(x)).map(x => ({ label: x.label, file: x.file, name: x.name, change: x.change })),
   ]
-  return `${section(`${TESTS_WRITTEN}. You have reviewed the list before: these are the tests new or changed since`, newTests)}${section(`${SUPPORT_WRITTEN}, new or changed since you last reviewed the list`, newSupport)}${section('Unchanged since you last reviewed the list, and given in short: each says what it did when you last saw it. Where the commits since change the code of one, hold it to that description still', short)}`
+  return `${section(`${TESTS_WRITTEN}. You have reviewed the list before: these are the tests new or changed since, in their entries or in their code`, newTests)}${section(`${SUPPORT_WRITTEN}, new or changed since you last reviewed the list, in their entries or in their code`, newSupport)}${section('Unchanged since you last reviewed the list, both in their entries and in their code, and given in short: a test by its label, node id, change and criterion alone, and support by its label, file, name and change', short)}`
 }
 
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
@@ -837,7 +856,7 @@ const summaryAsk = () => {
 
 const productPrompt = (k, questions, testReport, tests, support, whole = false) => `Job 2 — a round of the branch. ${shared(k, 'product', whole)} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${section('What a league should see once it lands', ARGS.criteria)}${section('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support, whole)}${section('The tester\'s report', testReport)}`
 
-const testsTesterPrompt = (k, tests) => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
+const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
 1. What is committed: list every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted. The tests must be committed to count.
 2. Collection: pytest tests/ --collect-only -q must exit 0.
@@ -845,7 +864,8 @@ const testsTesterPrompt = (k, tests) => `You check the tests changed in round ${
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
 ${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
-
+${since ? `7. What has changed under tests/ since ${since}: run ${CHANGED_TESTS(since)}, with a Bash timeout of 600000 ms, and copy what it prints into changedSince, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changedSinceError, and leave the lists in changedSince empty.
+` : ''}
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (a deleted test is not among them)', tests)}`
@@ -1088,12 +1108,26 @@ const testsProblems = t => {
 // test's node id, change and whether it passes already, which is all it runs from. The tester runs no
 // deleted test, and runs none at all where every change is a deletion: an empty list of targets
 // would be the whole suite.
+//
+// Where a reviewer has seen the list before and commits have been made since, the tester also lists
+// what has changed under tests/ since the earlier of the two reviewers last saw it: from the base
+// where that is not known, which gives every entry in full. Its schema then requires the list, so an
+// answer that lacks it is not one the runtime passes on.
 const reviewTests = async (k, questions) => {
   const run = written.filter(w => w.change !== 'deleted')
+  const seenAt = ['issue', 'product'].filter(l => listSeen[l]).map(l => reviewedAt[l])
+  const known = seenAt.every(at => at !== undefined && at <= commits.length)
+  const earliest = known && seenAt.length ? Math.min(...seenAt) : undefined
+  const since = !seenAt.length || earliest === commits.length ? '' : earliest ? commits[earliest - 1].sha : base
   const test = written.length || supportWritten.length
-    ? await agent(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) }))), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: TESTS_CHECK_SCHEMA })
+    ? await agent(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
+  const nothing = { tests: new Set(), support: new Set() }
+  const found = t => t.changedSince || { tests: [], support: [] }
+  listTouched = !since ? nothing
+    : !test || filled(test.changedSinceError) ? null
+      : { tests: new Set(found(test).tests.map(x => bareId(x.nodeid))), support: new Set(found(test).support.map(supportKey)) }
   const [issueResult, productResult] = await parallel([
     () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
     () => agent(productPrompt(k, questions.business, test, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
