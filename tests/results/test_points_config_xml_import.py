@@ -400,7 +400,7 @@ async def test_the_outcome_reaches_the_log(tmp_path, xml, fragments):
 
     await _import(db_path, interaction, xml)
 
-    audited = _audited(interaction)
+    [audited] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
     for fragment in fragments:
         assert fragment in audited
     assert "FAILED (" not in audited
@@ -416,7 +416,7 @@ async def test_an_import_into_a_missing_config_is_audited(tmp_path):
 
     await _import(db_path, interaction)
 
-    audited = _audited(interaction)
+    [audited] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
     assert audited.startswith("⛔ ")
     assert f"refused for Manager (<@{ACTOR_ID}>)" in audited
     assert "not found" in audited

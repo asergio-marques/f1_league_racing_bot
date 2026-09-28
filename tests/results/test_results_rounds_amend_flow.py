@@ -1364,7 +1364,7 @@ async def test_a_reply_that_can_no_longer_be_sent_is_not_taken_for_a_failure(tmp
 
     await _amend(cog, interaction, parsed=["Line 1: driver not in division"])
 
-    logged = _logged(cog)
+    [logged] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert logged.startswith("⛔ ")
     assert f"refused for Admin (<@{USER_ID}>)" in logged
     assert "AMEND_REJECTED" not in logged

@@ -449,6 +449,9 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
 
     assert said in _all_replies(interaction)
     cog.bot.amendment_service.amend_round.assert_not_awaited()
+    if case.startswith("pending"):
+        # The season being set up is written through its snapshot, not the amendment service.
+        cog._snapshot_pending.assert_not_awaited()
     [line] = _lines(cog)
     assert line.startswith("⛔ ")
     assert "/round amend" in line

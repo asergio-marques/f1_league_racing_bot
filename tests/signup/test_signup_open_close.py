@@ -657,7 +657,10 @@ SIGNUP_OPEN_REFUSALS = [
     pytest.param({"stage": "PLACEMENTS"}, {}, {}, "can only be opened", id="wrong-stage"),
     pytest.param({"channel": None}, {}, {}, "put right", id="configuration-incomplete"),
     pytest.param({"slots": 0}, {}, {}, "time slot", id="no-time-slots"),
-    pytest.param({}, {}, {"close_time": "next tuesday-ish"}, "", id="unparseable-close-time"),
+    pytest.param(
+        {}, {}, {"close_time": "next tuesday-ish"}, "not a valid ISO 8601 datetime",
+        id="unparseable-close-time",
+    ),
     pytest.param({}, {}, {"track_ids": "1, 99999"}, "99999", id="unknown-track"),
     pytest.param({}, {"channel_found": False}, {}, "not found", id="channel-gone"),
 ]

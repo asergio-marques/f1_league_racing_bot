@@ -753,22 +753,25 @@ MODULE_GATED = [
     ("rounds_sync", "results rounds sync", 1),
 ]
 
-#: Every acting command behind `season_for_command`: its cog, its attribute, its name, and how
-#: many arguments it takes. The bulk amend form is the fourteenth, and is its own case below.
+#: Every acting command behind `season_for_command`: its cog, its attribute, its name, how
+#: many arguments it takes, and a fragment of the gate's refusal with no live season. The bulk
+#: amend form is the fourteenth, and is its own case below.
 SEASON_GATED = [
-    (_RESULTS, "amend_toggle", "results amend toggle", 0),
-    (_RESULTS, "amend_revert", "results amend revert", 0),
-    (_RESULTS, "amend_session", "results amend session", 4),
-    (_RESULTS, "amend_fl", "results amend fl", 3),
-    (_RESULTS, "amend_fl_plimit", "results amend fl-plimit", 3),
-    (_RESULTS, "bulk_amend_session", "results amend bulk-session", 2),
-    (_RESULTS, "reserves_toggle", "results reserves toggle", 1),
-    (_RESULTS, "standings_sync", "results standings sync", 1),
-    (_RESULTS, "rounds_sync", "results rounds sync", 1),
-    (_RESULTS, "rounds_amend", "results rounds amend", 3),
-    ("leaguebot.core.cogs.driver_cog.DriverCog", "reassign", "driver reassign", 3),
+    (_RESULTS, "amend_toggle", "results amend toggle", 0, "there is none"),
+    (_RESULTS, "amend_revert", "results amend revert", 0, "there is none"),
+    (_RESULTS, "amend_session", "results amend session", 4, "there is none"),
+    (_RESULTS, "amend_fl", "results amend fl", 3, "there is none"),
+    (_RESULTS, "amend_fl_plimit", "results amend fl-plimit", 3, "there is none"),
+    (_RESULTS, "bulk_amend_session", "results amend bulk-session", 2, "there is none"),
+    (_RESULTS, "reserves_toggle", "results reserves toggle", 1, "there is none"),
+    (_RESULTS, "standings_sync", "results standings sync", 1, "there is none"),
+    (_RESULTS, "rounds_sync", "results rounds sync", 1, "there is none"),
+    (_RESULTS, "rounds_amend", "results rounds amend", 3, "there is none"),
+    # `/driver reassign` names its own rule, whatever the reason it is refused.
+    ("leaguebot.core.cogs.driver_cog.DriverCog", "reassign", "driver reassign", 3,
+     "only while drivers are being placed"),
     ("leaguebot.core.cogs.season_cog.SeasonCog", "division_calendar_sync",
-     "division calendar-sync", 1),
+     "division calendar-sync", 1, "there is none"),
 ]
 
 BULK_REFUSALS = [
@@ -787,9 +790,9 @@ BULK_REFUSALS = [
     ],
     *[
         pytest.param(
-            f"season gate:{cls}:{attr}:{nargs}", name, "", id=f"season-gate-{attr}"
+            f"season gate:{cls}:{attr}:{nargs}", name, said, id=f"season-gate-{attr}"
         )
-        for cls, attr, name, nargs in SEASON_GATED
+        for cls, attr, name, nargs, said in SEASON_GATED
     ],
 ]
 
@@ -801,9 +804,9 @@ BULK_REFUSALS = [
 async def test_every_bulk_session_refusal_reaches_the_log_channel(
     db_path, season, case, given, said
 ):
-    """Each refusal answers the member as before, writes nothing, and writes one line in the
-    standard refusal form. The shared checks' refusals reach every acting command they guard,
-    each named in its line."""
+    """Each refusal answers the member as before and writes one line in the standard refusal
+    form; a form's refusal leaves its store as it was. The shared checks' refusals reach every
+    acting command they guard, each named in its line."""
     from leaguebot.core.services.amendment_service import disable_amendment_mode
 
     if case.startswith("module gate:") or case.startswith("season gate:"):
