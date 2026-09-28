@@ -438,8 +438,16 @@ const BUILDER_RULES = `The rules of the work:
 - Never push, never touch GitHub, never file anything, and never pip install into the shared virtualenv.
 - Where the plan, the owner's decisions and the rules cited to you do not settle something, return it as a question rather than guess: kind "business" for anything about what the bot does, what a league sees or what a spec says, and "engineering" for the rest. Carry on with whatever it does not block, and set blocked only where nothing is left that you can do.
 - Finish with everything committed, new files included: git -C ${worktree} status --porcelain --untracked-files=all prints nothing.
+- Work in a piece of the round, not the whole of it: carry out at most three of the plan's commit points, or of the findings this round owes, and once you have made some forty tool calls, stop at your next commit. Then finish as above, return planComplete false, and say in remaining what is left: another builder carries on from your commits.
 
 ${RUN_PYTEST}`
+
+// A builder works a round in pieces, each a fresh agent carrying on from the last one's commits.
+// An agent re-reads its whole conversation at every step, so one builder carrying a whole stage
+// costs roughly the square of its steps; pieces of a few commit points keep each conversation
+// short. The cap bounds a round whose builder never finishes: reaching it, the round is reviewed
+// as it stands, and cannot pass, since the plan is not complete.
+const MAX_PIECES = 8
 
 // The command that lists what the branch changes under tests/, which the builder's lists must
 // match entry for entry (tools/changed_tests.py).
@@ -477,7 +485,7 @@ const BUILDER_SCHEMA = {
     commits: {
       type: 'array',
       items: { type: 'object', required: ['sha', 'subject'], properties: { sha: { type: 'string' }, subject: { type: 'string' } } },
-      description: 'the commits made this round, oldest first',
+      description: 'the commits you made, oldest first',
     },
     planComplete: { type: 'boolean', description: 'everything this stage owes is done' },
     remaining: { type: 'array', items: { type: 'string' }, description: 'what this stage still owes' },
@@ -671,9 +679,12 @@ const priorSection = lane => {
 
 const shared = (k, lane) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>.${DESIGN_PASS}`
 
-const builderPrompt = k => {
+// `earlier` holds the results of the round's pieces before this one: a later piece carries on from
+// them, and leaves alone the findings they have already fixed or disputed.
+const builderPrompt = (k, earlier = []) => {
   const first = k === offset + 1
-  const open = [...ledger.values()].filter(materialOpen).map(f => ({
+  const answeredBefore = new Set(earlier.flatMap(p => [...p.fixed, ...p.disputed].map(x => x.id)))
+  const open = [...ledger.values()].filter(f => materialOpen(f) && !answeredBefore.has(f.id)).map(f => ({
     id: f.id,
     from: LANE_NAMES[f.lane],
     title: f.title,
@@ -689,14 +700,17 @@ const builderPrompt = k => {
   }))
   // A branch may carry this issue's work before the stage's first round: from an earlier run
   // of the stage, or, after the owner refused the result at acceptance, from a whole earlier pass.
-  const start = first && !previous
+  const last = earlier[earlier.length - 1]
+  const start = last
+    ? `You carry on from an earlier builder of this round, which handed off before finishing: read git -C ${worktree} log ${base}..HEAD first, and build on what is there. Its commits, and those of any builder before it this round: ${earlier.flatMap(p => p.commits).map(c => `${c.sha} ${c.subject}`).join('; ')}. What it said remains: ${(last.remaining || []).join('; ') || 'nothing named'}.${answeredBefore.size ? ` The findings it has already fixed or disputed, which are left to the checkers: ${[...answeredBefore].join(', ')}.` : ''} Carry on from there. Report the commits you make, and the findings you fix or dispute, yourself alone: the earlier builders' are reported already${stage === 'tests' ? '; but your tests[] and support[] still cover the whole branch since its base, as below' : ''}.`
+    : first && !previous
     ? `Start the stage from the plan. Read git -C ${worktree} log ${base}..HEAD first: where the branch already carries work for this issue, the plan is an amendment to it, and you build on what is there.`
     : `Earlier rounds have already worked on this branch: read git -C ${worktree} log ${base}..HEAD first. Fix each open material finding below in a commit of its own, or dispute it with evidence where you judge it wrong; fix the failures below; and finish whatever this stage still owes. Report every finding id you fixed or disputed.`
   const answered = !(first && previous) ? ''
     : previous.status === 'question' ? ` The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.${previous.testChanges && previous.testChanges.length ? ` The test changes you proposed went to the owner: each made is on the branch now, committed by the tests stage${testsHead ? ` by ${testsHead}` : ''}, and each refused is in the decisions below, to build without.` : ''}`
       : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for changes: those in the decisions below, and any finding below that the owner wants made. Make them: they bind you, and this stage owes them until they are done.'
         : ''
-  return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}.
+  return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}${earlier.length ? `, piece ${earlier.length + 1}` : ''}.
 
 ${WHERE}
 
@@ -1048,6 +1062,61 @@ const TRIAGE_CONTEXT = `${section('The approved plan', plan)}${section('The owne
 // Two wordings of one question count as the same when they differ only in case and spacing.
 const sameQuestion = text => String(text).toLowerCase().replace(/\s+/g, ' ').trim()
 
+// The round's pieces, merged into the one result the round is reviewed and recorded from. The
+// commits, fixes, disputes, questions, test changes and defects of every piece are joined; the
+// tests stage's lists come from the last piece, which lists the whole branch since its base, and
+// the build's markers removed are joined. Whether the stage is done, and what it still owes, is
+// the last piece's to say.
+const mergePieces = parts => {
+  const last = parts[parts.length - 1]
+  const all = field => parts.flatMap(p => p[field] || [])
+  return {
+    ...last,
+    commits: all('commits'),
+    fixed: all('fixed'),
+    disputed: all('disputed'),
+    questions: all('questions'),
+    testChanges: all('testChanges'),
+    separateDefects: all('separateDefects'),
+    notes: all('notes'),
+    tests: stage === 'tests' ? last.tests : all('tests'),
+    support: stage === 'tests' ? last.support || [] : all('support'),
+  }
+}
+
+// The builder's pieces of round k, one after another. A further piece starts only where the last
+// one committed something, is on the branch, and is neither finished nor blocked, and asked no
+// question and proposed no test change: anything the owner must see goes to the round's review at
+// once, as a round without pieces would. The commits of every piece that returned on the branch
+// are recorded, so that the result says what the branch carries even where a later piece returns
+// nothing.
+const buildRound = async k => {
+  const parts = []
+  const record = () => {
+    const on = parts.filter(p => p.onBranch)
+    if (!on.length) return
+    const merged = mergePieces(on)
+    commits.push(...merged.commits)
+    separateDefects.push(...merged.separateDefects)
+  }
+  for (let n = 1; ; n++) {
+    const got = await agent(builderPrompt(k, parts), { label: n === 1 ? `${stage}:r${k}:builder` : `${stage}:r${k}:p${n}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
+    if (!got) {
+      record()
+      return { missing: n === 1 ? `the builder returned nothing in round ${k}` : `the builder returned nothing in round ${k}, piece ${n}` }
+    }
+    parts.push(got)
+    // A later piece is given the list as it stands, under its labels.
+    if (stage === 'tests' && got.onBranch) ({ tests: written, support: supportWritten } = labelled(got.tests, got.support || []))
+    const handsOff = got.onBranch && got.commits.length && !got.planComplete && !got.blocked && !got.questions.length && !(got.testChanges || []).length
+    if (!handsOff) break
+    if (n === MAX_PIECES) { log(`Round ${k}: the builder handed off ${MAX_PIECES} pieces, the most a round takes, without finishing; the round is reviewed as it stands.`); break }
+    log(`Round ${k}: piece ${n} of the builder made ${got.commits.length} commit(s) and handed off; piece ${n + 1} carries on.`)
+  }
+  record()
+  return { built: mergePieces(parts) }
+}
+
 const rounds = []
 let status = 'unfinished'
 let failure = ''
@@ -1059,11 +1128,9 @@ let lastTest = null
 
 for (let k = offset + 1; k <= offset + maxRounds; k++) {
   phase(stage === 'tests' ? 'Tests' : 'Build')
-  const built = await agent(builderPrompt(k), { label: `${stage}:r${k}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
-  if (!built) { status = 'failed'; failure = `the builder returned nothing in round ${k}`; break }
+  const { built, missing } = await buildRound(k)
+  if (missing) { status = 'failed'; failure = missing; break }
   if (!built.onBranch) { status = 'failed'; failure = `the checkout at ${worktree} is not on ${branch}`; break }
-  commits.push(...built.commits)
-  separateDefects.push(...built.separateDefects)
   if (stage === 'tests') ({ tests: written, support: supportWritten } = labelled(built.tests, built.support || []))
   else written = [...written, ...built.tests]
   // A claim counts only on a finding the builder still owes: a settled or minor one stays as it is.

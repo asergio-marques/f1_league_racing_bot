@@ -54,10 +54,7 @@ def test_every_scenario_file_is_run() -> None:
         ),
         "build-stage-scenarios.js",
         "check-stage-scenarios.js",
-        pytest.param(
-            "handoff-scenarios.js",
-            marks=pytest.mark.xfail(strict=True, reason="#483: the builder is not yet handed off in pieces within a round"),
-        ),
+        pytest.param("handoff-scenarios.js"),
         pytest.param(
             "incremental-review-scenarios.js",
             marks=pytest.mark.xfail(
