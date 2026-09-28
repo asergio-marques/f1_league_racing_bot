@@ -322,9 +322,6 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
     assert await _drivers(db_path) == [(102, 1)]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a timed revert is still announced as AMEND_REVERTED"
-)
 async def test_the_revert_is_announced(tmp_path):
     """An amendment quietly undone would be worse than one left hanging. It is announced in the
     standard lapse form; a row that recorded nobody names "a member", with no mention."""
@@ -348,10 +345,6 @@ async def test_the_revert_is_announced(tmp_path):
     assert "<@" not in head
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a timed revert is still announced as AMEND_REVERTED, its re-run step not in code",
-)
 async def test_the_revert_notice_says_to_re_run_results_rounds_amend(tmp_path):
     """The league is told the amendment lapsed and may be run again, so the notice sends the
     manager to the command they now type. The line beneath the standard lapse form says so."""
@@ -774,9 +767,6 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     return next(line for line in lines if line.startswith("⌛ "))
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: the amendment's record does not yet name the member who opened it"
-)
 async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path):
     """The sweep names who started the amendment it reverts, by their server display name and
     their mention."""
@@ -785,11 +775,6 @@ async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path
     assert line.splitlines()[0].endswith("lapsed unconfirmed (started by Alex (<@77>))")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: the amendment's record has no started_by, and a timed revert is still "
-    "announced as AMEND_REVERTED",
-)
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
     """The timed revert of an amendment whose opener has since left the server, which the
     sweep still reaches: the standard lapse form, naming them by mention alone, with what

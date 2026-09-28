@@ -33,7 +33,9 @@ from leaguebot.image.utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
+from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
+from leaguebot.core.utils.log_lines import record_abandoned
 
 if TYPE_CHECKING:
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
@@ -2602,20 +2604,18 @@ async def _approve_amendment_reports(interaction, state) -> None:
             await _recompute_session_points(db_path, round_id)
     except Exception as exc:  # noqa: BLE001 — undone, and the manager told
         log.exception("amendment: the report stage of round %s failed", round_id)
-        await _abandon_failed_amendment(
-            interaction, state, stage="reports", reason=f"{type(exc).__name__}: {exc}"
-        )
+        await _abandon_failed_amendment(interaction, state, stage="reports", error=exc)
         return
 
     state.reports_approved = True
 
+    opening_error: Exception | None = None
     try:
         opened = await _post_appeals_prompt(state, interaction.guild, bot, db_path)
-        reason = "the appeals stage could not be opened: its channel is unreachable"
     except Exception as exc:  # noqa: BLE001 — a send, a render or a view may fail outright
         log.exception("amendment: could not open the appeal stage of round %s", round_id)
         opened = False
-        reason = f"the appeals stage could not be opened: {type(exc).__name__}: {exc}"
+        opening_error = exc
 
     if not opened:
         # **An amendment with no route to its last stage is undone now**, rather than left for
@@ -2624,7 +2624,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
         # which is why this runs before the re-arm below rather than after it.
         state.reports_approved = False
         await _abandon_failed_amendment(
-            interaction, state, stage="reports", reason=reason
+            interaction, state, stage="reports", error=opening_error, opening_appeals=True
         )
         return
 
@@ -2702,9 +2702,7 @@ async def _approve_amendment_appeals(interaction, state) -> None:
         await _recompute_former_drivers_after_amendment(db_path, round_id)
     except Exception as exc:  # noqa: BLE001 — undone, and the manager told
         log.exception("amendment: the appeal stage of round %s failed", round_id)
-        await _abandon_failed_amendment(
-            interaction, state, stage="appeals", reason=f"{type(exc).__name__}: {exc}"
-        )
+        await _abandon_failed_amendment(interaction, state, stage="appeals", error=exc)
         return
 
     await _release_amendment(db_path, round_id)
@@ -2818,13 +2816,30 @@ async def _log_result_amended(
         log.exception("amendment: could not reply to the manager for round %s", state.round_id)
 
 
-async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: str) -> None:
+async def _abandon_failed_amendment(
+    interaction,
+    state,
+    *,
+    stage: str,
+    error: BaseException | None,
+    opening_appeals: bool = False,
+) -> None:
     """Undo an amendment whose report or appeal stage failed part-way, and say so.
 
     The caller holds the claim. The round is reverted and the channel closed, exactly as for any
     internal failure of an amendment; the manager re-runs the command. Where the revert itself
     fails, the channel is kept and the deadline set to now, so the sweep tries again within
     minutes rather than the snapshot being thrown away with the channel.
+
+    *error* is the fault that stopped it, or None where nothing raised: the appeals stage could
+    not be opened because its channel could not be reached (*opening_appeals*). The manager is
+    told the plain kind of fault, never its message; the `AMEND_FAILED` notice names its type
+    alone, the traceback having gone to the host's log with the caller's `log.exception`.
+
+    **This reports the failure rather than raising it again.** The revert is a real clean-up,
+    and the amendment reports its own failure because only it can say what became of the round;
+    raised again, the view's failure path would report it a second time, as "may have been
+    partly done".
     """
     db_path: str = state.db_path
     round_id: int = state.round_id
@@ -2836,14 +2851,22 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
         log.exception("amendment: could not revert round %s after a failed stage", round_id)
         await _rearm_amendment(db_path, round_id, datetime.now(timezone.utc).isoformat())
         outcome = (
-            "The round could not be put back yet; the bot will retry within a few minutes and "
-            "log an AMEND_REVERTED notice when it has."
+            "The round could not be put back yet; the bot tries again within a few minutes."
         )
     else:
         await _close_amendment_channel(
             db_path, interaction.guild, round_id, reason="Amendment failed"
         )
         outcome = "The round was put back as it was." if reverted else "Nothing was changed."
+
+    if error is not None:
+        kind = describe_fault(error)
+        reason = f"{type(error).__name__}. The details are in the host's log."
+    else:
+        kind = "the bot could not reach the amendment's channel to open the appeals stage"
+        reason = "its channel could not be reached."
+    if opening_appeals:
+        reason = f"the appeals stage could not be opened: {reason}"
 
     try:
         await state.bot.output_router.post_log(
@@ -2857,8 +2880,7 @@ async def _abandon_failed_amendment(interaction, state, *, stage: str, reason: s
         log.exception("amendment: could not log the failure of round %s", round_id)
     try:
         await interaction.followup.send(
-            f"❌ The amendment failed at its {stage} stage. {outcome} Check the log "
-            "channel for details, then re-run `/results rounds amend`.",
+            amendment_fault_reply(kind, f"{outcome} {AMENDMENT_RE_RUN}"),
             ephemeral=True,
         )
     except Exception:  # noqa: BLE001
@@ -5330,7 +5352,7 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
         moment = moment.replace(tzinfo=timezone.utc)
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT round_id, session_types, expires_at "
+            "SELECT round_id, session_types, expires_at, started_by "
             "FROM round_amend_channels WHERE expires_at IS NOT NULL"
         )
         candidates = [dict(row) for row in await cursor.fetchall()]
@@ -5361,14 +5383,22 @@ async def sweep_expired_amendments(bot: LeagueBot, *, now: datetime | None = Non
             bot.db_path, await league_guild(bot), round_id, reason="Amendment abandoned",
         )
 
+        # In the standard lapse form, naming the member who started it (`started_by`).
         try:
             rctx = await _get_round_context(bot.db_path, round_id)
-            await bot.output_router.post_log(
-                f"System | AMEND_REVERTED | Notice\n"
-                f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
-                f"  round: {rctx['round_number']}, sessions: {_sessions_text(sessions)}\n"
-                "  The amendment's report and appeal stages were not approved in time, so the "
-                "round has been put back as it was. Re-run /results rounds amend to try again."
+            await record_abandoned(
+                bot,
+                row["started_by"],
+                what=(
+                    f"`/results rounds amend` of round {rctx['round_number']} "
+                    f"({rctx['division_name']})"
+                ),
+                lapsed=True,
+                detail=(
+                    f"season: {rctx['season_number']}, sessions: {_sessions_text(sessions)}\n"
+                    "The amendment's report and appeal stages were not approved in time, so the "
+                    f"round has been put back as it was. {AMENDMENT_RE_RUN}"
+                ),
             )
         except Exception:  # noqa: BLE001 — the revert stands whether or not it was announced
             log.exception(

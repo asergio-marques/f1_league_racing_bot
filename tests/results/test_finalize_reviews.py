@@ -1973,9 +1973,6 @@ async def test_a_stage_of_an_amendment_no_longer_open_changes_nothing(tmp_path):
     assert "no longer open" in str(interaction.followup.send.await_args.args[0])
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed stage still names the exception's message and not the plain kind"
-)
 async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     """The records are cleared before the reports are written back, so a failure between the two
     would otherwise leave the session carrying none of its decisions. The manager is told the
@@ -2010,9 +2007,6 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     assert state.appeals_prompt_message_id is None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed stage's reply does not yet end with the plain kind and the re-run"
-)
 async def test_a_failed_amendment_stage_says_to_re_run_results_rounds_amend(tmp_path):
     """The AMEND_FAILED notice, and the reply beside it, send the manager to the command they
     now type. The reply names the plain kind of fault before it."""
@@ -2309,9 +2303,6 @@ async def test_a_fresh_appeal_is_stamped_in_utc(tmp_path):
     assert datetime.fromisoformat(row["submitted_at"]).utcoffset() == timedelta(0)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: an unreachable appeals channel is not yet said in plain words"
-)
 async def test_an_amendment_whose_appeal_stage_cannot_open_is_undone(tmp_path):
     """There is no route to the last stage, so leaving it would strand the round until the sweep
     reverted it half an hour later with the manager told nothing. The manager is told the bot
@@ -2576,9 +2567,6 @@ def _failed_notice(state) -> str:
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed report stage still names the exception's message"
-)
 async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
     """The report stage stops on a database fault: the manager is told it is the bot's, the
     plain kind, that the round was put back, and to re-run; the notice names the type alone."""
@@ -2607,9 +2595,6 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
     assert "database is locked" not in notice
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a failed appeals stage still names the exception's message"
-)
 @pytest.mark.parametrize(
     "case", ["opening-raises", "channel-unreachable", "the-appeals-stage-fails"]
 )
