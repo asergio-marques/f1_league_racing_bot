@@ -1,7 +1,7 @@
 export const meta = {
   name: 'work-issue',
   description: 'Work one approved issue in stages, each ending at a gate the owner decides: check the plan against the architecture, the design files and the specs; make every test change, each with the scenario it tests, for the owner to approve before any code is written; then build, review and test until they pass',
-  whenToUse: 'Run by the fix-issue, fix-issues and design-review skills, one stage per run. Requires args {stage, issue, plan, modules, ...}; the check at the head of the script says what each stage needs. The check stage is read-only. The tests and build stages commit on the given branch in the given checkout, and never push or touch GitHub.',
+  whenToUse: 'Run by the fix-issue, fix-issues and design-review skills, one stage per run. Requires args {stage, issue, plan, modules, ...}; the check at the head of the script says what each stage needs. Each role runs on the model and effort the script sets for it by default, which args models and efforts override. The check stage is read-only. The tests and build stages commit on the given branch in the given checkout, and never push or touch GitHub.',
   phases: [
     { title: 'Check', detail: 'architecture and design (issue-reviewer), spec and acceptance (product-owner), in parallel' },
     { title: 'Tests', detail: 'the builder makes every test change the work needs, those failing marked as expected to fail, and lists each with its scenario' },
@@ -40,13 +40,48 @@ const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
 }
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass") and maxRounds. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers.`
+// Each role's model and effort. Every model is set explicitly, so that a session on another model
+// still verifies with Opus. Sonnet runs the build's builder, which implements an approved plan
+// against tests that already exist, and whose every round the suite, mypy and three or four Opus
+// reviewers check; and the tester, which runs commands and copies their output, at low effort.
+// Opus runs every other role: the tests stage's builder, whose tests everything after it is held
+// to, the checkers and reviewers, and triage, each open-ended judgement that nothing later would
+// catch. The next issue's per-agent figures and findings confirm the Sonnet builder, or put it back
+// on Opus where it costs more rounds than it saves.
+const ROLE_DEFAULTS = {
+  testsBuilder: { model: 'opus' },
+  builder: { model: 'sonnet' },
+  issue: { model: 'opus' },
+  code: { model: 'opus' },
+  product: { model: 'opus' },
+  design: { model: 'opus' },
+  tester: { model: 'sonnet', effort: 'low' },
+  triage: { model: 'opus' },
+}
+// fable is left out by the owner's ruling, and is refused like any model not listed.
+const MODELS = ['opus', 'sonnet', 'haiku']
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass") and maxRounds. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
 }
 const unknown = ARGS.modules.filter(m => !SPECS[m])
 if (unknown.length) throw new Error(`Unknown module ${unknown.join(', ')}. ${USAGE}`)
+// `models` and `efforts` override the defaults above, role by role, and are checked before any agent
+// runs.
+for (const [name, allowed] of [['models', MODELS], ['efforts', EFFORTS]]) {
+  const given = ARGS[name] || {}
+  if (typeof given !== 'object' || Array.isArray(given)) throw new Error(`${name} is {role: value}. ${USAGE}`)
+  const wrong = Object.entries(given).filter(([role, v]) => !ROLE_DEFAULTS[role] || !allowed.includes(v))
+  if (wrong.length) throw new Error(`${name} names ${wrong.map(([role, v]) => `${role}: ${JSON.stringify(v)}`).join(', ')}, which is not a role or not a value it takes. ${USAGE}`)
+}
+const settingsFor = role => {
+  const model = (ARGS.models || {})[role] || ROLE_DEFAULTS[role].model
+  const effort = (ARGS.efforts || {})[role] || ROLE_DEFAULTS[role].effort
+  return effort ? { model, effort } : { model }
+}
 
 const { stage, plan, modules } = ARGS
 const issue = String(ARGS.issue).replace(/^#/, '')
@@ -269,7 +304,7 @@ const triage = async (questions, tag, where, context, handled = []) => {
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => agent(
     `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], keeping the question's ref on what settles it, and copying the question word for word into answers[].question. A question that asks the same as one already handled, listed below, goes in duplicates[] with its ref, and is neither answered nor escalated. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
-    { label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
+    { ...settingsFor('triage'), label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
     () => business.length ? ask(business, 'product', 'Business questions raised by checkers whose ground they are not, for') : Promise.resolve(null),
@@ -312,11 +347,11 @@ if (stage === 'check') {
   log(`Checking the plan for #${issue} against the architecture, the design files (${DESIGN_LIST}) and the specs (${SPEC_LIST}).`)
   const [architecture, design, product] = await parallel([
     () => agent(`Job 1 — check a plan against the architecture. ${head}${context}`,
-      { label: 'check:architecture', phase: 'Check', agentType: 'issue-reviewer', schema: ARCHITECTURE_SCHEMA }),
+      { ...settingsFor('issue'), label: 'check:architecture', phase: 'Check', agentType: 'issue-reviewer', schema: ARCHITECTURE_SCHEMA }),
     () => agent(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}`,
-      { label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
+      { ...settingsFor('issue'), label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
     () => agent(`Job 1 — a plan. ${head} The specs: ${SPEC_LIST}, and the core specification wherever the plan touches core's rules.${context}`,
-      { label: 'check:product', phase: 'Check', agentType: 'product-owner', schema: PRODUCT_PLAN_SCHEMA }),
+      { ...settingsFor('product'), label: 'check:product', phase: 'Check', agentType: 'product-owner', schema: PRODUCT_PLAN_SCHEMA }),
   ])
   const failed = [['architecture', architecture], ['design', design], ['product', product]].filter(([, r]) => !r).map(([k]) => k)
   if (failed.length) log(`No result for: ${failed.join(', ')}. Resume the run before relying on the check.`)
@@ -988,12 +1023,12 @@ const testsProblems = t => {
 const reviewTests = async (k, questions) => {
   const run = written.filter(w => w.change !== 'deleted')
   const test = written.length || supportWritten.length
-    ? await agent(testsTesterPrompt(k, run), { label: `tests:r${k}:tester`, phase: 'Review', effort: 'low', schema: TESTS_CHECK_SCHEMA })
+    ? await agent(testsTesterPrompt(k, run), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: TESTS_CHECK_SCHEMA })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const [issueResult, productResult] = await parallel([
-    () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
-    () => agent(productPrompt(k, questions.business, test, written, supportWritten), { label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
+    () => agent(productPrompt(k, questions.business, test, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const problems = testsProblems(test)
   return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && !problems.length }
@@ -1036,16 +1071,16 @@ const reviewBuild = async (k, built, questions) => {
   if (quiet) log(`Round ${k}: the builder is blocked and made no commit, so the suite is not run.`)
   // The tester goes first: the suite is the longest wait, and the Pi runs two agents at once.
   const [test, issueAndDesign, code, product] = await parallel([
-    () => quiet ? Promise.resolve(undefined) : agent(buildTesterPrompt(k), { label: `build:r${k}:tester`, phase: 'Review', effort: 'low', schema: SUITE_SCHEMA }),
-    () => agent(issuePrompt(k, questions.engineering, null), { label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
+    () => quiet ? Promise.resolve(undefined) : agent(buildTesterPrompt(k), { ...settingsFor('tester'), label: `build:r${k}:tester`, phase: 'Review', schema: SUITE_SCHEMA }),
+    () => agent(issuePrompt(k, questions.engineering, null), { ...settingsFor('issue'), label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
       .then(async issueResult => {
         for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
         if (!designFiles.size) return { issue: issueResult, design: undefined }
-        const design = await agent(designPrompt(k, [...designFiles].sort()), { label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
+        const design = await agent(designPrompt(k, [...designFiles].sort()), { ...settingsFor('design'), label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
         return { issue: issueResult, design }
       }),
-    () => agent(codePrompt(k), { label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
-    () => agent(productPrompt(k, questions.business, null), { label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => agent(codePrompt(k), { ...settingsFor('code'), label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
+    () => agent(productPrompt(k, questions.business, null), { ...settingsFor('product'), label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const green = !!test && !hostProblem(test) && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length && !unapprovedTestChanges(test).length
   return {
@@ -1100,7 +1135,7 @@ const buildRound = async k => {
     separateDefects.push(...merged.separateDefects)
   }
   for (let n = 1; ; n++) {
-    const got = await agent(builderPrompt(k, parts), { label: n === 1 ? `${stage}:r${k}:builder` : `${stage}:r${k}:p${n}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
+    const got = await agent(builderPrompt(k, parts), { ...settingsFor(stage === 'tests' ? 'testsBuilder' : 'builder'), label: n === 1 ? `${stage}:r${k}:builder` : `${stage}:r${k}:p${n}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
     if (!got) {
       record()
       return { missing: n === 1 ? `the builder returned nothing in round ${k}` : `the builder returned nothing in round ${k}, piece ${n}` }
@@ -1214,7 +1249,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     // The product owner found nothing but left its summary out: ask again. Whatever else the
     // second call finds counts, so a finding or a question it raises stops the pass.
     if (!summary) {
-      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null)}\n\nThe other checkers found nothing in this round. Write summary now.`, { label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
       if (asked) {
         addFindings('product', asked.findings)
         citations.push(...asked.answers)
