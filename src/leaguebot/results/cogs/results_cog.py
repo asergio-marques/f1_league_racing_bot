@@ -37,7 +37,7 @@ from leaguebot.core.utils.channel_guard import (
     league_manager_only,
 )
 from leaguebot.core.utils.input_validator import NAME
-from leaguebot.core.utils.interaction_errors import describe
+from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import (
     CallbackButton,
@@ -387,6 +387,11 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
         )
 
 
+def xml_import_named(config_name: str) -> str:
+    """`/results config xml-import` as its log lines name it: with the configuration it writes."""
+    return f"`/results config xml-import` into configuration {config_name}"
+
+
 async def _run_xml_import(
     interaction: discord.Interaction,
     xml_text: str,
@@ -395,11 +400,21 @@ async def _run_xml_import(
 ) -> None:
     """Shared logic for modal and file-attachment XML import paths.
 
-    Parses, validates, persists, and replies with an ephemeral summary.
-    Posts an audit log entry on both success and failure.
+    Parses, validates, persists, and replies with an ephemeral summary. Every outcome is
+    recorded in the log channel: a success with the values it set, a refusal (a payload that
+    does not parse, points out of order, a configuration that does not exist) in the standard
+    refusal form with its detail as the reason, and a failure in the standard failure form.
+
+    **A database fault is caught by name and reported here**, through `report_failure`, rather
+    than left to the form's or the command's failure path, so that its one line names the
+    configuration the import was writing, and its reply says that nothing from the import was
+    saved: the import is one transaction, so a fault leaves the configuration as it was. Any
+    other error propagates to the failure path.
     """
     from leaguebot.results.services.points_config_service import ConfigNotFoundError, xml_import_config
     from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
+
+    what = xml_import_named(config_name)
 
     async def _audit(msg: str) -> None:
         await bot_of(interaction).output_router.post_log(
@@ -412,36 +427,39 @@ async def _run_xml_import(
         payload, warnings = parse_xml_payload(xml_text)
     except XmlImportError as exc:
         error_text = "\n".join(f"  • {e}" for e in exc.errors)
-        await interaction.followup.send(
-            f"❌ XML parse/validation failed:\n{error_text}", ephemeral=True
+        await refuse(
+            interaction,
+            f"❌ XML parse/validation failed:\n{error_text}",
+            what=what,
+            reason=f"XML parse/validation failed: {'; '.join(exc.errors)}",
         )
-        await _audit(f"FAILED (parse error): {'; '.join(exc.errors)}")
         return
 
     # --- semantic validation (monotonic ordering) -------------------------
     mono_errors = validate_payload(payload)
     if mono_errors:
         error_text = "\n".join(f"  • {e}" for e in mono_errors)
-        await interaction.followup.send(
-            f"❌ Points ordering validation failed:\n{error_text}", ephemeral=True
+        await refuse(
+            interaction,
+            f"❌ Points ordering validation failed:\n{error_text}",
+            what=what,
+            reason=f"points ordering validation failed: {'; '.join(mono_errors)}",
         )
-        await _audit(f"FAILED (monotonic violation): {'; '.join(mono_errors)}")
         return
 
     # --- persist ----------------------------------------------------------
     try:
         await xml_import_config(db_path, config_name, payload)
     except ConfigNotFoundError:
-        await interaction.followup.send(
-            f"❌ Config **{config_name}** not found.", ephemeral=True
-        )
-        await _audit("FAILED (config not found)")
+        await refuse(interaction, f"❌ Config **{config_name}** not found.", what=what)
         return
-    except Exception as exc:
-        await interaction.followup.send(
-            f"❌ Database error: {exc}", ephemeral=True
+    except sqlite3.Error as exc:
+        await report_failure(
+            interaction,
+            exc,
+            what=what,
+            outcome="Nothing from the import was saved. Run the import again to retry.",
         )
-        await _audit(f"FAILED (db error): {exc}")
         return
 
     # --- success reply ----------------------------------------------------
@@ -1177,25 +1195,20 @@ class ResultsCog(commands.Cog):
             await interaction.response.defer(ephemeral=True)
 
             raw = await file.read()
+            what = xml_import_named(name)
 
             if len(raw) > 100_000:
-                await interaction.followup.send(
-                    "❌ File is too large (max 100 KB).", ephemeral=True
-                )
+                await refuse(interaction, "❌ File is too large (max 100 KB).", what=what)
                 return
 
             if not raw:
-                await interaction.followup.send(
-                    "❌ The attached file is empty.", ephemeral=True
-                )
+                await refuse(interaction, "❌ The attached file is empty.", what=what)
                 return
 
             try:
                 xml_text = raw.decode("utf-8")
             except UnicodeDecodeError:
-                await interaction.followup.send(
-                    "❌ File could not be decoded as UTF-8.", ephemeral=True
-                )
+                await refuse(interaction, "❌ File could not be decoded as UTF-8.", what=what)
                 return
 
             await _run_xml_import(

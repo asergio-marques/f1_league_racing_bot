@@ -304,10 +304,6 @@ async def test_importing_into_a_config_that_does_not_exist_is_refused(tmp_path):
     assert CONFIG in _replied(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a database failure is still answered with \"Database error\" and its text",
-)
 async def test_a_database_failure_is_reported_without_its_text(tmp_path, monkeypatch):
     """Neither a traceback nor the database's own words are actionable at a manager. The
     standard failure reply says the fault is the bot's, that nothing from the import was
@@ -330,10 +326,6 @@ async def test_a_database_failure_is_reported_without_its_text(tmp_path, monkeyp
     assert "database is locked" not in replied
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a database failure is still logged as \"FAILED (db error)\" with its text",
-)
 async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line(
     tmp_path, monkeypatch
 ):
@@ -376,18 +368,11 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
             MALFORMED_XML,
             ["⛔ ", f"refused for Manager (<@{ACTOR_ID}>)", "XML syntax error"],
             id="parse-error",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#442: a parse refusal is still logged as FAILED (parse error)"
-            ),
         ),
         pytest.param(
             UNORDERED_XML,
             ["⛔ ", f"refused for Manager (<@{ACTOR_ID}>)", "position 1 has 10 pts"],
             id="ordering",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#442: an ordering refusal is still logged as FAILED (monotonic violation)",
-            ),
         ),
     ],
 )
@@ -406,9 +391,6 @@ async def test_the_outcome_reaches_the_log(tmp_path, xml, fragments):
     assert "FAILED (" not in audited
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: a missing config is still logged as FAILED (config not found)"
-)
 async def test_an_import_into_a_missing_config_is_audited(tmp_path):
     """In the standard refusal form, the configuration named."""
     db_path = await _make_db(tmp_path, name="xml_audit_missing", with_config=False)
@@ -602,9 +584,6 @@ XML_IMPORT_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#442: an xml-import refusal is not logged in the standard refusal form"
-)
 @pytest.mark.parametrize("raw, with_config, enabled, said", XML_IMPORT_REFUSALS)
 async def test_every_xml_import_refusal_reaches_the_log_channel(
     tmp_path, raw, with_config, enabled, said
