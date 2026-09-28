@@ -1308,7 +1308,7 @@ async def _sheet_attachment(
     except Exception as exc:  # noqa: BLE001 — the sheet must post whatever happens here
         log.error(
             "post_attendance_sheet: the graphic could not be drawn for division %s: %s",
-            division_id, exc,
+            division_id, exc, exc_info=True,
         )
         return None
 
@@ -1361,7 +1361,7 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                 log.error(
                     "post_attendance_sheet: the track registry could not be read, so the "
                     "round headings are drawn without their flags: %s",
-                    exc,
+                    exc, exc_info=True,
                 )
                 tracks = {}
 
@@ -1405,7 +1405,7 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
                         row["points_awarded"]
                     )
     except Exception as exc:  # noqa: BLE001 — a grid that cannot be read is drawn empty
-        log.error("post_attendance_sheet: could not read the round grid: %s", exc)
+        log.error("post_attendance_sheet: could not read the round grid: %s", exc, exc_info=True)
         return [], {}
 
     return headings, cells

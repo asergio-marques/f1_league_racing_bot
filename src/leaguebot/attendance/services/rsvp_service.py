@@ -415,7 +415,7 @@ async def _checkin_attachment(
     except Exception as exc:  # noqa: BLE001 — the call must post whatever happens here
         log.error(
             "run_rsvp_notice: the check-in graphic could not be drawn for division %d: %s",
-            division_id, exc,
+            division_id, exc, exc_info=True,
         )
         return None
 

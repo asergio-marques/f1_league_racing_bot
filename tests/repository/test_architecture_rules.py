@@ -414,7 +414,6 @@ def _catch_alls_losing_details() -> Counter[tuple[str, str]]:
 
 
 KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, TRACEBACKS),
     ("signup/cogs/admin_review_cog.py", "_may_review_signup"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, TRACEBACKS),
     ("image/cogs/image_cog.py", "ImageCog._log"): (1, TRACEBACKS),
@@ -429,9 +428,7 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (2, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (2, TRACEBACKS),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, TRACEBACKS),
-    ("attendance/services/attendance_service.py", "_round_grid"): (2, TRACEBACKS),
     ("attendance/services/attendance_service.py", "_seat_team_field"): (1, TRACEBACKS),
-    ("attendance/services/attendance_service.py", "_sheet_attachment"): (1, TRACEBACKS),
     ("core/services/cancellation_notice_service.py", "_send"): (1, TRACEBACKS),
     ("image/services/image_attendance_post.py", "attendance_enabled"): (1, TRACEBACKS),
     ("image/services/image_attendance_post.py", "render_sheet"): (1, TRACEBACKS),
@@ -469,7 +466,7 @@ KNOWN_CATCH_ALLS_LOSING_DETAILS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_weather_post.py", "render_forecast"): (1, TRACEBACKS),
     ("image/services/image_weather_post.py", "weather_enabled"): (1, TRACEBACKS),
     ("results/services/results_post_service.py", "post_session_results"): (1, TRACEBACKS),
-    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, TRACEBACKS),
+    ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, TRACEBACKS),
     ("core/services/season_fingerprint_service.py", "_artwork_signature"): (2, TRACEBACKS),
     ("signup/services/signup_module_service.py", "SignupModuleService.move_base_role_overwrite"): (1, TRACEBACKS),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, TRACEBACKS),
