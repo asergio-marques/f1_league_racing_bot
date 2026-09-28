@@ -67,10 +67,6 @@ def test_a_cancel_passes_over_a_job_already_gone(caplog, cancel, args):
         assert result == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a scheduler fault other than JobLookupError is still swallowed in silence",
-)
 @pytest.mark.parametrize("cancel, args", CANCELS, ids=[name for name, _ in CANCELS])
 def test_a_cancel_logs_the_traceback_of_any_other_failure(caplog, cancel, args):
     """A job store that cannot be written is a real fault: a warning carrying the error and
