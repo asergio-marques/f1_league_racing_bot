@@ -445,9 +445,10 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - The period shall run from the moment the corrected classification is written and cover both stages together. Approving the report stage shall not extend it: the user prepares the review beforehand. Decided 2026-09-21.
     - Abandoning an amendment with its button, a restart during it, or a failure part-way through a stage shall undo it on the same terms rather than leave it part-made.
     - An amendment cancelled, or lapsed, shall be recorded in the log channel naming the member who cancelled it, or who started it, with what became of the round and the command to run again beneath.
-- **An amendment that stops on a fault shall say so plainly.** Decided 2026-09-28. The user shall be told that the fault is the bot's and not anything they entered, the kind of fault in plain words, what became of the round — put back as it was, not put back yet, or nothing written — and to run the command again. Where the amendment's channel cannot be reached to open the appeals stage, the reply shall say so. The log channel shall name the kind of fault, never its detail.
     - Once its last stage has been approved, an amendment can no longer be abandoned.
     - An amendment abandoned before its classification was inserted has nothing to undo, and shall simply end.
+
+- **An amendment that stops on a fault shall say so plainly.** Decided 2026-09-28. The user shall be told that the fault is the bot's and not anything they entered, the kind of fault in plain words, what became of the round — put back as it was, not put back yet, or nothing written — and to run the command again. Where the amendment's channel cannot be reached to open the appeals stage, the reply shall say so. The log channel shall name the kind of fault, never its detail.
 
 - **An amendment shall rebuild everything the division's channels show**, in the order a league reads them: the results, the standings, the attendance sheet, the round's report verdicts, then its appeal verdicts.
     - Every round of the division shall be reposted, in round order, and not the amended round alone — a repost being a new message, reposting one round alone would leave the channel out of sequence.
