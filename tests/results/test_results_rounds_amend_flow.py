@@ -1271,7 +1271,7 @@ async def test_a_fault_between_pastes_lets_the_division_go(tmp_path):
     assert await _amend_rows(db_path) == 0
     channel.delete.assert_awaited_once()
     assert "AMEND_FAILED" in _logged(cog)
-    assert "before anything was written" in _replied(interaction)
+    assert "Nothing was written." in _replied(interaction)
     assert "Discord refused or failed a request from the bot" in _replied(interaction)
 
 
