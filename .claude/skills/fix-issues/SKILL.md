@@ -149,7 +149,9 @@ plan. That is a success, not a failure.
 **Check each returned plan before the user sees it**, through the `work-issue` workflow's check
 stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
 product owner's questions to the user first, and items 7 and 8 added to the plan from its result.
-Keep each check's result for the issue's build, and for its next check: a check of an amended plan
+Keep each check's result for the issue's build, and for its next check, saved to a file as
+`fix-issue`'s "What a stage returns" says: a batch's session reads every issue's results, so what it
+leaves out of the conversation it saves many times over. A check of an amended plan
 passes the last result as `previous`, so that each checker judges what the amendment changes rather
 than starting over. Run the checks one at a time, as the plans come back: each is three read-only
 agents, and the Pi runs two at once.
@@ -214,8 +216,9 @@ main checkout's `.venv/bin/python`; `criteria` and `checks` come from its Stage 
 `testsHead` is as `fix-issue` names it. `models` and `efforts` are passed only to override a role's
 default, as `fix-issue` names them: by default Sonnet runs the build's builder, and the tester at low
 effort, and Opus runs every other role; the next issue's per-agent figures and findings confirm the
-Sonnet builder, or put it back on Opus. The issues' runs go on concurrently, one run per issue at a
-time. Tell the user each build takes about ten agents, and one more for each piece a builder hands
+Sonnet builder, or put it back on Opus. Every stage's result is saved to
+`.claude/gates/<N>-<stage>.json` and read as `fix-issue` says, never pasted into the conversation.
+The issues' runs go on concurrently, one run per issue at a time. Tell the user each build takes about ten agents, and one more for each piece a builder hands
 off, and that the Pi runs two of a workflow's agents at once.
 
 **Each issue's Gate 2 file is written to the main checkout's `.claude/gates/<N>-gate-2.md`,** never
@@ -295,6 +298,9 @@ and one module, plus `internal` when the change touches nothing a league sees â€
 file test are in `CONTRIBUTING.md`, "Pull requests", and the required check `pr-label-check`
 refuses a pull request without them. The `fix-issue` skill's Phase 7 gives the commands. Report per
 issue and say plainly whether each is fixed, partly fixed, or turned out not to reproduce.
+
+**One batch per session.** Once the batch's pull requests are open, say that the next batch or
+issue belongs in a fresh session: this one carries every stage of every issue in it.
 
 Keep the worktree of any issue that ended red or unfinished, so the failure can be inspected. Remove
 only the worktrees of issues that merged cleanly, and only once the user has seen the result.
