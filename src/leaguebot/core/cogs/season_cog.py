@@ -6485,91 +6485,92 @@ class _ConfirmView(LeagueView):
 
         await interaction.response.defer(ephemeral=True)
 
-        scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
-
-        # Judged again, with a fresh moment, rather than trusting the verdict the summary was
-        # built on. This view stands for two minutes and a window can pass inside them: a round
-        # offered while its check-in deadline was still ahead can have it behind by the time the
-        # button is pressed, and applying the amendment then is exactly the silent loss the
-        # rules exist to prevent. The season approval re-evaluates its own gate for the same
-        # reason, a round being able to cross a window while the review stands.
-        _rnd_now = await self._cog.bot.season_service.get_round(self._round_id)
-        if _rnd_now is None:
-            await refuse(
-                interaction,
-                "\u26d4 That round no longer exists. **Nothing has been changed.**",
-                what=what,
-            )
-            self.stop()
-            return
-        what = _round_amend_named(_rnd_now.round_number)
-
-        _verdict = await _judge_round_amendment(
-            self._cog.bot,
-            _rnd_now,
-            self._amendments,
-            now=datetime.now(timezone.utc),
-        )
-        if not _verdict.allowed:
-            await refuse(
-                interaction,
-                "\u26d4 This round can no longer be amended:\n"
-                + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
-                + "\n\n**Nothing has been changed.** Run `/round amend` again to start over.",
-                what=what,
-                reason="it can no longer be amended:\n" + "\n".join(_verdict.refusals),
-            )
-            self.stop()
-            return
-
-        # What each field was, for the success line's "from what to what".
-        before = {field: getattr(_rnd_now, field, None) for field, _ in self._amendments}
-
-        # One call carrying every field, not one call per field. Amending a round's track and
-        # its date used to run the whole amendment twice \u2014 two invalidation notices, two
-        # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
-        #
-        # A fault is reported here rather than left to the view's failure path, so that the
-        # reply and the line name the round (see `report_failure`); the buttons stop either way.
+        # A fault anywhere after the defer is reported here rather than left to the view's
+        # failure path, so that the reply and the line name the round (see `report_failure`).
+        # Every way out stops the buttons, a fault included: left running, the view would lapse
+        # two minutes later and record that nothing was changed, beside the failure already
+        # recorded for the same press, even where the round had been amended before the fault.
         try:
+            scheduled_at_changed = any(f == "scheduled_at" for f, _ in self._amendments)
+
+            # Judged again, with a fresh moment, rather than trusting the verdict the summary was
+            # built on. This view stands for two minutes and a window can pass inside them: a round
+            # offered while its check-in deadline was still ahead can have it behind by the time the
+            # button is pressed, and applying the amendment then is exactly the silent loss the
+            # rules exist to prevent. The season approval re-evaluates its own gate for the same
+            # reason, a round being able to cross a window while the review stands.
+            _rnd_now = await self._cog.bot.season_service.get_round(self._round_id)
+            if _rnd_now is None:
+                await refuse(
+                    interaction,
+                    "\u26d4 That round no longer exists. **Nothing has been changed.**",
+                    what=what,
+                )
+                return
+            what = _round_amend_named(_rnd_now.round_number)
+
+            _verdict = await _judge_round_amendment(
+                self._cog.bot,
+                _rnd_now,
+                self._amendments,
+                now=datetime.now(timezone.utc),
+            )
+            if not _verdict.allowed:
+                await refuse(
+                    interaction,
+                    "\u26d4 This round can no longer be amended:\n"
+                    + "\n".join(f"\u2022 {reason}" for reason in _verdict.refusals)
+                    + "\n\n**Nothing has been changed.** Run `/round amend` again to start over.",
+                    what=what,
+                    reason="it can no longer be amended:\n" + "\n".join(_verdict.refusals),
+                )
+                return
+
+            # What each field was, for the success line's "from what to what".
+            before = {field: getattr(_rnd_now, field, None) for field, _ in self._amendments}
+
+            # One call carrying every field, not one call per field. Amending a round's track and
+            # its date used to run the whole amendment twice \u2014 two invalidation notices, two
+            # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
             await self._cog.bot.amendment_service.amend_round(
                 self._round_id,
                 interaction.user,
                 self._amendments,
                 self._cog.bot,
             )
+
+            rnd = await self._cog.bot.season_service.get_round(self._round_id)
+            if rnd is not None and scheduled_at_changed:
+                await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
+
+            division_id = rnd.division_id if rnd is not None else None
+            rounds = (
+                await self._cog.bot.season_service.get_division_rounds(division_id)
+                if division_id is not None
+                else []
+            )
+            msg = "\u2705 Round amended successfully."
+            if rounds:
+                msg += "\n\n" + format_round_list(rounds)
+            await interaction.followup.send(msg, ephemeral=True)
+            await self._cog.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                "/round amend | Success\n"
+                f"  round {_rnd_now.round_number} (round_id: {self._round_id})"
+                + _changed_values(before, dict(self._amendments)),
+            )
         except Exception as exc:  # noqa: BLE001 — reported here, naming the round
             await report_failure(interaction, exc, what=what)
+        finally:
             self.stop()
-            return
-
-        rnd = await self._cog.bot.season_service.get_round(self._round_id)
-        if rnd is not None and scheduled_at_changed:
-            await self._cog.bot.season_service.renumber_rounds(rnd.division_id)
-
-        division_id = rnd.division_id if rnd is not None else None
-        rounds = (
-            await self._cog.bot.season_service.get_division_rounds(division_id)
-            if division_id is not None
-            else []
-        )
-        msg = "\u2705 Round amended successfully."
-        if rounds:
-            msg += "\n\n" + format_round_list(rounds)
-        await interaction.followup.send(msg, ephemeral=True)
-        await self._cog.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round amend | Success\n"
-            f"  round {_rnd_now.round_number} (round_id: {self._round_id})"
-            + _changed_values(before, dict(self._amendments)),
-        )
-        self.stop()
 
     @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await interaction.response.send_message("Amendment cancelled.", ephemeral=True)
+        # Stopped first, so that a reply that cannot be sent is not followed by a lapse too.
         self.stop()
+        await interaction.response.send_message("Amendment cancelled.", ephemeral=True)
         await record_abandoned(
             self._cog.bot,
             interaction.user,

@@ -532,11 +532,6 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     assert NEW_TRACK in values, "the new value is not stated"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#442: a /round amend confirmation that fails outside amend_round leaves its view "
-    "running, so its lapse is recorded as well",
-)
 @pytest.mark.parametrize("where", ["after amending", "before amending"])
 async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tmp_path, where):
     """A fault in the Confirm press anywhere but the amendment itself — putting the rounds back
