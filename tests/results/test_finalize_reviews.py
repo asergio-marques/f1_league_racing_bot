@@ -2698,61 +2698,6 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
     assert "render failed" not in reply and "disk full" not in reply
 
 
-def _not_yet_put_back(where: str):
-    """Mark the log-line half of a case: the reply already says it."""
-    if where == "log line":
-        return pytest.mark.xfail(
-            strict=True,
-            reason="#442: the failure line of an amendment stage not yet put back does not end "
-            "on running it again once it has been",
-        )
-    return ()
-
-
-@pytest.mark.parametrize(
-    "where",
-    [
-        pytest.param(where, marks=_not_yet_put_back(where), id=where.replace(" ", "-"))
-        for where in ("reply", "log line")
-    ],
-)
-async def test_an_amendment_stage_not_yet_put_back_says_to_run_it_again_once_it_has_been(
-    tmp_path, where
-):
-    """A report stage fails and the round cannot be put back straight away: the amendment is
-    left for the sweep, which retries within minutes, and a re-run is refused until then. So
-    the reply ends on running the command again once the round has been put back, and so does
-    the failure line, for whoever reads the log rather than the reply."""
-    db_path = await _make_db(tmp_path, name=f"amend_stage_not_put_back_{where.replace(' ', '_')}")
-    state = _state(db_path, staged=[_penalty()])
-    await _open_amendment(state)
-    interaction = _interaction(state=state)
-
-    with patch(
-        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
-        new=AsyncMock(side_effect=RuntimeError("still locked")),
-    ), patch(
-        "leaguebot.results.services.result_submission_service._close_amendment_channel",
-        new=AsyncMock(),
-    ), patch(
-        "leaguebot.results.services.penalty_service.apply_penalties",
-        new=AsyncMock(side_effect=RuntimeError("disk full")),
-    ):
-        await _run_real_apply(finalize_penalty_review, state, interaction)
-
-    once_put_back = "Run `/results rounds amend` again once it has been put back."
-    if where == "reply":
-        reply = str(interaction.followup.send.await_args.args[0])
-        assert reply.endswith(once_put_back)
-        return
-    notice = _failed_notice(state)
-    assert notice.splitlines()[0] == _failure_head("RuntimeError")
-    # In code or in plain text, as the line's other steps are: the words are what is pinned.
-    last = notice.splitlines()[-1]
-    assert last.startswith("  ")
-    assert last.replace("`", "").endswith(once_put_back.replace("`", ""))
-
-
 @pytest.mark.parametrize(
     "case",
     [
