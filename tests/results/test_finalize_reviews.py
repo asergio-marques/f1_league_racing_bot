@@ -1973,9 +1973,13 @@ async def test_a_stage_of_an_amendment_no_longer_open_changes_nothing(tmp_path):
     assert "no longer open" in str(interaction.followup.send.await_args.args[0])
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: a failed stage still names the exception's message and not the plain kind"
+)
 async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     """The records are cleared before the reports are written back, so a failure between the two
-    would otherwise leave the session carrying none of its decisions."""
+    would otherwise leave the session carrying none of its decisions. The manager is told the
+    plain kind of fault; the notice names its type, and neither names its message."""
     db_path = await _make_db(tmp_path, name="amend_stage_two_fails")
     state = _state(db_path, staged=[_penalty()])
     await _open_amendment(state)
@@ -1995,14 +1999,23 @@ async def test_a_report_stage_that_fails_part_way_is_undone(tmp_path):
     # With the bot, so the standings put back settle a full tie by name.
     revert.assert_awaited_once_with(db_path, ROUND_ID, state.bot)
     close.assert_awaited_once()
-    assert "AMEND_FAILED" in _logged(state)
-    assert "put back as it was" in str(interaction.followup.send.await_args.args[0])
+    logged = _logged(state)
+    assert "AMEND_FAILED" in logged
+    assert "RuntimeError" in logged
+    assert "disk full" not in logged
+    reply = str(interaction.followup.send.await_args.args[0])
+    assert "put back as it was" in reply
+    assert "the bot hit an internal fault" in reply
+    assert "disk full" not in reply
     assert state.appeals_prompt_message_id is None
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: a failed stage's reply does not yet end with the plain kind and the re-run"
+)
 async def test_a_failed_amendment_stage_says_to_re_run_results_rounds_amend(tmp_path):
     """The AMEND_FAILED notice, and the reply beside it, send the manager to the command they
-    now type."""
+    now type. The reply names the plain kind of fault before it."""
     db_path = await _make_db(tmp_path, name="amend_stage_fails_rerun")
     state = _state(db_path, staged=[_penalty()])
     await _open_amendment(state)
@@ -2027,9 +2040,9 @@ async def test_a_failed_amendment_stage_says_to_re_run_results_rounds_amend(tmp_
     assert notice.splitlines()[-1] == (
         "  The round was put back as it was. Re-run /results rounds amend to try again."
     )
-    assert str(interaction.followup.send.await_args.args[0]).endswith(
-        "then re-run `/results rounds amend`."
-    )
+    reply = str(interaction.followup.send.await_args.args[0])
+    assert "the bot hit an internal fault" in reply
+    assert reply.endswith("Re-run `/results rounds amend` to try again.")
 
 
 async def test_a_kept_report_keeps_its_author_and_its_time(tmp_path):
@@ -2296,9 +2309,13 @@ async def test_a_fresh_appeal_is_stamped_in_utc(tmp_path):
     assert datetime.fromisoformat(row["submitted_at"]).utcoffset() == timedelta(0)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#442: an unreachable appeals channel is not yet said in plain words"
+)
 async def test_an_amendment_whose_appeal_stage_cannot_open_is_undone(tmp_path):
     """There is no route to the last stage, so leaving it would strand the round until the sweep
-    reverted it half an hour later with the manager told nothing."""
+    reverted it half an hour later with the manager told nothing. The manager is told the bot
+    could not reach the amendment's channel."""
     db_path = await _make_db(tmp_path, name="amend_no_stage_three")
     state = _state(db_path, staged=[_penalty()])
     await _open_amendment(state)
@@ -2315,7 +2332,10 @@ async def test_an_amendment_whose_appeal_stage_cannot_open_is_undone(tmp_path):
     revert.assert_awaited_once()
     close.assert_awaited_once()
     assert "AMEND_FAILED" in _logged(state)
-    assert "could not be opened" in _logged(state)
+    assert (
+        "the bot could not reach the amendment's channel to open the appeals stage"
+        in str(interaction.followup.send.await_args.args[0])
+    )
     # The deadline was never handed back, so nothing else could act on the amendment while it
     # was being undone — the claim is the caller's to hold until it is done with it.
     assert await _deadline(db_path) is None
@@ -2523,3 +2543,169 @@ async def test_the_report_stage_rewrites_every_amended_session_and_no_other(tmp_
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT description FROM penalty_records ORDER BY id")
         assert [r[0] for r in await cursor.fetchall()] == ["Sprint", "Corner cutting"]
+
+
+# ---------------------------------------------------------------------------
+# A failed stage names the kind of fault, and every stage refusal is recorded (#442)
+# ---------------------------------------------------------------------------
+
+PLAIN_DATABASE = "the bot could not read or write its database"
+PLAIN_INTERNAL = "the bot hit an internal fault"
+RE_RUN = "Re-run `/results rounds amend` to try again."
+
+
+def _undone():
+    """The revert and the channel's close, both succeeding."""
+    return (
+        patch(
+            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "leaguebot.results.services.result_submission_service._close_amendment_channel",
+            new=AsyncMock(),
+        ),
+    )
+
+
+def _failed_notice(state) -> str:
+    return next(
+        str(c.args[0])
+        for c in state.bot.output_router.post_log.await_args_list
+        if "AMEND_FAILED" in str(c.args[0])
+    )
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a failed report stage still names the exception's message"
+)
+async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
+    """The report stage stops on a database fault: the manager is told it is the bot's, the
+    plain kind, that the round was put back, and to re-run; the notice names the type alone."""
+    import sqlite3
+
+    db_path = await _make_db(tmp_path, name="amend_stage_two_kind")
+    state = _state(db_path, staged=[_penalty()])
+    await _open_amendment(state)
+    interaction = _interaction()
+    revert, close = _undone()
+
+    with revert, close, patch(
+        "leaguebot.results.services.penalty_service.apply_penalties",
+        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
+    ):
+        await _run_real_apply(finalize_penalty_review, state, interaction)
+
+    reply = str(interaction.followup.send.await_args.args[0])
+    assert "stopped on a fault in the bot, not on anything you entered" in reply
+    assert PLAIN_DATABASE in reply
+    assert "put back as it was" in reply
+    assert reply.endswith(RE_RUN)
+    assert "database is locked" not in reply
+    notice = _failed_notice(state)
+    assert "OperationalError" in notice
+    assert "database is locked" not in notice
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#442: a failed appeals stage still names the exception's message"
+)
+@pytest.mark.parametrize(
+    "case", ["opening-raises", "channel-unreachable", "the-appeals-stage-fails"]
+)
+async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path, case):
+    """The appeals stage cannot be opened — on a fault, or because its channel cannot be
+    reached — or fails once approved. Each tells the manager, in plain words, what kind of
+    fault it was and that the round was put back; the notice names no exception message."""
+    db_path = await _make_db(tmp_path, name=f"amend_appeals_{case.replace('-', '_')}")
+    if case == "the-appeals-stage-fails":
+        state = _state(db_path, appeals=[_penalty()])
+        stage = finalize_appeals_review
+        fault = patch(
+            "leaguebot.results.services.result_submission_service._apply_staged_appeals",
+            new=AsyncMock(side_effect=RuntimeError("disk full")),
+        )
+    else:
+        state = _state(db_path, staged=[_penalty()])
+        stage = finalize_penalty_review
+        fault = patch(
+            "leaguebot.results.services.result_submission_service._post_appeals_prompt",
+            new=AsyncMock(
+                side_effect=RuntimeError("render failed") if case == "opening-raises" else None,
+                return_value=False,
+            ),
+        )
+    await _open_amendment(state)
+    interaction = _interaction()
+    revert, close = _undone()
+
+    with revert, close, fault:
+        await _run(stage, state, interaction)
+
+    reply = str(interaction.followup.send.await_args.args[0])
+    assert "stopped on a fault in the bot, not on anything you entered" in reply
+    if case == "channel-unreachable":
+        assert "the bot could not reach the amendment's channel to open the appeals stage" in reply
+    else:
+        assert PLAIN_INTERNAL in reply
+    assert "put back as it was" in reply
+    assert reply.endswith(RE_RUN)
+    notice = _failed_notice(state)
+    assert "render failed" not in notice and "disk full" not in notice
+    assert "render failed" not in reply and "disk full" not in reply
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            "reports-already-approved",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#442: an amendment stage refusal writes no log line"
+            ),
+        ),
+        pytest.param(
+            "report-stage-not-open",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#442: an amendment stage refusal writes no log line"
+            ),
+        ),
+        pytest.param(
+            "appeals-stage-not-open",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#442: an amendment stage refusal writes no log line"
+            ),
+        ),
+        "a-first-pass-refusal",
+    ],
+)
+async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case):
+    """The stages of an amendment refuse a press they cannot act on, and each refusal writes
+    one line in the standard refusal form. The ordinary first-pass review's refusals are no
+    part of the amendment and still write nothing."""
+    first_pass = case == "a-first-pass-refusal"
+    db_path = await _make_db(
+        tmp_path, name=f"amend_stage_refused_{case.replace('-', '_')}",
+        resubmitting=1 if first_pass else 0,
+    )
+    state = _state(db_path, staged=[_penalty()], appeals=[_penalty()])
+    if case == "reports-already-approved":
+        await _open_amendment(state)
+        state.reports_approved = True
+    elif not first_pass:
+        state.is_amendment = True  # no open amendment to claim
+    interaction = _interaction()
+    interaction.client = state.bot
+    interaction.user.display_name = "Steward"
+    interaction.command = None
+    stage = finalize_appeals_review if case == "appeals-stage-not-open" else finalize_penalty_review
+
+    await _run(stage, state, interaction)
+
+    lines = _logged(state)
+    if first_pass:
+        assert lines == ""
+        return
+    [line] = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ ")
+    assert f"refused for Steward (<@{STEWARD}>)" in line
