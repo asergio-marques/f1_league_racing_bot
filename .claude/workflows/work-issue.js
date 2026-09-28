@@ -821,7 +821,10 @@ const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ th
 // unchanged, so its code can change under an unchanged entry, and the issue reviewer holds the code
 // to the scenario, which the short form leaves out. `listTouched` holds the node ids and support
 // keys whose code has changed since, as the round's tester found them; where that is not known,
-// every entry is given in full.
+// every entry is given in full. The tool reports a changed fixture, helper, value or file as support,
+// and a test as changed only where its own code is: so where any support has changed since, every
+// test entry is given in full, as any of them may use it and its scenario be held to what its setup
+// now does.
 let listTouched = null
 const changedSince = (entry, before, keyOf) => {
   const was = before.find(b => keyOf(b) === keyOf(entry))
@@ -833,7 +836,7 @@ const listFor = (lane, tests, support, whole = false) => {
   if (!seen || whole || !listTouched) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
   const testKey = t => bareId(t.nodeid)
   const touched = listTouched
-  const newTests = tests.filter(t => changedSince(t, seen.tests || [], testKey) || touched.tests.has(testKey(t)))
+  const newTests = tests.filter(t => touched.support.size || changedSince(t, seen.tests || [], testKey) || touched.tests.has(testKey(t)))
   const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey) || touched.support.has(supportKey(x)))
   const short = [
     ...tests.filter(t => !newTests.includes(t)).map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(filled(t.criterion) ? { criterion: t.criterion } : {}) })),
