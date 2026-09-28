@@ -1400,14 +1400,23 @@ RE_RUN = "Re-run `/results rounds amend` to try again."
 
 def _press(user_id: int = USER_ID, *, name: str = "Admin", router=None):
     """A press of the Cancel Amendment button, by the server member *user_id*, shown on the
-    server as *name* — as every press Discord delivers in a server is."""
+    server as *name* — as every press Discord delivers in a server is.
+
+    Its response reports itself answered once the button has answered it, as Discord's does,
+    so a reply that picks its route by `is_done()` goes where it would against Discord."""
     press = MagicMock()
     press.user = MagicMock(spec=discord.Member)
     press.user.id = user_id
     press.user.display_name = name
     press.response = MagicMock()
-    press.response.is_done = MagicMock(return_value=False)
-    press.response.send_message = AsyncMock()
+    answered = {"done": False}
+
+    async def _answer(*_a, **_k):
+        answered["done"] = True
+
+    press.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    press.response.send_message = AsyncMock(side_effect=_answer)
+    press.response.defer = AsyncMock(side_effect=_answer)
     press.followup = MagicMock()
     press.followup.send = AsyncMock()
     if router is not None:
