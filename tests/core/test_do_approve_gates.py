@@ -1040,3 +1040,173 @@ async def test_approving_twice_creates_each_session_once(db_path):
 
     assert cog.bot.season_service.transition_to_active.await_count == 2
     assert await _session_types(db_path) == ["SHORT_QUALIFYING", "LONG_RACE"]
+
+
+# ── Every gate's refusal is recorded (#482) ─────────────────────────────────
+#
+# The core specification's "The record of what changed": a refusal is one line in the log
+# channel naming the member, what was refused and why. Each gate below answers the manager as
+# it does today, and writes one "⛔ … refused for …" line naming the ✅ Approve button and the
+# review it belongs to; a gate whose reply is a list carries every item of it in the line.
+
+
+def _recorded_interaction(cog):
+    """The manager's press, connected to the cog's log channel so the refusal line can be read."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+
+
+def _what_the_line_carries(reply: str) -> list[str]:
+    """What the refusal line must hold of *reply*: each item of a listed reply, or else the
+    reply's first line without its mark."""
+    lines = [line.strip() for line in reply.splitlines() if line.strip()]
+    items = [line.removeprefix("•").strip() for line in lines if line.startswith("•")]
+    if items:
+        return items
+    first = lines[0]
+    for mark in ("⛔", "❌"):
+        first = first.removeprefix(mark)
+    return [first.strip()]
+
+
+async def _gate_no_pending_setup(db_path, monkeypatch):
+    cog = _cog(db_path)
+    cog._pending = {}
+    cog._get_pending = MagicMock(return_value=None)
+    return cog, "No pending season setup"
+
+
+async def _gate_setup_incomplete(db_path, monkeypatch):
+    cog = _cog(db_path)
+    cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=0, divisions=[])}
+    return cog, "Season setup state is incomplete"
+
+
+async def _gate_no_longer_in_placements(db_path, monkeypatch):
+    from leaguebot.core.models.season import SeasonStage
+
+    cog = _cog(db_path)
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.ONGOING)
+    return cog, "no longer in placements"
+
+
+async def _gate_no_divisions(db_path, monkeypatch):
+    return _cog(db_path, _season_has_divisions=AsyncMock(return_value=False)), "no divisions"
+
+
+async def _gate_s_unsettled_signups_and_channel_faults(db_path, monkeypatch):
+    cog = _cog(
+        db_path,
+        _placement_confirmation_faults=AsyncMock(
+            return_value=(
+                ["Driver <@501>'s signup is not settled"],
+                ["**Pro** has no results channel set"],
+            )
+        ),
+    )
+    return cog, "Season cannot be approved"
+
+
+async def _gate_tiers_not_sequential(db_path, monkeypatch):
+    cog = _cog(db_path)
+    cog.bot.season_service.validate_division_tiers = AsyncMock(
+        side_effect=ValueError("Tiers must be sequential from 1.")
+    )
+    return cog, "Tiers must be sequential from 1."
+
+
+async def _gate_0_a_division_without_rounds(db_path, monkeypatch):
+    return _cog_with_rounds(db_path, [], attendance=False), "have no rounds: **Premier**"
+
+
+async def _gate_0b_two_rounds_at_one_moment(db_path, monkeypatch):
+    first, second = _round_in(30, number=1), _round_in(30, number=2)
+    second.scheduled_at = first.scheduled_at
+    cog = _cog_with_rounds(db_path, [first, second], attendance=False)
+    return cog, "duplicate round times detected"
+
+
+async def _gate_2_no_points_configuration(db_path, monkeypatch):
+    return _cog_with_results(db_path), "no points configuration is attached"
+
+
+async def _gate_2a_points_out_of_order(db_path, monkeypatch):
+    await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
+    return _cog_with_results(db_path), "violates monotonic ordering"
+
+
+async def _gate_2b_no_signup_channel(db_path, monkeypatch):
+    cog, _words, _deadline = await _no_signup_channel(db_path, monkeypatch)
+    return cog, "missing required configuration"
+
+
+async def _gate_2d_a_round_already_run(db_path, monkeypatch):
+    cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False)
+    return cog, "dates that have already gone by"
+
+
+async def _gate_3a_an_unusable_team_name(db_path, monkeypatch):
+    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
+    return cog, "cannot become"
+
+
+async def _gate_4a_a_lineup_too_small(db_path, monkeypatch):
+    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
+    return cog, "cannot draw this season"
+
+
+async def _gate_4b_an_image_fault(db_path, monkeypatch):
+    cog = _images_on(_cog(db_path), monkeypatch, converter=False)
+    return cog, "image module is not correctly configured"
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: the approval's gates do not yet record their refusals"
+)
+@pytest.mark.parametrize(
+    "gate",
+    [
+        _gate_no_pending_setup,
+        _gate_setup_incomplete,
+        _gate_no_longer_in_placements,
+        _gate_no_divisions,
+        _gate_s_unsettled_signups_and_channel_faults,
+        _gate_tiers_not_sequential,
+        _gate_0_a_division_without_rounds,
+        _gate_0b_two_rounds_at_one_moment,
+        _gate_2_no_points_configuration,
+        _gate_2a_points_out_of_order,
+        _gate_2b_no_signup_channel,
+        _gate_2d_a_round_already_run,
+        _gate_3a_an_unusable_team_name,
+        _gate_4a_a_lineup_too_small,
+        _gate_4b_an_image_fault,
+    ],
+    ids=lambda f: f.__name__.removeprefix("_gate_"),
+)
+async def test_every_approval_gate_refusal_is_recorded(db_path, monkeypatch, gate):
+    """Manager (id 77) presses ✅ Approve and one gate refuses: the reply is today's, nothing is
+    approved, and the log channel gets exactly one refusal line naming the button and its
+    review, carrying the reply's reason — every item of it where the reply is a list."""
+    cog, reply_says = await gate(db_path, monkeypatch)
+    interaction = _recorded_interaction(cog)
+
+    await _run(cog, interaction)
+
+    reply = _replies(interaction)
+    assert reply_says in reply
+    cog.bot.season_service.transition_to_active.assert_not_awaited()
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    line = lines[0]
+    head = line.splitlines()[0]
+    assert head.startswith("⛔ ")
+    assert "Approve" in head and "/season placements-review" in head
+    assert " refused for Manager (<@77>) — " in head
+    for carried in _what_the_line_carries(reply):
+        assert carried in line, (carried, line)
