@@ -249,7 +249,7 @@ class _ConfirmDisableResultsView(LeagueView):
         await self._cog._apply_results_disable(
             interaction, cascade_attendance=self._cascade_attendance
         )
-        await self._cog._refresh_hub(interaction)
+        await self._cog._refresh_hub(interaction, "`/module disable`")
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -312,7 +312,7 @@ class ModuleCog(commands.Cog):
             await self._enable_images(interaction)
         else:
             await self._enable_signup(interaction)
-        await self._refresh_hub(interaction)
+        await self._refresh_hub(interaction, describe(interaction))
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -341,15 +341,16 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
-        await self._refresh_hub(interaction)
+        await self._refresh_hub(interaction, describe(interaction))
 
-    async def _refresh_hub(self, interaction: discord.Interaction) -> None:
+    async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
         """Bring the hub's panel up to date: a module's options are offered while it is on.
 
         Run after every enable and disable, the confirmed results disable included, whether
         or not the module offers anything — the hub asks each option, not each module. A
-        panel that cannot be refreshed is logged, naming the member and the command that caused
-        the refresh, and never fails the toggle behind it.
+        panel that cannot be refreshed is logged, naming the member and *what* caused the refresh,
+        and never fails the toggle behind it. The caller names it: a button's interaction
+        carries no command, so `describe` could only say "an interaction" for it.
         """
         from leaguebot.core.services.hub_service import refresh_panel
 
@@ -361,7 +362,7 @@ class ModuleCog(commands.Cog):
         if fault is not None:
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                f"{describe(interaction)} | Hub panel not refreshed: {fault}"
+                f"{what} | Hub panel not refreshed: {fault}"
             )
 
     async def _refuse_module_change(
