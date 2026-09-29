@@ -164,6 +164,93 @@ async def test_a_non_text_channel_is_refused():
     assert "text channel" in _reply(interaction)
 
 
+# ── What the log channel records (#482) ─────────────────────────────────
+
+ADMIN_ID = 4242
+
+
+def _run_by_alex(cog, interaction):
+    """*interaction* as the league admin Alex runs it, reaching *cog*'s log channel.
+
+    The command defers before anything else, so the interaction reads as answered and a
+    refusal's reply goes by the follow-up.
+    """
+    cog.bot.output_router.post_log = AsyncMock()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "clean-bot"
+    interaction.user.id = ADMIN_ID
+    interaction.user.display_name = "Alex"
+    interaction.response.is_done = MagicMock(return_value=True)
+    return interaction
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /clean-bot's refusal is not yet recorded")
+async def test_a_non_text_channel_refusal_is_recorded():
+    """The core specification's "The record of what changed": a refusal is one line naming
+    the member, what was refused and why. The reply is today's."""
+    cog = _cog()
+    interaction = _run_by_alex(cog, _interaction(MagicMock()))  # not a TextChannel
+
+    await _run(cog, interaction, 1)
+
+    interaction.followup.send.assert_awaited_once_with(
+        "⛔ This command can only be used in a text channel.", ephemeral=True
+    )
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/clean-bot` refused for Alex (<@{ADMIN_ID}>) — "
+        "This command can only be used in a text channel."
+    )
+
+
+@pytest.mark.parametrize(
+    ("messages", "count", "deleted", "failed"),
+    [
+        pytest.param(
+            lambda: [
+                _message(),
+                _message(fails=discord.HTTPException(MagicMock(status=403), "no")),
+                _message(),
+                _message(),
+            ],
+            3,
+            3,
+            1,
+            marks=pytest.mark.xfail(
+                strict=True, reason="#482: /clean-bot's success is not yet recorded"
+            ),
+            id="three_deleted_one_would_not",
+        ),
+        pytest.param(
+            lambda: [_message(SOMEONE_ELSE), _message(SOMEONE_ELSE)],
+            5,
+            0,
+            0,
+            marks=pytest.mark.xfail(
+                strict=True, reason="#482: /clean-bot's success is not yet recorded"
+            ),
+            id="none_deleted",
+        ),
+    ],
+)
+async def test_a_clean_writes_one_line_naming_the_channel_and_the_counts(
+    messages, count, deleted, failed
+):
+    """One success line naming the member, the channel, how many messages were deleted —
+    none included — and how many would not delete."""
+    cog = _cog()
+    interaction = _run_by_alex(cog, _interaction(_channel(messages())))
+
+    await _run(cog, interaction, count)
+
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = cog.bot.output_router.post_log.await_args.args[0]
+    lines = [text.strip() for text in line.splitlines()]
+    assert lines[0] == f"Alex (<@{ADMIN_ID}>) | /clean-bot | Success"
+    assert "channel: <#700>" in lines
+    assert f"deleted: {deleted}" in lines
+    assert f"could not delete: {failed}" in lines
+
+
 # ── The bound itself ──────────────────────────────────────────────────────
 
 
