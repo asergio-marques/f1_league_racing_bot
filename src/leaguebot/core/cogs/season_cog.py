@@ -3593,11 +3593,14 @@ class SeasonCog(commands.Cog):
         if not deferred:
             await interaction.response.defer(ephemeral=True)
         from leaguebot.core.services.season_end_service import execute_season_end
-        await execute_season_end(season.id, self.bot)
-        await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
+        await execute_season_end(season.id, self.bot, actor=interaction.user)
+        # The command's one success line, written before the reply so that it stands even where
+        # the reply cannot be sent; the season's end writes none of its own.
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season complete | Success",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /season complete | Success\n"
+            f"  season: Season #{season.season_number}",
         )
+        await interaction.followup.send("\u2705 Season marked as complete.", ephemeral=True)
 
     # ------------------------------------------------------------------
     # /division group

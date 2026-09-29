@@ -24,11 +24,6 @@ from leaguebot.core.services.season_end_service import execute_season_end
 #: who completes it, so that a line it writes names them (#482).
 _ALEX = SimpleNamespace(id=4242, display_name="Alex")
 
-_TAKES_THE_MEMBER = pytest.mark.xfail(
-    strict=True,
-    reason="#482: execute_season_end does not yet take the member who completes the season",
-)
-
 
 # ---------------------------------------------------------------------------
 # Stub helpers
@@ -205,7 +200,6 @@ async def test_get_last_scheduled_at_returns_none_for_unknown_server() -> None:
 # execute_season_end tests
 # ---------------------------------------------------------------------------
 
-@_TAKES_THE_MEMBER
 async def test_execute_season_end_archives_season() -> None:
     """Season row status becomes COMPLETED and all data is retained."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -227,7 +221,6 @@ async def test_execute_season_end_archives_season() -> None:
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_execute_season_end_retains_divisions_and_rounds() -> None:
     """Division and round rows are preserved after season archival."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -255,7 +248,6 @@ async def test_execute_season_end_retains_divisions_and_rounds() -> None:
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_execute_season_end_writes_no_success_line_of_its_own() -> None:
     """The season's end writes no "Season N complete" line: `/season complete`, its one caller,
     writes the command's one success line, naming the member, as soon as it returns."""
@@ -271,7 +263,6 @@ async def test_execute_season_end_writes_no_success_line_of_its_own() -> None:
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_execute_season_end_is_idempotent() -> None:
     """Calling execute_season_end twice must not raise: the second call finds no active season
     and does nothing, and the season stays completed."""
@@ -291,7 +282,6 @@ async def test_execute_season_end_is_idempotent() -> None:
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_execute_season_end_preserves_server_config() -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -310,7 +300,6 @@ async def test_execute_season_end_preserves_server_config() -> None:
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_execute_season_end_cancels_season_end_job() -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -359,7 +348,6 @@ async def _status(db_path: str) -> str:
     return row[0]
 
 
-@_TAKES_THE_MEMBER
 async def test_the_final_classification_is_posted_while_the_season_is_still_active() -> None:
     """Everything downstream of here reads the season as the live one."""
     from unittest.mock import AsyncMock, patch
@@ -390,7 +378,6 @@ async def test_the_final_classification_is_posted_while_the_season_is_still_acti
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_the_season_still_completes_when_the_classification_fails() -> None:
     """A picture is not what the completion is for (XIV.7)."""
     from unittest.mock import AsyncMock, patch
@@ -413,7 +400,6 @@ async def test_the_season_still_completes_when_the_classification_fails() -> Non
         os.unlink(db_path)
 
 
-@_TAKES_THE_MEMBER
 async def test_a_classification_problem_reaches_the_logging_channel() -> None:
     """Never a channel a driver reads (XIV.4). The line names the member who completed the
     season, as every other line does, rather than "System" (#482)."""

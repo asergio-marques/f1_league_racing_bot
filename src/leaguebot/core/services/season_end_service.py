@@ -2,10 +2,10 @@
 
 One entry point:
 
-execute_season_end(season_id, bot)
+execute_season_end(season_id, bot, *, actor)
     Archives the season (status → COMPLETED), writes DriverHistoryEntry
     records for every assigned driver, posts each division's final standings
-    and attendance sheet, and announces completion in the log channel.  All
+    and attendance sheet.  The caller records the outcome.  All
     season data is permanently retained.
     Idempotent: a no-op if no active season is found (handles duplicate calls).
 
@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.member_names import member_named
 
 if TYPE_CHECKING:
     import discord
@@ -34,11 +35,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-async def execute_season_end(season_id: int, bot: "LeagueBot") -> None:
-    """Archive the season and announce completion in the log channel.
+async def execute_season_end(
+    season_id: int, bot: "LeagueBot", *, actor: "discord.User | discord.Member"
+) -> None:
+    """Archive the season. The caller records the outcome.
 
     All season data is permanently retained (status → COMPLETED).
     Idempotent: returns immediately if no active season is found for the server.
+
+    **This writes no success line** (#482): `/season complete`, the one caller, writes the
+    command's own, naming the member, as soon as this returns. *actor* is the member who
+    completes the season, named in the one line this does write, the report of a final
+    classification that had problems, as every line names the member.
     """
     season_svc = bot.season_service
 
@@ -81,9 +89,13 @@ async def execute_season_end(season_id: int, bot: "LeagueBot") -> None:
             try:
                 await bot.output_router.post_log(
                     "\n".join(
-                        ["System | Season complete | Final classification", *(
-                            f"    - {line}" for line in problems
-                        )]
+                        [
+                            f"{member_named(getattr(actor, 'display_name', None), actor.id)}"
+                            " | /season complete | Final classification",
+                            *(
+                                f"    - {line}" for line in problems
+                            ),
+                        ]
                     ),
                 )
             except Exception:  # noqa: BLE001
@@ -104,12 +116,6 @@ async def execute_season_end(season_id: int, bot: "LeagueBot") -> None:
 
     # 7. Archive: flip status to COMPLETED (all data retained)
     await season_svc.complete_season(season.id)
-
-    # Announce completion
-    completion_msg = (
-        f"System | Season {season.season_number} complete | Success"
-    )
-    await bot.output_router.post_log(completion_msg)
 
     log.info(
         "Season %s archived (COMPLETED).",

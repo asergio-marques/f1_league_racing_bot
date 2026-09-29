@@ -597,13 +597,6 @@ async def test_a_season_with_everything_finished_is_completed():
     cog.bot.output_router.post_log.assert_awaited_once()
 
 
-_ONE_COMPLETE_LINE = pytest.mark.xfail(
-    strict=True,
-    reason="#482: /season complete does not yet write its one line, with the season number, "
-    "before its reply",
-)
-
-
 def _season_seven():
     """Season 7 of the league, being raced, its number apart from its id."""
     from leaguebot.core.models.season import SeasonStage
@@ -611,7 +604,6 @@ def _season_seven():
     return SimpleNamespace(id=SEASON_ID, season_number=7, stage=SeasonStage.ONGOING)
 
 
-@_ONE_COMPLETE_LINE
 async def test_completing_a_season_writes_one_line_naming_the_member_and_the_season():
     """Admin completes season 7, every division finished. The season's end is handed Admin, and
     the log holds one line: Admin's `/season complete` success, stating season 7 beneath it."""
@@ -632,7 +624,6 @@ async def test_completing_a_season_writes_one_line_naming_the_member_and_the_sea
     )
 
 
-@_ONE_COMPLETE_LINE
 async def test_a_completed_season_is_recorded_even_where_the_reply_cannot_be_sent():
     """Admin completes season 7, and the reply saying so cannot be sent. The season is complete
     all the same, and its success line was written before the reply was tried."""
