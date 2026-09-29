@@ -104,6 +104,8 @@ it only to place it; the rules governing it belong to its own specification.
 - Every command, button and form that changes something, or tries to, whoever uses it, shall record every outcome in the log channel: its success, its refusal and its failure, and, where it asks for a confirmation, that confirmation cancelled or left to lapse. A view, a list, a preview and the hub's About change nothing and shall record nothing. Decided 2026-09-28.
     - A refusal shall be recorded as one line naming the member, what was refused and why. A cancel shall name the member who cancelled, and a lapse the member who started what lapsed, each with what became of the change and what to do next beneath it.
     - The member shall be named by their display name on the server and their mention. A member no longer on the server shall be named by their mention alone.
+    - A refusal to someone on another server, to a command used in a direct message, or made before the bot is set up, when there is no log channel, shall be written to the host's log alone, the member being answered as ever. Decided 2026-09-29.
+    - A results paste into a submission channel is a message, not a command, and this rule does not reach it. Decided 2026-09-29.
 - A mention written into the log channel shall not notify anybody.
 - A record too long for one message shall be divided across as many as it requires.
 - A message the bot fails to post shall be kept and delivered later.
