@@ -345,3 +345,57 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
     assert len(lines) == 1, lines
     assert lines[0].startswith("⛔ ") and " refused for Alex (<@4242>) — " in lines[0], lines
 
+
+# ── A press under way is not expired under it (#482, F11) ──────────────────
+#
+# While a press is being worked (under test mode the backup question, then the approval), the
+# review's timer may fire. A review whose press is under way does not expire: the press records
+# its own outcome, and the timer deletes nothing, posts no notice and records no lapse.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the review's timer firing while a press is under way deletes the review, "
+    "posts the expiry notice and records a lapse",
+)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_the_press(
+    view_class, label, review, helper, verb
+):
+    """Alex presses his review's button, and while the approval (or confirmation) is being worked
+    the review's five minutes run out and its timer fires, as discord.py fires it, in a task of
+    its own.
+
+    While the press is under way the timer deletes nothing and posts no expiry notice; once it
+    ends, no notice has been posted and no lapse recorded, and the log holds only the press's own
+    line.
+    """
+    view, cog, message = _review(view_class, helper)
+    own_line = f"Alex (<@{REVIEWER}>) | {review} | Success"
+    seen: dict = {}
+
+    async def _worked(*_args, **_kwargs):
+        # discord.py's timer: the view is stopped and `on_timeout` is run as a task.
+        view._dispatch_timeout()
+        [timer] = [
+            task for task in asyncio.all_tasks()
+            if task.get_name() == f"discord-ui-view-timeout-{view.id}"
+        ]
+        seen["timer"] = timer
+        # Long enough for the timer to have done whatever it will do while the press is worked.
+        await asyncio.wait({timer}, timeout=0.5)
+        seen["deleted"] = message.delete.await_count
+        seen["notices"] = message.channel.send.await_count
+        seen["lines"] = list(_logged(cog))
+        await cog.bot.output_router.post_log(own_line)
+
+    getattr(cog, helper).side_effect = _worked
+
+    await view_class.approve(view, _press(cog), MagicMock())
+    await asyncio.wait_for(seen["timer"], timeout=2)
+
+    assert seen["deleted"] == 0, "the review was deleted while its press was under way"
+    assert seen["notices"] == 0, "the expiry notice was posted while the press was under way"
+    assert seen["lines"] == [], seen["lines"]
+    message.channel.send.assert_not_awaited()
+    assert _logged(cog) == [own_line]
