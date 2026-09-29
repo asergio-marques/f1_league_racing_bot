@@ -487,19 +487,38 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
         assert f"lapsed unconfirmed (started by Manager (<@{USER_ID}>))" in head
 
 
+def _amending_in_earnest(cog, path):
+    """Let the confirmation amend the round through the real amendment service, with weather
+    off, so that every line a confirmed amendment writes is the one a league would read."""
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    cog.bot.amendment_service = AmendmentService(path)
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+
+
+_ONE_AMEND_LINE = pytest.mark.xfail(
+    strict=True,
+    reason="#482: a confirmed /round amend still writes two success lines, one from the "
+    "amendment and one from the confirmation",
+)
+
+
+@_ONE_AMEND_LINE
 async def test_a_round_amend_logs_the_values_it_set(tmp_path):
-    """The success line names the member, `/round amend` and the round, and states beneath it
-    each field changed, from its old value to its new one, named as the command's parameter
-    (`track`) rather than by its column."""
+    """A confirmed amendment writes one line: it names the member, `/round amend` and the round,
+    and states beneath it each field changed, from its old value to its new one, named as the
+    command's parameter (`track`) rather than by its column. The amendment's own
+    "/round amend (field)" line is gone."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
-    cog.bot.amendment_service.amend_round = AsyncMock()
+    cog = _cog(path, attendance=False)
+    _amending_in_earnest(cog, path)
     interaction = _interaction()
     _recording(cog, interaction)
 
     await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
 
     [line] = _lines(cog)
+    assert "(field)" not in line
     assert "/round amend" in line
     assert f"<@{USER_ID}>" in line
     assert "round 1" in line.lower()
@@ -508,6 +527,31 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     assert NEW_TRACK in values, "the new value is not stated"
     assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in values.splitlines()
     assert "track_name" not in values
+
+
+@_ONE_AMEND_LINE
+async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_changed(tmp_path):
+    """The manager confirms moving round 1 of Div A from Bahrain International Circuit to
+    Silverstone Circuit, and the amendment is saved, but the reply saying so cannot be sent. The
+    log holds the amendment's one success line, with the track from what to what, beside the
+    failure line for the press."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path, attendance=False)
+    _amending_in_earnest(cog, path)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
+    _recording(cog, interaction)
+
+    await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
+        assert (await cursor.fetchone())["track_name"] == NEW_TRACK
+    success, failure = _lines(cog)
+    assert success.startswith(f"Manager (<@{USER_ID}>) | /round amend | Success\n")
+    assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in success.splitlines()
+    assert failure.startswith("\u274c ")
+    assert f"failed for Manager (<@{USER_ID}>)" in failure
 
 
 async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
