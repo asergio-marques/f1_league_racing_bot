@@ -293,7 +293,6 @@ def _log_lines(cog) -> list[str]:
     return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a posted Mystery Round notice writes no log line")
 async def test_a_posted_mystery_notice_is_recorded(tmp_path):
     """The notice is posted to the league, so the rehearsal records it as every other phase is
     recorded: one success line naming the maintainer and what was posted, for which round (#482)."""
@@ -327,7 +326,6 @@ async def test_a_phase_with_no_job_cancels_nothing(tmp_path):
     cog.bot.scheduler_service.cancel_job.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a failed mystery notice in /test-mode advance writes no failure line")
 async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
     """The maintainer is stepping through a season and needs to know which round failed: the
     standard failure reply and one failure line name the notice, the division and the round
@@ -388,7 +386,6 @@ async def test_result_submission_opens_a_wizard(tmp_path):
     assert "Opening result submission wizard" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: opening the result submission wizard writes no log line")
 async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
     """The wizard runs on its own once opened, so its line says it was started, never that the
     results were submitted (#482)."""
@@ -556,7 +553,6 @@ async def test_the_rsvp_notice_is_fired(tmp_path):
     assert "RSVP notice" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a failed RSVP notice in /test-mode advance writes no failure line")
 async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
     """The standard failure reply and one failure line name the RSVP notice, the division and
     the round (#482)."""
@@ -631,7 +627,6 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
         (7, "leaguebot.attendance.services.rsvp_service.run_rsvp_deadline", "RSVP deadline"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#482: a failed check-in phase in /test-mode advance writes no failure line")
 async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, runner, phrase):
     """The standard failure reply and one failure line name the phase, the division and the
     round (#482)."""
@@ -706,7 +701,6 @@ async def test_a_fired_cleanup_cancels_its_job_by_kind(
 
 
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
-@pytest.mark.xfail(strict=True, reason="#482: a failed cleanup in /test-mode advance writes no failure line")
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
     """The standard failure reply and one failure line name the cleanup, the division and the
     round (#482)."""
@@ -769,7 +763,6 @@ async def test_a_weather_phase_cancels_its_job_before_running(tmp_path):
     assert order == ["cancel", "run"]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a failed weather phase in /test-mode advance writes no failure line")
 async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
     """The standard failure reply names the phase, the division, the round and the track, and
     one failure line the phase, the division and the round (#482)."""

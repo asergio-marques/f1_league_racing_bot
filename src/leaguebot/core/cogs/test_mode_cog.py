@@ -35,6 +35,7 @@ from leaguebot.core.services.test_mode_service import (
     toggle_test_mode_nationality,
     count_live_real_drivers,
     get_next_pending_phase,
+    PhaseEntry,
     build_review_summary,
 )
 from leaguebot.core.models.season import SeasonStage
@@ -300,16 +301,9 @@ class TestModeCog(commands.Cog):
             from leaguebot.core.db.database import get_connection
             try:
                 await run_mystery_notice(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in mystery notice for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while posting the Mystery Round notice "
-                    f"for **{entry['division_name']}** — **Round {entry['round_number']}**. "
-                    "Check the bot logs for details.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the Mystery Round notice", entry)
                 )
                 return
             # Mark notice as sent so this round is excluded from future advance calls
@@ -331,6 +325,12 @@ class TestModeCog(commands.Cog):
                 f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
                 f"Notice posted to the division forecast channel.",
                 ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: Mystery Round notice\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: Round {entry['round_number']}",
             )
             return
 
@@ -390,6 +390,12 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             asyncio.create_task(run_result_submission_job(entry["round_id"], self.bot))
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: result submission wizard started (it runs on its own)\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: Round {entry['round_number']}",
+            )
             return
 
         # ── RSVP notice (phase_number=5) ─────────────────────────────────────────
@@ -399,16 +405,9 @@ class TestModeCog(commands.Cog):
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_notice(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in rsvp_notice for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the RSVP notice for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
-                    "Check the bot logs for details.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the RSVP notice", entry)
                 )
                 return
             await interaction.followup.send(
@@ -432,15 +431,9 @@ class TestModeCog(commands.Cog):
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_last_notice(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in rsvp_last_notice for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the RSVP last-notice for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the RSVP last-notice", entry)
                 )
                 return
             await interaction.followup.send(
@@ -463,15 +456,9 @@ class TestModeCog(commands.Cog):
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_deadline(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in rsvp_deadline for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the RSVP deadline for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the RSVP deadline", entry)
                 )
                 return
             await interaction.followup.send(
@@ -507,15 +494,9 @@ class TestModeCog(commands.Cog):
             self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
             try:
                 await cleanup(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in the %s for round_id=%d",
-                    what, entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the {what} for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
                 )
                 return
             await interaction.followup.send(
@@ -541,16 +522,13 @@ class TestModeCog(commands.Cog):
 
         try:
             await runner(entry["round_id"], self.bot)
-        except Exception:
-            log.exception(
-                "Test mode advance: unhandled error in phase %d runner for round_id=%d",
-                phase_number, entry["round_id"],
-            )
-            await interaction.followup.send(
-                f"\u274c An internal error occurred while advancing Phase {phase_number} "
-                f"for **{entry['division_name']}** \u2014 **{entry['track_name']}**. "
-                "Check the bot logs for details.",
-                ephemeral=True,
+        except Exception as exc:  # noqa: BLE001 — reported here, to name the phase and the round
+            await report_failure(
+                interaction,
+                exc,
+                what=self._advance_what(
+                    interaction, f"Phase {phase_number}", entry, track=entry["track_name"]
+                ),
             )
             return
 
@@ -573,6 +551,21 @@ class TestModeCog(commands.Cog):
             f"  track: {entry['track_name']}\n"
             f"  round: {entry['round_number']}",
         )
+    @staticmethod
+    def _advance_what(
+        interaction: discord.Interaction,
+        step: str,
+        entry: PhaseEntry,
+        *,
+        track: str | None = None,
+    ) -> str:
+        """Name *step* of a round as the failure reply and the log line should read it:
+        the command, the step, the division and the round (and the track of a weather phase)."""
+        where = f"{entry['division_name']}, Round {entry['round_number']}"
+        if track is not None:
+            where += f" ({track})"
+        return f"{describe(interaction)} at {step} for {where}"
+
     # ------------------------------------------------------------------
     # /test-mode review
     # ------------------------------------------------------------------
