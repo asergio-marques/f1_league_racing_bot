@@ -47,7 +47,7 @@ from leaguebot.core.utils.interaction_errors import describe, describe_form, rep
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.weather.utils.message_builder import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 
 log = logging.getLogger(__name__)
 
@@ -1315,8 +1315,10 @@ class _ConfirmRestoreView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._requester_id:
-            await interaction.response.send_message(
-                "⛔ Only the person who ran the command can confirm it.", ephemeral=True
+            await refuse(
+                interaction,
+                "⛔ Only the person who ran the command can confirm it.",
+                what=describe(interaction, button),
             )
             return
 
@@ -1324,16 +1326,24 @@ class _ConfirmRestoreView(LeagueView):
         bot = self._cog.bot
         try:
             backup_service.stage_restore(bot.db_path, _jobstore_path(bot))
-        except backup_service.BackupError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+        except backup_service.BackupFault as exc:
+            # A copy or write that failed. Staging undoes itself, so nothing stands.
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction, button),
+                outcome="Nothing was restored.",
+            )
             self.stop()
             return
-        except Exception:
+        except backup_service.BackupError as exc:
+            # Something the maintainer can act on (no backup, an unreadable one).
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction, button))
+            self.stop()
+            return
+        except Exception as exc:  # noqa: BLE001 — a file may have been staged before it stopped
             log.exception("backup restore: staging failed")
-            await interaction.followup.send(
-                "⛔ The restore could not be prepared. Nothing has been changed.",
-                ephemeral=True,
-            )
+            await report_failure(interaction, exc, what=describe(interaction, button))
             self.stop()
             return
 
@@ -1345,6 +1355,11 @@ class _ConfirmRestoreView(LeagueView):
             "can be walked back by hand if it was not what you wanted.",
             ephemeral=True,
         )
+        await bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            "/test-mode backup restore | Success\n"
+            "  restore: staged; the bot must be restarted to come back on it",
+        )
         log.info("backup restore: staged by %s", interaction.user)
         self.stop()
 
@@ -1352,7 +1367,31 @@ class _ConfirmRestoreView(LeagueView):
     async def cancel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
+        if interaction.user.id != self._requester_id:
+            await refuse(
+                interaction,
+                "⛔ Only the person who ran the command can cancel it.",
+                what=describe(interaction, button),
+            )
+            return
         await interaction.response.send_message(
             "Nothing has been changed.", ephemeral=True
         )
         self.stop()
+        await record_abandoned(
+            interaction.client,
+            interaction.user,
+            what="`/test-mode backup restore`",
+            lapsed=False,
+            detail="Nothing was restored.",
+        )
+
+    async def on_timeout(self) -> None:
+        """Record that the confirmation lapsed unanswered, naming who started it."""
+        await record_abandoned(
+            self._cog.bot,
+            self._requester_id,
+            what="`/test-mode backup restore`",
+            lapsed=True,
+            detail="Nothing was restored. Run `/test-mode backup restore` again to restore.",
+        )

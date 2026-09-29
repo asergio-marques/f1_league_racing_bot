@@ -422,9 +422,6 @@ async def test_confirming_stages_the_restore_and_says_to_restart(live):
     assert "Restart the bot" in _reply(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: another member's press on the restore confirmation is not recorded"
-)
 async def test_only_the_requester_may_confirm(live):
     """Another member's press stages nothing, is refused, and the refusal is recorded (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
@@ -450,7 +447,6 @@ async def test_only_the_requester_may_confirm(live):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: cancelling a restore writes no log line")
 async def test_cancelling_changes_nothing(live):
     """Cancel stages nothing, and is recorded with "Nothing was restored." beneath it (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
@@ -472,7 +468,6 @@ async def test_cancelling_changes_nothing(live):
     assert any("Nothing was restored." in text for text in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a restore confirmation left unanswered writes no log line")
 async def test_a_restore_confirmation_left_unanswered_is_recorded_as_lapsed(live):
     """A lapse is recorded as started by the maintainer, with what became of it beneath (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
@@ -492,9 +487,6 @@ async def test_a_restore_confirmation_left_unanswered_is_recorded_as_lapsed(live
     assert any("Nothing was restored." in text for text in beneath)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a staging fault is answered as a refusal and recorded nowhere"
-)
 async def test_a_staging_fault_says_nothing_was_restored(live, monkeypatch):
     """A staging stopped by a copy that failed removes what it staged, so it undid itself: the
     standard failure reply states "Nothing was restored.", never the error, and a failure line is
@@ -525,9 +517,6 @@ async def test_a_staging_fault_says_nothing_was_restored(live, monkeypatch):
     assert "the disk is full" not in line
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a restore refused at the confirmation writes no log line"
-)
 async def test_a_backup_found_unreadable_at_the_confirmation_is_refused_and_recorded(live):
     """A scheduler backup that is not a readable database is something the maintainer can act
     on, so the press is refused with today's reason and the refusal recorded (#482)."""
@@ -553,10 +542,6 @@ async def test_a_backup_found_unreadable_at_the_confirmation_is_refused_and_reco
     assert line.endswith(f" refused for Manager (<@{USER_ID}>) — {reason}")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: an unexpected staging error says nothing has been changed and is "
-    "recorded nowhere"
-)
 async def test_an_unexpected_staging_error_may_have_been_partly_done(live, monkeypatch):
     """Any error but a copy fault may have left a file staged, so the reply keeps the default
     "may have been partly done", never "Nothing has been changed", and a failure line is written
@@ -585,7 +570,6 @@ async def test_an_unexpected_staging_error_may_have_been_partly_done(live, monke
     assert f"failed for Manager (<@{USER_ID}>) — RuntimeError." in line
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a staged restore writes no log line")
 async def test_a_staged_restore_is_recorded(live):
     """Staging a restore decides what the bot comes back on, so it is recorded (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
