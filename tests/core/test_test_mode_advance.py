@@ -288,6 +288,25 @@ async def test_a_posted_mystery_notice_takes_its_notice_job_down(tmp_path, job_i
     cog.bot.scheduler_service.cancel_job.assert_not_called()
 
 
+def _log_lines(cog) -> list[str]:
+    """Every line written to the log channel."""
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+
+
+@pytest.mark.xfail(strict=True, reason="#482: a posted Mystery Round notice writes no log line")
+async def test_a_posted_mystery_notice_is_recorded(tmp_path):
+    """The notice is posted to the league, so the rehearsal records it as every other phase is
+    recorded: one success line naming the maintainer and what was posted, for which round (#482)."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(0))
+
+    [line] = _log_lines(cog)
+    assert line.startswith("Maintainer (<@77>) | /test-mode advance | Success")
+    assert "Mystery Round notice" in line
+    assert "Division 1" in line and "Round 3" in line
+
+
 async def test_a_fired_phase_cancels_its_own_job(tmp_path):
     """Otherwise the real job stays queued and fires again later, posting the same forecast
     a second time."""
@@ -367,6 +386,20 @@ async def test_result_submission_opens_a_wizard(tmp_path):
     await _advance(cog, interaction, _entry(4))
 
     assert "Opening result submission wizard" in _replied(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason="#482: opening the result submission wizard writes no log line")
+async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
+    """The wizard runs on its own once opened, so its line says it was started, never that the
+    results were submitted (#482)."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(4))
+
+    [line] = _log_lines(cog)
+    assert line.startswith("Maintainer (<@77>) | /test-mode advance")
+    assert "Division 1" in line and "Round 3" in line
+    assert "wizard" in line.lower() and "started" in line.lower()
 
 
 async def _noop(round_id: int) -> None:
