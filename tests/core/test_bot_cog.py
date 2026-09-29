@@ -952,6 +952,9 @@ def _resetting_bot(db_path: str, tmp_path) -> MagicMock:
     bot.scheduler_service._scheduler.running = False
     bot.scheduler_service._jobstore_path = str(tmp_path / "scheduler.db")
     bot.user.id = 1000
+    # Asked before the wipe where the reset's closing line goes (#482): the configured log
+    # channel, as the router reads it while the configuration is still there.
+    bot.output_router.log_destination = AsyncMock(return_value=CONFIGURED_LOG)
     return bot
 
 
@@ -1102,6 +1105,158 @@ async def test_a_second_factory_reset_waits_for_the_first_clean_up(tmp_path):
 
     assert "still cleaning" in interaction.response.send_message.call_args.args[0]
     cog._clean_up.cancel()
+
+
+# ── /bot factory-reset's closing line (#482) ───────────────────────────────
+#
+# A reset that goes ahead leaves one line in the log channel, posted once its clean-up has
+# ended, however it ended (owner, 2026-09-29: "One line after clean-up"). The wipe takes the
+# configuration with it, so the cog asks the router where the log goes before the wipe and
+# hands that back with the line.
+
+
+def _clean_up_ending(monkeypatch, bot: MagicMock, ending: str) -> dict:
+    """Make the Discord clean-up end as *ending* says, noting how many log lines stood as it ran.
+
+    "finished" cleans everything, "faults" finishes with a channel it could not clear, and
+    "stopped" breaks part-way on something it did not expect.
+    """
+    from leaguebot.core.services import factory_reset_service
+
+    seen: dict = {}
+
+    async def clean(guild, bot_user_id, targets, report, **_kwargs):
+        seen["lines_while_cleaning"] = bot.output_router.post_log.await_count
+        if ending == "stopped":
+            raise RuntimeError("gateway lost")
+        outcome = factory_reset_service.CleanOutcome(
+            total=2, done=2, channels_deleted=1, messages_deleted=5
+        )
+        if ending == "faults":
+            outcome.faults.append("#race-log could not be cleared: 403 Forbidden")
+        return outcome
+
+    monkeypatch.setattr(factory_reset_service, "clean_discord", clean)
+    return seen
+
+
+def _asked_before_the_wipe(bot: MagicMock, db_path: str, answer: int | None) -> dict:
+    """Answer where the log goes with *answer*, noting whether the league was still configured."""
+    seen: dict = {}
+
+    async def destination():
+        seen["configured_when_asked"] = await ConfigService(db_path).get_league_server_id()
+        return answer
+
+    bot.output_router.log_destination = AsyncMock(side_effect=destination)
+    return seen
+
+
+async def _pending_rows(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM pending_messages")
+        (count,) = await cursor.fetchone()
+    return count
+
+
+@pytest.mark.parametrize(
+    "ending",
+    [
+        pytest.param(
+            "finished",
+            id="clean-up-finished",
+            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
+        ),
+        pytest.param(
+            "faults",
+            id="clean-up-finished-with-faults",
+            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
+        ),
+        pytest.param(
+            "stopped",
+            id="clean-up-stopped-part-way",
+            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
+        ),
+    ],
+)
+async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_ends(
+    tmp_path, monkeypatch, ending
+):
+    """One line, to the log channel found before the wipe, posted after the clean-up has ended
+    and so left standing by it: it names the server owner, has what was erased beneath it, and
+    says how the clean-up ended (#482)."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _resetting_bot(db_path, tmp_path)
+    asked = _asked_before_the_wipe(bot, db_path, CONFIGURED_LOG)
+    cleaning = _clean_up_ending(monkeypatch, bot, ending)
+    cog = BotCog(bot)
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    assert asked["configured_when_asked"] == SERVER_ID
+    assert cleaning["lines_while_cleaning"] == 0
+    [call] = bot.output_router.post_log.await_args_list
+    assert call.kwargs["channel"] == CONFIGURED_LOG
+    line = str(call.args[0])
+    first, *beneath = line.splitlines()
+    assert f"admin (<@{OWNER_ID}>)" in first and "/bot factory-reset" in first
+    assert beneath, "what was erased goes beneath the line"
+    if ending == "finished":
+        assert "stopped" not in line.lower() and "could not" not in line
+    elif ending == "faults":
+        assert "#race-log could not be cleared" in line
+    else:
+        assert "stopped" in line.lower()
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        pytest.param(
+            "not-found",
+            id="log-channel-not-found",
+            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
+        ),
+        pytest.param(
+            "not-written",
+            id="log-channel-refuses-or-is-gone",
+            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
+        ),
+    ],
+)
+async def test_a_factory_reset_line_that_cannot_be_posted_goes_to_the_host_log(
+    tmp_path, monkeypatch, caplog, where
+):
+    """Where the log channel cannot be found before the wipe, or cannot take the line after the
+    clean-up, the line goes to the host's log, and nothing is queued to retry it: the fresh
+    database belongs to a bot serving no server (#482)."""
+    caplog.set_level(logging.INFO, logger="leaguebot.core.cogs.bot_cog")
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _resetting_bot(db_path, tmp_path)
+    _asked_before_the_wipe(bot, db_path, None if where == "not-found" else CONFIGURED_LOG)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    _clean_up_ending(monkeypatch, bot, "finished")
+    cog = BotCog(bot)
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    if where == "not-found":
+        bot.output_router.post_log.assert_not_awaited()
+    else:
+        [call] = bot.output_router.post_log.await_args_list
+        assert call.kwargs["channel"] == CONFIGURED_LOG
+    assert any(
+        record.name == "leaguebot.core.cogs.bot_cog"
+        and record.levelno >= logging.INFO
+        and f"admin (<@{OWNER_ID}>)" in record.getMessage()
+        and "/bot factory-reset" in record.getMessage()
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+    assert await _pending_rows(db_path) == 0
 
 
 def test_nothing_current_names_a_withdrawn_bot_command():
