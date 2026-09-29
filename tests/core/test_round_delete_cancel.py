@@ -436,6 +436,35 @@ async def test_cancelling_a_round_winds_a_finished_season_down():
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a /round cancel whose season could not be wound down says nothing of it, "
+    "to the admin or in the log",
+)
+async def test_a_wind_down_that_fails_after_a_round_cancel_is_named_as_not_done():
+    """The core specification's record of what changed: an outcome is recorded as it is. Round 5
+    of Division 1, in a season being raced, is cancelled, and the season it may have finished
+    cannot then be wound down (the wind-down raises). The cancellation stands; the reply and the
+    one success line each name the wind-down as not done, saying the season could not be moved
+    to pending completion and that /season complete does it."""
+    cog = _make_cog()
+    cog.bot.season_service.wind_down_ongoing = AsyncMock(side_effect=RuntimeError("disk full"))
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.cancel_round.assert_awaited_once()
+    replied = _replied(interaction)
+    assert replied.startswith("\u2705 Round **5** in **Division 1** cancelled."), replied
+    assert "pending completion" in replied.lower(), replied
+    assert "/season complete" in replied, replied
+    [line] = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    assert line.startswith(f"Admin (<@{ACTOR_ID}>) | /round cancel | Success"), line
+    [not_done] = [row for row in line.splitlines() if row.strip().startswith("not done:")]
+    assert "pending completion" in not_done.lower(), line
+    assert "/season complete" in not_done, line
+
+
 async def test_the_jobs_go_before_the_round_is_recorded_cancelled():
     """A job firing between the two would post a forecast for a round the league has just
     called off."""

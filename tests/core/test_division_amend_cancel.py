@@ -634,6 +634,36 @@ async def test_cancelling_a_division_winds_a_finished_season_down(tmp_path):
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a /division cancel whose season could not be wound down says nothing of it, "
+    "to the manager or in the log",
+)
+async def test_a_wind_down_that_fails_after_a_division_cancel_is_named_as_not_done(tmp_path):
+    """The core specification's record of what changed: an outcome is recorded as it is. Division
+    Pro of a season being raced is cancelled, and the season it may have finished cannot then
+    be wound down (the wind-down raises). The cancellation stands; the reply and the one success
+    line each name the wind-down as not done, saying the season could not be moved to pending
+    completion and that /season complete does it."""
+    db_path = await _make_db(tmp_path, status="ACTIVE", name="division_cancel_wind_down_fails")
+    cog = _make_cog(db_path)
+    cog.bot.season_service.wind_down_ongoing = AsyncMock(side_effect=RuntimeError("disk full"))
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.cancel_division.assert_awaited_once()
+    replied = _replied(interaction)
+    assert replied.startswith("\u2705 Division **Pro** cancelled."), replied
+    assert "pending completion" in replied.lower(), replied
+    assert "/season complete" in replied, replied
+    [line] = _logged(cog)
+    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division cancel | Success"), line
+    [not_done] = [row for row in line.splitlines() if row.strip().startswith("not done:")]
+    assert "pending completion" in not_done.lower(), line
+    assert "/season complete" in not_done, line
+
+
 async def test_cancelling_needs_an_active_season(tmp_path):
     """There is no running division to stand down; in setup `/division delete` is the one
     that applies."""
