@@ -576,7 +576,8 @@ def test_a_staging_whose_scheduler_copy_fails_stages_nothing(tmp_path, monkeypat
 def test_a_restore_with_no_scheduler_half_stages_an_empty_scheduler(tmp_path):
     """Otherwise the restored league meets whichever scheduler is live, with jobs it did not have
     when it was saved (#482, F5): an empty scheduler database is staged beside the league one, and
-    the restart leaves the live scheduler holding no jobs."""
+    the restart leaves the live scheduler holding no jobs. The two jobs it replaces are kept first,
+    in the scheduler's pre-restore copy, so a restore nobody wanted can be walked back."""
     live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
     _database(live, rows=1)
     bs.save(live, jobs)
@@ -584,6 +585,8 @@ def test_a_restore_with_no_scheduler_half_stages_an_empty_scheduler(tmp_path):
 
     bs.stage_restore(live, jobs)
 
+    assert bs.is_readable_database(bs.prerestore_path(jobs))
+    assert _rows_held(bs.prerestore_path(jobs)) == 2
     assert bs.staged_path(live).is_file()
     assert bs.is_readable_database(bs.staged_path(jobs))
     assert _rows_held(bs.staged_path(jobs)) == 0
