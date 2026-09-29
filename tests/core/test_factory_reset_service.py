@@ -115,6 +115,55 @@ async def test_a_database_that_cannot_be_copied_is_refused(tmp_path):
         take_backup(str(tmp_path / "missing.db"), _jobstore(tmp_path), now=NOW)
 
 
+def _a_copy_that_fails_its_check(db_path, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(backup_service, "is_readable_database", lambda _path: False)
+    take_backup(db_path, _jobstore(tmp_path), now=NOW)
+
+
+def _a_copy_that_cannot_be_finished(db_path, tmp_path, monkeypatch) -> None:
+    def refuse(*_args, **_kwargs):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    # The module's own name for sqlite3 alone, so the copy itself still goes through.
+    monkeypatch.setattr(
+        factory_reset_service, "sqlite3", SimpleNamespace(connect=refuse, Error=sqlite3.Error)
+    )
+    take_backup(db_path, _jobstore(tmp_path), now=NOW)
+
+
+def _a_database_that_cannot_be_copied(_db_path, tmp_path, _monkeypatch) -> None:
+    take_backup(str(tmp_path / "missing.db"), _jobstore(tmp_path), now=NOW)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        pytest.param(
+            _a_copy_that_fails_its_check,
+            id="integrity-check-fails",
+            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
+        ),
+        pytest.param(
+            _a_copy_that_cannot_be_finished,
+            id="copy-cannot-be-finished",
+            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
+        ),
+        pytest.param(
+            _a_database_that_cannot_be_copied,
+            id="copy-fails",
+            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
+        ),
+    ],
+)
+async def test_a_backup_that_cannot_be_taken_is_a_fault(db_path, tmp_path, monkeypatch, fault):
+    """Every way the reset's backup can fail is a fault in the bot (#482): `/bot factory-reset`
+    records it as a failure, erasing nothing, and its reply does not name the error."""
+    with pytest.raises(backup_service.BackupError) as raised:
+        fault(db_path, tmp_path, monkeypatch)
+
+    assert isinstance(raised.value, backup_service.BackupFault)
+
+
 # ── The Discord targets, gathered before the wipe ─────────────────────────
 
 

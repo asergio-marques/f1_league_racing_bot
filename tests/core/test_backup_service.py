@@ -12,6 +12,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -170,6 +171,103 @@ def test_a_failed_copy_leaves_the_previous_backup_standing(tmp_path):
 
     assert _rows(bs.backup_path(live)) == good
     assert not bs.backup_path(live).with_name("bot.bkup.db.part").exists()
+
+
+# ── A fault, told from a refusal ──────────────────────────────────────────
+
+
+def _no_database(tmp_path: Path) -> None:
+    bs.save(tmp_path / "bot.db", tmp_path / "scheduler.db")
+
+
+def _a_copy_that_fails(tmp_path: Path) -> None:
+    (tmp_path / "corrupt.db").write_bytes(b"not a database at all")
+    bs.snapshot_database(tmp_path / "corrupt.db", tmp_path / "copy.bkup.db")
+
+
+def _a_write_that_fails(tmp_path: Path, monkeypatch) -> None:
+    def refuse(*_args, **_kwargs):
+        raise OSError("the disk is full")
+
+    # Replaced on this module alone, so nothing else in the run renames through it.
+    monkeypatch.setattr(bs, "os", SimpleNamespace(replace=refuse))
+    _database(tmp_path / "bot.db")
+    bs.save(tmp_path / "bot.db", tmp_path / "scheduler.db")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        pytest.param(
+            lambda tmp_path, _monkeypatch: _no_database(tmp_path),
+            id="no-database-to-copy",
+            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
+        ),
+        pytest.param(
+            lambda tmp_path, _monkeypatch: _a_copy_that_fails(tmp_path),
+            id="copy-fails",
+            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
+        ),
+        pytest.param(
+            _a_write_that_fails,
+            id="write-fails",
+            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
+        ),
+    ],
+)
+def test_a_copy_or_write_that_fails_is_a_fault(tmp_path, monkeypatch, fault):
+    """A fault in the bot, not something the member can act on (#482): the cogs record it as a
+    failure, never as a refusal, and their reply does not name it."""
+    with pytest.raises(bs.BackupError) as raised:
+        fault(tmp_path, monkeypatch)
+
+    assert isinstance(raised.value, bs.BackupFault)
+
+
+def _locked(tmp_path: Path) -> None:
+    live = tmp_path / "bot.db"
+    _database(live)
+    bs.set_lock(live, who="Manager")
+    bs.save(live, tmp_path / "scheduler.db")
+
+
+def _none_saved(tmp_path: Path) -> None:
+    _database(tmp_path / "bot.db")
+    bs.stage_restore(tmp_path / "bot.db", tmp_path / "scheduler.db")
+
+
+def _unreadable(tmp_path: Path) -> None:
+    live = tmp_path / "bot.db"
+    _database(live)
+    bs.backup_path(live).write_bytes(b"not a database at all")
+    bs.stage_restore(live, tmp_path / "scheduler.db")
+
+
+def _scheduler_unreadable(tmp_path: Path) -> None:
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    bs.backup_path(jobs).write_bytes(b"not a database at all")
+    bs.stage_restore(live, jobs)
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        pytest.param(_locked, id="locked"),
+        pytest.param(_none_saved, id="none-saved"),
+        pytest.param(_unreadable, id="unreadable"),
+        pytest.param(_scheduler_unreadable, id="scheduler-unreadable"),
+    ],
+)
+def test_what_the_member_can_act_on_is_a_plain_backup_error(tmp_path, refusal):
+    """Locked, none saved and unreadable are refusals with a reason to act on, not faults (#482):
+    the plain error, never its fault subclass."""
+    with pytest.raises(bs.BackupError) as raised:
+        refusal(tmp_path)
+
+    assert type(raised.value) is bs.BackupError
 
 
 # ── The lock ──────────────────────────────────────────────────────────────
