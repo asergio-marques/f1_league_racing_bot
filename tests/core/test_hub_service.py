@@ -200,17 +200,11 @@ async def test_a_press_on_an_option_no_module_registers_any_more_is_refused():
             True,
             "the hub's “View licence” option",
             id="no longer offered",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: a stale hub press is not yet recorded in the log channel"
-            ),
         ),
         pytest.param(
             False,
             "the hub's `licence` option",
             id="no longer registered",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: a stale hub press is not yet recorded in the log channel"
-            ),
         ),
     ],
 )

@@ -44,6 +44,7 @@ import discord
 
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, league_guild
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -150,11 +151,17 @@ def _callback_for(key: str) -> Callable[[discord.Interaction], Awaitable[None]]:
 
 
 async def press(interaction: discord.Interaction, key: str) -> None:
-    """Answer a press on the button keyed *key*, judging the option as it stands now."""
+    """Answer a press on the button keyed *key*, judging the option as it stands now.
+
+    A press on an option no longer offered is a refusal of a button that tries to act, so it is
+    recorded in the log channel through `refuse`, the option named by its label, or by its key
+    where no module registers it any more. The member is answered as ever.
+    """
     bot = bot_of(interaction)
     option = _OPTIONS.get(key)
     if option is None or not await is_offered(bot, option):
-        await interaction.response.send_message(NO_LONGER_OFFERED, ephemeral=True)
+        what = f"the hub's `{key}` option" if option is None else f"the hub's “{option.label}” option"
+        await refuse(interaction, NO_LONGER_OFFERED, what=what)
         fault = await refresh_panel(bot)
         if fault is not None:
             log.warning("hub: %s", fault)
