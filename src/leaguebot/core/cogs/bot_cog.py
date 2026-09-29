@@ -682,7 +682,14 @@ class BotCog(commands.Cog):
         The log is written *before* the pack, because the pack clears the log channel. The
         refusal for a current season is therefore asked first, read-only, so that the log
         does not announce a pack that will not happen; the service asks again inside its own
-        transaction, and the rare season set up between the two is logged as a refusal.
+        transaction, and the rare season set up between the two is recorded as a refusal.
+
+        The line is written as the pack begins, so it says the pack is under way and what it
+        will clear, never that it is done: once the pack has run there is no log channel to
+        say so in. A fault inside the pack's transaction is rolled back with the
+        configuration intact, so its failure line still reaches the log channel; a fault after
+        the commit (cancelling the scheduler's jobs, clearing the in-memory state) finds no
+        configuration and is recorded in the host's log alone.
         """
         if confirm != _CONFIRM_WORD:
             await refuse(
@@ -703,8 +710,11 @@ class BotCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Success\n"
-            f"  The bot no longer serves this server. `/bot init` on another claims it."
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Pack under way\n"
+            f"  Clearing the four bot settings, the base and driver roles, the team roles, "
+            f"the hub and signup channels, the signup wizards, undelivered messages and "
+            f"scheduled jobs. The bot will no longer serve this server; `/bot init` on "
+            f"another claims it."
         )
         try:
             result = await pack_service.pack(
@@ -715,14 +725,10 @@ class BotCog(commands.Cog):
                 actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | "
-                f"Refused — season {refused.season_number} was set up meanwhile. "
-                f"Nothing was changed."
-            )
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 _current_season_refusal(refused.season_number, refused.stage),
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 

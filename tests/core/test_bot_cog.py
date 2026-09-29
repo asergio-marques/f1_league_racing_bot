@@ -855,7 +855,6 @@ async def test_bot_pack_is_refused_while_a_season_is_current_and_is_recorded(tmp
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /bot pack's line still reads Success")
 async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
     """The one line a pack writes goes before it, while the log channel is still the league's.
 
@@ -890,7 +889,6 @@ async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
     assert "buttons now refuse" in reply
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a pack losing a race still writes a hand-built Refused line")
 async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypatch):
     from leaguebot.core.services import pack_service
 
