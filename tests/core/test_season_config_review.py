@@ -291,16 +291,29 @@ async def test_confirming_refuses_on_a_fault_found_afresh():
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a configuration confirmation refused because the season moved on is not yet "
+    "recorded",
+)
 async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
+    """The refusal is recorded as one line naming the presser and the review (#482)."""
     bot = _bot()
     bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
     cog = _cog(bot)
     interaction = _interaction()
+    interaction.client = bot
 
     await cog._do_confirm_configuration(interaction)
 
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
-    bot.output_router.post_log.assert_not_awaited()
+    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith("⛔ ")
+    assert "/season config-review" in logged[0]
+    assert "refused for Manager (<@4242>) — " in logged[0]
+    assert "The season is no longer in configuration." in logged[0]
+
 
 
 # ── The button ─────────────────────────────────────────────────────────────────────
