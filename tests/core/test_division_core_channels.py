@@ -421,10 +421,6 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
 COMMAND_NAMES = {"lineup": "division lineup-channel", "calendar": "division calendar-channel"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /division lineup-channel and calendar-channel's refusals are not yet recorded",
-)
 @pytest.mark.parametrize("which", ALL)
 @pytest.mark.parametrize(
     "case",

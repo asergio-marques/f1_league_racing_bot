@@ -4093,15 +4093,18 @@ class SeasonCog(commands.Cog):
         setting: str,
         *,
         division_name: str | None = None,
+        what: str | None = None,
     ) -> bool:
-        """Reply and return True where *channel* is already doing another job.
+        """Reply, record the refusal and return True where *channel* is already doing another job.
 
         A channel serves one purpose across the whole server (decided 2026-09-06): two
         settings sharing one interleave two kinds of posting, and several posting paths
         edit or delete their last message by an id stored against the channel, so sharing
         is how one output comes to delete another's. The rule, and the words for the value
         the setting already holds, are `channel_refusal`'s; this sends its refusal for the
-        channel commands of this cog.
+        channel commands of this cog, through `refuse`, so the log channel holds one line for it.
+        *what* names the refused command as the log reads it; it defaults to the interaction's own
+        command. Both branches of the guard, another job and the same one, are refusals.
         """
         from leaguebot.core.services.channel_registry_service import channel_refusal
 
@@ -4111,13 +4114,9 @@ class SeasonCog(commands.Cog):
         if message is None:
             return False
 
-        # Both callers answer before any defer. The follow-up branch is kept as a guard for a
-        # later caller that defers first: a fresh response after a defer is a 404, so the
-        # reply follows whichever state the interaction is already in.
-        if interaction.response.is_done():
-            await interaction.followup.send(message, ephemeral=True)
-        else:
-            await interaction.response.send_message(message, ephemeral=True)
+        # Both callers answer before any defer. `refuse` follows whichever state the interaction
+        # is in, so a later caller that defers first is answered by a follow-up, not a 404.
+        await refuse(interaction, message, what=what or describe(interaction))
         return True
 
     @division.command(
@@ -4135,17 +4134,19 @@ class SeasonCog(commands.Cog):
         import json as _json
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division **{name}** not found in the current season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if await self._refuse_channel_in_use(
@@ -4207,17 +4208,19 @@ class SeasonCog(commands.Cog):
         import json as _json
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division **{name}** not found in the current season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if await self._refuse_channel_in_use(
