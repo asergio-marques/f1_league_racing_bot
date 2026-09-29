@@ -209,6 +209,7 @@ class BotCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot init | Success\n"
+            f"  league_admin_role: {league_admin_role.name} (<@&{league_admin_role.id}>)\n"
             f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
             f"  interaction_channel: <#{interaction_channel.id}>\n"
             f"  log_channel: <#{log_channel.id}>",

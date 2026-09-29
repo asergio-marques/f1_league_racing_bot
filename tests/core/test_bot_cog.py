@@ -261,7 +261,6 @@ async def _init_configured(tmp_path) -> tuple[MagicMock, MagicMock]:
     return bot, interaction
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /bot init's line omits the league admin role")
 async def test_bot_init_s_line_names_the_league_admin_role(tmp_path):
     """The line lists all four settings it saved, the league admin role among them (#482)."""
     bot, _interaction_ = await _init_configured(tmp_path)
