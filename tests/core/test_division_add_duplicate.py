@@ -835,3 +835,141 @@ async def test_duplicating_before_placements_is_refused_and_recorded(tmp_path, s
         f"\u26d4 `/division duplicate` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
 
+
+
+# ---------------------------------------------------------------------------
+# Every other refusal of /division add and /division duplicate is recorded (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why. Each reply stays word for word as today, by the channel it
+# goes by today: /division add's after its defer, /division duplicate's before its own, save a
+# copy the service itself refuses, which comes after it.
+
+
+def _answers(interaction) -> list[str]:
+    """Every reply the member was sent, whichever way it went, in order."""
+    return [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    ]
+
+
+_MENTION = "<@123456789012345678>"
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /division add's refusals are not yet recorded")
+@pytest.mark.parametrize(
+    "arranged, asked, reply",
+    [
+        pytest.param(
+            {"setup": False}, {},
+            "❌ No pending season setup. Run `/season setup` first.",
+            id="no_season_being_set_up",
+        ),
+        pytest.param(
+            {"stage": "CONFIGURATION"}, {},
+            "⛔ Divisions can only be added while the season is in placements — once "
+            "its configuration is confirmed and its signup window has closed.",
+            id="before_placements",
+        ),
+        pytest.param(
+            {}, {"name": _MENTION},
+            "❌ A mention of a member in the division name would notify them wherever it is "
+            "posted. Remove it, then try again.",
+            id="a_mention_in_the_name",
+        ),
+        pytest.param(
+            {}, {"name": "pRO"},
+            "❌ A division named **pRO** already exists in this setup.",
+            id="a_name_already_taken",
+        ),
+    ],
+)
+async def test_every_other_division_add_refusal_is_recorded(tmp_path, arranged, asked, reply):
+    """A season in placements whose setup holds division Pro at tier 1, unless the case says
+    otherwise. The manager (id 77) adds division Am at tier 2, but with one thing wrong: no season
+    being set up; the season still in configuration; a member's mention as the name; or the name
+    pRO, which Pro already holds. The manager gets today's reply word for word and nothing else,
+    no division is added, and the log channel gets exactly one line, "⛔ `/division add` refused
+    for Manager (<@77>) — " and the reply's words."""
+    from leaguebot.core.models.season import SeasonStage
+
+    db_path = await _make_db(tmp_path)
+    cfg = None if arranged.get("setup") is False else _pending(
+        PendingDivision(name="Pro", role_id=1, tier=1)
+    )
+    cog = _make_cog(
+        db_path,
+        cfg=cfg,
+        stage=SeasonStage(arranged["stage"]) if "stage" in arranged else None,
+    )
+    interaction = _run_by_the_manager(cog, "division add")
+
+    await _add(cog, interaction, **{"name": "Am", "tier": 2, **asked})
+
+    interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.response.send_message.assert_not_awaited()
+    if cfg is not None:
+        assert [d.name for d in cfg.divisions] == ["Pro"]
+    cog._snapshot_pending.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/division add` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /division duplicate's refusals are not yet recorded")
+@pytest.mark.parametrize(
+    "arranged, asked, reply",
+    [
+        pytest.param(
+            {"status": "ACTIVE"}, {},
+            "❌ `/division duplicate` can only be used while the season is in placements.",
+            id="no_season_being_set_up",
+        ),
+        pytest.param(
+            {}, {"source": "Rookie"},
+            "❌ Division `Rookie` not found in pending setup.",
+            id="an_unknown_source",
+        ),
+        pytest.param(
+            {}, {"new_name": "**Am**"},
+            "❌ The formatting `` **Am** `` in the division name reads differently as text "
+            "and on a graphic. Remove it, then try again.",
+            id="markup_in_the_name",
+        ),
+        pytest.param(
+            {}, {"new_name": "pro"},
+            "❌ A division named **pro** already exists.",
+            id="a_name_already_taken",
+        ),
+        pytest.param(
+            {"duplicate_error": ValueError("tier 2 is not sequential")}, {},
+            "⛔ tier 2 is not sequential",
+            id="a_copy_the_service_refuses",
+        ),
+    ],
+)
+async def test_every_other_division_duplicate_refusal_is_recorded(
+    tmp_path, arranged, asked, reply
+):
+    """A season in placements holding division Pro at tier 1, unless the case says otherwise. The
+    manager (id 77) copies Pro as Am at tier 2, but with one thing wrong: no season being set up
+    (the season is being raced); source division Rookie, which does not exist; the name **Am**,
+    written with markup; the name pro, which Pro already holds; or a copy the season's rules
+    refuse ('tier 2 is not sequential'). The manager gets today's reply word for word and nothing
+    else, no division is seeded, and the log channel gets exactly one line, "⛔ `/division
+    duplicate` refused for Manager (<@77>) — " and the reply's words."""
+    db_path = await _make_db(tmp_path, status=arranged.get("status", "SETUP"))
+    cog = _make_cog(db_path, duplicate_error=arranged.get("duplicate_error"))
+    interaction = _run_by_the_manager(cog, "division duplicate")
+
+    await _duplicate(cog, interaction, **asked)
+
+    assert _answers(interaction) == [reply]
+    cog.bot.team_service.seed_division_teams.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/division duplicate` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]

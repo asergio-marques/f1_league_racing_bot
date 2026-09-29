@@ -1055,3 +1055,156 @@ async def test_a_setup_command_before_placements_is_refused_and_recorded(
         f"\u26d4 `/{command}` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
 
+
+
+# ---------------------------------------------------------------------------
+# Every other refusal of /division delete, rename and amend is recorded (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why. Each reply stays word for word as today, and goes as today's
+# does, as the first answer to the interaction. /division amend with no option stays a refusal:
+# something was asked for and nothing given.
+
+
+def _as_discord(interaction):
+    """Make *interaction* read as Discord's does: not answered until the command replies or
+    defers, and answered from then on."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+async def _rename_to_a_mention(cog, interaction):
+    return await _rename(cog, interaction, new="<@123456789012345678>")
+
+
+async def _rename_onto_am(cog, interaction):
+    return await _rename(cog, interaction, new="am")
+
+
+async def _amend_nothing(cog, interaction):
+    return await _amend(cog, interaction)
+
+
+async def _amend_to_a_mention(cog, interaction):
+    return await _amend(cog, interaction, new_name="<@123456789012345678>")
+
+
+async def _amend_onto_am(cog, interaction):
+    return await _amend(cog, interaction, new_name="AM")
+
+
+async def _delete_elite(cog, interaction):
+    return await _delete(cog, interaction, name="Elite")
+
+
+async def _rename_elite(cog, interaction):
+    return await _rename(cog, interaction, current="Elite", new="Rookie")
+
+
+async def _amend_elite(cog, interaction):
+    return await _amend(cog, interaction, name="Elite", tier=3)
+
+
+_A_MENTION_REFUSED = (
+    "❌ A mention of a member in the division name would notify them wherever it is "
+    "posted. Remove it, then try again."
+)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: /division delete, rename and amend's refusals are not yet recorded"
+)
+@pytest.mark.parametrize(
+    "command, run, arranged, reply",
+    [
+        pytest.param(
+            "division delete", _delete, {"status": "ACTIVE"},
+            "❌ `/division delete` can only be used while the season is in placements.",
+            id="delete-no_season_being_set_up",
+        ),
+        pytest.param(
+            "division delete", _delete_elite, {},
+            "❌ Division `Elite` not found.",
+            id="delete-an_unknown_division",
+        ),
+        pytest.param(
+            "division rename", _rename, {"status": "ACTIVE"},
+            "❌ `/division rename` can only be used while the season is in placements.",
+            id="rename-no_season_being_set_up",
+        ),
+        pytest.param(
+            "division rename", _rename_elite, {},
+            "❌ Division `Elite` not found.",
+            id="rename-an_unknown_division",
+        ),
+        pytest.param(
+            "division rename", _rename_to_a_mention, {},
+            _A_MENTION_REFUSED,
+            id="rename-a_mention_in_the_name",
+        ),
+        pytest.param(
+            "division rename", _rename_onto_am, {},
+            "❌ A division named **am** already exists.",
+            id="rename-a_name_already_taken",
+        ),
+        pytest.param(
+            "division amend", _amend_nothing, {},
+            "❌ Provide at least one of: `new_name`, `tier`, `role`.",
+            id="amend-no_option",
+        ),
+        pytest.param(
+            "division amend", _amend_the_tier, {"status": "ACTIVE"},
+            "❌ `/division amend` is only permitted while the season is in placements.",
+            id="amend-no_season_being_set_up",
+        ),
+        pytest.param(
+            "division amend", _amend_elite, {},
+            "❌ Division `Elite` not found.",
+            id="amend-an_unknown_division",
+        ),
+        pytest.param(
+            "division amend", _amend_to_a_mention, {},
+            _A_MENTION_REFUSED,
+            id="amend-a_mention_in_the_name",
+        ),
+        pytest.param(
+            "division amend", _amend_onto_am, {},
+            "❌ A division named **AM** already exists.",
+            id="amend-a_name_already_taken",
+        ),
+    ],
+)
+async def test_every_other_division_delete_rename_and_amend_refusal_is_recorded(
+    tmp_path, command, run, arranged, reply
+):
+    """A season in placements holding division Pro at tier 1 with role 555, and division Am at
+    tier 2, unless the case says otherwise. The manager (id 77) is refused in eleven cases:
+    /division delete, rename or amend with no season being set up (the season is being raced) or
+    naming division Elite, which does not exist; a rename or an amend of Pro to a member's
+    mention, or onto Am's name in another case; and an amend asking for nothing. The manager gets
+    today's reply word for word and nothing else. Pro stands as it was, nothing is deleted or
+    renamed, and no audit entry is written. The log channel gets exactly one line, "⛔
+    `/division …` refused for Manager (<@77>) — " and the reply's words."""
+    db_path = await _make_db(tmp_path, status=arranged.get("status", "SETUP"))
+    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
+    interaction = _as_discord(_run_by_the_manager(cog, command))
+
+    await run(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.season_service.delete_division.assert_not_awaited()
+    cog.bot.season_service.rename_division.assert_not_awaited()
+    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert await _audit_rows(db_path) == []
+    assert _logged(cog) == [
+        f"⛔ `/{command}` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
