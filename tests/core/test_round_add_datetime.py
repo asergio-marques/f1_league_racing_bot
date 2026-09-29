@@ -111,7 +111,6 @@ _OVERFLOW = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /round add's refusals are not yet recorded")
 @pytest.mark.parametrize(
     "arranged, asked, reply",
     [

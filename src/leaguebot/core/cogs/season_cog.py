@@ -4503,28 +4503,31 @@ class SeasonCog(commands.Cog):
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
         if cfg is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c No pending season setup. Run `/season setup` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         try:
             fmt = RoundFormat(format.upper())
         except ValueError:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Invalid format `{format}`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         track_name = track.strip() or None
 
         if fmt != RoundFormat.MYSTERY and not track_name:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c A track is required for `{fmt.value}` rounds. "
                 "Leave track blank only for `MYSTERY` rounds.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4532,27 +4535,30 @@ class SeasonCog(commands.Cog):
             async with get_connection(self.bot.db_path) as _tdb:
                 _resolved = await track_service.resolve_track_name(_tdb, track_name)
             if _resolved is None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Unknown track `{track_name}`.\n"
                     "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
             track_name = _resolved
 
         sched = parse_datetime(scheduled_at)
         if sched is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         div = next((d for d in cfg.divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Division `{division_name}` not found in pending setup.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4565,11 +4571,12 @@ class SeasonCog(commands.Cog):
             (r for r in div.rounds if r["scheduled_at"] == sched), None
         )
         if _clash is not None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"❌ **{div.name}** already holds round {_clash['round_number']} at "
                 f"{discord_ts(sched)}. Two rounds of one division cannot share a moment "
                 f"— the season could not be approved. The round was **not** added.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4580,7 +4587,11 @@ class SeasonCog(commands.Cog):
             len(div.rounds) + 1
         )
         if _overflow is not None:
-            await interaction.followup.send(_overflow, ephemeral=True)
+            await refuse(
+                interaction,
+                _overflow,
+                what=describe(interaction),
+            )
             return
 
         new_round: dict[str, Any] = {
@@ -4974,9 +4985,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         season_id = await _get_setup_season_id(self.bot)
         if season_id is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/round delete` can only be used while the season is in placements.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4985,27 +4997,30 @@ class SeasonCog(commands.Cog):
             try:
                 await self.bot.season_service.assert_season_mutable(setup_season)
             except SeasonImmutableError:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     "\u274c This season is archived (COMPLETED) and cannot be modified.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
         divisions = await self.bot.season_service.get_divisions(season_id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{division_name}` not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Round {round_number} not found in division `{division_name}`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -5045,9 +5060,10 @@ class SeasonCog(commands.Cog):
         confirm: str,
     ) -> None:
         if confirm != "CONFIRM":
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -5056,43 +5072,48 @@ class SeasonCog(commands.Cog):
 
         # Available only while the season is ongoing (issue #220).
         if season is None or season.stage not in ONGOING_STAGES:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/round cancel` is available only while the season is ongoing.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         try:
             await self.bot.season_service.assert_season_mutable(season)
         except SeasonImmutableError:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c This season is archived (COMPLETED) and cannot be modified.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{division_name}` not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         rounds = await self.bot.season_service.get_division_rounds(div.id)
         rnd = next((r for r in rounds if r.round_number == round_number), None)
         if rnd is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Round {round_number} not found in division `{division_name}`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if rnd.status == RoundStatus.CANCELLED.value:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Round {round_number} in **{division_name}** is already cancelled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -5105,10 +5126,11 @@ class SeasonCog(commands.Cog):
         # so `/round cancel` refused a round that `/division cancel` would quietly cancel, taking
         # a raced result with it. One rule, read from one place, is what stops them disagreeing.
         if rnd.status not in ROUND_CANCELLABLE:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Cannot cancel Round {round_number} — its results have already been "
                 "entered, and the drivers' reports and appeals depend on it.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -5116,10 +5138,11 @@ class SeasonCog(commands.Cog):
         # cancellable, but the wizard would be writing into it as it went (FR-020).
         from leaguebot.results.services.result_submission_service import is_submission_open
         if await is_submission_open(self.bot.db_path, rnd.id):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Cannot cancel Round {round_number} — a results submission channel is "
                 "currently open. Close the submission first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 

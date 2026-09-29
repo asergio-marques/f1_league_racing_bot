@@ -590,7 +590,6 @@ _RESULTS_IN = sorted(
 )[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /round delete's refusals are not yet recorded")
 @pytest.mark.parametrize(
     "arranged, asked, reply",
     [
@@ -632,7 +631,6 @@ async def test_every_other_round_delete_refusal_is_recorded(arranged, asked, rep
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /round cancel's refusals are not yet recorded")
 @pytest.mark.parametrize(
     "arranged, asked, reply",
     [
