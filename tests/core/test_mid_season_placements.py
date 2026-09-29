@@ -656,10 +656,6 @@ async def test_a_season_not_returned_to_ongoing_names_the_repair(db_path):
     assert "not done: The season could not be returned to Ongoing" in _logged(cog)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a season that had already moved on is not yet named as not done",
-)
 async def test_a_season_that_had_already_moved_on_is_named_as_not_done(db_path):
     """The placements are confirmed, but the season was cancelled while the review stood, so it
     cannot be returned to Ongoing (the move is refused as one its lifecycle does not allow).

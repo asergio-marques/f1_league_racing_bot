@@ -2749,6 +2749,21 @@ class SeasonCog(commands.Cog):
             await self.bot.season_service.set_stage(season.id, SeasonStage.ONGOING)
         except InvalidStageTransition:
             log.warning("mid-season placements: season %s had already moved on", season.id)
+            # Named as not done, with the stage it is in: confirming again cannot move it.
+            try:
+                moved_to = await self.bot.season_service.get_stage(season.id)
+            except Exception:  # noqa: BLE001 — the stage only makes the line more exact
+                log.exception("mid-season placements: could not read season %s's stage", season.id)
+                moved_to = None
+            where = (
+                f" and is now {moved_to.value.replace('_', ' ').lower()}"
+                if moved_to is not None
+                else ""
+            )
+            not_done.append(
+                "The season could not be returned to Ongoing \u2014 it had already moved on"
+                f"{where}."
+            )
         except Exception:  # noqa: BLE001 — the placements are committed
             # Confirming again repairs it: the review offers its button with nothing left
             # to commit, and the confirmation then makes this move alone.
