@@ -412,6 +412,10 @@ async def _run_season_complete(divisions, outstanding, all_done=False):
     sent: list[str] = []
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
+    # Connected to the cog's log channel, and not yet answered, as Discord's interaction is
+    # before its reply, so a refusal the command records lands where a real one would.
+    interaction.client = cog.bot
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock(side_effect=lambda msg, **kw: sent.append(msg))
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
