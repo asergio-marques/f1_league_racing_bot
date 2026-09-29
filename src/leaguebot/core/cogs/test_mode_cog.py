@@ -1379,13 +1379,6 @@ class _ConfirmRestoreView(LeagueView):
     async def cancel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        if interaction.user.id != self._requester_id:
-            await refuse(
-                interaction,
-                "⛔ Only the person who ran the command can cancel it.",
-                what=describe(interaction, button),
-            )
-            return
         await interaction.response.send_message(
             "Nothing has been changed.", ephemeral=True
         )
