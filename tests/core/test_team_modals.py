@@ -215,7 +215,6 @@ async def test_the_reserve_team_is_sent_to_its_own_command():
     interaction.response.send_modal.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a /team modify form submitted untouched writes no line")
 async def test_a_form_submitted_untouched_changes_nothing():
     """Nothing is written, the manager is told so, and one line records that nothing was
     changed (#482)."""

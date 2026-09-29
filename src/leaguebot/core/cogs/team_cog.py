@@ -273,6 +273,12 @@ class TeamCog(commands.Cog):
             await interaction.followup.send(
                 f'Nothing changed: "{current["full_name"]}" stands as it was.', ephemeral=True
             )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team modify | "
+                "Nothing changed\n"
+                f"  team: {current['full_name']}\n"
+                "  the form was submitted as it stood"
+            )
             return
 
         if names_changed and not await self._team_list_is_open():
