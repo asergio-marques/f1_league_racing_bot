@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import sqlite3
 from typing import Callable, Any
 
 import discord
@@ -478,12 +479,24 @@ def server_owner_only(func: Callable) -> Callable:
             )
             # The configuration is read here, after the owner check has failed, and only to
             # decide whether to record: the owner's own path reads no setting.
-            config = await self.bot.config_service.get_server_config()
+            # A configuration past repair is what a factory reset exists for, so a read that
+            # fails must not cost the member their answer: it is kept in the host's log and
+            # the refusal is not recorded.
+            try:
+                config = await self.bot.config_service.get_server_config()
+                record = config is not None
+            except sqlite3.Error:
+                log.exception(
+                    "server owner: /%s: the configuration could not be read, so the refusal "
+                    "is not recorded in the log channel",
+                    func.__name__,
+                )
+                record = False
             await _refuse(
                 interaction,
                 "⛔ Only this server's owner may factory-reset the bot, whatever roles or "
                 "permissions anyone else holds.",
-                record=config is not None,
+                record=record,
             )
             return
 
