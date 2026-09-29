@@ -371,7 +371,6 @@ _NOT_IN_HOST_LOG = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_wrong_channel_refusal_is_recorded():
     """A manager's command used outside the interaction channel: the member is told, as ever,
     and the log channel records who was refused what and why."""
@@ -390,7 +389,6 @@ async def test_a_wrong_channel_refusal_is_recorded():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_member_of_neither_tier_is_recorded_by_name_and_mention():
     """The line names the member by display name and mention, and the roles by name alone."""
     command, _ = _guarded(league_manager_only)
@@ -404,7 +402,6 @@ async def test_a_member_of_neither_tier_is_recorded_by_name_and_mention():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_league_manager_refused_an_admin_command_is_recorded():
     command, _ = _guarded(league_admin_only)
     interaction = _interaction(_member(roles=(MANAGER_ROLE,)), command="module enable")
@@ -417,7 +414,6 @@ async def test_a_league_manager_refused_an_admin_command_is_recorded():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_an_admin_command_refused_for_want_of_an_admin_role_is_recorded():
     command, _ = _guarded(league_admin_only)
     interaction = _interaction(_member(administrator=True), command="module enable")
@@ -430,7 +426,6 @@ async def test_an_admin_command_refused_for_want_of_an_admin_role_is_recorded():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
 @pytest.mark.parametrize(
     "decorator", [league_admin_only, league_manager_only],
     ids=["league_admin_only", "league_manager_only"],
@@ -450,7 +445,6 @@ async def test_a_refusal_before_the_bot_is_set_up_goes_to_the_host_log_alone(dec
     assert _host_records_refusal(caplog, "round add", guild=SERVER_ID)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
 async def test_a_command_used_in_a_direct_message_goes_to_the_host_log_alone(caplog):
     """A direct message to a manager's command in a group not limited to servers: it arrives
     with no guild and the direct message's own channel id, so it meets the wrong-channel
@@ -490,7 +484,6 @@ async def test_a_setup_command_refused_on_a_set_up_server_is_recorded():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
 async def test_a_setup_command_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone(
     caplog,
 ):
@@ -526,7 +519,6 @@ async def test_a_factory_reset_refused_on_a_set_up_server_is_recorded():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_IN_HOST_LOG)
 async def test_a_factory_reset_refused_before_the_bot_is_set_up_goes_to_the_host_log_alone(
     caplog,
 ):
