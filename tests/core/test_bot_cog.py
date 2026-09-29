@@ -272,7 +272,6 @@ async def test_bot_init_s_line_names_the_league_admin_role(tmp_path):
     assert f"<#{CONFIGURED_CHANNEL}>" in line and f"<#{CONFIGURED_LOG}>" in line
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /bot init's reply omits the league admin role")
 async def test_bot_init_s_reply_names_the_league_admin_role(tmp_path):
     """The confirmation lists the league admin role beside the other three settings (#482, F3)."""
     _bot_, interaction = await _init_configured(tmp_path)

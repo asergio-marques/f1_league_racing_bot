@@ -202,6 +202,7 @@ class BotCog(commands.Cog):
 
         await interaction.response.send_message(
             f"✅ Bot configuration saved!\n"
+            f"**League admin role**: {league_admin_role.mention}\n"
             f"**Interaction role**: {interaction_role.mention}\n"
             f"**Interaction channel**: {interaction_channel.mention}\n"
             f"**Log channel**: {log_channel.mention}",
