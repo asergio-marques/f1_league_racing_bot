@@ -546,6 +546,40 @@ def test_a_staging_whose_scheduler_copy_fails_stages_nothing(tmp_path, monkeypat
     assert "live only" in _rows(live)
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        pytest.param(bs.BackupFault("bot.prerestore.db could not be written"), id="backup-fault"),
+        pytest.param(OSError("the disk is full"), id="os-error"),
+        pytest.param(sqlite3.OperationalError("disk I/O error"), id="sqlite-error"),
+    ],
+)
+def test_a_staging_whose_pre_restore_copy_fails_stages_nothing(tmp_path, monkeypatch, failure):
+    """The copy of what is live is taken before anything is staged, and its failure is a fault
+    like any other copy's: an earlier staging still awaiting a restart goes too, so the next
+    start swaps nothing in (#482, F1)."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    _add_round(live, "live only")
+    bs.stage_restore(live, jobs)
+
+    def fail(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(bs, "snapshot_database", fail)
+
+    with pytest.raises(bs.BackupError) as raised:
+        bs.stage_restore(live, jobs)
+
+    assert isinstance(raised.value, bs.BackupFault)
+    assert not bs.staged_path(live).exists()
+    assert not bs.staged_path(jobs).exists()
+    assert bs.apply_staged_restore(live, jobs) is False
+    assert "live only" in _rows(live)
+
+
 def test_a_restore_with_no_scheduler_half_stages_an_empty_scheduler(tmp_path):
     """Otherwise the restored league meets whichever scheduler is live, with jobs it did not have
     when it was saved (#482, F5): an empty scheduler database is staged beside the league one, and
