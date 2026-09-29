@@ -6172,6 +6172,10 @@ NO_DIVISIONS_REFUSAL = (
 )
 
 
+#: What became of a backup that a fault stopped: the approval goes on without it.
+_BACKUP_NOT_TAKEN = "The backup was not taken. The season is being approved anyway."
+
+
 class _BackupBeforeApprovalView(LeagueView):
     """Save the databases, or don't, or stop — asked between the last gate and the commit.
 
@@ -6179,7 +6183,16 @@ class _BackupBeforeApprovalView(LeagueView):
     review whose backup question goes unanswered expires exactly when it would have expired
     anyway. `answer` is None in that case, which is how the caller tells silence from a
     deliberate "no".
+
+    **What the log holds.** A save that is taken writes a success line of its own, so the record
+    holds it whatever the approval then does. A save refused (`BackupError`: locked, none saved)
+    is a refusal with its reason; one a fault stopped (`BackupFault`, or any other error) takes
+    the standard failure reply and line, its outcome saying the backup was not taken and the
+    season is being approved anyway. Neither stops the approval.
     """
+
+    #: The save button as the log channel names it.
+    _save_button = "the \U0001f4be Save, then approve button of `/season placements-review`"
 
     def __init__(self, cog: SeasonCog, *, timeout: float) -> None:
         super().__init__(timeout=timeout)
@@ -6206,24 +6219,39 @@ class _BackupBeforeApprovalView(LeagueView):
                 self._cog.bot.db_path,
                 backup_service.jobstore_path_of(self._cog.bot),
             )
+        except backup_service.BackupFault as exc:
+            # A fault in the bot's own copy: the standard failure form, in place of the
+            # fault's text, which a manager cannot act on. The details go to the host's log.
+            await report_failure(
+                interaction,
+                exc,
+                what=self._save_button,
+                outcome=_BACKUP_NOT_TAKEN,
+            )
+            self.answer = "skip"
+            self.stop()
+            return
         except backup_service.BackupError as exc:
             # A backup that cannot be taken does not refuse the season. The manager asked
             # for a convenience and is told it was not available; approving is what they
             # actually came to do, and the alternative is making them run the review again
             # for a reason that has nothing to do with the season.
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"⚠️ The backup was not taken — {exc}\nApproving the season "
                 f"anyway.",
-                ephemeral=True,
+                what=self._save_button,
+                reason=str(exc),
             )
             self.answer = "skip"
             self.stop()
             return
-        except Exception:
-            log.exception("season approval: the backup could not be taken")
-            await interaction.followup.send(
-                "⚠️ The backup could not be taken. Approving the season anyway.",
-                ephemeral=True,
+        except Exception as exc:
+            await report_failure(
+                interaction,
+                exc,
+                what=self._save_button,
+                outcome=_BACKUP_NOT_TAKEN,
             )
             self.answer = "skip"
             self.stop()
@@ -6232,6 +6260,10 @@ class _BackupBeforeApprovalView(LeagueView):
             if paused and scheduler is not None:
                 scheduler._scheduler.resume()
 
+        # Its own line, so the record holds the backup whatever the approval then does.
+        await self._cog.bot.output_router.post_log(
+            f"{interaction_member(interaction)} | /season placements-review backup | Success"
+        )
         await interaction.followup.send(
             "✅ Saved. Restore it with `/test-mode backup restore`.", ephemeral=True
         )

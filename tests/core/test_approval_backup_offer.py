@@ -439,10 +439,6 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
     assert "no room" in str(interaction.followup.send.await_args.args[0])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a backup stopped by a fault does not yet answer in the standard failure form",
-)
 async def test_an_unexpected_failure_also_still_approves():
     """Same reasoning, and the fault is logged rather than shown — a manager cannot act on
     a traceback, and the season is not the thing that went wrong.
@@ -515,11 +511,6 @@ async def test_silence_leaves_no_answer():
 # lapse is recorded, naming the member, with what became of it and what to do next; a refusal is
 # one line naming the member and why; a failure is recorded as every failure is. Alex (id 77) is
 # the league manager approving the season, under test mode.
-
-_BACKUP_RECORDED = pytest.mark.xfail(
-    strict=True, reason="#482: the backup question's outcomes are not yet recorded in the log channel"
-)
-
 
 def _recording_cog() -> SeasonCog:
     """A test-mode league whose bot keeps every log line and finds Alex on its server by id."""
@@ -619,7 +610,6 @@ async def test_a_backup_question_that_lapses_is_recorded(minutes_left, answer, s
     assert said in detail and "Nothing has been approved" in detail, detail
 
 
-@_BACKUP_RECORDED
 async def test_a_backup_saved_before_approving_writes_its_own_line():
     """Alex presses 💾 Save, then approve, and the backup is written.
 
@@ -642,7 +632,6 @@ async def test_a_backup_saved_before_approving_writes_its_own_line():
     assert head.endswith("/season placements-review backup | Success"), head
 
 
-@_BACKUP_RECORDED
 async def test_a_backup_refused_is_recorded_with_its_reason():
     """Alex presses 💾 Save, then approve, but the backup cannot be taken for a reason the bot
     is not at fault for (here: 'the saved backup is locked').
@@ -674,7 +663,6 @@ async def test_a_backup_refused_is_recorded_with_its_reason():
     assert reason == "the saved backup is locked"
 
 
-@_BACKUP_RECORDED
 @pytest.mark.parametrize("fault", ["backup_fault", "unexpected_error"])
 async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(fault):
     """Alex presses 💾 Save, then approve, and the copy stops on a fault in the bot.
