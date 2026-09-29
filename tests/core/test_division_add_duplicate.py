@@ -737,12 +737,6 @@ async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
 # The tier rule is one pure function now (`season_service.validate_division_tier`), which both
 # commands use; neither reply changes, and each refusal writes one line to the log channel.
 
-_TIER_RECORDED = pytest.mark.xfail(
-    strict=True, reason="#482: /division add and /division duplicate do not yet record a refused tier"
-)
-
-
-@_TIER_RECORDED
 @pytest.mark.parametrize(
     "tier,reply",
     [
@@ -769,7 +763,6 @@ async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, t
     ]
 
 
-@_TIER_RECORDED
 @pytest.mark.parametrize(
     "tier,reply",
     [
@@ -860,7 +853,6 @@ def _answers(interaction) -> list[str]:
 _MENTION = "<@123456789012345678>"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /division add's refusals are not yet recorded")
 @pytest.mark.parametrize(
     "arranged, asked, reply",
     [
@@ -920,7 +912,6 @@ async def test_every_other_division_add_refusal_is_recorded(tmp_path, arranged, 
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /division duplicate's refusals are not yet recorded")
 @pytest.mark.parametrize(
     "arranged, asked, reply",
     [

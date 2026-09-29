@@ -1172,9 +1172,6 @@ _A_MENTION_REFUSED = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /division delete, rename and amend's refusals are not yet recorded"
-)
 @pytest.mark.parametrize(
     "command, run, arranged, reply",
     [
@@ -1271,7 +1268,6 @@ async def _cancel_elite(cog, interaction):
     return await _cancel(cog, interaction, name="Elite")
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /division cancel's refusals are not yet recorded")
 @pytest.mark.parametrize(
     "run, arranged, reply",
     [

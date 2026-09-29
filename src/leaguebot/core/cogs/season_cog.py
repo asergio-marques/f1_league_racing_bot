@@ -3572,9 +3572,10 @@ class SeasonCog(commands.Cog):
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
         if cfg is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c No pending season setup. Run `/season setup` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3587,36 +3588,44 @@ class SeasonCog(commands.Cog):
             else None
         )
         if stage is not SeasonStage.PLACEMENTS:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u26d4 Divisions can only be added while the season is in placements — "
                 "once its configuration is confirmed and its signup window has closed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if tier < 1:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u26d4 Tier must be 1 or higher.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         refusal = validate_division_name(name)
         if refusal is not None:
-            await interaction.followup.send(f"\u274c {refusal}", ephemeral=True)
+            await refuse(
+                interaction,
+                f"\u274c {refusal}",
+                what=describe(interaction),
+            )
             return
 
         if any(d.name.lower() == name.lower() for d in cfg.divisions if d.name):
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c A division named **{name}** already exists in this setup.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if any(d.tier == tier for d in cfg.divisions if d.name):
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u26d4 A division with tier **{tier}** already exists in this setup.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3666,44 +3675,53 @@ class SeasonCog(commands.Cog):
     ) -> None:
         season_id = await _get_setup_season_id(self.bot)
         if season_id is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/division duplicate` can only be used while the season is in placements.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if tier < 1:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u26d4 Tier must be 1 or higher.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season_id)
         src_div = next((d for d in divisions if d.name.lower() == source_name.lower()), None)
         if src_div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{source_name}` not found in pending setup.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         refusal = validate_division_name(new_name)
         if refusal is not None:
-            await interaction.response.send_message(f"\u274c {refusal}", ephemeral=True)
+            await refuse(
+                interaction,
+                f"\u274c {refusal}",
+                what=describe(interaction),
+            )
             return
 
         if any(d.name.lower() == new_name.lower() for d in divisions):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c A division named **{new_name}** already exists.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if any(d.tier == tier for d in divisions):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u26d4 A division with tier **{tier}** already exists in this season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3739,7 +3757,11 @@ class SeasonCog(commands.Cog):
                 tier=tier,
             )
         except ValueError as exc:
-            await interaction.followup.send(f"\u26d4 {exc}", ephemeral=True)
+            await refuse(
+                interaction,
+                f"\u26d4 {exc}",
+                what=describe(interaction),
+            )
             return
 
         # Seed teams for the newly created division
@@ -3783,18 +3805,20 @@ class SeasonCog(commands.Cog):
     ) -> None:
         season_id = await _get_setup_season_id(self.bot)
         if season_id is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/division delete` can only be used while the season is in placements.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season_id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{name}` not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3832,30 +3856,37 @@ class SeasonCog(commands.Cog):
     ) -> None:
         season_id = await _get_setup_season_id(self.bot)
         if season_id is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/division rename` can only be used while the season is in placements.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season_id)
         div = next((d for d in divisions if d.name.lower() == current_name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{current_name}` not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         refusal = validate_division_name(new_name)
         if refusal is not None:
-            await interaction.response.send_message(f"\u274c {refusal}", ephemeral=True)
+            await refuse(
+                interaction,
+                f"\u274c {refusal}",
+                what=describe(interaction),
+            )
             return
 
         if any(d.name.lower() == new_name.lower() for d in divisions if d.id != div.id):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c A division named **{new_name}** already exists.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3902,41 +3933,49 @@ class SeasonCog(commands.Cog):
         import json as _json
 
         if new_name is None and tier is None and role is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c Provide at least one of: `new_name`, `tier`, `role`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         season_id = await _get_setup_season_id(self.bot)
         if season_id is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/division amend` is only permitted while the season is in placements.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season_id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{name}` not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if new_name is not None:
             refusal = validate_division_name(new_name)
             if refusal is not None:
-                await interaction.response.send_message(f"\u274c {refusal}", ephemeral=True)
+                await refuse(
+                    interaction,
+                    f"\u274c {refusal}",
+                    what=describe(interaction),
+                )
                 return
 
         if new_name is not None and any(
             d.name.lower() == new_name.lower() for d in divisions if d.id != div.id
         ):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c A division named **{new_name}** already exists.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4023,9 +4062,10 @@ class SeasonCog(commands.Cog):
         confirm: str,
     ) -> None:
         if confirm != "CONFIRM":
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4034,34 +4074,38 @@ class SeasonCog(commands.Cog):
 
         # Available only while the season is ongoing (issue #220).
         if season is None or season.stage not in ONGOING_STAGES:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/division cancel` is available only while the season is ongoing.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         try:
             await self.bot.season_service.assert_season_mutable(season)
         except SeasonImmutableError:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c This season is archived (COMPLETED) and cannot be modified.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division `{name}` not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if div.status == "CANCELLED":
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division **{name}** is already cancelled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4342,16 +4386,19 @@ class SeasonCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.followup.send(
-                f"❌ Division **{name}** not found in the current season.", ephemeral=True
+            await refuse(
+                interaction,
+                f"❌ Division **{name}** not found in the current season.",
+                what=describe(interaction),
             )
             return
 
         if not div.calendar_channel_id:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"❌ **{name}** has no calendar channel configured. "
                 f"Set one with `/division calendar-channel` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -4377,10 +4424,11 @@ class SeasonCog(commands.Cog):
         )
 
         if posting.problem is not None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"❌ The calendar for **{name}** was not posted — {posting.problem}\n"
                 f"Nothing was deleted; the previous calendar still stands.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 

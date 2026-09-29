@@ -169,9 +169,6 @@ async def test_the_reply_says_it_was_posted_as_an_image(tmp_path):
     assert "reposted as image" in _replied(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a /division calendar-sync refused over its render is not yet recorded"
-)
 async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(tmp_path):
     """A manager who has just been refused will otherwise assume the channel is empty. The
     refusal is recorded (#482): the log channel gets exactly one refusal line, naming the member
@@ -299,9 +296,6 @@ async def test_a_season_with_no_number_still_draws_and_is_logged(tmp_path, caplo
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /division calendar-sync's refusals are not yet recorded"
-)
 @pytest.mark.parametrize(
     "divisions, name, reply",
     [
