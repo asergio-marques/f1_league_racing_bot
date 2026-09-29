@@ -83,7 +83,20 @@ class BackupState:
 
 
 class BackupError(Exception):
-    """Anything that stops a save or a restore, in words a manager can act on."""
+    """Anything that stops a save or a restore, in words a manager can act on.
+
+    A locked backup, none saved and one that cannot be read are this class itself: the
+    maintainer can act on each. A fault in the bot's own work is `BackupFault`.
+    """
+
+
+class BackupFault(BackupError):
+    """A copy, a write or an integrity check that failed: a fault in the bot, not a refusal.
+
+    The cogs tell it from its parent, catching it first, and record it as a failure whose
+    reply does not name the error; the parent they record as a refusal with its text as
+    the reason.
+    """
 
 
 # ── Copying a database ────────────────────────────────────────────────────
@@ -99,7 +112,7 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
     """
     source, target = Path(source), Path(target)
     if not source.is_file():
-        raise BackupError(f"there is no database at {source.name} to copy")
+        raise BackupFault(f"there is no database at {source.name} to copy")
 
     temporary = target.with_name(target.name + ".part")
     temporary.unlink(missing_ok=True)
@@ -126,13 +139,13 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
     if failure is not None:
         # Removed only once both handles are shut, or Windows will not let it go.
         temporary.unlink(missing_ok=True)
-        raise BackupError(f"{source.name} could not be copied: {failure}") from failure
+        raise BackupFault(f"{source.name} could not be copied: {failure}") from failure
 
     try:
         os.replace(temporary, target)
     except OSError as exc:
         temporary.unlink(missing_ok=True)
-        raise BackupError(f"{target.name} could not be written: {exc}") from exc
+        raise BackupFault(f"{target.name} could not be written: {exc}") from exc
 
 
 def copy_jobstore(source: str | Path, target: str | Path) -> None:

@@ -141,17 +141,14 @@ def _a_database_that_cannot_be_copied(_db_path, tmp_path, _monkeypatch) -> None:
         pytest.param(
             _a_copy_that_fails_its_check,
             id="integrity-check-fails",
-            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
         ),
         pytest.param(
             _a_copy_that_cannot_be_finished,
             id="copy-cannot-be-finished",
-            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
         ),
         pytest.param(
             _a_database_that_cannot_be_copied,
             id="copy-fails",
-            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
         ),
     ],
 )

@@ -320,17 +320,14 @@ def _a_write_that_fails(tmp_path: Path, monkeypatch) -> None:
         pytest.param(
             lambda tmp_path, _monkeypatch: _no_database(tmp_path),
             id="no-database-to-copy",
-            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
         ),
         pytest.param(
             lambda tmp_path, _monkeypatch: _a_copy_that_fails(tmp_path),
             id="copy-fails",
-            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
         ),
         pytest.param(
             _a_write_that_fails,
             id="write-fails",
-            marks=pytest.mark.xfail(strict=True, reason="#482: BackupFault does not exist"),
         ),
     ],
 )
