@@ -604,6 +604,19 @@ class _ReviewPoster:
         return message
 
 
+# What a cancellation says when the season it may have finished could not be wound down. The
+# cancellation stands; the season is still in its ongoing stage, and `/season complete` moves it on.
+# The host log keeps the fault itself (`log.exception`); the member is told what is left to do.
+_WIND_DOWN_NOT_DONE_REPLY = (
+    "\n\u26a0\ufe0f The season could not be moved to pending completion afterwards. "
+    "`/season complete` does it."
+)
+_WIND_DOWN_NOT_DONE_LOG = (
+    "\n  not done: the season could not be moved to pending completion; "
+    "`/season complete` does it"
+)
+
+
 class SeasonCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -4126,10 +4139,12 @@ class SeasonCog(commands.Cog):
 
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
+        wound_down = True
         try:
             await self.bot.season_service.wind_down_ongoing(self.bot)
         except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
             log.exception("could not wind the season down")
+            wound_down = False
 
         # Each enabled module says what the cancellation means for it, in its own channel, and
         # the calendar is posted again with the division's rounds struck through (#175).
@@ -4144,14 +4159,16 @@ class SeasonCog(commands.Cog):
 
         await interaction.followup.send(
             f"\u2705 Division **{name}** cancelled."
-            + cancellation_notice_service.failure_lines(report.failures),
+            + cancellation_notice_service.failure_lines(report.failures)
+            + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
             f"  division: {name}"
             + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures),
+            + cancellation_notice_service.failure_log_lines(report.failures)
+            + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
         )
 
     # ------------------------------------------------------------------
@@ -5118,10 +5135,12 @@ class SeasonCog(commands.Cog):
 
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
+        wound_down = True
         try:
             await self.bot.season_service.wind_down_ongoing(self.bot)
         except Exception:  # noqa: BLE001 — never fail the cancellation on the season's next stage
             log.exception("could not wind the season down")
+            wound_down = False
 
         # Each enabled module says what the cancellation means for it, in its own channel, and
         # the calendar is posted again with the round struck through (#175). Core posts
@@ -5139,7 +5158,8 @@ class SeasonCog(commands.Cog):
 
         await interaction.followup.send(
             f"\u2705 Round **{round_number}** in **{division_name}** cancelled."
-            + cancellation_notice_service.failure_lines(report.failures),
+            + cancellation_notice_service.failure_lines(report.failures)
+            + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
@@ -5147,7 +5167,8 @@ class SeasonCog(commands.Cog):
             f"  division: {division_name}\n"
             f"  round: {round_number}"
             + report.audit
-            + cancellation_notice_service.failure_log_lines(report.failures),
+            + cancellation_notice_service.failure_log_lines(report.failures)
+            + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
         )
 
     # ------------------------------------------------------------------

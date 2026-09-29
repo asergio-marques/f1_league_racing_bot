@@ -436,11 +436,6 @@ async def test_cancelling_a_round_winds_a_finished_season_down():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a /round cancel whose season could not be wound down says nothing of it, "
-    "to the admin or in the log",
-)
 async def test_a_wind_down_that_fails_after_a_round_cancel_is_named_as_not_done():
     """The core specification's record of what changed: an outcome is recorded as it is. Round 5
     of Division 1, in a season being raced, is cancelled, and the season it may have finished
