@@ -226,8 +226,7 @@ hand. Pass every stage the same arguments:
   `builder` (the build's), `issue`, `code`, `product`, `design`, `tester` and `triage`. By default
   Sonnet runs the build's builder, and the tester at low effort, and Opus runs every other role. A
   model is `opus`, `sonnet` or `haiku`, and `fable` is refused; an effort is `low`, `medium`,
-  `high`, `xhigh` or `max`. The next issue's per-agent figures and findings confirm the Sonnet
-  builder, or put it back on Opus.
+  `high`, `xhigh` or `max`.
 
 **Leave the checkout alone while a stage runs:** its builder is working in it.
 

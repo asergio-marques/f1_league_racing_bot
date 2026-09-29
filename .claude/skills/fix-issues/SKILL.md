@@ -220,8 +220,7 @@ the tests stage, Gate 2, the build stage and Gate 3, with the arguments listed t
 main checkout's `.venv/bin/python`; `criteria` and `checks` come from its Stage 2 check; and
 `testsHead` is as `fix-issue` names it. `models` and `efforts` are passed only to override a role's
 default, as `fix-issue` names them: by default Sonnet runs the build's builder, and the tester at low
-effort, and Opus runs every other role; the next issue's per-agent figures and findings confirm the
-Sonnet builder, or put it back on Opus. Every stage's result is saved to
+effort, and Opus runs every other role. Every stage's result is saved to
 `.claude/gates/<N>-<stage>.json` and read as `fix-issue` says, never pasted into the conversation.
 Its calls taken on a recommendation and its minor findings are shown once at the issue's next gate,
 and a stage that returns `capped` or `stalled` goes to the user as one question, all as `fix-issue`

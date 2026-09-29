@@ -43,8 +43,7 @@ const DESIGN_FILES = {
 // reviewers check; and the tester, which runs commands and copies their output, at low effort.
 // Opus runs every other role: the tests stage's builder, whose tests everything after it is held
 // to, the checkers and reviewers, and triage, each open-ended judgement that nothing later would
-// catch. The next issue's per-agent figures and findings confirm the Sonnet builder, or put it back
-// on Opus where it costs more rounds than it saves.
+// catch.
 const ROLE_DEFAULTS = {
   testsBuilder: { model: 'opus' },
   builder: { model: 'sonnet' },
