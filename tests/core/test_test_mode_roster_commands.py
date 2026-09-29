@@ -152,7 +152,6 @@ async def test_clearing_an_empty_division_says_so(tmp_path):
     assert "No fake drivers found" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /test-mode roster clear with nothing to clear writes no line")
 async def test_clearing_nothing_is_recorded_as_nothing_changed(tmp_path):
     """The command tried to change something, so its outcome is recorded (#482): one line
     naming the maintainer and the command, saying nothing was changed. A line saying the

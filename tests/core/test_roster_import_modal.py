@@ -134,7 +134,6 @@ async def test_the_roster_is_held_to_the_template_capacities(monkeypatch):
     assert seated.await_args.kwargs["placement_service"] is cog.bot.placement_service
 
 
-@pytest.mark.xfail(strict=True, reason="#482: an imported test roster writes no log line")
 async def test_an_imported_roster_is_recorded(monkeypatch):
     """Seating a roster changes the season, so it is recorded: one success line naming the
     maintainer, how many drivers were seated and in which division (#482)."""

@@ -1192,6 +1192,12 @@ class TestModeCog(commands.Cog):
             await interaction.response.send_message(
                 f"ℹ️ No fake drivers found in **{division}**.", ephemeral=True
             )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                "/test-mode roster clear | Nothing changed\n"
+                f"  division: {division}\n"
+                "  reason: no fake drivers to remove",
+            )
         else:
             await interaction.response.send_message(
                 f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
@@ -1276,6 +1282,12 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
             f"`/test-mode roster list` shows a division's drivers with the mentions "
             f"result submission wants.",
             ephemeral=True,
+        )
+        await self._cog.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            "/test-mode roster add-bulk | Success\n"
+            f"  drivers_seated: {seated}\n"
+            f"  divisions: {', '.join(divisions)}",
         )
 
 
