@@ -50,7 +50,7 @@ from leaguebot.core.utils.channel_guard import (
     server_owner_only,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_server import guild_of
 from leaguebot.core.utils.log_lines import refuse
 
@@ -981,8 +981,13 @@ async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
         outcome = await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
     except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
         log.exception("factory reset: the Discord clean-up stopped")
+        # The owner's private progress message keeps the text (a test pins it); the log
+        # channel gets the kind of fault only, the detail staying in the host's log.
         await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
-        await close("Clean-up stopped part-way", f"Discord: the clean-up stopped: {exc}")
+        await close(
+            "Clean-up stopped part-way",
+            f"Discord: the clean-up stopped: {describe_fault(exc)}.",
+        )
         return
     detail = (
         f"Discord: {outcome.channels_deleted} channel(s) and "
