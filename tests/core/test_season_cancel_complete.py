@@ -596,6 +596,72 @@ async def test_a_season_with_everything_finished_is_completed():
     cog.bot.output_router.post_log.assert_awaited_once()
 
 
+_ONE_COMPLETE_LINE = pytest.mark.xfail(
+    strict=True,
+    reason="#482: /season complete does not yet write its one line, with the season number, "
+    "before its reply",
+)
+
+
+def _season_seven():
+    """Season 7 of the league, being raced, its number apart from its id."""
+    from leaguebot.core.models.season import SeasonStage
+
+    return SimpleNamespace(id=SEASON_ID, season_number=7, stage=SeasonStage.ONGOING)
+
+
+@_ONE_COMPLETE_LINE
+async def test_completing_a_season_writes_one_line_naming_the_member_and_the_season():
+    """Admin completes season 7, every division finished. The season's end is handed Admin, and
+    the log holds one line: Admin's `/season complete` success, stating season 7 beneath it."""
+    cog = _make_cog(season=_season_seven(), all_finished=True)
+    interaction = _interaction()
+
+    with patch(
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ) as execute:
+        await _complete(cog, interaction)
+
+    execute.assert_awaited_once_with(SEASON_ID, cog.bot, actor=interaction.user)
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    head, _, body = line.partition("\n")
+    assert head == f"Admin (<@{ACTOR_ID}>) | /season complete | Success"
+    assert any("season" in row.lower() and "7" in row for row in body.splitlines()), (
+        "the season number is not stated beneath the line"
+    )
+
+
+@_ONE_COMPLETE_LINE
+async def test_a_completed_season_is_recorded_even_where_the_reply_cannot_be_sent():
+    """Admin completes season 7, and the reply saying so cannot be sent. The season is complete
+    all the same, and its success line was written before the reply was tried."""
+    cog = _make_cog(season=_season_seven(), all_finished=True)
+    interaction = _interaction()
+    order: list[str] = []
+
+    async def _log(content, *args, **kwargs):
+        order.append(f"log: {content}")
+
+    async def _reply(*args, **kwargs):
+        order.append("reply")
+        raise RuntimeError("gateway closed")
+
+    cog.bot.output_router.post_log = AsyncMock(side_effect=_log)
+    interaction.followup.send = AsyncMock(side_effect=_reply)
+
+    with patch(
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ):
+        try:
+            await _complete(cog, interaction)
+        except RuntimeError:
+            pass  # the reply's own fault goes on to the command's failure handling
+
+    successes = [row for row in order if "| /season complete | Success" in row]
+    assert len(successes) == 1, order
+    assert order.index(successes[0]) < order.index("reply"), "the line waited on the reply"
+
+
 async def test_completing_waits_while_a_round_is_being_amended(_open_amendment):
     """#345, decided 2026-09-21. Completing posts every division's final classification from
     the database, which holds the amendment's corrections before they are approved. Refused

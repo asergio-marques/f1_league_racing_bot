@@ -11,10 +11,23 @@ from __future__ import annotations
 
 import os
 import tempfile
+from types import SimpleNamespace
+
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.season_end_service import execute_season_end
+
+
+#: Alex, the league admin who runs `/season complete`. The season's end is handed the member
+#: who completes it, so that a line it writes names them (#482).
+_ALEX = SimpleNamespace(id=4242, display_name="Alex")
+
+_TAKES_THE_MEMBER = pytest.mark.xfail(
+    strict=True,
+    reason="#482: execute_season_end does not yet take the member who completes the season",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +205,7 @@ async def test_get_last_scheduled_at_returns_none_for_unknown_server() -> None:
 # execute_season_end tests
 # ---------------------------------------------------------------------------
 
+@_TAKES_THE_MEMBER
 async def test_execute_season_end_archives_season() -> None:
     """Season row status becomes COMPLETED and all data is retained."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -200,7 +214,7 @@ async def test_execute_season_end_archives_season() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(season_id, bot)
+        await execute_season_end(season_id, bot, actor=_ALEX)
         # Season row must still exist with status COMPLETED
         async with get_connection(db_path) as db:
             cur = await db.execute(
@@ -213,6 +227,7 @@ async def test_execute_season_end_archives_season() -> None:
         os.unlink(db_path)
 
 
+@_TAKES_THE_MEMBER
 async def test_execute_season_end_retains_divisions_and_rounds() -> None:
     """Division and round rows are preserved after season archival."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -221,7 +236,7 @@ async def test_execute_season_end_retains_divisions_and_rounds() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(season_id, bot)
+        await execute_season_end(season_id, bot, actor=_ALEX)
         async with get_connection(db_path) as db:
             cur = await db.execute(
                 "SELECT COUNT(*) FROM divisions d "
@@ -240,36 +255,43 @@ async def test_execute_season_end_retains_divisions_and_rounds() -> None:
         os.unlink(db_path)
 
 
-async def test_execute_season_end_posts_log_message() -> None:
+@_TAKES_THE_MEMBER
+async def test_execute_season_end_writes_no_success_line_of_its_own() -> None:
+    """The season's end writes no "Season N complete" line: `/season complete`, its one caller,
+    writes the command's one success line, naming the member, as soon as it returns."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(season_id, bot)
-        assert len(bot.output_router.log_messages) == 1
-        msg = bot.output_router.log_messages[0]
-        assert "Season Complete" in msg or "season" in msg.lower()
+        await execute_season_end(season_id, bot, actor=_ALEX)
+        assert bot.output_router.log_messages == []
     finally:
         os.unlink(db_path)
 
 
+@_TAKES_THE_MEMBER
 async def test_execute_season_end_is_idempotent() -> None:
-    """Calling execute_season_end twice must not raise and must only post one log."""
+    """Calling execute_season_end twice must not raise: the second call finds no active season
+    and does nothing, and the season stays completed."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
     try:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(season_id, bot)
-        await execute_season_end(season_id, bot)  # second call: no-op (no active season)
-        assert len(bot.output_router.log_messages) == 1  # only posted once
+        await execute_season_end(season_id, bot, actor=_ALEX)
+        await execute_season_end(season_id, bot, actor=_ALEX)  # second call: no-op (no active season)
+        async with get_connection(db_path) as db:
+            cur = await db.execute("SELECT status FROM seasons")
+            assert (await cur.fetchone())[0] == "COMPLETED"
+        assert bot.output_router.log_messages == []  # neither call writes a line of its own
     finally:
         os.unlink(db_path)
 
 
+@_TAKES_THE_MEMBER
 async def test_execute_season_end_preserves_server_config() -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -277,7 +299,7 @@ async def test_execute_season_end_preserves_server_config() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(season_id, bot)
+        await execute_season_end(season_id, bot, actor=_ALEX)
         async with get_connection(db_path) as db:
             cur = await db.execute(
                 "SELECT COUNT(*) FROM server_configs WHERE server_id = 1"
@@ -288,6 +310,7 @@ async def test_execute_season_end_preserves_server_config() -> None:
         os.unlink(db_path)
 
 
+@_TAKES_THE_MEMBER
 async def test_execute_season_end_cancels_season_end_job() -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = tmp.name
@@ -295,7 +318,7 @@ async def test_execute_season_end_cancels_season_end_job() -> None:
         await run_migrations(db_path)
         season_id, _ = await _seed_server(db_path, server_id=1)
         bot = _FakeBot(db_path)
-        await execute_season_end(season_id, bot)
+        await execute_season_end(season_id, bot, actor=_ALEX)
         assert bot.scheduler_service.season_end_cancelled == 1
     finally:
         os.unlink(db_path)
@@ -336,6 +359,7 @@ async def _status(db_path: str) -> str:
     return row[0]
 
 
+@_TAKES_THE_MEMBER
 async def test_the_final_classification_is_posted_while_the_season_is_still_active() -> None:
     """Everything downstream of here reads the season as the live one."""
     from unittest.mock import AsyncMock, patch
@@ -356,7 +380,7 @@ async def test_the_final_classification_is_posted_while_the_season_is_still_acti
             "leaguebot.core.services.season_classification_service.post_final_classifications",
             AsyncMock(side_effect=_post),
         ) as spy:
-            await execute_season_end(season_id, bot)
+            await execute_season_end(season_id, bot, actor=_ALEX)
 
         assert spy.await_count == 1
         assert spy.await_args.args[3] == season_id
@@ -366,6 +390,7 @@ async def test_the_final_classification_is_posted_while_the_season_is_still_acti
         os.unlink(db_path)
 
 
+@_TAKES_THE_MEMBER
 async def test_the_season_still_completes_when_the_classification_fails() -> None:
     """A picture is not what the completion is for (XIV.7)."""
     from unittest.mock import AsyncMock, patch
@@ -381,15 +406,17 @@ async def test_the_season_still_completes_when_the_classification_fails() -> Non
             "leaguebot.core.services.season_classification_service.post_final_classifications",
             AsyncMock(side_effect=RuntimeError("the renderer fell over")),
         ):
-            await execute_season_end(season_id, bot)
+            await execute_season_end(season_id, bot, actor=_ALEX)
 
         assert await _status(db_path) == "COMPLETED"
     finally:
         os.unlink(db_path)
 
 
+@_TAKES_THE_MEMBER
 async def test_a_classification_problem_reaches_the_logging_channel() -> None:
-    """Never a channel a driver reads (XIV.4)."""
+    """Never a channel a driver reads (XIV.4). The line names the member who completed the
+    season, as every other line does, rather than "System" (#482)."""
     from unittest.mock import AsyncMock, patch
 
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -403,9 +430,13 @@ async def test_a_classification_problem_reaches_the_logging_channel() -> None:
             "leaguebot.core.services.season_classification_service.post_final_classifications",
             AsyncMock(return_value=["Div A standings: the template is at fault"]),
         ):
-            await execute_season_end(season_id, bot)
+            await execute_season_end(season_id, bot, actor=_ALEX)
 
-        posted = "\n".join(bot.output_router.log_messages)
+        [posted] = bot.output_router.log_messages
+        head = posted.splitlines()[0]
+        assert head.startswith("Alex (<@4242>) | "), "the line does not name the member"
+        assert "Final classification" in head
+        assert "System" not in head
         assert "the template is at fault" in posted
         assert await _status(db_path) == "COMPLETED"
     finally:
