@@ -654,6 +654,47 @@ async def test_a_season_not_returned_to_ongoing_names_the_repair(db_path):
     assert "not done: The season could not be returned to Ongoing" in _logged(cog)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a season that had already moved on is not yet named as not done",
+)
+async def test_a_season_that_had_already_moved_on_is_named_as_not_done(db_path):
+    """The placements are confirmed, but the season was cancelled while the review stood, so it
+    cannot be returned to Ongoing (the move is refused as one its lifecycle does not allow).
+
+    The placements stand. The reply and the log line name the return to Ongoing as not done,
+    saying the season had already moved on and the stage it is in (Cancelled), and do not tell
+    the manager to confirm again: confirming again cannot move a cancelled season.
+    """
+    from leaguebot.core.models.season import InvalidStageTransition
+
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    placing = await cog.bot.season_service.get_confirmed_season()
+    cog.bot.season_service.get_confirmed_season = AsyncMock(side_effect=[placing, None])
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.CANCELLED)
+    cog.bot.season_service.set_stage = AsyncMock(
+        side_effect=InvalidStageTransition("CANCELLED -> ONGOING")
+    )
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    cog.bot.placement_service.commit_mid_season_placements.assert_awaited_once()
+    replied = _replied(interaction)
+    assert "1 placement(s) confirmed" in replied
+    assert "Not everything could be done" in replied
+    assert "ongoing again" not in replied
+    not_done = [
+        line for line in _logged(cog).splitlines() if line.strip().startswith("not done:")
+    ]
+    assert len(not_done) == 1, _logged(cog)
+    for text in (replied, not_done[0]):
+        assert "already moved on" in text, text
+        assert "cancelled" in text.lower(), text
+        assert "confirm again" not in text, text
+
+
 async def test_ungranted_drivers_are_named_in_the_reply_and_the_log(db_path):
     """Confirming again finds nothing left to commit, so nothing would grant them later."""
     await _settle_every_signup(db_path)
