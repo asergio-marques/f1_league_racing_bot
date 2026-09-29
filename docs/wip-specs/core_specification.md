@@ -105,6 +105,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A refusal shall be recorded as one line naming the member, what was refused and why. A cancel shall name the member who cancelled, and a lapse the member who started what lapsed, each with what became of the change and what to do next beneath it.
     - The member shall be named by their display name on the server and their mention. A member no longer on the server shall be named by their mention alone.
     - A refusal to someone on another server, to a command used in a direct message, or made before the bot is set up, when there is no log channel, shall be written to the host's log alone, the member being answered as ever. Decided 2026-09-29.
+    - A command that changes nothing because nothing was asked of it, such as a form submitted unchanged, shall record that nothing was changed.
     - A results paste into a submission channel is a message, not a command, and this rule does not reach it. Decided 2026-09-29.
 - A mention written into the log channel shall not notify anybody.
 - A record too long for one message shall be divided across as many as it requires.
@@ -143,18 +144,19 @@ it only to place it; the rules governing it belong to its own specification.
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.
 - A pack shall change nothing in Discord. The bot's messages shall stay on the server it leaves, and their buttons shall be refused from then on; the pack's reply shall say so.
-- A pack shall be written to the log channel before the settings are cleared.
+- A pack shall be written to the log channel as it begins, before the settings are cleared, and the line shall say that the pack is under way. Once the pack is done no log channel remains, so a fault after that point is written to the host's log alone.
 
 #### Factory reset
 - A factory reset shall be the server owner's command alone. It shall be given from any channel of a server the bot is not refusing.
-- A factory reset shall first take a backup of both the bot's databases on the host, and shall be refused, erasing nothing, if the backup cannot be taken. The backup shall not replace an earlier one. Restoring a backup shall be the host's task and not a command's.
+- A factory reset shall first take a backup of both the bot's databases on the host, and shall not go ahead, erasing nothing, if the backup cannot be taken; that shall be recorded in the log channel as a failure, and the reply shall say that nothing was erased. The backup shall not replace an earlier one. Restoring a backup shall be the host's task and not a command's.
 - A factory reset shall then erase the league: the bot shall hold only the packaged circuit list, no scheduled work, nothing in memory, and no claim upon any server.
 - A factory reset shall then clean the server it was given upon:
     - it shall delete the channels the bot created — signup wizard channels, results submission channels and results amendment channels;
-    - it shall delete the bot's own messages in every channel it posts to or reads from, in any season. A message of anybody else shall never be deleted.
+    - it shall delete the bot's own messages in every channel it posts to or reads from, in any season, save the one line of the next rule. A message of anybody else shall never be deleted.
+- Once its clean-up ends, however it ends, a factory reset shall post one line in the log channel, naming the server owner who ran it, what was erased and how the clean-up ended. It shall be the one message of the bot's that the clean-up leaves. A line that cannot be posted shall be written to the host's log. Decided 2026-09-29.
 - The clean-up shall report its progress to the server owner in one direct message, edited as it goes, and naming the channel being worked before it is worked, so that a clean-up interrupted part-way says where it stopped. Where the owner cannot be sent a message, the progress shall go to the host's log alone.
 - A channel that cannot be cleaned shall be reported and passed over, and the clean-up shall carry on.
-- A second factory reset shall be refused while a clean-up is still under way.
+- A second factory reset shall be refused while a clean-up is still under way, and so shall initialising the bot, which shall tell the member to run it again once the clean-up has finished.
 
 ### Deleting the bot's own messages
 - A command deleting the bot's own messages in a channel shall require the number to be deleted, and shall accept no fewer than one and no more than ten.
@@ -658,11 +660,12 @@ section states the rules it holds to.
 - Four commands shall be available for saving the state of the bot and returning to it: one saving, one locking what was saved, one reporting what is saved, and one restoring it. They shall be subcommands of the test mode commands, that being the only circumstance in which they run.
 - Every one of them shall be refused unless the server is in test mode, and unless the member holds the league admin role.
 - Saving shall copy both the league database and the database of the scheduler, so that the jobs of a season are restored beside the season itself.
-- Saving shall replace whatever was saved before, save where the saved state has been locked.
+- Saving shall replace whatever was saved before, save where the saved state has been locked. It shall replace both databases or neither: a save that fails leaves the previous pair standing. Where there is no scheduler database, the saved state shall hold the league database and no scheduler database, and no earlier scheduler copy shall remain beside it.
 - The saved state shall be deleted when test mode is switched off by the toggle, and when the season it was taken for is completed. A locked state shall be deleted with it, the lock refusing a save rather than outliving the run it was taken in. A season cancelled or aborted shall leave the saved state as it stands, being a season abandoned rather than run to its end.
 - The lock shall be set and unset by the same command. A state locked shall refuse to be overwritten by a save, and the lock shall record the member who set it and the moment they did.
 - Restoring shall be confirmed before anything is done, and shall be confirmed by the member who commanded it and by no other.
 - Restoring shall refuse a saved state that cannot be read as a database, and shall refuse before anything of the live state is disturbed.
+- Restoring shall prepare both databases or neither: a restore that fails while preparing leaves nothing prepared. Where the saved state holds no scheduler database, it shall bring back an empty one, so that no job the state did not have is left running.
 - Restoring shall keep a copy of the state it replaces, so that a restore nobody wanted may be walked back.
 - Restoring shall not replace the databases while the bot runs. It shall prepare the replacement, and the replacement shall be made when the bot next starts, before any part of the bot has opened either database. The manager shall be told that a restart is required.
 - A state restored shall carry the test mode flag it was saved with.

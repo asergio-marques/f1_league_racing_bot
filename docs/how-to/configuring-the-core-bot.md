@@ -725,7 +725,7 @@ you. The old server's channels and roles do not, so you set those again on the n
    /bot pack confirm:CONFIRM
    ```
 
-   The bot writes the pack to the log channel, then lets go of this server. From now until the
+   The bot writes a line to the log channel saying the pack is under way, then lets go of this server. From now until the
    next step, every button and form it has ever posted is refused, wherever it is pressed.
 3. **Invite the bot to the new server** and run `/bot init` there, as in step 1. It claims the
    new server and takes the four settings afresh; test mode and your module settings are as you
@@ -748,10 +748,10 @@ you. The old server's channels and roles do not, so you set those again on the n
 ```
 
 Only the Discord **server owner** can run this, from any channel. It takes a backup of both of
-the bot's databases on the computer running it, and erases nothing if the backup fails. Then it
+the bot's databases on the computer running it, and erases nothing if the backup fails, saying so in the reply and in the log channel. Then it
 erases the league — seasons, drivers, teams, settings, all of it — and deletes the channels the
 bot created and every message the bot posted on this server. Nobody else's messages are touched.
-Afterwards you start again from step 1 of this guide.
+When the clean-up ends, the bot leaves one line in the log channel saying who ran the reset and how the clean-up ended; it is the one message of its own that stays. `/bot init` is refused until the clean-up has finished. Afterwards you start again from step 1 of this guide.
 
 The clean-up can take a long while on a server with a long history. The bot sends you a direct
 message and keeps it up to date; if that message stops changing, it names the channel the

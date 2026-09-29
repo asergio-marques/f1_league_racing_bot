@@ -312,6 +312,10 @@ every outcome in this form; they are being brought in line.
 
 Exempt from the interaction-channel rule, since no channel is configured until it has run — and it accepts Discord's **Administrator** permission, since the league admin role is one of the things it is setting.
 
+**It is refused while a factory reset is still cleaning up**, with a reply to run it again once the clean-up has finished. That refusal goes to the host's log alone, as no server is claimed then.
+
+**Its reply and its log line name all four settings**, the league admin role among them.
+
 **It runs once.** A second `/bot init` on a configured server is refused, not applied — it names the four commands below instead. To move the league to another server, [`/bot pack`](#bot-pack--ready-the-bot-for-another-server) frees this one first.
 
 **After a pack it claims the new server** and takes the four settings afresh. Test mode and every module's settings are kept from before; only the channels and roles are new.
@@ -414,7 +418,7 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 
 **Refused while there is a current season** — one at any stage short of completed or cancelled. Complete it, or cancel or abort it, first. It is allowed in test mode.
 
-**Nothing in Discord changes.** The bot's messages stay on this server, and their buttons are refused from then on. The bot stays in the server too, refusing every command there once another server has claimed it; remove it when you are ready. The pack is written to the log channel before the log channel is cleared, and audited with every setting and role it cleared.
+**Nothing in Discord changes.** The bot's messages stay on this server, and their buttons are refused from then on. The bot stays in the server too, refusing every command there once another server has claimed it; remove it when you are ready. The pack is written to the log channel as it begins, saying it is under way, before the log channel is cleared, and audited with every setting and role it cleared. Once it is done no log channel remains, so a fault after that point goes to the host's log alone.
 
 ---
 
@@ -427,11 +431,12 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 
 Erases the league entire and cleans the bot out of this server. Only the server's **owner** may run it — no role and no permission lets anybody else, however much of the server they administer.
 
-1. **A backup first, always.** Both of the bot's databases are copied on the host, beside the live ones, as `bot.factory-<moment>.db` and `scheduler.factory-<moment>.db`. If the backup cannot be taken, nothing is erased. Each factory reset keeps its own backup. **Restoring one is done on the host**, not by a command.
+1. **A backup first, always.** Both of the bot's databases are copied on the host, beside the live ones, as `bot.factory-<moment>.db` and `scheduler.factory-<moment>.db`. If the backup cannot be taken, nothing is erased: the reply says so and the failure is written to the log channel. Each factory reset keeps its own backup. **Restoring one is done on the host**, not by a command.
 2. **Then the wipe.** The bot holds only the packaged circuit list afterwards — no seasons, drivers, teams, settings or scheduled work — and serves no server. `/bot init` starts again from the beginning.
 3. **Then the clean-up.** The bot deletes the channels it created (signup wizard channels, results submission and amendment channels), and **its own messages** in every channel it posts to, in every season. Nobody else's messages are touched.
+4. **Then one line in the log channel**, once the clean-up ends however it ends, naming you, what was erased and how the clean-up ended. It is the one message of the bot's left standing; if it cannot be posted it goes to the host's log.
 
-> **The clean-up can take a long time.** Discord deletes messages under 14 days old in batches, but older ones one at a time and under rate limits. The bot sends you a direct message and edits it as it goes, naming each channel before it starts on it, so if the clean-up is interrupted the message says where it stopped. If your direct messages are closed, the progress goes to the host's log instead. A channel the bot cannot clean is listed at the end and skipped. A second factory reset is refused until the clean-up has finished.
+> **The clean-up can take a long time.** Discord deletes messages under 14 days old in batches, but older ones one at a time and under rate limits. The bot sends you a direct message and edits it as it goes, naming each channel before it starts on it, so if the clean-up is interrupted the message says where it stopped. If your direct messages are closed, the progress goes to the host's log instead. A channel the bot cannot clean is listed at the end and skipped. A second factory reset, and `/bot init`, are refused until the clean-up has finished.
 
 > The bot needs **Manage Channels**, **Manage Messages** and **Read Message History** for the clean-up — all among the [bot permissions](#bot-permissions-oauth2-scopes-bot-applicationscommands) it is invited with.
 
