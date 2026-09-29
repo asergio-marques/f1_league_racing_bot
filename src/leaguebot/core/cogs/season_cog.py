@@ -58,6 +58,7 @@ from leaguebot.weather.utils.message_builder import discord_ts, format_division_
 from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.round_import import (
     ParsedDivisionRounds,
@@ -1039,6 +1040,16 @@ class SeasonCog(commands.Cog):
             log.error("season review: lineup image failed: %s", exc, exc_info=True)
             return REVIEW_IMAGE_FAULT
 
+    async def _record_review_posted(self, interaction: discord.Interaction, command: str) -> None:
+        """Write the one line that says who ran *command* and that its question is standing.
+
+        A review changes nothing until it is answered, but it leads to a change and asks to
+        be answered: the line lets the lapse or refusal that follows it read against it.
+        """
+        await self.bot.output_router.post_log(
+            f"{interaction_member(interaction)} | {command} | Review posted"
+        )
+
     async def _post_approval_prompt(
         self, poster: _ReviewPoster, view: "_ApproveView", season_id: int
     ) -> None:
@@ -1064,6 +1075,7 @@ class SeasonCog(commands.Cog):
         )
         view.carries(poster.posted)
         await view.bind(message)
+        await self._record_review_posted(poster.interaction, "/season placements-review")
 
     async def _post_review_calendar_image(
         self, poster: _ReviewPoster, division, rounds, season_number, *, prepared=None
@@ -1738,18 +1750,20 @@ class SeasonCog(commands.Cog):
             if confirmed.stage is SeasonStage.ONGOING_PLACEMENTS:
                 await self._review_mid_season_placements(interaction, confirmed)
             else:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     "\u26d4 Placements can only be reviewed while the season is in placements, "
                     "or mid-season while the drivers of a closed signup window are placed.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
             return
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
         if cfg is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No pending season setup. Run `/season setup` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1757,10 +1771,11 @@ class SeasonCog(commands.Cog):
         if cfg.season_id and (
             await self.bot.season_service.get_stage(cfg.season_id)
         ) is not SeasonStage.PLACEMENTS:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u26d4 Placements can only be reviewed while the season is in placements. "
                 "A season in configuration is reviewed with `/season config-review`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -2598,6 +2613,7 @@ class SeasonCog(commands.Cog):
             )
             view.carries(poster.posted)
             await view.bind(message)
+            await self._record_review_posted(interaction, "/season placements-review")
         finally:
             self._discard_prepared_review_images(prepared)
 
@@ -3001,10 +3017,11 @@ class SeasonCog(commands.Cog):
             else None
         )
         if cfg is None or stage is not SeasonStage.CONFIGURATION:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ There is no season in configuration. `/season setup` begins one; a "
                 "season whose configuration is confirmed is reviewed with `/season placements-review`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3088,6 +3105,7 @@ class SeasonCog(commands.Cog):
         )
         view.carries(poster.posted)
         await view.bind(message)
+        await self._record_review_posted(interaction, "/season config-review")
 
     async def _do_confirm_configuration(self, interaction: discord.Interaction) -> None:
         """Confirm the configuration: judge the faults afresh, then move the season on.

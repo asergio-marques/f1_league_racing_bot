@@ -740,9 +740,6 @@ _NOT_IN_CONFIGURATION = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /season config-review's refusal is not yet recorded"
-)
 @pytest.mark.parametrize(
     "stage, set_up",
     [
@@ -772,9 +769,6 @@ async def test_every_config_review_refusal_is_recorded(stage, set_up):
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a posted configuration review does not yet write a line naming who ran it"
-)
 async def test_a_posted_config_review_writes_one_line_naming_who_ran_it(monkeypatch):
     """A review that posts its question writes one line naming who ran it (#482, criterion 6),
     so a later lapse line reads against it."""

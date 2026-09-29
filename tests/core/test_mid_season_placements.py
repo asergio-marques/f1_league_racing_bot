@@ -1011,10 +1011,6 @@ async def test_every_mid_season_confirmation_refusal_is_recorded(
         assert item in line, (item, line)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a posted mid-season placements review does not yet write its line",
-)
 async def test_a_posted_mid_season_review_writes_one_line_naming_who_ran_it(monkeypatch):
     """Manager (id 42) runs /season placements-review on a season being raced whose closed
     window left one driver to place, with nothing standing in the way, so the question is
