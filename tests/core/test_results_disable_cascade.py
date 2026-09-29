@@ -93,15 +93,28 @@ def _make_cog(db_path: str, *, attendance_enabled: bool) -> ModuleCog:
 
 
 def _make_interaction() -> MagicMock:
+    """An interaction whose response knows whether it has been used, as Discord's does, so that
+    a refusal answers by `response` until the interaction is answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.id = ACTOR_ID
     interaction.user.display_name = "Admin"
     interaction.user.__str__ = lambda self: "admin#0001"  # type: ignore[assignment]
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
+
+
+def _log_lines(cog: ModuleCog) -> list[str]:
+    """Every line written to the log channel."""
+    return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
 
 
 async def _module_flags(db_path: str) -> tuple[int, int, int]:
@@ -158,17 +171,81 @@ async def test_the_warning_carries_a_confirmation(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#482: cancelling the disable of results writes no log line")
 async def test_cancelling_leaves_both_modules_enabled(tmp_path):
+    """Cancel changes nothing, and is recorded with what stands beneath it (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = _make_cog(db_path, attendance_enabled=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
+    interaction.client = cog.bot
 
     await view.cancel.callback(interaction)
 
     assert await _module_flags(db_path) == (1, 1, 1)
     reply = interaction.response.send_message.await_args.args[0]
     assert "remain enabled" in reply
+    lines = _log_lines(cog)
+    assert len(lines) == 1
+    first, *beneath = lines[0].splitlines()
+    assert first == f"↩️ `/module disable` cancelled by Admin (<@{ACTOR_ID}>)"
+    assert any("Both modules remain enabled." in text for text in beneath)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: cancelling a results-only disable writes no log line"
+)
+async def test_cancelling_a_results_only_disable_is_recorded(tmp_path):
+    """With attendance off, Cancel is recorded with results still enabled and nothing
+    deleted beneath it (#482)."""
+    db_path = await _make_db(tmp_path, attendance_enabled=False)
+    cog = _make_cog(db_path, attendance_enabled=False)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
+    interaction = _make_interaction()
+    interaction.client = cog.bot
+
+    await view.cancel.callback(interaction)
+
+    assert (await _module_flags(db_path))[0] == 1
+    lines = _log_lines(cog)
+    assert len(lines) == 1
+    first, *beneath = lines[0].splitlines()
+    assert first == f"↩️ `/module disable` cancelled by Admin (<@{ACTOR_ID}>)"
+    assert any(
+        "Results & Standings remains enabled and nothing was deleted." in text
+        for text in beneath
+    )
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a confirmation to disable results that lapses writes no log line"
+)
+async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
+    """Left unanswered until it times out, the confirmation changes nothing and is recorded as
+    lapsed, naming the admin who started it, with what stands and to run the command again
+    beneath it (#482)."""
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    cog = _make_cog(db_path, attendance_enabled=True)
+    guild = MagicMock()
+    guild.get_member = MagicMock(
+        side_effect=lambda member_id: (
+            MagicMock(id=ACTOR_ID, display_name="Admin") if member_id == ACTOR_ID else None
+        )
+    )
+    cog.bot.get_guild = MagicMock(return_value=guild)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID)
+
+    await view.on_timeout()
+
+    assert await _module_flags(db_path) == (1, 1, 1)
+    lines = _log_lines(cog)
+    assert len(lines) == 1
+    first, *beneath = lines[0].splitlines()
+    assert first == (
+        f"⌛ `/module disable` lapsed unconfirmed (started by Admin (<@{ACTOR_ID}>))"
+    )
+    assert any("Both modules remain enabled." in text for text in beneath)
+    assert any("/module disable" in text for text in beneath)
 
 
 async def test_confirming_disables_both_and_names_both(tmp_path):
@@ -189,16 +266,57 @@ async def test_confirming_disables_both_and_names_both(tmp_path):
     assert "Attendance module disabled" in reply
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#482: another member's press on the disable confirmation is not recorded"
+)
 async def test_only_the_actor_may_confirm(tmp_path):
+    """Another member's press changes nothing, is refused, and the refusal is recorded (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = _make_cog(db_path, attendance_enabled=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
+    interaction.client = cog.bot
     interaction.user.id = ACTOR_ID + 1
+    interaction.user.display_name = "Other"
 
     await view.confirm.callback(interaction)
 
     assert await _module_flags(db_path) == (1, 1, 1)
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ Not your action.", ephemeral=True
+    )
+    assert _log_lines(cog) == [
+        f"⛔ the “✅ Disable both” button refused for Other (<@{ACTOR_ID + 1}>) — "
+        "Not your action."
+    ]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a failed wind-down is left out of the disable's log line"
+)
+async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(tmp_path):
+    """The disable goes through, but a season that could not be wound down afterwards is
+    named in its log line as not done, as an unfinished erase already reads "Incomplete"
+    (#482)."""
+    db_path = await _make_db(tmp_path, attendance_enabled=False)
+    cog = _make_cog(db_path, attendance_enabled=False)
+    cog.bot.season_service.wind_down_ongoing = AsyncMock(
+        side_effect=RuntimeError("the scheduler is down")
+    )
+    interaction = _make_interaction()
+    interaction.client = cog.bot
+
+    await cog._disable_results(interaction)
+
+    assert (await _module_flags(db_path))[0] == 0
+    lines = [line for line in _log_lines(cog) if "/module disable results" in line]
+    assert len(lines) == 1
+    first, *beneath = lines[0].splitlines()
+    assert first.startswith(f"Admin (<@{ACTOR_ID}>) | /module disable results")
+    assert any(
+        text.startswith("  not done:") and ("wind" in text or "wound" in text)
+        for text in beneath
+    )
 
 
 # ---------------------------------------------------------------------------
