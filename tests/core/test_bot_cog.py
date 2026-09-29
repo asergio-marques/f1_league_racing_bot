@@ -999,7 +999,6 @@ async def test_bot_factory_reset_without_the_word_changes_nothing(tmp_path):
     assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a backup that cannot be taken is not yet a failure")
 async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monkeypatch):
     """A backup that cannot be taken is a fault in the bot, so the reset is a failure, not a
     refusal (owner, 2026-09-29): the standard failure reply stating that nothing was erased, with

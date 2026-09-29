@@ -50,7 +50,7 @@ from leaguebot.core.utils.channel_guard import (
     server_owner_only,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe
+from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import guild_of
 from leaguebot.core.utils.log_lines import refuse
 
@@ -807,11 +807,14 @@ class BotCog(commands.Cog):
             backup = factory_reset_service.take_backup(
                 db_path, backup_service.jobstore_path_of(self.bot)
             )
-        except backup_service.BackupError as exc:
-            await interaction.followup.send(
-                f"⛔ Nothing was erased: the backup could not be taken, and a factory reset "
-                f"never runs without one. {exc}",
-                ephemeral=True,
+        except backup_service.BackupFault as exc:
+            # A copy, a write or a check that failed is a fault in the bot, not a refusal, and
+            # nothing has been erased: the reply says so without naming the error.
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction),
+                outcome="Nothing was erased: the backup could not be taken.",
             )
             return
         finally:
