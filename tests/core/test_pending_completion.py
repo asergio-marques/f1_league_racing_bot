@@ -252,7 +252,9 @@ async def test_completing_winds_a_finished_season_down_first(tmp_path):
     service = SeasonService(path)
     cog.bot.season_service = service
     service.get_confirmed_season = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.ONGOING_SIGNUPS)
+        return_value=SimpleNamespace(
+            id=SEASON_ID, season_number=1, stage=SeasonStage.ONGOING_SIGNUPS
+        )
     )
     cog.bot.output_router.post_log = AsyncMock()
     interaction = MagicMock()
