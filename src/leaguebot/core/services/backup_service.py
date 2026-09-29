@@ -273,6 +273,11 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
     Nothing live is replaced here — see the module docstring on why the swap belongs to
     startup. What *is* done now is the checking, so a manager learns their backup is
     unusable while they still have the working database, rather than after it is gone.
+
+    **Staging is all or nothing.** If a copy fails, both staged names are removed (whichever
+    call wrote them, an earlier staging awaiting a restart included) and a `BackupFault` is
+    raised, so the caller may say nothing was restored. Any other error reaches the caller as
+    it is, including a staged file that cannot be removed.
     """
     league_backup = backup_path(db_path)
     if not league_backup.is_file():
@@ -300,9 +305,18 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
     if Path(jobstore_path).is_file():
         snapshot_database(jobstore_path, prerestore_path(jobstore_path))
 
-    shutil.copyfile(league_backup, staged_path(db_path))
-    if jobstore_backup.is_file():
-        shutil.copyfile(jobstore_backup, staged_path(jobstore_path))
+    staged = (staged_path(db_path), staged_path(jobstore_path))
+    try:
+        shutil.copyfile(league_backup, staged[0])
+        if jobstore_backup.is_file():
+            shutil.copyfile(jobstore_backup, staged[1])
+    except (OSError, sqlite3.Error) as exc:
+        # Both staged names go, whichever call wrote them: an earlier staging still awaiting
+        # a restart goes too, so the next start swaps nothing in. A file that cannot be removed
+        # raises its own OSError, which is not a fault this function undid.
+        for path in staged:
+            path.unlink(missing_ok=True)
+        raise BackupFault(f"the restore could not be staged: {exc}") from exc
     log.info("backup: staged a restore of %s", league_backup)
 
 

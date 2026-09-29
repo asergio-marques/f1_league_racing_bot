@@ -528,20 +528,8 @@ class _ShutilWhoseSchedulerStagingFails:
 @pytest.mark.parametrize(
     "earlier",
     [
-        pytest.param(
-            False,
-            id="first-staging",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: a failed staging leaves the league database staged"
-            ),
-        ),
-        pytest.param(
-            True,
-            id="after-an-earlier-staging",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: a failed staging leaves the league database staged"
-            ),
-        ),
+        pytest.param(False, id="first-staging"),
+        pytest.param(True, id="after-an-earlier-staging"),
     ],
 )
 def test_a_staging_whose_scheduler_copy_fails_stages_nothing(tmp_path, monkeypatch, earlier):
