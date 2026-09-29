@@ -59,14 +59,7 @@ def _http_error() -> discord.HTTPException:
     [
         "answered", "deferred", "reason given", "reply fails", "post fails", "over long",
         "info mark", "hourglass mark",
-        pytest.param(
-            "chain mark",
-            marks=pytest.mark.xfail(strict=True, reason="#482: ⛓ is not yet a reply mark"),
-        ),
-        pytest.param(
-            "pause mark",
-            marks=pytest.mark.xfail(strict=True, reason="#482: ⏸️ is not yet a reply mark"),
-        ),
+        "chain mark", "pause mark",
     ],
 )
 async def test_refuse_replies_to_the_member_and_logs_one_line(case):
