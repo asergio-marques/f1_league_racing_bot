@@ -392,7 +392,8 @@ def bot_setup_only(func: Callable) -> Callable:
     A league admin's tier, but reachable by Discord's Administrator permission as well, and
     from any channel. Both exemptions have the same cause: these commands repair the very
     settings the other guards read, so gating them on those settings would lock a league out
-    of the one failure the commands exist to fix.
+    of the one failure the commands exist to fix. A refusal is recorded in the log channel
+    where a configuration exists, and goes to the host's log alone before `/bot init`.
     """
 
     @functools.wraps(func)
@@ -408,6 +409,8 @@ def bot_setup_only(func: Callable) -> Callable:
         config = await self.bot.config_service.get_server_config()
 
         if not may_set_up_bot(config, member):
+            # Recorded only where a configuration exists: before `/bot init` there is no log
+            # channel, and the refusal goes to the host's log alone.
             name = _role_name(
                 getattr(interaction, "guild", None),
                 getattr(config, "league_admin_role_id", None),
@@ -417,7 +420,7 @@ def bot_setup_only(func: Callable) -> Callable:
                 interaction,
                 f"⛔ You need {name}, or Discord's **Administrator** permission, "
                 f"to change the bot's settings.",
-                record=False,
+                record=config is not None,
             )
             return
 
@@ -433,7 +436,9 @@ def server_owner_only(func: Callable) -> Callable:
 
     Not a tier the league configures — see the module docstring. From any channel, and
     whether or not the bot is set up, since a factory reset reads none of the settings the
-    other guards rest on and may be the way out of a configuration past repair.
+    other guards rest on and may be the way out of a configuration past repair. Its setting is
+    read only once the owner check has failed, and only to decide whether the refusal is
+    recorded (it is where a configuration exists), so the owner's path reads none.
     """
 
     @functools.wraps(func)
@@ -450,11 +455,14 @@ def server_owner_only(func: Callable) -> Callable:
                 interaction.user.id,
                 interaction.guild_id,
             )
+            # The configuration is read here, after the owner check has failed, and only to
+            # decide whether to record: the owner's own path reads no setting.
+            config = await self.bot.config_service.get_server_config()
             await _refuse(
                 interaction,
                 "⛔ Only this server's owner may factory-reset the bot, whatever roles or "
                 "permissions anyone else holds.",
-                record=False,
+                record=config is not None,
             )
             return
 

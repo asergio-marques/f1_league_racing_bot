@@ -470,7 +470,6 @@ async def test_a_command_used_in_a_direct_message_goes_to_the_host_log_alone(cap
     assert _host_records_refusal(caplog, "round add", guild=None)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_setup_command_refused_on_a_set_up_server_is_recorded():
     command, ran = _guarded(bot_setup_only)
     interaction = _interaction(_member(roles=(MANAGER_ROLE,)), command="bot admin-role")
@@ -505,7 +504,6 @@ def _not_the_owner() -> MagicMock:
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_factory_reset_refused_on_a_set_up_server_is_recorded():
     command, ran = _guarded(server_owner_only)
     interaction = _not_the_owner()
