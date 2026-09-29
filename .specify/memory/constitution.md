@@ -1,6 +1,40 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-09-29 — v14.7.0 → v14.8.0: MINOR — a refusal outside the league's own server goes to the host's log alone (issue #482)]
+  Version change    : 14.7.0 → 14.8.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0: an exception is added inside an existing
+                      principle and nothing is removed or redefined. Principle V's "every outcome,
+                      whoever uses it" now stops short of a refusal that has no log channel to
+                      reach, or no league to belong to.
+
+  Modified sections :
+    - Principle V, Observability & Change Audit Trail — new paragraph after the record rule: a
+      refusal to someone on another server, to a command used in a direct message, or made before
+      the bot is set up is written to the host's log alone, the member being answered as ever; a
+      results paste into a submission channel is a message, not a command, and the rule does not
+      reach it.
+
+  Why the constitution is the document that moved:
+    - `docs/wip-specs/core_specification.md`, "The record of what changed", gains the same
+      exception on the same branch and remains the governing statement of it.
+    - The owner decided on 2026-09-29 that such refusals go to the host's log alone, and that a
+      results paste is out of scope.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/482-log-shared-guard-refusals.
+
+  Templates / docs  : none. The core specification and the README are corrected on the same
+                      branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-28 — v14.6.3 → v14.7.0: MINOR — every outcome of a command that acts is recorded (issue #442)]
   Version change    : 14.6.3 → 14.7.0
   Bump rationale    : MINOR, on the precedent of v14.1.0: guidance is added inside two existing
@@ -5324,6 +5358,11 @@ failure, and, where it asks for a confirmation, that confirmation cancelled or l
 Each line MUST name the member and what they used. A view, a list, a preview and the hub's
 About change nothing and record nothing.
 
+One exception: a refusal to someone on another server, to a command used in a direct message,
+or made before the bot is set up — where there is no log channel to record it in — is written
+to the host's log alone, the member being answered as ever. A results paste into a submission
+channel is a message, not a command, and this rule does not reach it.
+
 **Rationale**: A league's managers, its admins and its drivers need an unambiguous,
 channel-visible record of computations and changes, especially when disputing weather
 outcomes or schedule alterations.
@@ -8613,4 +8652,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.7.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-28
+**Version**: 14.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-29
