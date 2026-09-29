@@ -141,6 +141,7 @@ def _cog(
     cog = SeasonCog.__new__(SeasonCog)
     bot = MagicMock()
     bot.db_path = db_path
+    bot.output_router.post_log = AsyncMock()
     cog.bot = bot
 
     cfg = pending or _pending()
@@ -951,9 +952,6 @@ def _a_season_in_configuration(cog):
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.CONFIGURATION)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /season placements-review's refusals are not yet recorded"
-)
 @pytest.mark.parametrize(
     "arrange, reply",
     [
@@ -1006,9 +1004,6 @@ class _RecordedApproveView:
         _RecordedApproveView.made.append(self)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a posted placements review does not yet write a line naming who ran it"
-)
 async def test_a_posted_placements_review_writes_one_line_naming_who_ran_it(db_path, monkeypatch):
     """A review that posts its question writes one line naming who ran it (#482, criterion 6),
     so a later lapse line reads against it."""
