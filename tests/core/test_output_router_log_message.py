@@ -125,3 +125,107 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing(
     assert await router.post_forecast(ForecastChannel(None), "forecast") is None
     bot.get_channel.assert_not_called()
     bot.fetch_channel.assert_not_awaited()
+
+
+# ── The factory reset's closing line (#482) ───────────────────────────────
+#
+# A factory reset posts one line once its clean-up has finished, after the wipe has taken the
+# configuration and with it any way to find the log channel. The cog asks the router where the
+# log goes before the wipe, and hands that back with the line. A line that cannot be posted is
+# not queued: a queued row would sit in the fresh database of a bot serving no server. Nor does
+# it fall back to the interaction channel, which no configuration is left to name.
+
+
+def _unconfigured_bot(channel) -> MagicMock:
+    """A bot just wiped: no configuration, but the channel it held is still in Discord."""
+    bot = _bot(channel)
+    bot.config_service.get_server_config = AsyncMock(return_value=None)
+    return bot
+
+
+@pytest.mark.xfail(strict=True, reason="#482: the router does not say where the log goes")
+async def test_the_router_says_where_the_log_goes():
+    router = OutputRouter(_bot(_channel([])))
+
+    assert await router.log_destination() == 99
+
+
+@pytest.mark.xfail(strict=True, reason="#482: the router does not say where the log goes")
+async def test_the_router_says_there_is_no_log_before_the_bot_is_set_up():
+    bot = MagicMock()
+    bot.config_service.get_server_config = AsyncMock(return_value=None)
+
+    assert await OutputRouter(bot).log_destination() is None
+
+
+@pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel")
+async def test_a_line_for_a_given_channel_is_written_as_any_other():
+    """Its mentions name without notifying and it carries the separator, with no configuration
+    left to read."""
+    sent = []
+    bot = _unconfigured_bot(_channel(sent))
+
+    message = await OutputRouter(bot).post_log("<@77> reset the league", channel=555)
+
+    assert message is not None
+    bot.get_channel.assert_called_once_with(555)
+    [line] = sent
+    assert line.startswith("`<@77>` reset the league")
+    assert line.endswith("\n" + "―" * 36)
+
+
+@pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel")
+async def test_a_long_line_for_a_given_channel_is_split_and_returns_its_first_message():
+    sent = []
+    bot = _unconfigured_bot(_channel(sent))
+
+    message = await OutputRouter(bot).post_log(
+        "\n".join(f"line {i}" * 40 for i in range(200)), channel=555
+    )
+
+    assert len(sent) > 1, "this content was meant to be split"
+    assert message.jump_url == "http://j/0"
+
+
+def _refusing_channel() -> MagicMock:
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock(
+        side_effect=discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "no access")
+    )
+    return channel
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        pytest.param(
+            "refuses",
+            id="channel-refuses-the-post",
+            marks=pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel"),
+        ),
+        pytest.param(
+            "gone",
+            id="channel-is-gone",
+            marks=pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel"),
+        ),
+    ],
+)
+async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redirected(
+    tmp_path, monkeypatch, where
+):
+    """No retry row and no notice in the interaction channel: the caller puts the line in the
+    host's log instead."""
+    from leaguebot.core.services import retry_service
+
+    enqueue = AsyncMock()
+    monkeypatch.setattr(retry_service, "enqueue", enqueue)
+    bot = _bot(_refusing_channel())
+    if where == "gone":
+        bot.get_channel = MagicMock(return_value=None)
+        bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone"))
+    router = OutputRouter(bot, retry_db_path=str(tmp_path / "retry.db"))
+
+    assert await router.post_log("the league was reset", channel=555) is None
+
+    enqueue.assert_not_awaited()
+    assert [call.args[0] for call in bot.get_channel.call_args_list] == [555]
