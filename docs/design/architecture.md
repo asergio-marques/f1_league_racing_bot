@@ -484,10 +484,12 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
 - **What happens if it fails:** it is retried, and named in the log channel if it keeps failing (a
   log line that keeps failing, in the host's log).
 
-  One log line is not queued: the factory reset's closing line. It is posted after the reset has
-  wiped the database, so a retry row would sit in a fresh database of a bot serving no server, with
-  no configuration left to find a channel in. The cog learns the log channel from the router before
-  the wipe and posts to it directly; a line that cannot be posted goes to the host's log.
+  One log line is not queued: the factory reset's closing line (the core specification's "Factory
+  reset" section holds the rule for what it says and when). It is posted after the reset has wiped
+  the database, so it is neither queued nor answered by a notice in the interaction channel, for two
+  reasons that `OutputRouter.post_log`'s docstring gives: a queued row would sit in the fresh
+  database of a bot serving no server, and no configuration is left to find an interaction channel
+  in. The cog learns the log channel from the router before the wipe and posts to it directly.
 
 **A failed post is sent again by its owning module, on the queue's retry.** A post that fails inside
 a change is retried by the change queue, which runs the owning module's post again, as text. The
