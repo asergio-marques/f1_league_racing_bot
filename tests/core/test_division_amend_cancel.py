@@ -161,6 +161,18 @@ def _interaction(*, channel=None):
     return interaction
 
 
+def _run_by_the_manager(cog, command: str):
+    """The manager's interaction for *command*, connected to the cog's log channel."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = command
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+
+
 def _replied(interaction) -> str:
     return "\n".join(
         str(call.args[0])
@@ -833,3 +845,42 @@ async def test_a_division_amended_to_a_name_with_everyone_is_refused(tmp_path):
 
     assert "division name" in _replied(interaction)
     assert (await _division_row(db_path))["name"] == "Pro"
+
+
+# ---------------------------------------------------------------------------
+# /division amend holds a tier to the rule /division add does (#482)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: /division amend does not yet hold a new tier to the tier rule"
+)
+@pytest.mark.parametrize(
+    "tier,reply",
+    [
+        pytest.param(0, "\u26d4 Tier must be 1 or higher.", id="zero"),
+        pytest.param(-1, "\u26d4 Tier must be 1 or higher.", id="negative"),
+        pytest.param(
+            2,
+            "\u26d4 A division with tier **2** already exists in this setup.",
+            id="another_divisions_tier",
+        ),
+    ],
+)
+async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_path, tier, reply):
+    """The core specification's Divisions: a tier is unique within its season and no lower than
+    1. Pro holds tier 1 and Am tier 2; the manager amends Pro's tier. The refusal is
+    `/division add`'s, word for word, and is recorded; Pro keeps its tier and nothing is
+    audited."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
+    interaction = _run_by_the_manager(cog, "division amend")
+
+    await _amend(cog, interaction, tier=tier)
+
+    assert _replied(interaction) == reply
+    assert (await _division_row(db_path))["tier"] == 1
+    assert await _audit_rows(db_path) == []
+    assert _logged(cog) == [
+        f"\u26d4 `/division amend` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]

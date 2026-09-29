@@ -142,6 +142,12 @@ def _make_cog(
 
 
 def _interaction():
+    """An interaction that reads as Discord's does: unanswered until it is answered or deferred.
+
+    A refusal answers through `response` or `followup` as the interaction stands, so a bare
+    `MagicMock` `is_done`, which is always truthy, would send a refusal before the defer down the
+    wrong channel.
+    """
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
@@ -149,11 +155,28 @@ def _interaction():
     interaction.user.display_name = "Manager"
     interaction.user.__str__ = lambda self: "Manager#0001"  # type: ignore[assignment]
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(return_value=False)
+
+    def _answered(*_args, **_kwargs):
+        interaction.response.is_done.return_value = True
+
+    interaction.response.send_message = AsyncMock(side_effect=_answered)
+    interaction.response.defer = AsyncMock(side_effect=_answered)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
+
+
+def _run_by_the_manager(cog, command: str):
+    """The manager's interaction for *command*, connected to the cog's log channel."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = command
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
 
 
 def _replied(interaction) -> str:
@@ -705,3 +728,71 @@ async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
 
     assert "division name" in _replied(interaction)
     cog.bot.season_service.duplicate_division.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# A tier refused, in today's words, and recorded (#482)
+# ---------------------------------------------------------------------------
+#
+# The tier rule is one pure function now (`season_service.validate_division_tier`), which both
+# commands use; neither reply changes, and each refusal writes one line to the log channel.
+
+_TIER_RECORDED = pytest.mark.xfail(
+    strict=True, reason="#482: /division add and /division duplicate do not yet record a refused tier"
+)
+
+
+@_TIER_RECORDED
+@pytest.mark.parametrize(
+    "tier,reply",
+    [
+        pytest.param(0, "\u26d4 Tier must be 1 or higher.", id="zero"),
+        pytest.param(-1, "\u26d4 Tier must be 1 or higher.", id="negative"),
+        pytest.param(
+            2, "\u26d4 A division with tier **2** already exists in this setup.", id="taken"
+        ),
+    ],
+)
+async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, tier, reply):
+    """The season is in placements and holds Pro at tier 2; the manager adds Am."""
+    db_path = await _make_db(tmp_path)
+    cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=2))
+    cog = _make_cog(db_path, cfg=cfg)
+    interaction = _run_by_the_manager(cog, "division add")
+
+    await _add(cog, interaction, name="Am", tier=tier)
+
+    assert _replied(interaction) == reply
+    assert [d.name for d in cfg.divisions] == ["Pro"]
+    assert _logged(cog) == [
+        f"\u26d4 `/division add` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
+
+
+@_TIER_RECORDED
+@pytest.mark.parametrize(
+    "tier,reply",
+    [
+        pytest.param(0, "\u26d4 Tier must be 1 or higher.", id="zero"),
+        pytest.param(-3, "\u26d4 Tier must be 1 or higher.", id="negative"),
+        pytest.param(
+            1, "\u26d4 A division with tier **1** already exists in this season.", id="taken"
+        ),
+    ],
+)
+async def test_duplicate_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, tier, reply):
+    """The season is in placements and holds Pro at tier 1; the manager copies it as Am.
+    Duplicate keeps its own taken-tier words ("... in this season."), and answers before any
+    defer, as every one of its refusals does."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, "division duplicate")
+
+    await _duplicate(cog, interaction, source="Pro", new_name="Am", tier=tier)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.season_service.duplicate_division.assert_not_awaited()
+    assert _logged(cog) == [
+        f"\u26d4 `/division duplicate` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
