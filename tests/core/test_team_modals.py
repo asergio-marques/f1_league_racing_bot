@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 
 
@@ -205,7 +207,10 @@ async def test_the_reserve_team_is_sent_to_its_own_command():
     interaction.response.send_modal.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a /team modify form submitted untouched writes no line")
 async def test_a_form_submitted_untouched_changes_nothing():
+    """Nothing is written, the manager is told so, and one line records that nothing was
+    changed (#482)."""
     cog = _modify_cog()
 
     interaction = await _submit(cog)
@@ -213,6 +218,10 @@ async def test_a_form_submitted_untouched_changes_nothing():
     assert "Nothing changed" in interaction.followup.send.await_args.args[0]
     cog.bot.team_service.modify_default_team.assert_not_awaited()
     cog.bot.placement_service.set_team_role_config.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = cog.bot.output_router.post_log.await_args.args[0]
+    assert line.startswith("Manager (<@42>) | /team modify")
+    assert "nothing" in line.lower() and "chang" in line.lower()
 
 
 async def test_changing_both_names_records_them_and_names_the_artwork_file():
