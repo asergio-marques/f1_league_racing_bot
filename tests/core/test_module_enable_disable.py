@@ -401,7 +401,6 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     assert cfg.autosack_threshold is None
 
 
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off(tmp_path):
     """The configuration and its audit entry are one write: where the second fails, the
     first is not kept either, and the league is told, in the standard failure reply, that the
@@ -455,7 +454,6 @@ async def _refuse_the_audit(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
     """The flag and its audit entry are one write, so the module stays off. The member gets
     the standard failure reply, saying the module is still off and what to do next, with no

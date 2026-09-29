@@ -269,7 +269,6 @@ async def test_a_failed_enable_leaves_the_module_off(tmp_path):
     assert "disk full" not in replied
 
 
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
     """It is logged as the failure it is, once, and never as a success."""
     db_path = await _make_db(tmp_path)
@@ -292,13 +291,7 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
 @pytest.mark.parametrize(
     "switch_off_fails",
     [
-        pytest.param(
-            False,
-            id="the-write-fails",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: report_failure still names the member by mention alone"
-            ),
-        ),
+        pytest.param(False, id="the-write-fails"),
         pytest.param(True, id="the-switch-off-also-fails"),
     ],
 )

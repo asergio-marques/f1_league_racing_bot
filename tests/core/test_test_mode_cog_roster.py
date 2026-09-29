@@ -356,7 +356,6 @@ class TestRosterListShowsIt:
 # ── A driver that cannot be written (#442) ────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added(cog):
     """The service raises on a database fault. The command answers with the standard failure
     reply, saying the test driver was not added and how to retry, with no error text, and one

@@ -101,9 +101,6 @@ async def test_a_failure_is_written_to_the_log_channel():
     assert "Traceback" not in line
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: report_failure still names the member by mention alone"
-)
 async def test_a_failure_names_the_member_by_display_name_and_mention():
     """As every line in the log channel does: the name for the reader, the mention for the
     account it was."""

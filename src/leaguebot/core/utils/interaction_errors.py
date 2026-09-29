@@ -13,7 +13,10 @@ and `LeagueModal` call instead. It does three things, each independent of the ot
   Naming the command and the kind of fault is what keeps it clear of the constitution's ban
   on a generic "something went wrong" (decided 2026-09-19).
 - **The log channel gets one line** naming the member, what failed and the exception's type,
-  so the league holds something to report. No traceback: the channel is for people.
+  so the league holds something to report. The member is named as every line in the channel
+  names them, by display name and mention (`interaction_member`, from
+  `core/utils/member_names.py`, a leaf module `log_lines` could not stand in for without a
+  cycle), and by mention alone where they have no display name. No traceback: the channel is for people.
 
 **The handler never raises.** It runs where the failure already happened: the interaction's
 token may have expired, or the fault may be the database `post_log` reads its channel from.
@@ -48,6 +51,8 @@ from typing import Any
 
 import discord
 from discord import app_commands
+
+from leaguebot.core.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +143,7 @@ async def report_failure(
         return
     try:
         await router.post_log(
-            f"❌ {what} failed for <@{user_id}> — {type(error).__name__}. "
+            f"❌ {what} failed for {interaction_member(interaction)} — {type(error).__name__}. "
             f"The details are in the host's log."
         )
     except Exception as exc:  # noqa: BLE001 — the handler must never raise

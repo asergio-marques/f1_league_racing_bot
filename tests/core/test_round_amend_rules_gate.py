@@ -328,7 +328,6 @@ def _all_replies(interaction) -> str:
     return "\n".join(str(call.args[0]) for call in calls if call.args)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path):
     """A fault while the amendment is applied is the bot's: the standard failure reply naming
     `/round amend` and the round, one line in the log channel, and the buttons stopped."""
@@ -534,7 +533,6 @@ async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
 
 
 @pytest.mark.parametrize("where", ["after amending", "before amending"])
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tmp_path, where):
     """A fault in the Confirm press anywhere but the amendment itself — putting the rounds back
     in order after the round was moved, or reading the round before it — still stops the
@@ -569,7 +567,6 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tm
     assert "database is locked" not in line
 
 
-@pytest.mark.xfail(strict=True, reason="#482: report_failure still names the member by mention alone")
 async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_view(tmp_path):
     """The Confirm press cannot even be acknowledged — the defer fails. It is reported as any
     other fault in the press, and the buttons stop, so no lapse line follows the failure."""
