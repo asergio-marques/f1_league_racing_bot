@@ -253,7 +253,6 @@ _CASES = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the team cog's own refusals write no log line")
 @pytest.mark.parametrize("case", sorted(_CASES))
 async def test_a_refusal_of_the_team_cog_is_recorded_in_the_log_channel(case):
     """A manager the team cog's own checks turn away, at a command or on its form, is answered
