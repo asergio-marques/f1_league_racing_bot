@@ -435,9 +435,18 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
     assert "no room" in str(interaction.followup.send.await_args.args[0])
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a backup stopped by a fault does not yet answer in the standard failure form",
+)
 async def test_an_unexpected_failure_also_still_approves():
     """Same reasoning, and the fault is logged rather than shown — a manager cannot act on
-    a traceback, and the season is not the thing that went wrong."""
+    a traceback, and the season is not the thing that went wrong.
+
+    The reply takes the standard failure form, its outcome saying the backup was not taken and
+    the season is being approved anyway (the core specification's "Saving a season before its
+    placements are confirmed": "The manager shall be told that it was not taken and the
+    confirmation shall continue")."""
     view = await _view()
     interaction = _button_interaction()
 
@@ -446,7 +455,10 @@ async def test_an_unexpected_failure_also_still_approves():
 
     assert view.answer == "skip"
     replied = str(interaction.followup.send.await_args.args[0])
-    assert "could not be taken" in replied
+    assert replied.startswith("❌ "), replied
+    assert "stopped on a fault in the bot" in replied
+    assert "not taken" in replied and "anyway" in replied
+    assert "may have been partly done" not in replied
     assert "truncated" not in replied
 
 
@@ -489,3 +501,207 @@ async def test_silence_leaves_no_answer():
     view = await _view()
 
     assert view.answer is None
+
+
+# ---------------------------------------------------------------------------
+# What the log channel holds for the question (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a confirmation cancelled or left to
+# lapse is recorded, naming the member, with what became of it and what to do next; a refusal is
+# one line naming the member and why; a failure is recorded as every failure is. Alex (id 77) is
+# the league manager approving the season, under test mode.
+
+_BACKUP_RECORDED = pytest.mark.xfail(
+    strict=True, reason="#482: the backup question's outcomes are not yet recorded in the log channel"
+)
+
+
+def _recording_cog() -> SeasonCog:
+    """A test-mode league whose bot keeps every log line and finds Alex on its server by id."""
+    cog = _make_cog()
+    cog.bot.output_router.post_log = AsyncMock()
+    alex = MagicMock()
+    alex.id = 77
+    alex.display_name = "Alex"
+    guild = MagicMock()
+    guild.get_member = MagicMock(side_effect=lambda uid: alex if uid == 77 else None)
+    cog.bot.get_guild = MagicMock(return_value=guild)
+    cog.bot.scheduler_service = None
+    return cog
+
+
+def _alex_approving(cog):
+    """Alex's press of ✅ Approve, already deferred, as the backup question is asked from it."""
+    interaction = _interaction()
+    interaction.user.display_name = "Alex"
+    interaction.client = cog.bot
+    interaction.response.is_done = MagicMock(return_value=True)
+    return interaction
+
+
+def _alex_pressing(cog):
+    """Alex's press of a button on the backup question, reading as Discord's does: not yet
+    answered until the button defers, answered from then on."""
+    interaction = _button_interaction()
+    interaction.user = MagicMock()
+    interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client = cog.bot
+    answered = {"done": False}
+
+    async def _defer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.defer = AsyncMock(side_effect=_defer)
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock()
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+
+
+@_BACKUP_RECORDED
+async def test_cancelling_the_backup_question_is_recorded():
+    """Alex approves a test-mode season, is asked about a backup, and presses ❌ Cancel.
+
+    Nothing is approved, as today, and the log gets one cancel line naming Alex, with what became
+    of it and what to do next beneath it.
+    """
+    cog = _recording_cog()
+    interaction = _alex_approving(cog)
+
+    assert await _offer(cog, interaction, answer="cancel") is False
+
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    head, *beneath = lines[0].splitlines()
+    assert head.startswith("↩️ "), head
+    assert "/season placements-review" in head, head
+    assert head.endswith("cancelled by Alex (<@77>)"), head
+    detail = " ".join(text.strip() for text in beneath)
+    assert detail == "Nothing has been approved, and nothing has been saved. Run the review again."
+
+
+@_BACKUP_RECORDED
+@pytest.mark.parametrize(
+    "minutes_left,answer,said",
+    [
+        pytest.param(5, None, "expired while the backup question went unanswered", id="unanswered"),
+        pytest.param(-1, "save", "expired before the season could be approved", id="expired_before_asked"),
+    ],
+)
+async def test_a_backup_question_that_lapses_is_recorded(minutes_left, answer, said):
+    """Alex approves a test-mode season and the review runs out: either the backup question is
+    left unanswered until the review's five minutes are up, or they were already up before it
+    could be asked.
+
+    Nothing is approved, as today, and the log gets one lapse line naming Alex as the member who
+    started the approval, with the reply's own words beneath it.
+    """
+    cog = _recording_cog()
+    interaction = _alex_approving(cog)
+
+    assert await _offer(cog, interaction, minutes_left=minutes_left, answer=answer) is False
+
+    assert said in _replied(interaction)
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    head, *beneath = lines[0].splitlines()
+    assert head.startswith("⌛ "), head
+    assert "/season placements-review" in head, head
+    assert head.endswith("lapsed unconfirmed (started by Alex (<@77>))"), head
+    detail = " ".join(beneath)
+    assert said in detail and "Nothing has been approved" in detail, detail
+
+
+@_BACKUP_RECORDED
+async def test_a_backup_saved_before_approving_writes_its_own_line():
+    """Alex presses 💾 Save, then approve, and the backup is written.
+
+    He is told it was saved and how to restore it, as today, and the log gets a success line of
+    its own for the backup, so the record holds it whatever the approval then does.
+    """
+    cog = _recording_cog()
+    view = await _view(cog)
+    interaction = _alex_pressing(cog)
+
+    with patch("leaguebot.core.services.backup_service.save"):
+        await _press(view, "save", interaction)
+
+    assert view.answer == "save"
+    assert "/test-mode backup restore" in str(interaction.followup.send.await_args.args[0])
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    head = lines[0].splitlines()[0]
+    assert head.startswith("Alex (<@77>) | "), head
+    assert head.endswith("/season placements-review backup | Success"), head
+
+
+@_BACKUP_RECORDED
+async def test_a_backup_refused_is_recorded_with_its_reason():
+    """Alex presses 💾 Save, then approve, but the backup cannot be taken for a reason the bot
+    is not at fault for (here: 'the saved backup is locked').
+
+    He gets today's reply word for word and the approval goes on; the log gets one refusal line
+    naming Alex and the save button, with the reason.
+    """
+    from leaguebot.core.services import backup_service
+
+    cog = _recording_cog()
+    view = await _view(cog)
+    interaction = _alex_pressing(cog)
+
+    with patch(
+        "leaguebot.core.services.backup_service.save",
+        side_effect=backup_service.BackupError("the saved backup is locked"),
+    ):
+        await _press(view, "save", interaction)
+
+    assert view.answer == "skip"
+    assert interaction.followup.send.await_args.args[0] == (
+        "⚠️ The backup was not taken — the saved backup is locked\nApproving the season anyway."
+    )
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    refused, _, reason = lines[0].partition(" refused for Alex (<@77>) — ")
+    assert refused.startswith("⛔ "), lines[0]
+    assert "Save, then approve" in refused, lines[0]
+    assert reason == "the saved backup is locked"
+
+
+@_BACKUP_RECORDED
+@pytest.mark.parametrize("fault", ["backup_fault", "unexpected_error"])
+async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(fault):
+    """Alex presses 💾 Save, then approve, and the copy stops on a fault in the bot.
+
+    He gets the standard failure reply saying the backup was not taken and the season is being
+    approved anyway, never the fault's own text; the approval goes on; and the log gets one
+    failure line naming Alex and the save button.
+    """
+    from leaguebot.core.services import backup_service
+
+    error = (
+        backup_service.BackupFault("bot.db could not be copied: disk full")
+        if fault == "backup_fault"
+        else OSError("truncated")
+    )
+    cog = _recording_cog()
+    view = await _view(cog)
+    interaction = _alex_pressing(cog)
+
+    with patch("leaguebot.core.services.backup_service.save", side_effect=error):
+        await _press(view, "save", interaction)
+
+    assert view.answer == "skip"
+    replied = str(interaction.followup.send.await_args.args[0])
+    assert replied.startswith("❌ ") and "stopped on a fault in the bot" in replied, replied
+    assert "not taken" in replied and "anyway" in replied, replied
+    assert str(error) not in replied
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("❌ "), lines[0]
+    assert "Save, then approve" in lines[0], lines[0]
+    assert f"failed for Alex (<@77>) — {type(error).__name__}." in lines[0], lines[0]
