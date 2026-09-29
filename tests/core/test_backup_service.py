@@ -9,6 +9,8 @@ good one, a restore that cannot be walked back.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,6 +173,93 @@ def test_a_failed_copy_leaves_the_previous_backup_standing(tmp_path):
 
     assert _rows(bs.backup_path(live)) == good
     assert not bs.backup_path(live).with_name("bot.bkup.db.part").exists()
+
+
+# ── A save replaces both backups or neither (#482, F2) ──────────────────────
+
+
+def _saved_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """A league and a scheduler database, saved once, each with a round added since."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    _add_round(live, "since the save")
+    _add_round(jobs, "since the save")
+    return live, jobs
+
+
+def _backups(tmp_path: Path) -> dict[str, bytes]:
+    """Every backup file and temporary beside it, by name, with its contents."""
+    return {p.name: p.read_bytes() for p in sorted(tmp_path.iterdir()) if ".bkup" in p.name}
+
+
+class _OsWhoseSecondBackupRenameFails:
+    """`os` for the backup module alone, whose rename onto the second of the two backups fails.
+
+    Whichever backup is replaced first lands; the rename onto the other then fails, leaving the
+    pair mismatched.
+    """
+
+    def __init__(self, *finals: Path) -> None:
+        self._finals = {str(final) for final in finals}
+        self._landed: list[str] = []
+
+    def replace(self, source, target) -> None:
+        if str(target) in self._finals:
+            if self._landed:
+                raise OSError("the disk is full")
+            self._landed.append(str(target))
+        os.replace(source, target)
+
+    def __getattr__(self, name: str):
+        return getattr(os, name)
+
+
+def test_a_save_replaces_both_backups(tmp_path):
+    live, jobs = _saved_pair(tmp_path)
+
+    bs.save(live, jobs)
+
+    # Read before the rows are: reading a backup in WAL leaves its own -wal and -shm beside it.
+    assert set(_backups(tmp_path)) == {"bot.bkup.db", "scheduler.bkup.db"}
+    assert "since the save" in _rows(bs.backup_path(live))
+    assert "since the save" in _rows(bs.backup_path(jobs))
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a save replaces the league backup before copying the scheduler's"
+)
+def test_a_save_whose_scheduler_copy_fails_leaves_the_previous_pair(tmp_path):
+    """Neither backup is replaced until both copies are taken, so the previous pair stands, with
+    no temporary left beside it, and the fault is one the caller may call harmless."""
+    live, jobs = _saved_pair(tmp_path)
+    before = _backups(tmp_path)
+    jobs.write_bytes(b"not a database at all")
+
+    with pytest.raises(bs.BackupError) as raised:
+        bs.save(live, jobs)
+
+    assert isinstance(raised.value, bs.BackupFault)
+    assert _backups(tmp_path) == before
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a failure between the two renames is still a backup error"
+)
+def test_a_save_whose_second_rename_fails_is_not_told_as_harmless(tmp_path, monkeypatch):
+    """Once one backup is replaced the pair no longer matches, so the failure is neither a fault
+    the save undid nor a refusal: it reaches the caller as an unexpected error, whose reply says
+    the save may have been partly done."""
+    live, jobs = _saved_pair(tmp_path)
+    monkeypatch.setattr(
+        bs, "os", _OsWhoseSecondBackupRenameFails(bs.backup_path(live), bs.backup_path(jobs))
+    )
+
+    with pytest.raises(Exception) as raised:
+        bs.save(live, jobs)
+
+    assert not isinstance(raised.value, bs.BackupError)
 
 
 # ── A fault, told from a refusal ──────────────────────────────────────────
@@ -392,6 +481,63 @@ def test_a_corrupt_scheduler_backup_is_refused_too(tmp_path):
 
 
 # ── Applying it at startup ────────────────────────────────────────────────
+
+
+class _ShutilWhoseSchedulerStagingFails:
+    """`shutil` for the backup module alone, whose copy onto the scheduler's staged name fails."""
+
+    def __init__(self, jobs: Path) -> None:
+        self._target = str(bs.staged_path(jobs))
+
+    def copyfile(self, source, target, *args, **kwargs):
+        if str(target) == self._target:
+            raise OSError("the disk is full")
+        return shutil.copyfile(source, target, *args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(shutil, name)
+
+
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        pytest.param(
+            False,
+            id="first-staging",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#482: a failed staging leaves the league database staged"
+            ),
+        ),
+        pytest.param(
+            True,
+            id="after-an-earlier-staging",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#482: a failed staging leaves the league database staged"
+            ),
+        ),
+    ],
+)
+def test_a_staging_whose_scheduler_copy_fails_stages_nothing(tmp_path, monkeypatch, earlier):
+    """Otherwise the next start swaps the league database in without its scheduler (#482, F1).
+    Both staged names go, even where an earlier staging still awaiting a restart wrote them, and
+    the fault is one the restore confirmation may call "Nothing was restored."."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    _add_round(live, "live only")
+    if earlier:
+        bs.stage_restore(live, jobs)
+    monkeypatch.setattr(bs, "shutil", _ShutilWhoseSchedulerStagingFails(jobs))
+
+    with pytest.raises(bs.BackupError) as raised:
+        bs.stage_restore(live, jobs)
+
+    assert isinstance(raised.value, bs.BackupFault)
+    assert not bs.staged_path(live).exists()
+    assert not bs.staged_path(jobs).exists()
+    assert bs.apply_staged_restore(live, jobs) is False
+    assert "live only" in _rows(live)
 
 
 def test_the_staged_database_replaces_the_live_one(tmp_path):
