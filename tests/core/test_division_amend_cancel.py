@@ -985,6 +985,59 @@ async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_
 
 
 # ---------------------------------------------------------------------------
+# A division is named as it is named, not as it was typed (#482, F8)
+# ---------------------------------------------------------------------------
+#
+# Rename and amend find the division without regard to case, so a manager may type `pro` for
+# Pro. The core specification's Divisions: "its name shall be what the bot displays". The reply
+# and the log line name the division as it stands, never as the manager typed it.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /division rename and /division amend name the division as the manager typed it",
+)
+@pytest.mark.parametrize(
+    "command,run,done",
+    [
+        pytest.param(
+            "division rename",
+            lambda cog, interaction: _rename(cog, interaction, current="pro", new="Elite"),
+            "renamed to",
+            id="rename",
+        ),
+        pytest.param(
+            "division amend",
+            lambda cog, interaction: _amend(cog, interaction, name="pro", tier=3),
+            "amended",
+            id="amend",
+        ),
+    ],
+)
+async def test_a_division_typed_in_another_case_is_named_as_it_is_named(
+    tmp_path, command, run, done
+):
+    """Pro, in a season in placements, is renamed to Elite, or amended to tier 3, by a manager
+    who typed its name as `pro`."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, command)
+
+    await run(cog, interaction)
+
+    replied = _replied(interaction)
+    first = replied.splitlines()[0]
+    assert done in first
+    assert "**Pro**" in first
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert f"/{command}" in line
+    assert "Pro" in words
+    assert "pro" not in words
+
+
+# ---------------------------------------------------------------------------
 # The setup commands run in Placements alone (#482, F4)
 # ---------------------------------------------------------------------------
 #
