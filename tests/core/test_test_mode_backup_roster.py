@@ -316,7 +316,6 @@ async def test_removing_a_driver_names_them_and_their_team():
     assert "Alpha" in replied
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a /test-mode roster remove the service refuses writes no line")
 async def test_a_refusal_from_the_roster_service_reaches_the_maintainer():
     """The service returns a string to refuse, which the command has to recognise as a
     refusal rather than treat as a result; the refusal is recorded in the log channel

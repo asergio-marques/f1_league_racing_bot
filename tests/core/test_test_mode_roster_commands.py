@@ -183,7 +183,6 @@ async def test_a_clear_is_logged_with_what_it_removed(tmp_path):
     assert "5" in logged
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a /test-mode roster clear the service refuses writes no line")
 async def test_a_refusal_from_the_service_is_passed_on(tmp_path):
     """It returns a string to explain itself — an unknown division, a season in the wrong
     state — and a maintainer cannot act on a refusal they are not shown. The refusal is
