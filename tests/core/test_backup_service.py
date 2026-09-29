@@ -63,6 +63,19 @@ def _rows(path: Path) -> list[str]:
         db.close()
 
 
+def _rows_held(path: Path) -> int:
+    """How many rows every table of *path* holds between them: a scheduler's jobs, here.
+
+    Closed explicitly, as `_rows` is, so the file can be replaced after.
+    """
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        return sum(db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables)
+    finally:
+        db.close()
+
+
 # ── Naming ────────────────────────────────────────────────────────────────
 
 
@@ -260,6 +273,23 @@ def test_a_save_whose_second_rename_fails_is_not_told_as_harmless(tmp_path, monk
         bs.save(live, jobs)
 
     assert not isinstance(raised.value, bs.BackupError)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a save with no scheduler database leaves the earlier scheduler backup"
+)
+def test_a_save_with_no_scheduler_database_leaves_no_scheduler_backup(tmp_path):
+    """The saved pair is the league backup and no scheduler backup (#482, F5): an earlier scheduler
+    backup is never left paired with a newer league backup, for a restore to bring back jobs the
+    league did not have when it was saved."""
+    live, jobs = _saved_pair(tmp_path)
+    jobs.unlink()
+
+    bs.save(live, jobs)
+
+    # Read before the rows are: reading a backup in WAL leaves its own -wal and -shm beside it.
+    assert set(_backups(tmp_path)) == {"bot.bkup.db"}
+    assert "since the save" in _rows(bs.backup_path(live))
 
 
 # ── A fault, told from a refusal ──────────────────────────────────────────
@@ -538,6 +568,28 @@ def test_a_staging_whose_scheduler_copy_fails_stages_nothing(tmp_path, monkeypat
     assert not bs.staged_path(jobs).exists()
     assert bs.apply_staged_restore(live, jobs) is False
     assert "live only" in _rows(live)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a restore with no scheduler half stages the league database alone"
+)
+def test_a_restore_with_no_scheduler_half_stages_an_empty_scheduler(tmp_path):
+    """Otherwise the restored league meets whichever scheduler is live, with jobs it did not have
+    when it was saved (#482, F5): an empty scheduler database is staged beside the league one, and
+    the restart leaves the live scheduler holding no jobs."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    bs.save(live, jobs)
+    _database(jobs, wal=False, rows=2)
+
+    bs.stage_restore(live, jobs)
+
+    assert bs.staged_path(live).is_file()
+    assert bs.is_readable_database(bs.staged_path(jobs))
+    assert _rows_held(bs.staged_path(jobs)) == 0
+    assert bs.apply_staged_restore(live, jobs) is True
+    assert jobs.is_file()
+    assert _rows_held(jobs) == 0
 
 
 def test_the_staged_database_replaces_the_live_one(tmp_path):
