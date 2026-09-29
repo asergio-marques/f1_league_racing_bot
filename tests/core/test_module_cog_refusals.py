@@ -47,9 +47,6 @@ def _interaction(cog: ModuleCog) -> MagicMock:
     return interaction
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /module disable of a module already off writes no log line"
-)
 @pytest.mark.parametrize(
     ("module", "reason"),
     [

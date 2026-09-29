@@ -474,8 +474,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "⚠️ Weather module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Weather module is already disabled.", what=describe(interaction)
             )
             return
 
@@ -566,8 +566,8 @@ class ModuleCog(commands.Cog):
         right, whatever attendance is doing.
         """
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "⚠️ Results & Standings module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Results & Standings module is already disabled.", what=describe(interaction)
             )
             return
 
@@ -645,10 +645,12 @@ class ModuleCog(commands.Cog):
 
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
+        wound_down = True
         try:
             await self.bot.season_service.wind_down_ongoing(self.bot)
         except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
             log.exception("could not wind the season down")
+            wound_down = False
 
         if purged is None or purged["rounds"]:
             outcome = (
@@ -694,6 +696,12 @@ class ModuleCog(commands.Cog):
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results"
             + summary
+            + (
+                ""
+                if wound_down
+                else "\n  not done: the season could not be wound down afterwards, so it may "
+                "still be waiting on a stage it should have moved past"
+            )
             + (
                 f"\n  left standing, to delete by hand: {len(left_standing)}\n"
                 + "\n".join(f"  {link}" for link in left_standing)
@@ -874,8 +882,8 @@ class ModuleCog(commands.Cog):
         ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
         """
         if not await self.bot.module_service.is_images_enabled():
-            await interaction.response.send_message(
-                "⚠️ Image module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Image module is already disabled.", what=describe(interaction)
             )
             return
 
@@ -909,8 +917,8 @@ class ModuleCog(commands.Cog):
 
         if not cascade:
             if not await self.bot.module_service.is_attendance_enabled():
-                await interaction.response.send_message(
-                    "⚠️ Attendance module is already disabled.", ephemeral=True
+                await refuse(
+                    interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
                 )
                 return
             await interaction.response.defer(ephemeral=True)
@@ -998,8 +1006,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         if not await self.bot.module_service.is_signup_enabled():
-            await interaction.response.send_message(
-                "⚠️ Signup module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Signup module is already disabled.", what=describe(interaction)
             )
             return
 

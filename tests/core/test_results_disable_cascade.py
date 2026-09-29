@@ -291,9 +291,6 @@ async def test_only_the_actor_may_confirm(tmp_path):
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a failed wind-down is left out of the disable's log line"
-)
 async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(tmp_path):
     """The disable goes through, but a season that could not be wound down afterwards is
     named in its log line as not done, as an unfinished erase already reads "Incomplete"
