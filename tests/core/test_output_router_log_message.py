@@ -143,14 +143,12 @@ def _unconfigured_bot(channel) -> MagicMock:
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the router does not say where the log goes")
 async def test_the_router_says_where_the_log_goes():
     router = OutputRouter(_bot(_channel([])))
 
     assert await router.log_destination() == 99
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the router does not say where the log goes")
 async def test_the_router_says_there_is_no_log_before_the_bot_is_set_up():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
@@ -158,7 +156,6 @@ async def test_the_router_says_there_is_no_log_before_the_bot_is_set_up():
     assert await OutputRouter(bot).log_destination() is None
 
 
-@pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel")
 async def test_a_line_for_a_given_channel_is_written_as_any_other():
     """Its mentions name without notifying and it carries the separator, with no configuration
     left to read."""
@@ -174,7 +171,6 @@ async def test_a_line_for_a_given_channel_is_written_as_any_other():
     assert line.endswith("\n" + "―" * 36)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel")
 async def test_a_long_line_for_a_given_channel_is_split_and_returns_its_first_message():
     sent = []
     bot = _unconfigured_bot(_channel(sent))
@@ -201,12 +197,10 @@ def _refusing_channel() -> MagicMock:
         pytest.param(
             "refuses",
             id="channel-refuses-the-post",
-            marks=pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel"),
         ),
         pytest.param(
             "gone",
             id="channel-is-gone",
-            marks=pytest.mark.xfail(strict=True, reason="#482: post_log takes no channel"),
         ),
     ],
 )

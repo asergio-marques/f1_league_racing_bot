@@ -86,7 +86,19 @@ class OutputRouter:
             fallback_label="forecast",
         )
 
-    async def post_log(self, content: str) -> "Optional[discord.Message]":
+    async def log_destination(self) -> "Optional[int]":
+        """Where the log goes now: the log channel's id, or ``None`` before the bot is set up.
+
+        The one place outside the configuration that names the log channel. A caller about to
+        erase the configuration (the factory reset) asks here first and hands the answer back to
+        :meth:`post_log` as *channel*, once the configuration that would have named it is gone.
+        """
+        config = await self._bot.config_service.get_server_config()
+        return None if config is None else config.log_channel_id
+
+    async def post_log(
+        self, content: str, *, channel: "Optional[int]" = None
+    ) -> "Optional[discord.Message]":
         """Post *content* to the league's calculation log channel.
 
         Mention syntax (<@id>, <@&id>) is wrapped in backticks so Discord
@@ -104,9 +116,21 @@ class OutputRouter:
         rather than at its tail. This is the one respect in which it differs from
         :meth:`post_forecast`, which returns the last because its callers store the id to
         edit the message later.
+
+        *channel* sends to that channel id instead, wrapped, separated and split exactly as
+        any other line, but **neither queued for retry nor answered by a notice in the
+        interaction channel** when it cannot be posted: it returns ``None`` and the caller puts
+        the line in the host's log. It exists for the factory reset's closing line, written
+        after the wipe, when no configuration is left to find an interaction channel in and a
+        queued row would sit in the fresh database of a bot serving no server. Get the id from
+        :meth:`log_destination` before the wipe.
         """
-        content = _MENTION_RE.sub(r"`\1`", content)
-        content = content + "\n" + "\u2015" * 36
+        content = self._as_log_line(content)
+        if channel is not None:
+            return await self._send(
+                channel, content, enqueue_on_failure=False, fallback_label="log",
+                return_first=True,
+            )
         config = await self._bot.config_service.get_server_config()
         if config is None:
             log.error("post_log: the bot is not set up, so there is no log channel")
@@ -133,6 +157,12 @@ class OutputRouter:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _as_log_line(content: str) -> str:
+        """Wrap mentions in code so they name without notifying, and append the separator."""
+        content = _MENTION_RE.sub(r"`\1`", content)
+        return content + "\n" + "\u2015" * 36
 
     async def _send(
         self,
