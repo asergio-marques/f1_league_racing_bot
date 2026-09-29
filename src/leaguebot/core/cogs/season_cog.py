@@ -6852,9 +6852,6 @@ class _ConfirmView(LeagueView):
                 )
                 return
 
-            # What each field was, for the success line's "from what to what".
-            before = {field: getattr(_rnd_now, field, None) for field, _ in self._amendments}
-
             # One call carrying every field, not one call per field. Amending a round's track and
             # its date used to run the whole amendment twice \u2014 two invalidation notices, two
             # cancels, two re-arms, two re-runs of every overdue phase (issue #115).
@@ -6879,12 +6876,6 @@ class _ConfirmView(LeagueView):
             if rounds:
                 msg += "\n\n" + format_round_list(rounds)
             await interaction.followup.send(msg, ephemeral=True)
-            await self._cog.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                "/round amend | Success\n"
-                f"  round {_rnd_now.round_number} (round_id: {self._round_id})"
-                + _changed_values(before, dict(self._amendments)),
-            )
         except Exception as exc:  # noqa: BLE001 — reported here, naming the round
             await report_failure(interaction, exc, what=what)
         finally:

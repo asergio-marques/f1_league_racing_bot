@@ -61,6 +61,10 @@ class AmendmentService:
         round is deliberately past-dated so the overdue phases re-run, and that is an amendment
         `/round amend` itself would decline.
 
+        **The amendment's one success line is written here**, straight after the save and before
+        the steps that can still fail, so the record holds what changed however the rest ends.
+        The command does not write a second.
+
         Steps (inside one transaction):
         1. Load current Round.
         2. Record an AuditEntry per field, with old/new values.
@@ -254,6 +258,21 @@ class AmendmentService:
 
             await db.commit()
 
+        # The one success line of the amendment, written as soon as it is saved so that it
+        # stands whatever fails in the steps after (the core specification's "The record of
+        # what changed"). Each field is named as `/round amend` names its parameter.
+        _parameter_of = {"track_name": "track"}
+        _changed = "".join(
+            f"\n  {_parameter_of.get(f, f)}: {old_value if old_value is not None else 'none'}"
+            f" \u2192 {db_value}"
+            for f, old_value, db_value in applied
+        )
+        await bot.output_router.post_log(
+            f"{actor.display_name} (<@{actor.id}>) | /round amend | Success\n"
+            f"  round {row['round_number']} (round_id: {round_id})"
+            f"{_changed}",
+        )
+
         # 5. Cancel + re-schedule
         from leaguebot.core.services.season_service import SeasonService
         season_svc = SeasonService(self._db_path)
@@ -413,17 +432,6 @@ class AmendmentService:
                     invalidation_message(amended_track),
                     enqueue_on_failure=True,
                 )
-
-        # The audit line is not weather output and does not wait on a forecast having been
-        # withdrawn: an amendment is worth recording whether or not it cost the round anything.
-        _changed = "\n".join(
-            f"  {f}: {old_value} → {db_value}" for f, old_value, db_value in applied
-        )
-        await bot.output_router.post_log(
-            f"{actor.display_name} (<@{actor.id}>) | /round amend (field) | Success\n"
-            f"  round: {updated_round.round_number}\n"
-            f"{_changed}",
-        )
 
         # 7. Re-run missed phases (non-MYSTERY only, and only with weather on)
         from leaguebot.weather.services.phase1_service import run_phase1

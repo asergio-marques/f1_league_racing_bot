@@ -235,11 +235,6 @@ async def test_amend_round_changes_the_field(tmp_path):
 # here, in the cogs' success form, and is written as soon as the amendment is saved, so it stands
 # whatever fails after the save: the core specification's "The record of what changed".
 
-_ONE_AMEND_LINE = pytest.mark.xfail(
-    strict=True,
-    reason="#482: amend_round does not yet write the one /round amend line straight after the save",
-)
-
 #: The moment these amendments are made at, pinned so that the round's phases are judged alike
 #: on every run.
 _AMEND_NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
@@ -299,7 +294,6 @@ def _race_control():
     return actor
 
 
-@_ONE_AMEND_LINE
 @pytest.mark.asyncio
 async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and_each_change(
     tmp_path,
@@ -334,7 +328,6 @@ async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and
     assert "track_name" not in body
 
 
-@_ONE_AMEND_LINE
 @pytest.mark.parametrize("fault_in", ["cancelling the round's jobs", "re-running a phase"])
 @pytest.mark.asyncio
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(

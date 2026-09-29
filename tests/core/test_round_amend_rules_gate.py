@@ -496,14 +496,6 @@ def _amending_in_earnest(cog, path):
     cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
 
 
-_ONE_AMEND_LINE = pytest.mark.xfail(
-    strict=True,
-    reason="#482: a confirmed /round amend still writes two success lines, one from the "
-    "amendment and one from the confirmation",
-)
-
-
-@_ONE_AMEND_LINE
 async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     """A confirmed amendment writes one line: it names the member, `/round amend` and the round,
     and states beneath it each field changed, from its old value to its new one, named as the
@@ -529,7 +521,6 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     assert "track_name" not in values
 
 
-@_ONE_AMEND_LINE
 async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_changed(tmp_path):
     """The manager confirms moving round 1 of Div A from Bahrain International Circuit to
     Silverstone Circuit, and the amendment is saved, but the reply saying so cannot be sent. The
