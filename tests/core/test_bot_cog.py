@@ -121,6 +121,15 @@ def _interaction(*, channel_id: int = 999) -> MagicMock:
     interaction.user.display_name = "admin"
     interaction.user.roles = []
     interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    # Answered once replied to or deferred, as Discord's is: a bare mock would say it always
+    # was, and a refusal or a failure would answer by the wrong route.
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.send_message.await_count
+            or interaction.response.defer.await_count
+        )
+    )
     return interaction
 
 
@@ -992,23 +1001,39 @@ async def test_bot_factory_reset_without_the_word_changes_nothing(tmp_path):
     assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a backup that cannot be taken is not yet a failure")
 async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monkeypatch):
+    """A backup that cannot be taken is a fault in the bot, so the reset is a failure, not a
+    refusal (owner, 2026-09-29): the standard failure reply stating that nothing was erased, with
+    no raw error in Discord, and a failure line in the log channel, whose configuration is still
+    there to find it (#482)."""
     from leaguebot.core.services import backup_service, factory_reset_service
+    from leaguebot.core.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
-        raise backup_service.BackupError("the disk is full")
+        raise backup_service.BackupFault("the disk is full")
 
     monkeypatch.setattr(factory_reset_service, "take_backup", fail)
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_resetting_bot(db_path, tmp_path))
-    interaction = _owner_interaction()
+    bot = _resetting_bot(db_path, tmp_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _owner_interaction(), "bot factory-reset")
 
     await _run(cog, interaction)
 
     reply = interaction.followup.send.call_args.args[0]
-    assert "Nothing was erased" in reply and "the disk is full" in reply
+    assert reply == failure_reply(
+        "`/bot factory-reset`", "Nothing was erased: the backup could not be taken."
+    )
+    assert "the disk is full" not in reply
+    [line] = _log_lines(bot)
+    assert line.startswith(
+        f"❌ `/bot factory-reset` failed for admin (<@{OWNER_ID}>) — BackupFault."
+    )
+    assert "the disk is full" not in line
     assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
+    assert cog._clean_up is None
     interaction.user.send.assert_not_awaited()
 
 
