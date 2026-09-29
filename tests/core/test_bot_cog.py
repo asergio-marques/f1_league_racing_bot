@@ -282,7 +282,6 @@ async def test_bot_init_s_reply_names_the_league_admin_role(tmp_path):
     assert f"<#{CONFIGURED_CHANNEL}>" in reply and f"<#{CONFIGURED_LOG}>" in reply
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /bot init is not refused while a clean-up runs")
 async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path, caplog):
     """A new `/bot init` would claim the server while the last reset is still deleting the bot's
     messages and roles there (#482, F4). It is refused, with a reply to run it again once the

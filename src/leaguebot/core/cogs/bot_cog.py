@@ -153,6 +153,16 @@ class BotCog(commands.Cog):
             await _refuse_on_host(interaction, _ANOTHER_SERVER)
             return
 
+        if self._clean_up is not None and not self._clean_up.done():
+            # A new claim would be made while the last reset is still deleting the bot's
+            # messages and roles here. Nothing is configured, so the host's log alone.
+            await _refuse_on_host(
+                interaction,
+                "⛔ A factory reset is still cleaning up Discord. Run `/bot init` again once "
+                "it has finished.",
+            )
+            return
+
         existing = await self.bot.config_service.get_server_config()
         if existing:
             await refuse(
