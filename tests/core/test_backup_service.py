@@ -240,9 +240,6 @@ def test_a_save_replaces_both_backups(tmp_path):
     assert "since the save" in _rows(bs.backup_path(jobs))
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a save replaces the league backup before copying the scheduler's"
-)
 def test_a_save_whose_scheduler_copy_fails_leaves_the_previous_pair(tmp_path):
     """Neither backup is replaced until both copies are taken, so the previous pair stands, with
     no temporary left beside it, and the fault is one the caller may call harmless."""
@@ -257,9 +254,6 @@ def test_a_save_whose_scheduler_copy_fails_leaves_the_previous_pair(tmp_path):
     assert _backups(tmp_path) == before
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a failure between the two renames is still a backup error"
-)
 def test_a_save_whose_second_rename_fails_is_not_told_as_harmless(tmp_path, monkeypatch):
     """Once one backup is replaced the pair no longer matches, so the failure is neither a fault
     the save undid nor a refusal: it reaches the caller as an unexpected error, whose reply says

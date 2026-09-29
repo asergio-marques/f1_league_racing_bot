@@ -110,11 +110,31 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
     interruption leaves the previous backup standing rather than a half-written one where
     a good one used to be.
     """
-    source, target = Path(source), Path(target)
+    target = Path(target)
+    temporary = _copy_to_temporary(source, target)
+    try:
+        os.replace(temporary, target)
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        raise BackupFault(f"{target.name} could not be written: {exc}") from exc
+
+
+def _temporary_beside(target: Path) -> Path:
+    """The name a copy bound for *target* is written under first."""
+    return target.with_name(target.name + ".part")
+
+
+def _copy_to_temporary(source: str | Path, target: Path) -> Path:
+    """Copy *source* through the backup API to the temporary name beside *target*, and return it.
+
+    Raises `BackupFault` where there is no database to copy or the copy fails, having removed
+    what it wrote.
+    """
+    source = Path(source)
     if not source.is_file():
         raise BackupFault(f"there is no database at {source.name} to copy")
 
-    temporary = target.with_name(target.name + ".part")
+    temporary = _temporary_beside(target)
     temporary.unlink(missing_ok=True)
     origin = copy = None
     try:
@@ -140,12 +160,7 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
         # Removed only once both handles are shut, or Windows will not let it go.
         temporary.unlink(missing_ok=True)
         raise BackupFault(f"{source.name} could not be copied: {failure}") from failure
-
-    try:
-        os.replace(temporary, target)
-    except OSError as exc:
-        temporary.unlink(missing_ok=True)
-        raise BackupFault(f"{target.name} could not be written: {exc}") from exc
+    return temporary
 
 
 def copy_jobstore(source: str | Path, target: str | Path) -> None:
@@ -228,18 +243,46 @@ def set_lock(live_path: str | Path, *, who: str, now: datetime | None = None) ->
 
 
 def save(db_path: str | Path, jobstore_path: str | Path) -> None:
-    """Back up both databases, overwriting whatever was there.
+    """Back up both databases, overwriting whatever was there, both or neither.
 
     Refuses while the backup is locked. The caller pauses the scheduler around this.
+
+    **All or nothing.** Both copies are taken to temporary files beside their targets first,
+    and only once both have succeeded are the two backups replaced, so a copy that fails leaves
+    the previous pair standing and no temporary behind. Such a failure is a `BackupFault`, and
+    a caller may say the previous backup is unchanged. A failure in the renames themselves is
+    not: the first rename that fails is a `BackupFault` too (nothing has been replaced yet), but
+    one after the league backup has landed leaves a mismatched pair and raises the `OSError`
+    as it is, for a caller to call a fault that may have been partly done.
     """
     if is_locked(db_path):
         raise BackupError(
             "the saved backup is locked, so it will not be overwritten. "
             "Unlock it with `/test-mode backup lock` first."
         )
-    snapshot_database(db_path, backup_path(db_path))
-    copy_jobstore(jobstore_path, backup_path(jobstore_path))
-    log.info("backup: saved %s and %s", backup_path(db_path), backup_path(jobstore_path))
+    league_target = backup_path(db_path)
+    jobs_target = backup_path(jobstore_path)
+    has_jobs = Path(jobstore_path).is_file()
+
+    league_part = jobs_part = None
+    try:
+        league_part = _copy_to_temporary(db_path, league_target)
+        if has_jobs:
+            jobs_part = _copy_to_temporary(jobstore_path, jobs_target)
+        try:
+            os.replace(league_part, league_target)
+        except OSError as exc:
+            raise BackupFault(f"{league_target.name} could not be written: {exc}") from exc
+        league_part = None
+        # From here the pair no longer matches until the scheduler's half lands.
+        if jobs_part is not None:
+            os.replace(jobs_part, jobs_target)
+            jobs_part = None
+    finally:
+        for part in (league_part, jobs_part):
+            if part is not None:
+                part.unlink(missing_ok=True)
+    log.info("backup: saved %s and %s", league_target, jobs_target)
 
 
 def discard(db_path: str | Path, jobstore_path: str | Path) -> bool:
