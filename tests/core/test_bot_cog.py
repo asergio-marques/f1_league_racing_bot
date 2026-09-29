@@ -1173,7 +1173,8 @@ async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_
 ):
     """One line, to the log channel found before the wipe, posted after the clean-up has ended
     and so left standing by it: it names the server owner, has what was erased beneath it, and
-    says how the clean-up ended (#482)."""
+    says how the clean-up ended, a clean-up that stopped naming its kind of fault and never the
+    error itself (#482)."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _resetting_bot(db_path, tmp_path)
@@ -1197,7 +1198,10 @@ async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_
     elif ending == "faults":
         assert "#race-log could not be cleared" in line
     else:
+        # The kind of fault, in plain words; the error itself stays in the host's log.
         assert "stopped" in line.lower()
+        assert "the bot hit an internal fault" in line
+        assert "gateway lost" not in line
 
 
 @pytest.mark.parametrize(
