@@ -16,6 +16,8 @@ earlier press failed rather than that nothing was done.
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -257,3 +259,89 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
     detail = "\n".join(beneath).lower()
     assert "failed" in detail and "partly" in detail, detail
     assert "nothing has been" not in detail, detail
+
+
+# ── Five minutes from posting, whatever is pressed (#482, F10) ─────────────
+#
+# The core specification's "Confirming placements": "The button shall stand for five minutes from
+# the posting of the review that carries it." discord.py restarts a view's timer on every press
+# that reaches a button, a refused one included, so a review pressed now and then would never
+# expire. Here the review's five minutes are scaled down to one second, so its timer runs in earnest.
+
+_FIVE_MINUTES_FROM_POSTING = pytest.mark.xfail(
+    strict=True,
+    reason="#482: a press, even a refused one, restarts the review's five minutes",
+)
+
+
+@_FIVE_MINUTES_FROM_POSTING
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
+    monkeypatch, view_class, label, review, helper, verb
+):
+    """Alex's review is posted and its timer starts. Four-fifths of the way through (scaled: half
+    of a one-second window) Sam, who may not answer it, presses its button and is refused.
+
+    The review still expires at its five minutes from posting, not five minutes from Sam's press:
+    the question is deleted, today's notice is posted, and the log holds Sam's refusal and then
+    Alex's lapse line.
+    """
+    from leaguebot.core.cogs import season_cog
+
+    monkeypatch.setattr(season_cog, "APPROVAL_WINDOW_SECONDS", 1.0)
+    view, cog, message = _review(view_class, helper)
+    loop = asyncio.get_running_loop()
+    posted = loop.time()
+    # What discord.py does when the question is posted with its view: the timer starts.
+    view._start_listening_from_store(MagicMock())
+    try:
+        await asyncio.sleep(0.5)
+        button = next(item for item in view.children if isinstance(item, discord.ui.Button))
+        await view._dispatch_item(button, _press(cog, BYSTANDER, "Sam"))
+
+        # Due at one second from posting; a timer restarted by the press would run to 1.5.
+        while not view.is_finished() and loop.time() < posted + 1.25:
+            await asyncio.sleep(0.02)
+        assert view.is_finished(), "the review outlived its window after a refused press"
+        while not message.channel.send.await_count and loop.time() < posted + 2.0:
+            await asyncio.sleep(0.02)
+    finally:
+        view.stop()
+
+    getattr(cog, helper).assert_not_awaited()
+    message.delete.assert_awaited_once()
+    assert "<@4242> your review has expired" in message.channel.send.await_args.args[0]
+    lines = _logged(cog)
+    assert len(lines) == 2, lines
+    assert lines[0].startswith("⛔ ") and " refused for Sam (<@99>) — " in lines[0], lines
+    head = lines[1].splitlines()[0]
+    assert head.startswith("⌛ "), head
+    assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
+
+
+@_FIVE_MINUTES_FROM_POSTING
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_a_press_after_the_five_minutes_confirms_nothing(
+    view_class, label, review, helper, verb
+):
+    """Alex's review was posted more than five minutes ago (its window closed a second ago), and
+    Alex presses its button.
+
+    The press is not taken as a confirmation: nothing is approved or confirmed. Alex is answered
+    privately that nothing has been approved (or confirmed), and the log holds exactly one line,
+    the refusal of his press.
+    """
+    view, cog, message = _review(view_class, helper)
+    view._deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+    interaction = _press(cog)
+
+    await view_class.approve(view, interaction, MagicMock())
+
+    getattr(cog, helper).assert_not_awaited()
+    reply = interaction.response.send_message.await_args
+    assert f"Nothing has been {verb}" in reply.args[0], reply
+    assert reply.kwargs["ephemeral"] is True
+    lines = _logged(cog)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("⛔ ") and " refused for Alex (<@4242>) — " in lines[0], lines
+
