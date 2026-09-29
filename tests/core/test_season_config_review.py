@@ -315,6 +315,24 @@ async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
     assert "The season is no longer in configuration." in logged[0]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the signup settings are still fixed before the season's stage is moved, so a "
+    "refused confirmation has already written them",
+)
+async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signup_settings():
+    """F5: the stage moves first, so a refused confirmation writes nothing (#482)."""
+    bot = _bot(signup=True)
+    bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    cog = _cog(bot)
+    interaction = _interaction()
+    interaction.client = bot
+
+    await cog._do_confirm_configuration(interaction)
+
+    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
+    bot.signup_module_service.snapshot_season_config.assert_not_awaited()
+
 
 # ── The button ─────────────────────────────────────────────────────────────────────
 
