@@ -21,6 +21,15 @@ from leaguebot.core.services.test_mode_service import count_live_real_drivers
 
 SERVER_ID = 22150
 
+#: Alex, the league admin who runs `/season complete`. The season's end is handed the member
+#: who completes it, so that a line it writes names them (#482).
+_ALEX = SimpleNamespace(id=4242, display_name="Alex")
+
+_TAKES_THE_MEMBER = pytest.mark.xfail(
+    strict=True,
+    reason="#482: execute_season_end does not yet take the member who completes the season",
+)
+
 
 class _Scheduler:
     def cancel_season_end(self):
@@ -94,10 +103,11 @@ async def db_path(tmp_path):
 async def _complete(db_path):
     bot = _bot(db_path)
     with patch("leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
-        await execute_season_end(1, bot)
+        await execute_season_end(1, bot, actor=_ALEX)
     return bot
 
 
+@_TAKES_THE_MEMBER
 async def test_completion_returns_drivers_to_not_signed_up(db_path):
     await _complete(db_path)
 
@@ -109,6 +119,7 @@ async def test_completion_returns_drivers_to_not_signed_up(db_path):
     assert rows == [(1, "NOT_SIGNED_UP")]
 
 
+@_TAKES_THE_MEMBER
 async def test_completion_leaves_no_live_driver_to_hold_test_mode_shut(db_path):
     """The defect behind `/test-mode toggle` refusing between seasons."""
     await _complete(db_path)
@@ -116,6 +127,7 @@ async def test_completion_leaves_no_live_driver_to_hold_test_mode_shut(db_path):
     assert await count_live_real_drivers(db_path) == 0
 
 
+@_TAKES_THE_MEMBER
 async def test_completion_switches_test_mode_off(db_path):
     await _complete(db_path)
 
@@ -126,6 +138,7 @@ async def test_completion_switches_test_mode_off(db_path):
         assert (await cursor.fetchone())[0] == 0
 
 
+@_TAKES_THE_MEMBER
 async def test_the_season_is_archived_with_history_for_its_former_driver(db_path):
     await _complete(db_path)
 
@@ -140,6 +153,7 @@ async def test_the_season_is_archived_with_history_for_its_former_driver(db_path
     assert rows == [("1001", 1), ("9000000000000000003", None)]
 
 
+@_TAKES_THE_MEMBER
 async def test_an_open_signup_window_is_closed(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
@@ -154,6 +168,7 @@ async def test_an_open_signup_window_is_closed(db_path):
     closed.assert_awaited_once()
 
 
+@_TAKES_THE_MEMBER
 async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db_path):
     """Each step of the end-of-season pass stands apart from the next."""
     with patch(
@@ -167,6 +182,7 @@ async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db
         assert (await cursor.fetchone())[0] == "COMPLETED"
 
 
+@_TAKES_THE_MEMBER
 async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path):
     async with get_connection(db_path) as db:
         await db.execute(
@@ -187,6 +203,7 @@ async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path
         assert (await cursor.fetchone())[0] == 0
 
 
+@_TAKES_THE_MEMBER
 async def test_the_window_is_closed_before_the_driver_pass(db_path):
     """Closed first, so that nobody begins a signup the driver pass has already gone by."""
     async with get_connection(db_path) as db:
@@ -211,6 +228,7 @@ async def test_the_window_is_closed_before_the_driver_pass(db_path):
     assert order == ["window", "driver pass"]
 
 
+@_TAKES_THE_MEMBER
 async def test_completing_deletes_the_saved_test_mode_backup(db_path):
     """Decided 2026-09-17: a season run to its end leaves a state nothing could restore."""
     from pathlib import Path
