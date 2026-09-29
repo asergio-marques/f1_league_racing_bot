@@ -884,3 +884,68 @@ async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_
     assert _logged(cog) == [
         f"\u26d4 `/division amend` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
+
+
+# ---------------------------------------------------------------------------
+# Asking for what already stands changes nothing, and says so (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a command that changes nothing because
+# nothing was asked of it records that nothing was changed. No audit entry is written, since no
+# value moved; the reply says nothing changed; and the log holds one line, in the success form,
+# saying so. Only an exact match is nothing: "Pro" to "PRO" is a rename (above).
+
+_NO_OP = pytest.mark.xfail(
+    strict=True, reason="#482: /division rename and /division amend do not yet tell a no-op apart"
+)
+
+
+def _says_nothing_changed(text: str) -> bool:
+    return "nothing" in text.lower() and "chang" in text.lower()
+
+
+@_NO_OP
+async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
+    """Pro, in a season in placements, is renamed to Pro."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, "division rename")
+
+    await _rename(cog, interaction, current="Pro", new="Pro")
+
+    cog.bot.season_service.rename_division.assert_not_awaited()
+    assert _says_nothing_changed(_replied(interaction))
+    assert "renamed to" not in _replied(interaction)
+    assert await _audit_rows(db_path) == []
+    [line] = _logged(cog)
+    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division rename |")
+    assert _says_nothing_changed(line)
+
+
+@_NO_OP
+@pytest.mark.parametrize(
+    "asked",
+    [
+        pytest.param({"new_name": "Pro"}, id="its_own_name"),
+        pytest.param({"tier": 1}, id="its_own_tier"),
+        pytest.param({"role": 555}, id="its_own_role"),
+        pytest.param({"new_name": "Pro", "tier": 1, "role": 555}, id="every_value_as_it_stands"),
+    ],
+)
+async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_path, asked):
+    """Pro, tier 1, role 555, in a season in placements, is amended to values it already holds."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, "division amend")
+    if "role" in asked:
+        asked = {**asked, "role": _role(asked["role"])}
+
+    await _amend(cog, interaction, **asked)
+
+    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert await _audit_rows(db_path) == []
+    assert _says_nothing_changed(_replied(interaction))
+    assert "amended" not in _replied(interaction)
+    [line] = _logged(cog)
+    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division amend |")
+    assert _says_nothing_changed(line)
