@@ -822,11 +822,6 @@ _SEASON_REFUSALS = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /season cancel and /season complete answer a refusal but write nothing to the "
-    "log channel",
-)
 @pytest.mark.parametrize("command, built, amending, word, reply", _SEASON_REFUSALS)
 async def test_every_season_cancel_and_complete_refusal_is_recorded(
     _open_amendment, command, built, amending, word, reply

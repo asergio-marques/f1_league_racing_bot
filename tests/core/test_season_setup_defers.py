@@ -220,9 +220,6 @@ async def test_season_setup_begins_the_season_in_configuration():
     assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /season setup answers a refusal but writes nothing to the log channel"
-)
 @pytest.mark.parametrize(
     "standing, reply",
     [

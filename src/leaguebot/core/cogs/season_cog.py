@@ -642,26 +642,29 @@ class SeasonCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         if self._get_pending() is not None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season placements-review` to approve, or `/season abort` to cancel it first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if await self.bot.season_service.get_confirmed_season() is not None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c A season is currently active for this server. "
                 "Complete it before starting a new one.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if await self.bot.season_service.get_setup_season() is not None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c A season setup is already in progress for this server. "
                 "Use `/season placements-review` to continue, or cancel it first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3215,18 +3218,20 @@ class SeasonCog(commands.Cog):
         confirm: str,
     ) -> None:
         if confirm != "CONFIRM":
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         season = await self.bot.season_service.get_confirmed_season()
         if season is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No season is being raced, so there is none to cancel. A season whose placements are yet to be "
                 "confirmed is abandoned with `/season abort`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3235,10 +3240,11 @@ class SeasonCog(commands.Cog):
         from leaguebot.core.models.season import ONGOING_STAGES
 
         if season.stage not in ONGOING_STAGES:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c Every division of this season is done. Complete it with "
                 "`/season complete` instead.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3250,12 +3256,13 @@ class SeasonCog(commands.Cog):
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Cannot cancel the season — round {held['round_number']} of "
                 f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
                 "Finish or cancel it first: cancelling writes every driver's history from the "
                 "standings, which would carry its corrections before they are approved.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3368,9 +3375,10 @@ class SeasonCog(commands.Cog):
         signups.
         """
         if confirm != "CONFIRM":
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c Type exactly `CONFIRM` in the `confirm` field to proceed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3382,10 +3390,11 @@ class SeasonCog(commands.Cog):
             SeasonStage.PLACEMENTS,
         }
         if season is None or season.stage not in pre_confirmation:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c `/season abort` is available only before a season's placements are "
                 "first confirmed. An ongoing season is cancelled with `/season cancel`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3425,8 +3434,10 @@ class SeasonCog(commands.Cog):
     ) -> None:
         season = await self.bot.season_service.get_confirmed_season()
         if season is None:
-            await interaction.response.send_message(
-                "\u274c No season is being raced, so there is none to complete.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c No season is being raced, so there is none to complete.",
+                what=describe(interaction),
             )
             return
 
@@ -3438,12 +3449,13 @@ class SeasonCog(commands.Cog):
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Cannot complete season — round {held['round_number']} of "
                 f"**{held['division_name']}** is being amended in <#{held['channel_id']}>. "
                 "Finish or cancel it first: completing posts every division's final "
                 "classification, which would carry its corrections before they are approved.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3495,10 +3507,8 @@ class SeasonCog(commands.Cog):
                     f"divisions have not finished: {unfinished}. Cancel a division that will "
                     "never run, or report this."
                 )
-            if deferred:
-                await interaction.followup.send(message, ephemeral=True)
-            else:
-                await interaction.response.send_message(message, ephemeral=True)
+            # The reply is a list when rounds are outstanding, and the line carries all of it.
+            await refuse(interaction, message, what=describe(interaction), reason=message[2:])
             return
 
         if not deferred:

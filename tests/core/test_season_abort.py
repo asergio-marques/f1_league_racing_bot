@@ -88,9 +88,6 @@ _ABORT_REFUSED = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /season abort answers a refusal but writes nothing to the log channel"
-)
 @pytest.mark.parametrize(
     "stage, word, reply",
     [
