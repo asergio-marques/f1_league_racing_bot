@@ -119,12 +119,16 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
         raise BackupFault(f"{target.name} could not be written: {exc}") from exc
 
 
-def _temporary_beside(target: Path) -> Path:
-    """The name a copy bound for *target* is written under first."""
-    return target.with_name(target.name + ".part")
+def _temporary_beside(target: Path, tag: str = "") -> Path:
+    """The name a copy bound for *target* is written under first.
+
+    *tag* keeps two copies bound for the same target apart, as a save whose two databases
+    are one file would otherwise have them share a name.
+    """
+    return target.with_name(target.name + tag + ".part")
 
 
-def _copy_to_temporary(source: str | Path, target: Path) -> Path:
+def _copy_to_temporary(source: str | Path, target: Path, tag: str = "") -> Path:
     """Copy *source* through the backup API to the temporary name beside *target*, and return it.
 
     Raises `BackupFault` where there is no database to copy or the copy fails, having removed
@@ -134,7 +138,7 @@ def _copy_to_temporary(source: str | Path, target: Path) -> Path:
     if not source.is_file():
         raise BackupFault(f"there is no database at {source.name} to copy")
 
-    temporary = _temporary_beside(target)
+    temporary = _temporary_beside(target, tag)
     temporary.unlink(missing_ok=True)
     origin = copy = None
     try:
@@ -273,7 +277,7 @@ def save(db_path: str | Path, jobstore_path: str | Path) -> None:
     try:
         league_part = _copy_to_temporary(db_path, league_target)
         if has_jobs:
-            jobs_part = _copy_to_temporary(jobstore_path, jobs_target)
+            jobs_part = _copy_to_temporary(jobstore_path, jobs_target, ".jobs")
         try:
             os.replace(league_part, league_target)
         except OSError as exc:
