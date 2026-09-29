@@ -591,3 +591,108 @@ async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_vie
     assert f"failed for Manager (<@{USER_ID}>)" in line
     assert "RuntimeError" in line
     assert "gateway closed" not in line
+
+
+# ---------------------------------------------------------------------------
+# An amendment to the values that stand changes nothing, and says so (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a command that changes nothing because
+# nothing was asked of it records that nothing was changed. On either path the reply says nothing
+# changed, no audit entry is written and the log holds one line, in the success form, saying so;
+# the active path offers no confirmation for it. Whether the values stand is judged purely
+# (`amendment_rules_service`), and tested there.
+
+_NO_OP = pytest.mark.xfail(
+    strict=True, reason="#482: /round amend does not yet tell an amendment to what stands apart"
+)
+
+
+def _says_nothing_changed(text: str) -> bool:
+    return "nothing" in text.lower() and "chang" in text.lower()
+
+
+async def _audit_rows(path: str) -> list:
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT change_type FROM audit_entries")
+        return [tuple(row) for row in await cursor.fetchall()]
+
+
+def _as_typed(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+@_NO_OP
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param(("track",), id="its_own_track"),
+        pytest.param(("format",), id="its_own_format"),
+        pytest.param(("scheduled_at",), id="its_own_moment"),
+        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
+    ],
+)
+async def test_an_active_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
+    """Round 1 of Div A, in a season being raced, stands at Bahrain International Circuit, in
+    the NORMAL format, thirty days from now; the manager amends it to values it already holds."""
+    at = (datetime.now(timezone.utc) + timedelta(days=30)).replace(second=0, microsecond=0)
+    path = await _db(tmp_path, scheduled_at=at)
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+    standing = {
+        "track": "Bahrain International Circuit",
+        "format": "NORMAL",
+        "scheduled_at": _as_typed(at),
+    }
+
+    await _amend(cog, interaction, **{field: standing[field] for field in fields})
+
+    assert not _offered_a_confirmation(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    assert _says_nothing_changed(_reply(interaction))
+    assert await _audit_rows(path) == []
+    [line] = _lines(cog)
+    assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
+    assert not line.startswith("⛔")
+    assert _says_nothing_changed(line)
+
+
+@_NO_OP
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param(("track",), id="its_own_track"),
+        pytest.param(("format",), id="its_own_format"),
+        pytest.param(("scheduled_at",), id="its_own_moment"),
+        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
+    ],
+)
+async def test_a_pending_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
+    """Round 1 of Div A, in the season being set up, stands at Bahrain International Circuit, in
+    the NORMAL format, on 1 December 2026 at 18:00 UTC; the manager amends it to values it
+    already holds. Nothing is saved to the season being set up."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    pending = _pending()
+    cog._get_pending = MagicMock(return_value=pending)
+    cog._snapshot_pending = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+    standing = {
+        "track": "Bahrain International Circuit",
+        "format": "NORMAL",
+        "scheduled_at": "2026-12-01T18:00:00",
+    }
+
+    await _amend(cog, interaction, **{field: standing[field] for field in fields})
+
+    cog._snapshot_pending.assert_not_awaited()
+    assert _says_nothing_changed(_reply(interaction))
+    assert "updated and saved" not in _reply(interaction)
+    assert await _audit_rows(path) == []
+    [line] = _lines(cog)
+    assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
+    assert not line.startswith("⛔")
+    assert _says_nothing_changed(line)
