@@ -176,10 +176,6 @@ async def test_record_abandoned_writes_each_standard_form_and_never_raises(case)
         assert line.splitlines()[1].strip() == detail
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: member_named and interaction_member do not yet live in member_names",
-)
 def test_the_member_naming_helpers_import_from_member_names_and_log_lines_alike():
     """`interaction_errors` names the member too, and cannot import `log_lines` without a
     cycle, so the two helpers live in a leaf module of their own; `log_lines` keeps offering
