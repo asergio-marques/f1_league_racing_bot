@@ -55,7 +55,7 @@ from leaguebot.core.utils.channel_guard import (
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView, is_foreign_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -301,13 +301,18 @@ class BulkRoundModal(LeagueModal, title="Add rounds in bulk"):
         await interaction.response.defer(ephemeral=True)
         rounds, errors = parse_bulk_round_lines(self.entries.value)
         if errors:
-            await interaction.followup.send(
-                _format_import_errors(errors), ephemeral=True
+            await refuse(
+                interaction,
+                _format_import_errors(errors),
+                what=describe_form(self),
+                reason="\n".join(errors),
             )
             return
         if not rounds:
-            await interaction.followup.send(
-                "❌ Nothing to add — no rounds were given.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ Nothing to add — no rounds were given.",
+                what=describe_form(self),
             )
             return
 
@@ -315,6 +320,7 @@ class BulkRoundModal(LeagueModal, title="Add rounds in bulk"):
             interaction,
             [ParsedDivisionRounds(division_name=self._division_name, rounds=rounds)],
             source="/round add-bulk",
+            what=describe_form(self),
         )
 
 
@@ -340,17 +346,24 @@ class XmlRoundModal(LeagueModal, title="Add rounds from XML"):
         await interaction.response.defer(ephemeral=True)
         divisions, errors = parse_round_xml(self.payload.value)
         if errors:
-            await interaction.followup.send(
-                _format_import_errors(errors), ephemeral=True
+            await refuse(
+                interaction,
+                _format_import_errors(errors),
+                what=describe_form(self),
+                reason="\n".join(errors),
             )
             return
         if not any(entry.rounds for entry in divisions):
-            await interaction.followup.send(
-                "❌ Nothing to add — no rounds were given.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ Nothing to add — no rounds were given.",
+                what=describe_form(self),
             )
             return
 
-        await _run_round_import(interaction, divisions, source="/round add-xml")
+        await _run_round_import(
+            interaction, divisions, source="/round add-xml", what=describe_form(self)
+        )
 
 
 async def _run_round_import(
@@ -358,10 +371,13 @@ async def _run_round_import(
     parsed: list[ParsedDivisionRounds],
     *,
     source: str,
+    what: str,
 ) -> None:
     """Apply a parsed calendar and report it. Shared by both import modals.
 
     The interaction is already deferred. Everything here replies through ``followup``.
+    *what* names the form as the log channel should read a refusal of it, which the form
+    passes in (`describe_form`), this function holding no form.
     """
     cog = cast("SeasonCog | None", bot_of(interaction).get_cog("SeasonCog"))
     if cog is None:  # pragma: no cover — the cog is loaded for the command to exist
@@ -372,8 +388,10 @@ async def _run_round_import(
 
     cfg = cog.resolve_pending(interaction)
     if cfg is None:
-        await interaction.followup.send(
-            "❌ No pending season setup. Run `/season setup` first.", ephemeral=True
+        await refuse(
+            interaction,
+            "❌ No pending season setup. Run `/season setup` first.",
+            what=what,
         )
         return
 
@@ -384,7 +402,12 @@ async def _run_round_import(
         overflow_check=partial(_overflow_for, cog),
     )
     if errors:
-        await interaction.followup.send(_format_import_errors(errors), ephemeral=True)
+        await refuse(
+            interaction,
+            _format_import_errors(errors),
+            what=what,
+            reason="\n".join(errors),
+        )
         return
 
     # Once, after every division: the import lands in one transaction.

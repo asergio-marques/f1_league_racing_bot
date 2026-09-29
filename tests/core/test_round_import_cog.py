@@ -426,9 +426,6 @@ def _submitted(form: str, value: str):
     return modal
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: the round import forms do not yet record their refusals"
-)
 @pytest.mark.parametrize(
     "form, title, value, has_setup, season_refuses, reply_says, carried",
     [
