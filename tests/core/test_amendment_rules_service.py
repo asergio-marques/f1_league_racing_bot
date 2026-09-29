@@ -464,13 +464,23 @@ def test_a_round_nudged_within_its_closed_check_in_stays_closed():
 
 _NO_OP = pytest.mark.xfail(strict=True, reason="#482: the no-op judgements are not yet written")
 
-#: A round as `/round amend` reads it before it asks for anything: its track, format and moment,
-#: the moment as the database hands it back (naive, UTC).
+#: A round as `/round amend` holds it before it asks for anything: its track, its format as a
+#: `RoundFormat` and its moment as a naive UTC `datetime`, which is what `_row_to_round` makes of
+#: the stored row on the active path and what the pending path's round already carries.
 _STANDING = {
     "track_name": "Bahrain International Circuit",
-    "format": "SPRINT",
-    "scheduled_at": "2026-07-01 18:00:00",
+    "format": RoundFormat.SPRINT,
+    "scheduled_at": datetime(2026, 7, 1, 18, 0),
 }
+
+
+def _asked_moment(text: str) -> datetime:
+    """A moment as `/round amend` holds it once typed: through `parse_datetime`, naive UTC."""
+    from leaguebot.core.utils.input_validator import parse_datetime
+
+    moment = parse_datetime(text)
+    assert moment is not None
+    return moment
 
 
 @_NO_OP
@@ -480,18 +490,18 @@ _STANDING = {
         pytest.param({"track_name": "Bahrain International Circuit"}, id="the_same_track"),
         pytest.param({"format": RoundFormat.SPRINT}, id="the_same_format"),
         pytest.param(
-            {"scheduled_at": datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc)},
+            {"scheduled_at": _asked_moment("2026-07-01T18:00:00")},
             id="the_same_moment_given_in_utc",
         ),
         pytest.param(
-            {"scheduled_at": datetime(2026, 7, 1, 20, 0, tzinfo=timezone(timedelta(hours=2)))},
+            {"scheduled_at": _asked_moment("2026-07-01T20:00:00+02:00")},
             id="the_same_moment_given_in_another_zone",
         ),
         pytest.param(
             {
                 "track_name": "Bahrain International Circuit",
                 "format": RoundFormat.SPRINT,
-                "scheduled_at": datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc),
+                "scheduled_at": _asked_moment("2026-07-01T18:00:00"),
             },
             id="every_field_as_it_stands",
         ),
@@ -510,7 +520,7 @@ def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
         pytest.param({"track_name": "Silverstone Circuit"}, id="another_track"),
         pytest.param({"format": RoundFormat.NORMAL}, id="another_format"),
         pytest.param(
-            {"scheduled_at": datetime(2026, 7, 1, 19, 0, tzinfo=timezone.utc)},
+            {"scheduled_at": _asked_moment("2026-07-01T19:00:00")},
             id="another_moment",
         ),
         pytest.param(
