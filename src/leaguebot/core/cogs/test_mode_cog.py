@@ -1388,7 +1388,7 @@ class _ConfirmRestoreView(LeagueView):
             interaction.user,
             what="`/test-mode backup restore`",
             lapsed=False,
-            detail="Nothing was restored.",
+            detail="Nothing was restored. Run `/test-mode backup restore` again to restore.",
         )
 
     async def on_timeout(self) -> None:

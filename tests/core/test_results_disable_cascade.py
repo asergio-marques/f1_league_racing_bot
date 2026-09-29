@@ -171,7 +171,6 @@ async def test_the_warning_carries_a_confirmation(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the cancel line does not name the next step")
 async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     """Cancel changes nothing, and is recorded with what stands and what to do next beneath it
     (#482)."""
@@ -194,7 +193,6 @@ async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     assert any("Run `/module disable` again" in text for text in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the cancel line does not name the next step")
 async def test_cancelling_a_results_only_disable_is_recorded(tmp_path):
     """With attendance off, Cancel is recorded with results still enabled and nothing
     deleted beneath it, and what to do next (#482)."""

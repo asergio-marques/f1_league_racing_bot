@@ -268,7 +268,7 @@ class _ConfirmDisableResultsView(LeagueView):
             interaction.user,
             what="`/module disable`",
             lapsed=False,
-            detail=self._standing,
+            detail=f"{self._standing} Run `/module disable` again to disable results.",
         )
 
     async def on_timeout(self) -> None:

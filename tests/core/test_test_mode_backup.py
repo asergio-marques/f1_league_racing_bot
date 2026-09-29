@@ -447,7 +447,6 @@ async def test_only_the_requester_may_confirm(live):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the cancel line does not name the next step")
 async def test_cancelling_changes_nothing(live):
     """Cancel stages nothing, and is recorded with "Nothing was restored." and what to do next
     beneath it (#482)."""
