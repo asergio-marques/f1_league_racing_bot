@@ -19,7 +19,7 @@ from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import LeagueView, league_guild
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
@@ -242,28 +242,55 @@ class _ConfirmDisableResultsView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._actor_id:
-            await interaction.response.send_message("⛔ Not your action.", ephemeral=True)
+            await refuse(interaction, "⛔ Not your action.", what=describe(interaction, button))
             return
         self.stop()
         await interaction.response.defer(ephemeral=True)
         await self._cog._apply_results_disable(
             interaction, cascade_attendance=self._cascade_attendance
         )
-        await self._cog._refresh_hub()
+        await self._cog._refresh_hub(interaction, "`/module disable`")
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._actor_id:
-            await interaction.response.send_message("⛔ Not your action.", ephemeral=True)
+            await refuse(interaction, "⛔ Not your action.", what=describe(interaction, button))
             return
         self.stop()
         await interaction.response.send_message(
-            "Cancelled. Both modules remain enabled."
-            if self._cascade_attendance
-            else "Cancelled. Results & Standings remains enabled and nothing was deleted.",
+            f"Cancelled. {self._standing}",
             ephemeral=True,
+        )
+        await record_abandoned(
+            interaction.client,
+            interaction.user,
+            what="`/module disable`",
+            lapsed=False,
+            detail=f"{self._standing} Run `/module disable` again to disable results.",
+        )
+
+    async def on_timeout(self) -> None:
+        """Record that the confirmation lapsed unanswered, naming who started it.
+
+        Nothing was changed, so the line says what stands and to run the command again.
+        """
+        await record_abandoned(
+            self._cog.bot,
+            self._actor_id,
+            what="`/module disable`",
+            lapsed=True,
+            detail=f"{self._standing} Run `/module disable` again to disable results.",
+        )
+
+    @property
+    def _standing(self) -> str:
+        """What stands once the confirmation is not given."""
+        return (
+            "Both modules remain enabled."
+            if self._cascade_attendance
+            else "Results & Standings remains enabled and nothing was deleted."
         )
 
 
@@ -312,7 +339,7 @@ class ModuleCog(commands.Cog):
             await self._enable_images(interaction)
         else:
             await self._enable_signup(interaction)
-        await self._refresh_hub()
+        await self._refresh_hub(interaction, describe(interaction))
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -341,14 +368,16 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
-        await self._refresh_hub()
+        await self._refresh_hub(interaction, describe(interaction))
 
-    async def _refresh_hub(self) -> None:
+    async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
         """Bring the hub's panel up to date: a module's options are offered while it is on.
 
         Run after every enable and disable, the confirmed results disable included, whether
         or not the module offers anything — the hub asks each option, not each module. A
-        panel that cannot be refreshed is logged and never fails the toggle behind it.
+        panel that cannot be refreshed is logged, naming the member and *what* caused the refresh,
+        and never fails the toggle behind it. The caller names it: a button's interaction
+        carries no command, so `describe` could only say "an interaction" for it.
         """
         from leaguebot.core.services.hub_service import refresh_panel
 
@@ -358,7 +387,10 @@ class ModuleCog(commands.Cog):
             log.exception("module toggle: the hub panel could not be refreshed")
             return
         if fault is not None:
-            await self.bot.output_router.post_log(f"Hub panel not refreshed: {fault}")
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                f"{what} | Hub panel not refreshed: {fault}"
+            )
 
     async def _refuse_module_change(
         self,
@@ -469,8 +501,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "⚠️ Weather module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Weather module is already disabled.", what=describe(interaction)
             )
             return
 
@@ -561,8 +593,8 @@ class ModuleCog(commands.Cog):
         right, whatever attendance is doing.
         """
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "⚠️ Results & Standings module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Results & Standings module is already disabled.", what=describe(interaction)
             )
             return
 
@@ -640,10 +672,12 @@ class ModuleCog(commands.Cog):
 
         # The division finishing may have been the season's last: a season with a window open or
         # placements to confirm is wound down and moves to Pending completion at once (#220).
+        wound_down = True
         try:
             await self.bot.season_service.wind_down_ongoing(self.bot)
         except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
             log.exception("could not wind the season down")
+            wound_down = False
 
         if purged is None or purged["rounds"]:
             outcome = (
@@ -689,6 +723,12 @@ class ModuleCog(commands.Cog):
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results"
             + summary
+            + (
+                ""
+                if wound_down
+                else "\n  not done: the season could not be wound down afterwards, so it may "
+                "still be waiting on a stage it should have moved past"
+            )
             + (
                 f"\n  left standing, to delete by hand: {len(left_standing)}\n"
                 + "\n".join(f"  {link}" for link in left_standing)
@@ -869,8 +909,8 @@ class ModuleCog(commands.Cog):
         ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
         """
         if not await self.bot.module_service.is_images_enabled():
-            await interaction.response.send_message(
-                "⚠️ Image module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Image module is already disabled.", what=describe(interaction)
             )
             return
 
@@ -904,8 +944,8 @@ class ModuleCog(commands.Cog):
 
         if not cascade:
             if not await self.bot.module_service.is_attendance_enabled():
-                await interaction.response.send_message(
-                    "⚠️ Attendance module is already disabled.", ephemeral=True
+                await refuse(
+                    interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
                 )
                 return
             await interaction.response.defer(ephemeral=True)
@@ -993,8 +1033,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         if not await self.bot.module_service.is_signup_enabled():
-            await interaction.response.send_message(
-                "⚠️ Signup module is already disabled.", ephemeral=True
+            await refuse(
+                interaction, "⚠️ Signup module is already disabled.", what=describe(interaction)
             )
             return
 

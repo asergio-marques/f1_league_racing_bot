@@ -22,11 +22,19 @@ SERVER_ID = 7700
 
 
 def _interaction():
+    """An interaction whose response knows whether it has been used, as Discord's does, so that
+    a refusal answers by `response` until the interaction is answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
 
@@ -40,6 +48,8 @@ def _cog(*, test_mode: bool = True):
     )
     # The stage the roster may change in has tests of its own (test_test_mode_roster_stage).
     cog._refuse_roster_change_outside_placements = AsyncMock(return_value=False)
+    # A log channel that can be written to, as an imported roster now writes a line there (#482).
+    cog.bot.output_router.post_log = AsyncMock()
     return cog
 
 
@@ -122,6 +132,28 @@ async def test_the_roster_is_held_to_the_template_capacities(monkeypatch):
 
     seated.assert_awaited_once()
     assert seated.await_args.kwargs["placement_service"] is cog.bot.placement_service
+
+
+async def test_an_imported_roster_is_recorded(monkeypatch):
+    """Seating a roster changes the season, so it is recorded: one success line naming the
+    maintainer, how many drivers were seated and in which division (#482)."""
+    import leaguebot.core.services.test_roster_service as trs
+
+    monkeypatch.setattr(trs, "add_test_drivers_in_bulk", AsyncMock(return_value=(1, [])))
+    cog = _cog()
+    modal = _RosterImportModal(cog)
+    modal.csv_text._value = "9000000000000000001,Quicksilver,Alpine,Elite,British"
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.user.id = 77
+    interaction.user.display_name = "Maintainer"
+
+    await modal.on_submit(interaction)
+
+    [line] = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    first = line.splitlines()[0]
+    assert first.startswith("Maintainer (<@77>) | ") and "Success" in first
+    assert "1" in line and "Elite" in line
 
 
 async def test_the_submission_defers_before_it_replies():

@@ -9,9 +9,12 @@ good one, a restore that cannot be walked back.
 """
 from __future__ import annotations
 
+import os
+import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,6 +59,19 @@ def _rows(path: Path) -> list[str]:
     db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
         return [r[0] for r in db.execute("SELECT track FROM rounds ORDER BY id")]
+    finally:
+        db.close()
+
+
+def _rows_held(path: Path) -> int:
+    """How many rows every table of *path* holds between them: a scheduler's jobs, here.
+
+    Closed explicitly, as `_rows` is, so the file can be replaced after.
+    """
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        return sum(db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables)
     finally:
         db.close()
 
@@ -170,6 +186,211 @@ def test_a_failed_copy_leaves_the_previous_backup_standing(tmp_path):
 
     assert _rows(bs.backup_path(live)) == good
     assert not bs.backup_path(live).with_name("bot.bkup.db.part").exists()
+
+
+# ── A save replaces both backups or neither (#482, F2) ──────────────────────
+
+
+def _saved_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """A league and a scheduler database, saved once, each with a round added since."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    _add_round(live, "since the save")
+    _add_round(jobs, "since the save")
+    return live, jobs
+
+
+def _backups(tmp_path: Path) -> dict[str, bytes]:
+    """Every backup file and temporary beside it, by name, with its contents."""
+    return {p.name: p.read_bytes() for p in sorted(tmp_path.iterdir()) if ".bkup" in p.name}
+
+
+class _OsWhoseSecondBackupRenameFails:
+    """`os` for the backup module alone, whose rename onto the second of the two backups fails.
+
+    Whichever backup is replaced first lands; the rename onto the other then fails, leaving the
+    pair mismatched.
+    """
+
+    def __init__(self, *finals: Path) -> None:
+        self._finals = {str(final) for final in finals}
+        self._landed: list[str] = []
+
+    def replace(self, source, target) -> None:
+        if str(target) in self._finals:
+            if self._landed:
+                raise OSError("the disk is full")
+            self._landed.append(str(target))
+        os.replace(source, target)
+
+    def __getattr__(self, name: str):
+        return getattr(os, name)
+
+
+def test_a_save_replaces_both_backups(tmp_path):
+    live, jobs = _saved_pair(tmp_path)
+
+    bs.save(live, jobs)
+
+    # Read before the rows are: reading a backup in WAL leaves its own -wal and -shm beside it.
+    assert set(_backups(tmp_path)) == {"bot.bkup.db", "scheduler.bkup.db"}
+    assert "since the save" in _rows(bs.backup_path(live))
+    assert "since the save" in _rows(bs.backup_path(jobs))
+
+
+def test_a_save_whose_scheduler_copy_fails_leaves_the_previous_pair(tmp_path):
+    """Neither backup is replaced until both copies are taken, so the previous pair stands, with
+    no temporary left beside it, and the fault is one the caller may call harmless."""
+    live, jobs = _saved_pair(tmp_path)
+    before = _backups(tmp_path)
+    jobs.write_bytes(b"not a database at all")
+
+    with pytest.raises(bs.BackupError) as raised:
+        bs.save(live, jobs)
+
+    assert isinstance(raised.value, bs.BackupFault)
+    assert _backups(tmp_path) == before
+
+
+def test_a_save_whose_second_rename_fails_is_not_told_as_harmless(tmp_path, monkeypatch):
+    """Once one backup is replaced the pair no longer matches, so the failure is neither a fault
+    the save undid nor a refusal: it reaches the caller as an unexpected error, whose reply says
+    the save may have been partly done."""
+    live, jobs = _saved_pair(tmp_path)
+    monkeypatch.setattr(
+        bs, "os", _OsWhoseSecondBackupRenameFails(bs.backup_path(live), bs.backup_path(jobs))
+    )
+
+    with pytest.raises(Exception) as raised:
+        bs.save(live, jobs)
+
+    assert not isinstance(raised.value, bs.BackupError)
+
+
+def test_a_save_with_no_scheduler_database_leaves_no_scheduler_backup(tmp_path):
+    """The saved pair is the league backup and no scheduler backup (#482, F5): an earlier scheduler
+    backup is never left paired with a newer league backup, for a restore to bring back jobs the
+    league did not have when it was saved."""
+    live, jobs = _saved_pair(tmp_path)
+    jobs.unlink()
+
+    bs.save(live, jobs)
+
+    # Read before the rows are: reading a backup in WAL leaves its own -wal and -shm beside it.
+    assert set(_backups(tmp_path)) == {"bot.bkup.db"}
+    assert "since the save" in _rows(bs.backup_path(live))
+
+
+def test_a_save_whose_two_databases_are_one_file_leaves_no_temporary(tmp_path):
+    """Where the league and the scheduler share one file, the save's two copies are bound for the
+    same backup: they are kept apart, so neither overwrites the other's temporary mid-save and
+    none is left behind, and the backup stands with what was live."""
+    live = tmp_path / "bot.db"
+    _database(live, rows=1)
+    bs.save(live, live)
+    _add_round(live, "since the save")
+
+    bs.save(live, live)
+
+    # Read before the rows are: reading a backup in WAL leaves its own -wal and -shm beside it.
+    assert set(_backups(tmp_path)) == {"bot.bkup.db"}
+    assert "since the save" in _rows(bs.backup_path(live))
+
+
+# ── A fault, told from a refusal ──────────────────────────────────────────
+
+
+def _no_database(tmp_path: Path) -> None:
+    bs.save(tmp_path / "bot.db", tmp_path / "scheduler.db")
+
+
+def _a_copy_that_fails(tmp_path: Path) -> None:
+    (tmp_path / "corrupt.db").write_bytes(b"not a database at all")
+    bs.snapshot_database(tmp_path / "corrupt.db", tmp_path / "copy.bkup.db")
+
+
+def _a_write_that_fails(tmp_path: Path, monkeypatch) -> None:
+    def refuse(*_args, **_kwargs):
+        raise OSError("the disk is full")
+
+    # Replaced on this module alone, so nothing else in the run renames through it.
+    monkeypatch.setattr(bs, "os", SimpleNamespace(replace=refuse))
+    _database(tmp_path / "bot.db")
+    bs.save(tmp_path / "bot.db", tmp_path / "scheduler.db")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        pytest.param(
+            lambda tmp_path, _monkeypatch: _no_database(tmp_path),
+            id="no-database-to-copy",
+        ),
+        pytest.param(
+            lambda tmp_path, _monkeypatch: _a_copy_that_fails(tmp_path),
+            id="copy-fails",
+        ),
+        pytest.param(
+            _a_write_that_fails,
+            id="write-fails",
+        ),
+    ],
+)
+def test_a_copy_or_write_that_fails_is_a_fault(tmp_path, monkeypatch, fault):
+    """A fault in the bot, not something the member can act on (#482): the cogs record it as a
+    failure, never as a refusal, and their reply does not name it."""
+    with pytest.raises(bs.BackupError) as raised:
+        fault(tmp_path, monkeypatch)
+
+    assert isinstance(raised.value, bs.BackupFault)
+
+
+def _locked(tmp_path: Path) -> None:
+    live = tmp_path / "bot.db"
+    _database(live)
+    bs.set_lock(live, who="Manager")
+    bs.save(live, tmp_path / "scheduler.db")
+
+
+def _none_saved(tmp_path: Path) -> None:
+    _database(tmp_path / "bot.db")
+    bs.stage_restore(tmp_path / "bot.db", tmp_path / "scheduler.db")
+
+
+def _unreadable(tmp_path: Path) -> None:
+    live = tmp_path / "bot.db"
+    _database(live)
+    bs.backup_path(live).write_bytes(b"not a database at all")
+    bs.stage_restore(live, tmp_path / "scheduler.db")
+
+
+def _scheduler_unreadable(tmp_path: Path) -> None:
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    bs.backup_path(jobs).write_bytes(b"not a database at all")
+    bs.stage_restore(live, jobs)
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        pytest.param(_locked, id="locked"),
+        pytest.param(_none_saved, id="none-saved"),
+        pytest.param(_unreadable, id="unreadable"),
+        pytest.param(_scheduler_unreadable, id="scheduler-unreadable"),
+    ],
+)
+def test_what_the_member_can_act_on_is_a_plain_backup_error(tmp_path, refusal):
+    """Locked, none saved and unreadable are refusals with a reason to act on, not faults (#482):
+    the plain error, never its fault subclass."""
+    with pytest.raises(bs.BackupError) as raised:
+        refusal(tmp_path)
+
+    assert type(raised.value) is bs.BackupError
 
 
 # ── The lock ──────────────────────────────────────────────────────────────
@@ -294,6 +515,107 @@ def test_a_corrupt_scheduler_backup_is_refused_too(tmp_path):
 
 
 # ── Applying it at startup ────────────────────────────────────────────────
+
+
+class _ShutilWhoseSchedulerStagingFails:
+    """`shutil` for the backup module alone, whose copy onto the scheduler's staged name fails."""
+
+    def __init__(self, jobs: Path) -> None:
+        self._target = str(bs.staged_path(jobs))
+
+    def copyfile(self, source, target, *args, **kwargs):
+        if str(target) == self._target:
+            raise OSError("the disk is full")
+        return shutil.copyfile(source, target, *args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(shutil, name)
+
+
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        pytest.param(False, id="first-staging"),
+        pytest.param(True, id="after-an-earlier-staging"),
+    ],
+)
+def test_a_staging_whose_scheduler_copy_fails_stages_nothing(tmp_path, monkeypatch, earlier):
+    """Otherwise the next start swaps the league database in without its scheduler (#482, F1).
+    Both staged names go, even where an earlier staging still awaiting a restart wrote them, and
+    the fault is one the restore confirmation may call "Nothing was restored."."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    _add_round(live, "live only")
+    if earlier:
+        bs.stage_restore(live, jobs)
+    monkeypatch.setattr(bs, "shutil", _ShutilWhoseSchedulerStagingFails(jobs))
+
+    with pytest.raises(bs.BackupError) as raised:
+        bs.stage_restore(live, jobs)
+
+    assert isinstance(raised.value, bs.BackupFault)
+    assert not bs.staged_path(live).exists()
+    assert not bs.staged_path(jobs).exists()
+    assert bs.apply_staged_restore(live, jobs) is False
+    assert "live only" in _rows(live)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        pytest.param(bs.BackupFault("bot.prerestore.db could not be written"), id="backup-fault"),
+        pytest.param(OSError("the disk is full"), id="os-error"),
+        pytest.param(sqlite3.OperationalError("disk I/O error"), id="sqlite-error"),
+    ],
+)
+def test_a_staging_whose_pre_restore_copy_fails_stages_nothing(tmp_path, monkeypatch, failure):
+    """The copy of what is live is taken before anything is staged, and its failure is a fault
+    like any other copy's: an earlier staging still awaiting a restart goes too, so the next
+    start swaps nothing in (#482, F1)."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    _database(jobs, wal=False, rows=1)
+    bs.save(live, jobs)
+    _add_round(live, "live only")
+    bs.stage_restore(live, jobs)
+
+    def fail(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(bs, "snapshot_database", fail)
+
+    with pytest.raises(bs.BackupError) as raised:
+        bs.stage_restore(live, jobs)
+
+    assert isinstance(raised.value, bs.BackupFault)
+    assert not bs.staged_path(live).exists()
+    assert not bs.staged_path(jobs).exists()
+    assert bs.apply_staged_restore(live, jobs) is False
+    assert "live only" in _rows(live)
+
+
+def test_a_restore_with_no_scheduler_half_stages_an_empty_scheduler(tmp_path):
+    """Otherwise the restored league meets whichever scheduler is live, with jobs it did not have
+    when it was saved (#482, F5): an empty scheduler database is staged beside the league one, and
+    the restart leaves the live scheduler holding no jobs. The two jobs it replaces are kept first,
+    in the scheduler's pre-restore copy, so a restore nobody wanted can be walked back."""
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    _database(live, rows=1)
+    bs.save(live, jobs)
+    _database(jobs, wal=False, rows=2)
+
+    bs.stage_restore(live, jobs)
+
+    assert bs.is_readable_database(bs.prerestore_path(jobs))
+    assert _rows_held(bs.prerestore_path(jobs)) == 2
+    assert bs.staged_path(live).is_file()
+    assert bs.is_readable_database(bs.staged_path(jobs))
+    assert _rows_held(bs.staged_path(jobs)) == 0
+    assert bs.apply_staged_restore(live, jobs) is True
+    assert jobs.is_file()
+    assert _rows_held(jobs) == 0
 
 
 def test_the_staged_database_replaces_the_live_one(tmp_path):

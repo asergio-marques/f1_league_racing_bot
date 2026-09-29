@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 
 
@@ -42,12 +44,20 @@ def _cog() -> MagicMock:
 
 
 def _interaction() -> MagicMock:
+    """An interaction whose response knows whether it has been used, as Discord's does, so that
+    a refusal answers by `response` until the interaction is answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.user.id = 42
     interaction.user.display_name = "Manager"
-    interaction.response.send_message = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
 
@@ -206,6 +216,8 @@ async def test_the_reserve_team_is_sent_to_its_own_command():
 
 
 async def test_a_form_submitted_untouched_changes_nothing():
+    """Nothing is written, the manager is told so, and one line records that nothing was
+    changed (#482)."""
     cog = _modify_cog()
 
     interaction = await _submit(cog)
@@ -213,6 +225,10 @@ async def test_a_form_submitted_untouched_changes_nothing():
     assert "Nothing changed" in interaction.followup.send.await_args.args[0]
     cog.bot.team_service.modify_default_team.assert_not_awaited()
     cog.bot.placement_service.set_team_role_config.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = cog.bot.output_router.post_log.await_args.args[0]
+    assert line.startswith("Manager (<@42>) | /team modify")
+    assert "nothing" in line.lower() and "chang" in line.lower()
 
 
 async def test_changing_both_names_records_them_and_names_the_artwork_file():

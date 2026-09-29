@@ -11,8 +11,10 @@ from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import parse_user_id
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import guild_of
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
@@ -64,10 +66,11 @@ class DriverCog(commands.Cog):
             except discord.HTTPException:
                 member = None
         if member is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"⛔ <@{user.id}> is a past account of a driver whose current account, "
                 f"<@{current}>, is not in the server.",
-                ephemeral=True,
+                what=describe(interaction),
             )
         return member
 
@@ -128,15 +131,18 @@ class DriverCog(commands.Cog):
         elif old_user_id is not None:
             parsed_old_id = parse_user_id(old_user_id)
             if parsed_old_id is None:
-                await interaction.response.send_message(
-                    "⛔ `old_user_id` must be a numeric Discord user ID.", ephemeral=True
+                await refuse(
+                    interaction,
+                    "⛔ `old_user_id` must be a numeric Discord user ID.",
+                    what=describe(interaction),
                 )
                 return
             resolved_old_id = str(parsed_old_id)
         else:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ You must supply either `old_user` (mention) or `old_user_id` (raw snowflake).",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -151,7 +157,7 @@ class DriverCog(commands.Cog):
                 resolved_old_id, new_user_id, actor_id, actor_name
             )
         except ValueError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         profile = outcome.profile
@@ -245,17 +251,20 @@ class DriverCog(commands.Cog):
         # Resolve season, and the stage placements may be made in (issue #220)
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
-            await interaction.followup.send(
-                _NOT_PLACING_REFUSAL.format(command="/driver assign"), ephemeral=True
+            await refuse(
+                interaction,
+                _NOT_PLACING_REFUSAL.format(command="/driver assign"),
+                what=describe(interaction),
             )
             return
 
         try:
             await self.bot.season_service.assert_season_mutable(season)
         except SeasonImmutableError:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "❌ This season is archived (COMPLETED) and cannot be modified.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -264,8 +273,10 @@ class DriverCog(commands.Cog):
             season.id, division
         )
         if resolved is None:
-            await interaction.followup.send(
-                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛔ Division **{division}** not found in the active season.",
+                what=describe(interaction),
             )
             return
         division_id, division_name = resolved
@@ -275,7 +286,7 @@ class DriverCog(commands.Cog):
             division_id, team
         )
         if reference.team is None:
-            await interaction.followup.send(f"⛔ {reference.refusal}", ephemeral=True)
+            await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
             return
 
         # Fetch the driver profile
@@ -283,8 +294,10 @@ class DriverCog(commands.Cog):
             str(user.id)
         )
         if profile is None:
-            await interaction.followup.send(
-                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛓ No driver profile found for **{user.display_name}**.",
+                what=describe(interaction),
             )
             return
 
@@ -302,7 +315,7 @@ class DriverCog(commands.Cog):
                 uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
         except ValueError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         verb = "Assigned"
@@ -351,17 +364,20 @@ class DriverCog(commands.Cog):
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
-            await interaction.followup.send(
-                _NOT_PLACING_REFUSAL.format(command="/driver unassign"), ephemeral=True
+            await refuse(
+                interaction,
+                _NOT_PLACING_REFUSAL.format(command="/driver unassign"),
+                what=describe(interaction),
             )
             return
 
         try:
             await self.bot.season_service.assert_season_mutable(season)
         except SeasonImmutableError:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "❌ This season is archived (COMPLETED) and cannot be modified.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -369,8 +385,10 @@ class DriverCog(commands.Cog):
             season.id, division
         )
         if resolved is None:
-            await interaction.followup.send(
-                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛔ Division **{division}** not found in the active season.",
+                what=describe(interaction),
             )
             return
         division_id, _division_name = resolved
@@ -379,8 +397,10 @@ class DriverCog(commands.Cog):
             str(user.id)
         )
         if profile is None:
-            await interaction.followup.send(
-                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛓ No driver profile found for **{user.display_name}**.",
+                what=describe(interaction),
             )
             return
 
@@ -396,7 +416,7 @@ class DriverCog(commands.Cog):
                 uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
             )
         except ValueError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         team_part = f"from **{result['team_name']}** " if result.get("team_name") else ""
@@ -452,9 +472,10 @@ class DriverCog(commands.Cog):
 
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ `/driver move` is available only while the season is ongoing.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -462,8 +483,10 @@ class DriverCog(commands.Cog):
             season.id, from_division
         )
         if resolved_from is None:
-            await interaction.followup.send(
-                f"⛔ Division **{from_division}** not found in the active season.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛔ Division **{from_division}** not found in the active season.",
+                what=describe(interaction),
             )
             return
         resolved_to = resolved_from
@@ -472,9 +495,10 @@ class DriverCog(commands.Cog):
                 season.id, to_division
             )
             if found_to is None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"⛔ Division **{to_division}** not found in the active season.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
             resolved_to = found_to
@@ -484,13 +508,15 @@ class DriverCog(commands.Cog):
             resolved_to[0], team
         )
         if reference.team is None:
-            await interaction.followup.send(f"⛔ {reference.refusal}", ephemeral=True)
+            await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
             return
 
         profile = await self.bot.driver_service.get_profile(str(user.id))
         if profile is None:
-            await interaction.followup.send(
-                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛓ No driver profile found for **{user.display_name}**.",
+                what=describe(interaction),
             )
             return
 
@@ -507,7 +533,7 @@ class DriverCog(commands.Cog):
                 discord_user_id=str(user.id),
             )
         except ValueError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         await interaction.followup.send(
@@ -551,9 +577,10 @@ class DriverCog(commands.Cog):
 
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ `/driver release` is available only while the season is ongoing.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -561,15 +588,19 @@ class DriverCog(commands.Cog):
             season.id, division
         )
         if resolved is None:
-            await interaction.followup.send(
-                f"⛔ Division **{division}** not found in the active season.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛔ Division **{division}** not found in the active season.",
+                what=describe(interaction),
             )
             return
 
         profile = await self.bot.driver_service.get_profile(str(user.id))
         if profile is None:
-            await interaction.followup.send(
-                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛓ No driver profile found for **{user.display_name}**.",
+                what=describe(interaction),
             )
             return
 
@@ -584,7 +615,7 @@ class DriverCog(commands.Cog):
                 discord_user_id=str(user.id),
             )
         except ValueError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         await interaction.followup.send(
@@ -624,17 +655,20 @@ class DriverCog(commands.Cog):
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
-            await interaction.followup.send(
-                _NOT_PLACING_REFUSAL.format(command="/driver reject"), ephemeral=True
+            await refuse(
+                interaction,
+                _NOT_PLACING_REFUSAL.format(command="/driver reject"),
+                what=describe(interaction),
             )
             return
 
         profile = await self.bot.driver_service.get_profile(str(user.id))
         if profile is None or profile.current_state is not DriverState.UNASSIGNED:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"⛔ **{user.display_name}** is not an Unassigned driver. A placed driver is "
                 "unassigned first; a signup still in review is rejected from its panel.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -647,6 +681,7 @@ class DriverCog(commands.Cog):
 
         server_cfg = await self.bot.config_service.get_server_config()
         role_id = server_cfg.driver_role_id if server_cfg is not None else None
+        problems: list[str] = []
         if role_id and interaction.guild is not None:
             role = interaction.guild.get_role(role_id)
             if role is not None:
@@ -654,14 +689,16 @@ class DriverCog(commands.Cog):
                     await user.remove_roles(role, reason="Driver rejected")
                 except discord.HTTPException as exc:
                     log.warning("reject: could not remove the driver role: %s", exc)
+                    problems.append(f"the driver role could not be removed: {exc}")
 
-        await interaction.followup.send(
-            f"✅ Turned down **{user.display_name}**. They are no longer signed up.",
-            ephemeral=True,
-        )
+        reply = f"✅ Turned down **{user.display_name}**. They are no longer signed up."
+        if problems:
+            reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {p}" for p in problems)
+        await interaction.followup.send(reply, ephemeral=True)
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reject | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)",
+            f"  user: {user.display_name} (<@{user.id}>)"
+            + "".join(f"\n  not done: {p}" for p in problems),
         )
 
     # ------------------------------------------------------------------
@@ -694,9 +731,10 @@ class DriverCog(commands.Cog):
         # season still being built has no confirmed placement to sack anyone from.
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ `/driver sack` is available only while the season is ongoing.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -704,8 +742,10 @@ class DriverCog(commands.Cog):
             str(user.id)
         )
         if profile is None:
-            await interaction.followup.send(
-                f"⛓ No driver profile found for **{user.display_name}**.", ephemeral=True
+            await refuse(
+                interaction,
+                f"⛓ No driver profile found for **{user.display_name}**.",
+                what=describe(interaction),
             )
             return
 
@@ -719,7 +759,7 @@ class DriverCog(commands.Cog):
                 discord_user_id=str(user.id),
             )
         except ValueError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         await interaction.followup.send(

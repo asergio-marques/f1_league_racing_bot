@@ -30,12 +30,20 @@ def _make_role(role_id: int = 555, *, grantable: bool = True) -> MagicMock:
 
 
 def _make_interaction(guild_id: int = 1) -> MagicMock:
+    """An interaction whose response knows whether it has been used, as Discord's does, so that
+    a refusal answers by `response` until the interaction is answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = guild_id
     interaction.user.id = 42
     interaction.user.__str__ = lambda self: "admin#0001"
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
 
@@ -416,6 +424,8 @@ class TestOneRolePerTeam:
         assert interaction.response.send_message.call_args.args[0].startswith("⛔")
 
     async def test_the_reserve_is_not_given_a_role_another_team_holds(self):
+        """No driver moves, the manager is told which team holds the role, and the refusal is
+        recorded (#482)."""
         from leaguebot.core.cogs.team_cog import TeamCog
         bot = _make_bot()
         bot.placement_service.set_team_role_config = AsyncMock(
@@ -423,12 +433,18 @@ class TestOneRolePerTeam:
         )
         cog = TeamCog(bot)
         interaction = _make_interaction()
+        interaction.client = bot
+        interaction.command.qualified_name = "team reserve-role"
+        interaction.user.display_name = "Admin"
 
         await _unwrap(cog.team_reserve_role)(cog, interaction, role=self._role())
 
         bot.placement_service.swap_team_role.assert_not_awaited()
-        bot.output_router.post_log.assert_not_awaited()
         assert '"Ferrari"' in interaction.followup.send.call_args.args[0]
+        bot.output_router.post_log.assert_awaited_once_with(
+            '⛔ `/team reserve-role` refused for Admin (<@42>) — '
+            '<@&111> is already the role of "Ferrari".'
+        )
 
 
 # ---------------------------------------------------------------------------

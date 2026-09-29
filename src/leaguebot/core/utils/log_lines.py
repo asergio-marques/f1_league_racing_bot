@@ -44,7 +44,7 @@ from leaguebot.core.utils.messages import chunk_message
 log = logging.getLogger(__name__)
 
 #: The marks a reply opens with, which the log line's own mark replaces.
-_REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳")
+_REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳", "⛓", "⏸️", "⏸")
 
 
 async def name_of_member(bot: Any, member_id: int | None) -> str:
@@ -101,10 +101,10 @@ async def refuse(
     except Exception:  # noqa: BLE001 — the refusal is still recorded
         log.warning("could not tell user %s that %s was refused", user_id, what, exc_info=True)
 
-    router = getattr(interaction.client, "output_router", None)
-    if router is None:
-        return
     try:
+        router = getattr(getattr(interaction, "client", None), "output_router", None)
+        if router is None:
+            return
         detail = reason if reason is not None else _first_line(reply)
         await router.post_log(f"⛔ {what} refused for {interaction_member(interaction)} — {detail}")
     except Exception:  # noqa: BLE001 — the member has still been answered

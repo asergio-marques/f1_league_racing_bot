@@ -15,7 +15,8 @@ round already submitted. `test_a_fired_phase_cancels_its_own_job` holds it.
 **An unhandled error in a phase is reported, not raised.** The maintainer is stepping through a
 season and needs to know which round failed; an exception escaping into the interaction handler
 would tell them only that the command failed, with the season half-advanced and no indication
-where.
+where. The report is the standard failure reply and one failure line in the log channel, each
+naming the phase, the division and the round (#482).
 
 **Result submission refuses while one is already open**, and names *which* review is standing.
 A round awaiting appeal verdicts has had its report verdicts settled already, so always saying
@@ -112,6 +113,7 @@ def _make_cog(db_path: str, *, test_mode: bool = True) -> _Cog:
 
 def _interaction():
     interaction = MagicMock()
+    interaction.command.qualified_name = "test-mode advance"
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
     interaction.user.id = 77
@@ -122,6 +124,33 @@ def _interaction():
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
+
+
+def _failure_lines(cog) -> list[str]:
+    """Every failure line written to the log channel."""
+    return [
+        str(call.args[0])
+        for call in cog.bot.output_router.post_log.await_args_list
+        if str(call.args[0]).startswith("❌")
+    ]
+
+
+def _assert_failure_recorded(cog, interaction, phase: str) -> None:
+    """The maintainer got the standard failure reply and the log channel one failure line,
+    each naming *phase*, the division and the round, the line the kind of fault too (#482)."""
+    replied = _replied(interaction)
+    assert "stopped on a fault in the bot" in replied
+    assert "internal error" not in replied
+    assert "Check the bot logs" not in replied
+    for text in (phase, "Division 1", "Round 3"):
+        assert text.lower() in replied.lower()
+    lines = _failure_lines(cog)
+    assert len(lines) == 1
+    line = lines[0]
+    assert "`/test-mode advance`" in line
+    assert "failed for Maintainer (<@77>) — RuntimeError." in line
+    for text in (phase, "Division 1", "Round 3"):
+        assert text.lower() in line.lower()
 
 
 def _replied(interaction) -> str:
@@ -259,6 +288,24 @@ async def test_a_posted_mystery_notice_takes_its_notice_job_down(tmp_path, job_i
     cog.bot.scheduler_service.cancel_job.assert_not_called()
 
 
+def _log_lines(cog) -> list[str]:
+    """Every line written to the log channel."""
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+
+
+async def test_a_posted_mystery_notice_is_recorded(tmp_path):
+    """The notice is posted to the league, so the rehearsal records it as every other phase is
+    recorded: one success line naming the maintainer and what was posted, for which round (#482)."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(0))
+
+    [line] = _log_lines(cog)
+    assert line.startswith("Maintainer (<@77>) | /test-mode advance | Success")
+    assert "Mystery Round notice" in line
+    assert "Division 1" in line and "Round 3" in line
+
+
 async def test_a_fired_phase_cancels_its_own_job(tmp_path):
     """Otherwise the real job stays queued and fires again later, posting the same forecast
     a second time."""
@@ -280,10 +327,13 @@ async def test_a_phase_with_no_job_cancels_nothing(tmp_path):
 
 
 async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
-    """The maintainer is stepping through a season and needs to know which round failed."""
+    """The maintainer is stepping through a season and needs to know which round failed: the
+    standard failure reply and one failure line name the notice, the division and the round
+    (#482)."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(
         cog,
@@ -296,10 +346,7 @@ async def test_a_failing_mystery_notice_is_reported_not_raised(tmp_path):
         },
     )
 
-    replied = _replied(interaction)
-    assert "internal error" in replied
-    assert "Division 1" in replied
-    assert "Round 3" in replied
+    _assert_failure_recorded(cog, interaction, "Mystery Round notice")
 
 
 async def test_a_failing_notice_is_not_marked_done(tmp_path):
@@ -337,6 +384,19 @@ async def test_result_submission_opens_a_wizard(tmp_path):
     await _advance(cog, interaction, _entry(4))
 
     assert "Opening result submission wizard" in _replied(interaction)
+
+
+async def test_an_opened_submission_wizard_is_recorded_as_started(tmp_path):
+    """The wizard runs on its own once opened, so its line says it was started, never that the
+    results were submitted (#482)."""
+    cog = _make_cog(await _make_db(tmp_path))
+
+    await _advance(cog, _interaction(), _entry(4))
+
+    [line] = _log_lines(cog)
+    assert line.startswith("Maintainer (<@77>) | /test-mode advance")
+    assert "Division 1" in line and "Round 3" in line
+    assert "wizard" in line.lower() and "started" in line.lower()
 
 
 async def _noop(round_id: int) -> None:
@@ -494,8 +554,11 @@ async def test_the_rsvp_notice_is_fired(tmp_path):
 
 
 async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
+    """The standard failure reply and one failure line name the RSVP notice, the division and
+    the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(
         cog,
@@ -508,7 +571,7 @@ async def test_a_failing_rsvp_notice_is_reported_not_raised(tmp_path):
         },
     )
 
-    assert "internal error" in _replied(interaction)
+    _assert_failure_recorded(cog, interaction, "RSVP notice")
 
 
 async def test_a_fired_rsvp_notice_is_logged_to_the_league(tmp_path):
@@ -565,17 +628,17 @@ async def test_a_check_in_phase_with_no_job_cancels_nothing(tmp_path, phase):
     ],
 )
 async def test_a_failing_check_in_phase_is_reported_not_raised(tmp_path, phase, runner, phrase):
+    """The standard failure reply and one failure line name the phase, the division and the
+    round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(
         cog, interaction, _entry(phase), **{runner: AsyncMock(side_effect=RuntimeError("x"))}
     )
 
-    replied = _replied(interaction)
-    assert "internal error" in replied
-    assert phrase in replied
-    cog.bot.output_router.post_log.assert_not_awaited()
+    _assert_failure_recorded(cog, interaction, phrase)
 
 
 @pytest.mark.parametrize("phase,name", [(6, "rsvp_last_notice"), (7, "rsvp_deadline")])
@@ -639,8 +702,11 @@ async def test_a_fired_cleanup_cancels_its_job_by_kind(
 
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
 async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner, label, prefix):
+    """The standard failure reply and one failure line name the cleanup, the division and the
+    round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
+    interaction.client = cog.bot
     target = {
         "run_post_race_cleanup": "leaguebot.weather.services.forecast_cleanup_service.run_post_race_cleanup",
         "run_rsvp_cleanup": "leaguebot.attendance.services.rsvp_service.run_rsvp_cleanup",
@@ -650,10 +716,7 @@ async def test_a_failing_cleanup_is_reported_not_raised(tmp_path, phase, runner,
         cog, interaction, _entry(phase), **{target: AsyncMock(side_effect=RuntimeError("x"))}
     )
 
-    replied = _replied(interaction)
-    assert "internal error" in replied
-    assert label in replied
-    cog.bot.output_router.post_log.assert_not_awaited()
+    _assert_failure_recorded(cog, interaction, label)
 
 
 @pytest.mark.parametrize("phase,runner,label,prefix", CLEANUPS)
@@ -701,8 +764,11 @@ async def test_a_weather_phase_cancels_its_job_before_running(tmp_path):
 
 
 async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
+    """The standard failure reply names the phase, the division, the round and the track, and
+    one failure line the phase, the division and the round (#482)."""
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _advance(
         cog,
@@ -711,10 +777,8 @@ async def test_a_failing_weather_phase_names_the_round_and_track(tmp_path):
         **{"leaguebot.weather.services.phase1_service.run_phase1": AsyncMock(side_effect=RuntimeError("boom"))},
     )
 
-    replied = _replied(interaction)
-    assert "internal error occurred while advancing Phase 1" in replied
-    assert "Silverstone Circuit" in replied
-    cog.bot.output_router.post_log.assert_not_awaited()
+    _assert_failure_recorded(cog, interaction, "Phase 1")
+    assert "Silverstone Circuit" in _replied(interaction)
 
 
 async def test_a_fired_weather_phase_is_logged_with_its_track(tmp_path):

@@ -56,7 +56,7 @@ def backup_path(live_path: str | Path, stamp: str) -> Path:
 def take_backup(
     db_path: str | Path, jobstore_path: str | Path, *, now: datetime | None = None
 ) -> FactoryBackup:
-    """Copy both databases beside the live ones. Raises `backup_service.BackupError`.
+    """Copy both databases beside the live ones. Raises `backup_service.BackupFault`.
 
     The caller pauses the scheduler around this, as `backup_service.save`'s callers do, so
     that no job is written to the job store mid-copy.
@@ -67,7 +67,7 @@ def take_backup(
     _self_contained(database)
     if not backup_service.is_readable_database(database):
         database.unlink(missing_ok=True)
-        raise backup_service.BackupError(
+        raise backup_service.BackupFault(
             f"the copy of {Path(db_path).name} did not pass its integrity check"
         )
 
@@ -93,7 +93,7 @@ def _self_contained(path: Path) -> None:
         connection = sqlite3.connect(str(path))
         connection.execute("PRAGMA journal_mode=DELETE")
     except sqlite3.Error as exc:
-        raise backup_service.BackupError(f"{path.name} could not be finished: {exc}") from exc
+        raise backup_service.BackupFault(f"{path.name} could not be finished: {exc}") from exc
     finally:
         if connection is not None:
             connection.close()

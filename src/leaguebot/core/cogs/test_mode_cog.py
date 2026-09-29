@@ -35,6 +35,7 @@ from leaguebot.core.services.test_mode_service import (
     toggle_test_mode_nationality,
     count_live_real_drivers,
     get_next_pending_phase,
+    PhaseEntry,
     build_review_summary,
 )
 from leaguebot.core.models.season import SeasonStage
@@ -42,11 +43,11 @@ from leaguebot.core.services import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.weather.utils.message_builder import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 
 log = logging.getLogger(__name__)
 
@@ -91,11 +92,12 @@ class TestModeCog(commands.Cog):
 
         live = await live_season_stage(self.bot.db_path)
         if live is None or live[1] is not SeasonStage.CONFIGURATION:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Test mode can only be switched while a season is in configuration. "
                 "Start one with `/season setup`; a season whose configuration is confirmed "
                 "keeps test mode as it stands until the season ends.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -107,12 +109,13 @@ class TestModeCog(commands.Cog):
                 self.bot.db_path,
             )
             if real_drivers:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     f"⛔ Test mode cannot be enabled while this server has "
                     f"**{real_drivers}** real driver(s).\n"
                     "Test mode is for an empty league — disabling it deletes every fake "
                     "driver, and while it is on no real driver may sign up or be placed.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
@@ -212,9 +215,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ This command is only available when test mode is enabled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -250,9 +254,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "ℹ️ Test mode is not active. Use `/test-mode toggle` to enable it first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -265,11 +270,12 @@ class TestModeCog(commands.Cog):
         )
 
         if entry is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "ℹ️ All phases for all rounds and divisions have been executed. "
                 "There is nothing left to advance.\n"
                 "Use `/season complete` when all rounds are finalized to end the season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -295,16 +301,9 @@ class TestModeCog(commands.Cog):
             from leaguebot.core.db.database import get_connection
             try:
                 await run_mystery_notice(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in mystery notice for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while posting the Mystery Round notice "
-                    f"for **{entry['division_name']}** — **Round {entry['round_number']}**. "
-                    "Check the bot logs for details.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the Mystery Round notice", entry)
                 )
                 return
             # Mark notice as sent so this round is excluded from future advance calls
@@ -326,6 +325,12 @@ class TestModeCog(commands.Cog):
                 f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
                 f"Notice posted to the division forecast channel.",
                 ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: Mystery Round notice\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: Round {entry['round_number']}",
             )
             return
 
@@ -351,20 +356,22 @@ class TestModeCog(commands.Cog):
                         if status == "AWAITING_APPEAL_VERDICTS"
                         else "penalty review"
                     )
-                    await interaction.followup.send(
+                    await refuse(
+                        interaction,
                         f"⏸️ **{entry['division_name']}** — **Round {entry['round_number']}** "
                         f"is awaiting {review} approval. Please complete the {review} in the "
                         f"submission channel before advancing.",
-                        ephemeral=True,
+                        what=describe(interaction),
                     )
                     return
                 # Finalized (shouldn't normally reach here, but handle gracefully)
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"⏸️ Result submission for "
                     f"**{entry['division_name']}** — **Round {entry['round_number']}** "
                     f"is already in progress. Please submit results in the submission "
                     f"channel before advancing.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
@@ -383,6 +390,12 @@ class TestModeCog(commands.Cog):
                 ephemeral=True,
             )
             asyncio.create_task(run_result_submission_job(entry["round_id"], self.bot))
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"  phase: result submission wizard started (it runs on its own)\n"
+                f"  division: {entry['division_name']}\n"
+                f"  round: Round {entry['round_number']}",
+            )
             return
 
         # ── RSVP notice (phase_number=5) ─────────────────────────────────────────
@@ -392,16 +405,9 @@ class TestModeCog(commands.Cog):
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_notice(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in rsvp_notice for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the RSVP notice for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**. "
-                    "Check the bot logs for details.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the RSVP notice", entry)
                 )
                 return
             await interaction.followup.send(
@@ -425,15 +431,9 @@ class TestModeCog(commands.Cog):
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_last_notice(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in rsvp_last_notice for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the RSVP last-notice for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the RSVP last-notice", entry)
                 )
                 return
             await interaction.followup.send(
@@ -456,15 +456,9 @@ class TestModeCog(commands.Cog):
                 self.bot.scheduler_service.cancel_job(entry["job_id"])
             try:
                 await run_rsvp_deadline(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in rsvp_deadline for round_id=%d",
-                    entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the RSVP deadline for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, "the RSVP deadline", entry)
                 )
                 return
             await interaction.followup.send(
@@ -500,15 +494,9 @@ class TestModeCog(commands.Cog):
             self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
             try:
                 await cleanup(entry["round_id"], self.bot)
-            except Exception:
-                log.exception(
-                    "Test mode advance: unhandled error in the %s for round_id=%d",
-                    what, entry["round_id"],
-                )
-                await interaction.followup.send(
-                    f"❌ An internal error occurred while firing the {what} for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}**.",
-                    ephemeral=True,
+            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
+                await report_failure(
+                    interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
                 )
                 return
             await interaction.followup.send(
@@ -534,16 +522,13 @@ class TestModeCog(commands.Cog):
 
         try:
             await runner(entry["round_id"], self.bot)
-        except Exception:
-            log.exception(
-                "Test mode advance: unhandled error in phase %d runner for round_id=%d",
-                phase_number, entry["round_id"],
-            )
-            await interaction.followup.send(
-                f"\u274c An internal error occurred while advancing Phase {phase_number} "
-                f"for **{entry['division_name']}** \u2014 **{entry['track_name']}**. "
-                "Check the bot logs for details.",
-                ephemeral=True,
+        except Exception as exc:  # noqa: BLE001 — reported here, to name the phase and the round
+            await report_failure(
+                interaction,
+                exc,
+                what=self._advance_what(
+                    interaction, f"Phase {phase_number}", entry, track=entry["track_name"]
+                ),
             )
             return
 
@@ -566,6 +551,21 @@ class TestModeCog(commands.Cog):
             f"  track: {entry['track_name']}\n"
             f"  round: {entry['round_number']}",
         )
+    @staticmethod
+    def _advance_what(
+        interaction: discord.Interaction,
+        step: str,
+        entry: PhaseEntry,
+        *,
+        track: str | None = None,
+    ) -> str:
+        """Name *step* of a round as the failure reply and the log line should read it:
+        the command, the step, the division and the round (and the track of a weather phase)."""
+        where = f"{entry['division_name']}, Round {entry['round_number']}"
+        if track is not None:
+            where += f" ({track})"
+        return f"{describe(interaction)} at {step} for {where}"
+
     # ------------------------------------------------------------------
     # /test-mode review
     # ------------------------------------------------------------------
@@ -621,9 +621,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ This command is only available when test mode is enabled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -635,7 +636,7 @@ class TestModeCog(commands.Cog):
                 str(interaction.user),
             )
         except ValueError as exc:
-            await interaction.response.send_message(f"⛔ {exc}", ephemeral=True)
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 
         await interaction.response.send_message(
@@ -694,24 +695,31 @@ class TestModeCog(commands.Cog):
             await interaction.response.send_message(reply, ephemeral=True)
         return True
 
-    async def _refuse_outside_test_mode(self, interaction: discord.Interaction) -> bool:
-        """Reply and return True where the server is not in test mode.
+    async def _refuse_outside_test_mode(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Reply and return True where the server is not in test mode, having recorded the
+        refusal in the log channel unless *record* is False.
 
         Read at the moment of the command rather than trusted from earlier: the flag can
         be turned off between one command and the next, and a restore is not something to
-        run on the strength of a stale reading.
+        run on the strength of a stale reading. `/test-mode backup status` is a view, and
+        passes `record=False`: a view records nothing.
         """
         config = await self.bot.config_service.get_server_config(
 
         )
         if config is not None and config.test_mode_active:
             return False
-        await interaction.followup.send(
+        reply = (
             "⛔ The backup commands run only while the server is in **test mode**. They "
             "copy and replace the whole database, which is not something to do to a "
-            "league that is running. Turn test mode on with `/test-mode toggle` first.",
-            ephemeral=True,
+            "league that is running. Turn test mode on with `/test-mode toggle` first."
         )
+        if record:
+            await refuse(interaction, reply, what=describe(interaction))
+        else:
+            await interaction.followup.send(reply, ephemeral=True)
         return True
 
     # ── save ──────────────────────────────────────────────────────────────
@@ -739,15 +747,20 @@ class TestModeCog(commands.Cog):
                     scheduler._scheduler.pause()
                     paused = True
             backup_service.save(db_path, _jobstore_path(self.bot))
-        except backup_service.BackupError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
-            return
-        except Exception:
-            log.exception("backup save: failed")
-            await interaction.followup.send(
-                "⛔ The backup could not be taken. The log channel has the detail.",
-                ephemeral=True,
+        except backup_service.BackupFault as exc:
+            # A copy, write or check that failed: a fault in the bot, and one that left the
+            # previous backup as it was. Any other error goes to the tree's failure handler,
+            # which says the save may have been partly done.
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction),
+                outcome="The previous backup is unchanged.",
             )
+            return
+        except backup_service.BackupError as exc:
+            # Locked: something the maintainer can act on, so a refusal.
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
         finally:
             if paused and scheduler is not None:
@@ -759,6 +772,10 @@ class TestModeCog(commands.Cog):
             f"whatever was there before.\n"
             f"Lock it with `/test-mode backup lock` if you want to keep this one.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode backup save | Success\n"
+            f"  size_kb: {state.size_bytes // 1024}",
         )
         log.info(
             "backup save: by %s", interaction.user
@@ -778,10 +795,11 @@ class TestModeCog(commands.Cog):
 
         db_path = self.bot.db_path
         if not backup_service.state(db_path).exists:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ There is no saved backup to lock. Take one with "
                 "`/test-mode backup save`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -792,6 +810,10 @@ class TestModeCog(commands.Cog):
             if locked
             else "🔓 Unlocked. `/test-mode backup save` will overwrite it from now on.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode backup lock | Success\n"
+            f"  backup: {'locked' if locked else 'unlocked'}",
         )
 
     # ── status ────────────────────────────────────────────────────────────
@@ -804,7 +826,9 @@ class TestModeCog(commands.Cog):
     @changes_nothing
     async def backup_status(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        if await self._refuse_outside_test_mode(interaction):
+        if await self._refuse_outside_test_mode(
+            interaction, record=False
+        ):
             return
 
         state = backup_service.state(self.bot.db_path)
@@ -838,17 +862,19 @@ class TestModeCog(commands.Cog):
 
         state = backup_service.state(self.bot.db_path)
         if not state.exists or state.taken_at is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ There is no saved backup to restore. Take one with "
                 "`/test-mode backup save`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if not state.readable:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ The saved backup is not a readable database, so it will not be "
                 "restored. Take a fresh one with `/test-mode backup save`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -992,9 +1018,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ This command is only available when test mode is enabled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if await self._refuse_roster_change_outside_placements(interaction):
@@ -1019,9 +1046,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ This command is only available when test mode is enabled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if await self._refuse_roster_change_outside_placements(interaction):
@@ -1029,8 +1057,10 @@ class TestModeCog(commands.Cog):
 
         discord_uid = parse_user_id(user_id)
         if discord_uid is None:
-            await interaction.response.send_message(
-                "❌ `user_id` must be a numeric Discord user ID.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ `user_id` must be a numeric Discord user ID.",
+                what=describe(interaction),
             )
             return
 
@@ -1042,7 +1072,7 @@ class TestModeCog(commands.Cog):
         )
 
         if isinstance(result, str):
-            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
             return
 
         await interaction.response.send_message(
@@ -1138,9 +1168,10 @@ class TestModeCog(commands.Cog):
 
         )
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ This command is only available when test mode is enabled.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         if await self._refuse_roster_change_outside_placements(interaction):
@@ -1154,12 +1185,18 @@ class TestModeCog(commands.Cog):
         )
 
         if isinstance(result, str):
-            await interaction.response.send_message(f"⛔ {result}", ephemeral=True)
+            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
             return
 
         if result == 0:
             await interaction.response.send_message(
                 f"ℹ️ No fake drivers found in **{division}**.", ephemeral=True
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                "/test-mode roster clear | Nothing changed\n"
+                f"  division: {division}\n"
+                "  reason: no fake drivers to remove",
             )
         else:
             await interaction.response.send_message(
@@ -1218,8 +1255,10 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
 
         drivers, errors = parse_roster_csv(str(self.csv_text.value))
         if errors:
-            await interaction.followup.send(
-                _format_roster_errors(errors), ephemeral=True
+            await refuse(
+                interaction,
+                _format_roster_errors(errors),
+                what=describe_form(self),
             )
             return
 
@@ -1229,8 +1268,10 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
             placement_service=self._cog.bot.placement_service,
         )
         if errors:
-            await interaction.followup.send(
-                _format_roster_errors(errors), ephemeral=True
+            await refuse(
+                interaction,
+                _format_roster_errors(errors),
+                what=describe_form(self),
             )
             return
 
@@ -1241,6 +1282,12 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
             f"`/test-mode roster list` shows a division's drivers with the mentions "
             f"result submission wants.",
             ephemeral=True,
+        )
+        await self._cog.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            "/test-mode roster add-bulk | Success\n"
+            f"  drivers_seated: {seated}\n"
+            f"  divisions: {', '.join(divisions)}",
         )
 
 
@@ -1280,26 +1327,37 @@ class _ConfirmRestoreView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._requester_id:
-            await interaction.response.send_message(
-                "⛔ Only the person who ran the command can confirm it.", ephemeral=True
+            await refuse(
+                interaction,
+                "⛔ Only the person who ran the command can confirm it.",
+                what=describe(interaction, button),
             )
             return
 
+        # Stopped as the press is accepted, so a reply that fails later cannot leave a
+        # view to lapse with "Nothing was restored." over a staged restore, nor let a
+        # second press stage it again.
+        self.stop()
         await interaction.response.defer(ephemeral=True)
         bot = self._cog.bot
         try:
             backup_service.stage_restore(bot.db_path, _jobstore_path(bot))
-        except backup_service.BackupError as exc:
-            await interaction.followup.send(f"⛔ {exc}", ephemeral=True)
-            self.stop()
-            return
-        except Exception:
-            log.exception("backup restore: staging failed")
-            await interaction.followup.send(
-                "⛔ The restore could not be prepared. Nothing has been changed.",
-                ephemeral=True,
+        except backup_service.BackupFault as exc:
+            # A copy or write that failed. Staging undoes itself, so nothing stands.
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction, button),
+                outcome="Nothing was restored.",
             )
-            self.stop()
+            return
+        except backup_service.BackupError as exc:
+            # Something the maintainer can act on (no backup, an unreadable one).
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction, button))
+            return
+        except Exception as exc:  # noqa: BLE001 — a file may have been staged before it stopped
+            log.exception("backup restore: staging failed")
+            await report_failure(interaction, exc, what=describe(interaction, button))
             return
 
         await interaction.followup.send(
@@ -1310,8 +1368,12 @@ class _ConfirmRestoreView(LeagueView):
             "can be walked back by hand if it was not what you wanted.",
             ephemeral=True,
         )
+        await bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            "/test-mode backup restore | Success\n"
+            "  restore: staged; the bot must be restarted to come back on it",
+        )
         log.info("backup restore: staged by %s", interaction.user)
-        self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -1321,3 +1383,20 @@ class _ConfirmRestoreView(LeagueView):
             "Nothing has been changed.", ephemeral=True
         )
         self.stop()
+        await record_abandoned(
+            interaction.client,
+            interaction.user,
+            what="`/test-mode backup restore`",
+            lapsed=False,
+            detail="Nothing was restored. Run `/test-mode backup restore` again to restore.",
+        )
+
+    async def on_timeout(self) -> None:
+        """Record that the confirmation lapsed unanswered, naming who started it."""
+        await record_abandoned(
+            self._cog.bot,
+            self._requester_id,
+            what="`/test-mode backup restore`",
+            lapsed=True,
+            detail="Nothing was restored. Run `/test-mode backup restore` again to restore.",
+        )

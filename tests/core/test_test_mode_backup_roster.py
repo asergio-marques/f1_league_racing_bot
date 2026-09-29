@@ -318,9 +318,12 @@ async def test_removing_a_driver_names_them_and_their_team():
 
 async def test_a_refusal_from_the_roster_service_reaches_the_maintainer():
     """The service returns a string to refuse, which the command has to recognise as a
-    refusal rather than treat as a result."""
+    refusal rather than treat as a result; the refusal is recorded in the log channel
+    (#482)."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "test-mode roster remove"
 
     with patch(
         "leaguebot.core.services.test_roster_service.remove_test_driver",
@@ -329,7 +332,9 @@ async def test_a_refusal_from_the_roster_service_reaches_the_maintainer():
         await _remove(cog, interaction)
 
     assert "No test driver with that id." in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "⛔ `/test-mode roster remove` refused for Maintainer (<@77>) — No test driver with that id."
+    )
 
 
 async def test_a_successful_removal_is_logged_with_the_id_as_well_as_the_name():

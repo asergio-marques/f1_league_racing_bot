@@ -237,7 +237,9 @@ Building a season to test one thing is slow, and testing the next thing usually 
 
 **A restore needs a restart.** The bot holds its databases open the whole time it runs, so the files cannot be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live, and stages the swap; the bot picks it up the next time it starts. Under a service that happens on its own — stop it and it comes back restored. From a terminal, stop it and run it again.
 
-**What it saves.** Both `bot.db` and the scheduler's `scheduler.db`, so the jobs come back with the data. Restoring puts you back exactly where the snapshot was taken, test mode included.
+**What it saves.** Both `bot.db` and the scheduler's `scheduler.db`, so the jobs come back with the data. Restoring puts you back exactly where the snapshot was taken, test mode included. A save takes both or neither: if it fails, the previous snapshot stands and the reply says so. Where there is no scheduler database, the snapshot holds `bot.db` alone and no older scheduler copy is left beside it, and restoring it brings back an empty job store rather than whichever is live. A restore likewise stages both files or none.
+
+**Each of these writes a line to the log channel**, success, refusal or failure, naming who ran it. `backup status` writes nothing, being a view. `advance` writes one too: the mystery notice and the submission wizard's start are recorded, and a phase that fails is recorded naming the phase, the division and the round.
 
 **The approval offers to save for you.** Under test mode, pressing Approve on `/season placements-review` pauses just before it commits anything and asks whether to save first — after every check has passed, and before the schedule is armed or a single lineup posted. That is the moment worth returning to, so you need not remember to save beforehand.
 

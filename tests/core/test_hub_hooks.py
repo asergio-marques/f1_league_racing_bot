@@ -100,14 +100,44 @@ async def test_the_confirmed_results_disable_refreshes_the_panel():
 
 
 async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
+    """The line names the member and the command that caused the refresh (#482)."""
     monkeypatch.setattr(
         hub_service, "refresh_panel", AsyncMock(return_value="The hub channel is gone.")
     )
     cog = _module_cog()
+    interaction = _interaction()
+    interaction.command.qualified_name = "module disable"
 
-    await cog._refresh_hub()
+    await undecorate(ModuleCog.disable)(cog, interaction, _choice("weather"))
 
-    assert "The hub channel is gone." in cog.bot.output_router.post_log.await_args.args[0]
+    [line] = [
+        str(call.args[0])
+        for call in cog.bot.output_router.post_log.await_args_list
+        if "The hub channel is gone." in str(call.args[0])
+    ]
+    assert "Admin (<@77>)" in line and "/module disable" in line
+
+
+async def test_a_panel_not_refreshed_after_the_confirmed_results_disable_names_the_command(
+    monkeypatch,
+):
+    """The confirmation's button carries no command, so the line names `/module disable` itself,
+    never "an interaction" (#482)."""
+    monkeypatch.setattr(
+        hub_service, "refresh_panel", AsyncMock(return_value="The hub channel is gone.")
+    )
+    cog = _module_cog()
+    cog._apply_results_disable = AsyncMock()
+    view = _ConfirmDisableResultsView(cog, actor_id=77)
+    interaction = _interaction()
+    interaction.command = None
+
+    await view.confirm.callback(interaction)
+
+    cog._apply_results_disable.assert_awaited_once()
+    assert [call.args[0] for call in cog.bot.output_router.post_log.await_args_list] == [
+        "Admin (<@77>) | `/module disable` | Hub panel not refreshed: The hub channel is gone."
+    ]
 
 
 async def test_a_refresh_that_raises_does_not_fail_the_toggle(monkeypatch):
@@ -187,16 +217,23 @@ async def test_a_channel_setting_leaves_the_hub_s_permissions_alone(db_path, mon
     reapply.assert_not_awaited()
 
 
-async def test_permissions_that_cannot_be_set_again_are_logged(monkeypatch):
+async def test_permissions_that_cannot_be_set_again_are_logged(db_path, monkeypatch):
+    """The line names the member and the command that changed the role (#482)."""
     monkeypatch.setattr(
         hub_service, "reapply_hub_permissions", AsyncMock(return_value="No permission.")
     )
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock()
+    cog = _bot_cog(db_path)
+    interaction = _interaction()
+    interaction.command.qualified_name = "bot base-role"
 
-    await bot_cog._reapply_hub_permissions(bot)
+    await undecorate(BotCog.handle_base_role)(cog, interaction, _role())
 
-    assert "No permission." in bot.output_router.post_log.await_args.args[0]
+    [line] = [
+        str(call.args[0])
+        for call in cog.bot.output_router.post_log.await_args_list
+        if "No permission." in str(call.args[0])
+    ]
+    assert "Admin (<@77>)" in line and "/bot base-role" in line
 
 
 async def test_permissions_that_raise_do_not_fail_the_role_command(monkeypatch):

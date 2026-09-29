@@ -26,7 +26,9 @@ setting had been. The audit keeps the value each command replaced.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -119,6 +121,15 @@ def _interaction(*, channel_id: int = 999) -> MagicMock:
     interaction.user.display_name = "admin"
     interaction.user.roles = []
     interaction.response.send_message = AsyncMock()
+    interaction.response.defer = AsyncMock()
+    # Answered once replied to or deferred, as Discord's is: a bare mock would say it always
+    # was, and a refusal or a failure would answer by the wrong route.
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.send_message.await_count
+            or interaction.response.defer.await_count
+        )
+    )
     return interaction
 
 
@@ -135,6 +146,45 @@ def _role(role_id: int) -> MagicMock:
     role.name = "Stewards"
     role.mention = f"<@&{role_id}>"
     return role
+
+
+def _refusable(bot: MagicMock, interaction: MagicMock, command: str) -> MagicMock:
+    """*interaction* as `/<command>` from the bot, answering as Discord's does (#482).
+
+    Its client is the bot, whose log channel a refusal is recorded in, and its response knows
+    whether it has been used, so that a refusal answers by `response` or `followup` as the
+    command left it.
+    """
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
+    interaction.client = bot
+    interaction.command.qualified_name = command
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+#: The marks a reply opens with, which a refusal's log line leaves out of its reason.
+_REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳")
+
+
+def _reason(reply: str) -> str:
+    """The reason a refusal's log line gives: the reply's first line, without its mark."""
+    first = reply.strip().splitlines()[0].strip()
+    for mark in _REPLY_MARKS:
+        if first.startswith(mark):
+            return first[len(mark):].lstrip(chr(0xFE0F)).strip()
+    return first
+
+
+def _log_lines(bot: MagicMock) -> list[str]:
+    """Every line written to the league's log channel."""
+    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
 
 
 # ── /bot init runs once ───────────────────────────────────────────────────
@@ -189,6 +239,83 @@ async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
     }
     assert json.loads(row["new_value"]) == new
     assert json.loads(row["old_value"]) == dict.fromkeys(new)
+
+
+async def _init_configured(tmp_path) -> tuple[MagicMock, MagicMock]:
+    """Run a first `/bot init` with the four configured settings: the bot and the interaction."""
+    db_path = await _make_db(tmp_path)
+    bot = _bot(db_path)
+    cog = BotCog(bot)
+    interaction = _interaction()
+    admin_role = _role(CONFIGURED_ADMIN_ROLE)
+    admin_role.name = "League Admins"
+
+    await _unwrap(cog.handle_bot_init)(
+        cog,
+        interaction,
+        _role(CONFIGURED_ROLE),
+        admin_role,
+        _channel(CONFIGURED_CHANNEL),
+        _channel(CONFIGURED_LOG),
+    )
+    return bot, interaction
+
+
+async def test_bot_init_s_line_names_the_league_admin_role(tmp_path):
+    """The line lists all four settings it saved, the league admin role among them (#482)."""
+    bot, _interaction_ = await _init_configured(tmp_path)
+
+    [line] = _log_lines(bot)
+    assert line.startswith("admin (<@7>) | /bot init | Success")
+    assert f"League Admins (<@&{CONFIGURED_ADMIN_ROLE}>)" in line
+    assert f"(<@&{CONFIGURED_ROLE}>)" in line
+    assert f"<#{CONFIGURED_CHANNEL}>" in line and f"<#{CONFIGURED_LOG}>" in line
+
+
+async def test_bot_init_s_reply_names_the_league_admin_role(tmp_path):
+    """The confirmation lists the league admin role beside the other three settings (#482, F3)."""
+    _bot_, interaction = await _init_configured(tmp_path)
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert f"<@&{CONFIGURED_ADMIN_ROLE}>" in reply
+    assert f"<@&{CONFIGURED_ROLE}>" in reply
+    assert f"<#{CONFIGURED_CHANNEL}>" in reply and f"<#{CONFIGURED_LOG}>" in reply
+
+
+async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path, caplog):
+    """A new `/bot init` would claim the server while the last reset is still deleting the bot's
+    messages and roles there (#482, F4). It is refused, with a reply to run it again once the
+    clean-up has finished. No server is claimed, so there is no log channel to record it in:
+    the refusal goes to the host's log alone.
+    """
+    import asyncio
+
+    caplog.set_level(logging.INFO, logger="leaguebot.core.cogs.bot_cog")
+    db_path = await _make_db(tmp_path)
+    bot = _bot(db_path)
+    cog = BotCog(bot)
+    cog._clean_up = asyncio.get_running_loop().create_future()
+    interaction = _refusable(bot, _interaction(), "bot init")
+
+    try:
+        await _unwrap(cog.handle_bot_init)(
+            cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+        )
+    finally:
+        cog._clean_up.cancel()
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert "clean" in reply.lower() and "again" in reply.lower()
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+    bot.output_router.post_log.assert_not_awaited()
+    assert any(
+        record.name == "leaguebot.core.cogs.bot_cog"
+        and record.levelno >= logging.INFO
+        and "bot init" in record.getMessage()
+        and re.search(r"(?<!\d)7(?!\d)", record.getMessage())
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
 
 
 async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
@@ -688,20 +815,23 @@ def test_bot_pack_is_a_league_admin_s_command_in_the_interaction_channel():
 
 
 async def test_bot_pack_without_the_word_changes_nothing(tmp_path):
+    """Refused, and the refusal recorded in the log channel (#482)."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _packing_bot(db_path)
     cog = BotCog(bot)
-    interaction = _interaction(channel_id=CONFIGURED_CHANNEL)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
 
     await _unwrap(cog.handle_pack)(cog, interaction, "confirm")
 
-    assert "CONFIRM" in interaction.response.send_message.call_args.args[0]
+    reply = interaction.response.send_message.call_args.args[0]
+    assert "CONFIRM" in reply
     assert await bot.config_service.get_league_server_id() == SERVER_ID
-    bot.output_router.post_log.assert_not_awaited()
+    assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
-async def test_bot_pack_is_refused_while_a_season_is_current_and_logs_nothing(tmp_path):
+async def test_bot_pack_is_refused_while_a_season_is_current_and_is_recorded(tmp_path):
+    """Refused before anything is cleared, and the refusal recorded in the log channel (#482)."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     async with get_connection(db_path) as db:
@@ -712,7 +842,7 @@ async def test_bot_pack_is_refused_while_a_season_is_current_and_logs_nothing(tm
         await db.commit()
     bot = _packing_bot(db_path)
     cog = BotCog(bot)
-    interaction = _interaction(channel_id=CONFIGURED_CHANNEL)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
 
     await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
 
@@ -720,17 +850,24 @@ async def test_bot_pack_is_refused_while_a_season_is_current_and_logs_nothing(tm
     assert "Season 3 is current" in reply
     assert "waiting" in reply
     assert await bot.config_service.get_league_server_id() == SERVER_ID
-    bot.output_router.post_log.assert_not_awaited()
+    assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
 async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
+    """The one line a pack writes goes before it, while the log channel is still the league's.
+
+    Once the pack has run there is no log channel to write to, so the line cannot report the
+    pack as done (#482): it says the pack is under way and what it will clear.
+    """
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _packing_bot(db_path)
     claimed_when_logged = []
+    lines = []
 
     async def post_log(content):
         claimed_when_logged.append(await bot.config_service.get_league_server_id())
+        lines.append(content)
 
     bot.output_router.post_log = AsyncMock(side_effect=post_log)
     cog = BotCog(bot)
@@ -739,6 +876,11 @@ async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
     await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
 
     assert claimed_when_logged == [SERVER_ID]
+    [line] = lines
+    assert line.startswith("admin (<@7>) | /bot pack | ")
+    assert "Success" not in line, "the line is written before the pack has succeeded"
+    assert re.search(r"under ?way", line), line
+    assert "settings" in line and "roles" in line, "the line says what the pack will clear"
     assert await bot.config_service.get_league_server_id() is None
     reply = interaction.followup.send.call_args.args[0]
     assert "/bot init" in reply
@@ -757,12 +899,16 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     monkeypatch.setattr(pack_service, "pack", refuse)
     bot = _packing_bot(db_path)
     cog = BotCog(bot)
-    interaction = _deferred(_interaction(channel_id=CONFIGURED_CHANNEL))
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
 
     await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
 
-    assert "Season 4 is current" in interaction.followup.send.call_args.args[0]
-    assert "Refused" in bot.output_router.post_log.call_args_list[-1].args[0]
+    reply = interaction.followup.send.call_args.args[0]
+    assert "Season 4 is current" in reply
+    # The line the pack wrote as it began, then the standard refusal (#482).
+    lines = _log_lines(bot)
+    assert len(lines) == 2
+    assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
@@ -799,6 +945,9 @@ def _resetting_bot(db_path: str, tmp_path) -> MagicMock:
     bot.scheduler_service._scheduler.running = False
     bot.scheduler_service._jobstore_path = str(tmp_path / "scheduler.db")
     bot.user.id = 1000
+    # Asked before the wipe where the reset's closing line goes (#482): the configured log
+    # channel, as the router reads it while the configuration is still there.
+    bot.output_router.log_destination = AsyncMock(return_value=CONFIGURED_LOG)
     return bot
 
 
@@ -849,22 +998,37 @@ async def test_bot_factory_reset_without_the_word_changes_nothing(tmp_path):
 
 
 async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monkeypatch):
+    """A backup that cannot be taken is a fault in the bot, so the reset is a failure, not a
+    refusal (owner, 2026-09-29): the standard failure reply stating that nothing was erased, with
+    no raw error in Discord, and a failure line in the log channel, whose configuration is still
+    there to find it (#482)."""
     from leaguebot.core.services import backup_service, factory_reset_service
+    from leaguebot.core.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
-        raise backup_service.BackupError("the disk is full")
+        raise backup_service.BackupFault("the disk is full")
 
     monkeypatch.setattr(factory_reset_service, "take_backup", fail)
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_resetting_bot(db_path, tmp_path))
-    interaction = _owner_interaction()
+    bot = _resetting_bot(db_path, tmp_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _owner_interaction(), "bot factory-reset")
 
     await _run(cog, interaction)
 
     reply = interaction.followup.send.call_args.args[0]
-    assert "Nothing was erased" in reply and "the disk is full" in reply
+    assert reply == failure_reply(
+        "`/bot factory-reset`", "Nothing was erased: the backup could not be taken."
+    )
+    assert "the disk is full" not in reply
+    [line] = _log_lines(bot)
+    assert line.startswith(
+        f"❌ `/bot factory-reset` failed for admin (<@{OWNER_ID}>) — BackupFault."
+    )
+    assert "the disk is full" not in line
     assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
+    assert cog._clean_up is None
     interaction.user.send.assert_not_awaited()
 
 
@@ -935,6 +1099,157 @@ async def test_a_second_factory_reset_waits_for_the_first_clean_up(tmp_path):
     cog._clean_up.cancel()
 
 
+# ── /bot factory-reset's closing line (#482) ───────────────────────────────
+#
+# A reset that goes ahead leaves one line in the log channel, posted once its clean-up has
+# ended, however it ended (owner, 2026-09-29: "One line after clean-up"). The wipe takes the
+# configuration with it, so the cog asks the router where the log goes before the wipe and
+# hands that back with the line.
+
+
+def _clean_up_ending(monkeypatch, bot: MagicMock, ending: str) -> dict:
+    """Make the Discord clean-up end as *ending* says, noting how many log lines stood as it ran.
+
+    "finished" cleans everything, "faults" finishes with a channel it could not clear, and
+    "stopped" breaks part-way on something it did not expect.
+    """
+    from leaguebot.core.services import factory_reset_service
+
+    seen: dict = {}
+
+    async def clean(guild, bot_user_id, targets, report, **_kwargs):
+        seen["lines_while_cleaning"] = bot.output_router.post_log.await_count
+        if ending == "stopped":
+            raise RuntimeError("gateway lost")
+        outcome = factory_reset_service.CleanOutcome(
+            total=2, done=2, channels_deleted=1, messages_deleted=5
+        )
+        if ending == "faults":
+            outcome.faults.append("#race-log could not be cleared: 403 Forbidden")
+        return outcome
+
+    monkeypatch.setattr(factory_reset_service, "clean_discord", clean)
+    return seen
+
+
+def _asked_before_the_wipe(bot: MagicMock, db_path: str, answer: int | None) -> dict:
+    """Answer where the log goes with *answer*, noting whether the league was still configured."""
+    seen: dict = {}
+
+    async def destination():
+        seen["configured_when_asked"] = await ConfigService(db_path).get_league_server_id()
+        return answer
+
+    bot.output_router.log_destination = AsyncMock(side_effect=destination)
+    return seen
+
+
+async def _pending_rows(db_path: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM pending_messages")
+        (count,) = await cursor.fetchone()
+    return count
+
+
+@pytest.mark.parametrize(
+    "ending",
+    [
+        pytest.param(
+            "finished",
+            id="clean-up-finished",
+        ),
+        pytest.param(
+            "faults",
+            id="clean-up-finished-with-faults",
+        ),
+        pytest.param(
+            "stopped",
+            id="clean-up-stopped-part-way",
+        ),
+    ],
+)
+async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_ends(
+    tmp_path, monkeypatch, ending
+):
+    """One line, to the log channel found before the wipe, posted after the clean-up has ended
+    and so left standing by it: it names the server owner, has what was erased beneath it, and
+    says how the clean-up ended, a clean-up that stopped naming its kind of fault and never the
+    error itself (#482)."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _resetting_bot(db_path, tmp_path)
+    asked = _asked_before_the_wipe(bot, db_path, CONFIGURED_LOG)
+    cleaning = _clean_up_ending(monkeypatch, bot, ending)
+    cog = BotCog(bot)
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    assert asked["configured_when_asked"] == SERVER_ID
+    assert cleaning["lines_while_cleaning"] == 0
+    [call] = bot.output_router.post_log.await_args_list
+    assert call.kwargs["channel"] == CONFIGURED_LOG
+    line = str(call.args[0])
+    first, *beneath = line.splitlines()
+    assert f"admin (<@{OWNER_ID}>)" in first and "/bot factory-reset" in first
+    assert beneath, "what was erased goes beneath the line"
+    if ending == "finished":
+        assert "stopped" not in line.lower() and "could not" not in line
+    elif ending == "faults":
+        assert "#race-log could not be cleared" in line
+    else:
+        # The kind of fault, in plain words; the error itself stays in the host's log.
+        assert "stopped" in line.lower()
+        assert "the bot hit an internal fault" in line
+        assert "gateway lost" not in line
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        pytest.param(
+            "not-found",
+            id="log-channel-not-found",
+        ),
+        pytest.param(
+            "not-written",
+            id="log-channel-refuses-or-is-gone",
+        ),
+    ],
+)
+async def test_a_factory_reset_line_that_cannot_be_posted_goes_to_the_host_log(
+    tmp_path, monkeypatch, caplog, where
+):
+    """Where the log channel cannot be found before the wipe, or cannot take the line after the
+    clean-up, the line goes to the host's log, and nothing is queued to retry it: the fresh
+    database belongs to a bot serving no server (#482)."""
+    caplog.set_level(logging.INFO, logger="leaguebot.core.cogs.bot_cog")
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = _resetting_bot(db_path, tmp_path)
+    _asked_before_the_wipe(bot, db_path, None if where == "not-found" else CONFIGURED_LOG)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    _clean_up_ending(monkeypatch, bot, "finished")
+    cog = BotCog(bot)
+    interaction = _owner_interaction()
+
+    await _run(cog, interaction)
+
+    if where == "not-found":
+        bot.output_router.post_log.assert_not_awaited()
+    else:
+        [call] = bot.output_router.post_log.await_args_list
+        assert call.kwargs["channel"] == CONFIGURED_LOG
+    assert any(
+        record.name == "leaguebot.core.cogs.bot_cog"
+        and record.levelno >= logging.INFO
+        and f"admin (<@{OWNER_ID}>)" in record.getMessage()
+        and "/bot factory-reset" in record.getMessage()
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+    assert await _pending_rows(db_path) == 0
+
+
 def test_nothing_current_names_a_withdrawn_bot_command():
     """The five setup commands became `/bot …` and `/bot-reset` was withdrawn (issue #247).
 
@@ -961,3 +1276,212 @@ def test_nothing_current_names_a_withdrawn_bot_command():
         if withdrawn.search(path.read_text(encoding="utf-8"))
     )
     assert offenders == []
+
+
+# ── #482: every refusal of the bot cog's own checks is recorded ────────────
+
+
+def _unconfigured_channel(channel_id: int = 905) -> MagicMock:
+    """A channel the bot may manage, holding no job of the bot's."""
+    channel = _channel(channel_id)
+    perms = MagicMock(manage_channels=True, manage_roles=True)
+    channel.permissions_for = MagicMock(return_value=perms)
+    return channel
+
+
+def _grantable_role(role_id: int = 903, *, managed: bool = False) -> MagicMock:
+    """A role the bot can grant, unless it is *managed* by an integration."""
+    role = MagicMock(spec=discord.Role)
+    role.id = role_id
+    role.name = "Drivers"
+    role.mention = f"<@&{role_id}>"
+    role.is_default.return_value = False
+    role.managed = managed
+    role.guild.me.guild_permissions.manage_roles = True
+    role.guild.me.top_role.__gt__ = lambda _self, _other: True
+    return role
+
+
+async def _seed_ongoing_season(db_path: str) -> None:
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (start_date, status, season_number, stage) "
+            "VALUES ('2026-01-01', 'ACTIVE', 3, 'ONGOING')"
+        )
+        await db.commit()
+
+
+def _losing_init_race(bot: MagicMock, db_path: str, *, winner: int) -> None:
+    """`/bot init` loses its claim to a run on server *winner* between its check and its write."""
+    real = bot.config_service
+
+    async def _lose(cfg):
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO server_configs (server_id, interaction_role_id, "
+                "interaction_channel_id, log_channel_id) VALUES (?, ?, ?, ?)",
+                (winner, CONFIGURED_ROLE, CONFIGURED_CHANNEL, CONFIGURED_LOG),
+            )
+            await db.commit()
+        return await ConfigService.save_server_config(real, cfg)
+
+    bot.config_service = MagicMock(wraps=real)
+    bot.config_service.get_league_server_id = real.get_league_server_id
+    bot.config_service.get_server_config = real.get_server_config
+    bot.config_service.save_server_config = _lose
+
+
+async def _init(cog, interaction):
+    await _unwrap(cog.handle_bot_init)(
+        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+    )
+
+
+async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str, str]:
+    """Set up the refusal *case* and run it: the bot, the interaction, the command as the log
+    names it, and a phrase of today's reply."""
+    db_path = await _make_db(tmp_path)
+    # Every case but these runs on the league's configured server.
+    if not (case.endswith("before init") or case == "init lost race to the same server"):
+        await _seed_config(db_path)
+    bot = _resetting_bot(db_path, tmp_path)
+    cog = BotCog(bot)
+    command = {
+        "init": "bot init", "log": "bot log-channel", "base": "bot base-role",
+        "driver": "bot driver-role", "hub": "bot hub-channel", "factory": "bot factory-reset",
+    }[case.split("-")[0].split(" ")[0]]
+    interaction = _refusable(bot, _owner_interaction(), command)
+
+    if case == "init already configured":
+        await _init(cog, interaction)
+        return bot, interaction, command, "runs once"
+    if case == "init lost race to the same server":
+        _losing_init_race(bot, db_path, winner=SERVER_ID)
+        await _init(cog, interaction)
+        return bot, interaction, command, "already configured"
+    if case == "log-channel already another job":
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_CHANNEL))
+        return bot, interaction, command, "bot command channel"
+    if case == "base-role fixed for the season":
+        await _seed_ongoing_season(db_path)
+        await _unwrap(cog.handle_base_role)(cog, interaction, _grantable_role())
+        return bot, interaction, command, "fixed for Season 3"
+    if case == "driver-role cannot be granted":
+        await _unwrap(cog.handle_driver_role)(cog, interaction, _grantable_role(managed=True))
+        return bot, interaction, command, "❌"
+    if case == "hub-channel already another job":
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel(CONFIGURED_LOG))
+        return bot, interaction, command, "log channel"
+    if case == "hub-channel lacks permissions":
+        channel = _unconfigured_channel()
+        channel.permissions_for.return_value = MagicMock(manage_channels=False, manage_roles=True)
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, channel)
+        return bot, interaction, command, "Manage Channel"
+    if case == "factory-reset without the word":
+        await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
+        return bot, interaction, command, "CONFIRM"
+    # The host-only cases.
+    if case == "init on another server":
+        interaction.guild_id = SERVER_ID + 1
+        await _init(cog, interaction)
+        return bot, interaction, command, "another server"
+    if case == "init lost race to another server before init":
+        _losing_init_race(bot, db_path, winner=SERVER_ID + 1)
+        await _init(cog, interaction)
+        return bot, interaction, command, "another server"
+    if case == "log-channel before init":
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(905))
+        return bot, interaction, command, "not configured yet"
+    if case == "base-role before init":
+        await _unwrap(cog.handle_base_role)(cog, interaction, _grantable_role())
+        return bot, interaction, command, "not configured yet"
+    if case == "hub-channel before init":
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel())
+        return bot, interaction, command, "not configured yet"
+    if case == "factory-reset without the word before init":
+        await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
+        return bot, interaction, command, "CONFIRM"
+    if case == "factory-reset while cleaning up before init":
+        import asyncio
+
+        cog._clean_up = asyncio.get_running_loop().create_future()
+        try:
+            await _unwrap(cog.handle_factory_reset)(cog, interaction, "CONFIRM")
+        finally:
+            cog._clean_up.cancel()
+        return bot, interaction, command, "still cleaning"
+    raise AssertionError(case)
+
+
+def _replied(interaction: MagicMock) -> str:
+    calls = (
+        interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    )
+    return "\n".join(str(call.args[0]) for call in calls)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "init already configured",
+        "init lost race to the same server",
+        "log-channel already another job",
+        "base-role fixed for the season",
+        "driver-role cannot be granted",
+        "hub-channel already another job",
+        "hub-channel lacks permissions",
+        "factory-reset without the word",
+    ],
+)
+async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path, case):
+    """A member the bot cog's own checks turn away on the league's configured server is
+    answered as today, seen by them alone, and one standard line records it (#482).
+
+    `/bot pack`'s two refusals are pinned by the pack tests above.
+    """
+    bot, interaction, command, phrase = await _refused_site(case, tmp_path)
+
+    reply = _replied(interaction)
+    assert phrase in reply
+    sent = (
+        interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    )
+    assert sent and all(call.kwargs.get("ephemeral") is True for call in sent)
+    assert _log_lines(bot) == [
+        f"⛔ `/{command}` refused for admin (<@{OWNER_ID}>) — {_reason(reply)}"
+    ]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "init on another server",
+        "init lost race to another server before init",
+        "log-channel before init",
+        "base-role before init",
+        "hub-channel before init",
+        "factory-reset without the word before init",
+        "factory-reset while cleaning up before init",
+    ],
+)
+async def test_a_refusal_outside_the_league_goes_to_the_host_log_alone(tmp_path, caplog, case):
+    """A refusal given on another server, or before the bot is set up, answers the member as
+    today and writes nothing to a log channel: there is none of the league's to write to. The
+    host's log records it, naming the command and the member (owner, #482: "Host log only").
+    """
+    caplog.set_level(logging.INFO, logger="leaguebot.core.cogs.bot_cog")
+
+    bot, interaction, command, phrase = await _refused_site(case, tmp_path)
+
+    assert phrase in _replied(interaction)
+    bot.output_router.post_log.assert_not_awaited()
+    member = re.compile(rf"(?<!\d){OWNER_ID}(?!\d)")
+    assert any(
+        record.name == "leaguebot.core.cogs.bot_cog"
+        and record.levelno >= logging.INFO
+        and command in record.getMessage()
+        and member.search(record.getMessage())
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]

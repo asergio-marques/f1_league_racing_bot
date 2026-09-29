@@ -142,17 +142,23 @@ async def test_a_move_of_a_member_with_no_profile_is_refused():
     cog.bot.placement_service.move_driver.assert_not_awaited()
 
 
-async def test_a_refusal_the_service_raises_is_relayed_and_nothing_is_logged():
+async def test_a_refusal_the_service_raises_is_relayed_and_recorded():
+    """The manager is told the service's reason, and the refusal is recorded (#482)."""
     cog = _cog()
     cog.bot.placement_service.move_driver = AsyncMock(
         side_effect=ValueError("**Reserve** in this division has no available seats.")
     )
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "driver move"
 
     await _move(cog, interaction)
 
     assert _reply(interaction) == "⛔ **Reserve** in this division has no available seats."
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "⛔ `/driver move` refused for Manager (<@1>) — "
+        "**Reserve** in this division has no available seats."
+    )
 
 
 async def test_a_move_names_the_team_in_the_division_moved_into():
@@ -251,17 +257,23 @@ async def test_a_release_of_a_member_with_no_profile_is_refused():
     cog.bot.placement_service.release_driver.assert_not_awaited()
 
 
-async def test_a_release_the_service_refuses_is_relayed_and_nothing_is_logged():
+async def test_a_release_the_service_refuses_is_relayed_and_recorded():
+    """The manager is told the service's reason, and the refusal is recorded (#482)."""
     cog = _cog()
     cog.bot.placement_service.release_driver = AsyncMock(
         side_effect=ValueError("That is the driver's only seat. Sack or move them instead.")
     )
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "driver release"
 
     await _release(cog, interaction)
 
     assert _reply(interaction) == "⛔ That is the driver's only seat. Sack or move them instead."
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "⛔ `/driver release` refused for Manager (<@1>) — "
+        "That is the driver's only seat. Sack or move them instead."
+    )
 
 
 @pytest.mark.parametrize(
@@ -315,6 +327,45 @@ async def test_a_rejection_stands_when_the_driver_role_cannot_be_removed():
         str(USER_ID), DriverState.NOT_SIGNED_UP
     )
     assert _reply(interaction).startswith("✅ Turned down **Racer**")
+
+
+async def test_a_rejection_whose_role_cannot_be_removed_says_so_in_reply_and_line():
+    """A driver role Discord will not take back is named as not done, in the manager's reply
+    and in the log line beneath the success, as `/driver reassign` names what it could not do
+    (#482)."""
+    cog = DriverCog.__new__(DriverCog)
+    cog.bot = MagicMock()
+    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
+    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
+        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
+    )
+    cog.bot.driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(id=PROFILE_ID, current_state=DriverState.UNASSIGNED)
+    )
+    cog.bot.driver_service.transition = AsyncMock()
+    cog.bot.signup_module_service.withdraw_approval = AsyncMock()
+    cog.bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(driver_role_id=902)
+    )
+    cog.bot.output_router.post_log = AsyncMock()
+    interaction = _interaction()
+    interaction.guild.get_role = MagicMock(return_value=SimpleNamespace(id=902))
+    member = _member()
+    member.remove_roles = AsyncMock(
+        side_effect=discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "missing")
+    )
+
+    await undecorate(DriverCog.reject)(cog, interaction, member)
+
+    reply = _reply(interaction)
+    assert reply.startswith("✅ Turned down **Racer**")
+    assert any("role" in line for line in reply.splitlines()[1:])
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = cog.bot.output_router.post_log.await_args.args[0]
+    assert line.splitlines()[0] == "Manager (<@1>) | /driver reject | Success"
+    assert any(
+        text.startswith("  not done:") and "role" in text for text in line.splitlines()[1:]
+    )
 
 
 # ── Any account names the driver (issue #243) ────────────────────────────────────────

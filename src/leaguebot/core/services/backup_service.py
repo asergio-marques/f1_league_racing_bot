@@ -83,7 +83,20 @@ class BackupState:
 
 
 class BackupError(Exception):
-    """Anything that stops a save or a restore, in words a manager can act on."""
+    """Anything that stops a save or a restore, in words a manager can act on.
+
+    A locked backup, none saved and one that cannot be read are this class itself: the
+    maintainer can act on each. A fault in the bot's own work is `BackupFault`.
+    """
+
+
+class BackupFault(BackupError):
+    """A copy, a write or an integrity check that failed: a fault in the bot, not a refusal.
+
+    The cogs tell it from its parent, catching it first, and record it as a failure whose
+    reply does not name the error; the parent they record as a refusal with its text as
+    the reason.
+    """
 
 
 # ── Copying a database ────────────────────────────────────────────────────
@@ -97,11 +110,35 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
     interruption leaves the previous backup standing rather than a half-written one where
     a good one used to be.
     """
-    source, target = Path(source), Path(target)
-    if not source.is_file():
-        raise BackupError(f"there is no database at {source.name} to copy")
+    target = Path(target)
+    temporary = _copy_to_temporary(source, target)
+    try:
+        os.replace(temporary, target)
+    except OSError as exc:
+        temporary.unlink(missing_ok=True)
+        raise BackupFault(f"{target.name} could not be written: {exc}") from exc
 
-    temporary = target.with_name(target.name + ".part")
+
+def _temporary_beside(target: Path, tag: str = "") -> Path:
+    """The name a copy bound for *target* is written under first.
+
+    *tag* keeps two copies bound for the same target apart, as a save whose two databases
+    are one file would otherwise have them share a name.
+    """
+    return target.with_name(target.name + tag + ".part")
+
+
+def _copy_to_temporary(source: str | Path, target: Path, tag: str = "") -> Path:
+    """Copy *source* through the backup API to the temporary name beside *target*, and return it.
+
+    Raises `BackupFault` where there is no database to copy or the copy fails, having removed
+    what it wrote.
+    """
+    source = Path(source)
+    if not source.is_file():
+        raise BackupFault(f"there is no database at {source.name} to copy")
+
+    temporary = _temporary_beside(target, tag)
     temporary.unlink(missing_ok=True)
     origin = copy = None
     try:
@@ -126,13 +163,8 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
     if failure is not None:
         # Removed only once both handles are shut, or Windows will not let it go.
         temporary.unlink(missing_ok=True)
-        raise BackupError(f"{source.name} could not be copied: {failure}") from failure
-
-    try:
-        os.replace(temporary, target)
-    except OSError as exc:
-        temporary.unlink(missing_ok=True)
-        raise BackupError(f"{target.name} could not be written: {exc}") from exc
+        raise BackupFault(f"{source.name} could not be copied: {failure}") from failure
+    return temporary
 
 
 def copy_jobstore(source: str | Path, target: str | Path) -> None:
@@ -215,18 +247,53 @@ def set_lock(live_path: str | Path, *, who: str, now: datetime | None = None) ->
 
 
 def save(db_path: str | Path, jobstore_path: str | Path) -> None:
-    """Back up both databases, overwriting whatever was there.
+    """Back up both databases, overwriting whatever was there, both or neither.
 
     Refuses while the backup is locked. The caller pauses the scheduler around this.
+
+    **All or nothing.** Both copies are taken to temporary files beside their targets first,
+    and only once both have succeeded are the two backups replaced, so a copy that fails leaves
+    the previous pair standing and no temporary behind. Such a failure is a `BackupFault`, and
+    a caller may say the previous backup is unchanged. A failure in the renames themselves is
+    not: the first rename that fails is a `BackupFault` too (nothing has been replaced yet), but
+    one after the league backup has landed leaves a mismatched pair and raises the `OSError`
+    as it is, for a caller to call a fault that may have been partly done.
+
+    **No scheduler database means no scheduler backup.** A bot that has never scheduled
+    anything has none, and the saved pair is then the league backup alone: an earlier
+    scheduler backup is removed as the new pair replaces the old, so a restore never brings
+    back jobs the league did not have when it was saved.
     """
     if is_locked(db_path):
         raise BackupError(
             "the saved backup is locked, so it will not be overwritten. "
             "Unlock it with `/test-mode backup lock` first."
         )
-    snapshot_database(db_path, backup_path(db_path))
-    copy_jobstore(jobstore_path, backup_path(jobstore_path))
-    log.info("backup: saved %s and %s", backup_path(db_path), backup_path(jobstore_path))
+    league_target = backup_path(db_path)
+    jobs_target = backup_path(jobstore_path)
+    has_jobs = Path(jobstore_path).is_file()
+
+    league_part = jobs_part = None
+    try:
+        league_part = _copy_to_temporary(db_path, league_target)
+        if has_jobs:
+            jobs_part = _copy_to_temporary(jobstore_path, jobs_target, ".jobs")
+        try:
+            os.replace(league_part, league_target)
+        except OSError as exc:
+            raise BackupFault(f"{league_target.name} could not be written: {exc}") from exc
+        league_part = None
+        # From here the pair no longer matches until the scheduler's half lands.
+        if jobs_part is not None:
+            os.replace(jobs_part, jobs_target)
+            jobs_part = None
+        else:
+            jobs_target.unlink(missing_ok=True)
+    finally:
+        for part in (league_part, jobs_part):
+            if part is not None:
+                part.unlink(missing_ok=True)
+    log.info("backup: saved %s and %s", league_target, jobs_target)
 
 
 def discard(db_path: str | Path, jobstore_path: str | Path) -> bool:
@@ -260,6 +327,18 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
     Nothing live is replaced here — see the module docstring on why the swap belongs to
     startup. What *is* done now is the checking, so a manager learns their backup is
     unusable while they still have the working database, rather than after it is gone.
+
+    **Staging is all or nothing.** If a copy fails, both staged names are removed (whichever
+    call wrote them, an earlier staging awaiting a restart included) and a `BackupFault` is
+    raised, so the caller may say nothing was restored. Any other error reaches the caller as
+    it is, including a staged file that cannot be removed.
+
+    **A backup with no scheduler half stages an empty scheduler database** beside the league
+    one, so the restart replaces the live scheduler with one holding no job, and the restored
+    league runs with none it did not have when it was saved. The file is a real, non-empty
+    one: only its header page is written (`PRAGMA user_version`), the connection closed
+    explicitly so Windows can rename it, and the scheduler creates its table on it at start.
+    The live scheduler is kept in its pre-restore copy first, as ever.
     """
     league_backup = backup_path(db_path)
     if not league_backup.is_file():
@@ -280,17 +359,41 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
             "database, so it will not be restored."
         )
 
-    # What is live now, kept before anything is staged: a restore nobody wanted is
-    # otherwise unrecoverable, and this is the only copy of the state it replaced.
-    if Path(db_path).is_file():
-        snapshot_database(db_path, prerestore_path(db_path))
-    if Path(jobstore_path).is_file():
-        snapshot_database(jobstore_path, prerestore_path(jobstore_path))
-
-    shutil.copyfile(league_backup, staged_path(db_path))
-    if jobstore_backup.is_file():
-        shutil.copyfile(jobstore_backup, staged_path(jobstore_path))
+    staged = (staged_path(db_path), staged_path(jobstore_path))
+    try:
+        # What is live now, kept before anything is staged: a restore nobody wanted is
+        # otherwise unrecoverable, and this is the only copy of the state it replaced. Inside
+        # the try, so a copy that fails here also leaves no earlier staging behind.
+        if Path(db_path).is_file():
+            snapshot_database(db_path, prerestore_path(db_path))
+        if Path(jobstore_path).is_file():
+            snapshot_database(jobstore_path, prerestore_path(jobstore_path))
+        shutil.copyfile(league_backup, staged[0])
+        if jobstore_backup.is_file():
+            shutil.copyfile(jobstore_backup, staged[1])
+        else:
+            _write_empty_database(staged[1])
+    except (OSError, sqlite3.Error, BackupFault) as exc:
+        # Both staged names go, whichever call wrote them: an earlier staging still awaiting
+        # a restart goes too, so the next start swaps nothing in. A file that cannot be removed
+        # raises its own OSError, which is not a fault this function undid.
+        for path in staged:
+            path.unlink(missing_ok=True)
+        if isinstance(exc, BackupFault):
+            raise
+        raise BackupFault(f"the restore could not be staged: {exc}") from exc
     log.info("backup: staged a restore of %s", league_backup)
+
+
+def _write_empty_database(path: Path) -> None:
+    """Write a database holding nothing but its header page to *path*."""
+    path.unlink(missing_ok=True)
+    connection = sqlite3.connect(str(path))
+    try:
+        connection.execute("PRAGMA user_version = 1")
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool:

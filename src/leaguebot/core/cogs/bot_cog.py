@@ -50,7 +50,9 @@ from leaguebot.core.utils.channel_guard import (
     server_owner_only,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_server import guild_of
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +71,26 @@ _CONFIRM_WORD = "CONFIRM"
 _ANOTHER_SERVER = (
     "⛔ This bot already serves the league on another server. One bot serves one league."
 )
+
+
+async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
+    """Answer the member with *reply*, seen by them alone, and record the refusal in the host's
+    log alone.
+
+    For a refusal made on another server, or before the bot is set up: there is no log channel
+    of the league's to write to (owner, #482: "Host log only").
+    """
+    log.info(
+        "%s refused for %s (%s): %s",
+        describe(interaction),
+        getattr(interaction.user, "display_name", "a member"),
+        getattr(interaction.user, "id", None),
+        reply.strip().splitlines()[0] if reply.strip() else "",
+    )
+    if interaction.response.is_done():
+        await interaction.followup.send(reply, ephemeral=True)
+    else:
+        await interaction.response.send_message(reply, ephemeral=True)
 
 
 class BotCog(commands.Cog):
@@ -128,16 +150,27 @@ class BotCog(commands.Cog):
 
         league = await self.bot.config_service.get_league_server_id()
         if league is not None and league != server_id:
-            await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
+            await _refuse_on_host(interaction, _ANOTHER_SERVER)
+            return
+
+        if self._clean_up is not None and not self._clean_up.done():
+            # A new claim would be made while the last reset is still deleting the bot's
+            # messages and roles here. Nothing is configured, so the host's log alone.
+            await _refuse_on_host(
+                interaction,
+                "⛔ A factory reset is still cleaning up Discord. Run `/bot init` again once "
+                "it has finished.",
+            )
             return
 
         existing = await self.bot.config_service.get_server_config()
         if existing:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⚠️ This server is already configured, and `/bot init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.\n"
                 "To move the league to another server, use `/bot pack` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -161,12 +194,13 @@ class BotCog(commands.Cog):
             # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
             if await self.bot.config_service.get_league_server_id() != server_id:
-                await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
+                await _refuse_on_host(interaction, _ANOTHER_SERVER)
                 return
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⚠️ This server is already configured, and `/bot init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -178,6 +212,7 @@ class BotCog(commands.Cog):
 
         await interaction.response.send_message(
             f"✅ Bot configuration saved!\n"
+            f"**League admin role**: {league_admin_role.mention}\n"
             f"**Interaction role**: {interaction_role.mention}\n"
             f"**Interaction channel**: {interaction_channel.mention}\n"
             f"**Log channel**: {log_channel.mention}",
@@ -185,6 +220,7 @@ class BotCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot init | Success\n"
+            f"  league_admin_role: {league_admin_role.name} (<@&{league_admin_role.id}>)\n"
             f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
             f"  interaction_channel: <#{interaction_channel.id}>\n"
             f"  log_channel: <#{log_channel.id}>",
@@ -230,9 +266,10 @@ class BotCog(commands.Cog):
 
             use = await find_channel_use(self.bot.db_path, value)
             if use is not None:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     refusal(mention, use, same_setting=(use == ChannelUse(_setting))),
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
@@ -241,9 +278,8 @@ class BotCog(commands.Cog):
 
         changed = await self.bot.config_service.set_core_setting(column, value)
         if not changed:
-            await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
 
@@ -263,7 +299,7 @@ class BotCog(commands.Cog):
         )
         log.info("%s set %s", interaction.user, column)
         if column in ("interaction_role_id", "league_admin_role_id"):
-            await _reapply_hub_permissions(self.bot)
+            await _reapply_hub_permissions(self.bot, interaction)
 
     @group.command(
         name="log-channel",
@@ -391,19 +427,19 @@ class BotCog(commands.Cog):
             and interaction.guild.get_role(old_role_id) is None
         )
         if season_number is not None and not replacing_gone:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ The league's roles are fixed for Season {season_number} now that its "
                 f"configuration has been confirmed. `{command}` is available again once the "
                 "season has ended, or while a new season is in configuration — or at once, "
                 "should the role be deleted from the server.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if config is None:
-            await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
 
@@ -416,16 +452,15 @@ class BotCog(commands.Cog):
                 remedy="Choose a role of the drivers' own.",
             )
             if refusal is not None:
-                await interaction.response.send_message(f"❌ {refusal}", ephemeral=True)
+                await refuse(interaction, f"❌ {refusal}", what=describe(interaction))
                 return
 
         # Two permission edits on the signup channel outrun Discord's three seconds.
         await interaction.response.defer(ephemeral=True)
 
         if not await self.bot.config_service.set_core_setting(column, role.id):
-            await interaction.followup.send(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
 
@@ -434,7 +469,7 @@ class BotCog(commands.Cog):
                 interaction.guild, old_role_id, role
             )
             # The hub is seen by the base role, or by everyone where there is none (#279).
-            await _reapply_hub_permissions(self.bot)
+            await _reapply_hub_permissions(self.bot, interaction)
 
         await _audit(
             self.bot,
@@ -570,9 +605,10 @@ class BotCog(commands.Cog):
 
         use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -587,18 +623,18 @@ class BotCog(commands.Cog):
             if not held
         ]
         if missing:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ The bot needs {' and '.join(f'**{m}**' for m in missing)} on "
                 f"{channel.mention} to set who may see the hub. Nothing was changed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         config = await self.bot.config_service.get_server_config()
         if config is None:
-            await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
         old_channel_id, old_message_id = config.hub_channel_id, config.hub_message_id
@@ -657,28 +693,39 @@ class BotCog(commands.Cog):
         The log is written *before* the pack, because the pack clears the log channel. The
         refusal for a current season is therefore asked first, read-only, so that the log
         does not announce a pack that will not happen; the service asks again inside its own
-        transaction, and the rare season set up between the two is logged as a refusal.
+        transaction, and the rare season set up between the two is recorded as a refusal.
+
+        The line is written as the pack begins, so it says the pack is under way and what it
+        will clear, never that it is done: once the pack has run there is no log channel to
+        say so in. A fault inside the pack's transaction is rolled back with the
+        configuration intact, so its failure line still reaches the log channel; a fault after
+        the commit (cancelling the scheduler's jobs, clearing the in-memory state) finds no
+        configuration and is recorded in the host's log alone.
         """
         if confirm != _CONFIRM_WORD:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Nothing was changed. Pass `confirm:{_CONFIRM_WORD}` (case-sensitive) "
                 f"to free this server.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         async with get_connection(self.bot.db_path) as db:
             season = await pack_service.current_season(db)
         if season is not None:
-            await interaction.response.send_message(
-                _current_season_refusal(*season), ephemeral=True
+            await refuse(
+                interaction, _current_season_refusal(*season), what=describe(interaction)
             )
             return
 
         await interaction.response.defer(ephemeral=True)
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Success\n"
-            f"  The bot no longer serves this server. `/bot init` on another claims it."
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | Pack under way\n"
+            f"  Clearing the four bot settings, the base and driver roles, the team roles, "
+            f"the hub and signup channels, the signup wizards, undelivered messages and "
+            f"scheduled jobs. The bot will no longer serve this server; `/bot init` on "
+            f"another claims it."
         )
         try:
             result = await pack_service.pack(
@@ -689,14 +736,10 @@ class BotCog(commands.Cog):
                 actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot pack | "
-                f"Refused — season {refused.season_number} was set up meanwhile. "
-                f"Nothing was changed."
-            )
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 _current_season_refusal(refused.season_number, refused.stage),
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -719,6 +762,17 @@ class BotCog(commands.Cog):
     # /bot factory-reset — return the bot to a fresh install
     # ------------------------------------------------------------------
 
+    async def _refuse_factory_reset(self, interaction: discord.Interaction, reply: str) -> None:
+        """Refuse a factory reset: recorded in the log channel where a server configuration
+        exists, in the host's log alone where none does (a clean-up still running after a reset
+        has wiped it, or a bot never set up). Decided from the configuration, never from
+        `log_channel_id`, as `channel_guard` decides.
+        """
+        if await self.bot.config_service.get_server_config() is None:
+            await _refuse_on_host(interaction, reply)
+        else:
+            await refuse(interaction, reply, what=describe(interaction))
+
     @group.command(
         name="factory-reset",
         description="Server owner only: back up, then erase the league and the bot's posts.",
@@ -738,16 +792,16 @@ class BotCog(commands.Cog):
         this one has no say over that one.
         """
         if confirm != _CONFIRM_WORD:
-            await interaction.response.send_message(
+            await self._refuse_factory_reset(
+                interaction,
                 f"❌ Nothing was changed. Pass `confirm:{_CONFIRM_WORD}` (case-sensitive) "
                 f"to erase the league.",
-                ephemeral=True,
             )
             return
         if self._clean_up is not None and not self._clean_up.done():
-            await interaction.response.send_message(
+            await self._refuse_factory_reset(
+                interaction,
                 "⛔ A factory reset is still cleaning up Discord. Wait for it to finish.",
-                ephemeral=True,
             )
             return
 
@@ -764,11 +818,14 @@ class BotCog(commands.Cog):
             backup = factory_reset_service.take_backup(
                 db_path, backup_service.jobstore_path_of(self.bot)
             )
-        except backup_service.BackupError as exc:
-            await interaction.followup.send(
-                f"⛔ Nothing was erased: the backup could not be taken, and a factory reset "
-                f"never runs without one. {exc}",
-                ephemeral=True,
+        except backup_service.BackupFault as exc:
+            # A copy, a write or a check that failed is a fault in the bot, not a refusal, and
+            # nothing has been erased: the reply says so without naming the error.
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction),
+                outcome="Nothing was erased: the backup could not be taken.",
             )
             return
         finally:
@@ -776,6 +833,9 @@ class BotCog(commands.Cog):
                 scheduler._scheduler.resume()
 
         targets = await factory_reset_service.gather_targets(db_path)
+        # The wipe takes the configuration and with it any way to find the log channel, so
+        # where the closing line goes is learned now.
+        log_channel = await self.bot.output_router.log_destination()
         await factory_reset_service.wipe(db_path, scheduler, self.bot)
         log.warning(
             "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",
@@ -805,9 +865,35 @@ class BotCog(commands.Cog):
         # A command runs on a bot that has logged in, which is when it has a user.
         assert self.bot.user is not None
         bot_user_id = self.bot.user.id
+        who = f"{interaction.user.display_name} (<@{interaction.user.id}>)"
+
+        async def close(ending: str, detail: str) -> None:
+            await self._post_closing_line(log_channel, who, ending, detail)
+
         self._clean_up = asyncio.create_task(
-            _clean_up(interaction.guild, bot_user_id, targets, report)
+            _clean_up(interaction.guild, bot_user_id, targets, report, close)
         )
+
+    async def _post_closing_line(
+        self, log_channel: int | None, who: str, ending: str, detail: str
+    ) -> None:
+        """Leave the one line a factory reset leaves in the log channel, once its clean-up ends.
+
+        Posted to *log_channel*, found before the wipe, with no retry row and no notice in the
+        interaction channel (see `OutputRouter.post_log`): the fresh database belongs to a bot
+        serving no server. Where there was no log channel, or it takes no line, the line goes to
+        the host's log instead.
+        """
+        line = (
+            f"{who} | /bot factory-reset | {ending}\n"
+            "  Erased: the league's database and its scheduled jobs, after a backup was "
+            f"taken.\n  {detail}"
+        )
+        if log_channel is not None and await self.bot.output_router.post_log(
+            line, channel=log_channel
+        ):
+            return
+        log.warning("factory reset: the closing line could not be posted:\n%s", line)
 
 
 async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -> None:
@@ -833,11 +919,14 @@ async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -
         await db.commit()
 
 
-async def _reapply_hub_permissions(bot: LeagueBot) -> None:
+async def _reapply_hub_permissions(
+    bot: LeagueBot, interaction: discord.Interaction | None = None
+) -> None:
     """Set the hub's permissions again after a role they name has changed (issue #279).
 
     Logged where it fails, and never failing the role command that asked for it: the role is
-    set either way, and the hub is repaired in Discord.
+    set either way, and the hub is repaired in Discord. The line it posts where the permissions
+    could not be set names the member and the command that changed the role, from *interaction*.
     """
     from leaguebot.core.services.hub_service import reapply_hub_permissions
 
@@ -847,7 +936,13 @@ async def _reapply_hub_permissions(bot: LeagueBot) -> None:
         log.exception("the hub's permissions could not be applied again")
         return
     if fault is not None:
-        await bot.output_router.post_log(f"Hub permissions not updated: {fault}")
+        who = (
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            f"{describe(interaction)} | "
+            if interaction is not None
+            else ""
+        )
+        await bot.output_router.post_log(f"{who}Hub permissions not updated: {fault}")
 
 
 async def _stand_down_old_hub(
@@ -876,13 +971,33 @@ async def _stand_down_old_hub(
     return faults
 
 
-async def _clean_up(guild, bot_user_id: int, targets, report) -> None:
-    """Run the clean-up, and say so where something it did not expect stops it."""
+async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
+    """Run the clean-up, and say so where something it did not expect stops it.
+
+    However it ends, *close(ending, detail)* is then awaited once, to leave the reset's closing
+    line: after the clean-up, so that its deletions leave the line standing.
+    """
     try:
-        await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
+        outcome = await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
     except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
         log.exception("factory reset: the Discord clean-up stopped")
+        # The owner's private progress message keeps the text (a test pins it); the log
+        # channel gets the kind of fault only, the detail staying in the host's log.
         await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
+        await close(
+            "Clean-up stopped part-way",
+            f"Discord: the clean-up stopped: {describe_fault(exc)}.",
+        )
+        return
+    detail = (
+        f"Discord: {outcome.channels_deleted} channel(s) and "
+        f"{outcome.messages_deleted} message(s) deleted."
+    )
+    if outcome.faults:
+        detail += "\n  " + "\n  ".join(outcome.faults)
+        await close("Clean-up finished with faults", detail)
+    else:
+        await close("Clean-up finished", detail)
 
 
 async def _open_progress(user: discord.User | discord.Member) -> discord.Message | None:
