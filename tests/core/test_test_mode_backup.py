@@ -484,6 +484,138 @@ async def test_cancelling_changes_nothing(live):
     assert any("Nothing was restored." in text for text in beneath)
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a restore confirmation left unanswered writes no log line")
+async def test_a_restore_confirmation_left_unanswered_is_recorded_as_lapsed(live):
+    """A lapse is recorded as started by the maintainer, with what became of it beneath (#482)."""
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
+
+    cog = _cog(live)
+    await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
+    view = _ConfirmRestoreView(cog, USER_ID)
+
+    await view.on_timeout()
+
+    assert not bs.staged_path(live.db).exists()
+    [line] = _log_lines(cog)
+    first, *beneath = line.splitlines()
+    assert first.startswith("⌛ `/test-mode backup restore` lapsed unconfirmed (started by ")
+    assert f"<@{USER_ID}>" in first
+    assert any("Nothing was restored." in text for text in beneath)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a staging fault is answered as a refusal and recorded nowhere"
+)
+async def test_a_staging_fault_says_nothing_was_restored(live, monkeypatch):
+    """A staging stopped by a copy that failed removes what it staged, so it undid itself: the
+    standard failure reply states "Nothing was restored.", never the error, and a failure line is
+    written (#482, special case 10)."""
+    cog = _cog(live)
+    await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
+
+    def fail(*_args, **_kwargs):
+        raise bs.BackupFault("scheduler.staged.db could not be written: the disk is full")
+
+    monkeypatch.setattr(bs, "stage_restore", fail)
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
+
+    view = _ConfirmRestoreView(cog, USER_ID)
+    interaction = _recorded(cog, "test-mode backup restore")
+
+    await view.confirm.callback(interaction)
+
+    reply = _reply(interaction)
+    assert reply.startswith("❌ ") and "stopped on a fault in the bot" in reply
+    assert "Nothing was restored." in reply
+    assert "partly done" not in reply
+    assert "the disk is full" not in reply
+    [line] = _log_lines(cog)
+    assert line.startswith("❌ ")
+    assert f"failed for Manager (<@{USER_ID}>) — BackupFault." in line
+    assert "the disk is full" not in line
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a restore refused at the confirmation writes no log line"
+)
+async def test_a_backup_found_unreadable_at_the_confirmation_is_refused_and_recorded(live):
+    """A scheduler backup that is not a readable database is something the maintainer can act
+    on, so the press is refused with today's reason and the refusal recorded (#482)."""
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
+
+    cog = _cog(live)
+    await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
+    bs.backup_path(live.jobs).write_bytes(b"not a database at all")
+    view = _ConfirmRestoreView(cog, USER_ID)
+    interaction = _recorded(cog, "test-mode backup restore")
+
+    await view.confirm.callback(interaction)
+
+    reason = (
+        "the saved scheduler backup (scheduler.bkup.db) is not a readable database, so it "
+        "will not be restored."
+    )
+    assert _reply(interaction) == f"⛔ {reason}"
+    assert not bs.staged_path(live.db).exists()
+    [line] = _log_lines(cog)
+    assert line.startswith("⛔ ")
+    assert line.endswith(f" refused for Manager (<@{USER_ID}>) — {reason}")
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: an unexpected staging error says nothing has been changed and is "
+    "recorded nowhere"
+)
+async def test_an_unexpected_staging_error_may_have_been_partly_done(live, monkeypatch):
+    """Any error but a copy fault may have left a file staged, so the reply keeps the default
+    "may have been partly done", never "Nothing has been changed", and a failure line is written
+    (#482, special case 10)."""
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
+
+    cog = _cog(live)
+    await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(bs, "stage_restore", fail)
+    view = _ConfirmRestoreView(cog, USER_ID)
+    interaction = _recorded(cog, "test-mode backup restore")
+
+    await view.confirm.callback(interaction)
+
+    reply = _reply(interaction)
+    assert reply.startswith("❌ ") and "partly done" in reply
+    assert "Nothing has been changed" not in reply
+    assert "boom" not in reply
+    [line] = _log_lines(cog)
+    assert line.startswith("❌ ")
+    assert f"failed for Manager (<@{USER_ID}>) — RuntimeError." in line
+
+
+@pytest.mark.xfail(strict=True, reason="#482: a staged restore writes no log line")
+async def test_a_staged_restore_is_recorded(live):
+    """Staging a restore decides what the bot comes back on, so it is recorded (#482)."""
+    from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
+
+    cog = _cog(live)
+    await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
+    view = _ConfirmRestoreView(cog, USER_ID)
+    interaction = _recorded(cog, "test-mode backup restore")
+
+    await view.confirm.callback(interaction)
+
+    assert bs.staged_path(live.db).is_file()
+    [line] = _log_lines(cog)
+    assert line.startswith(f"Manager (<@{USER_ID}>) | ")
+    assert "restore" in line.lower() and "staged" in line.lower()
+
+
 # ── Where the scheduler's database is ─────────────────────────────────────
 
 
