@@ -99,7 +99,6 @@ async def test_the_confirmed_results_disable_refreshes_the_panel():
     cog._refresh_hub.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the hub panel's line does not name the member")
 async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
     """The line names the member and the command that caused the refresh (#482)."""
     monkeypatch.setattr(
@@ -196,7 +195,6 @@ async def test_a_channel_setting_leaves_the_hub_s_permissions_alone(db_path, mon
     reapply.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the hub permissions' line does not name the member")
 async def test_permissions_that_cannot_be_set_again_are_logged(db_path, monkeypatch):
     """The line names the member and the command that changed the role (#482)."""
     monkeypatch.setattr(

@@ -288,7 +288,7 @@ class BotCog(commands.Cog):
         )
         log.info("%s set %s", interaction.user, column)
         if column in ("interaction_role_id", "league_admin_role_id"):
-            await _reapply_hub_permissions(self.bot)
+            await _reapply_hub_permissions(self.bot, interaction)
 
     @group.command(
         name="log-channel",
@@ -458,7 +458,7 @@ class BotCog(commands.Cog):
                 interaction.guild, old_role_id, role
             )
             # The hub is seen by the base role, or by everyone where there is none (#279).
-            await _reapply_hub_permissions(self.bot)
+            await _reapply_hub_permissions(self.bot, interaction)
 
         await _audit(
             self.bot,
@@ -908,11 +908,14 @@ async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -
         await db.commit()
 
 
-async def _reapply_hub_permissions(bot: LeagueBot) -> None:
+async def _reapply_hub_permissions(
+    bot: LeagueBot, interaction: discord.Interaction | None = None
+) -> None:
     """Set the hub's permissions again after a role they name has changed (issue #279).
 
     Logged where it fails, and never failing the role command that asked for it: the role is
-    set either way, and the hub is repaired in Discord.
+    set either way, and the hub is repaired in Discord. The line it posts where the permissions
+    could not be set names the member and the command that changed the role, from *interaction*.
     """
     from leaguebot.core.services.hub_service import reapply_hub_permissions
 
@@ -922,7 +925,13 @@ async def _reapply_hub_permissions(bot: LeagueBot) -> None:
         log.exception("the hub's permissions could not be applied again")
         return
     if fault is not None:
-        await bot.output_router.post_log(f"Hub permissions not updated: {fault}")
+        who = (
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+            f"{describe(interaction)} | "
+            if interaction is not None
+            else ""
+        )
+        await bot.output_router.post_log(f"{who}Hub permissions not updated: {fault}")
 
 
 async def _stand_down_old_hub(
