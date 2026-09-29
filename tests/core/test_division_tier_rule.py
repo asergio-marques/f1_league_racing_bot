@@ -4,7 +4,9 @@ The rule, the core specification's: a division's tier is 1 or higher, and no two
 season share one. `/division add` and `/division duplicate` each wrote it in the cog, and
 `/division amend` not at all, so an amended division could take tier 0 or another division's
 tier. One pure function now holds it, beside `validate_division_name`, and all three commands
-refuse with its words, which are `/division add`'s of today.
+use it. Its words are `/division add`'s of today, and `/division amend` refuses with them;
+`/division duplicate` keeps its own taken-tier words ("... already exists in this season."),
+which no league sees change. What each command replies is pinned by the command's own tests.
 
 Pure tests: no database, no Discord. The caller hands it the tiers the season's *other*
 divisions hold, which is how a division amended to keep its own tier is not refused.
