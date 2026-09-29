@@ -407,3 +407,74 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
     row = (await _audit_rows(db_path))[0]
     assert json.loads(row["old_value"])["channel_id"] == 111
     assert json.loads(row["new_value"])["channel_id"] == CHANNEL_ID
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why. Each reply stays word for word as today, the channel guard's
+# two answers included: a channel doing another job, and a channel already doing this one.
+
+#: The command's full name, as the log channel reads it.
+COMMAND_NAMES = {"lineup": "division lineup-channel", "calendar": "division calendar-channel"}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /division lineup-channel and calendar-channel's refusals are not yet recorded",
+)
+@pytest.mark.parametrize("which", ALL)
+@pytest.mark.parametrize(
+    "case",
+    ["no_season", "an_unknown_division", "a_channel_doing_another_job", "the_channel_already_set"],
+)
+async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case, monkeypatch):
+    """Division 1 of a season being set up, and a text channel #notices. The manager (id 77) runs
+    /division lineup-channel or calendar-channel and is refused in four cases: with no season
+    live; naming Division 9, which does not exist; giving #notices while it is already the
+    results channel of Division 2; and giving #notices while it is already this very channel of
+    Division 1. The manager gets today's reply word for word and nothing else, the setting is
+    not written and nothing is audited, and the log channel gets exactly one line, "⛔
+    `/division …-channel` refused for Manager (<@77>) — " and the reply's first line, without
+    its mark."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, season=None if case == "no_season" else SimpleNamespace(id=SEASON_ID))
+    name = "Division 9" if case == "an_unknown_division" else "Division 1"
+    if case == "a_channel_doing_another_job":
+
+        async def _in_use(*_args, **_kwargs):
+            return ChannelUse("results", "Division 2")
+
+        monkeypatch.setattr(
+            "leaguebot.core.services.channel_registry_service.find_channel_use", _in_use
+        )
+    if case == "the_channel_already_set":
+        await _seed_core_channel(db_path, which, CHANNEL_ID)
+    reply = {
+        "no_season": "❌ No season is live. A division's channels belong to the season "
+        "being built or raced — start one with `/season setup`.",
+        "an_unknown_division": "❌ Division **Division 9** not found in the current season.",
+        "a_channel_doing_another_job": "❌ #notices is already the results channel for "
+        "**Division 2**. A channel does one job — pick one that is not in use, or clear the "
+        "other setting first.",
+        "the_channel_already_set": f"ℹ️ #notices is already the {which} channel for "
+        "**Division 1**. Nothing was changed.",
+    }[case]
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = COMMAND_NAMES[which]
+
+    await _run(cog, which, interaction, name=name)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    assert await _audit_rows(db_path) == []
+    expected_column = CHANNEL_ID if case == "the_channel_already_set" else None
+    assert await _channel_column(db_path, CORE_COLUMNS[which]) == expected_column
+    reason = reply.split(" ", 1)[1]
+    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    assert logged == [
+        f"⛔ `/{COMMAND_NAMES[which]}` refused for Manager (<@{ACTOR_ID}>) — {reason}"
+    ]

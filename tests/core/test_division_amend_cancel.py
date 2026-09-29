@@ -1208,3 +1208,75 @@ async def test_every_other_division_delete_rename_and_amend_refusal_is_recorded(
     assert _logged(cog) == [
         f"⛔ `/{command}` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
     ]
+
+
+async def _cancel_as_typed_lower(cog, interaction):
+    return await _cancel(cog, interaction, confirm="confirm")
+
+
+async def _cancel_elite(cog, interaction):
+    return await _cancel(cog, interaction, name="Elite")
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /division cancel's refusals are not yet recorded")
+@pytest.mark.parametrize(
+    "run, arranged, reply",
+    [
+        pytest.param(
+            _cancel_as_typed_lower, {},
+            "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+            id="without_the_exact_word",
+        ),
+        pytest.param(
+            _cancel, {"season": None},
+            "❌ `/division cancel` is available only while the season is ongoing.",
+            id="no_season_being_raced",
+        ),
+        pytest.param(
+            _cancel,
+            {"season": SimpleNamespace(
+                id=SEASON_ID, status="ACTIVE", stage=SeasonStage.PENDING_COMPLETION,
+                season_number=4,
+            )},
+            "❌ `/division cancel` is available only while the season is ongoing.",
+            id="a_season_pending_completion",
+        ),
+        pytest.param(
+            _cancel, {"immutable": True},
+            "❌ This season is archived (COMPLETED) and cannot be modified.",
+            id="an_archived_season",
+        ),
+        pytest.param(
+            _cancel_elite, {},
+            "❌ Division `Elite` not found.",
+            id="an_unknown_division",
+        ),
+        pytest.param(
+            _cancel, {"divisions": [_division(status="CANCELLED")]},
+            "❌ Division **Pro** is already cancelled.",
+            id="a_division_already_cancelled",
+        ),
+    ],
+)
+async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged, reply):
+    """A season being raced holds division Pro, unless the case says otherwise. The admin (the
+    manager here, id 77) runs /division cancel on Pro and is refused in six cases: typing
+    'confirm' rather than CONFIRM; with no season being raced; on a season whose divisions are all
+    done (pending completion); on a season archived as completed; naming division Elite, which
+    does not exist; and on Pro already cancelled. The member gets today's reply word for word and
+    nothing else; nothing is deferred, cancelled or announced. The log channel gets exactly one
+    line, "⛔ `/division cancel` refused for Manager (<@77>) — " and the reply's words."""
+    db_path = await _make_db(tmp_path, status="ACTIVE")
+    cog = _make_cog(db_path, **arranged)
+    interaction = _as_discord(_run_by_the_manager(cog, "division cancel"))
+
+    announce = await run(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    interaction.response.defer.assert_not_awaited()
+    cog.bot.season_service.cancel_division.assert_not_awaited()
+    announce.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/division cancel` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
