@@ -329,9 +329,6 @@ async def test_a_rejection_stands_when_the_driver_role_cannot_be_removed():
     assert _reply(interaction).startswith("✅ Turned down **Racer**")
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /driver reject reads clean though the driver role stayed"
-)
 async def test_a_rejection_whose_role_cannot_be_removed_says_so_in_reply_and_line():
     """A driver role Discord will not take back is named as not done, in the manager's reply
     and in the log line beneath the success, as `/driver reassign` names what it could not do
