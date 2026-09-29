@@ -67,14 +67,27 @@ def _cog(live, *, test_mode: bool = True):
 
 
 def _interaction():
+    """An interaction whose response knows whether it has been used, as Discord's does, so that
+    a refusal answers by `response` until the interaction is answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.id = USER_ID
     interaction.user.display_name = "Manager"
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
+
+
+def _log_lines(cog) -> list[str]:
+    """Every line written to the log channel."""
+    return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
 
 
 def _body(command):
@@ -296,32 +309,54 @@ async def test_confirming_stages_the_restore_and_says_to_restart(live):
     assert "Restart the bot" in _reply(interaction)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#482: another member's press on the restore confirmation is not recorded"
+)
 async def test_only_the_requester_may_confirm(live):
+    """Another member's press stages nothing, is refused, and the refusal is recorded (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
     view = _ConfirmRestoreView(cog, USER_ID)
     interaction = _interaction()
+    interaction.client = cog.bot
     interaction.user.id = USER_ID + 1
+    interaction.user.display_name = "Other"
 
-    await _ConfirmRestoreView.confirm(view, interaction, MagicMock())
+    await view.confirm.callback(interaction)
 
     assert not bs.staged_path(live.db).exists()
-    interaction.response.send_message.assert_awaited()
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ Only the person who ran the command can confirm it.", ephemeral=True
+    )
+    assert _log_lines(cog) == [
+        f"⛔ the “♻️ Restore” button refused for Other (<@{USER_ID + 1}>) — "
+        "Only the person who ran the command can confirm it."
+    ]
 
 
+@pytest.mark.xfail(strict=True, reason="#482: cancelling a restore writes no log line")
 async def test_cancelling_changes_nothing(live):
+    """Cancel stages nothing, and is recorded with "Nothing was restored." beneath it (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
+    cog.bot.output_router.post_log = AsyncMock()
     view = _ConfirmRestoreView(cog, USER_ID)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _ConfirmRestoreView.cancel(view, interaction, MagicMock())
 
     assert not bs.staged_path(live.db).exists()
+    lines = _log_lines(cog)
+    assert len(lines) == 1
+    first, *beneath = lines[0].splitlines()
+    assert first == f"↩️ `/test-mode backup restore` cancelled by Manager (<@{USER_ID}>)"
+    assert any("Nothing was restored." in text for text in beneath)
 
 
 # ── Where the scheduler's database is ─────────────────────────────────────

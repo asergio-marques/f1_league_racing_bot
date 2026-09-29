@@ -9,8 +9,9 @@ opened the check-in modal is attendance's now, `/attendance test rsvp`, and is c
 live season it would delete real drivers. The test-mode flag is the only thing between the two,
 and it is checked before anything else.
 
-**Clearing nothing is reported, and not logged.** A division with no fake drivers in it is an
-ordinary answer to the command rather than a failure, but nothing happened — and a log line
+**Clearing nothing is reported, and recorded as nothing changed.** A division with no fake
+drivers in it is an ordinary answer to the command rather than a failure. The command tried to
+change something, so its outcome is recorded (#482) — but as nothing changed, since a line
 saying a rehearsal's roster was cleared when it was already empty would misdescribe the state
 the databases are in.
 
@@ -86,13 +87,22 @@ def _make_cog(
 
 
 def _interaction():
+    """The maintainer's interaction, answering as Discord's does: it is done only once it has
+    been replied to, so a refusal replies by response rather than by followup."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
     interaction.user.id = 77
     interaction.user.display_name = "Maintainer"
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
     return interaction
 
 
@@ -142,15 +152,21 @@ async def test_clearing_an_empty_division_says_so(tmp_path):
     assert "No fake drivers found" in _replied(interaction)
 
 
-async def test_clearing_nothing_is_not_logged(tmp_path):
-    """Nothing happened, and a log line saying a rehearsal's roster was cleared when it was
-    already empty would misdescribe the state the databases are in."""
+@pytest.mark.xfail(strict=True, reason="#482: /test-mode roster clear with nothing to clear writes no line")
+async def test_clearing_nothing_is_recorded_as_nothing_changed(tmp_path):
+    """The command tried to change something, so its outcome is recorded (#482): one line
+    naming the maintainer and the command, saying nothing was changed. A line saying the
+    roster was cleared would misdescribe the state the databases are in."""
     db_path = await _make_db(tmp_path, name="clear_nolog")
     cog = _make_cog(db_path)
 
     await _clear(cog, _interaction(), result=0)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = cog.bot.output_router.post_log.await_args.args[0]
+    assert line.startswith("Maintainer (<@77>) | /test-mode roster clear")
+    assert "nothing" in line.lower() and "chang" in line.lower()
+    assert "removed_drivers" not in line
 
 
 async def test_a_clear_is_logged_with_what_it_removed(tmp_path):
@@ -167,17 +183,23 @@ async def test_a_clear_is_logged_with_what_it_removed(tmp_path):
     assert "5" in logged
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a /test-mode roster clear the service refuses writes no line")
 async def test_a_refusal_from_the_service_is_passed_on(tmp_path):
     """It returns a string to explain itself — an unknown division, a season in the wrong
-    state — and a maintainer cannot act on a refusal they are not shown."""
+    state — and a maintainer cannot act on a refusal they are not shown. The refusal is
+    recorded in the log channel (#482)."""
     db_path = await _make_db(tmp_path, name="clear_refused")
     cog = _make_cog(db_path)
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "test-mode roster clear"
 
     await _clear(cog, interaction, result="Division 'Rookie' not found")
 
     assert "Division 'Rookie' not found" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "⛔ `/test-mode roster clear` refused for Maintainer (<@77>) — Division 'Rookie' not found"
+    )
 
 
 @pytest.mark.parametrize(
