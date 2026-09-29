@@ -958,10 +958,6 @@ def _faults_on_every_count(cog):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the mid-season confirmation does not yet record its refusals",
-)
 @pytest.mark.parametrize(
     "arrange, reply_says, carried",
     [

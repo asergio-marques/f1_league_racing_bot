@@ -2687,6 +2687,8 @@ class SeasonCog(commands.Cog):
     async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
         """Commit the new placements and return the season to Ongoing.
 
+        A refusal is recorded as one of the review's button, which is the only press here.
+
         **Nothing after the commit may raise out of here** (issue #387), as at approval. The
         placements are committed by then, and a raise reaching the view's error handler would
         tell the manager the confirmation did not finish and leave the review standing to
@@ -2697,12 +2699,14 @@ class SeasonCog(commands.Cog):
         """
         from leaguebot.core.models.season import InvalidStageTransition
 
+        what = _review_button("Confirm placements", "/season placements-review")
         await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u26d4 The season is no longer placing drivers. **Nothing has been confirmed.**",
-                ephemeral=True,
+                what=what,
             )
             return
         # Judged afresh, as the first confirmation judges Gate S (#374). The review withholds
@@ -2720,11 +2724,13 @@ class SeasonCog(commands.Cog):
         ]
         if faults:
             bullets = "\n".join(f"• {line}" for line in faults)
-            for chunk in chunk_message(
+            await refuse(
+                interaction,
                 f"⛔ Placements cannot be confirmed:\n{bullets}\n"
-                "**Nothing has been confirmed.**"
-            ):
-                await interaction.followup.send(chunk, ephemeral=True)
+                "**Nothing has been confirmed.**",
+                what=what,
+                reason="placements cannot be confirmed:\n" + "\n".join(faults),
+            )
             return
 
         outcome = await self.bot.placement_service.commit_mid_season_placements(
@@ -3146,26 +3152,29 @@ class SeasonCog(commands.Cog):
     async def _do_confirm_configuration(self, interaction: discord.Interaction) -> None:
         """Confirm the configuration: judge the faults afresh, then move the season on.
 
+        A refusal is recorded as one of the review's button, which is the only press here.
+
         To Waiting where the signup module is enabled, or to Placements where it is not or
         the season runs in test mode, test mode never opening a signup window.
         """
         from leaguebot.core.models.season import InvalidStageTransition
 
+        what = _review_button("Confirm configuration", "/season config-review")
         cfg = self._get_pending()
         if cfg is None or not cfg.season_id:
-            await interaction.response.send_message(
-                "⛔ There is no season in configuration.", ephemeral=True
-            )
+            await refuse(interaction, "⛔ There is no season in configuration.", what=what)
             return
 
         await interaction.response.defer(ephemeral=True)
         faults = await self._configuration_faults(cfg.season_id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"⛔ The configuration cannot be confirmed:\n{body}\n"
                 "**Nothing has been confirmed.**",
-                ephemeral=True,
+                what=what,
+                reason="the configuration cannot be confirmed:\n" + "\n".join(faults),
             )
             return
 
@@ -3183,9 +3192,10 @@ class SeasonCog(commands.Cog):
         try:
             await self.bot.season_service.set_stage(cfg.season_id, target)
         except InvalidStageTransition:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "⛔ The season is no longer in configuration. **Nothing has been confirmed.**",
-                ephemeral=True,
+                what=what,
             )
             return
 
@@ -6192,6 +6202,11 @@ class _BackupBeforeApprovalView(LeagueView):
         self.stop()
 
 
+def _review_button(label: str, review: str) -> str:
+    """A review's button as the log channel names it: which button, of which review."""
+    return f"the \u2705 {label} button of `{review}`"
+
+
 class _ApproveView(LeagueView):
     """The standing question at the end of a review, and the button that answers it.
 
@@ -6209,6 +6224,13 @@ class _ApproveView(LeagueView):
 
     #: The command whose report this button answers, named when the review expires.
     _review_command = "/season placements-review"
+    #: The button's label without its mark, as a refusal of a press names it.
+    _button_label = "Approve"
+
+    @property
+    def _button(self) -> str:
+        """This view's button, named for the log channel."""
+        return _review_button(self._button_label, self._review_command)
 
     def __init__(self, cog: SeasonCog, reviewer_id: int) -> None:
         super().__init__(timeout=APPROVAL_WINDOW_SECONDS)
@@ -6355,10 +6377,11 @@ class _ApproveView(LeagueView):
         # read the channel can press this. Nothing is read and nothing is approved for a
         # member who may not approve.
         if not await self._may_approve(interaction):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Only the person who ran this review, or a league admin, "
                 "can approve it. **Nothing has been approved.**",
-                ephemeral=True,
+                what=self._button,
             )
             return
 
@@ -6374,12 +6397,14 @@ class _ApproveView(LeagueView):
             changed = self._fingerprint.differs_from(current)
             if changed:
                 bullets = "\n".join(f"• {area}" for area in changed)
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     f"⛔ Your season has changed since this review, so the report above "
                     f"no longer describes it:\n{bullets}\n"
                     f"Run `/season placements-review` again and approve from the fresh report. "
                     f"**Nothing has been approved.**",
-                    ephemeral=True,
+                    what=self._button,
+                    reason=f"the season has changed since this review:\n{bullets}",
                 )
                 await self._expire_now()
                 return
@@ -6471,16 +6496,18 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
     """
 
     _review_command = "/season placements-review"
+    _button_label = "Confirm placements"
 
     @discord.ui.button(label="✅ Confirm placements", style=discord.ButtonStyle.success)
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if not await self._may_approve(interaction):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Only the person who ran this review, or a league admin, can confirm "
                 "it. **Nothing has been confirmed.**",
-                ephemeral=True,
+                what=self._button,
             )
             return
 
@@ -6493,11 +6520,13 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
             changed = self._fingerprint.differs_from(current)
             if changed:
                 bullets = "\n".join(f"• {area}" for area in changed)
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     f"⛔ The season has changed since this review:\n{bullets}\n"
                     f"Run `{self._review_command}` again and confirm from the fresh "
                     f"report. **Nothing has been confirmed.**",
-                    ephemeral=True,
+                    what=self._button,
+                    reason=f"the season has changed since this review:\n{bullets}",
                 )
                 await self._expire_now()
                 return
@@ -6518,16 +6547,18 @@ class _ConfirmConfigurationView(_ApproveView):
     """
 
     _review_command = "/season config-review"
+    _button_label = "Confirm configuration"
 
     @discord.ui.button(label="✅ Confirm configuration", style=discord.ButtonStyle.success)
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if not await self._may_approve(interaction):
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Only the person who ran this review, or a league admin, can confirm "
                 "it. **Nothing has been confirmed.**",
-                ephemeral=True,
+                what=self._button,
             )
             return
 
@@ -6540,11 +6571,13 @@ class _ConfirmConfigurationView(_ApproveView):
             changed = self._fingerprint.differs_from(current)
             if changed:
                 bullets = "\n".join(f"• {area}" for area in changed)
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     f"⛔ The season has changed since this review:\n{bullets}\n"
                     f"Run `{self._review_command}` again and confirm from the fresh "
                     f"report. **Nothing has been confirmed.**",
-                    ephemeral=True,
+                    what=self._button,
+                    reason=f"the season has changed since this review:\n{bullets}",
                 )
                 await self._expire_now()
                 return

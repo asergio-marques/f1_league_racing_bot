@@ -292,11 +292,6 @@ async def test_confirming_refuses_on_a_fault_found_afresh():
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a configuration confirmation refused because the season moved on is not yet "
-    "recorded",
-)
 async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
     """The refusal is recorded as one line naming the presser and the review (#482)."""
     bot = _bot()
@@ -809,10 +804,6 @@ def _manager_confirming(bot):
     return interaction
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the configuration confirmation does not yet record these refusals",
-)
 async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded():
     """The configuration review's question is pressed once no season is being set up."""
     bot = _bot()
@@ -836,10 +827,6 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the configuration confirmation does not yet record these refusals",
-)
 async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded():
     """Manager (id 4242) confirms a configuration that now holds two faults."""
     bot = _bot()

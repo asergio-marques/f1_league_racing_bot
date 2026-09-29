@@ -34,9 +34,6 @@ REVIEWER = 4242
 BYSTANDER = 99
 ADMIN_ROLE = 444
 
-_RECORDED = pytest.mark.xfail(
-    strict=True, reason="#482: a review button's refusal is not yet recorded in the log channel"
-)
 _LAPSE_RECORDED = pytest.mark.xfail(
     strict=True, reason="#482: a season review's lapse is not yet recorded in the log channel"
 )
@@ -136,7 +133,6 @@ def _changed_since_the_review(monkeypatch, area: str = "Division Pro's rounds") 
 # ── A press refused ────────────────────────────────────────────────────────
 
 
-@_RECORDED
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     view_class, label, review, helper, verb
@@ -167,7 +163,6 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     assert reason.startswith("Only the person who ran this review, or a league admin"), line
 
 
-@_RECORDED
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_refused_because_the_season_changed_is_recorded_once(
     monkeypatch, view_class, label, review, helper, verb
