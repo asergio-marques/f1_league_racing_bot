@@ -694,3 +694,50 @@ async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
     assert _logged(cog) == [
         f"⛔ `/round cancel` refused for Admin (<@{ACTOR_ID}>) — {reply[2:]}"
     ]
+
+
+# ---------------------------------------------------------------------------
+# /round cancel names the division as it is named (#482, F9)
+# ---------------------------------------------------------------------------
+#
+# The division is found without regard to case, so an admin may type `pro` for Pro. The core
+# specification's Divisions: "its name shall be what the bot displays". The reply and the log
+# line name the division as it stands, never as the admin typed it.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /round cancel names the division as the admin typed it",
+)
+@pytest.mark.parametrize(
+    "arranged, answered",
+    [
+        pytest.param({}, "✅ Round **5** in **Pro** cancelled.", id="cancelled"),
+        pytest.param(
+            {"rounds": [_round(status=RoundStatus.CANCELLED.value)]},
+            "❌ Round 5 in **Pro** is already cancelled.",
+            id="already_cancelled",
+        ),
+    ],
+)
+async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as_it_is_named(
+    arranged, answered
+):
+    """A season being raced holds division Pro with round 5. The admin (id 77) runs /round
+    cancel on round 5 with CONFIRM, typing the division's name as 'pro', in two cases: the round
+    is cancelled, or it was already cancelled and the command is refused. The reply opens by
+    naming the division as it is named, **Pro**, and nowhere shows 'pro'; the one log line (the
+    success line, or the refusal line) names Pro and never 'pro'."""
+    cog = _make_cog(divisions=[_division("Pro")], **arranged)
+    interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
+
+    await _cancel(cog, interaction, division="pro")
+
+    replied = _replied(interaction)
+    assert replied.startswith(answered), replied
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert "/round cancel" in line, line
+    assert "Pro" in words, line
+    assert "pro" not in words, line
