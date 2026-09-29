@@ -796,3 +796,42 @@ async def test_duplicate_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_p
     assert _logged(cog) == [
         f"\u26d4 `/division duplicate` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
+
+
+# ---------------------------------------------------------------------------
+# /division duplicate runs in Placements alone (#482, F4)
+# ---------------------------------------------------------------------------
+#
+# The core specification: "Divisions shall be created and deleted ... only while the season is
+# in Placements". A season being set up but not yet in Placements is refused in today's words,
+# and the refusal is recorded. In Placements it still works: every duplicate test above runs
+# there.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /division duplicate still copies into a season being set up before it "
+    "reaches placements",
+)
+@pytest.mark.parametrize(
+    "stage_name", ["CONFIGURATION", "WAITING", "SIGNUPS"], ids=str.lower
+)
+async def test_duplicating_before_placements_is_refused_and_recorded(tmp_path, stage_name):
+    """A season being set up, still in configuration, waiting or signups, holds division Pro.
+    The manager duplicates Pro as Am at tier 2. The copy is refused in today's words and
+    recorded, and nothing is copied."""
+    from leaguebot.core.models.season import SeasonStage
+
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, stage=SeasonStage(stage_name))
+    interaction = _run_by_the_manager(cog, "division duplicate")
+
+    await _duplicate(cog, interaction)
+
+    reply = "\u274c `/division duplicate` can only be used while the season is in placements."
+    assert _replied(interaction) == reply
+    cog.bot.season_service.duplicate_division.assert_not_awaited()
+    assert _logged(cog) == [
+        f"\u26d4 `/division duplicate` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
+

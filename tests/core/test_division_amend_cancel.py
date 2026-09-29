@@ -112,10 +112,13 @@ def _make_cog(
     ),
     immutable: bool = False,
     rounds=None,
+    stage: SeasonStage = SeasonStage.PLACEMENTS,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
+    # The stage of the season being set up, which the setup commands ask before they act.
+    bot.season_service.get_stage = AsyncMock(return_value=stage)
     divisions = divisions if divisions is not None else [_division()]
     bot.season_service.get_divisions = AsyncMock(
         side_effect=[divisions, remaining if remaining is not None else divisions] * 4
@@ -949,3 +952,76 @@ async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_
     [line] = _logged(cog)
     assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division amend |")
     assert _says_nothing_changed(line)
+
+
+# ---------------------------------------------------------------------------
+# The setup commands run in Placements alone (#482, F4)
+# ---------------------------------------------------------------------------
+#
+# The core specification: "Divisions shall be created and deleted, and rounds added and deleted,
+# only while the season is in Placements", and "A division may be renamed, and its name, tier
+# and role amended, while its season is in Placements alone". A season being set up but not yet
+# in Placements is refused in the words each command uses today, and the refusal is recorded.
+# In Placements each still works: every test above runs there.
+
+_PLACEMENTS_ONLY = pytest.mark.xfail(
+    strict=True,
+    reason="#482: /division delete, rename and amend still act on a season being set up "
+    "before it reaches placements",
+)
+
+
+async def _amend_the_tier(cog, interaction):
+    return await _amend(cog, interaction, tier=2)
+
+
+@_PLACEMENTS_ONLY
+@pytest.mark.parametrize(
+    "stage",
+    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
+    ids=lambda stage: stage.value.lower(),
+)
+@pytest.mark.parametrize(
+    "command, run, reply",
+    [
+        pytest.param(
+            "division delete",
+            _delete,
+            "\u274c `/division delete` can only be used while the season is in placements.",
+            id="delete",
+        ),
+        pytest.param(
+            "division rename",
+            _rename,
+            "\u274c `/division rename` can only be used while the season is in placements.",
+            id="rename",
+        ),
+        pytest.param(
+            "division amend",
+            _amend_the_tier,
+            "\u274c `/division amend` is only permitted while the season is in placements.",
+            id="amend",
+        ),
+    ],
+)
+async def test_a_setup_command_before_placements_is_refused_and_recorded(
+    tmp_path, command, run, reply, stage
+):
+    """A season being set up, still in configuration, waiting or signups, holds division Pro at
+    tier 1. The manager deletes Pro, renames it Elite, or amends it to tier 2. Each is refused
+    in today's words and recorded, and Pro stands as it was."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, stage=stage)
+    interaction = _run_by_the_manager(cog, command)
+
+    await run(cog, interaction)
+
+    assert _replied(interaction) == reply
+    cog.bot.season_service.delete_division.assert_not_awaited()
+    cog.bot.season_service.rename_division.assert_not_awaited()
+    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert await _audit_rows(db_path) == []
+    assert _logged(cog) == [
+        f"\u26d4 `/{command}` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
+

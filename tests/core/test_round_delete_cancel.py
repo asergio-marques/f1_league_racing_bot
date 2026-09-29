@@ -86,11 +86,14 @@ def _make_cog(
     mutable: bool = True,
     divisions=None,
     rounds=None,
+    stage: SeasonStage = SeasonStage.PLACEMENTS,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
 
     bot.season_service = MagicMock()
+    # The stage of the season being set up, which `/round delete` asks before it acts.
+    bot.season_service.get_stage = AsyncMock(return_value=stage)
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=active_season)
     bot.season_service.assert_season_mutable = AsyncMock(
@@ -205,6 +208,38 @@ async def test_deleting_outside_setup_is_refused():
 
     assert "only be used while the season is in placements" in _replied(interaction)
     cog.bot.season_service.delete_round.assert_not_awaited()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /round delete still deletes from a season being set up before it reaches "
+    "placements",
+)
+@pytest.mark.parametrize(
+    "stage",
+    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
+    ids=lambda stage: stage.value.lower(),
+)
+async def test_deleting_before_placements_is_refused_and_recorded(stage):
+    """The core specification: rounds are added and deleted only while the season is in
+    Placements. A season being set up, still in configuration, waiting or signups, has round 5
+    in Division 1. The admin deletes it: refused in today's words and recorded, and nothing is
+    deleted. In Placements it still works: every delete test here runs there."""
+    cog = _make_cog(stage=stage)
+    interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "round delete"
+
+    await _delete(cog, interaction)
+
+    reply = "\u274c `/round delete` can only be used while the season is in placements."
+    assert _replied(interaction) == reply
+    cog.bot.season_service.delete_round.assert_not_awaited()
+    logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert logged == [
+        f"\u26d4 `/round delete` refused for Admin (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
 
 
 async def test_deleting_from_an_archived_season_is_refused():
