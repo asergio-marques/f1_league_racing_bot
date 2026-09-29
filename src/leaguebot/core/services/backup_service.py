@@ -254,6 +254,11 @@ def save(db_path: str | Path, jobstore_path: str | Path) -> None:
     not: the first rename that fails is a `BackupFault` too (nothing has been replaced yet), but
     one after the league backup has landed leaves a mismatched pair and raises the `OSError`
     as it is, for a caller to call a fault that may have been partly done.
+
+    **No scheduler database means no scheduler backup.** A bot that has never scheduled
+    anything has none, and the saved pair is then the league backup alone: an earlier
+    scheduler backup is removed as the new pair replaces the old, so a restore never brings
+    back jobs the league did not have when it was saved.
     """
     if is_locked(db_path):
         raise BackupError(
@@ -278,6 +283,8 @@ def save(db_path: str | Path, jobstore_path: str | Path) -> None:
         if jobs_part is not None:
             os.replace(jobs_part, jobs_target)
             jobs_part = None
+        else:
+            jobs_target.unlink(missing_ok=True)
     finally:
         for part in (league_part, jobs_part):
             if part is not None:
@@ -321,6 +328,13 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
     call wrote them, an earlier staging awaiting a restart included) and a `BackupFault` is
     raised, so the caller may say nothing was restored. Any other error reaches the caller as
     it is, including a staged file that cannot be removed.
+
+    **A backup with no scheduler half stages an empty scheduler database** beside the league
+    one, so the restart replaces the live scheduler with one holding no job, and the restored
+    league runs with none it did not have when it was saved. The file is a real, non-empty
+    one: only its header page is written (`PRAGMA user_version`), the connection closed
+    explicitly so Windows can rename it, and the scheduler creates its table on it at start.
+    The live scheduler is kept in its pre-restore copy first, as ever.
     """
     league_backup = backup_path(db_path)
     if not league_backup.is_file():
@@ -353,6 +367,8 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
         shutil.copyfile(league_backup, staged[0])
         if jobstore_backup.is_file():
             shutil.copyfile(jobstore_backup, staged[1])
+        else:
+            _write_empty_database(staged[1])
     except (OSError, sqlite3.Error) as exc:
         # Both staged names go, whichever call wrote them: an earlier staging still awaiting
         # a restart goes too, so the next start swaps nothing in. A file that cannot be removed
@@ -361,6 +377,17 @@ def stage_restore(db_path: str | Path, jobstore_path: str | Path) -> None:
             path.unlink(missing_ok=True)
         raise BackupFault(f"the restore could not be staged: {exc}") from exc
     log.info("backup: staged a restore of %s", league_backup)
+
+
+def _write_empty_database(path: Path) -> None:
+    """Write a database holding nothing but its header page to *path*."""
+    path.unlink(missing_ok=True)
+    connection = sqlite3.connect(str(path))
+    try:
+        connection.execute("PRAGMA user_version = 1")
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool:
