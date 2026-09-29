@@ -447,8 +447,10 @@ async def test_only_the_requester_may_confirm(live):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#482: the cancel line does not name the next step")
 async def test_cancelling_changes_nothing(live):
-    """Cancel stages nothing, and is recorded with "Nothing was restored." beneath it (#482)."""
+    """Cancel stages nothing, and is recorded with "Nothing was restored." and what to do next
+    beneath it (#482)."""
     from leaguebot.core.cogs.test_mode_cog import _ConfirmRestoreView
 
     cog = _cog(live)
@@ -466,6 +468,7 @@ async def test_cancelling_changes_nothing(live):
     first, *beneath = lines[0].splitlines()
     assert first == f"↩️ `/test-mode backup restore` cancelled by Manager (<@{USER_ID}>)"
     assert any("Nothing was restored." in text for text in beneath)
+    assert any("Run `/test-mode backup restore` again" in text for text in beneath)
 
 
 async def test_a_restore_confirmation_left_unanswered_is_recorded_as_lapsed(live):
