@@ -51,6 +51,7 @@ from leaguebot.core.utils.channel_guard import (
     league_admin_only,
     league_manager_only,
     league_role_faults,
+    changes_nothing,
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
@@ -1727,6 +1728,7 @@ class SeasonCog(commands.Cog):
     # be is not an administrative act: the report is what the review is for. Approving it is
     # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
+    @changes_nothing
     async def season_review(self, interaction: discord.Interaction) -> None:
         confirmed = await self.bot.season_service.get_confirmed_season()
         if confirmed is not None:
@@ -2983,6 +2985,7 @@ class SeasonCog(commands.Cog):
         description="Review the season's configuration and confirm it.",
     )
     @league_manager_only
+    @changes_nothing
     async def season_config_review(self, interaction: discord.Interaction) -> None:
         """Report the configuration of the season in Configuration, and offer to confirm it.
 
@@ -3160,6 +3163,7 @@ class SeasonCog(commands.Cog):
         description="View a summary of the season being raced.",
     )
     @league_manager_only
+    @changes_nothing
     async def season_status(self, interaction: discord.Interaction) -> None:
         season = await self.bot.season_service.get_confirmed_season()
         if season is None:

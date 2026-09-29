@@ -19,7 +19,7 @@ from leaguebot.attendance.services.attendance_service import (
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import as_text_channel, channel_refusal
 from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
-from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import LeagueModal, guild_of
@@ -378,6 +378,7 @@ class AttendanceCog(commands.Cog):
         description="Show the current attendance configuration for this server.",
     )
     @league_manager_only
+    @changes_nothing
     async def config_show(self, interaction: discord.Interaction) -> None:
         if not await self._guard_module_enabled(interaction):
             return

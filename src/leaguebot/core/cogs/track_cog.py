@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from leaguebot.core.db.database import get_connection
 import leaguebot.core.services.track_service as track_service
-from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ class TrackCog(commands.Cog):
         description="List all available tracks.",
     )
     @league_manager_only
+    @changes_nothing
     async def track_list(
         self,
         interaction: discord.Interaction,

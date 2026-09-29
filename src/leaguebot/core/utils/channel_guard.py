@@ -43,7 +43,9 @@ run `/bot init`. The guard this replaced let such a command through untouched.
 would notify every holder of it each time somebody mistyped a command.
 
 **A refusal is recorded in the log channel, where the league's own can be told from the rest.**
-The tier guards record every refusal of a command used on the league's server: the wrong
+The tier guards record every refusal of a command used on the league's server, save one of a
+command marked `changes_nothing` — a view, a list or a preview, which record nothing, a refusal
+included, and whose refusal the member alone sees: the wrong
 channel, no league admin role configured, not a league admin, not a league manager. Two kinds go
 to the host's log alone, the member being answered as ever: a refusal before the bot is set up,
 when there is no log channel, and any refusal of a command used in a direct message, from which
@@ -283,6 +285,23 @@ def may_set_up_bot(config: Any, member: discord.Member) -> bool:
     return is_league_admin(config, member)
 
 
+#: Set on a command that changes nothing — a view, a list, a preview. The guards answer its
+#: refusals as ever but leave the log channel alone: such a command "shall record nothing"
+#: (core specification, "The record of what changed").
+CHANGES_NOTHING_ATTRIBUTE = "_changes_nothing"
+
+
+def changes_nothing(func: Callable) -> Callable:
+    """Mark a view, list or preview command, so a guard's refusal of it is not recorded.
+
+    Worn directly above the `def`, below the tier guard: the guard reads the mark from the
+    function it wraps, and `functools.wraps` carries it to the wrapper for anything that
+    inspects the command afterwards.
+    """
+    setattr(func, CHANGES_NOTHING_ATTRIBUTE, True)
+    return func
+
+
 async def _refuse(interaction: Interaction, message: str, *, record: bool) -> None:
     """Turn the member away with *message*, seen by them alone.
 
@@ -315,7 +334,9 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
             # Whether a refusal is recorded rests on whether a server configuration exists, and
             # on the interaction having come from a server. Not on the log channel, which is the
             # router's alone to name: with no configuration there is no league to record it for.
-            in_a_server = interaction.guild_id is not None
+            # A view, list or preview changes nothing and records nothing, a refusal included.
+            records = not getattr(func, CHANGES_NOTHING_ATTRIBUTE, False)
+            in_a_server = interaction.guild_id is not None and records
             if config is None:
                 await _refuse(interaction, _NOT_SET_UP, record=False)
                 return
@@ -342,7 +363,7 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
 
             if tier == LEAGUE_ADMIN:
                 if config.league_admin_role_id is None:
-                    await _refuse(interaction, _NO_ADMIN_ROLE, record=True)
+                    await _refuse(interaction, _NO_ADMIN_ROLE, record=records)
                     return
                 if not is_league_admin(config, member):
                     name = _role_name(
@@ -351,7 +372,7 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
                     await _refuse(
                         interaction,
                         f"⛔ This command is a league admin's. You need {name}.",
-                        record=True,
+                        record=records,
                     )
                     return
             elif not is_league_manager(config, member):
@@ -365,7 +386,7 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
                     interaction,
                     f"⛔ You don't have permission to use this command. "
                     f"You need {manager}, or {admin}.",
-                    record=True,
+                    record=records,
                 )
                 return
 

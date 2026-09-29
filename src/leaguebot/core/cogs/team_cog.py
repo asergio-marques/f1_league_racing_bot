@@ -13,7 +13,7 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 from leaguebot.image.utils.asset_resolver import normalise
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
-from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal, changes_nothing
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueModal
 
@@ -401,6 +401,7 @@ class TeamCog(commands.Cog):
         description="List all teams in the server list with their mapped roles.",
     )
     @league_manager_only
+    @changes_nothing
     async def team_list(
         self,
         interaction: discord.Interaction,
@@ -470,6 +471,7 @@ class TeamCog(commands.Cog):
         public="Post the lineup visibly in the channel (default: only visible to you).",
     )
     @league_manager_only
+    @changes_nothing
     async def team_lineup(
         self,
         interaction: discord.Interaction,

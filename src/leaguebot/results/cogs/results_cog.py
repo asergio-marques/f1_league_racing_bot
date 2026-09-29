@@ -35,6 +35,7 @@ from leaguebot.core.utils.channel_guard import (
     is_league_manager,
     league_admin_only,
     league_manager_only,
+    changes_nothing,
 )
 from leaguebot.core.utils.input_validator import NAME
 from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
@@ -1073,6 +1074,7 @@ class ResultsCog(commands.Cog):
     @app_commands.describe(scope="Which store to read — the season's, or this server's")
     @app_commands.choices(scope=_SCOPE_CHOICES)
     @league_manager_only
+    @changes_nothing
     async def config_list(
         self,
         interaction: discord.Interaction,
@@ -1131,6 +1133,7 @@ class ResultsCog(commands.Cog):
     )
     @app_commands.choices(scope=_SCOPE_CHOICES, session=_SESSION_CHOICES)
     @league_manager_only
+    @changes_nothing
     async def config_view(
         self,
         interaction: discord.Interaction,
@@ -1573,6 +1576,7 @@ class ResultsCog(commands.Cog):
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
     @league_admin_only
+    @changes_nothing
     async def amend_review(self, interaction: discord.Interaction) -> None:
         """Review the modification store and approve or reject it.
 

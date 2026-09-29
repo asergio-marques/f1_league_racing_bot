@@ -39,7 +39,7 @@ from leaguebot.core.services import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.time_parsing import parse_time_of_day
-from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults
+from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
@@ -797,6 +797,7 @@ class SignupCog(commands.Cog):
 
     @config_group.command(name="view", description="View current signup module configuration.")
     @league_manager_only
+    @changes_nothing
     async def config_view(self, interaction: discord.Interaction) -> None:
         cfg = await self.bot.signup_module_service.get_config()
         settings = await self.bot.signup_module_service.get_settings()
@@ -1253,6 +1254,7 @@ class SignupCog(commands.Cog):
 
     @time_slot_group.command(name="list", description="List all configured availability time slots.")
     @league_manager_only
+    @changes_nothing
     async def time_slot_list(self, interaction: discord.Interaction) -> None:
         slots = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
@@ -1767,6 +1769,7 @@ class SignupCog(commands.Cog):
         description="List the unsettled signups: Unassigned drivers by seed, then those still in review.",
     )
     @league_manager_only
+    @changes_nothing
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()
@@ -1838,6 +1841,7 @@ class SignupCog(commands.Cog):
         description="Export the unsettled signups to a CSV file.",
     )
     @league_manager_only
+    @changes_nothing
     async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
