@@ -670,54 +670,76 @@ def _is_a_follow_up(func: ast.Attribute) -> bool:
     )
 
 
-def _direct_posts() -> Counter[tuple[str, str]]:
+#: The calls that put something in a channel or take it away: a message sent, deleted or edited,
+#: a batch of messages deleted, and a channel deleted, whatever it is called on.
+_POSTING_CALLS = frozenset({"send", "delete", "edit", "delete_messages"})
+
+
+def _is_a_post(call: ast.Call) -> bool:
+    """Whether *call* posts, deletes or edits in a channel. A follow-up answers a member, and an
+    `.edit(overwrites=…)` sets a channel's permissions; neither is a post."""
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr not in _POSTING_CALLS:
+        return False
+    if func.attr == "send":
+        return not _is_a_follow_up(func)
+    if func.attr == "edit":
+        return not any(keyword.arg == "overwrites" for keyword in call.keywords)
+    return True
+
+
+def _direct_posts_among(nodes) -> Counter[tuple[str, str]]:
+    """The posts among *nodes*, each ``(file, function, node)``, counted by file and function."""
     found: Counter[tuple[str, str]] = Counter()
-    for path, function, node in _nodes():
-        if (path in POSTING_ALLOWED or (path, function) in NOT_A_POST
-                or not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute)):
+    for path, function, node in nodes:
+        if path in POSTING_ALLOWED or (path, function) in NOT_A_POST:
             continue
-        if node.func.attr == "send" and not _is_a_follow_up(node.func):
+        if isinstance(node, ast.Call) and _is_a_post(node):
             found[(path, function)] += 1
     return found
 
 
+def _direct_posts() -> Counter[tuple[str, str]]:
+    return _direct_posts_among(_nodes())
+
+
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
-    ("__main__.py", "_recover_expired_review_prompts"): (1, HANDLERS),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
+    ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
+    ("__main__.py", "_recover_expired_review_prompts"): (2, HANDLERS),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (4, PASS["results"]),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
-    ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["signup"]),
-    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (3, PASS["results"]),
+    ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["signup"]),
+    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (6, PASS["results"]),
     ("core/cogs/season_cog.py", "SeasonCog._post_approval_prompt"): (1, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._post_review_calendar_image"): (2, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._post_review_lineup_image"): (2, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._review_mid_season_placements"): (7, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog._send_channel_faults"): (1, HANDLERS),
-    ("core/cogs/season_cog.py", "SeasonCog.on_message"): (1, HANDLERS),
+    ("core/cogs/season_cog.py", "SeasonCog.on_message"): (2, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (3, HANDLERS),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (18, HANDLERS),
-    ("core/cogs/season_cog.py", "_ApproveView.on_timeout"): (1, HANDLERS),
+    ("core/cogs/season_cog.py", "_ApproveView.on_timeout"): (3, HANDLERS),
     ("core/cogs/season_cog.py", "_confirm_privately"): (1, HANDLERS),
-    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
-    ("attendance/services/attendance_service.py", "post_attendance_sheet"): (2, PASS["attendance"]),
-    ("core/services/calendar_post_service.py", "replace_calendar_message"): (2, HANDLERS),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (2, PASS["signup"]),
+    ("attendance/services/attendance_service.py", "post_attendance_sheet"): (3, PASS["attendance"]),
+    ("core/services/calendar_post_service.py", "replace_calendar_message"): (3, HANDLERS),
     ("core/services/cancellation_notice_service.py", "_send"): (1, HANDLERS),
     ("weather/services/forecast_cleanup_service.py", "post_phase_message"): (1, PASS["weather"]),
-    ("core/services/hub_service.py", "refresh_panel"): (1, HANDLERS),
-    ("image/services/image_lineup_post.py", "try_post"): (1, PASS["image"]),
+    ("core/services/hub_service.py", "refresh_panel"): (2, HANDLERS),
+    ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "_post_one"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, HANDLERS),
+    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (2, HANDLERS),
     ("results/services/result_submission_service.py", "_post_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_resubmit_collection_task"): (14, PASS["results"]),
+    ("results/services/result_submission_service.py", "_resubmit_collection_task"): (15, PASS["results"]),
     ("results/services/result_submission_service.py", "_resubmit_collection_task._cancelled"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "enter_penalty_state"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "enter_resubmit_flow"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "run_result_submission_job"): (13, PASS["results"]),
-    ("results/services/results_post_service.py", "_send_chunked"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "run_result_submission_job"): (14, PASS["results"]),
+    ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, HANDLERS),
     ("attendance/services/rsvp_service.py", "_post_distribution_announcement"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_post_no_reserve_notice"): (1, PASS["attendance"]),
@@ -741,17 +763,62 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.request_changes"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.select_correction_parameter"): (1, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (1, PASS["signup"]),
-    ("core/utils/batch_notice.py", "batch_notice"): (1, HANDLERS),
+    ("signup/services/wizard_service.py", "WizardService.start_wizard"): (2, PASS["signup"]),
+    ("core/utils/batch_notice.py", "batch_notice"): (2, HANDLERS),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (1, PASS["results"]),
+    ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
+    ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_deadline"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "withdraw_rsvp_call"): (1, PASS["attendance"]),
+    ("core/cogs/bot_cog.py", "BotCog.handle_factory_reset.report"): (1, HANDLERS),
+    ("core/cogs/bot_cog.py", "_stand_down_old_hub"): (1, HANDLERS),
+    ("core/cogs/clean_cog.py", "CleanCog.clean_bot"): (1, HANDLERS),
+    ("core/cogs/season_cog.py", "_ApproveView._clear_report"): (1, HANDLERS),
+    ("core/services/factory_reset_service.py", "_delete_own_messages"): (3, HANDLERS),
+    ("core/services/factory_reset_service.py", "clean_discord"): (1, HANDLERS),
+    ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
+    ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_close_amend_channel_record"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_take_down_cancel_button"): (1, PASS["results"]),
+    ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
+    ("results/services/results_post_service.py", "post_standings"): (1, PASS["results"]),
+    ("results/services/results_purge_service.py", "_close_open_amendments"): (1, PASS["results"]),
+    ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService._execute_channel_delete"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, PASS["signup"]),
+    ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
 
 def test_posts_go_through_the_output_handlers():
     """A post to a channel goes through the handler for its kind: log line, standing post, notice
-    or bot-owned channel (architecture.md, "Posting to Discord"). The handlers are still to be
-    built, so today every `.send` outside the router is listed: core's under the handlers' own
-    issue, which moves them, and each module's under its pass."""
+    or bot-owned channel (architecture.md, "Posting to Discord"). A post is a message sent, deleted
+    or edited, a batch of messages deleted, or a channel deleted (`_is_a_post`). The handlers are
+    still to be built, so today every such call outside the router is listed: core's under the
+    handlers' own issue, which moves them, and each module's under its pass."""
     _check("posts go through the output handlers", _direct_posts(), KNOWN_DIRECT_POSTS)
+
+
+def test_the_posting_check_counts_deletes_and_edits_but_not_permission_edits():
+    """The check reads what reaches a channel, not the one verb `.send`: a message deleted or
+    edited, a batch of messages deleted and a channel deleted are each a direct post, while a
+    follow-up answers a member and an `.edit(overwrites=…)` only sets a channel's permissions."""
+    sample = ast.parse(
+        "async def handler(channel, message, interaction, overwrites):\n"
+        "    await channel.send('hello')\n"
+        "    await message.delete()\n"
+        "    await message.edit(content='changed')\n"
+        "    await channel.delete_messages([message])\n"
+        "    await channel.delete()\n"
+        "    await channel.edit(overwrites=overwrites)\n"
+        "    await interaction.followup.send('answered')\n"
+    )
+    owners = _owners(sample)
+    nodes = [("core/cogs/sample_cog.py", owners.get(node, "<module>"), node)
+             for node in ast.walk(sample)]
+
+    assert _direct_posts_among(nodes) == Counter({("core/cogs/sample_cog.py", "handler"): 5})
 
 
 # ── 11. Each table is written by the module that owns it ────────────────────────────────────
