@@ -350,7 +350,7 @@ async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path
     assert "database is locked" not in reply
     assert "The amendment failed" not in reply
     [line] = _lines(cog)
-    assert "`/round amend` of round 1 failed for <@88>" in line
+    assert "`/round amend` of round 1 failed for Manager (<@88>)" in line
     assert "OperationalError" in line
     assert view.is_finished()
 
@@ -562,7 +562,7 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(tm
     assert view.is_finished(), "the buttons are still live, so the view will lapse as well"
     [line] = _lines(cog)
     assert line.startswith("❌ ")
-    assert f"failed for <@{USER_ID}>" in line
+    assert f"failed for Manager (<@{USER_ID}>)" in line
     assert "OperationalError" in line
     assert "database is locked" not in line
 
@@ -588,6 +588,6 @@ async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_vie
     cog.bot.amendment_service.amend_round.assert_not_awaited()
     [line] = _lines(cog)
     assert line.startswith("❌ ")
-    assert f"failed for <@{USER_ID}>" in line
+    assert f"failed for Manager (<@{USER_ID}>)" in line
     assert "RuntimeError" in line
     assert "gateway closed" not in line

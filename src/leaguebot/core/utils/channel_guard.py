@@ -41,12 +41,24 @@ run `/bot init`. The guard this replaced let such a command through untouched.
 
 **A refusal names a role, never mentions one.** A refusal that pinged the league admin role
 would notify every holder of it each time somebody mistyped a command.
+
+**A refusal is recorded in the log channel, where the league's own can be told from the rest.**
+The tier guards record every refusal of a command used on the league's server, save one of a
+command marked `changes_nothing` — a view, a list or a preview, which record nothing, a refusal
+included, and whose refusal the member alone sees: the wrong
+channel, no league admin role configured, not a league admin, not a league manager. Two kinds go
+to the host's log alone, the member being answered as ever: a refusal before the bot is set up,
+when there is no log channel, and any refusal of a command used in a direct message, from which
+the bot cannot tell whether the person belongs to the league. Whether to record rests on whether
+a server configuration exists and on the interaction having come from a server, never on the log
+channel's id, which the output router alone names.
 """
 
 from __future__ import annotations
 
 import functools
 import logging
+import sqlite3
 from typing import Callable, Any
 
 import discord
@@ -63,6 +75,9 @@ from discord import Interaction
 # namespace. A name a command signature uses must therefore be importable here, however
 # unused it looks. Pinned by `test_a_command_annotation_resolves_against_this_module`.
 from discord import app_commands  # noqa: F401
+
+from leaguebot.core.utils.interaction_errors import describe
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -271,8 +286,43 @@ def may_set_up_bot(config: Any, member: discord.Member) -> bool:
     return is_league_admin(config, member)
 
 
-async def _refuse(interaction: Interaction, message: str) -> None:
+#: Set on a command that changes nothing — a view, a list, a preview. The guards answer its
+#: refusals as ever but leave the log channel alone: such a command "shall record nothing"
+#: (core specification, "The record of what changed").
+CHANGES_NOTHING_ATTRIBUTE = "_changes_nothing"
+
+
+def changes_nothing(func: Callable) -> Callable:
+    """Mark a view, list or preview command, so a guard's refusal of it is not recorded.
+
+    Worn directly above the `def`, below the tier guard: the guard reads the mark from the
+    function it wraps, and `functools.wraps` carries it to the wrapper for anything that
+    inspects the command afterwards.
+    """
+    setattr(func, CHANGES_NOTHING_ATTRIBUTE, True)
+    return func
+
+
+async def _refuse(interaction: Interaction, message: str, *, record: bool) -> None:
+    """Turn the member away with *message*, seen by them alone.
+
+    Where *record*, the refusal is written to the log channel too, through `refuse`. Where not,
+    the member is answered as ever and the host's log alone keeps the refusal, naming the
+    command, the user and the server (owner decision on #482: a refusal to someone whose
+    standing the bot cannot know — another server, a direct message, a server not yet set up —
+    is not the league's to read).
+    """
+    if record:
+        await refuse(interaction, message, what=describe(interaction))
+        return
     await interaction.response.send_message(message, ephemeral=True)
+    log.info(
+        "%s refused to user %s (id=%s) in guild %s",
+        describe(interaction),
+        interaction.user,
+        interaction.user.id,
+        interaction.guild_id,
+    )
 
 
 def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
@@ -282,8 +332,14 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
         @functools.wraps(func)
         async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
             config = await self.bot.config_service.get_server_config()
+            # Whether a refusal is recorded rests on whether a server configuration exists, and
+            # on the interaction having come from a server. Not on the log channel, which is the
+            # router's alone to name: with no configuration there is no league to record it for.
+            # A view, list or preview changes nothing and records nothing, a refusal included.
+            records = not getattr(func, CHANGES_NOTHING_ATTRIBUTE, False)
+            in_a_server = interaction.guild_id is not None and records
             if config is None:
-                await _refuse(interaction, _NOT_SET_UP)
+                await _refuse(interaction, _NOT_SET_UP, record=False)
                 return
 
             if interaction.channel_id != config.interaction_channel_id:
@@ -298,17 +354,17 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
                     interaction.user.id,
                     interaction.guild_id,
                 )
-                await _refuse(interaction, _WRONG_CHANNEL)
+                await _refuse(interaction, _WRONG_CHANNEL, record=in_a_server)
                 return
 
             member = _member_of(interaction)
             if member is None:
-                await _refuse(interaction, _NOT_IN_A_SERVER)
+                await _refuse(interaction, _NOT_IN_A_SERVER, record=False)
                 return
 
             if tier == LEAGUE_ADMIN:
                 if config.league_admin_role_id is None:
-                    await _refuse(interaction, _NO_ADMIN_ROLE)
+                    await _refuse(interaction, _NO_ADMIN_ROLE, record=records)
                     return
                 if not is_league_admin(config, member):
                     name = _role_name(
@@ -317,6 +373,7 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
                     await _refuse(
                         interaction,
                         f"⛔ This command is a league admin's. You need {name}.",
+                        record=records,
                     )
                     return
             elif not is_league_manager(config, member):
@@ -330,6 +387,7 @@ def _tier_guard(tier: str) -> Callable[[Callable], Callable]:
                     interaction,
                     f"⛔ You don't have permission to use this command. "
                     f"You need {manager}, or {admin}.",
+                    record=records,
                 )
                 return
 
@@ -356,14 +414,15 @@ def bot_setup_only(func: Callable) -> Callable:
     A league admin's tier, but reachable by Discord's Administrator permission as well, and
     from any channel. Both exemptions have the same cause: these commands repair the very
     settings the other guards read, so gating them on those settings would lock a league out
-    of the one failure the commands exist to fix.
+    of the one failure the commands exist to fix. A refusal is recorded in the log channel
+    where a configuration exists, and goes to the host's log alone before `/bot init`.
     """
 
     @functools.wraps(func)
     async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
         member = _member_of(interaction)
         if member is None:
-            await _refuse(interaction, _NOT_IN_A_SERVER)
+            await _refuse(interaction, _NOT_IN_A_SERVER, record=False)
             return
 
         # Read before the permission check because the league admin role is one of the
@@ -372,6 +431,8 @@ def bot_setup_only(func: Callable) -> Callable:
         config = await self.bot.config_service.get_server_config()
 
         if not may_set_up_bot(config, member):
+            # Recorded only where a configuration exists: before `/bot init` there is no log
+            # channel, and the refusal goes to the host's log alone.
             name = _role_name(
                 getattr(interaction, "guild", None),
                 getattr(config, "league_admin_role_id", None),
@@ -381,6 +442,7 @@ def bot_setup_only(func: Callable) -> Callable:
                 interaction,
                 f"⛔ You need {name}, or Discord's **Administrator** permission, "
                 f"to change the bot's settings.",
+                record=config is not None,
             )
             return
 
@@ -396,14 +458,16 @@ def server_owner_only(func: Callable) -> Callable:
 
     Not a tier the league configures — see the module docstring. From any channel, and
     whether or not the bot is set up, since a factory reset reads none of the settings the
-    other guards rest on and may be the way out of a configuration past repair.
+    other guards rest on and may be the way out of a configuration past repair. Its setting is
+    read only once the owner check has failed, and only to decide whether the refusal is
+    recorded (it is where a configuration exists), so the owner's path reads none.
     """
 
     @functools.wraps(func)
     async def wrapper(self: Any, interaction: Interaction, *args: Any, **kwargs: Any) -> None:
         guild = getattr(interaction, "guild", None)
         if guild is None or _member_of(interaction) is None:
-            await _refuse(interaction, _NOT_IN_A_SERVER)
+            await _refuse(interaction, _NOT_IN_A_SERVER, record=False)
             return
         if interaction.user.id != guild.owner_id:
             log.warning(
@@ -413,10 +477,26 @@ def server_owner_only(func: Callable) -> Callable:
                 interaction.user.id,
                 interaction.guild_id,
             )
+            # The configuration is read here, after the owner check has failed, and only to
+            # decide whether to record: the owner's own path reads no setting.
+            # A configuration past repair is what a factory reset exists for, so a read that
+            # fails must not cost the member their answer: it is kept in the host's log and
+            # the refusal is not recorded.
+            try:
+                config = await self.bot.config_service.get_server_config()
+                record = config is not None
+            except sqlite3.Error:
+                log.exception(
+                    "server owner: /%s: the configuration could not be read, so the refusal "
+                    "is not recorded in the log channel",
+                    func.__name__,
+                )
+                record = False
             await _refuse(
                 interaction,
                 "⛔ Only this server's owner may factory-reset the bot, whatever roles or "
                 "permissions anyone else holds.",
+                record=record,
             )
             return
 

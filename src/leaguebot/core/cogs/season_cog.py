@@ -51,6 +51,7 @@ from leaguebot.core.utils.channel_guard import (
     league_admin_only,
     league_manager_only,
     league_role_faults,
+    changes_nothing,
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.weather.utils.message_builder import discord_ts, format_division_list, format_round_list, format_roster_block
@@ -3160,6 +3161,7 @@ class SeasonCog(commands.Cog):
         description="View a summary of the season being raced.",
     )
     @league_manager_only
+    @changes_nothing
     async def season_status(self, interaction: discord.Interaction) -> None:
         season = await self.bot.season_service.get_confirmed_season()
         if season is None:

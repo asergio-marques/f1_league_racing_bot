@@ -40,7 +40,7 @@ from leaguebot.core.services.test_mode_service import (
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
-from leaguebot.core.utils.channel_guard import league_admin_only
+from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -575,6 +575,7 @@ class TestModeCog(commands.Cog):
         description="Show season configuration and phase completion status.",
     )
     @league_admin_only
+    @changes_nothing
     async def review(self, interaction: discord.Interaction) -> None:
         config = await self.bot.config_service.get_server_config(
 
@@ -800,6 +801,7 @@ class TestModeCog(commands.Cog):
         description="Show whether a backup exists, when it was taken, and if it is locked.",
     )
     @league_admin_only
+    @changes_nothing
     async def backup_status(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -1062,6 +1064,7 @@ class TestModeCog(commands.Cog):
     )
     @app_commands.describe(division="Name of the division.")
     @league_admin_only
+    @changes_nothing
     async def roster_list(
         self,
         interaction: discord.Interaction,

@@ -378,4 +378,4 @@ async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added
     assert "Run `/test-mode roster add` again to retry." in reply
     assert "database is locked" not in reply
     [line] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
-    assert "failed for <@1>" in line
+    assert "failed for Tester (<@1>)" in line

@@ -16,7 +16,7 @@ from discord.ext import commands
 
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
-from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -188,6 +188,7 @@ class WeatherCog(commands.Cog):
         description="Show the three weather deadlines currently set.",
     )
     @league_manager_only
+    @changes_nothing
     async def config_view(self, interaction: discord.Interaction) -> None:
         """Read the three deadlines back (issue #118).
 

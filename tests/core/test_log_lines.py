@@ -174,3 +174,13 @@ async def test_record_abandoned_writes_each_standard_form_and_never_raises(case)
     elif case == "detail beneath":
         assert head == f"↩️ `/round amend` of round 3 cancelled by Alex (<@{USER}>)"
         assert line.splitlines()[1].strip() == detail
+
+
+def test_the_member_naming_helpers_import_from_member_names_and_log_lines_alike():
+    """`interaction_errors` names the member too, and cannot import `log_lines` without a
+    cycle, so the two helpers live in a leaf module of their own; `log_lines` keeps offering
+    them to the callers that import them from it."""
+    from leaguebot.core.utils import log_lines, member_names
+
+    assert log_lines.member_named is member_names.member_named
+    assert log_lines.interaction_member is member_names.interaction_member

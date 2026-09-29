@@ -59,12 +59,17 @@ def _offered(value: bool):
 
 
 def _interaction(client=None):
+    """A press by Alex, not yet answered, as Discord delivers it."""
     interaction = MagicMock()
     if client is None:
         # A server with no hub set: the refresh after a refused press has nothing to do.
         client = MagicMock()
         client.config_service.get_server_config = AsyncMock(return_value=None)
+        client.output_router.post_log = AsyncMock()
     interaction.client = client
+    interaction.user.id = 4242
+    interaction.user.display_name = "Alex"
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
     return interaction
 
@@ -186,6 +191,43 @@ async def test_a_press_on_an_option_no_module_registers_any_more_is_refused():
     await view.children[0].callback(interaction)
 
     assert "no longer offered" in interaction.response.send_message.await_args.args[0]
+
+
+@pytest.mark.parametrize(
+    "registered, named",
+    [
+        pytest.param(
+            True,
+            "the hub's “View licence” option",
+            id="no longer offered",
+        ),
+        pytest.param(
+            False,
+            "the hub's `licence` option",
+            id="no longer registered",
+        ),
+    ],
+)
+async def test_a_stale_press_is_recorded_in_the_log_channel(registered, named):
+    """A press on a button that tries to act is refused in the log channel as well as to the
+    member (the core specification's "The record of what changed"). The option is named by its
+    label, or by its key where no module registers it any more; the member is answered exactly
+    as before."""
+    option = _option("licence", label="View licence", offered=_offered(False))
+    if registered:
+        register_option(option)
+    view = HubPanelView([option])
+    interaction = _interaction()
+
+    await view.children[0].callback(interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(
+        hub_service.NO_LONGER_OFFERED, ephemeral=True
+    )
+    interaction.client.output_router.post_log.assert_awaited_once_with(
+        f"⛔ {named} refused for Alex (<@4242>) — "
+        "That option is no longer offered here. The panel has been refreshed."
+    )
 
 
 # ── Posting and refreshing the panel ──────────────────────────────────────

@@ -431,7 +431,7 @@ async def test_an_attendance_enable_that_cannot_be_audited_leaves_the_module_off
     # One failure line: the command, the member and the kind of fault, never its words.
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "IntegrityError" in line
     assert "disk I/O error" not in line
 
@@ -476,7 +476,7 @@ async def test_a_weather_enable_that_cannot_be_written_says_the_module_is_still_
     assert "Module remains disabled" not in replied
     [line] = _lines(cog)
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "IntegrityError" in line
     assert "disk I/O error" not in line
 

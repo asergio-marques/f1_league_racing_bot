@@ -33,7 +33,7 @@ from leaguebot.image.models.image_constants import (
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal
-from leaguebot.core.utils.channel_guard import league_manager_only
+from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
 from leaguebot.core.utils.time_parsing import parse_time_of_day
@@ -1663,6 +1663,7 @@ class ImageCog(commands.Cog):
         description="Show the whole image configuration and whether it holds together.",
     )
     @league_manager_only
+    @changes_nothing
     async def config_view(self, interaction: discord.Interaction) -> None:
         if not await self._guard_module_enabled(interaction):
             return
@@ -1949,6 +1950,7 @@ class ImageCog(commands.Cog):
         division="The division whose calendar to draw."
     )
     @league_manager_only
+    @changes_nothing
     async def test_calendar(
         self, interaction: discord.Interaction, division: str
     ) -> None:
@@ -1973,6 +1975,7 @@ class ImageCog(commands.Cog):
         division="The division whose lineup to draw."
     )
     @league_manager_only
+    @changes_nothing
     async def test_lineup(
         self, interaction: discord.Interaction, division: str
     ) -> None:
@@ -1998,6 +2001,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_results(
         self,
         interaction: discord.Interaction,
@@ -2027,6 +2031,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_standings(
         self,
         interaction: discord.Interaction,
@@ -2056,6 +2061,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_attendance(
         self,
         interaction: discord.Interaction,
@@ -2085,6 +2091,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_rsvp(
         self,
         interaction: discord.Interaction,
@@ -2114,6 +2121,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_verdict(
         self,
         interaction: discord.Interaction,
@@ -2143,6 +2151,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_verdict_banner(
         self,
         interaction: discord.Interaction,
@@ -2172,6 +2181,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_weather_p1(
         self,
         interaction: discord.Interaction,
@@ -2201,6 +2211,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_weather_p2(
         self,
         interaction: discord.Interaction,
@@ -2230,6 +2241,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_weather_p3(
         self,
         interaction: discord.Interaction,
@@ -2259,6 +2271,7 @@ class ImageCog(commands.Cog):
         round="The round number to draw for. Omit where this server has no season.",
     )
     @league_manager_only
+    @changes_nothing
     async def test_weather_mystery(
         self,
         interaction: discord.Interaction,

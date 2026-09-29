@@ -283,7 +283,7 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
     assert not any("Success" in line for line in lines)
     [line] = lines
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "RuntimeError" in line
     assert "disk full" not in line
 
@@ -291,10 +291,7 @@ async def test_a_failed_enable_is_not_logged_as_a_success(tmp_path):
 @pytest.mark.parametrize(
     "switch_off_fails",
     [
-        pytest.param(
-            False,
-            id="the-write-fails",
-        ),
+        pytest.param(False, id="the-write-fails"),
         pytest.param(True, id="the-switch-off-also-fails"),
     ],
 )
@@ -341,6 +338,6 @@ async def test_an_image_enable_that_cannot_be_written_is_switched_back_off_and_s
     assert "disk I/O error" not in replied
     [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert "/module enable" in line
-    assert f"failed for <@{ACTOR_ID}>" in line
+    assert f"failed for Admin (<@{ACTOR_ID}>)" in line
     assert "IntegrityError" in line
     assert "disk I/O error" not in line

@@ -457,6 +457,10 @@ async def test_a_setting_command_refuses_a_member_of_neither_tier(
 
     interaction = _interaction()
     interaction.user.guild_permissions.administrator = False
+    # The guard answers before anything else has: the interaction is still unanswered, and
+    # its client is the bot, whose log channel a refusal is recorded in.
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.client = cog.bot
 
     # The decorated command, not the unwrapped body.
     await getattr(cog, attribute).callback(cog, interaction, factory(new_id))
@@ -821,6 +825,10 @@ async def test_bot_factory_reset_refuses_an_administrator_who_is_not_the_owner(t
     interaction = _owner_interaction(user_id=OWNER_ID + 1)
     interaction.user.guild_permissions = discord.Permissions(administrator=True)
     interaction.user.roles = [_role(CONFIGURED_ADMIN_ROLE)]
+    # The guard answers before the command defers: the interaction is still unanswered, and
+    # its client is the bot, whose log channel a refusal is recorded in.
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.client = cog.bot
 
     await _run(cog, interaction)
 

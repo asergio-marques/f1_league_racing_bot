@@ -24,7 +24,10 @@ logged with its traceback.
 message; a reply too long for one is sent in parts through `chunk_message`, never cut off.
 
 It lives apart from `interaction_errors` because it reaches the guild through `league_guild`,
-and `league_server`, which defines that, imports `interaction_errors`.
+and `league_server`, which defines that, imports `interaction_errors`. The two helpers that name a
+member from what an interaction carries, `member_named` and `interaction_member`, live in
+`core/utils/member_names.py` so that `interaction_errors` can use them too; this module imports
+them and so still offers them to its callers.
 """
 
 from __future__ import annotations
@@ -35,23 +38,13 @@ from typing import Any
 import discord
 
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.member_names import interaction_member, member_named
 from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
 
 #: The marks a reply opens with, which the log line's own mark replaces.
 _REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳")
-
-
-def member_named(display_name: str | None, member_id: int) -> str:
-    """"Alex (<@4242>)", or the mention alone where the member has no name to give."""
-    return f"{display_name} (<@{member_id}>)" if display_name else f"<@{member_id}>"
-
-
-def interaction_member(interaction: discord.Interaction) -> str:
-    """The member who used *interaction*, named as the log channel names them."""
-    user = interaction.user
-    return member_named(getattr(user, "display_name", None), user.id)
 
 
 async def name_of_member(bot: Any, member_id: int | None) -> str:

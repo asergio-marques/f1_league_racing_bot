@@ -170,7 +170,7 @@ These must be enabled in the **Discord Developer Portal → Bot → Privileged G
 One bot serves one league, and a league is one Discord server. Host a bot application for your league alone and add it to that one server.
 
 - **Switch *Public Bot* off** in the **Discord Developer Portal → Bot**. Then only the application's owner can add the bot to a server, and nobody else can invite it into theirs.
-- **`/bot init` claims the server.** From then on the bot answers commands there and nowhere else. On any other server it stays, but refuses every command — and every button or form left over from before a move — with *"⛔ This bot serves another server's league and takes no commands here."*, and ignores everything else that happens there.
+- **`/bot init` claims the server.** From then on the bot answers commands there and nowhere else. On any other server it stays, but refuses every command — and every button or form left over from before a move — with *"⛔ This bot serves another server's league and takes no commands here."*, and ignores everything else that happens there. Those refusals are not written to the log channel, only to the host's log.
 - **The host log warns you.** Whenever the bot sits in more than one server, it logs a warning at startup and each time it joins a server, naming every server it is in. Remove it from the ones that are not the league's.
 - **Moving the league to another server** takes [`/bot pack`](#bot-pack--ready-the-bot-for-another-server) on the old one, which frees the claim, then `/bot init` on the new one. Drivers, past seasons, the team list, points configurations and module settings go with the league; the old server's roles and channels do not.
 - **Between servers the bot acts on nothing.** After `/bot pack` and until `/bot init` claims a new server, every button and form the bot ever posted — on any server, and in direct messages — is refused with *"⛔ This bot is between servers and acts on nothing until `/bot init` claims one."*
@@ -293,7 +293,11 @@ it set, a refusal as *"⛔ `/signup open` refused for Alex (@Alex) — Signups a
 open."*, a failure, and a confirmation cancelled (*"↩️ … cancelled by …"*) or left to lapse
 (*"⌛ … lapsed unconfirmed (started by …)"*). A refusal, a cancel or a lapse names the member
 by their display name on the server and their mention, which notifies nobody. Views, lists,
-previews and the hub's About change nothing and record nothing. Some commands do not yet record
+previews and the hub's About change nothing and record nothing. A refusal to someone on
+another server, to a command used in a direct message, or made before `/bot init` or after
+`/bot pack` is answered as ever but written to the host's log alone: there is no log channel to
+write it in, or no way to tell whether the person belongs to the league. A results paste into a
+submission channel is a message, not a command, and is not covered. Some commands do not yet record
 every outcome in this form; they are being brought in line.
 
 ### `/bot init` — One-time server setup
