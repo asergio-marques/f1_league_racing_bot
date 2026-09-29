@@ -283,6 +283,22 @@ def test_a_save_with_no_scheduler_database_leaves_no_scheduler_backup(tmp_path):
     assert "since the save" in _rows(bs.backup_path(live))
 
 
+def test_a_save_whose_two_databases_are_one_file_leaves_no_temporary(tmp_path):
+    """Where the league and the scheduler share one file, the save's two copies are bound for the
+    same backup: they are kept apart, so neither overwrites the other's temporary mid-save and
+    none is left behind, and the backup stands with what was live."""
+    live = tmp_path / "bot.db"
+    _database(live, rows=1)
+    bs.save(live, live)
+    _add_round(live, "since the save")
+
+    bs.save(live, live)
+
+    # Read before the rows are: reading a backup in WAL leaves its own -wal and -shm beside it.
+    assert set(_backups(tmp_path)) == {"bot.bkup.db"}
+    assert "since the save" in _rows(bs.backup_path(live))
+
+
 # ── A fault, told from a refusal ──────────────────────────────────────────
 
 
