@@ -5356,6 +5356,10 @@ class SeasonCog(commands.Cog):
         that is as true of a season waiting on this question as of one waiting on the
         button. Leaving it unanswered therefore expires the approval rather than holding
         it open, which is the whole reason the deadline is carried in here.
+
+        Each way the approval ends here is recorded in the log channel: a cancel as a cancel,
+        and the question left unanswered, or the review expiring before it was asked, as a
+        lapse, with the reply's own words beneath.
         """
         config = await self.bot.config_service.get_server_config()
         if config is None or not getattr(config, "test_mode_active", False):
@@ -5363,11 +5367,12 @@ class SeasonCog(commands.Cog):
 
         remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
         if remaining <= 0:
-            await interaction.followup.send(
+            reply = (
                 "⏱️ This review expired before the season could be approved. Run "
-                "`/season placements-review` again. **Nothing has been approved.**",
-                ephemeral=True,
+                "`/season placements-review` again. **Nothing has been approved.**"
             )
+            await interaction.followup.send(reply, ephemeral=True)
+            await self._record_backup_question_ended(interaction, reply, lapsed=True)
             return False
 
         from leaguebot.core.services import backup_service
@@ -5394,18 +5399,40 @@ class SeasonCog(commands.Cog):
         await view.wait()
 
         if view.answer is None:
-            await interaction.followup.send(
+            reply = (
                 "⏱️ This review expired while the backup question went "
-                "unanswered. Run `/season placements-review` again. **Nothing has been approved.**",
-                ephemeral=True,
+                "unanswered. Run `/season placements-review` again. **Nothing has been approved.**"
             )
+            await interaction.followup.send(reply, ephemeral=True)
+            await self._record_backup_question_ended(interaction, reply, lapsed=True)
             return False
         if view.answer == "cancel":
             await interaction.followup.send(
                 "Nothing has been approved, and nothing has been saved.", ephemeral=True
             )
+            await self._record_backup_question_ended(
+                interaction,
+                "Nothing has been approved, and nothing has been saved. "
+                "Run the review again.",
+                lapsed=False,
+            )
             return False
         return True
+
+    async def _record_backup_question_ended(
+        self, interaction: discord.Interaction, detail: str, *, lapsed: bool
+    ) -> None:
+        """Record that the approval ended at the backup question: cancelled, or lapsed.
+
+        The reply's own words go beneath the line, less the marks a message carries.
+        """
+        await record_abandoned(
+            self.bot,
+            interaction.user,
+            what="`/season placements-review`",
+            lapsed=lapsed,
+            detail=detail.removeprefix("⏱️ ").replace("**", ""),
+        )
 
     async def _do_approve(
         self, interaction: discord.Interaction, *, deadline: datetime | None = None

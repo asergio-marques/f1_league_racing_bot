@@ -567,7 +567,6 @@ def _logged(cog) -> list[str]:
     return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
 
 
-@_BACKUP_RECORDED
 async def test_cancelling_the_backup_question_is_recorded():
     """Alex approves a test-mode season, is asked about a backup, and presses ❌ Cancel.
 
@@ -589,7 +588,6 @@ async def test_cancelling_the_backup_question_is_recorded():
     assert detail == "Nothing has been approved, and nothing has been saved. Run the review again."
 
 
-@_BACKUP_RECORDED
 @pytest.mark.parametrize(
     "minutes_left,answer,said",
     [
