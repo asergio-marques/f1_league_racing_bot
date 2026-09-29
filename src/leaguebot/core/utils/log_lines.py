@@ -101,10 +101,10 @@ async def refuse(
     except Exception:  # noqa: BLE001 — the refusal is still recorded
         log.warning("could not tell user %s that %s was refused", user_id, what, exc_info=True)
 
-    router = getattr(interaction.client, "output_router", None)
-    if router is None:
-        return
     try:
+        router = getattr(getattr(interaction, "client", None), "output_router", None)
+        if router is None:
+            return
         detail = reason if reason is not None else _first_line(reply)
         await router.post_log(f"⛔ {what} refused for {interaction_member(interaction)} — {detail}")
     except Exception:  # noqa: BLE001 — the member has still been answered
