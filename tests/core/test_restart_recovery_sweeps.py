@@ -49,6 +49,7 @@ import pytest
 
 import leaguebot.__main__ as bot_module
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.review_prompts import store_review_prompt
 
 SERVER_ID = 11808
 SEASON_ID = 1
@@ -301,11 +302,13 @@ async def test_a_naive_scheduled_time_is_read_as_utc(tmp_path):
 
 async def _seed_prompt(db_path):
     async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO season_review_prompts (id, season_id, channel_id, "
-            "message_id, reviewer_id, posted_at) "
-            "VALUES (?, ?, ?, ?, ?, '2026-02-01T00:00:00+00:00')",
-            (1, SEASON_ID, CHANNEL_ID, MESSAGE_ID, REVIEWER_ID),
+        await store_review_prompt(
+            db,
+            season_id=SEASON_ID,
+            channel_id=CHANNEL_ID,
+            message_id=MESSAGE_ID,
+            reviewer_id=REVIEWER_ID,
+            posted_at="2026-02-01T00:00:00+00:00",
         )
         await db.commit()
 

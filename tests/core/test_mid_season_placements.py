@@ -16,6 +16,7 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.placement_service import PlacementService, PlacementsCommitted
+from tests.support.review_prompts import store_review_prompt
 from tests.support.undecorate import undecorate
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
@@ -768,12 +769,15 @@ async def test_a_stumbled_confirmation_still_clears_its_review(db_path):
     view._season_id = 1
     report = [MagicMock(delete=AsyncMock()), MagicMock(delete=AsyncMock())]
     view.carries(report)
-    view._message = prompt = MagicMock(delete=AsyncMock())
+    view._message = prompt = MagicMock(id=800, delete=AsyncMock())
     async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO season_review_prompts "
-            "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
-            "VALUES (1, 1, 700, 800, 42, '2026-03-01T00:00:00+00:00')"
+        await store_review_prompt(
+            db,
+            season_id=1,
+            channel_id=700,
+            message_id=800,
+            reviewer_id=42,
+            posted_at="2026-03-01T00:00:00+00:00",
         )
         await db.commit()
     interaction = _interaction()

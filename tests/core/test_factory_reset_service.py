@@ -13,6 +13,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import backup_service, factory_reset_service
 from leaguebot.core.services.factory_reset_service import take_backup
+from tests.support.review_prompts import store_review_prompt
 
 NOW = datetime(2026, 9, 19, 10, 15, 0, tzinfo=timezone.utc)
 
@@ -191,9 +192,10 @@ async def _seed_channels(db_path: str) -> None:
             VALUES ('900', 42), ('901', NULL);
             INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at)
             VALUES (31, 'x', 'Forbidden', '2026-01-01');
-            INSERT INTO season_review_prompts (id, season_id, channel_id, message_id,
-                reviewer_id, posted_at) VALUES (1, 2, 32, 1, 1, '2026-01-01');
         """)
+        await store_review_prompt(
+            db, season_id=2, channel_id=32, message_id=1, reviewer_id=1, posted_at="2026-01-01"
+        )
         await db.commit()
 
 

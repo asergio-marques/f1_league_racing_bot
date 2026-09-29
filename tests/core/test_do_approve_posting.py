@@ -48,6 +48,7 @@ from leaguebot.core.cogs.season_cog import (
 )
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import Round, RoundFormat
+from tests.support.review_prompts import store_review_prompt
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 12608
@@ -1082,13 +1083,15 @@ async def test_a_stumbled_approval_still_clears_its_review(db_path):
     view._season_id = SEASON_ID
     report = [MagicMock(delete=AsyncMock()), MagicMock(delete=AsyncMock())]
     view.carries(report)
-    view._message = prompt = MagicMock(delete=AsyncMock())
+    view._message = prompt = MagicMock(id=800, delete=AsyncMock())
     async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO season_review_prompts "
-            "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
-            "VALUES (1, ?, 700, 800, ?, '2026-03-01T00:00:00+00:00')",
-            (SEASON_ID, USER_ID),
+        await store_review_prompt(
+            db,
+            season_id=SEASON_ID,
+            channel_id=700,
+            message_id=800,
+            reviewer_id=USER_ID,
+            posted_at="2026-03-01T00:00:00+00:00",
         )
         await db.commit()
     interaction = _interaction()
