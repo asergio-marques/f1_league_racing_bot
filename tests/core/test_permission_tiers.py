@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -31,11 +32,13 @@ import pytest
 
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.utils.channel_guard import (
+    CHANGES_NOTHING_ATTRIBUTE,
     CHANNEL_EXEMPT_ATTRIBUTE,
     LEAGUE_ADMIN,
     LEAGUE_MANAGER,
     TIER_ATTRIBUTE,
     bot_setup_only,
+    changes_nothing,
     is_league_admin,
     is_league_manager,
     league_admin_only,
@@ -545,6 +548,134 @@ async def test_the_owner_s_factory_reset_reads_no_setting():
 
     assert ran == [True]
     cog.bot.config_service.get_server_config.assert_not_awaited()
+
+
+# ── A view, list or preview records nothing, a refusal included (#482) ────
+
+
+@pytest.mark.parametrize(
+    "member,channel_id",
+    [
+        pytest.param(_member(roles=(MANAGER_ROLE,)), CHANNEL + 1, id="wrong channel"),
+        pytest.param(_member(), CHANNEL, id="missing roles"),
+    ],
+)
+async def test_a_refused_view_is_not_recorded(member, channel_id, caplog):
+    """A view, a list or a preview changes nothing and shall record nothing (core
+    specification, "The record of what changed"), its refusal included. The member is answered
+    as ever and the host's log keeps the refusal; the same command left unmarked is recorded,
+    so the mark and not the refusal is what keeps the line out of the log channel."""
+    caplog.set_level(logging.INFO, logger=_GUARD_LOG)
+    ran: list[bool] = []
+
+    @league_manager_only
+    @changes_nothing
+    async def view(self, interaction, *args, **kwargs) -> None:
+        ran.append(True)
+
+    @league_manager_only
+    async def twin(self, interaction, *args, **kwargs) -> None:
+        ran.append(True)
+
+    viewed = _interaction(member, channel_id=channel_id, command="track list")
+    await view(_cog(_config()), viewed)
+
+    assert ran == []
+    viewed.response.send_message.assert_awaited_once()
+    assert viewed.response.send_message.await_args.kwargs == {"ephemeral": True}
+    viewed.client.output_router.post_log.assert_not_awaited()
+    assert _host_records_refusal(caplog, "track list", guild=SERVER_ID)
+
+    acted = _interaction(member, channel_id=channel_id, command="track add")
+    await twin(_cog(_config()), acted)
+
+    assert ran == []
+    [line] = _logged(acted)
+    assert line.startswith("⛔ `/track add` refused for Alex (<@7>) — ")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /season config-review, /season placements-review and /results amend review "
+    "lead to a change but are still marked as changing nothing",
+)
+def test_the_view_commands_are_marked_as_changing_nothing():
+    """Exactly the view, list and preview commands carry the mark, and no acting command does.
+
+    The three review commands lead to a change — confirming a season's configuration, approving
+    its placements, approving an amendment — so a refusal of any of them is recorded, and they
+    must not carry the mark."""
+    from tests.core.test_command_tiers import COMMANDS
+
+    views = {
+        "attendance config show",
+        "weather config view",
+        "track list",
+        "season status",
+        "test-mode review",
+        "test-mode backup status",
+        "test-mode roster list",
+        "results config list",
+        "results config view",
+        "team list",
+        "team lineup",
+        "signup config view",
+        "signup time-slot list",
+        "signup unassigned list",
+        "signup unassigned export",
+        "images config view",
+        "images test calendar",
+        "images test lineup",
+        "images test results",
+        "images test standings",
+        "images test attendance",
+        "images test rsvp",
+        "images test verdict",
+        "images test verdict-banner",
+        "images test weather-p1",
+        "images test weather-p2",
+        "images test weather-p3",
+        "images test weather-mystery",
+    }
+    assert views <= set(COMMANDS), "a view command named here no longer exists"
+
+    marked = {
+        name
+        for name, command in COMMANDS.items()
+        if getattr(command.callback, CHANGES_NOTHING_ATTRIBUTE, False)
+    }
+
+    assert marked == views
+
+
+async def test_a_factory_reset_refusal_survives_an_unreadable_configuration(caplog):
+    """A configuration past repair is what a factory reset exists for, so a read that fails
+    must not cost the member their answer: the refusal still reaches them, nothing is written
+    to the log channel, and the host's log keeps the failed read."""
+    caplog.set_level(logging.INFO, logger=_GUARD_LOG)
+    command, ran = _guarded(server_owner_only)
+    interaction = _not_the_owner()
+    cog = _cog(_config())
+    cog.bot.config_service.get_server_config = AsyncMock(
+        side_effect=sqlite3.OperationalError("database disk image is malformed")
+    )
+
+    await command(cog, interaction)
+
+    assert ran == []
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ Only this server's owner may factory-reset the bot, whatever roles or "
+        "permissions anyone else holds.",
+        ephemeral=True,
+    )
+    interaction.client.output_router.post_log.assert_not_awaited()
+    assert any(
+        record.name == _GUARD_LOG
+        and record.levelno >= logging.ERROR
+        and record.exc_info is not None
+        and isinstance(record.exc_info[1], sqlite3.OperationalError)
+        for record in caplog.records
+    )
 
 
 # ── The tier is readable off the decorator ────────────────────────────────
