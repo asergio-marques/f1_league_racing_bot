@@ -118,6 +118,28 @@ async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
     assert "Admin (<@77>)" in line and "/module disable" in line
 
 
+async def test_a_panel_not_refreshed_after_the_confirmed_results_disable_names_the_command(
+    monkeypatch,
+):
+    """The confirmation's button carries no command, so the line names `/module disable` itself,
+    never "an interaction" (#482)."""
+    monkeypatch.setattr(
+        hub_service, "refresh_panel", AsyncMock(return_value="The hub channel is gone.")
+    )
+    cog = _module_cog()
+    cog._apply_results_disable = AsyncMock()
+    view = _ConfirmDisableResultsView(cog, actor_id=77)
+    interaction = _interaction()
+    interaction.command = None
+
+    await view.confirm.callback(interaction)
+
+    cog._apply_results_disable.assert_awaited_once()
+    assert [call.args[0] for call in cog.bot.output_router.post_log.await_args_list] == [
+        "Admin (<@77>) | `/module disable` | Hub panel not refreshed: The hub channel is gone."
+    ]
+
+
 async def test_a_refresh_that_raises_does_not_fail_the_toggle(monkeypatch):
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(side_effect=RuntimeError("x")))
     cog = _module_cog()
