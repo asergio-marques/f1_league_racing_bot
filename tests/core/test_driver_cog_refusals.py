@@ -11,6 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.cogs.driver_cog import DriverCog
@@ -64,7 +65,10 @@ def _cog() -> DriverCog:
 
 
 def _interaction(cog: DriverCog, command: str) -> MagicMock:
-    """`/<command>` run by the manager Alex, answering as Discord's does."""
+    """`/<command>` run by the manager Alex on the league's server, answering as Discord's does.
+
+    The server is the bot's own stand-in, so that a case may make a member gone from it.
+    """
     state = {"done": False}
 
     async def _answer(*_args, **_kwargs):
@@ -72,6 +76,7 @@ def _interaction(cog: DriverCog, command: str) -> MagicMock:
 
     interaction = MagicMock()
     interaction.client = cog.bot
+    interaction.guild = cog.bot.guild
     interaction.command.qualified_name = command
     interaction.user.id = MANAGER_ID
     interaction.user.display_name = "Alex"
@@ -128,7 +133,12 @@ def _service_refuses(name: str, reason: str):
 
 
 def _past_account_gone(bot):
+    """Racer's account is a past one, and the driver's current account has left the server."""
     bot.driver_service.current_account = AsyncMock(return_value="9999")
+    bot.guild.get_member = MagicMock(return_value=None)
+    bot.guild.fetch_member = AsyncMock(
+        side_effect=discord.NotFound(MagicMock(status=404), "gone")
+    )
 
 
 # case id → (command, how it is called, how the cog is made to refuse, a phrase of today's reply)
