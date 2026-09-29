@@ -234,6 +234,7 @@ async def test_the_review_is_refused_outside_configuration(stage):
     bot = _bot(stage=stage)
     cog = _cog(bot)
     interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_config_review)(cog, interaction)
 
@@ -704,3 +705,86 @@ async def test_the_confirmation_says_what_comes_next_and_is_logged(signup, expec
     log_line = bot.output_router.post_log.await_args.args[0]
     assert "/season config-review | Confirmed" in log_line
     assert f"stage: {'WAITING' if signup else 'PLACEMENTS'}" in log_line
+
+
+# ── What the review records in the log channel (#482) ─────────────────────────────
+
+
+def _run_by_the_manager(bot, interaction):
+    """The manager's run of `/season config-review`, connected to the bot's log channel so that
+    a line the command writes can be read. It reads as Discord's does: not answered until the
+    command replies or defers, and answered from then on."""
+    interaction.client = bot
+    interaction.command.qualified_name = "season config-review"
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+def _logged(bot) -> list[str]:
+    """The lines written to the log channel, in order."""
+    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+
+
+_NOT_IN_CONFIGURATION = (
+    "⛔ There is no season in configuration. `/season setup` begins one; a season whose "
+    "configuration is confirmed is reviewed with `/season placements-review`."
+)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: /season config-review's refusal is not yet recorded"
+)
+@pytest.mark.parametrize(
+    "stage, set_up",
+    [
+        pytest.param(SeasonStage.WAITING, True, id="a_season_waiting_for_signups"),
+        pytest.param(SeasonStage.PLACEMENTS, True, id="a_season_in_placements"),
+        pytest.param(None, False, id="no_season_being_set_up"),
+    ],
+)
+async def test_every_config_review_refusal_is_recorded(stage, set_up):
+    """The refusal answers as today and writes one refusal line (#482, criterion 1)."""
+    bot = _bot(stage=stage)
+    cog = _cog(bot)
+    if not set_up:
+        cog._pending = {}
+        cog._get_pending = MagicMock(return_value=None)
+    interaction = _run_by_the_manager(bot, _interaction())
+
+    await undecorate(SeasonCog.season_config_review)(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(
+        _NOT_IN_CONFIGURATION, ephemeral=True
+    )
+    interaction.response.defer.assert_not_awaited()
+    assert _logged(bot) == [
+        f"⛔ `/season config-review` refused for Manager (<@{REVIEWER}>) — "
+        f"{_NOT_IN_CONFIGURATION[2:]}"
+    ]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a posted configuration review does not yet write a line naming who ran it"
+)
+async def test_a_posted_config_review_writes_one_line_naming_who_ran_it(monkeypatch):
+    """A review that posts its question writes one line naming who ran it (#482, criterion 6),
+    so a later lapse line reads against it."""
+    bot = _report_bot(signup=True, test_mode=True)
+    cog = _cog(bot)
+    interaction = _run_by_the_manager(bot, _interaction())
+
+    await _report(cog, interaction, monkeypatch)
+
+    (view,) = _RecordedView.made
+    view.bind.assert_awaited_once()
+    lines = [line for line in _logged(bot) if "/season config-review" in line]
+    assert len(lines) == 1
+    assert lines[0].startswith(f"Manager (<@{REVIEWER}>) | /season config-review")
+    assert not any(line.startswith("⛔") for line in _logged(bot))

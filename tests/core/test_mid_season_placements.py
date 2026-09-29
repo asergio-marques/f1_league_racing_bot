@@ -138,6 +138,7 @@ def _interaction():
 async def test_the_review_is_refused_in_the_other_ongoing_stages(db_path, stage):
     cog = _cog(db_path, stage)
     interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_review)(cog, interaction)
 

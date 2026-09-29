@@ -299,6 +299,7 @@ async def test_a_server_with_no_pending_setup_is_told_to_start_one(db_path):
     cog._pending = {}
     cog._get_pending = MagicMock(return_value=None)
     interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_review)(cog, interaction)
 
@@ -901,3 +902,130 @@ async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(d
     assert fault in refusal
     assert cog._image_configuration_faults.await_count == 2
     season_svc.transition_to_active.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# What the review records in the log channel (#482)
+# ---------------------------------------------------------------------------
+
+
+def _run_by_alex(cog, interaction):
+    """Alex's run of `/season placements-review`, connected to the cog's log channel so that a
+    line the command writes can be read. It reads as Discord's does: not answered until the
+    command replies or defers, and answered from then on."""
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "season placements-review"
+    interaction.user.display_name = "Alex"
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    """The lines written to the log channel, in order."""
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+
+
+def _a_season_being_raced(cog):
+    from leaguebot.core.models.season import SeasonStage
+
+    cog.bot.season_service.get_confirmed_season = AsyncMock(
+        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.ONGOING)
+    )
+
+
+def _no_setup(cog):
+    cog._pending = {}
+    cog._get_pending = MagicMock(return_value=None)
+
+
+def _a_season_in_configuration(cog):
+    from leaguebot.core.models.season import SeasonStage
+
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.CONFIGURATION)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: /season placements-review's refusals are not yet recorded"
+)
+@pytest.mark.parametrize(
+    "arrange, reply",
+    [
+        pytest.param(
+            _a_season_being_raced,
+            "⛔ Placements can only be reviewed while the season is in placements, or "
+            "mid-season while the drivers of a closed signup window are placed.",
+            id="a_season_being_raced_outside_its_placements",
+        ),
+        pytest.param(
+            _no_setup,
+            "❌ No pending season setup. Run `/season setup` first.",
+            id="no_season_being_set_up",
+        ),
+        pytest.param(
+            _a_season_in_configuration,
+            "⛔ Placements can only be reviewed while the season is in placements. A season "
+            "in configuration is reviewed with `/season config-review`.",
+            id="a_season_still_in_configuration",
+        ),
+    ],
+)
+async def test_every_placements_review_refusal_is_recorded(db_path, arrange, reply):
+    """Each refusal answers as today and writes one refusal line (#482, criterion 1)."""
+    cog = _cog(db_path)
+    arrange(cog)
+    interaction = _run_by_alex(cog, _interaction())
+
+    await undecorate(SeasonCog.season_review)(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.response.defer.assert_not_awaited()
+    interaction.followup.send.assert_not_awaited()
+    cog._post_approval_prompt.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/season placements-review` refused for Alex (<@{USER_ID}>) — {reply[2:]}"
+    ]
+
+
+class _RecordedApproveView:
+    """Stands in for the approve view, recording what the review did with it."""
+
+    made: list["_RecordedApproveView"] = []
+
+    def __init__(self, cog, reviewer_id):
+        self.reviewer_id = reviewer_id
+        self.record_fingerprint = AsyncMock()
+        self.bind = AsyncMock()
+        self.carries = MagicMock()
+        _RecordedApproveView.made.append(self)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: a posted placements review does not yet write a line naming who ran it"
+)
+async def test_a_posted_placements_review_writes_one_line_naming_who_ran_it(db_path, monkeypatch):
+    """A review that posts its question writes one line naming who ran it (#482, criterion 6),
+    so a later lapse line reads against it."""
+    import leaguebot.core.cogs.season_cog as season_cog
+
+    _RecordedApproveView.made = []
+    monkeypatch.setattr(season_cog, "_ApproveView", _RecordedApproveView)
+    cog = _cog(db_path)
+    # The question is really posted, so the line is read wherever the review writes it.
+    cog._post_approval_prompt = SeasonCog._post_approval_prompt.__get__(cog)
+    interaction = _run_by_alex(cog, _interaction())
+
+    await _review(cog, interaction)
+
+    (view,) = _RecordedApproveView.made
+    view.bind.assert_awaited_once()
+    lines = [line for line in _logged(cog) if "/season placements-review" in line]
+    assert len(lines) == 1
+    assert lines[0].startswith(f"Alex (<@{USER_ID}>) | /season placements-review")
+    assert not any(line.startswith("⛔") for line in _logged(cog))
