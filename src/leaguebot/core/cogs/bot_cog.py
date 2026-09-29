@@ -50,7 +50,9 @@ from leaguebot.core.utils.channel_guard import (
     server_owner_only,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import guild_of
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +71,26 @@ _CONFIRM_WORD = "CONFIRM"
 _ANOTHER_SERVER = (
     "⛔ This bot already serves the league on another server. One bot serves one league."
 )
+
+
+async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
+    """Answer the member with *reply*, seen by them alone, and record the refusal in the host's
+    log alone.
+
+    For a refusal made on another server, or before the bot is set up: there is no log channel
+    of the league's to write to (owner, #482: "Host log only").
+    """
+    log.info(
+        "%s refused for %s (%s): %s",
+        describe(interaction),
+        getattr(interaction.user, "display_name", "a member"),
+        getattr(interaction.user, "id", None),
+        reply.strip().splitlines()[0] if reply.strip() else "",
+    )
+    if interaction.response.is_done():
+        await interaction.followup.send(reply, ephemeral=True)
+    else:
+        await interaction.response.send_message(reply, ephemeral=True)
 
 
 class BotCog(commands.Cog):
@@ -128,16 +150,17 @@ class BotCog(commands.Cog):
 
         league = await self.bot.config_service.get_league_server_id()
         if league is not None and league != server_id:
-            await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
+            await _refuse_on_host(interaction, _ANOTHER_SERVER)
             return
 
         existing = await self.bot.config_service.get_server_config()
         if existing:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⚠️ This server is already configured, and `/bot init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.\n"
                 "To move the league to another server, use `/bot pack` first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -161,12 +184,13 @@ class BotCog(commands.Cog):
             # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
             # won rather than claiming a success that wrote nothing.
             if await self.bot.config_service.get_league_server_id() != server_id:
-                await interaction.response.send_message(_ANOTHER_SERVER, ephemeral=True)
+                await _refuse_on_host(interaction, _ANOTHER_SERVER)
                 return
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⚠️ This server is already configured, and `/bot init` runs once.\n"
                 f"To change a setting use {_SETTINGS_COMMANDS}.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -230,9 +254,10 @@ class BotCog(commands.Cog):
 
             use = await find_channel_use(self.bot.db_path, value)
             if use is not None:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     refusal(mention, use, same_setting=(use == ChannelUse(_setting))),
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
                 return
 
@@ -241,9 +266,8 @@ class BotCog(commands.Cog):
 
         changed = await self.bot.config_service.set_core_setting(column, value)
         if not changed:
-            await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
 
@@ -391,19 +415,19 @@ class BotCog(commands.Cog):
             and interaction.guild.get_role(old_role_id) is None
         )
         if season_number is not None and not replacing_gone:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ The league's roles are fixed for Season {season_number} now that its "
                 f"configuration has been confirmed. `{command}` is available again once the "
                 "season has ended, or while a new season is in configuration — or at once, "
                 "should the role be deleted from the server.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         if config is None:
-            await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
 
@@ -416,16 +440,15 @@ class BotCog(commands.Cog):
                 remedy="Choose a role of the drivers' own.",
             )
             if refusal is not None:
-                await interaction.response.send_message(f"❌ {refusal}", ephemeral=True)
+                await refuse(interaction, f"❌ {refusal}", what=describe(interaction))
                 return
 
         # Two permission edits on the signup channel outrun Discord's three seconds.
         await interaction.response.defer(ephemeral=True)
 
         if not await self.bot.config_service.set_core_setting(column, role.id):
-            await interaction.followup.send(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
 
@@ -570,9 +593,10 @@ class BotCog(commands.Cog):
 
         use = await find_channel_use(self.bot.db_path, channel.id)
         if use is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 refusal(channel.mention, use, same_setting=(use == ChannelUse("hub"))),
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -587,18 +611,18 @@ class BotCog(commands.Cog):
             if not held
         ]
         if missing:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ The bot needs {' and '.join(f'**{m}**' for m in missing)} on "
                 f"{channel.mention} to set who may see the hub. Nothing was changed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         config = await self.bot.config_service.get_server_config()
         if config is None:
-            await interaction.response.send_message(
-                "⛔ This server is not configured yet — run `/bot init` first.",
-                ephemeral=True,
+            await _refuse_on_host(
+                interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
         old_channel_id, old_message_id = config.hub_channel_id, config.hub_message_id
@@ -660,18 +684,19 @@ class BotCog(commands.Cog):
         transaction, and the rare season set up between the two is logged as a refusal.
         """
         if confirm != _CONFIRM_WORD:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Nothing was changed. Pass `confirm:{_CONFIRM_WORD}` (case-sensitive) "
                 f"to free this server.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         async with get_connection(self.bot.db_path) as db:
             season = await pack_service.current_season(db)
         if season is not None:
-            await interaction.response.send_message(
-                _current_season_refusal(*season), ephemeral=True
+            await refuse(
+                interaction, _current_season_refusal(*season), what=describe(interaction)
             )
             return
 
@@ -719,6 +744,17 @@ class BotCog(commands.Cog):
     # /bot factory-reset — return the bot to a fresh install
     # ------------------------------------------------------------------
 
+    async def _refuse_factory_reset(self, interaction: discord.Interaction, reply: str) -> None:
+        """Refuse a factory reset: recorded in the log channel where a server configuration
+        exists, in the host's log alone where none does (a clean-up still running after a reset
+        has wiped it, or a bot never set up). Decided from the configuration, never from
+        `log_channel_id`, as `channel_guard` decides.
+        """
+        if await self.bot.config_service.get_server_config() is None:
+            await _refuse_on_host(interaction, reply)
+        else:
+            await refuse(interaction, reply, what=describe(interaction))
+
     @group.command(
         name="factory-reset",
         description="Server owner only: back up, then erase the league and the bot's posts.",
@@ -738,16 +774,16 @@ class BotCog(commands.Cog):
         this one has no say over that one.
         """
         if confirm != _CONFIRM_WORD:
-            await interaction.response.send_message(
+            await self._refuse_factory_reset(
+                interaction,
                 f"❌ Nothing was changed. Pass `confirm:{_CONFIRM_WORD}` (case-sensitive) "
                 f"to erase the league.",
-                ephemeral=True,
             )
             return
         if self._clean_up is not None and not self._clean_up.done():
-            await interaction.response.send_message(
+            await self._refuse_factory_reset(
+                interaction,
                 "⛔ A factory reset is still cleaning up Discord. Wait for it to finish.",
-                ephemeral=True,
             )
             return
 

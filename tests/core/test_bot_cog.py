@@ -817,7 +817,6 @@ def test_bot_pack_is_a_league_admin_s_command_in_the_interaction_channel():
     assert getattr(callback, CHANNEL_EXEMPT_ATTRIBUTE) is False
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /bot pack's wrong word is not yet recorded")
 async def test_bot_pack_without_the_word_changes_nothing(tmp_path):
     """Refused, and the refusal recorded in the log channel (#482)."""
     db_path = await _make_db(tmp_path)
@@ -834,7 +833,6 @@ async def test_bot_pack_without_the_word_changes_nothing(tmp_path):
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /bot pack's current-season refusal is not yet recorded")
 async def test_bot_pack_is_refused_while_a_season_is_current_and_is_recorded(tmp_path):
     """Refused before anything is cleared, and the refusal recorded in the log channel (#482)."""
     db_path = await _make_db(tmp_path)
@@ -1430,7 +1428,6 @@ def _replied(interaction: MagicMock) -> str:
     return "\n".join(str(call.args[0]) for call in calls)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the bot cog's own refusals are not yet recorded")
 @pytest.mark.parametrize(
     "case",
     [
@@ -1464,7 +1461,6 @@ async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path,
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the bot cog's host-only refusals write no host line")
 @pytest.mark.parametrize(
     "case",
     [
