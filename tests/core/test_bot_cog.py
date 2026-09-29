@@ -232,6 +232,86 @@ async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
     assert json.loads(row["old_value"]) == dict.fromkeys(new)
 
 
+async def _init_configured(tmp_path) -> tuple[MagicMock, MagicMock]:
+    """Run a first `/bot init` with the four configured settings: the bot and the interaction."""
+    db_path = await _make_db(tmp_path)
+    bot = _bot(db_path)
+    cog = BotCog(bot)
+    interaction = _interaction()
+    admin_role = _role(CONFIGURED_ADMIN_ROLE)
+    admin_role.name = "League Admins"
+
+    await _unwrap(cog.handle_bot_init)(
+        cog,
+        interaction,
+        _role(CONFIGURED_ROLE),
+        admin_role,
+        _channel(CONFIGURED_CHANNEL),
+        _channel(CONFIGURED_LOG),
+    )
+    return bot, interaction
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /bot init's line omits the league admin role")
+async def test_bot_init_s_line_names_the_league_admin_role(tmp_path):
+    """The line lists all four settings it saved, the league admin role among them (#482)."""
+    bot, _interaction_ = await _init_configured(tmp_path)
+
+    [line] = _log_lines(bot)
+    assert line.startswith("admin (<@7>) | /bot init | Success")
+    assert f"League Admins (<@&{CONFIGURED_ADMIN_ROLE}>)" in line
+    assert f"(<@&{CONFIGURED_ROLE}>)" in line
+    assert f"<#{CONFIGURED_CHANNEL}>" in line and f"<#{CONFIGURED_LOG}>" in line
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /bot init's reply omits the league admin role")
+async def test_bot_init_s_reply_names_the_league_admin_role(tmp_path):
+    """The confirmation lists the league admin role beside the other three settings (#482, F3)."""
+    _bot_, interaction = await _init_configured(tmp_path)
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert f"<@&{CONFIGURED_ADMIN_ROLE}>" in reply
+    assert f"<@&{CONFIGURED_ROLE}>" in reply
+    assert f"<#{CONFIGURED_CHANNEL}>" in reply and f"<#{CONFIGURED_LOG}>" in reply
+
+
+@pytest.mark.xfail(strict=True, reason="#482: /bot init is not refused while a clean-up runs")
+async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path, caplog):
+    """A new `/bot init` would claim the server while the last reset is still deleting the bot's
+    messages and roles there (#482, F4). It is refused, with a reply to run it again once the
+    clean-up has finished. No server is claimed, so there is no log channel to record it in:
+    the refusal goes to the host's log alone.
+    """
+    import asyncio
+
+    caplog.set_level(logging.INFO, logger="leaguebot.core.cogs.bot_cog")
+    db_path = await _make_db(tmp_path)
+    bot = _bot(db_path)
+    cog = BotCog(bot)
+    cog._clean_up = asyncio.get_running_loop().create_future()
+    interaction = _refusable(bot, _interaction(), "bot init")
+
+    try:
+        await _unwrap(cog.handle_bot_init)(
+            cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+        )
+    finally:
+        cog._clean_up.cancel()
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert "clean" in reply.lower() and "again" in reply.lower()
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+    bot.output_router.post_log.assert_not_awaited()
+    assert any(
+        record.name == "leaguebot.core.cogs.bot_cog"
+        and record.levelno >= logging.INFO
+        and "bot init" in record.getMessage()
+        and re.search(r"(?<!\d)7(?!\d)", record.getMessage())
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+
+
 async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
