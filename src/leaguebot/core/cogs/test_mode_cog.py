@@ -1334,6 +1334,10 @@ class _ConfirmRestoreView(LeagueView):
             )
             return
 
+        # Stopped as the press is accepted, so a reply that fails later cannot leave a
+        # view to lapse with "Nothing was restored." over a staged restore, nor let a
+        # second press stage it again.
+        self.stop()
         await interaction.response.defer(ephemeral=True)
         bot = self._cog.bot
         try:
@@ -1346,17 +1350,14 @@ class _ConfirmRestoreView(LeagueView):
                 what=describe(interaction, button),
                 outcome="Nothing was restored.",
             )
-            self.stop()
             return
         except backup_service.BackupError as exc:
             # Something the maintainer can act on (no backup, an unreadable one).
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction, button))
-            self.stop()
             return
         except Exception as exc:  # noqa: BLE001 — a file may have been staged before it stopped
             log.exception("backup restore: staging failed")
             await report_failure(interaction, exc, what=describe(interaction, button))
-            self.stop()
             return
 
         await interaction.followup.send(
@@ -1373,7 +1374,6 @@ class _ConfirmRestoreView(LeagueView):
             "  restore: staged; the bot must be restarted to come back on it",
         )
         log.info("backup restore: staged by %s", interaction.user)
-        self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
