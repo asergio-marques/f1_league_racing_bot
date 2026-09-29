@@ -30,12 +30,20 @@ def _make_role(role_id: int = 555, *, grantable: bool = True) -> MagicMock:
 
 
 def _make_interaction(guild_id: int = 1) -> MagicMock:
+    """An interaction whose response knows whether it has been used, as Discord's does, so that
+    a refusal answers by `response` until the interaction is answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = guild_id
     interaction.user.id = 42
     interaction.user.__str__ = lambda self: "admin#0001"
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
 

@@ -31,6 +31,25 @@ def _role(
     return role
 
 
+def _interaction() -> MagicMock:
+    """A command, or a form's submission, by a manager, whose response knows whether it has been
+    used, as Discord's does, so that a refusal answers by `response` until the interaction is
+    answered or deferred (#482)."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
+    interaction = MagicMock()
+    interaction.guild_id = 1
+    interaction.user.id = 42
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
 def test_a_grantable_role_is_accepted():
     assert role_grant_refusal(_role()) is None
 
@@ -118,12 +137,7 @@ async def test_a_team_command_refuses_a_role_the_bot_cannot_grant(command, argum
     bot.team_service.add_default_team = AsyncMock()
     bot.placement_service.team_holding_role = AsyncMock(return_value=None)
     bot.placement_service.set_team_role_config = AsyncMock()
-    interaction = MagicMock()
-    interaction.guild_id = 1
-    interaction.user.id = 42
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
+    interaction = _interaction()
     cog = TeamCog.__new__(TeamCog)
     cog.bot = bot
 
@@ -145,9 +159,7 @@ async def test_adding_a_team_refuses_a_role_the_bot_cannot_grant():
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
     bot.team_service.add_default_team = AsyncMock()
     bot.placement_service.team_holding_role = AsyncMock(return_value=None)
-    interaction = MagicMock()
-    interaction.user.id = 42
-    interaction.response.send_message = AsyncMock()
+    interaction = _interaction()
     cog = TeamCog.__new__(TeamCog)
     cog.bot = bot
 
