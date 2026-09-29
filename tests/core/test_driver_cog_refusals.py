@@ -316,7 +316,6 @@ _CASES = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the driver cog's own refusals write no log line")
 @pytest.mark.parametrize("case", sorted(_CASES))
 async def test_a_refusal_of_the_driver_cog_is_recorded_in_the_log_channel(case):
     """A manager the driver cog's own checks turn away is answered as today, seen by them

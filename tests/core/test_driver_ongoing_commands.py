@@ -142,7 +142,6 @@ async def test_a_move_of_a_member_with_no_profile_is_refused():
     cog.bot.placement_service.move_driver.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a move the service refuses writes no log line")
 async def test_a_refusal_the_service_raises_is_relayed_and_recorded():
     """The manager is told the service's reason, and the refusal is recorded (#482)."""
     cog = _cog()
@@ -258,7 +257,6 @@ async def test_a_release_of_a_member_with_no_profile_is_refused():
     cog.bot.placement_service.release_driver.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a release the service refuses writes no log line")
 async def test_a_release_the_service_refuses_is_relayed_and_recorded():
     """The manager is told the service's reason, and the refusal is recorded (#482)."""
     cog = _cog()
