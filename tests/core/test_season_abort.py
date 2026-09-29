@@ -65,6 +65,7 @@ async def test_a_season_is_aborted_before_its_placements_are_confirmed(stage):
 async def test_abort_is_refused_once_placements_are_confirmed(stage):
     cog = _cog(stage)
     interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_abort)(cog, interaction, "CONFIRM")
 

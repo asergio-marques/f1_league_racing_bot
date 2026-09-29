@@ -844,6 +844,7 @@ async def test_another_league_manager_may_not_confirm_the_mid_season_placements(
 
     view, cog = _view()
     interaction = _pressed_by(99)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
 
@@ -860,6 +861,7 @@ async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
     view._fingerprint.differs_from = MagicMock(return_value=["the seated drivers"])
     monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
     interaction = _pressed_by(REVIEWER)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
 

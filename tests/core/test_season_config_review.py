@@ -373,6 +373,7 @@ async def test_another_league_manager_may_not_confirm():
     view, cog = _view()
     interaction = _interaction()
     interaction.user = _member(99)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
@@ -662,6 +663,7 @@ async def test_a_configuration_changed_since_the_review_is_not_confirmed(monkeyp
     monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
     interaction = _interaction()
     interaction.user = _member(REVIEWER)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
