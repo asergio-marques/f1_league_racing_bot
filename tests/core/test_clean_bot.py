@@ -44,19 +44,24 @@ def _channel(messages):
 
 
 def _interaction(channel):
+    """The admin's run of the command. Its client's log channel takes a line, as a real one
+    does, so a command that records its outcome is not stopped by the test's own stand-in."""
     interaction = MagicMock()
     interaction.guild_id = 55
     interaction.channel = channel
     interaction.user = MagicMock()
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
     return interaction
 
 
 def _cog():
+    """The cog, its bot's log channel taking a line as a real one does."""
     cog = CleanCog.__new__(CleanCog)
     cog.bot = MagicMock()
     cog.bot.user = BOT_USER
+    cog.bot.output_router.post_log = AsyncMock()
     return cog
 
 

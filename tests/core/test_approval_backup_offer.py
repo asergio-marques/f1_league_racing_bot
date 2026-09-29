@@ -52,6 +52,9 @@ def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> Season
     bot.config_service.get_server_config = AsyncMock(
         return_value=None if config_missing else SimpleNamespace(test_mode_active=test_mode)
     )
+    # The log channel takes a line, as a real one does, so an outcome the approval or its
+    # backup question records is not stopped by the test's own stand-in.
+    bot.output_router.post_log = AsyncMock()
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     return cog
@@ -333,6 +336,7 @@ def _button_interaction():
     interaction.response.defer = AsyncMock()
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
     return interaction
 
 
