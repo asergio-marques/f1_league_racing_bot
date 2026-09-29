@@ -594,11 +594,6 @@ async def test_a_refused_view_is_not_recorded(member, channel_id, caplog):
     assert line.startswith("⛔ `/track add` refused for Alex (<@7>) — ")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /season config-review, /season placements-review and /results amend review "
-    "lead to a change but are still marked as changing nothing",
-)
 def test_the_view_commands_are_marked_as_changing_nothing():
     """Exactly the view, list and preview commands carry the mark, and no acting command does.
 

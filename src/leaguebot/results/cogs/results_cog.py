@@ -1576,7 +1576,6 @@ class ResultsCog(commands.Cog):
 
     @amend_group.command(name="review", description="Review modification store changes and approve or reject.")
     @league_admin_only
-    @changes_nothing
     async def amend_review(self, interaction: discord.Interaction) -> None:
         """Review the modification store and approve or reject it.
 

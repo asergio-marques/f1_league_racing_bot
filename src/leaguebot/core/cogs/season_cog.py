@@ -1728,7 +1728,6 @@ class SeasonCog(commands.Cog):
     # be is not an administrative act: the report is what the review is for. Approving it is
     # the narrower right, and `_ApproveView` is where that is enforced.
     @league_manager_only
-    @changes_nothing
     async def season_review(self, interaction: discord.Interaction) -> None:
         confirmed = await self.bot.season_service.get_confirmed_season()
         if confirmed is not None:
@@ -2985,7 +2984,6 @@ class SeasonCog(commands.Cog):
         description="Review the season's configuration and confirm it.",
     )
     @league_manager_only
-    @changes_nothing
     async def season_config_review(self, interaction: discord.Interaction) -> None:
         """Report the configuration of the season in Configuration, and offer to confirm it.
 
