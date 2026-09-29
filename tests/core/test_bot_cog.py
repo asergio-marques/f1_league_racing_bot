@@ -1159,17 +1159,14 @@ async def _pending_rows(db_path: str) -> int:
         pytest.param(
             "finished",
             id="clean-up-finished",
-            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
         ),
         pytest.param(
             "faults",
             id="clean-up-finished-with-faults",
-            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
         ),
         pytest.param(
             "stopped",
             id="clean-up-stopped-part-way",
-            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
         ),
     ],
 )
@@ -1211,12 +1208,10 @@ async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_
         pytest.param(
             "not-found",
             id="log-channel-not-found",
-            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
         ),
         pytest.param(
             "not-written",
             id="log-channel-refuses-or-is-gone",
-            marks=pytest.mark.xfail(strict=True, reason="#482: a factory reset posts no closing line"),
         ),
     ],
 )

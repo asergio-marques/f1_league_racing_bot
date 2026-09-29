@@ -822,6 +822,9 @@ class BotCog(commands.Cog):
                 scheduler._scheduler.resume()
 
         targets = await factory_reset_service.gather_targets(db_path)
+        # The wipe takes the configuration and with it any way to find the log channel, so
+        # where the closing line goes is learned now.
+        log_channel = await self.bot.output_router.log_destination()
         await factory_reset_service.wipe(db_path, scheduler, self.bot)
         log.warning(
             "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",
@@ -851,9 +854,35 @@ class BotCog(commands.Cog):
         # A command runs on a bot that has logged in, which is when it has a user.
         assert self.bot.user is not None
         bot_user_id = self.bot.user.id
+        who = f"{interaction.user.display_name} (<@{interaction.user.id}>)"
+
+        async def close(ending: str, detail: str) -> None:
+            await self._post_closing_line(log_channel, who, ending, detail)
+
         self._clean_up = asyncio.create_task(
-            _clean_up(interaction.guild, bot_user_id, targets, report)
+            _clean_up(interaction.guild, bot_user_id, targets, report, close)
         )
+
+    async def _post_closing_line(
+        self, log_channel: int | None, who: str, ending: str, detail: str
+    ) -> None:
+        """Leave the one line a factory reset leaves in the log channel, once its clean-up ends.
+
+        Posted to *log_channel*, found before the wipe, with no retry row and no notice in the
+        interaction channel (see `OutputRouter.post_log`): the fresh database belongs to a bot
+        serving no server. Where there was no log channel, or it takes no line, the line goes to
+        the host's log instead.
+        """
+        line = (
+            f"{who} | /bot factory-reset | {ending}\n"
+            "  Erased: the league's database and its scheduled jobs, after a backup was "
+            f"taken.\n  {detail}"
+        )
+        if log_channel is not None and await self.bot.output_router.post_log(
+            line, channel=log_channel
+        ):
+            return
+        log.warning("factory reset: the closing line could not be posted:\n%s", line)
 
 
 async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -> None:
@@ -922,13 +951,28 @@ async def _stand_down_old_hub(
     return faults
 
 
-async def _clean_up(guild, bot_user_id: int, targets, report) -> None:
-    """Run the clean-up, and say so where something it did not expect stops it."""
+async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
+    """Run the clean-up, and say so where something it did not expect stops it.
+
+    However it ends, *close(ending, detail)* is then awaited once, to leave the reset's closing
+    line: after the clean-up, so that its deletions leave the line standing.
+    """
     try:
-        await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
+        outcome = await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
     except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
         log.exception("factory reset: the Discord clean-up stopped")
         await report(f"⛔ Factory reset: the Discord clean-up stopped: {exc}")
+        await close("Clean-up stopped part-way", f"Discord: the clean-up stopped: {exc}")
+        return
+    detail = (
+        f"Discord: {outcome.channels_deleted} channel(s) and "
+        f"{outcome.messages_deleted} message(s) deleted."
+    )
+    if outcome.faults:
+        detail += "\n  " + "\n  ".join(outcome.faults)
+        await close("Clean-up finished with faults", detail)
+    else:
+        await close("Clean-up finished", detail)
 
 
 async def _open_progress(user: discord.User | discord.Member) -> discord.Message | None:
