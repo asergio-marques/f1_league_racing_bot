@@ -747,15 +747,20 @@ class TestModeCog(commands.Cog):
                     scheduler._scheduler.pause()
                     paused = True
             backup_service.save(db_path, _jobstore_path(self.bot))
-        except backup_service.BackupError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-        except Exception:
-            log.exception("backup save: failed")
-            await interaction.followup.send(
-                "⛔ The backup could not be taken. The log channel has the detail.",
-                ephemeral=True,
+        except backup_service.BackupFault as exc:
+            # A copy, write or check that failed: a fault in the bot, and one that left the
+            # previous backup as it was. Any other error goes to the tree's failure handler,
+            # which says the save may have been partly done.
+            await report_failure(
+                interaction,
+                exc,
+                what=describe(interaction),
+                outcome="The previous backup is unchanged.",
             )
+            return
+        except backup_service.BackupError as exc:
+            # Locked: something the maintainer can act on, so a refusal.
+            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
         finally:
             if paused and scheduler is not None:
@@ -767,6 +772,10 @@ class TestModeCog(commands.Cog):
             f"whatever was there before.\n"
             f"Lock it with `/test-mode backup lock` if you want to keep this one.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode backup save | Success\n"
+            f"  size_kb: {state.size_bytes // 1024}",
         )
         log.info(
             "backup save: by %s", interaction.user
@@ -801,6 +810,10 @@ class TestModeCog(commands.Cog):
             if locked
             else "🔓 Unlocked. `/test-mode backup save` will overwrite it from now on.",
             ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode backup lock | Success\n"
+            f"  backup: {'locked' if locked else 'unlocked'}",
         )
 
     # ── status ────────────────────────────────────────────────────────────

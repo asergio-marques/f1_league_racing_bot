@@ -212,9 +212,6 @@ async def test_save_pauses_the_scheduler_and_resumes_it(live):
     cog.bot.scheduler_service._scheduler.resume.assert_called_once()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a save with nothing to copy is answered as a refusal, not a failure"
-)
 async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     """A backup that leaves the bot's scheduler paused has broken the season to save it.
 
@@ -238,9 +235,6 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a save whose scheduler copy fails is answered as a refusal"
-)
 async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unchanged(live):
     """Neither backup is replaced until both copies are taken, so a scheduler copy that fails
     leaves the previous pair standing, and the reply may say so (#482, special case 11)."""
@@ -265,10 +259,6 @@ async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unc
     cog.bot.scheduler_service._scheduler.resume.assert_called()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: backup save's catch-all answers an unexpected fault itself, "
-    "claiming a log line it never writes"
-)
 async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, monkeypatch):
     """A fault the save did not undo — here the second backup cannot be written once the first
     has been replaced — reaches the tree's failure handler: the standard reply saying the save
@@ -296,7 +286,6 @@ async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, mon
     cog.bot.scheduler_service._scheduler.resume.assert_called_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a backup save writes no log line")
 async def test_a_save_is_recorded(live):
     """A save changes what a restore brings back, so it is recorded (#482)."""
     cog = _cog(live)
@@ -335,7 +324,6 @@ async def test_lock_toggles_and_says_which_way(live):
     assert "Unlocked" in _reply(second)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: locking and unlocking the backup write no log line")
 async def test_locking_and_unlocking_are_recorded(live):
     """Each press of the toggle is recorded, saying which way it went (#482)."""
     cog = _cog(live)
