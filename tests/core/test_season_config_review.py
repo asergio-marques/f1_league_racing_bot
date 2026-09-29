@@ -790,3 +790,84 @@ async def test_a_posted_config_review_writes_one_line_naming_who_ran_it(monkeypa
     assert len(lines) == 1
     assert lines[0].startswith(f"Manager (<@{REVIEWER}>) | /season config-review")
     assert not any(line.startswith("⛔") for line in _logged(bot))
+
+
+# ── The confirmation's other refusals are recorded (#482) ───────────────────────────
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why. A refusal by ✅ Confirm configuration names the button and
+# the review it belongs to, and one whose reply is a list carries every item of it.
+
+
+def _manager_confirming(bot):
+    """Manager (id 4242) pressing ✅ Confirm configuration, connected to the bot's log channel,
+    and reading as Discord's does: not answered until it replies or defers."""
+    interaction = _interaction()
+    interaction.client = bot
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the configuration confirmation does not yet record these refusals",
+)
+async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded():
+    """The configuration review's question is pressed once no season is being set up."""
+    bot = _bot()
+    cog = _cog(bot)
+    cog._pending.clear()
+    cog._get_pending = MagicMock(return_value=None)
+    interaction = _manager_confirming(bot)
+
+    await cog._do_confirm_configuration(interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ There is no season in configuration.", ephemeral=True
+    )
+    bot.season_service.set_stage.assert_not_awaited()
+    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1, logged
+    assert logged[0].startswith("⛔ ")
+    assert "Confirm configuration" in logged[0] and "/season config-review" in logged[0]
+    assert logged[0].endswith(
+        " refused for Manager (<@4242>) — There is no season in configuration."
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the configuration confirmation does not yet record these refusals",
+)
+async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded():
+    """Manager (id 4242) confirms a configuration that now holds two faults."""
+    bot = _bot()
+    cog = _cog(bot)
+    faults = [
+        "The signup module is enabled but has no signup channel — set one with `/signup channel`.",
+        "**Pro** has no lineup channel — set one with `/division lineup-channel`.",
+    ]
+    cog._configuration_faults = AsyncMock(return_value=faults)
+    interaction = _manager_confirming(bot)
+
+    await cog._do_confirm_configuration(interaction)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert reply.startswith("⛔ The configuration cannot be confirmed:")
+    assert "Nothing has been confirmed" in reply
+    bot.season_service.set_stage.assert_not_awaited()
+    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1, logged
+    head = logged[0].splitlines()[0]
+    assert head.startswith("⛔ ")
+    assert "Confirm configuration" in head and "/season config-review" in head
+    assert " refused for Manager (<@4242>) — " in head
+    for fault in faults:
+        assert fault in logged[0], (fault, logged[0])
