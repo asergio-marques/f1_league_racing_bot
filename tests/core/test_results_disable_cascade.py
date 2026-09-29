@@ -171,7 +171,6 @@ async def test_the_warning_carries_a_confirmation(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: cancelling the disable of results writes no log line")
 async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     """Cancel changes nothing, and is recorded with what stands beneath it (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
@@ -192,9 +191,6 @@ async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     assert any("Both modules remain enabled." in text for text in beneath)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: cancelling a results-only disable writes no log line"
-)
 async def test_cancelling_a_results_only_disable_is_recorded(tmp_path):
     """With attendance off, Cancel is recorded with results still enabled and nothing
     deleted beneath it (#482)."""
@@ -217,9 +213,6 @@ async def test_cancelling_a_results_only_disable_is_recorded(tmp_path):
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a confirmation to disable results that lapses writes no log line"
-)
 async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
     """Left unanswered until it times out, the confirmation changes nothing and is recorded as
     lapsed, naming the admin who started it, with what stands and to run the command again
@@ -266,9 +259,6 @@ async def test_confirming_disables_both_and_names_both(tmp_path):
     assert "Attendance module disabled" in reply
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: another member's press on the disable confirmation is not recorded"
-)
 async def test_only_the_actor_may_confirm(tmp_path):
     """Another member's press changes nothing, is refused, and the refusal is recorded (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)

@@ -19,7 +19,7 @@ from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, report_failure
 from leaguebot.core.utils.league_server import LeagueView, league_guild
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
@@ -242,7 +242,7 @@ class _ConfirmDisableResultsView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._actor_id:
-            await interaction.response.send_message("⛔ Not your action.", ephemeral=True)
+            await refuse(interaction, "⛔ Not your action.", what=describe(interaction, button))
             return
         self.stop()
         await interaction.response.defer(ephemeral=True)
@@ -256,14 +256,41 @@ class _ConfirmDisableResultsView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._actor_id:
-            await interaction.response.send_message("⛔ Not your action.", ephemeral=True)
+            await refuse(interaction, "⛔ Not your action.", what=describe(interaction, button))
             return
         self.stop()
         await interaction.response.send_message(
-            "Cancelled. Both modules remain enabled."
-            if self._cascade_attendance
-            else "Cancelled. Results & Standings remains enabled and nothing was deleted.",
+            f"Cancelled. {self._standing}",
             ephemeral=True,
+        )
+        await record_abandoned(
+            interaction.client,
+            interaction.user,
+            what="`/module disable`",
+            lapsed=False,
+            detail=self._standing,
+        )
+
+    async def on_timeout(self) -> None:
+        """Record that the confirmation lapsed unanswered, naming who started it.
+
+        Nothing was changed, so the line says what stands and to run the command again.
+        """
+        await record_abandoned(
+            self._cog.bot,
+            self._actor_id,
+            what="`/module disable`",
+            lapsed=True,
+            detail=f"{self._standing} Run `/module disable` again to disable results.",
+        )
+
+    @property
+    def _standing(self) -> str:
+        """What stands once the confirmation is not given."""
+        return (
+            "Both modules remain enabled."
+            if self._cascade_attendance
+            else "Results & Standings remains enabled and nothing was deleted."
         )
 
 
