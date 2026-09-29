@@ -5431,34 +5431,35 @@ class SeasonCog(commands.Cog):
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
         await interaction.response.defer(ephemeral=True)
+        # Every gate below refuses through `refuse`, naming this button in the log channel.
+        what = _review_button("Approve", "/season placements-review")
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
         if cfg is None:
-            await interaction.followup.send(
-                "\u274c No pending season setup.",
-                ephemeral=True,
-            )
+            await refuse(interaction, "\u274c No pending season setup.", what=what)
             return
 
         if cfg.season_id == 0:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c Season setup state is incomplete. Use `/season abort` and start again.",
-                ephemeral=True,
+                what=what,
             )
             return
 
         season_svc = self.bot.season_service
 
         if await season_svc.get_stage(cfg.season_id) is not SeasonStage.PLACEMENTS:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u26d4 The season is no longer in placements. **Nothing has been approved.**",
-                ephemeral=True,
+                what=what,
             )
             return
 
         if not await self._season_has_divisions(cfg.season_id):
-            await interaction.followup.send(
-                NO_DIVISIONS_REFUSAL + " **Nothing has been approved.**", ephemeral=True
+            await refuse(
+                interaction, NO_DIVISIONS_REFUSAL + " **Nothing has been approved.**", what=what
             )
             return
 
@@ -5469,18 +5470,19 @@ class SeasonCog(commands.Cog):
         )
         if unsettled or channel_faults:
             bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])
-            for chunk in chunk_message(
-                f"\u26d4 Season cannot be approved:\n{bullets}"
-            ):
-                await interaction.followup.send(chunk, ephemeral=True)
+            await refuse(
+                interaction,
+                f"\u26d4 Season cannot be approved:\n{bullets}",
+                what=what,
+                reason="the season cannot be approved:\n" + "\n".join([*unsettled, *channel_faults]),
+            )
             return
 
         # Validate tier sequential integrity before committing
         try:
             await season_svc.validate_division_tiers(cfg.season_id)
         except ValueError as exc:
-            msg = f"\u26d4 Season cannot be approved. {exc}"
-            await interaction.followup.send(msg, ephemeral=True)
+            await refuse(interaction, f"\u26d4 Season cannot be approved. {exc}", what=what)
             return
 
         divisions = await season_svc.get_divisions(cfg.season_id)
@@ -5492,11 +5494,12 @@ class SeasonCog(commands.Cog):
         empty_divs = [d.name for d in divisions if not div_rounds[d.id]]
         if empty_divs:
             names = ", ".join(f"**{n}**" for n in empty_divs)
-            msg = (
+            await refuse(
+                interaction,
                 f"\u274c Season cannot be approved \u2014 the following divisions have no rounds: "
-                f"{names}. Add at least one round to each division first."
+                f"{names}. Add at least one round to each division first.",
+                what=what,
             )
-            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # ── Gate 0b: no two rounds in the same division may share a datetime ──
@@ -5512,11 +5515,13 @@ class SeasonCog(commands.Cog):
                 seen.add(rnd.scheduled_at)
         if duplicate_errors:
             bullet_list = "\n\u2022 ".join(duplicate_errors)
-            msg = (
+            await refuse(
+                interaction,
                 f"\u274c Season cannot be approved \u2014 duplicate round times detected:\n\u2022 {bullet_list}\n"
-                f"Reschedule rounds so each has a unique datetime within its division."
+                f"Reschedule rounds so each has a unique datetime within its division.",
+                what=what,
+                reason="duplicate round times detected:\n" + "\n".join(duplicate_errors),
             )
-            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # Every channel a division posts to — the weather, results, standings, verdicts, RSVP
@@ -5548,8 +5553,12 @@ class SeasonCog(commands.Cog):
 
             if errors:
                 bullet_list = "\n\u2022 ".join(errors)
-                msg = f"\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n\u2022 {bullet_list}"
-                await interaction.followup.send(msg, ephemeral=True)
+                await refuse(
+                    interaction,
+                    f"\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n\u2022 {bullet_list}",
+                    what=what,
+                    reason="R&S prerequisites not met:\n" + "\n".join(errors),
+                )
                 return
 
             # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
@@ -5559,11 +5568,14 @@ class SeasonCog(commands.Cog):
             mono_errors = await self._points_ordering_problems(cfg.season_id)
             if mono_errors:
                 bullet_list = "\n\u2022 ".join(mono_errors)
-                msg = (
+                await refuse(
+                    interaction,
                     f"\u274c Season cannot be approved \u2014 points configuration "
-                    f"violates monotonic ordering:\n\u2022 {bullet_list}"
+                    f"violates monotonic ordering:\n\u2022 {bullet_list}",
+                    what=what,
+                    reason="points configuration violates monotonic ordering:\n"
+                    + "\n".join(mono_errors),
                 )
-                await interaction.followup.send(msg, ephemeral=True)
                 return
 
         # ── Gate 2b: signup module config prerequisites ───────────────────────
@@ -5578,11 +5590,14 @@ class SeasonCog(commands.Cog):
                     missing.append("**Signup channel** (use `/signup channel`)")
                 if missing:
                     bullet_list = "\n\u2022 ".join(missing)
-                    msg = (
+                    await refuse(
+                        interaction,
                         f"\u274c Season cannot be approved \u2014 signup module is enabled but "
-                        f"missing required configuration:\n\u2022 {bullet_list}"
+                        f"missing required configuration:\n\u2022 {bullet_list}",
+                        what=what,
+                        reason="signup module is enabled but missing required configuration:\n"
+                        + "\n".join(missing),
                     )
-                    await interaction.followup.send(msg, ephemeral=True)
                     return
 
         # ── Gate 2d: no round may already have run, nor be inside a window (#121, #122, #181)
@@ -5652,12 +5667,14 @@ class SeasonCog(commands.Cog):
             _date_problems.append(f"• **{_div.name}** — " + "; ".join(_bits) + ".")
         if _date_problems:
             _body = "\n".join(_date_problems)
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"❌ Season cannot be approved — its calendar holds dates that have "
                 f"already gone by:\n{_body}\n"
                 f"Move those rounds with `/round amend`, or shorten the windows, then run "
                 f"`/season placements-review` again. **Nothing has been approved.**",
-                ephemeral=True,
+                what=what,
+                reason=f"its calendar holds dates that have already gone by:\n{_body}",
             )
             return
 
@@ -5674,11 +5691,14 @@ class SeasonCog(commands.Cog):
         name_problems = await self._team_name_problems(cfg.season_id)
         if name_problems:
             bullet_list = "\n• ".join(name_problems)
-            msg = (
+            await refuse(
+                interaction,
                 f"❌ Season cannot be approved — these team names cannot become "
-                f"lineup template fields:\n• {bullet_list}"
+                f"lineup template fields:\n• {bullet_list}",
+                what=what,
+                reason="these team names cannot become lineup template fields:\n"
+                + "\n".join(name_problems),
             )
-            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # ── Gate 4a: the lineup template against this season (038, FR-017/18) ─
@@ -5689,11 +5709,14 @@ class SeasonCog(commands.Cog):
         lineup_problems = await self._lineup_problems(cfg.season_id)
         if lineup_problems:
             bullet_list = "\n• ".join(lineup_problems)
-            msg = (
+            await refuse(
+                interaction,
                 f"❌ Season cannot be approved — the `lineup` image aspect is on but "
-                f"the template cannot draw this season:\n• {bullet_list}"
+                f"the template cannot draw this season:\n• {bullet_list}",
+                what=what,
+                reason="the `lineup` image aspect is on but the template cannot draw this "
+                "season:\n" + "\n".join(lineup_problems),
             )
-            await interaction.followup.send(msg, ephemeral=True)
             return
 
         # ── Gate 4b: the image module's configuration (#396) ──────────────────
@@ -5713,11 +5736,14 @@ class SeasonCog(commands.Cog):
             image_faults = await self._image_configuration_faults()
             if image_faults:
                 bullet_list = "\n• ".join(image_faults)
-                for chunk in chunk_message(
+                await refuse(
+                    interaction,
                     f"❌ Season cannot be approved — the image module is not correctly "
-                    f"configured:\n• {bullet_list}"
-                ):
-                    await interaction.followup.send(chunk, ephemeral=True)
+                    f"configured:\n• {bullet_list}",
+                    what=what,
+                    reason="the image module is not correctly configured:\n"
+                    + "\n".join(image_faults),
+                )
                 return
 
         # The graphics are **not** drawn here (withdrawn 2026-09-07). `/season

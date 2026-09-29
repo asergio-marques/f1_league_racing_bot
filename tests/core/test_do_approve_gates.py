@@ -1165,9 +1165,6 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
     return cog, "image module is not correctly configured"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: the approval's gates do not yet record their refusals"
-)
 @pytest.mark.parametrize(
     "gate",
     [
