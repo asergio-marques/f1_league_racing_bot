@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.cancellation_notice_service import CancellationReport
 from leaguebot.core.services.season_service import SeasonImmutableError
 from tests.support.undecorate import undecorate
@@ -705,3 +706,161 @@ async def test_cancelling_waits_while_a_round_is_being_amended(_open_amendment):
     replied = _replied(interaction)
     assert "Cannot cancel the season" in replied
     assert "round 2 of **Division 1** is being amended in <#8200>" in replied
+
+
+# ---------------------------------------------------------------------------
+# Every refusal of /season cancel and /season complete is recorded (#482)
+# ---------------------------------------------------------------------------
+
+
+def _run_by_the_admin(cog, interaction, command: str):
+    """The admin's interaction for *command*, connected to the cog's log channel so that a
+    refusal line the command writes can be read. It reads as Discord's does: not answered until
+    the command replies or defers, and answered from then on."""
+    interaction.client = cog.bot
+    interaction.command.qualified_name = command
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    """The lines the command wrote to the log channel, in order."""
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+
+
+def _amended_round(_open_amendment):
+    _open_amendment.return_value = {
+        "round_number": 2, "division_name": "Division 1", "channel_id": 8200,
+    }
+
+
+def _in_signups():
+    from leaguebot.core.models.season import SeasonStage
+
+    return SimpleNamespace(id=SEASON_ID, season_number=3, stage=SeasonStage.ONGOING_SIGNUPS)
+
+
+_ROUNDS_OUTSTANDING = [
+    {"division": "Division 1", "round_number": 5, "track_name": "Monza"},
+    {"division": "Division 2", "round_number": 4},
+]
+_ROUNDS_REPLY = (
+    "❌ Cannot complete season — the following rounds are not yet finalised:\n"
+    "• Division 1 — Round 5 (Monza)\n"
+    "• Division 2 — Round 4"
+)
+
+# (command, what the cog is built with, whether a round is being amended, the confirmation word,
+#  the reply the admin gets today)
+_SEASON_REFUSALS = [
+    pytest.param(
+        "season cancel", {}, False, "confirm",
+        "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+        id="cancel-without-the-confirmation-word",
+    ),
+    pytest.param(
+        "season cancel", {"season": None}, False, "CONFIRM",
+        "❌ No season is being raced, so there is none to cancel. A season whose placements "
+        "are yet to be confirmed is abandoned with `/season abort`.",
+        id="cancel-with-no-season-being-raced",
+    ),
+    pytest.param(
+        "season cancel",
+        {"season": SimpleNamespace(id=SEASON_ID, season_number=3, stage=SeasonStage.PENDING_COMPLETION)},
+        False, "CONFIRM",
+        "❌ Every division of this season is done. Complete it with `/season complete` instead.",
+        id="cancel-of-a-season-whose-divisions-are-all-done",
+    ),
+    pytest.param(
+        "season cancel", {}, True, "CONFIRM",
+        "❌ Cannot cancel the season — round 2 of **Division 1** is being amended in "
+        "<#8200>. Finish or cancel it first: cancelling writes every driver's history from the "
+        "standings, which would carry its corrections before they are approved.",
+        id="cancel-while-a-round-is-being-amended",
+    ),
+    pytest.param(
+        "season complete", {"season": None}, False, None,
+        "❌ No season is being raced, so there is none to complete.",
+        id="complete-with-no-season-being-raced",
+    ),
+    pytest.param(
+        "season complete", {}, True, None,
+        "❌ Cannot complete season — round 2 of **Division 1** is being amended in "
+        "<#8200>. Finish or cancel it first: completing posts every division's final "
+        "classification, which would carry its corrections before they are approved.",
+        id="complete-while-a-round-is-being-amended",
+    ),
+    pytest.param(
+        "season complete", {"all_finished": False, "outstanding": _ROUNDS_OUTSTANDING}, False, None,
+        _ROUNDS_REPLY,
+        id="complete-with-rounds-not-yet-finalised",
+    ),
+    pytest.param(
+        "season complete",
+        {"season": "signups", "all_finished": False, "outstanding": _ROUNDS_OUTSTANDING},
+        False, None, _ROUNDS_REPLY,
+        id="complete-with-rounds-not-yet-finalised-after-the-wind-down",
+    ),
+    pytest.param(
+        "season complete",
+        {
+            "all_finished": False, "outstanding": [],
+            "divisions": [_division(11, "Division 1", status="FINISHED"), _division(12, "Division 2")],
+        },
+        False, None,
+        "❌ Cannot complete season — no round is outstanding, but these divisions have "
+        "not finished: **Division 2**. Cancel a division that will never run, or report this.",
+        id="complete-with-a-division-unfinished",
+    ),
+]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /season cancel and /season complete answer a refusal but write nothing to the "
+    "log channel",
+)
+@pytest.mark.parametrize("command, built, amending, word, reply", _SEASON_REFUSALS)
+async def test_every_season_cancel_and_complete_refusal_is_recorded(
+    _open_amendment, command, built, amending, word, reply
+):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. The admin runs /season cancel or /season complete and is refused:
+    they get today's reply word for word and nothing else, nothing is cancelled or completed, and
+    the log channel gets exactly one line, "⛔ `/season …` refused for Admin (<@77>) — " and the
+    reason. The rounds not yet finalised are a list, and the line carries every one of them."""
+    if built.get("season") == "signups":
+        built = {**built, "season": _in_signups()}
+    if amending:
+        _amended_round(_open_amendment)
+    cog = _make_cog(**built)
+    interaction = _run_by_the_admin(cog, _interaction(), command)
+    history, roles = _season_end()
+
+    with history, roles, patch(
+        "leaguebot.core.services.season_end_service.execute_season_end", new=AsyncMock(return_value=None)
+    ) as execute:
+        if command == "season cancel":
+            await _cancel(cog, interaction, confirm=word)
+        else:
+            await _complete(cog, interaction)
+
+    assert _replied(interaction) == reply
+    cog.bot.season_service.cancel_season_cascade.assert_not_awaited()
+    execute.assert_not_awaited()
+    [line] = _logged(cog)
+    head = f"⛔ `/{command}` refused for Admin (<@{ACTOR_ID}>) — "
+    assert line.startswith(head), line
+    if reply is _ROUNDS_REPLY:
+        assert "the following rounds are not yet finalised" in line
+        assert "Division 1 — Round 5 (Monza)" in line
+        assert "Division 2 — Round 4" in line
+    else:
+        assert line == head + reply[2:]
