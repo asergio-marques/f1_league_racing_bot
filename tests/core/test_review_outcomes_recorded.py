@@ -34,10 +34,6 @@ REVIEWER = 4242
 BYSTANDER = 99
 ADMIN_ROLE = 444
 
-_LAPSE_RECORDED = pytest.mark.xfail(
-    strict=True, reason="#482: a season review's lapse is not yet recorded in the log channel"
-)
-
 #: Each review button: its view, its label without the mark, the review it belongs to, the
 #: helper a press hands on to, and the verb its replies use.
 _BUTTONS = [
@@ -202,7 +198,6 @@ async def test_a_press_refused_because_the_season_changed_is_recorded_once(
 # ── A review left to lapse ─────────────────────────────────────────────────
 
 
-@_LAPSE_RECORDED
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     view_class, label, review, helper, verb
@@ -231,7 +226,6 @@ async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     assert review in detail and "again" in detail, detail
 
 
-@_LAPSE_RECORDED
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_review_whose_press_failed_says_so_when_it_lapses(
     view_class, label, review, helper, verb

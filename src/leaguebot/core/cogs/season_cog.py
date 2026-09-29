@@ -6246,12 +6246,20 @@ class _ApproveView(LeagueView):
     replaces it with a notice pinging the reviewer. That timer is held in memory and dies
     with the process, which is why the message is also recorded in `season_review_prompts`
     and swept at startup by `_recover_expired_review_prompts`.
+
+    **What the log holds.** A review left to lapse records one lapse line naming the member who
+    ran it, beside the public notice. One ended by `_expire_now` (the season changed under it)
+    records only the refusal that ended it. A press whose helper raised leaves the review up and
+    pressable, as before (`_press_under_way` stays set), and a lapse after that says an earlier
+    press failed and may have been partly done.
     """
 
     #: The command whose report this button answers, named when the review expires.
     _review_command = "/season placements-review"
     #: The button's label without its mark, as a refusal of a press names it.
     _button_label = "Approve"
+    #: What a review's reply says has not happened, when it lapses unanswered.
+    _verb = "approved"
 
     @property
     def _button(self) -> str:
@@ -6274,6 +6282,13 @@ class _ApproveView(LeagueView):
         self._season_id: int | None = None
         self._message: discord.Message | None = None
         self._report: list = []
+        # Set by `_expire_now`: the review ended on a refusal, which is what the log records,
+        # so its lapse is not recorded a second time.
+        self._ended_by_refusal = False
+        # Raised before a press hands on to its `_do_*` helper and lowered when it returns, so
+        # a helper that raises leaves it set: the review stays up, as it always has, and its
+        # lapse says an earlier press failed rather than that nothing was done.
+        self._press_under_way = False
 
     def carries(self, posted_messages: list) -> None:
         """The report this button answers, so approving can clear it."""
@@ -6389,10 +6404,32 @@ class _ApproveView(LeagueView):
             )
         except (discord.HTTPException, discord.Forbidden) as exc:
             log.warning("season review: could not post the expiry notice: %s", exc)
+        if self._ended_by_refusal:
+            return
+        if self._press_under_way:
+            detail = (
+                "An earlier press of the button failed and may have been partly done. "
+                f"Check the failure line before running `{self._review_command}` again."
+            )
+        else:
+            detail = (
+                f"Nothing has been {self._verb}. Run `{self._review_command}` again."
+            )
+        await record_abandoned(
+            self._cog.bot,
+            self._reviewer_id,
+            what=f"`{self._review_command}`",
+            lapsed=True,
+            detail=detail,
+        )
 
     async def _expire_now(self) -> None:
-        """End the review as a timeout would, before the five minutes are up."""
+        """End the review as a timeout would, before the five minutes are up.
+
+        The refusal that ends it is what the log records, so the lapse is not recorded too.
+        """
         self.stop()
+        self._ended_by_refusal = True
         await self.on_timeout()
 
     @discord.ui.button(label="✅ Approve", style=discord.ButtonStyle.success)
@@ -6435,7 +6472,9 @@ class _ApproveView(LeagueView):
                 await self._expire_now()
                 return
 
+        self._press_under_way = True
         await self._cog._do_approve(interaction, deadline=self._deadline)
+        self._press_under_way = False
         await self._forget()
         await self._clear_report()
         self._message = None
@@ -6523,6 +6562,7 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
 
     _review_command = "/season placements-review"
     _button_label = "Confirm placements"
+    _verb = "confirmed"
 
     @discord.ui.button(label="✅ Confirm placements", style=discord.ButtonStyle.success)
     async def approve(
@@ -6557,7 +6597,9 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
                 await self._expire_now()
                 return
 
+        self._press_under_way = True
         await self._cog._do_confirm_mid_season_placements(interaction)
+        self._press_under_way = False
         await self._forget()
         await self._clear_report()
         self._message = None
@@ -6574,6 +6616,7 @@ class _ConfirmConfigurationView(_ApproveView):
 
     _review_command = "/season config-review"
     _button_label = "Confirm configuration"
+    _verb = "confirmed"
 
     @discord.ui.button(label="✅ Confirm configuration", style=discord.ButtonStyle.success)
     async def approve(
@@ -6608,7 +6651,9 @@ class _ConfirmConfigurationView(_ApproveView):
                 await self._expire_now()
                 return
 
+        self._press_under_way = True
         await self._cog._do_confirm_configuration(interaction)
+        self._press_under_way = False
         await self._forget()
         await self._clear_report()
         self._message = None
