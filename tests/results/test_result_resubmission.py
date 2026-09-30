@@ -376,10 +376,6 @@ async def test_the_resubmission_itself_is_logged(tmp_path):
     assert "RESULTS_RESUBMISSION | Started" in _logged(state)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the resubmission's line counts the discarded pardons on a second line of its own",
-)
 async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
     """Resubmit pressed with one pardon staged and no penalty: the resubmission's one line
     counts no penalty and one pardon discarded."""
@@ -396,10 +392,6 @@ async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
     assert "discarded_pardons_count: 1" in started
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the Resubmit press writes two lines, naming the member by mention alone",
-)
 async def test_resubmit_writes_one_line_naming_what_it_discarded(tmp_path):
     """Alex presses Resubmit on round 3 (Division 1) with a 5-second penalty and an ABSENT pardon
     justified "Ill" staged: the log channel gets one line, "Alex (<@77>) | RESULTS_RESUBMISSION |

@@ -699,10 +699,6 @@ async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(t
     view.message.edit.assert_awaited_once_with(view=None)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the cancel is a hand-built RESULTS_RESUBMISSION line naming the manager by mention alone",
-)
 async def test_cancelling_the_resubmission_is_logged(tmp_path):
     """A cancel is recorded as every cancel is: one line naming who cancelled, by display name
     and mention, with what became of the change and what to do next beneath it."""

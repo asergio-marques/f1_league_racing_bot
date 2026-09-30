@@ -5087,8 +5087,6 @@ async def enter_resubmit_flow(
     db_path: str = bot.db_path
     round_id = state.round_id
     division_id = state.division_id
-    actor_id: int = interaction.user.id
-
     sub_channel = bot.get_channel(state.submission_channel_id)
     if sub_channel is None:
         await refuse(
@@ -5119,7 +5117,8 @@ async def enter_resubmit_flow(
         for sp in state.staged_pardons
     ]
 
-    srv_row = None
+    # One line for the press, written before anything is discarded: once they are gone there
+    # is no other record of what was staged. It names the penalties and the pardons both.
     try:
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -5129,7 +5128,7 @@ async def enter_resubmit_flow(
             srv_row = await cursor.fetchone()
         if srv_row:
             await bot.output_router.post_log(
-                f"<@{actor_id}> | RESULTS_RESUBMISSION_STAGED_DISCARD | Success\n"
+                f"{interaction_member(interaction)} | RESULTS_RESUBMISSION | Started\n"
                 f"  round_id: {round_id} ({state.division_name})\n"
                 f"  discarded_count: {discarded_count}\n"
                 f"  discarded: {_json.dumps(discarded_detail)}\n"
@@ -5137,7 +5136,7 @@ async def enter_resubmit_flow(
                 f"  discarded_pardons: {_json.dumps(discarded_pardons)}",
             )
     except Exception:
-        log.exception("enter_resubmit_flow: error writing staged-discard audit log (round %s)", round_id)
+        log.exception("enter_resubmit_flow: error writing resubmission audit log (round %s)", round_id)
 
     state.staged.clear()
     state.staged_pardons.clear()
@@ -5179,17 +5178,6 @@ async def enter_resubmit_flow(
         _resubmit_collection_task(round_id, division_id, bot, sub_channel, cancel_view),
         name=f"resubmit_r{round_id}",
     )
-
-    try:
-        if srv_row:
-            await bot.output_router.post_log(
-                f"<@{actor_id}> | RESULTS_RESUBMISSION | Started\n"
-                f"  round_id: {round_id} ({state.division_name})\n"
-                f"  Previous staged penalties discarded: {discarded_count}\n"
-                f"  Previous staged pardons discarded: {len(discarded_pardons)}",
-            )
-    except Exception:
-        log.exception("enter_resubmit_flow: error writing resubmission audit log (round %s)", round_id)
 
     await interaction.followup.send(
         "🔄 Resubmission started. Please re-enter the session results in the submission channel.",
@@ -5266,13 +5254,16 @@ async def _resubmit_collection_task(
     async def _cancelled() -> None:
         actor = cancel_view.cancelled_by if cancel_view is not None else None
         await sub_channel.send("↩️ **Resubmission cancelled.** The earlier results stand.")
-        try:
-            await bot.output_router.post_log(
-                f"<@{actor}> | RESULTS_RESUBMISSION | Cancelled\n"
-                f"  round_id: {round_id} ({division_name})",
-            )
-        except Exception:
-            log.exception("_resubmit_collection_task: error logging the cancel (round %s)", round_id)
+        await record_abandoned(
+            bot,
+            actor,
+            what=f"the resubmission of round {round_number} ({division_name})",
+            lapsed=False,
+            detail=(
+                "The earlier results stand.\n"
+                "Press 🔄 Resubmit Initial Results to start again."
+            ),
+        )
         await _return_to_review(
             bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
         )
