@@ -1317,10 +1317,6 @@ async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged
 # line name the division as it stands, never as the manager typed it, as rename and amend do.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /division cancel names the division as the manager typed it",
-)
 @pytest.mark.parametrize(
     "arranged, answered",
     [

@@ -210,11 +210,6 @@ async def test_deleting_outside_setup_is_refused():
     cog.bot.season_service.delete_round.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /round delete still deletes from a season being set up before it reaches "
-    "placements",
-)
 @pytest.mark.parametrize(
     "stage",
     [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
@@ -705,10 +700,6 @@ async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
 # line name the division as it stands, never as the admin typed it.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /round cancel names the division as the admin typed it",
-)
 @pytest.mark.parametrize(
     "arranged, answered",
     [
@@ -751,10 +742,6 @@ async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as
 # name it as it stands, never as the admin typed it.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /round delete names the division as the admin typed it",
-)
 @pytest.mark.parametrize(
     "number, answered",
     [

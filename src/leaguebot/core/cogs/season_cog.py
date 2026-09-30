@@ -4228,7 +4228,7 @@ class SeasonCog(commands.Cog):
         if div.status == "CANCELLED":
             await refuse(
                 interaction,
-                f"\u274c Division **{name}** is already cancelled.",
+                f"\u274c Division **{div.name}** is already cancelled.",
                 what=describe(interaction),
             )
             return
@@ -4269,14 +4269,14 @@ class SeasonCog(commands.Cog):
         )
 
         await interaction.followup.send(
-            f"\u2705 Division **{name}** cancelled."
+            f"\u2705 Division **{div.name}** cancelled."
             + cancellation_notice_service.failure_lines(report.failures)
             + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division cancel | Success\n"
-            f"  division: {name}"
+            f"  division: {div.name}"
             + report.audit
             + cancellation_notice_service.failure_log_lines(report.failures)
             + ("" if wound_down else _WIND_DOWN_NOT_DONE_LOG),
@@ -5094,7 +5094,7 @@ class SeasonCog(commands.Cog):
         division_name: str,
         round_number: int,
     ) -> None:
-        season_id = await _get_setup_season_id(self.bot)
+        season_id = await self._season_in_placements()
         if season_id is None:
             await refuse(
                 interaction,
@@ -5130,7 +5130,7 @@ class SeasonCog(commands.Cog):
         if rnd is None:
             await refuse(
                 interaction,
-                f"\u274c Round {round_number} not found in division `{division_name}`.",
+                f"\u274c Round {round_number} not found in division `{div.name}`.",
                 what=describe(interaction),
             )
             return
@@ -5143,13 +5143,13 @@ class SeasonCog(commands.Cog):
 
         remaining = await self.bot.season_service.get_division_rounds(div.id)
         await interaction.response.send_message(
-            f"\u2705 Round **{round_number}** deleted from **{division_name}** and rounds renumbered.\n\n"
+            f"\u2705 Round **{round_number}** deleted from **{div.name}** and rounds renumbered.\n\n"
             + format_round_list(remaining),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round delete | Success\n"
-            f"  division: {division_name}\n"
+            f"  division: {div.name}\n"
             f"  round: {round_number}",
         )
 
@@ -5215,7 +5215,7 @@ class SeasonCog(commands.Cog):
         if rnd is None:
             await refuse(
                 interaction,
-                f"\u274c Round {round_number} not found in division `{division_name}`.",
+                f"\u274c Round {round_number} not found in division `{div.name}`.",
                 what=describe(interaction),
             )
             return
@@ -5223,7 +5223,7 @@ class SeasonCog(commands.Cog):
         if rnd.status == RoundStatus.CANCELLED.value:
             await refuse(
                 interaction,
-                f"\u274c Round {round_number} in **{division_name}** is already cancelled.",
+                f"\u274c Round {round_number} in **{div.name}** is already cancelled.",
                 what=describe(interaction),
             )
             return
@@ -5291,14 +5291,14 @@ class SeasonCog(commands.Cog):
         )
 
         await interaction.followup.send(
-            f"\u2705 Round **{round_number}** in **{division_name}** cancelled."
+            f"\u2705 Round **{round_number}** in **{div.name}** cancelled."
             + cancellation_notice_service.failure_lines(report.failures)
             + ("" if wound_down else _WIND_DOWN_NOT_DONE_REPLY),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round cancel | Success\n"
-            f"  division: {division_name}\n"
+            f"  division: {div.name}\n"
             f"  round: {round_number}"
             + report.audit
             + cancellation_notice_service.failure_log_lines(report.failures)
