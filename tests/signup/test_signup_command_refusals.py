@@ -64,8 +64,11 @@ def _lines(bot) -> list[str]:
 # ── The module-off gate ─────────────────────────────────────────────────
 
 
-def _module_off_bot():
+def _module_off_bot(tmp_path):
+    """Signups disabled. Its database is an empty file under *tmp_path*, so a command that runs
+    past a missing gate fails there rather than leaving a file in the working directory."""
     bot = MagicMock()
+    bot.db_path = str(tmp_path / "untouched.db")
     bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
     bot.output_router.post_log = AsyncMock()
     return bot
@@ -103,12 +106,12 @@ _LISTS = [
 @pytest.mark.xfail(strict=True, reason=_GATE)
 @pytest.mark.parametrize("method, name, args", _ACTING, ids=[n for _, n, _ in _ACTING])
 async def test_a_command_refused_while_the_module_is_off_is_answered_once_and_recorded(
-    method, name, args
+    tmp_path, method, name, args
 ):
     """Signups disabled, a manager runs a `/signup` command that would change something: they
     are told once that the module is not enabled, and one refusal line names the command.
     Nothing else runs, and no failure line is written."""
-    bot = _module_off_bot()
+    bot = _module_off_bot(tmp_path)
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
     interaction = _interaction(bot, name)
@@ -124,9 +127,11 @@ async def test_a_command_refused_while_the_module_is_off_is_answered_once_and_re
 
 @pytest.mark.xfail(strict=True, reason=_GATE)
 @pytest.mark.parametrize("method, name", _LISTS, ids=[n for _, n in _LISTS])
-async def test_a_list_refused_while_the_module_is_off_is_answered_and_not_recorded(method, name):
+async def test_a_list_refused_while_the_module_is_off_is_answered_and_not_recorded(
+    tmp_path, method, name
+):
     """A list changes nothing, so the module-off refusal is answered and writes no line."""
-    bot = _module_off_bot()
+    bot = _module_off_bot(tmp_path)
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
     interaction = _interaction(bot, name)
@@ -145,10 +150,10 @@ async def test_the_cog_no_longer_gates_through_interaction_check():
     assert "interaction_check" not in SignupCog.__dict__
 
 
-async def test_a_command_run_in_a_dm_writes_no_league_line():
+async def test_a_command_run_in_a_dm_writes_no_league_line(tmp_path):
     """A DM reaches the tier guard before the module gate, and the guard sends it to the host
     log: the member is answered and the league's log channel is not written."""
-    bot = _module_off_bot()
+    bot = _module_off_bot(tmp_path)
     bot.config_service.get_server_config = AsyncMock(
         return_value=MagicMock(interaction_channel_id=100)
     )
