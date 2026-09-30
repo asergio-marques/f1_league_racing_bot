@@ -884,10 +884,6 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
         assert fragment in line, (fragment, line)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: No Penalties / Confirm with the channel unreachable posts nothing and tells nobody",
-)
 async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorded():
     """Round 3's penalty review (Division 1) has nothing staged, and its submission channel
     (4455) can no longer be reached. Alex presses No Penalties / Confirm. No approval question

@@ -1170,7 +1170,10 @@ class _ConfirmClearView(LeagueView):
         # Redrawn before the question is posted, not after: the redraw withdraws any approval
         # question standing, and would withdraw the one about to be posted.
         await _refresh_prompt(self.state)
-        await _show_approval_step(interaction, self.state)
+        if not await _show_approval_step(interaction, self.state):
+            await _approval_not_posted(
+                interaction, self.state, what=_button(button.label, self.state)
+            )
 
     @discord.ui.button(label="Cancel — keep penalties", style=discord.ButtonStyle.secondary)
     async def cancel_btn(
@@ -1200,8 +1203,12 @@ class _ConfirmClearView(LeagueView):
 async def _show_approval_step(
     interaction: discord.Interaction,
     state: PenaltyReviewState,
-) -> None:
+) -> bool:
     """Post an :class:`ApprovalView` message to the submission channel.
+
+    Returns whether it was posted. Where the submission channel cannot be reached nothing is
+    posted and nothing is said here: the caller tells the member and records the outcome
+    (`_approval_not_posted`), and writes its success line only on True.
 
     One at a time (#402): pressing **No Penalties / Confirm** again replaces the message rather
     than leaving two approvals standing, and the one posted is recorded so that its buttons can
@@ -1249,6 +1256,24 @@ async def _show_approval_step(
         msg = await ch.send(content, view=view)
         state.approval_message_id = msg.id
         state.bot.add_view(view, message_id=msg.id)
+        return True
+    return False
+
+
+async def _approval_not_posted(
+    interaction: discord.Interaction, state: PenaltyReviewState, *, what: str
+) -> None:
+    """Tell the member the approval question could not be posted, and record the refusal.
+
+    Not a fault in the bot: the submission channel is gone or out of reach, as the amend
+    review's is when it cannot be posted to. The review stands as it was.
+    """
+    await refuse(
+        interaction,
+        f"\u26a0\ufe0f The approval question could not be posted: "
+        f"<#{state.submission_channel_id}> could not be reached.",
+        what=what,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1480,11 +1505,12 @@ class PenaltyReviewView(LeagueView):
         if not self.state.staged:
             # No penalties — advance directly to approval step (T019)
             await interaction.response.defer(ephemeral=True)
-            await _show_approval_step(interaction, self.state)
+            what = _button("No Penalties / Confirm", self.state)
+            if not await _show_approval_step(interaction, self.state):
+                await _approval_not_posted(interaction, self.state, what=what)
+                return
             await _record_press(
-                interaction,
-                _button(button.label, self.state),
-                "posted the approval question: no penalties staged",
+                interaction, what, "posted the approval question: no penalties staged"
             )
         else:
             # Ask for explicit confirmation before clearing (T019)
