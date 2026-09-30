@@ -1299,11 +1299,12 @@ class SignupCog(commands.Cog):
         """
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Signups are not currently open, so there is no auto-close time to "
                 "manage. Set one when you open the window with "
                 "`/signup open close_time:`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return None
         return cfg
@@ -1350,17 +1351,18 @@ class SignupCog(commands.Cog):
 
         if cfg.close_at is not None:
             armed = datetime.fromisoformat(cfg.close_at)
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Signups already auto-close at {discord_ts(armed)} "
                 f"({discord_ts(armed, 'R')}). Use `/signup close-time modify` to change "
                 "it, or `/signup close-time cancel` to clear it.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         close_at_iso, close_error = _parse_close_time(close_time)
         if close_error is not None:
-            await interaction.response.send_message(close_error, ephemeral=True)
+            await refuse(interaction, close_error, what=describe(interaction))
             return
         assert close_at_iso is not None
 
@@ -1393,10 +1395,11 @@ class SignupCog(commands.Cog):
             return
 
         if cfg.close_at is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ No auto-close time is set. Signups stay open until you run "
                 "`/signup close`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1434,16 +1437,17 @@ class SignupCog(commands.Cog):
             return
 
         if cfg.close_at is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ No auto-close time is set, so there is nothing to change. Use "
                 "`/signup close-time add` to arm one.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         close_at_iso, close_error = _parse_close_time(close_time)
         if close_error is not None:
-            await interaction.response.send_message(close_error, ephemeral=True)
+            await refuse(interaction, close_error, what=describe(interaction))
             return
         assert close_at_iso is not None
 
