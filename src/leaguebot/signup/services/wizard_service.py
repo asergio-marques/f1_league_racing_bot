@@ -24,6 +24,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
+from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
@@ -1321,6 +1322,7 @@ class WizardService:
         channel = self._wizard_channel(wizard, guild)
         if channel is None:
             return _NO_WIZARD_CHANNEL
+        await self._record_button_step(wizard, guild, f"Platform: {platform}")
         await self._advance_wizard_in_channel(wizard, channel, guild)
         return None
 
@@ -1338,6 +1340,7 @@ class WizardService:
         channel = self._wizard_channel(wizard, guild)
         if channel is None:
             return _NO_WIZARD_CHANNEL
+        await self._record_button_step(wizard, guild, f"Driver type: {driver_type}")
         await self._advance_wizard_in_channel(wizard, channel, guild)
         return None
 
@@ -1362,6 +1365,9 @@ class WizardService:
             # No Preference — finalise with however many picks accumulated so far
             wizard.draft_answers["preferred_teams"] = current_picks
             wizard.draft_answers.pop("_pref_teams_step", None)
+            await self._record_button_step(
+                wizard, guild, "Preferred team: no preference"
+            )
             await self._advance_wizard_in_channel(wizard, channel, guild)
             return None
 
@@ -1374,7 +1380,12 @@ class WizardService:
         team_names: list[str] = snapshot.team_names if snapshot else []
         remaining = [t for t in team_names if t not in current_picks]
 
-        if next_step >= 3 or not remaining:
+        done = next_step >= 3 or not remaining
+        await self._record_button_step(
+            wizard, guild, f"Preferred team: {team_name}", ends_step=done
+        )
+
+        if done:
             # Done — all 3 picks taken or no teams left
             wizard.draft_answers.pop("_pref_teams_step", None)
             await self._advance_wizard_in_channel(wizard, channel, guild)
@@ -1415,8 +1426,32 @@ class WizardService:
         channel = self._wizard_channel(wizard, guild)
         if channel is None:
             return _NO_WIZARD_CHANNEL
+        await self._record_button_step(wizard, guild, "Preferred teammate: no preference")
         await self._advance_wizard_in_channel(wizard, channel, guild)
         return None
+
+    async def _record_button_step(
+        self,
+        wizard: SignupWizardRecord,
+        guild: discord.Guild,
+        answer: str,
+        *,
+        ends_step: bool = True,
+    ) -> None:
+        """Write the one line a wizard button answer leaves in the log channel, carrying the answer.
+
+        **One line per action** (#482): a button answer that ends a correction writes none
+        (*ends_step*: the step is finished), since `_commit_correction` writes "Correction
+        submitted" for it, and the press that submits a first signup is No Notes, which
+        `commit_wizard` records as "Submitted". A correction's Preferred Teams pick that
+        leaves more picks to come is not an end, and is recorded. A typed
+        answer is a message, not a button, and records only its refusal.
+        """
+        if ends_step and wizard.draft_answers.get("_is_correction"):
+            return
+        member = guild.get_member(int(wizard.discord_user_id))
+        named = member_named(getattr(member, "display_name", None), int(wizard.discord_user_id))
+        await self._output_router.post_log(f"{named} | Signup | {answer}")
 
     @staticmethod
     def _wizard_channel(

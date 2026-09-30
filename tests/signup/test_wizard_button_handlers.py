@@ -37,8 +37,6 @@ SERVER_ID = 1
 DRIVER_ID = "7"
 CHANNEL_ID = 99
 
-_NO_STEP_LINE = "#482: a wizard step answered by a button writes no line in the log channel"
-
 _PICKED_AGAIN = "#482: a team already picked is recorded a second time rather than turned away"
 
 #: The reply a press on a step already answered gets (the plan, commit point 19).
@@ -511,7 +509,6 @@ _BUTTON_STEPS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_STEP_LINE)
 @pytest.mark.parametrize("state, handler, answer, carries", _BUTTON_STEPS)
 async def test_a_button_answer_writes_one_line_with_the_answer(
     service, state, handler, answer, carries
@@ -536,7 +533,6 @@ async def test_a_button_answer_writes_one_line_with_the_answer(
         assert text.lower() in lines[0].lower(), lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_STEP_LINE)
 async def test_the_platform_line_reads_as_the_plan_gives_it(service):
     """The one line whose words are fixed: "Alex (<@7>) | Signup | Platform: Steam"."""
     from leaguebot.signup.models.signup_module import WizardState
