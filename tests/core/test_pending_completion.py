@@ -217,7 +217,15 @@ async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path
     assert (await _states(path))[3] == "UNASSIGNED"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the placements line still claims signups closed when every division is done",
+)
 async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_kept_off(tmp_path):
+    """Every division is done with three placements pending and signups already shut: the
+    driver in review has their channel held, the two approved drivers turned down lose the
+    driver role, and the line says only that the pending placements were turned down, with no
+    claim that signups closed."""
     from unittest.mock import AsyncMock, MagicMock
 
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS, divisions=(("FINISHED", None),))
@@ -244,7 +252,8 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
     assert held == ["1004"]
     # The two approved drivers turned down lose the driver role; the committed one keeps it.
     assert member.remove_roles.await_count == 2
-    assert "pending placements turned down: 3" in bot.output_router.post_log.await_args.args[0]
+    line = str(bot.output_router.post_log.await_args.args[0])
+    assert line == "System | Every division is done | Pending placements turned down: 3"
 
 
 async def test_completing_winds_a_finished_season_down_first(tmp_path):
