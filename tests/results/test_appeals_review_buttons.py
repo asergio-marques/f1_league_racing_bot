@@ -136,15 +136,27 @@ def _state(db_path: str, *, appeals=None) -> PenaltyReviewState:
 
 
 def _interaction():
+    """A press by the league manager Alex (id 77), answering as Discord's does — not done until
+    it replies, defers or opens a form — and connected to a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
     interaction.message.id = APPROVAL_MESSAGE_ID
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
     interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client = MagicMock()
+    interaction.client.output_router = MagicMock()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -529,3 +541,105 @@ async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. A button names itself and the review it
+# belongs to; one pressed after a restart has no review to name.
+# ---------------------------------------------------------------------------
+
+_OF_THE_APPEALS_REVIEW = "of the appeals review of round 3 (Pro)"
+_APPEALS_RESTARTED = "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh."
+_APPEALS_NOT_A_MANAGER = "⛔ Only league managers can interact with the penalty review."
+_ENTRY_GONE = "⚠️ That entry no longer exists (the list may have changed)."
+_NOTHING_TO_APPROVE = (
+    "⚠️ No corrections are staged. Use **No Changes / Confirm** to finalise without corrections."
+)
+_APPEALS_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
+_APPEALS_BUTTONS = ["➕ Add Correction", "No Changes / Confirm", "✅ Approve"]
+_APPEALS_CLEAR = "Yes, clear and proceed with no corrections"
+
+
+def _appeals_refusal(case_id, kind, label, reply, *, restarted=False, manager=True,
+                     staged=1, remaining=None):
+    return pytest.param(
+        kind, label, reply, restarted, manager, staged, remaining,
+        id=case_id,
+        marks=pytest.mark.xfail(strict=True, reason=_APPEALS_NOT_YET_RECORDED),
+    )
+
+
+_APPEALS_REFUSALS = [
+    *(
+        _appeals_refusal(f"restarted-{label}", "review", label, _APPEALS_RESTARTED,
+                         restarted=True)
+        for label in [*_APPEALS_BUTTONS, "Remove #1"]
+    ),
+    *(
+        _appeals_refusal(f"not-a-manager-{label}", "review", label, _APPEALS_NOT_A_MANAGER,
+                         manager=False)
+        for label in [*_APPEALS_BUTTONS, "Remove #1"]
+    ),
+    _appeals_refusal("not-a-manager-clear", "clear", _APPEALS_CLEAR, _APPEALS_NOT_A_MANAGER,
+                     manager=False),
+    _appeals_refusal("entry-gone-Remove #1", "review", "Remove #1", _ENTRY_GONE, remaining=0),
+    _appeals_refusal("nothing-staged-Approve", "review", "✅ Approve", _NOTHING_TO_APPROVE,
+                     staged=0),
+]
+
+
+@pytest.mark.parametrize(
+    "kind, label, reply, restarted, manager, staged, remaining", _APPEALS_REFUSALS
+)
+async def test_every_refused_press_of_the_appeals_review_is_recorded(
+    tmp_path, kind, label, reply, restarted, manager, staged, remaining
+):
+    """Alex presses a button of round 3's appeals review (division Pro, awaiting appeal
+    verdicts, one correction staged) — the review itself or the clear confirmation — and is
+    refused: after a restart, without the tier, on a Remove whose correction has already gone,
+    or approving with nothing staged. The reply is today's, nothing is staged, removed or
+    approved, and exactly one line records the refusal, naming the button, the review, Alex and
+    the reason."""
+    db_path = await _make_db(tmp_path, name="appeals_refusals")
+    state = None if restarted else _state(db_path, appeals=[_penalty()] * staged)
+    if kind == "clear":
+        view = _AppealsConfirmClearView(state=state)
+    else:
+        view = AppealsReviewView(state=state)
+    if restarted and label.startswith("Remove"):
+        press = view._make_remove_cb(0)
+    else:
+        press = next(
+            item for item in view.children if getattr(item, "label", None) == label
+        ).callback
+    if remaining is not None:
+        del state.staged_appeals[remaining:]
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(manager), p1 as penalty, p2 as appeals, p3 as refresh, p4 as refresh_appeals:
+        await press(interaction)
+
+    penalty.assert_not_awaited()
+    appeals.assert_not_awaited()
+    refresh.assert_not_awaited()
+    refresh_appeals.assert_not_awaited()
+    interaction.response.send_modal.assert_not_awaited()
+    if state is not None:
+        assert len(state.staged_appeals) == (staged if remaining is None else remaining)
+    (replied,) = [
+        call.args[0] for call in interaction.response.send_message.await_args_list
+    ] + [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert replied == reply
+    reason = reply.split(" ", 1)[1]
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    if restarted:
+        assert line.startswith(f"⛔ the “{label}” button"), line
+        assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
+    else:
+        assert line == (
+            f"⛔ the “{label}” button {_OF_THE_APPEALS_REVIEW} refused for Alex (<@77>) — {reason}"
+        )
