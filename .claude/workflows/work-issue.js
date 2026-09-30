@@ -1420,8 +1420,9 @@ const unapprovedTestChanges = t => {
   if (!filled(t.changes.head)) return ['the tester did not show that it ran tools/changed_tests.py: changes carries no head']
   const since = `since the tests the owner approved at ${testsHead}: revert it, and propose it in testChanges[] if the build needs it, or list it in adjusted[] where the plan's change broke it`
   // An adjustment to the new shape only ever modifies: a test or support added, deleted or moved is
-  // never one, whatever the builder lists.
-  const listed = new Set(adjusted.map(a => bareId(a.target)))
+  // never one, whatever the builder lists. And it counts only from the Gate 2 it was made after: once
+  // the owner approves the tests again, a later change to the same test is listed afresh.
+  const listed = new Set(adjusted.filter(a => a.since === testsHead).map(a => bareId(a.target)))
   const adjustedOnly = (x, key) => x.change === 'modified' && listed.has(key)
   return [
     ...t.changes.tests.filter(x => !adjustedOnly(x, bareId(x.nodeid))).map(x => `${x.nodeid} is ${x.change} ${since}`),
@@ -1580,7 +1581,11 @@ const buildRound = async k => {
 // What the round's builder changed, taken into the list and the ledger. A claim counts only on a
 // finding the builder still owes: a settled or minor one stays as it is.
 const takeIn = built => {
-  for (const a of built.adjusted || []) if (!adjusted.some(x => x.target === a.target)) adjusted.push({ ...a })
+  for (const a of built.adjusted || []) {
+    const was = adjusted.findIndex(x => x.target === a.target)
+    if (was >= 0) adjusted.splice(was, 1)
+    adjusted.push({ ...a, since: testsHead })
+  }
   if (stage === 'tests') ({ tests: written, support: supportWritten } = labelled(built.tests, built.support || []))
   else written = [...written, ...built.tests]
   for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }

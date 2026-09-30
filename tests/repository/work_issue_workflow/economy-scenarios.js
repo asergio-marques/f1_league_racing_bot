@@ -171,3 +171,23 @@ module.exports.deletedTestListedAsAdjustedStillFlagged = {
   },
   expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes('tests/x/test_a.py::test_old is deleted since the tests the owner approved')),
 }
+
+// An adjustment made after one Gate 2 lets nothing through after a later one: the build lists the
+// test afresh, or it is flagged.
+module.exports.adjustmentFromEarlierGateLetsNothingThrough = {
+  args: async runOnce => {
+    const first = await runOnce({ ...B, testsHead: 't0', maxRounds: 1 }, label => {
+      if (label.endsWith(':builder')) return builder({ tests: [], adjusted: [{ target: STUB, why: 'the plan adds season_number' }], testChanges: [{ nodeid: 'tests/x/test_a.py::test_new', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      if (label.endsWith(':tester')) return suite({ changes: changes([], [['tests/x/conftest.py', 'season_stub', 'modified']], [], 'h1') })
+      return lanesClean(label)
+    })
+    if (first.status !== 'question' || first.adjusted[0].since !== 't0') throw new Error('the first run did not stop on its test change with the adjustment recorded')
+    return { ...B, testsHead: 't1', maxRounds: 1, decisions: 'OWNER: make test_new', previous: first }
+  },
+  respond(label) {
+    if (label.endsWith(':builder')) return builder({ tests: [] })
+    if (label.endsWith(':tester')) return suite({ changes: changes([], [['tests/x/conftest.py', 'season_stub', 'modified']], [], 'h2') })
+    return lanesClean(label)
+  },
+  expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${STUB} is modified since the tests the owner approved at t1`)) && r.adjusted.length === 1,
+}
