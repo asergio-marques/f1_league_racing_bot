@@ -27,6 +27,7 @@ driver is told something rather than being shown an empty **Reason:** that reads
 """
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -53,11 +54,16 @@ MANAGER_ID = 77
 
 
 @pytest.fixture(autouse=True)
-def _clear_pending():
+async def _clear_pending():
     """`_PENDING_REASONS` is module-level state; a leak between tests would make one
-    test's parked reason answer another's message."""
+    test's parked reason answer another's message. Each entry's five-minute lapse is a task
+    (#482), cancelled here so that none outlives its test."""
     _PENDING_REASONS.clear()
     yield
+    for entry in list(_PENDING_REASONS.values()):
+        lapse = entry.get("lapse")
+        if lapse is not None:
+            lapse.cancel()
     _PENDING_REASONS.clear()
 
 
@@ -336,15 +342,20 @@ def _message(content: str, *, author_id: int = MANAGER_ID, is_bot: bool = False)
 
 
 def _cog_with_pending(action: str):
+    """A reason parked as the press parks it: the press's own interaction, whose followup
+    answers the manager, and the lapse task a reason that arrives cancels (#482)."""
     bot = _bot()
-    followup = MagicMock()
-    followup.send = AsyncMock(return_value=None)
+    interaction = _interaction(bot)
+    interaction.response.is_done = lambda: True  # the press deferred before parking
+    followup = interaction.followup
     _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] = {
         "action": action,
         "discord_user_id": DRIVER_ID,
-        "actor": MagicMock(),
-        "guild": MagicMock(),
+        "actor": interaction.user,
+        "guild": interaction.guild,
+        "interaction": interaction,
         "followup": followup,
+        "lapse": asyncio.get_running_loop().create_future(),
     }
     cog = AdminReviewCog(bot)
     return cog, followup
@@ -449,3 +460,177 @@ async def test_another_member_s_message_does_not_answer_the_prompt():
 
     cog.bot.wizard_service.reject_signup.assert_not_awaited()
     assert _PENDING_REASONS != {}
+
+
+# ---------------------------------------------------------------------------
+# The press recorded, and the reason's five minutes (#482)
+# ---------------------------------------------------------------------------
+
+NEGATIVE = [("request_changes_button", "Request Changes"), ("reject_button", "Reject")]
+NEGATIVE_IDS = ["request-changes", "reject"]
+
+_PRESS_NOT_RECORDED = (
+    "#482: Reject and Request Changes park only the followup, write no line, and never lapse"
+)
+_REASON_FAULT_ESCAPES = (
+    "#482: a fault in the reason step escapes on_message instead of being reported through the press"
+)
+
+#: The manager's reply where no reason arrived after pressing Reject.
+REJECT_LAPSED = (
+    "⌛ No reason arrived within five minutes. Nothing was rejected; the signup still awaits review."
+)
+
+
+def _lines(bot) -> list[str]:
+    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+
+
+def _sent(interaction) -> list[str]:
+    return [str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args]
+
+
+async def _press(bot, button: str, user_id: int = MANAGER_ID):
+    view = AdminReviewView(DRIVER_ID, bot)
+    interaction = _interaction(bot, user_id=user_id)
+    await getattr(type(view), button)(view, interaction, MagicMock())
+    return interaction
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
+@pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
+async def test_the_negative_buttons_write_their_press_line_and_park_the_press(
+    monkeypatch, button, label
+):
+    """The press is logged (owner, 2026-09-30, "Five minutes, logged"), and the entry keeps the
+    press's own interaction, through which the reason step later answers and records."""
+    _permitted(monkeypatch, True)
+    bot = _bot()
+
+    interaction = await _press(bot, button)
+
+    lines = _lines(bot)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith(f"Manager (<@{MANAGER_ID}>) | the “{label}” button of"), lines[0]
+    assert "signup review" in lines[0]
+    assert lines[0].endswith("| Asked for a reason"), lines[0]
+    assert _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["interaction"] is interaction
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
+@pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
+async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untouched(
+    monkeypatch, button, label
+):
+    """Five minutes after the press with no reason typed, the manager is told nothing was
+    done, one lapse line names them, and the driver still awaits review."""
+    assert arc._REASON_LAPSE_SECONDS == 5 * 60
+    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
+    _permitted(monkeypatch, True)
+    bot = _bot()
+
+    interaction = await _press(bot, button)
+    await _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["lapse"]
+
+    assert _PENDING_REASONS == {}
+    told = _sent(interaction)[-1]
+    assert told.startswith("⌛ No reason arrived within five minutes."), told
+    assert told.endswith("the signup still awaits review."), told
+    if label == "Reject":
+        assert told == REJECT_LAPSED
+    lines = _lines(bot)
+    assert len(lines) == 2, lines
+    assert lines[1].startswith(f"⌛ the “{label}” button of"), lines[1]
+    assert f"lapsed unconfirmed (started by Manager (<@{MANAGER_ID}>))" in lines[1]
+    bot.wizard_service.reject_signup.assert_not_awaited()
+    bot.wizard_service.request_changes.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
+async def test_a_reason_given_in_time_cancels_the_lapse(monkeypatch):
+    """The reason takes the entry and cancels its lapse, so no lapse follows the rejection."""
+    _permitted(monkeypatch, True)
+    bot = _bot()
+    interaction = await _press(bot, "reject_button")
+    lapse = _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["lapse"]
+
+    await AdminReviewCog(bot).on_message(_message("Lap time could not be verified."))
+    await asyncio.gather(lapse, return_exceptions=True)
+
+    assert lapse.cancelled()
+    bot.wizard_service.reject_signup.assert_awaited_once()
+    assert not any("lapsed" in line for line in _lines(bot)), _lines(bot)
+    assert not any(text.startswith("⌛") for text in _sent(interaction))
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
+async def test_a_lapse_whose_entry_was_replaced_does_nothing(monkeypatch):
+    """A lapse acts only while its own entry is the one pending: a later press has put
+    another in its place, and that one is left for its own five minutes."""
+    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
+    _permitted(monkeypatch, True)
+    bot = _bot()
+    interaction = await _press(bot, "reject_button")
+    first = _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]
+    later = dict(first, lapse=None)
+    _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] = later
+
+    await asyncio.gather(first["lapse"], return_exceptions=True)
+
+    assert _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)] is later
+    assert not any("lapsed" in line for line in _lines(bot)), _lines(bot)
+    assert not any(text.startswith("⌛") for text in _sent(interaction))
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
+async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(monkeypatch):
+    """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
+    reason goes, and its lapse with it, so no lapse fires into a league that has changed."""
+    from leaguebot.core.services.in_memory_state import clear_in_memory_state
+
+    monkeypatch.setattr(arc, "_REASON_LAPSE_SECONDS", 0)
+    _permitted(monkeypatch, True)
+    bot = _bot()
+    rejecting = await _press(bot, "reject_button")
+    requesting = await _press(bot, "request_changes_button", user_id=MANAGER_ID + 1)
+    lapses = [entry["lapse"] for entry in _PENDING_REASONS.values()]
+
+    clear_in_memory_state(bot)
+    await asyncio.gather(*lapses, return_exceptions=True)
+
+    assert len(lapses) == 2 and all(lapse.cancelled() for lapse in lapses)
+    assert _PENDING_REASONS == {}
+    assert not any("lapsed" in line for line in _lines(bot)), _lines(bot)
+    assert not any(text.startswith("⌛") for text in _sent(rejecting) + _sent(requesting))
+
+
+@pytest.mark.xfail(strict=True, reason=_REASON_FAULT_ESCAPES)
+@pytest.mark.parametrize(
+    "button,label,service",
+    [
+        ("request_changes_button", "Request Changes", "request_changes"),
+        ("reject_button", "Reject", "reject_signup"),
+    ],
+    ids=NEGATIVE_IDS,
+)
+async def test_a_fault_in_the_reason_step_is_reported_through_the_press(
+    monkeypatch, button, label, service
+):
+    """The reason completes the change the press asked for, so a fault in it is the button's
+    own: the manager is told once, one failure line names the button, and nothing escapes to
+    discord.py's event handler (core specification, "When a command fails")."""
+    _permitted(monkeypatch, True)
+    bot = _bot()
+    interaction = await _press(bot, button)
+    setattr(bot.wizard_service, service, AsyncMock(side_effect=RuntimeError("database is locked")))
+
+    await AdminReviewCog(bot).on_message(_message("Lap time could not be verified."))
+
+    failures = [text for text in _sent(interaction) if text.startswith("❌")]
+    assert len(failures) == 1, _sent(interaction)
+    assert f"“{label}” button" in failures[0]
+    assert not any(text.startswith("✅") for text in _sent(interaction))
+    failed = [line for line in _lines(bot) if line.startswith("❌")]
+    assert len(failed) == 1, _lines(bot)
+    assert failed[0].startswith(f"❌ the “{label}” button of"), failed[0]
+    assert f"failed for Manager (<@{MANAGER_ID}>)" in failed[0]

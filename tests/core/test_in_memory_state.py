@@ -12,6 +12,8 @@ import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from leaguebot.signup.cogs import admin_review_cog
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 
@@ -80,7 +82,15 @@ def test_the_register_names_no_store_that_does_not_exist():
     assert sorted((CLEARED | EXEMPT) - _stores()) == []
 
 
+_LAPSE_LEFT_RUNNING = (
+    "#482: the clear drops each pending reason without cancelling its five-minute lapse"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_LAPSE_LEFT_RUNNING)
 async def test_the_clear_empties_every_store():
+    """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
+    so none fires after a pack or a factory reset (#482)."""
     import asyncio
 
     season_cog = MagicMock()
@@ -89,7 +99,8 @@ async def test_the_clear_empties_every_store():
         get_cog=lambda name: season_cog if name == "SeasonCog" else None,
         wizard_service=SimpleNamespace(_correction_tasks={"7": task}),
     )
-    admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x"}
+    lapse = asyncio.get_running_loop().create_future()
+    admin_review_cog._PENDING_REASONS[(1, 2)] = {"action": "x", "lapse": lapse}
 
     clear_in_memory_state(bot)
 
@@ -97,3 +108,4 @@ async def test_the_clear_empties_every_store():
     assert admin_review_cog._PENDING_REASONS == {}
     assert bot.wizard_service._correction_tasks == {}
     assert task.cancelled()
+    assert lapse.cancelled()
