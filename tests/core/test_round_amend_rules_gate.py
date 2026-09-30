@@ -726,3 +726,41 @@ async def test_a_pending_round_amended_to_what_stands_changes_nothing(tmp_path, 
     assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
     assert not line.startswith("⛔")
     assert _says_nothing_changed(line)
+
+
+@pytest.mark.parametrize(
+    "status, refusal",
+    [
+        pytest.param(
+            "CANCELLED",
+            "This round has been cancelled and can no longer be amended.",
+            id="cancelled",
+        ),
+        pytest.param(
+            "AWAITING_REPORT_VERDICTS",
+            "This round's results have been entered",
+            id="results_entered",
+        ),
+    ],
+)
+async def test_a_round_that_cannot_be_amended_is_refused_even_given_what_stands(
+    tmp_path, status, refusal
+):
+    """Round 1 of Div A stands at Bahrain International Circuit, thirty days from now, but can
+    no longer be amended. The manager gives it the track it already has. The owner decided
+    (2026-09-30) that the refusal comes first: the manager is told the round cannot be amended,
+    as before, rather than that nothing changed."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    async with get_connection(path) as db:
+        await db.execute("UPDATE rounds SET status = ? WHERE id = 1", (status,))
+        await db.commit()
+    cog = _cog(path)
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    await _amend(cog, interaction, track="Bahrain International Circuit")
+
+    assert refusal in _reply(interaction)
+    assert "already holds those values" not in _reply(interaction)
+    [line] = _lines(cog)
+    assert line.startswith("⛔ "), line

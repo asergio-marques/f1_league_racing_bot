@@ -5079,18 +5079,6 @@ class SeasonCog(commands.Cog):
                 return
             amendments.append(("format", new_fmt))
 
-        # The values that stand are no amendment: nothing is offered, and nothing changes.
-        standing = {
-            "track_name": rnd.track_name,
-            "scheduled_at": rnd.scheduled_at,
-            "format": rnd.format,
-        }
-        if amendment_changes_nothing(standing, dict(amendments)):
-            await self._record_round_unchanged(
-                interaction, "/round amend", div.name, rnd.round_number
-            )
-            return
-
         # Judged before anything is offered, and judged again when it is confirmed. An
         # amendment the rules refuse never reaches a confirmation at all.
         _verdict = await _judge_round_amendment(
@@ -5105,6 +5093,20 @@ class SeasonCog(commands.Cog):
                 + "\n\n**Nothing has been changed.**",
                 what=_round_amend_named(rnd.round_number, div.name),
                 reason="\n".join(_verdict.refusals),
+            )
+            return
+
+        # The values that stand are no amendment: nothing is offered, and nothing changes. Asked
+        # after the rules, so a round that cannot be amended at all is refused as such, whatever
+        # was given (owner, 2026-09-30).
+        standing = {
+            "track_name": rnd.track_name,
+            "scheduled_at": rnd.scheduled_at,
+            "format": rnd.format,
+        }
+        if amendment_changes_nothing(standing, dict(amendments)):
+            await self._record_round_unchanged(
+                interaction, "/round amend", div.name, rnd.round_number
             )
             return
 
