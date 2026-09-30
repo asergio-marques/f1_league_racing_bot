@@ -500,3 +500,22 @@ async def test_the_timer_firing_while_a_finished_press_clears_the_review_records
     getattr(cog, helper).assert_awaited_once()
     message.channel.send.assert_not_awaited()
     assert not any(line.startswith("⌛ ") for line in _logged(cog)), _logged(cog)
+
+
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_the_five_minutes_run_from_the_posting_of_the_question(
+    view_class, label, review, helper, verb
+):
+    """Alex's review took longer than five minutes to draw and post: its view was built before
+    the report, and the question went up only afterwards. Alex presses a moment after the
+    question appears. The press is well inside five minutes from the posting, so it is taken:
+    the approval (or confirmation) is worked, and nothing is refused."""
+    view, cog, message = _review(view_class, helper)
+    # Built long enough ago that five minutes from building have already gone by.
+    view._deadline = datetime.now(timezone.utc) - timedelta(seconds=1)
+
+    await view.bind(message)
+    await view_class.approve(view, _press(cog), MagicMock())
+
+    getattr(cog, helper).assert_awaited_once()
+    assert not any(line.startswith("⛔ ") for line in _logged(cog)), _logged(cog)

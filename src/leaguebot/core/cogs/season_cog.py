@@ -6586,8 +6586,14 @@ class _ApproveView(LeagueView):
         it belongs to and the report above it (`carries` runs first), so that a restart can
         expire it on the terms a timeout would: its report deleted with it, and its lapse
         naming its review.
+
+        The five minutes start here, as the question is posted, and not when the view was
+        built: a placements review builds its view before drawing and posting its report,
+        which can take a while.
         """
         self._message = message
+        self._deadline = datetime.now(timezone.utc) + timedelta(seconds=APPROVAL_WINDOW_SECONDS)
+        self.timeout = APPROVAL_WINDOW_SECONDS
         if self._season_id is None:
             return
         try:
