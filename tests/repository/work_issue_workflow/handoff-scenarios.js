@@ -1,8 +1,9 @@
 // A builder handed off in pieces within a round: a piece that commits part of the plan and is not
 // finished is followed by another, told what the first did and what is left, and the round is
 // reviewed once, after the last piece. A piece's question the checkers settle does not end the
-// hand-off (#483); one that needs the owner does, as does a piece that proposes a test change or
-// commits nothing, so that nothing the owner must see is held back.
+// hand-off (#483); one that needs the owner does, as does a piece that commits nothing, so that
+// nothing the owner must see is held back. A proposed test change does not: the owner is given every
+// piece's proposals together, at the round's end.
 const { q, builder, review, testsCheck, suite, finding, base, round, changes } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
 // The piece an agent's label names: `build:r1:p2:builder` is piece 2, and `build:r1:builder` piece 1.
@@ -113,17 +114,19 @@ module.exports = {
     expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1
       && r.escalations.some(e => e.question === 'what should the reply say?' && e.unframed),
   },
-  handOffStopsOnTestChange: {
+  // A proposed test change does not end the hand-off: the next piece builds on, and the owner is
+  // given every piece's proposals together when the round is reviewed.
+  handOffCarriesOnPastTestChange: {
     args: { ...B, testsHead: 't0' },
     respond(label) {
-      if (label.endsWith(':builder')) {
-        if (label !== 'build:r1:builder') throw new Error('a piece followed one that proposed a test change: ' + label)
-        return unfinished({ testChanges: [{ nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
-      }
+      if (label === 'build:r1:builder') return unfinished({ testChanges: [{ nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      if (label === 'build:r1:p2:builder') return builder({ tests: [], commits: [{ sha: 'c2', subject: 'rest' }], testChanges: [{ nodeid: 'tests/x/test_a.py::test_full_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      if (label.endsWith(':builder')) throw new Error('unexpected ' + label)
       return lanesClean(label)
     },
-    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1 && labels.includes('build:r1:code')
-      && r.testChanges.length === 1 && r.testChanges[0].nodeid === 'tests/x/test_a.py::test_empty_division',
+    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 2 && labels.includes('build:r1:code')
+      && labels.indexOf('build:r1:code') > labels.indexOf('build:r1:p2:builder')
+      && r.testChanges.map(t => t.nodeid).join() === 'tests/x/test_a.py::test_empty_division,tests/x/test_a.py::test_full_division',
   },
   handOffStopsWithoutCommit: {
     args: { ...B, maxRounds: 1 },

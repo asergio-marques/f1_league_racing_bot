@@ -1345,8 +1345,10 @@ const mergePieces = parts => {
 }
 
 // The builder's pieces of round k, one after another. A further piece starts only where the last
-// one committed something, is on the branch, and is neither finished nor blocked, and proposed no
-// test change. A piece's questions do not end the hand-off where the checkers settle them: each goes
+// one committed something, is on the branch, and is neither finished nor blocked. A test change a
+// piece proposes does not end the hand-off: the pieces build on past it, and the round puts every
+// piece's proposals to the owner together, at its end, over a build as complete as it can be made
+// without them. A piece's questions do not end the hand-off where the checkers settle them: each goes
 // at once to the checker whose ground it is, and where every one is answered from a written rule or
 // taken as a reversible call, the next piece is given the answers and carries on, and the owner sees
 // them at the gate among the calls taken. A question that needs the owner ends the hand-off, and
@@ -1384,7 +1386,7 @@ const buildRound = async k => {
     parts.push(got)
     // A later piece is given the list as it stands, under its labels.
     if (stage === 'tests' && got.onBranch) ({ tests: written, support: supportWritten } = labelled(got.tests, got.support || []))
-    const handsOff = got.onBranch && got.commits.length && !got.planComplete && !got.blocked && !(got.testChanges || []).length
+    const handsOff = got.onBranch && got.commits.length && !got.planComplete && !got.blocked
     if (!handsOff) break
     if (n === MAX_PIECES) { log(`Round ${k}: the builder handed off ${MAX_PIECES} pieces, the most a round takes, without finishing; the round is reviewed as it stands.`); break }
     if (got.questions.length) {
