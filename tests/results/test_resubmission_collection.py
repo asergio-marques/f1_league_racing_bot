@@ -176,8 +176,12 @@ async def _run(
             self.selected = selected
 
         async def wait(self):
+            # *on_select* may return a coroutine, awaited as the choice: one that never ends
+            # is a manager who never chooses.
             if on_select is not None:
-                on_select()
+                outcome = on_select()
+                if asyncio.iscoroutine(outcome):
+                    await outcome
             return None
 
     patches = {
@@ -741,6 +745,41 @@ async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(
 
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
     assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the configuration choice is not raced against Cancel, so the resubmission "
+    "waits on a choice nobody makes (D4)",
+)
+async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmission(tmp_path):
+    """Alex pastes the qualifying session of a resubmission and, with two configurations
+    attached, is asked to choose one; instead he presses Cancel and never chooses. The
+    resubmission ends there: the earlier results stand, the resubmitting flag is cleared, the
+    round goes back to its penalty review without reposting, and one cancel line names him."""
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_choosing")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+    bot = _bot(db_path, [QUALI_PASTE])
+    bot.get_guild.return_value.get_member.return_value.display_name = "Alex"
+
+    async def _nobody_chooses():
+        _press_cancel(view)
+        await asyncio.Event().wait()
+
+    stubs = await asyncio.wait_for(
+        _run(bot, configs=("Standard", "Half"), cancel_view=view, on_select=_nobody_chooses),
+        timeout=3,
+    )
+
+    assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
+    assert await _resubmitting(db_path) == 0
+    stubs["penalty"].assert_awaited_once()
+    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+    assert "Resubmission cancelled" in _said(stubs["channel"])
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    [cancel] = [line for line in lines if line.startswith("↩️ ")]
+    assert f"cancelled by Alex (<@{MANAGER}>)" in cancel.split("\n", 1)[0]
 
 
 async def test_a_completed_resubmission_takes_down_the_cancel_button(tmp_path):
