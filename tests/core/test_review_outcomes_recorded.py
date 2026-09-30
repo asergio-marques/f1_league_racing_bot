@@ -555,3 +555,24 @@ async def test_a_second_press_while_one_is_being_worked_is_refused(
     refusals = [line for line in _logged(cog) if line.startswith("⛔ ")]
     assert len(refusals) == 1, _logged(cog)
     assert " refused for Alex (<@4242>) — " in refusals[0], refusals
+
+
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_a_review_expired_twice_at_once_posts_one_notice(
+    view_class, label, review, helper, verb
+):
+    """At the very end of Alex's five minutes the timer fires just as a late press ends the review
+    too, so two expiries run at once. The question is deleted and the public notice posted once,
+    and one lapse line at most is recorded."""
+    view, cog, message = _review(view_class, helper)
+
+    async def _a_slow_delete():
+        await asyncio.sleep(0.05)
+
+    message.delete = AsyncMock(side_effect=_a_slow_delete)
+
+    await asyncio.gather(view.on_timeout(), view.on_timeout())
+
+    message.channel.send.assert_awaited_once()
+    lapses = [line for line in _logged(cog) if line.startswith("⌛ ")]
+    assert len(lapses) <= 1, _logged(cog)
