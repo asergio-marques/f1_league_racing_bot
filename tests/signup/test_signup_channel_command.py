@@ -297,10 +297,6 @@ async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: an old signup channel the bot could not unlock goes to the host log only",
-)
 @pytest.mark.parametrize(
     "fault",
     [

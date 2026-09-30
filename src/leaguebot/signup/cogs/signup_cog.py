@@ -926,14 +926,21 @@ class SignupCog(commands.Cog):
 
         # Revert bot-applied overwrites on old channel (if changing)
         old_cleared: discord.TextChannel | None = None
+        # An old channel the bot cannot clear is reported and the move stands, as for the hub
+        # channel: the new channel is set either way, and the old one is put right by hand.
+        faults: list[str] = []
         if old_channel_id and old_channel_id != channel.id:
             old_channel = guild.get_channel(old_channel_id)
             if old_channel and isinstance(old_channel, discord.TextChannel):
                 try:
                     await old_channel.edit(overwrites={})
                     old_cleared = old_channel
-                except Exception:
+                except Exception as exc:
                     log.warning("signup_channel: could not revert overwrites on old channel %s", old_channel_id, exc_info=True)
+                    faults.append(
+                        f"The permissions on the old signup channel {old_channel.mention} "
+                        f"could not be cleared: {exc}"
+                    )
 
         # Apply overwrites to new channel. The server config is read here for the
         # interaction role; it used to be read further up, by the guard against reusing
@@ -1007,12 +1014,15 @@ class SignupCog(commands.Cog):
             )
             await db.commit()
 
-        await interaction.followup.send(
-            f"✅ Signup channel set to {channel.mention}.", ephemeral=True
-        )
+        reply = f"✅ Signup channel set to {channel.mention}."
+        if faults:
+            reply += "\n⚠️ " + "\n⚠️ ".join(faults)
+        await interaction.followup.send(reply, ephemeral=True)
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup channel | Success\n"
-            f"  channel: #{channel.name}",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup channel | "
+            f"{'Success' if not faults else 'Success, with faults'}\n"
+            f"  channel: #{channel.name}"
+            + "".join(f"\n  {fault}" for fault in faults),
         )
 
     # ── /signup nationality toggle (T020) ──────────────────────────────
