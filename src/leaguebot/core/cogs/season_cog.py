@@ -24,6 +24,7 @@ Commands:
 from __future__ import annotations
 
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
@@ -2752,7 +2753,8 @@ class SeasonCog(commands.Cog):
             # Named as not done, with the stage it is in: confirming again cannot move it.
             try:
                 moved_to = await self.bot.season_service.get_stage(season.id)
-            except Exception:  # noqa: BLE001 — the stage only makes the line more exact
+            except sqlite3.Error:
+                # The stage only makes the line more exact: a read that fails leaves it unnamed.
                 log.exception("mid-season placements: could not read season %s's stage", season.id)
                 moved_to = None
             where = (
