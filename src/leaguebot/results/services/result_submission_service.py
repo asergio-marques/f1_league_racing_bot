@@ -1089,7 +1089,8 @@ async def _report_incomplete_sanctions(
     """Tell the approving manager which attendance sanctions did not apply (#239).
 
     *logged* says the run has already posted its own ``ATTENDANCE_SANCTIONS | Incomplete``
-    line; where it never got that far, the log channel is told here instead.
+    line; where it never got that far, the log channel is told here instead, naming the member
+    who pressed (#482).
     """
     from leaguebot.attendance.services.attendance_service import sync_hint
 
@@ -1098,7 +1099,7 @@ async def _report_incomplete_sanctions(
     if not logged:
         try:
             await bot.output_router.post_log(
-                f"ATTENDANCE_SANCTIONS | Incomplete\n"
+                f"{interaction_member(interaction)} | ATTENDANCE_SANCTIONS | Incomplete\n"
                 + "\n".join(f"  {line}" for line in failures)
                 + f"\n  {hint}"
             )
@@ -1128,12 +1129,16 @@ async def _report_faults(
     the reply is the manager's; a failure to write one must not swallow the other, or the
     approval goes back to being silent in exactly the way this issue is about.
 
+    **Each entry names the member who pressed** (#482), "Alex (<@77>) | RESULTS_REPOST |
+    Incomplete", as the approval's own line does: an entry that named nobody could not be traced
+    to the approval that left the fault.
+
     Unlike the sanctions there is no *logged* flag, because none of the callers here has a
     route to the log channel of its own: this is the only place their faults are written.
     """
     try:
         await bot.output_router.post_log(
-            f"{heading}\n"
+            f"{interaction_member(interaction)} | {heading}\n"
             + "\n".join(f"  {line}" for line in faults)
             + f"\n  {hint}"
         )

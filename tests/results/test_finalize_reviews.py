@@ -2939,7 +2939,6 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
 # ---------------------------------------------------------------------------
 
 _ALEX = f"Alex (<@{STEWARD}>)"
-_NOT_YET_NAMED = "#482: the approval's lines name the member by mention alone, or not at all"
 
 
 def _line_under(state, heading: str) -> str:
@@ -2995,7 +2994,6 @@ async def _press_with(tmp_path, heading: str):
     return state
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
 @pytest.mark.parametrize(
     "heading",
     [
