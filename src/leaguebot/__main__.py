@@ -1263,7 +1263,13 @@ async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
         if channel is not None:
             # The question, then the report above it: the report goes with it, as it does
             # when the review expires while the bot runs.
-            standing = [int(row["message_id"]), *json.loads(row["report_message_ids"] or "[]")]
+            try:
+                report = [int(mid) for mid in json.loads(row["report_message_ids"] or "[]")]
+            except (ValueError, TypeError):
+                # Unreadable, which `bind` never writes: the question is still swept.
+                log.warning("an expired review's report could not be read; its question is swept")
+                report = []
+            standing = [int(row["message_id"]), *report]
             for message_id in standing:
                 try:
                     message = await channel.fetch_message(message_id)

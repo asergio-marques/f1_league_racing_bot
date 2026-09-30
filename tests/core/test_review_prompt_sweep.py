@@ -301,3 +301,22 @@ async def test_a_review_standing_at_a_restart_has_its_report_deleted_with_its_pr
         messages[message_id].delete.assert_awaited_once()
     channel.send.assert_awaited_once()
     assert await _rows(db_path) == []
+
+
+async def test_a_prompt_whose_report_list_cannot_be_read_is_still_cleared(db_path):
+    """A standing prompt whose recorded report is unreadable (written by hand, say) is still
+    swept: its question is deleted, the notice posted, its lapse recorded and its row cleared,
+    and the start-up goes on rather than stopping on it."""
+    await _store(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE season_review_prompts SET report_message_ids = 'not a list'")
+        await db.commit()
+    channel, message = _channel()
+    bot = _bot(db_path, channel)
+
+    await _recover_expired_review_prompts(bot)
+
+    message.delete.assert_awaited_once()
+    channel.send.assert_awaited_once()
+    assert [line for line in _logged(bot) if line.startswith("⌛ ")]
+    assert await _rows(db_path) == []
