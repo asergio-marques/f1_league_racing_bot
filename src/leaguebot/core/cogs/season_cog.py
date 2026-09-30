@@ -26,6 +26,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from functools import partial
@@ -6452,10 +6454,21 @@ class _ApproveView(LeagueView):
     with the process, which is why the message is also recorded in `season_review_prompts`
     and swept at startup by `_recover_expired_review_prompts`.
 
+    **Five minutes from posting.** The button stands five minutes from the posting of the review,
+    whatever is pressed meanwhile (the core specification's "Confirming placements"). discord.py
+    restarts a view's timer on every press it lets through, a refused one included, so
+    `interaction_check` sets the timeout to what is left of the window first, and the restart
+    lands on the same deadline. A press after it confirms nothing and ends the review.
+
+    **A press under way is not expired under it.** Where the timer fires while a press is being
+    worked (under test mode the backup question, then the approval), the expiry waits for the
+    press to end: a press that finishes has recorded its own outcome and cleared the review, and
+    one that raised leaves the review to expire then, as the timer asked.
+
     **What the log holds.** A review left to lapse records one lapse line naming the member who
-    ran it, beside the public notice. One ended by `_expire_now` (the season changed under it)
-    records only the refusal that ended it. A press whose helper raised leaves the review up and
-    pressable, as before (`_press_under_way` stays set), and a lapse after that says an earlier
+    ran it, beside the public notice. One ended by `_expire_now` (the season changed under it, or
+    its five minutes were up) records only the refusal that ended it. A press whose helper
+    raised leaves the review up and pressable, as before, and a lapse after that says an earlier
     press failed and may have been partly done.
     """
 
@@ -6490,10 +6503,66 @@ class _ApproveView(LeagueView):
         # Set by `_expire_now`: the review ended on a refusal, which is what the log records,
         # so its lapse is not recorded a second time.
         self._ended_by_refusal = False
-        # Raised before a press hands on to its `_do_*` helper and lowered when it returns, so
-        # a helper that raises leaves it set: the review stays up, as it always has, and its
-        # lapse says an earlier press failed rather than that nothing was done.
-        self._press_under_way = False
+        # True while a press is being worked by its `_do_*` helper (`_press_worked`).
+        self._pressing = False
+        # Set where the timer fired while a press was being worked: the expiry waits for it.
+        self._expiry_waiting = False
+        # Set when a press's helper raised, and cleared when one finishes: the review stays up,
+        # as it always has, and its lapse says an earlier press failed rather than that nothing
+        # was done.
+        self._press_failed = False
+
+    async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
+        """The base's check, then the timer held to five minutes from posting.
+
+        discord.py restarts the timer on every press this lets through, setting it to the
+        view's `timeout` from now; setting the timeout first to what is left of the window keeps
+        that restart on the deadline.
+        """
+        if not await super().interaction_check(interaction):
+            return False
+        left = (self._deadline - datetime.now(timezone.utc)).total_seconds()
+        self.timeout = max(left, 0.0)
+        return True
+
+    async def _refuse_if_expired(self, interaction: discord.Interaction) -> bool:
+        """Refuse a press made once the review's five minutes are up, and end the review.
+
+        The timer normally ends the review first; a press can still reach the button in the
+        moment between. It confirms nothing, and the refusal is what the log records.
+        """
+        if datetime.now(timezone.utc) < self._deadline:
+            return False
+        await refuse(
+            interaction,
+            "\u26d4 This review's five minutes are up, so it can no longer be answered. "
+            f"**Nothing has been {self._verb}.** Run `{self._review_command}` again.",
+            what=self._button,
+            reason="the review's five minutes were up",
+        )
+        await self._expire_now()
+        return True
+
+    @asynccontextmanager
+    async def _press_worked(self) -> AsyncIterator[None]:
+        """Around a press's `_do_*` helper: an expiry that falls meanwhile waits for it.
+
+        A press that finishes has recorded its outcome and the caller clears the review, so a
+        timer that fired while it ran is let go. One whose helper raises leaves
+        `_press_failed` set and, where the timer fired meanwhile, the review is expired now;
+        the raise then reaches the view's `on_error`, which records the failure.
+        """
+        self._pressing = True
+        self._press_failed = True
+        try:
+            yield
+            self._press_failed = False
+        finally:
+            self._pressing = False
+            if self._expiry_waiting:
+                self._expiry_waiting = False
+                if self._press_failed:
+                    await self.on_timeout()
 
     def carries(self, posted_messages: list) -> None:
         """The report this button answers, so approving can clear it."""
@@ -6585,8 +6654,12 @@ class _ApproveView(LeagueView):
 
         Deleted rather than left disabled: a public message offering a button nobody may
         press is a standing invitation to press it. The reviewer is pinged so the one
-        person who was waiting learns of it without having to watch the channel.
+        person who was waiting learns of it without having to watch the channel. Where a
+        press is being worked, the expiry waits for it (`_press_worked`).
         """
+        if self._pressing:
+            self._expiry_waiting = True
+            return
         await self._forget()
         # The report goes with the question. An expired review is one nobody may answer,
         # and leaving its dozen messages behind while deleting only the button would say
@@ -6617,7 +6690,7 @@ class _ApproveView(LeagueView):
             log.warning("season review: could not post the expiry notice: %s", exc)
         if self._ended_by_refusal:
             return
-        if self._press_under_way:
+        if self._press_failed:
             detail = (
                 "An earlier press of the button failed and may have been partly done. "
                 f"Check the failure line before running `{self._review_command}` again."
@@ -6659,6 +6732,9 @@ class _ApproveView(LeagueView):
             )
             return
 
+        if await self._refuse_if_expired(interaction):
+            return
+
         # The report you read is the report you approve. The five-minute life makes a change
         # unlikely; this makes one detectable — and it is what lets the approval trust the
         # review's own render rather than drawing everything a second time.
@@ -6683,9 +6759,8 @@ class _ApproveView(LeagueView):
                 await self._expire_now()
                 return
 
-        self._press_under_way = True
-        await self._cog._do_approve(interaction, deadline=self._deadline, what=self._button)
-        self._press_under_way = False
+        async with self._press_worked():
+            await self._cog._do_approve(interaction, deadline=self._deadline, what=self._button)
         await self._forget()
         await self._clear_report()
         self._message = None
@@ -6788,6 +6863,9 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
             )
             return
 
+        if await self._refuse_if_expired(interaction):
+            return
+
         if self._fingerprint is not None and self._season_id is not None:
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
@@ -6808,9 +6886,8 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
                 await self._expire_now()
                 return
 
-        self._press_under_way = True
-        await self._cog._do_confirm_mid_season_placements(interaction, what=self._button)
-        self._press_under_way = False
+        async with self._press_worked():
+            await self._cog._do_confirm_mid_season_placements(interaction, what=self._button)
         await self._forget()
         await self._clear_report()
         self._message = None
@@ -6842,6 +6919,9 @@ class _ConfirmConfigurationView(_ApproveView):
             )
             return
 
+        if await self._refuse_if_expired(interaction):
+            return
+
         if self._fingerprint is not None and self._season_id is not None:
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
@@ -6862,9 +6942,8 @@ class _ConfirmConfigurationView(_ApproveView):
                 await self._expire_now()
                 return
 
-        self._press_under_way = True
-        await self._cog._do_confirm_configuration(interaction, what=self._button)
-        self._press_under_way = False
+        async with self._press_worked():
+            await self._cog._do_confirm_configuration(interaction, what=self._button)
         await self._forget()
         await self._clear_report()
         self._message = None

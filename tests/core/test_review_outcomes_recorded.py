@@ -268,13 +268,8 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
 # that reaches a button, a refused one included, so a review pressed now and then would never
 # expire. Here the review's five minutes are scaled down to one second, so its timer runs in earnest.
 
-_FIVE_MINUTES_FROM_POSTING = pytest.mark.xfail(
-    strict=True,
-    reason="#482: a press, even a refused one, restarts the review's five minutes",
-)
 
 
-@_FIVE_MINUTES_FROM_POSTING
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     monkeypatch, view_class, label, review, helper, verb
@@ -319,7 +314,6 @@ async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
 
 
-@_FIVE_MINUTES_FROM_POSTING
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_after_the_five_minutes_confirms_nothing(
     view_class, label, review, helper, verb
@@ -353,11 +347,6 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
 # its own outcome, and the timer deletes nothing, posts no notice and records no lapse.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the review's timer firing while a press is under way deletes the review, "
-    "posts the expiry notice and records a lapse",
-)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_the_press(
     view_class, label, review, helper, verb
@@ -401,11 +390,6 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
     assert _logged(cog) == [own_line]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the review's timer firing while a press is under way deletes the review and "
-    "posts the expiry notice under the press, before the press has ended",
-)
 @pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
 async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_expire_once_it_ends(
     view_class, label, review, helper, verb
