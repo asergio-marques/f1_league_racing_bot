@@ -191,7 +191,6 @@ async def test_a_duplicate_name_is_refused():
     assert "already exists" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused creation is not yet recorded")
 async def test_a_refused_creation_is_recorded_as_a_refusal():
     """Nothing changed, so the log records the refusal and its reason, never a creation."""
     cog = _make_cog()
@@ -335,7 +334,6 @@ def _assert_removal_abandoned(line: str, ending: str) -> None:
     assert " ".join(text.strip() for text in detail) == _NOTHING_REMOVED, line
 
 
-@pytest.mark.xfail(strict=True, reason="#482: cancelling the removal is not recorded")
 async def test_cancelling_leaves_the_configuration_alone():
     """Admin (id 77) asked to remove the configuration "100%", which a season in setup is built
     on, and was asked to confirm. Admin presses Cancel. Nothing is removed, Admin is told it is
@@ -356,7 +354,6 @@ async def test_cancelling_leaves_the_configuration_alone():
     _assert_removal_abandoned(line, "cancelled by Admin (<@77>)")
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the removal's confirmation never lapses on record")
 async def test_a_removal_left_to_lapse_is_recorded():
     """Admin (id 77) asks to remove the configuration "100%", which a season in setup is
     built on, and is asked to confirm, then answers nothing until the question lapses. Nothing
@@ -435,7 +432,6 @@ async def test_both_routes_log_the_removal_identically():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the refused removal is not yet recorded")
 async def test_a_removal_that_finds_nothing_is_reported_not_raised():
     """The configuration can go between the existence check and the removal — another
     admin removing it in the meantime must not raise at this one, and the removal is

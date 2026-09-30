@@ -557,6 +557,21 @@ async def _run_xml_import(
     await _audit("SUCCESS" + "".join(f"\n{line}" for line in values))
 
 
+async def _take_down(posted: discord.Interaction | None) -> None:
+    """Take a lapsed confirmation's buttons down, through the interaction that posted it (#482).
+
+    Never through a message object's ``edit``: the confirmation is an ephemeral reply, which
+    only the interaction that sent it can edit. Left as it is where the interaction is not to
+    hand or Discord will not have it; the lapse is recorded either way.
+    """
+    if posted is None:
+        return
+    try:
+        await posted.edit_original_response(view=None)
+    except discord.HTTPException:
+        log.warning("could not take down a lapsed confirmation", exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # Confirmation — removing a points config a season in setup stands on
 # ---------------------------------------------------------------------------
@@ -572,36 +587,80 @@ class _ConfirmRemoveConfigView(LeagueView):
 
     The removal is irreversible either way, so the button is a danger button and says what
     it does rather than "Confirm".
+
+    Cancelling it and leaving it to lapse are each recorded (#482): the change was not made, and
+    the line says what stands and to run the command again. *posted* is the command's own
+    interaction, whose reply the buttons come down from at a lapse (`_take_down`); a view built
+    without it leaves them as they are.
     """
 
-    def __init__(self, cog: "ResultsCog", actor_id: int, config_name: str) -> None:
+    def __init__(
+        self,
+        cog: "ResultsCog",
+        actor_id: int,
+        config_name: str,
+        *,
+        posted: discord.Interaction | None = None,
+    ) -> None:
         super().__init__(timeout=120)
         self._cog = cog
         self._actor_id = actor_id
         self._config_name = config_name
+        self._posted = posted
+
+    @property
+    def _kept(self) -> str:
+        """What stands once the removal is not confirmed, and what to do next."""
+        return (
+            f"Nothing was removed; {self._config_name} is still attached. "
+            "Run /results config remove again to remove it."
+        )
+
+    def _what(self, interaction: discord.Interaction, button: discord.ui.Button) -> str:
+        return f"{describe(interaction, button)} of `/results config remove` of {self._config_name}"
+
+    async def on_timeout(self) -> None:
+        """Nobody answered: the buttons come down and the lapse is recorded."""
+        await _take_down(self._posted)
+        await record_abandoned(
+            self._cog.bot,
+            self._actor_id if self._posted is None else self._posted.user,
+            what="`/results config remove`",
+            lapsed=True,
+            detail=self._kept,
+        )
 
     @discord.ui.button(label="\u2705 Remove it anyway", style=discord.ButtonStyle.danger)
     async def confirm(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._actor_id:
-            await interaction.response.send_message("\u26d4 Not your action.", ephemeral=True)
+            await refuse(interaction, "\u26d4 Not your action.", what=self._what(interaction, button))
             return
         self.stop()
         await interaction.response.defer(ephemeral=True)
-        await self._cog._apply_config_remove(interaction, self._config_name)
+        await self._cog._apply_config_remove(
+            interaction, self._config_name, what=self._what(interaction, button)
+        )
 
     @discord.ui.button(label="\u274c Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if interaction.user.id != self._actor_id:
-            await interaction.response.send_message("\u26d4 Not your action.", ephemeral=True)
+            await refuse(interaction, "\u26d4 Not your action.", what=self._what(interaction, button))
             return
         self.stop()
         await interaction.response.send_message(
             f"Cancelled. **{self._config_name}** is untouched and still attached.",
             ephemeral=True,
+        )
+        await record_abandoned(
+            interaction.client,
+            interaction.user,
+            what="`/results config remove`",
+            lapsed=False,
+            detail=self._kept,
         )
 
 
@@ -776,13 +835,15 @@ class ResultsCog(commands.Cog):
         # name a league types is held to (#362).
         refusal = NAME.check("configuration name", name).refusal
         if refusal is not None:
-            await interaction.followup.send(f"\u274c {refusal}", ephemeral=True)
+            await refuse(interaction, f"\u274c {refusal}", what=describe(interaction))
             return
         try:
             await points_config_service.create_config(self.bot.db_path, name)
         except ConfigAlreadyExistsError:
-            await interaction.followup.send(
-                f"\u274c A config named **{name}** already exists on this server.", ephemeral=True
+            await refuse(
+                interaction,
+                f"\u274c A config named **{name}** already exists on this server.",
+                what=describe(interaction),
             )
             return
         await interaction.followup.send(
@@ -823,8 +884,8 @@ class ResultsCog(commands.Cog):
         if not await points_config_service.config_exists(
             self.bot.db_path, name
         ):
-            await interaction.followup.send(
-                f"\u274c Config **{name}** not found.", ephemeral=True
+            await refuse(
+                interaction, f"\u274c Config **{name}** not found.", what=describe(interaction)
             )
             return
 
@@ -832,7 +893,7 @@ class ResultsCog(commands.Cog):
             self.bot.db_path, name
         )
         if not standing:
-            await self._apply_config_remove(interaction, name)
+            await self._apply_config_remove(interaction, name, what=describe(interaction))
             return
 
         seasons = ", ".join(f"**Season #{number}**" for _, number in standing)
@@ -842,23 +903,25 @@ class ResultsCog(commands.Cog):
             f"session type, with no undo — and detaches it from that season, which will then "
             f"be refused for approval until another is attached.\n"
             f"Remove it anyway?",
-            view=_ConfirmRemoveConfigView(self, interaction.user.id, name),
+            view=_ConfirmRemoveConfigView(self, interaction.user.id, name, posted=interaction),
             ephemeral=True,
         )
 
     async def _apply_config_remove(
-        self, interaction: discord.Interaction, name: str
+        self, interaction: discord.Interaction, name: str, *, what: str
     ) -> None:
         """Remove the configuration and report it.
 
         Shared by the straight path and the confirmation button, so the two cannot come to
-        differ about what removing one does or about what the log records.
+        differ about what removing one does or about what the log records. *what* names the
+        command or the button that asked, for the refusal where the configuration has gone in
+        the meantime.
         """
         try:
             await points_config_service.remove_config(self.bot.db_path, name)
         except ConfigNotFoundError:
-            await interaction.followup.send(
-                f"\u274c Config **{name}** not found.", ephemeral=True
+            await refuse(
+                interaction, f"\u274c Config **{name}** not found.", what=describe(interaction)
             )
             return
         await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
@@ -896,7 +959,7 @@ class ResultsCog(commands.Cog):
                 points,
             )
         except ConfigNotFoundError:
-            await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
+            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
             return
         notice = _ordering_notice(
             name,
@@ -939,11 +1002,13 @@ class ResultsCog(commands.Cog):
                 self.bot.db_path, name, SessionType(session.value), points
             )
         except ConfigNotFoundError:
-            await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
+            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
             return
         except InvalidSessionTypeError:
-            await interaction.followup.send(
-                "\u274c Fastest-lap bonus cannot be set for qualifying sessions.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c Fastest-lap bonus cannot be set for qualifying sessions.",
+                what=describe(interaction),
             )
             return
         await interaction.followup.send(
@@ -979,11 +1044,13 @@ class ResultsCog(commands.Cog):
                 self.bot.db_path, name, SessionType(session.value), limit
             )
         except ConfigNotFoundError:
-            await interaction.followup.send(f"\u274c Config **{name}** not found.", ephemeral=True)
+            await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
             return
         except InvalidSessionTypeError:
-            await interaction.followup.send(
-                "\u274c Position limit cannot be set for qualifying sessions.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c Position limit cannot be set for qualifying sessions.",
+                what=describe(interaction),
             )
             return
         await interaction.followup.send(
@@ -1005,22 +1072,25 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_season_for_server()
         if season is None:
-            await interaction.followup.send("\u274c No season found for this server.", ephemeral=True)
+            await refuse(interaction, "\u274c No season found for this server.", what=describe(interaction))
             return
         try:
             await season_points_service.attach_config(
                 self.bot.db_path, season.id, name, season.status,
             )
         except SeasonNotInSetupError:
-            await interaction.followup.send(
-                "\u274c Config attachment is only allowed for seasons in SETUP.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c Config attachment is only allowed for seasons in SETUP.",
+                what=describe(interaction),
             )
             return
         except ConfigNotFoundError:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Config **{name}** does not exist on this server, so nothing was "
                 f"attached. Check the spelling, or create it with `/results config add`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
         await interaction.followup.send(
@@ -1040,15 +1110,17 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_season_for_server()
         if season is None:
-            await interaction.followup.send("\u274c No season found for this server.", ephemeral=True)
+            await refuse(interaction, "\u274c No season found for this server.", what=describe(interaction))
             return
         try:
             await season_points_service.detach_config(
                 self.bot.db_path, season.id, name, season.status
             )
         except SeasonNotInSetupError:
-            await interaction.followup.send(
-                "\u274c Config detachment is only allowed for seasons in SETUP.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c Config detachment is only allowed for seasons in SETUP.",
+                what=describe(interaction),
             )
             return
         except ConfigNotAttachedError:

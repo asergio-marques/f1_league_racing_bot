@@ -156,7 +156,6 @@ def _case(case_id, command, run, reply, *, season_status="SETUP"):
     return pytest.param(
         command, run, reply, season_status,
         id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
     )
 
 
@@ -233,7 +232,6 @@ async def test_every_config_refusal_is_recorded(tmp_path, command, run, reply, s
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("button", ["confirm", "cancel"])
 async def test_a_confirmation_pressed_by_another_admin_is_recorded(tmp_path, button):
     """Alex asked to remove 100% from a season in setup; another admin, Sam, presses one of

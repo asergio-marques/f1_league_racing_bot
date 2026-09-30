@@ -367,7 +367,6 @@ async def test_the_fastest_lap_commands_report_a_missing_configuration(caller, s
     assert "not found" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused fastest-lap edit is not yet recorded")
 @pytest.mark.parametrize(
     "caller,command", [(_fl, "fl"), (_plimit, "fl-plimit")], ids=["fl", "fl-plimit"]
 )
@@ -457,7 +456,6 @@ async def test_a_successful_attachment_is_logged():
     assert "config append" in cog.bot.output_router.post_log.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused attachment is not yet recorded")
 async def test_a_refused_attachment_is_recorded_as_a_refusal():
     """Nothing was attached, so the log records the refusal and its reason, never an
     attachment."""
