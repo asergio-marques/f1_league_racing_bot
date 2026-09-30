@@ -130,15 +130,22 @@ async def test_a_configuration_is_detached(tmp_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a refused detachment is not yet recorded")
 async def test_detaching_from_a_running_season_is_refused(tmp_path):
-    """Its points are snapshotted; `/results amend` is the route once it has started."""
+    """Its points are snapshotted; `/results amend` is the route once it has started. The
+    log records the refusal and its reason."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results config detach"
 
     await _detach(cog, interaction, error=SeasonNotInSetupError("active"))
 
     assert "only allowed for seasons in SETUP" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "⛔ `/results config detach` refused for Manager (<@77>) — "
+        "Config detachment is only allowed for seasons in SETUP."
+    )
 
 
 async def test_detaching_what_is_not_attached_is_an_answer(tmp_path):
@@ -198,17 +205,24 @@ async def test_the_modification_store_is_written(tmp_path, command, value, phras
     assert logged in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a refused amend is not yet recorded")
 @pytest.mark.parametrize("command", ["amend_fl", "amend_fl_plimit"])
 async def test_an_amend_outside_amendment_mode_is_refused(tmp_path, command):
     """Writing a store nothing will read would report a change that never reaches the
-    league."""
+    league. The log records the refusal and its reason."""
     cog = _make_cog()
     interaction = _interaction()
+
+    interaction.client = cog.bot
+    name = {"amend_fl": "results amend fl", "amend_fl_plimit": "results amend fl-plimit"}[command]
+    interaction.command.qualified_name = name
 
     await _fl(cog, interaction, command=command, error=AmendmentNotActiveError("off"))
 
     assert "Amendment mode is not active" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/{name}` refused for Manager (<@77>) — Amendment mode is not active."
+    )
 
 
 @pytest.mark.parametrize("command", ["amend_fl", "amend_fl_plimit"])
