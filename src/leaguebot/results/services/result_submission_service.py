@@ -4876,9 +4876,11 @@ class ResubmissionCancelView(LeagueView):
     async def cancel_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        from leaguebot.results.services.penalty_wizard import _require_lm
+        from leaguebot.results.services.penalty_wizard import _button, _require_lm
 
-        if not await _require_lm(interaction, self.state):
+        if not await _require_lm(
+            interaction, self.state, what=_button(button.label, self.state)
+        ):
             return
         self.cancelled_by = interaction.user.id
         self.pressed.set()
@@ -4961,6 +4963,8 @@ async def _return_to_review(
 async def enter_resubmit_flow(
     interaction: discord.Interaction,
     state,
+    *,
+    what: str | None = None,
 ) -> None:
     """Discard staged penalties and pardons and restart collection over the round's existing results.
 
@@ -4975,11 +4979,17 @@ async def enter_resubmit_flow(
     collector. Both would refuse if pressed regardless, as the review has moved on (#402).
 
     A submission channel that cannot be found refuses the resubmission before anything is
-    discarded: with nowhere to collect in, the review is all the round has.
+    discarded: with nowhere to collect in, the review is all the round has. The refusal is
+    recorded as *what* refused — the Resubmit button and its review, named by the button that
+    calls this. A call without one names the button from *state*, which only a test makes.
     """
     import asyncio
     import json as _json
-    from leaguebot.results.services.penalty_wizard import _delete_review_message, _take_down_approval
+    from leaguebot.results.services.penalty_wizard import (
+        _button,
+        _delete_review_message,
+        _take_down_approval,
+    )
 
     bot = state.bot
     db_path: str = bot.db_path
@@ -4989,9 +4999,10 @@ async def enter_resubmit_flow(
 
     sub_channel = bot.get_channel(state.submission_channel_id)
     if sub_channel is None:
-        await interaction.followup.send(
+        await refuse(
+            interaction,
             "❌ The submission channel could not be found, so the results cannot be resubmitted.",
-            ephemeral=True,
+            what=what or _button("🔄 Resubmit Initial Results", state),
         )
         return
 

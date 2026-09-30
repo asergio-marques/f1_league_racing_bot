@@ -128,6 +128,7 @@ def _state(
         bot=bot,
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
+        round_number=3,
         division_name="Division 1",
         submission_channel_id=SUBMISSION_CHANNEL_ID,
         staged=list(staged),
@@ -558,8 +559,6 @@ async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path
 # two refusals the resubmission itself makes.
 # ---------------------------------------------------------------------------
 
-_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
-
 
 def _pressing_interaction(*, deferred: bool):
     """A press by Alex (id 77), answering as Discord's does — done once it replies or defers —
@@ -587,7 +586,6 @@ def _pressing_interaction(*, deferred: bool):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 @pytest.mark.parametrize(
     "press, reply",
     [

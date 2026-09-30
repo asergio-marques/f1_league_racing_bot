@@ -824,11 +824,15 @@ async def test_cancel_refuses_somebody_without_the_tier(monkeypatch):
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
-    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
+    view = ResubmissionCancelView(
+        SimpleNamespace(db_path="", bot=bot, round_number=3, division_name="Division 1")
+    )
     interaction = MagicMock()
     interaction.user = MagicMock(spec=discord.Member)
     interaction.user.id = 5
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
 
     await type(view).cancel_btn(view, interaction, MagicMock())
 
@@ -844,7 +848,9 @@ async def test_cancel_pressed_by_a_league_manager_stops_the_resubmission(monkeyp
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
-    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
+    view = ResubmissionCancelView(
+        SimpleNamespace(db_path="", bot=bot, round_number=3, division_name="Division 1")
+    )
     interaction = MagicMock()
     interaction.user = MagicMock(spec=discord.Member)
     interaction.user.id = MANAGER

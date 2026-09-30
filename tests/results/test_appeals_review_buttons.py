@@ -567,7 +567,6 @@ _ENTRY_GONE = "⚠️ That entry no longer exists (the list may have changed)."
 _NOTHING_TO_APPROVE = (
     "⚠️ No corrections are staged. Use **No Changes / Confirm** to finalise without corrections."
 )
-_APPEALS_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
 _APPEALS_BUTTONS = ["➕ Add Correction", "No Changes / Confirm", "✅ Approve"]
 _APPEALS_CLEAR = "Yes, clear and proceed with no corrections"
 
@@ -577,7 +576,6 @@ def _appeals_refusal(case_id, kind, label, reply, *, restarted=False, manager=Tr
     return pytest.param(
         kind, label, reply, restarted, manager, staged, remaining,
         id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_APPEALS_NOT_YET_RECORDED),
     )
 
 

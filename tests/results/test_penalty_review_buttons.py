@@ -657,7 +657,6 @@ _WITHDRAWN = (
 _ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
 _NOTHING_STAGED = "⚠️ No penalties are staged."
 _APPROVAL_MESSAGE = 900
-_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
 
 #: The penalty review's buttons, by label, and the view each is on.
 _REVIEW_BUTTONS = [
@@ -719,7 +718,6 @@ def _refusal(case_id, kind, label, reply, *, setup=None, restarted=False, on_mes
     return pytest.param(
         kind, label, reply, setup, restarted, on_message, nothing_staged,
         id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED),
     )
 
 

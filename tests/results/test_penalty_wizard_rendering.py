@@ -98,7 +98,9 @@ def _interaction(*, member: bool = True):
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock(spec=discord.Member) if member else MagicMock()
     interaction.response = MagicMock()
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
     return interaction
 
 
@@ -163,7 +165,9 @@ async def test_a_refused_actor_is_told_why(monkeypatch):
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     interaction = _interaction()
 
-    assert await _require_lm(interaction, _state(_bot(MagicMock()))) is False
+    assert await _require_lm(
+        interaction, _state(_bot(MagicMock())), what="the button"
+    ) is False
     assert "Only league managers" in interaction.response.send_message.await_args.args[0]
 
 
@@ -173,7 +177,9 @@ async def test_a_permitted_actor_is_not_interrupted(monkeypatch):
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     interaction = _interaction()
 
-    assert await _require_lm(interaction, _state(_bot(MagicMock()))) is True
+    assert await _require_lm(
+        interaction, _state(_bot(MagicMock())), what="the button"
+    ) is True
     interaction.response.send_message.assert_not_awaited()
 
 
