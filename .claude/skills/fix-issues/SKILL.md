@@ -150,10 +150,12 @@ plan. That is a success, not a failure.
 stage, exactly as `fix-issue` Phase 3 does: the architecture, the design files and the specs, the
 product owner's questions to the user first, the checkers' assumptions listed in the plan and their
 follow-ups drafted beside it, never asked, and items 7 and 8 added to the plan from its result. A
-plan is re-checked once at most, as `fix-issue` says. A plan that proposes the light path skips the
-check and goes straight to Gate 1, as `fix-issue` Phase 3 describes. Where the user sends it down
-the light path, it is built by hand in its own worktree rather than through Stage 4; where they
-decline it, it is checked now and brought to Gate 1 again.
+plan is re-checked once at most, as `fix-issue` says. A plan that proposes the light path, for a
+mechanical change or one that only applies a decided rule, skips the check and goes straight to
+Gate 1, as `fix-issue` Phase 3 describes. Where the user sends it down the light path, it is built by
+hand in its own worktree rather than through Stage 4; where they decline it, it is checked now and
+brought to Gate 1 again. A plan split between the two paths is built as `fix-issue` says, its
+hand-built commit points named in `handBuilt`.
 Keep each check's result for the issue's build, and for its next check, saved to a file as
 `fix-issue`'s "What a stage returns" says: a batch's session reads every issue's results, so what it
 leaves out of the conversation it saves many times over. A check of an amended plan
@@ -220,13 +222,13 @@ the tests stage, Gate 2, the build stage and Gate 3, with the arguments listed t
 main checkout's `.venv/bin/python`; `criteria` and `checks` come from its Stage 2 check; and
 `testsHead` is as `fix-issue` names it. `models` and `efforts` are passed only to override a role's
 default, as `fix-issue` names them: by default Sonnet runs the build's builder, and the tester at low
-effort, and Opus runs every other role. Every stage's result is saved to
+effort, and Opus runs every other role, every role but the tester at high effort, and none above. Every stage's result is saved to
 `.claude/gates/<N>-<stage>.json` and read as `fix-issue` says, never pasted into the conversation.
 Its calls taken on a recommendation and its minor findings are shown once at the issue's next gate,
 and a stage that returns `capped` or `stalled` goes to the user as one question, all as `fix-issue`
 says. The issues' runs go on concurrently, one run per issue at a time. Tell the user each build
-takes about ten agents, and one more for each piece a builder hands off, and that the Pi runs two of
-a workflow's agents at once.
+takes about ten agents, one more for each piece a builder hands off, and one for each question
+settled mid-round, and that the Pi runs two of a workflow's agents at once.
 
 **Each issue's Gate 2 file is written to the main checkout's `.claude/gates/<N>-gate-2.md`,** never
 to the issue's worktree, so that every gate file stands in one place in the user's workspace, and a
