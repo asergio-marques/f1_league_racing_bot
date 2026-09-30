@@ -260,12 +260,14 @@ class AmendmentService:
 
         # The one success line of the amendment, written as soon as it is saved so that it
         # stands whatever fails in the steps after (the core specification's "The record of
-        # what changed"). Each field is named as `/round amend` names its parameter.
+        # what changed"). Each field is named as `/round amend` names its parameter, and a
+        # field given at the value it already held is no change and is not listed.
         _parameter_of = {"track_name": "track"}
         _changed = "".join(
             f"\n  {_parameter_of.get(f, f)}: {old_value if old_value is not None else 'none'}"
             f" \u2192 {db_value}"
             for f, old_value, db_value in applied
+            if old_value != db_value
         )
         await bot.output_router.post_log(
             f"{actor.display_name} (<@{actor.id}>) | /round amend | Success\n"
