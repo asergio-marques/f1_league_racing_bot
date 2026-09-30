@@ -32,9 +32,6 @@ from leaguebot.core.models.server_config import ServerConfig
 SERVER_ID = 4242
 USER_ID = "77"
 
-_NOT_RECORDED = "#482: the Sign Up button answers its refusal but writes no line in the log channel"
-
-
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
 
@@ -165,7 +162,6 @@ class TestTheRefusals:
     """Both messages were written, specified and unreachable — every press that should
     have produced one produced the crash instead."""
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
     @pytest.mark.parametrize("state", sorted(signup_cog.IN_PROGRESS_STATES, key=lambda s: s.value))
     async def test_a_driver_mid_signup_is_told_so(self, state):
         bot = _bot(_profile(state))
@@ -176,7 +172,6 @@ class TestTheRefusals:
         bot.wizard_service.start_wizard.assert_not_awaited()
         _assert_one_refusal_line(bot, "already have a signup in progress")
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
     @pytest.mark.parametrize("state", sorted(signup_cog.APPROVED_STATES, key=lambda s: s.value))
     async def test_an_approved_driver_is_told_so(self, state):
         bot = _bot(_profile(state))
@@ -187,7 +182,6 @@ class TestTheRefusals:
         bot.wizard_service.start_wizard.assert_not_awaited()
         _assert_one_refusal_line(bot, "already been approved")
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
     async def test_an_unconfigured_module_is_refused_and_recorded(self):
         """The wizard service finds no signup configuration and starts nothing. The member is
         told after the button has deferred, so by followup, and the refusal is recorded."""
@@ -243,7 +237,6 @@ class TestEveryState:
 class TestAPastAccount:
     """An account a driver has since moved on from signs nobody up."""
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
     async def test_a_past_account_is_refused_and_pointed_at_the_current_one(self):
         bot = _bot(None)
         bot.driver_service.current_account = AsyncMock(return_value="777")

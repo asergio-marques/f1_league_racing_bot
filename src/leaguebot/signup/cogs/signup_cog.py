@@ -181,6 +181,10 @@ APPROVED_STATES = {
 }
 
 
+#: How the log channel names the Sign Up button in a refusal it records.
+_SIGN_UP_BUTTON = "the “Sign Up” button"
+
+
 class SignupButtonView(LeagueView):
     """Persistent signup button view (T016).
 
@@ -209,10 +213,11 @@ class SignupButtonView(LeagueView):
         # league may not share one, and leaving test mode deletes every fake driver.
         server_cfg = await bot.config_service.get_server_config()
         if server_cfg is not None and server_cfg.test_mode_active:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "⛔ Signups are closed while this server is in test mode. "
                 "Ask an admin to turn it off.",
-                ephemeral=True,
+                what=_SIGN_UP_BUTTON,
             )
             return
 
@@ -221,20 +226,22 @@ class SignupButtonView(LeagueView):
         # already, so it may not start a profile of its own either.
         current = await bot.driver_service.current_account(discord_user_id)
         if current != discord_user_id:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"⛔ This account is a past account of a driver in this league. Sign up from "
                 f"<@{current}>, or ask a league manager to make this account the current one.",
-                ephemeral=True,
+                what=_SIGN_UP_BUTTON,
             )
             return
 
         profile = await bot.driver_service.get_profile(discord_user_id)
         if profile is not None and profile.current_state != DriverState.NOT_SIGNED_UP:
             if profile.current_state in IN_PROGRESS_STATES:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     "⛔ You already have a signup in progress — "
                     "check your private wizard channel.",
-                    ephemeral=True,
+                    what=_SIGN_UP_BUTTON,
                 )
             else:
                 # Every remaining state is an approved one: the two sets above cover all
@@ -242,18 +249,21 @@ class SignupButtonView(LeagueView):
                 # belonging to neither straight through into the wizard, signing somebody
                 # up who should have been refused — so the approved arm takes what is left
                 # and a new state gets a wrong message rather than a wrong signup.
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     "⛔ Your signup has already been approved. "
                     "You cannot sign up again.",
-                    ephemeral=True,
+                    what=_SIGN_UP_BUTTON,
                 )
             return
 
         await interaction.response.defer(ephemeral=True)
         channel = await bot.wizard_service.start_wizard(interaction)
         if channel is None:
-            await interaction.followup.send(
-                "❌ Signup module is not configured. Contact an admin.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ Signup module is not configured. Contact an admin.",
+                what=_SIGN_UP_BUTTON,
             )
             return
         await interaction.followup.send(

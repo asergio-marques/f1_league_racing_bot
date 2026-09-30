@@ -18,9 +18,6 @@ from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
 
-_NOT_RECORDED = "#482: the Sign Up button answers its refusal but writes no line in the log channel"
-
-
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
 
@@ -105,7 +102,6 @@ async def _open(bot) -> _Interaction:
 
 
 class TestTheSignUpButton:
-    @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
     async def test_it_is_refused_under_test_mode(self):
         bot = _bot(test_mode=True)
 
