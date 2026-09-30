@@ -619,12 +619,13 @@ const designFiles = new Set(previous && previous.designFiles ? previous.designFi
 // The owner's rulings, in `rulings` as {<finding id>: "fix" or "leave"}. On a dispute: one left as
 // built is closed, and any other goes back to the builder, which follows the ruling. On a minor
 // finding: one the owner wants made becomes material, so that its checker must confirm it like
-// any other, and one left is closed.
+// any other, and one left is closed. On an open material finding: one left as built is closed, as
+// the owner may rule where its only remedy is a test change they refused (#483).
 const rulings = ARGS.rulings || {}
 const badRulings = Object.entries(rulings).filter(([, v]) => v !== 'fix' && v !== 'leave')
 if (badRulings.length) throw new Error(`A ruling is "fix" or "leave", not: ${badRulings.map(([id, v]) => `${id}: ${JSON.stringify(v)}`).join(', ')}`)
 const unknownRulings = Object.keys(rulings).filter(id => !ledger.has(id))
-if (unknownRulings.length) throw new Error(`rulings name findings previous does not hold: ${unknownRulings.join(', ')}. rulings carries the last result's disputes and minor findings only.`)
+if (unknownRulings.length) throw new Error(`rulings name findings previous does not hold: ${unknownRulings.join(', ')}. rulings carries the last result's findings only.`)
 const unruled = [...ledger.values()].filter(f => f.status === 'upheld' && !rulings[f.id]).map(f => f.id)
 if (unruled.length) throw new Error(`previous holds disputes the owner has not ruled on: ${unruled.join(', ')}. Pass each in rulings as "fix" or "leave".`)
 for (const f of ledger.values()) {
@@ -636,6 +637,11 @@ for (const f of ledger.values()) {
   } else if (f.ownerWants ? ['open', 'fixed', 'disputed'].includes(f.status) : (!f.material && f.status === 'open')) {
     if (ruling === 'fix') { f.material = true; f.ownerWants = true }
     else { f.status = 'closed'; f.ownerLeft = true }
+  } else if (ruling === 'leave' && f.material && ['open', 'fixed', 'disputed'].includes(f.status)) {
+    // An open material finding the owner leaves as built is closed: one whose only remedy is a test
+    // change the owner refused had nowhere else to go, and held a green stage to its round budget.
+    f.status = 'closed'
+    f.ownerLeft = true
   }
 }
 
