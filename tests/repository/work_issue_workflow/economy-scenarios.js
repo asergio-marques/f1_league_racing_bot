@@ -1,6 +1,8 @@
-// What the workflow sends its agents, cut to what each needs (#483): text the plan already holds is
-// not sent a second time, and the product owner is asked for its summary up front.
-const { builder, review, suite, testsCheck, base } = require('./stubs')
+// Fewer agents, fewer stops and less re-read text (#483): text the plan already holds is not sent a
+// second time; commit points built by hand are named to the builder and the reviewers; the tester
+// gives each failure in one line; an idle design verifier is left out; the product owner is asked
+// for its summary up front; and the build adjusts a stub the plan's change breaks rather than stop.
+const { builder, review, suite, testsCheck, base, changes } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
 const lanesClean = label => {
   if (label.endsWith(':tester')) return suite()
@@ -113,3 +115,27 @@ const upFront = stage => ({
 })
 module.exports.summaryDemandedUpFrontInTests = upFront('tests')
 module.exports.summaryDemandedUpFrontInBuild = upFront('build')
+
+// After the owner approved the tests, the build may adjust a stub, fixture or exact-call assertion
+// the plan's own change breaks, listing it for the code reviewer to judge and the owner to see at
+// acceptance; any other test change is still sent back (#483).
+const STUB = 'tests/x/conftest.py::season_stub'
+const stubRun = (listed, o = {}) => ({
+  args: { ...B, testsHead: 't0', maxRounds: 1 },
+  respond(label, prompt) {
+    if (label.endsWith(':builder')) {
+      if (!prompt.includes('adjusted[]') || !prompt.includes('but four things')) throw new Error('the builder was not told it may adjust a broken stub')
+      return builder({ tests: [], adjusted: listed ? [{ target: STUB, why: 'the plan adds season_number to Season' }] : [] })
+    }
+    if (label.endsWith(':tester')) return suite({ changes: changes([], [['tests/x/conftest.py', 'season_stub', 'modified']], [], 'h1') })
+    if (label.endsWith(':code') && listed && !(prompt.includes(STUB) && prompt.includes('asserts less about behaviour'))) throw new Error('the code reviewer was not given the adjustment to judge')
+    return lanesClean(label)
+  },
+  ...o,
+})
+module.exports.buildAdjustsBrokenStub = stubRun(true, {
+  expect: r => r.status === 'passed' && r.adjusted.length === 1 && r.adjusted[0].target === STUB,
+})
+module.exports.unlistedTestChangeStillFlagged = stubRun(false, {
+  expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${STUB} is modified since the tests the owner approved`)),
+})

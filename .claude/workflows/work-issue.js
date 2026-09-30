@@ -557,6 +557,8 @@ const compactList = (tests, support) => ({ tests: (tests || []).map(t => compact
 // returned nothing is dropped, and is given the whole list again.
 const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, compactList(seen.tests, seen.support)]))
 const separateDefects = previous ? [...previous.separateDefects] : []
+// The tests the build adjusted after Gate 2 because the plan's change broke them, for Gate 3.
+const adjusted = previous && previous.adjusted ? [...previous.adjusted] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 // The reversible calls taken on a checker's recommendation rather than asked (stopsTheStage): they
 // bind the builder until the owner overrules them at the gate, and no checker asks them again.
@@ -686,7 +688,7 @@ The workflow keeps the list of every test this work adds, changes, deletes or mo
 Re-describe a listed entry only where its test has changed in meaning or the owner has asked for it, since the owner compares the list with the one they last saw. A label the owner's decisions use names the entry that carries it there, and each such entry is given to you in full.
 Each entry in support[] gives the file and the name as the command prints them, the change, what it now does, and in affects the node ids of the tests that use it.`
 
-const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but three things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; and the imports and patched paths that a move of the plan's rewrites, the names they bind or patch unchanged. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
+const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but four things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; the imports and patched paths that a move of the plan's rewrites, the names they bind or patch unchanged; and a stub, fake, fixture or exact-call assertion that the plan's own change to production code breaks, such as a call whose signature the plan changes, adjusted to the new shape and no further, so that it asserts no less about behaviour than it did. List each such adjustment in adjusted[], by the node id or the file::name that ${CHANGED_TESTS(testsHead)} gives it, with why the plan's change breaks it: the code reviewer judges each, and the owner sees each at acceptance. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
 
 // ---- the round loop's schemas ---------------------------------------------------------------
 
@@ -752,6 +754,11 @@ const BUILDER_SCHEMA = {
         },
       },
       description: 'the build: every test change it needs and has not made, for the owner; the tests stage: empty',
+    },
+    adjusted: {
+      type: 'array',
+      items: { type: 'object', required: ['target', 'why'], properties: { target: { type: 'string', description: 'the node id, or file::name, as tools/changed_tests.py gives it' }, why: { type: 'string', description: 'what in the plan\'s change breaks it, and what the adjustment changes' } } },
+      description: 'the build: each stub, fake, fixture or exact-call assertion the plan\'s change broke, adjusted to the new shape after the owner approved the tests; the tests stage: empty',
     },
     fixed: {
       type: 'array',
@@ -1074,7 +1081,7 @@ Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (a deleted test is not among them)', tests)}`
 
-const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('code')}`
+const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${section('Tests the build adjusted after the owner approved them, because the plan\'s change broke them: judge each, and report a material finding where one goes beyond the new shape or asserts less about behaviour than it did', adjusted)}${priorSection('code')}`
 
 const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed(k, 'design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('design')}`
 
@@ -1376,16 +1383,20 @@ const compactTest = (t, problems) => !t ? t : {
 // The host, not the code: what the tester reports as such, and a lock flock gave up on.
 const hostProblem = t => t ? (t.environmentProblem || (t.exitCode === 75 || t.lockTimedOut ? 'flock gave up waiting an hour for the test lock' : '')) : ''
 
-// What the build changed under tests/ after the owner approved the tests, but the three things it
-// may: markers removed, ratchet lines and imports, which the tool does not report.
+// What the build changed under tests/ after the owner approved the tests, but the four things it
+// may: markers removed, ratchet lines and imports, which the tool does not report, and the stubs and
+// fixtures the plan's own change broke, which the builder lists in adjusted[]. Stopping for the
+// owner and running the tests stage again for each of those cost most of the build's stops in #482
+// slice 3; the owner ruled that the build makes them and shows them at acceptance (#483).
 const unapprovedTestChanges = t => {
   if (!testsHead || !t) return []
   if (t.changesError) return [`tools/changed_tests.py could not list what the build changed under tests/: ${t.changesError}`]
   if (!filled(t.changes.head)) return ['the tester did not show that it ran tools/changed_tests.py: changes carries no head']
-  const since = `since the tests the owner approved at ${testsHead}: revert it, and propose it in testChanges[] if the build needs it`
+  const since = `since the tests the owner approved at ${testsHead}: revert it, and propose it in testChanges[] if the build needs it, or list it in adjusted[] where the plan's change broke it`
+  const listed = new Set(adjusted.map(a => bareId(a.target)))
   return [
-    ...t.changes.tests.map(x => `${x.nodeid} is ${x.change} ${since}`),
-    ...t.changes.support.filter(x => !isRatchet(x)).map(x => `${supportKey(x)} is ${x.change} ${since}`),
+    ...t.changes.tests.filter(x => !listed.has(bareId(x.nodeid))).map(x => `${x.nodeid} is ${x.change} ${since}`),
+    ...t.changes.support.filter(x => !isRatchet(x) && !listed.has(supportKey(x))).map(x => `${supportKey(x)} is ${x.change} ${since}`),
   ]
 }
 
@@ -1461,6 +1472,7 @@ const mergePieces = parts => {
     disputed: all('disputed'),
     questions: all('questions'),
     testChanges: all('testChanges'),
+    adjusted: all('adjusted'),
     separateDefects: all('separateDefects'),
     notes: all('notes'),
     tests: stage === 'tests' ? written : all('tests'),
@@ -1538,6 +1550,7 @@ const buildRound = async k => {
 // What the round's builder changed, taken into the list and the ledger. A claim counts only on a
 // finding the builder still owes: a settled or minor one stays as it is.
 const takeIn = built => {
+  for (const a of built.adjusted || []) if (!adjusted.some(x => x.target === a.target)) adjusted.push({ ...a })
   if (stage === 'tests') ({ tests: written, support: supportWritten } = labelled(built.tests, built.support || []))
   else written = [...written, ...built.tests]
   for (const x of built.fixed) { const f = ledger.get(x.id); if (f && materialOpen(f)) { f.status = 'fixed'; f.fixedIn = x.commit; f.notFixedBecause = '' } }
@@ -1743,6 +1756,7 @@ return {
   separateDefects,
   commits,
   handBuilt: HAND_BUILT,
+  adjusted,
   ledger: [...ledger.values()],
   designFiles: [...designFiles].sort(),
   reviewedAt,
