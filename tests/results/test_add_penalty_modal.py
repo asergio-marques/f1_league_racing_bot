@@ -698,14 +698,10 @@ async def test_a_signed_id_or_a_role_is_not_a_driver(tmp_path, typed):
 # one line naming the member, what was refused and why. A form names itself by its title.
 # ---------------------------------------------------------------------------
 
-_FORM_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
-
-
 def _form_refusal(case_id, appeals, **typed):
     return pytest.param(
         appeals, typed,
         id=f"{'correction' if appeals else 'penalty'}-{case_id}",
-        marks=pytest.mark.xfail(strict=True, reason=_FORM_NOT_YET_RECORDED),
     )
 
 

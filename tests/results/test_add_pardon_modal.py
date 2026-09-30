@@ -209,9 +209,6 @@ def _logged(state) -> list[str]:
     return [str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list]
 
 
-_FORM_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
-
-
 def _existing(pardon_type: str = "NO_RSVP") -> StagedPardon:
     return StagedPardon(
         driver_user_id=DRIVER_USER_ID,
@@ -582,7 +579,6 @@ async def test_the_same_pardon_for_another_driver_is_allowed(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_FORM_NOT_YET_RECORDED)
 @pytest.mark.parametrize("typed", ["<@&987654321098765432> agreed", "@everyone agreed"])
 async def test_a_group_mention_in_the_justification_is_refused(tmp_path, typed):
     """Refused as a penalty's texts are. The log channel it goes to notifies nobody, so this
@@ -609,7 +605,6 @@ async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
     assert len(state.staged_pardons) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_FORM_NOT_YET_RECORDED)
 async def test_an_emoji_in_the_justification_is_refused(tmp_path):
     """One rule for every text a steward types, though this one is only ever logged. Nothing is
     staged and the one line written is the refusal's (#482)."""
@@ -646,7 +641,6 @@ def _pardon_refusal(case_id, *, db=None, staged=False, **typed):
     return pytest.param(
         db or {}, staged, typed,
         id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_FORM_NOT_YET_RECORDED),
     )
 
 

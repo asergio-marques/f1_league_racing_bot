@@ -23,6 +23,7 @@ from leaguebot.core.services.driver_service import accounts_of_in_division, curr
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
+from leaguebot.core.utils.interaction_errors import describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import refuse
@@ -644,7 +645,9 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         if not self.use_appeals_staging:
             refusal = await _review_moved_on(self.state)
             if refusal is not None:
-                await interaction.followup.send(refusal, ephemeral=True)
+                await refuse(
+                    interaction, refusal, what=describe_form(self)
+                )
                 return
 
         # Both texts are published in the verdict, so neither may mention a group or carry an
@@ -655,16 +658,17 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         ):
             refusal = STEWARD_TEXT.check(label, text_input.value).refusal
             if refusal is not None:
-                await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
+                await refuse(
+                    interaction, f"❌ {refusal}", what=describe_form(self)
+                )
                 return
 
         # Resolve driver user ID from @mention or raw integer
         raw = self.driver_input.value.strip()
         driver_user_id = parse_user(raw)
         if driver_user_id is None:
-            await interaction.followup.send(
-                "❌ Could not parse driver. Use a @mention or a Discord user ID.",
-                ephemeral=True,
+            await refuse(
+                interaction, "❌ Could not parse driver. Use a @mention or a Discord user ID.", what=describe_form(self)
             )
             return
 
@@ -729,9 +733,8 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
 
         if not driver_found:
             sl = self.session_type.value.replace("_", " ").title()
-            await interaction.followup.send(
-                f"❌ <@{shown_user_id}> was not found in the **{sl}** results.",
-                ephemeral=True,
+            await refuse(
+                interaction, f"❌ <@{shown_user_id}> was not found in the **{sl}** results.", what=describe_form(self)
             )
             return
 
@@ -762,7 +765,9 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
             current_time_penalty_s=current_time_penalty_s,
         )
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(
+                interaction, f"❌ {result}", what=describe_form(self)
+            )
             return
 
         # Stage the penalty (with description and justification) and refresh.
@@ -823,15 +828,17 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         # --- The review may have moved on while the form was open (FR-011, #402) ---
         refusal = await _review_moved_on(self.state)
         if refusal is not None:
-            await interaction.followup.send(refusal, ephemeral=True)
+            await refuse(
+                interaction, refusal, what=describe_form(self)
+            )
             return
 
         # --- Parse driver user ID ---
         raw_id = self.driver_id_input.value.strip()
         parsed_id = parse_user_id(raw_id)
         if parsed_id is None:
-            await interaction.followup.send(
-                "❌ Invalid Discord User ID — must be a numeric ID.", ephemeral=True
+            await refuse(
+                interaction, "❌ Invalid Discord User ID — must be a numeric ID.", what=describe_form(self)
             )
             return
         driver_user_id = parsed_id
@@ -839,9 +846,8 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         # --- Validate pardon type ---
         pardon_type = self.pardon_type_input.value.strip().upper()
         if pardon_type not in _VALID_PARDON_TYPES:
-            await interaction.followup.send(
-                f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, ABSENT, NO_SHOW.",
-                ephemeral=True,
+            await refuse(
+                interaction, f"❌ Invalid pardon type `{pardon_type}`. Must be one of: NO_RSVP, ABSENT, NO_SHOW.", what=describe_form(self)
             )
             return
 
@@ -850,7 +856,9 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         # draws nothing; this keeps one rule for every text a steward types.
         refusal = STEWARD_TEXT.check("justification", justification).refusal
         if refusal is not None:
-            await interaction.followup.send(f"❌ {refusal}", ephemeral=True)
+            await refuse(
+                interaction, f"❌ {refusal}", what=describe_form(self)
+            )
             return
 
         from leaguebot.core.db.database import get_connection
@@ -860,9 +868,8 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             # --- Resolve driver profile ID ---
             profile_id = await resolve_driver_profile_id(driver_user_id, db)
             if profile_id is None:
-                await interaction.followup.send(
-                    f"❌ No driver profile found for user ID `{driver_user_id}` in this server.",
-                    ephemeral=True,
+                await refuse(
+                    interaction, f"❌ No driver profile found for user ID `{driver_user_id}` in this server.", what=describe_form(self)
                 )
                 return
             # Any account the driver has held names them; the pardon is staged, and every
@@ -908,10 +915,9 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             attended_in_results = (await cursor.fetchone()) is not None
 
         if dra_row is None:
-            await interaction.followup.send(
-                f"❌ No attendance row found for <@{driver_user_id}> in this round. "
-                "Ensure results have been submitted first.",
-                ephemeral=True,
+            await refuse(
+                interaction, f"❌ No attendance row found for <@{driver_user_id}> in this round. "
+                "Ensure results have been submitted first.", what=describe_form(self)
             )
             return
 
@@ -920,38 +926,33 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 
         # --- Validate pardon type against driver state (FR-007) ---
         if pardon_type == "NO_RSVP" and rsvp_status != "NO_RSVP":
-            await interaction.followup.send(
-                f"❌ NO_RSVP pardon rejected: <@{driver_user_id}> has RSVP status "
-                f"`{rsvp_status}` — they did RSVP, so NO_RSVP pardon is not applicable.",
-                ephemeral=True,
+            await refuse(
+                interaction, f"❌ NO_RSVP pardon rejected: <@{driver_user_id}> has RSVP status "
+                f"`{rsvp_status}` — they did RSVP, so NO_RSVP pardon is not applicable.", what=describe_form(self)
             )
             return
         if pardon_type == "ABSENT":
             if rsvp_status not in {"NO_RSVP", "TENTATIVE", "DECLINED"}:
-                await interaction.followup.send(
-                    f"❌ ABSENT pardon rejected: <@{driver_user_id}> has RSVP status "
-                    f"`{rsvp_status}` — ABSENT requires NO_RSVP, TENTATIVE, or DECLINED status.",
-                    ephemeral=True,
+                await refuse(
+                    interaction, f"❌ ABSENT pardon rejected: <@{driver_user_id}> has RSVP status "
+                    f"`{rsvp_status}` — ABSENT requires NO_RSVP, TENTATIVE, or DECLINED status.", what=describe_form(self)
                 )
                 return
             if attended_in_results:
-                await interaction.followup.send(
-                    f"❌ ABSENT pardon rejected: <@{driver_user_id}> is present in session results.",
-                    ephemeral=True,
+                await refuse(
+                    interaction, f"❌ ABSENT pardon rejected: <@{driver_user_id}> is present in session results.", what=describe_form(self)
                 )
                 return
         if pardon_type == "NO_SHOW":
             if rsvp_status != "ACCEPTED":
-                await interaction.followup.send(
-                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> has RSVP status "
-                    f"`{rsvp_status}` — NO_SHOW requires ACCEPTED status.",
-                    ephemeral=True,
+                await refuse(
+                    interaction, f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> has RSVP status "
+                    f"`{rsvp_status}` — NO_SHOW requires ACCEPTED status.", what=describe_form(self)
                 )
                 return
             if attended_in_results:
-                await interaction.followup.send(
-                    f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> is present in session results.",
-                    ephemeral=True,
+                await refuse(
+                    interaction, f"❌ NO_SHOW pardon rejected: <@{driver_user_id}> is present in session results.", what=describe_form(self)
                 )
                 return
 
@@ -961,9 +962,8 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             for p in self.state.staged_pardons
         )
         if duplicate:
-            await interaction.followup.send(
-                f"❌ A `{pardon_type}` pardon for <@{driver_user_id}> is already staged.",
-                ephemeral=True,
+            await refuse(
+                interaction, f"❌ A `{pardon_type}` pardon for <@{driver_user_id}> is already staged.", what=describe_form(self)
             )
             return
 
