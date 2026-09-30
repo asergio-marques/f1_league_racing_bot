@@ -991,9 +991,7 @@ class ResultsCog(commands.Cog):
         try:
             await points_config_service.remove_config(self.bot.db_path, name)
         except ConfigNotFoundError:
-            await refuse(
-                interaction, f"\u274c Config **{name}** not found.", what=describe(interaction)
-            )
+            await refuse(interaction, f"\u274c Config **{name}** not found.", what=what)
             return
         await interaction.followup.send(f"\u2705 Config **{name}** removed.", ephemeral=True)
         await self.bot.output_router.post_log(
