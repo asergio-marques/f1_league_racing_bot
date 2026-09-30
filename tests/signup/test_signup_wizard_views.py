@@ -45,6 +45,13 @@ OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
 _NOT_RECORDED = "#482: the wizard's button refusal is answered but writes no line in the log channel"
+_STEP_REFUSAL_IGNORED = (
+    "#482: the view ignores the reason a step handler gives for turning a press away, so the "
+    "driver is not told and nothing is recorded"
+)
+
+#: The reason a step handler gives for a press on a step already answered (commit point 19).
+_ALREADY_ANSWERED = "That step has already been answered."
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +70,7 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
     wizard_service.handle_driver_type_button = AsyncMock(return_value=None)
     wizard_service.handle_preferred_teams_button = AsyncMock(return_value=None)
     wizard_service.handle_no_preference_teammate = AsyncMock(return_value=None)
+    wizard_service.handle_no_notes = AsyncMock(return_value=None)
     wizard_service.withdraw = AsyncMock(return_value=None)
     wizard_service.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
@@ -481,3 +489,61 @@ async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_a
     interaction.client.wizard_service.withdraw.assert_not_awaited()
     interaction.client.wizard_service.handle_no_notes.assert_not_awaited()
     _assert_refusal_recorded(interaction, label)
+
+
+# ---------------------------------------------------------------------------
+# A step already answered
+# ---------------------------------------------------------------------------
+
+
+async def _press_step(view_name: str, button: str, interaction) -> None:
+    from leaguebot.signup.cogs import signup_cog
+
+    if view_name == "PreferredTeamsButtonView":
+        view = signup_cog.PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Ferrari"])
+        await getattr(view, button)(interaction)
+        return
+    view = getattr(signup_cog, view_name)(DRIVER_ID, MagicMock())
+    await getattr(type(view), button)(view, interaction, MagicMock())
+
+
+@pytest.mark.xfail(strict=True, reason=_STEP_REFUSAL_IGNORED)
+@pytest.mark.parametrize(
+    "view_name, button, handler, label",
+    [
+        ("PlatformButtonView", "steam", "handle_platform_button", "Steam"),
+        ("DriverTypeButtonView", "full_time", "handle_driver_type_button", "Full-Time Driver"),
+        ("PreferredTeamsButtonView", "_no_preference_callback", "handle_preferred_teams_button",
+         "No Preference"),
+        ("NoPreferenceTeammateView", "no_preference", "handle_no_preference_teammate",
+         "No Preference"),
+        ("NoNotesButtonView", "no_notes_button", "handle_no_notes", "No Notes"),
+    ],
+)
+async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
+    view_name, button, handler, label
+):
+    """The driver scrolls up and presses a button from a step they have already answered. The
+    step handler changes nothing and says why; the view tells the driver so, seen by them alone,
+    and records the refusal: one line naming the button, the driver's wizard it sits on, the
+    driver, and the reason. Until now the press was answered with nothing at all."""
+    interaction = _interaction()
+    setattr(interaction.client.wizard_service, handler, AsyncMock(return_value=_ALREADY_ANSWERED))
+
+    await _press_step(view_name, button, interaction)
+
+    getattr(interaction.client.wizard_service, handler).assert_awaited_once()
+    replies = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    ]
+    assert any(_ALREADY_ANSWERED in reply for reply in replies), replies
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith(f"⛔ the “{label}” button"), line
+    assert "signup wizard" in line
+    assert "refused for Driver (<@7>)" in line
+    assert _ALREADY_ANSWERED in line

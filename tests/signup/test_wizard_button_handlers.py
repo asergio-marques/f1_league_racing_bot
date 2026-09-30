@@ -37,6 +37,14 @@ SERVER_ID = 1
 DRIVER_ID = "7"
 CHANNEL_ID = 99
 
+_SILENT = (
+    "#482: a button on a step already answered is turned away in silence, returning no reason "
+    "for the view to answer and record"
+)
+
+#: The reply a press on a step already answered gets (the plan, commit point 19).
+_ALREADY_ANSWERED = "That step has already been answered."
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -86,13 +94,24 @@ def service():
     guild = MagicMock(spec=discord.Guild)
     guild.get_channel = MagicMock(return_value=channel)
 
+    member = MagicMock()
+    member.id = int(DRIVER_ID)
+    member.display_name = "Alex"
+    guild.get_member = MagicMock(return_value=member)
+
     signup_svc = MagicMock()
     signup_svc.save_wizard = AsyncMock(return_value=None)
+
+    router = MagicMock()
+    router.post_log = AsyncMock(return_value=None)
 
     bot = MagicMock()
     bot.signup_module_service = signup_svc
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.get_guild = MagicMock(return_value=guild)
+    bot.output_router = router
     svc._bot = bot
+    svc._output_router = router
 
     return SimpleNamespace(
         svc=svc,
@@ -100,12 +119,18 @@ def service():
         channel=channel,
         guild=guild,
         signup_svc=signup_svc,
+        router=router,
     )
 
 
 def _serve(ctx, wizard) -> None:
     """Make `get_wizard` answer with *wizard*."""
     ctx.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+
+
+def _lines(ctx) -> list[str]:
+    """Every line the press wrote in the log channel."""
+    return [str(call.args[0]) for call in ctx.router.post_log.await_args_list]
 
 
 # ---------------------------------------------------------------------------
@@ -125,40 +150,49 @@ async def test_a_platform_button_records_the_platform_and_advances(service):
     assert service.advanced == [wizard]
 
 
+@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_platform_button_pressed_on_a_later_step_does_nothing(service):
     """The step-2 buttons are still in the channel when the driver reaches step 5.
-    Pressing one must not overwrite an answer and shunt the wizard backwards."""
+    Pressing one must not overwrite an answer and shunt the wizard backwards, and the handler
+    says why, for the view to answer and record."""
     from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_DRIVER_TYPE)
     _serve(service, wizard)
 
-    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
+    reason = await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert "platform" not in wizard.draft_answers
     assert service.advanced == []
+    assert _ALREADY_ANSWERED in (reason or "")
 
 
+@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_button_from_a_driver_with_no_wizard_does_nothing(service):
     """The wizard channel is deleted when a signup completes, but a button could still be
-    pressed from a cached view before the delete lands."""
+    pressed from a cached view before the delete lands. The handler says why it did nothing
+    rather than leaving the press unanswered."""
     _serve(service, None)
 
-    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
+    reason = await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert service.advanced == []
+    assert isinstance(reason, str) and reason
 
 
+@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_button_whose_channel_is_gone_does_not_advance(service):
+    """The handler says why it did nothing rather than leaving the press unanswered."""
     from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PLATFORM)
     _serve(service, wizard)
     service.guild.get_channel = MagicMock(return_value=None)
 
-    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
+    reason = await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
 
     assert service.advanced == []
+    assert isinstance(reason, str) and reason
 
 
 # ---------------------------------------------------------------------------
@@ -180,18 +214,20 @@ async def test_a_driver_type_button_records_the_type_and_advances(service):
     assert service.advanced == [wizard]
 
 
+@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_driver_type_button_pressed_on_a_later_step_does_nothing(service):
     from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS)
     _serve(service, wizard)
 
-    await service.svc.handle_driver_type_button(
+    reason = await service.svc.handle_driver_type_button(
         DRIVER_ID, "Reserve Driver", service.guild
     )
 
     assert "driver_type" not in wizard.draft_answers
     assert service.advanced == []
+    assert _ALREADY_ANSWERED in (reason or "")
 
 
 # ---------------------------------------------------------------------------
@@ -359,18 +395,20 @@ async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(service
     assert wizard.last_activity_at is not None
 
 
+@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_team_button_pressed_on_a_later_step_does_nothing(service):
     from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NOTES)
     _serve(service, wizard)
 
-    await service.svc.handle_preferred_teams_button(
+    reason = await service.svc.handle_preferred_teams_button(
         DRIVER_ID, "Alpha", service.guild
     )
 
     assert "preferred_teams" not in wizard.draft_answers
     assert service.advanced == []
+    assert _ALREADY_ANSWERED in (reason or "")
 
 
 # ---------------------------------------------------------------------------
@@ -390,13 +428,37 @@ async def test_no_preference_for_a_teammate_records_none_and_advances(service):
     assert service.advanced == [wizard]
 
 
+@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_the_teammate_button_pressed_on_a_later_step_does_nothing(service):
     from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard(WizardState.COLLECTING_NOTES)
     _serve(service, wizard)
 
-    await service.svc.handle_no_preference_teammate(DRIVER_ID, service.guild)
+    reason = await service.svc.handle_no_preference_teammate(DRIVER_ID, service.guild)
 
     assert "preferred_teammate" not in wizard.draft_answers
     assert service.advanced == []
+    assert _ALREADY_ANSWERED in (reason or "")
+
+
+# ---------------------------------------------------------------------------
+# Notes
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=_SILENT)
+async def test_no_notes_pressed_after_the_signup_was_submitted_does_nothing(service):
+    """A driver whose signup has gone to review presses the No Notes left in the channel. It
+    must not submit the signup a second time, and the handler says why."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    wizard = _wizard(WizardState.UNENGAGED)
+    _serve(service, wizard)
+    service.svc.commit_wizard = AsyncMock(return_value=None)  # type: ignore[method-assign]
+
+    reason = await service.svc.handle_no_notes(DRIVER_ID, service.guild)
+
+    service.svc.commit_wizard.assert_not_awaited()
+    assert "notes" not in wizard.draft_answers
+    assert _ALREADY_ANSWERED in (reason or "")

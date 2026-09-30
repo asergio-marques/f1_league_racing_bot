@@ -44,6 +44,10 @@ CHANNEL_ID = 700
 TEAMS = ["Ferrari", "Mercedes", "McLaren"]
 
 _NOT_RECORDED = "#482: the team step's button refusal is answered but writes no line in the log channel"
+_STEP_REFUSAL_IGNORED = (
+    "#482: the team button ignores the reason the step handler gives for turning a press away, "
+    "so the driver is not told and nothing is recorded"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +250,23 @@ async def test_a_wizard_with_no_snapshot_is_answered():
 
     assert "Wizard session not found" in _replied(interaction)
     assert "Wizard session not found." in _refusal_line(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=_STEP_REFUSAL_IGNORED)
+async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded():
+    """The driver has moved past the team step and presses a team button left above. The step
+    handler changes nothing and says why; the button tells the driver so and records the
+    refusal, naming the driver's wizard."""
+    view = await _view()
+    interaction = _interaction()
+    interaction.client.wizard_service.handle_preferred_teams_button = AsyncMock(
+        return_value="That step has already been answered."
+    )
+
+    await _press_team(view, 0, interaction)
+
+    assert "That step has already been answered." in _replied(interaction)
+    assert "That step has already been answered." in _refusal_line(interaction)
 
 
 async def test_a_driver_with_no_picks_yet_sees_the_whole_list():
