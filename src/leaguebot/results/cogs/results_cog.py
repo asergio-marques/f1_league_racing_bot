@@ -197,6 +197,14 @@ _NOTHING_APPROVED = (
     "Run /results amend review again."
 )
 
+#: How long the amend review panel waits for Approve or Reject before it lapses.
+_AMEND_REVIEW_LAPSE_SECONDS = 300
+#: What the lapsed amend review panel tells the admin who ran it.
+_AMEND_REVIEW_LAPSED = (
+    "\u231b This review lapsed after five minutes. Nothing has been approved. The staged "
+    "changes and amendment mode remain. Run `/results amend review` again."
+)
+
 #: A form's refusal when the results module has been switched off since it was shown.
 _MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
 
@@ -1923,13 +1931,35 @@ class ResultsCog(commands.Cog):
 
         class _ReviewView(LeagueView):
             def __init__(self_v) -> None:
-                super().__init__(timeout=None)
+                super().__init__(timeout=_AMEND_REVIEW_LAPSE_SECONDS)
                 self_v.approved = False
                 self_v.rejected = False
                 # The interaction of the press, answered through from here on: the
                 # command's own token lasts fifteen minutes from the command, and an
                 # approval that rescores and reposts a season can outlast it.
                 self_v.pressed_by: discord.Interaction | None = None
+
+            async def on_timeout(self_v) -> None:
+                """Nobody answered in five minutes: nothing was approved, and that is recorded.
+
+                The buttons come down through the command's own interaction, whose token lasts
+                fifteen minutes, well beyond the five; the admin is told nothing was approved
+                and one lapse line names who ran the review. A panel that could not be edited
+                still records the lapse.
+                """
+                try:
+                    await interaction.edit_original_response(
+                        content=_AMEND_REVIEW_LAPSED, view=None
+                    )
+                except discord.HTTPException as exc:
+                    log.warning("could not take down the lapsed amend review panel: %s", exc)
+                await record_abandoned(
+                    self.bot,
+                    interaction.user,
+                    what=describe(interaction),
+                    lapsed=True,
+                    detail=_NOTHING_APPROVED,
+                )
 
             @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
             async def approve(
@@ -1974,9 +2004,9 @@ class ResultsCog(commands.Cog):
             return
 
         if view.approved:
-            # Asked again at the press rather than trusted from above: the panel has no
-            # timeout, so a staged table can change between the diff being drawn and the
-            # button being pressed — in either direction.
+            # Asked again at the press rather than trusted from above: a staged table can
+            # change between the diff being drawn and the button being pressed — in either
+            # direction.
             held = await open_amendment_in_season(self.bot.db_path, season.id)
             if held is not None:
                 await refuse(

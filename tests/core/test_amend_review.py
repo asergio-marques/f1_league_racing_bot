@@ -656,7 +656,6 @@ async def test_a_rejection_is_recorded_as_a_cancel():
     assert not any(line.startswith(("⛔", "⌛")) for line in lines)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the panel never lapses, and nothing records it")
 async def test_a_panel_nobody_answers_changes_nothing():
     """The panel lapses after five minutes (#482): its buttons come down through the
     command's own interaction, the admin is told nothing was approved, and one lapse line
