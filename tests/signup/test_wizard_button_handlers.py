@@ -44,6 +44,8 @@ _SILENT = (
 
 _NO_STEP_LINE = "#482: a wizard step answered by a button writes no line in the log channel"
 
+_PICKED_AGAIN = "#482: a team already picked is recorded a second time rather than turned away"
+
 #: The reply a press on a step already answered gets (the plan, commit point 19).
 _ALREADY_ANSWERED = "That step has already been answered."
 
@@ -287,6 +289,31 @@ async def test_a_team_already_picked_is_not_offered_again(service):
     view = service.channel.send.await_args.kwargs["view"]
     labels = [child.label for child in view.children if getattr(child, "label", None)]
     assert "Alpha" not in labels
+
+
+@pytest.mark.xfail(strict=True, reason=_PICKED_AGAIN)
+@pytest.mark.parametrize("correction", [False, True], ids=["signup", "correction"])
+async def test_a_team_already_picked_is_refused_and_changes_nothing(service, correction):
+    """Alex picked Alpha, scrolled up and pressed Alpha again on the first sub-step's message,
+    in a first signup or while correcting the preferred teams. The handler records nothing,
+    offers no next sub-step and writes no line, and says why: "That team has already been
+    picked." (#482, D3)."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    draft = {"preferred_teams": ["Alpha"], "_pref_teams_step": 1}
+    if correction:
+        draft["_is_correction"] = True
+    wizard = _wizard(WizardState.COLLECTING_PREFERRED_TEAMS, **draft)
+    _serve(service, wizard)
+
+    reason = await service.svc.handle_preferred_teams_button(DRIVER_ID, "Alpha", service.guild)
+
+    assert "That team has already been picked." in (reason or "")
+    assert wizard.draft_answers["preferred_teams"] == ["Alpha"]
+    assert wizard.draft_answers["_pref_teams_step"] == 1
+    assert service.advanced == []
+    service.channel.send.assert_not_awaited()
+    assert _lines(service) == []
 
 
 async def test_a_third_pick_ends_the_loop(service):

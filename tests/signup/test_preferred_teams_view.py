@@ -4,17 +4,17 @@ Issue #208. `PreferredTeamsButtonView` and its three callbacks were uncovered. I
 the signup wizard — one button per team the driver has not already picked, plus No Preference
 and Cancel.
 
-**A button carries an index, not a team name.** A persistent view survives a restart and is
-re-registered with no arguments at all, so a name baked into the callback at construction would
-be the list as it stood before the restart. Resolving the index against the *live* wizard state
-at press time is what makes the button mean what its label says — and the label is redrawn with
-the message. `test_a_button_resolves_its_team_from_the_live_wizard_state` is the one that holds
-it, and the failure it guards against is silent: a driver picks "Ferrari" and the wizard records
-"Mercedes", because the list shifted when they picked their first team.
+**A button records the team its label names** (#482, D3). A persistent view survives a restart
+and is re-registered with no arguments at all, so the callback knows only its button's
+`custom_id`. The pressed button is found by that id on the message it sits on, and its label is
+the team. Resolving the index against the live picks instead recorded a different team from the
+label whenever the driver pressed a button on an earlier sub-step's message: they picked Ferrari,
+scrolled up, pressed Mercedes, and the wizard recorded McLaren.
+`test_a_press_on_an_earlier_message_records_the_team_its_label_names` holds it.
 
-**A team already picked is not offered again.** Each pick shrinks the available list, so the
-index space shifts under the buttons every time — which is exactly why the resolution has to be
-live. A stale button pointing past the end of the list is answered rather than crashing or
+**A team already picked is not offered again**, and pressing it again on an earlier message is
+turned away by the step handler ("That team has already been picked."), which the button answers
+and records. A button that cannot be found on its message is answered rather than crashing or
 picking the wrong team.
 
 **Only the driver whose wizard it is may press.** These sit in a private signup channel, but a
@@ -44,6 +44,7 @@ CHANNEL_ID = 700
 TEAMS = ["Ferrari", "Mercedes", "McLaren"]
 
 _NOT_RECORDED = "#482: the team step's button refusal is answered but writes no line in the log channel"
+_LABEL_RULE = "#482: a team button resolves its index against the live picks, not its own label"
 _STEP_REFUSAL_IGNORED = (
     "#482: the team button ignores the reason the step handler gives for turning a press away, "
     "so the driver is not told and nothing is recorded"
@@ -67,8 +68,27 @@ def _wizard(*, picks=None, team_names=None, snapshot: bool = True):
     )
 
 
-def _interaction(*, user_id: str = DRIVER_ID, wizard=None):
+def _message(labels=None):
+    """The message the team buttons sit on: one button per label, `pteam_0` onward, then No
+    Preference and Cancel, as `PreferredTeamsButtonView` posts them."""
+    teams = [
+        SimpleNamespace(custom_id=f"pteam_{i}", label=label)
+        for i, label in enumerate(TEAMS if labels is None else labels)
+    ]
+    return SimpleNamespace(components=[
+        SimpleNamespace(children=teams),
+        SimpleNamespace(children=[
+            SimpleNamespace(custom_id="pteam_nopref", label="No Preference"),
+            SimpleNamespace(custom_id="pteam_cancel", label="Cancel Signup"),
+        ]),
+    ])
+
+
+def _interaction(*, user_id: str = DRIVER_ID, wizard=None, labels=None):
+    """*labels* are the team buttons on the message pressed; every team by default."""
     interaction = MagicMock()
+    interaction.message = _message(labels)
+    interaction.data = {}
     interaction.guild_id = SERVER_ID
     interaction.channel_id = CHANNEL_ID
     interaction.guild = MagicMock()
@@ -147,6 +167,7 @@ def _labels(view) -> list[str]:
 
 
 async def _press_team(view, index: int, interaction):
+    interaction.data = {"custom_id": f"pteam_{index}", "component_type": 2}
     await view._make_team_callback(index)(interaction)
 
 
@@ -190,9 +211,9 @@ async def test_a_restarted_view_offers_stub_buttons_for_every_slot():
 # ---------------------------------------------------------------------------
 
 
-async def test_a_button_resolves_its_team_from_the_live_wizard_state():
-    """The label is redrawn with the message; the index is all the button carries. A name
-    baked in at construction would be the list as it stood before the last press."""
+async def test_a_button_records_the_team_its_label_names():
+    """A driver with no picks yet presses the second button, labelled Mercedes, and Mercedes
+    is what reaches the wizard."""
     view = await _view()
     interaction = _interaction()
 
@@ -201,27 +222,51 @@ async def test_a_button_resolves_its_team_from_the_live_wizard_state():
     assert _chosen(interaction) == ["Mercedes"]
 
 
-async def test_a_press_after_an_earlier_pick_resolves_against_what_is_left():
-    """The failure this guards is silent: a driver picks the second button and the wizard
-    records a team they did not choose, because the list shifted when they picked first."""
+@pytest.mark.xfail(strict=True, reason=_LABEL_RULE)
+async def test_a_press_on_an_earlier_message_records_the_team_its_label_names():
+    """The driver picked Ferrari, scrolled up to the first sub-step's message, where Ferrari,
+    Mercedes and McLaren are all still shown, and pressed Mercedes. Mercedes is recorded, not
+    McLaren, which is what the second of the teams left used to resolve to."""
     view = await _view()
     interaction = _interaction(wizard=_wizard(picks=["Ferrari"]))
 
     await _press_team(view, 1, interaction)
 
-    assert _chosen(interaction) == ["McLaren"]
+    assert _chosen(interaction) == ["Mercedes"]
 
 
-async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
-    """A stale screen from before a restart, or a second press of a button whose team has
-    just been taken — either way it must not pick the wrong team or raise."""
+@pytest.mark.xfail(strict=True, reason=_LABEL_RULE)
+async def test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorded():
+    """The driver picked Ferrari, scrolled up to the first sub-step's message and pressed
+    Ferrari again. The button passes Ferrari to the step handler, which turns it away; the
+    driver is told "That team has already been picked." and the refusal is recorded."""
     view = await _view()
-    interaction = _interaction(wizard=_wizard(picks=["Ferrari", "Mercedes"]))
+    interaction = _interaction(wizard=_wizard(picks=["Ferrari"]))
+    interaction.client.wizard_service.handle_preferred_teams_button = AsyncMock(
+        return_value="That team has already been picked."
+    )
+
+    await _press_team(view, 0, interaction)
+
+    assert _chosen(interaction) == ["Ferrari"]
+    assert "That team has already been picked." in _replied(interaction)
+    assert "That team has already been picked." in _refusal_line(interaction)
+
+
+@pytest.mark.xfail(strict=True, reason=_LABEL_RULE)
+async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
+    """A stale screen: the third team button is pressed, but the message it was pressed on
+    carries only two team buttons, so there is no label to name a team. It must not pick a
+    team or raise: the driver is told "That option is no longer available." and the refusal
+    is recorded."""
+    view = await _view()
+    interaction = _interaction(labels=["Ferrari", "Mercedes"])
 
     await _press_team(view, 2, interaction)
 
     assert "no longer available" in _replied(interaction)
     assert _chosen(interaction) == []
+    assert "That option is no longer available." in _refusal_line(interaction)
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
