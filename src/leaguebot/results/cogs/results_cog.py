@@ -1831,7 +1831,7 @@ class ResultsCog(commands.Cog):
         need the panel made public, on the model of the season-approval question, and that
         is a larger change than this one.
         """
-        if not await self._module_gate(interaction, record=False):
+        if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -1846,14 +1846,16 @@ class ResultsCog(commands.Cog):
         )
 
         season = await season_for_command(
-            interaction, self.bot.season_service, "results amend review", record=False
+            interaction, self.bot.season_service, "results amend review"
         )
         if season is None:
             return
 
         state = await get_amendment_state(self.bot.db_path, season.id)
         if state is None or not state.amendment_active:
-            await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
+            await refuse(
+                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
+            )
             return
 
         diff = await get_modification_store_diff(self.bot.db_path, season.id)
@@ -1953,15 +1955,15 @@ class ResultsCog(commands.Cog):
             # button being pressed — in either direction.
             held = await open_amendment_in_season(self.bot.db_path, season.id)
             if held is not None:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     "\u23f8\ufe0f Not approved yet. " + _held_text(held)
                     + " **Nothing has been changed**; run `/results amend review` again then.",
-                    ephemeral=True,
-                )
-                await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                    f"| /results amend review | Refused (a round is being amended)\n"
-                    f"  round {held['round_number']} of {held['division_name']!r}",
+                    what=describe(interaction),
+                    reason=(
+                        f"round {held['round_number']} of {held['division_name']} is being "
+                        "amended, so nothing was approved"
+                    ),
                 )
                 return
             try:
@@ -1970,33 +1972,27 @@ class ResultsCog(commands.Cog):
                 )
             except NonMonotonicAmendmentError as exc:
                 bullet_list = "\n\u2022 ".join(exc.errors)
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"\u274c Amendment not approved \u2014 the points would be out of order:\n"
                     f"\u2022 {bullet_list}\n"
                     f"Nothing has been changed. The staged changes are still there to repair.",
-                    ephemeral=True,
-                )
-                await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                    f"| /results amend review | Refused (points out of order)\n"
-                    f"  {'; '.join(exc.errors)}",
+                    what=describe(interaction),
+                    reason="the points would be out of order:\n" + "\n".join(exc.errors),
                 )
                 return
             except AmendmentNotDeliverableError as exc:
                 bullet_list = "\n• ".join(exc.faults)
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     f"⛔ Amendment not approved — the result could not be "
                     f"published:\n• {bullet_list}\n"
                     f"**Nothing has been changed** — not the season's points, not the "
                     f"staged changes, not amendment mode. Approving rescores and reposts "
                     f"every round of every division, so it is refused entire rather than "
                     f"left half-published. Repair the channels above and review again.",
-                    ephemeral=True,
-                )
-                await self.bot.output_router.post_log(
-                    f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                    f"| /results amend review | Refused (channels not reachable)\n"
-                    f"  {'; '.join(exc.faults)}",
+                    what=describe(interaction),
+                    reason="the result could not be published:\n" + "\n".join(exc.faults),
                 )
                 return
             reply = "\u2705 Amendment approved. All standings recomputed and reposted."

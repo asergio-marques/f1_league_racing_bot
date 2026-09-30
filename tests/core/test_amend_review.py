@@ -282,9 +282,6 @@ def _assert_refusal_recorded(cog, interaction) -> None:
     )
 
 
-_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
-
-
 # ---------------------------------------------------------------------------
 # Getting as far as the panel
 # ---------------------------------------------------------------------------
@@ -303,7 +300,6 @@ async def test_the_panel_shows_the_staged_changes():
     assert "Approve or reject" in panel
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_server_with_no_season_is_refused():
     """The refusal is recorded (#482)."""
     cog = _make_cog(season=None)
@@ -320,7 +316,6 @@ async def test_a_server_with_no_season_is_refused():
     _assert_refusal_recorded(cog, interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_season_not_in_amendment_mode_is_refused():
     """There is no modification store to review; `/results amend toggle` is what opens one,
     and approving against an inactive mode would write nothing while reporting success. The
@@ -335,7 +330,6 @@ async def test_a_season_not_in_amendment_mode_is_refused():
     _assert_refusal_recorded(cog, interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_season_that_never_entered_amendment_mode_is_refused():
     """No state row at all, as against a row saying inactive — the same answer, and the
     `None` would otherwise be read for an attribute. The refusal is recorded (#482)."""
@@ -349,7 +343,6 @@ async def test_a_season_that_never_entered_amendment_mode_is_refused():
     _assert_refusal_recorded(cog, interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_command_is_refused_while_the_module_is_off():
     """Refused before it defers, as today; the refusal is recorded (#482)."""
     cog = _make_cog(enabled=False)
@@ -586,7 +579,6 @@ async def test_a_refused_approval_leaves_the_staged_changes_to_repair():
     assert "still there to repair" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused approval writes a hand-built \"Refused (…)\" line, not a ⛔ refusal line")
 async def test_a_refusal_is_logged_with_its_reason():
     """The bot declining to do what an admin asked is worth a record, and the reason is
     what makes the record useful: one ⛔ refusal line carrying the positions at fault (#482)."""
@@ -880,7 +872,6 @@ async def test_an_undeliverable_amendment_is_not_logged_as_a_success():
     assert "| Success" not in logged, logged
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused approval writes a hand-built \"Refused (…)\" line, not a ⛔ refusal line")
 async def test_the_refusal_is_logged_with_its_reason():
     """The bot declining what an admin asked is worth a record, and the reason is what
     makes the record useful — as the ordering refusal's already is: one ⛔ refusal line
@@ -897,7 +888,6 @@ async def test_the_refusal_is_logged_with_its_reason():
     assert "Refused (" not in _logged(cog)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused approval writes a hand-built \"Refused (…)\" line, not a ⛔ refusal line")
 async def test_the_two_refusals_are_told_apart():
     """A table out of order and an unreachable channel name different repairs; a log
     that called both the same would send a manager to the wrong one. The ordering's ⛔
@@ -932,7 +922,6 @@ async def test_the_panel_names_a_round_being_amended():
     assert "Round 2 of **Pro** is being amended in <#8200>" in panel
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused approval writes a hand-built \"Refused (…)\" line, not a ⛔ refusal line")
 async def test_a_round_being_amended_is_checked_again_at_the_press():
     """The panel stays open for five minutes: an amendment can open between drawing it and
     the press. The refusal is one ⛔ line naming the division being amended (#482)."""
