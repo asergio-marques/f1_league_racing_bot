@@ -1337,7 +1337,8 @@ const testsProblems = t => {
 // error either, does not show that the step ran, as with `changes`: what changed is then unknown,
 // and every entry is given in full.
 //
-// The issue reviewer is left out of a round it has nothing to do in: it has reviewed the list before,
+// The issue reviewer is left out of a round it has nothing to do in, never the first of a run carried
+// on from an earlier one, in which it holds the whole branch to the owner's decisions once: it has reviewed the list before,
 // none of its findings is pending, no engineering question is routed to it, and the round cannot
 // pass, because the plan is not complete or the tester found something wrong. In that position it
 // found nothing in ten rounds out of ten (#482 slices 2 and 3). It runs in any round that could
@@ -1347,7 +1348,7 @@ const testsProblems = t => {
 // counted from the product owner's last review alone.
 const reviewTests = async (k, questions, built) => {
   const run = written.filter(w => w.change !== 'deleted')
-  const issueIdle = !!listSeen.issue && reviewedAt.issue !== undefined && ![...ledger.values()].some(f => f.lane === 'issue' && materialPending(f)) && !questions.engineering.length
+  const issueIdle = !(previous && k === offset + 1) && !!listSeen.issue && reviewedAt.issue !== undefined && ![...ledger.values()].some(f => f.lane === 'issue' && materialPending(f)) && !questions.engineering.length
   const skipKnown = issueIdle && (!built.planComplete || built.blocked)
   const seenAt = (skipKnown ? ['product'] : ['issue', 'product']).filter(l => listSeen[l]).map(l => reviewedAt[l])
   const known = seenAt.every(at => at !== undefined && at <= commits.length)
@@ -1425,8 +1426,9 @@ const suiteProblems = t => {
 // branch has changed a design file. A checker left undefined was not due this round; one that is
 // null returned nothing.
 //
-// The design verifier is left out of a round it has nothing to do in: it has reviewed the design
-// files before, as far as the issue reviewer has reviewed the branch, none of its findings is
+// The design verifier is left out of a round it has nothing to do in, never the first of a run
+// carried on from an earlier one, in which it holds the whole branch to the owner's decisions once:
+// it has reviewed the design files before, as far as the issue reviewer has reviewed the branch, none of its findings is
 // pending, and the issue reviewer says the commits it reviewed this round change no design file. In
 // that position it found nothing in three rounds out of four (#482 slice 2). An issue reviewer that
 // returned nothing, or did not say, leaves the verifier to run.
@@ -1440,7 +1442,7 @@ const reviewBuild = async (k, built, questions) => {
       .then(async issueResult => {
         for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
         if (!designFiles.size) return { issue: issueResult, design: undefined }
-        const idle = reviewedAt.design !== undefined && reviewedAt.design === reviewedAt.issue
+        const idle = !(previous && k === offset + 1) && reviewedAt.design !== undefined && reviewedAt.design === reviewedAt.issue
           && ![...ledger.values()].some(f => f.lane === 'design' && materialPending(f))
           && !!issueResult && Array.isArray(issueResult.designDocsChangedSince) && !issueResult.designDocsChangedSince.length
         if (idle) { log(`Round ${k}: no design file has changed since the design verifier last reviewed, and it has nothing open, so it is not sent out.`); return { issue: issueResult, design: undefined } }

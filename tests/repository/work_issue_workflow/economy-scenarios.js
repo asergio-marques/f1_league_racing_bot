@@ -139,3 +139,24 @@ module.exports.buildAdjustsBrokenStub = stubRun(true, {
 module.exports.unlistedTestChangeStillFlagged = stubRun(false, {
   expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${STUB} is modified since the tests the owner approved`)),
 })
+
+// Nor is the design verifier left out of the first round of a run carried on after the owner's
+// answers, whatever the issue reviewer says changed.
+module.exports.designVerifierRunsInFirstRoundOfCarriedRun = {
+  args: async runOnce => {
+    const first = await runOnce({ ...B, maxRounds: 1 }, label => {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':issue')) return review({ designDocsChanged: ['docs/design/steward_module.md'], designDocsChangedSince: ['docs/design/steward_module.md'] })
+      if (label.endsWith(':product')) return review({ escalations: [{ kind: 'business', question: 'which season?', context: 'c', options: [{ label: 'a', meaning: 'x' }], recommendation: 'a', stops: true }] })
+      return lanesClean(label)
+    })
+    if (first.status !== 'question') throw new Error('the first run did not stop for the owner')
+    return { ...B, maxRounds: 1, decisions: 'OWNER: the current season', previous: first }
+  },
+  respond(label) {
+    if (label.endsWith(':builder')) return builder({ tests: [], commits: [{ sha: 'c2', subject: 'x' }] })
+    if (label.endsWith(':issue')) return review({ designDocsChanged: ['docs/design/steward_module.md'], designDocsChangedSince: [] })
+    return lanesClean(label)
+  },
+  expect: (r, { labels }) => labels.includes('build:r2:design'),
+}

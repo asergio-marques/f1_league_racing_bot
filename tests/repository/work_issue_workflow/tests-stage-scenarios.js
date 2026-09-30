@@ -548,3 +548,27 @@ Object.assign(scenarios, {
     expect: (r, { labels }) => labels.includes('tests:r2:issue'),
   },
 })
+
+// A run carried on after the owner's answers sends the issue reviewer in its first round, however
+// idle, since that round holds the whole branch to the new decisions once (#483).
+Object.assign(scenarios, {
+  issueReviewerRunsInFirstRoundOfCarriedRun: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', maxRounds: 1 }, label => {
+        if (label.endsWith(':builder')) return builder()
+        if (label.endsWith(':tester')) return testsCheck()
+        if (label.endsWith(':product')) return review({ escalations: [{ ...q('business', 'which season?'), stops: true }] })
+        return cleanLanes(label)
+      })
+      if (first.status !== 'question') throw new Error('the first run did not stop for the owner')
+      return { ...base, stage: 'tests', maxRounds: 1, decisions: 'OWNER: the current season', previous: first }
+    },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ planComplete: false, remaining: ['more'] })
+      if (label.endsWith(':tester')) return red()
+      if (label.endsWith(':issue') && !prompt.includes('earlier work they make wrong is in scope too')) throw new Error('the issue reviewer was not asked to hold the branch to the decisions')
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => labels.includes('tests:r2:issue'),
+  },
+})
