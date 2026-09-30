@@ -107,8 +107,8 @@ later polish phase.
   the plan against `docs/design/architecture.md`, the design files and the wip-specs before the
   user sees it, writes the failing tests first, then builds, reviews and tests in rounds until
   they pass, and stops for the user at the plan, the tests and the result. Nothing is built by
-  hand around it, unless the user chooses the light path at Gate 1 for a mechanical change, which
-  `fix-issue` describes. How it runs is the skills' to say.
+  hand around it, unless the user chooses the light path at Gate 1 for a mechanical change or one
+  that only applies a decided rule, which `fix-issue` describes. How it runs is the skills' to say.
 - `poc/` is **gitignored scratch** — the proof of concept, plus the sample assets and the
   earlier template copies. Not a design input, and never something to port code from. The
   one exception is a *rule* it already encodes: `normalize()` in `poc/build_poc.py` calls
