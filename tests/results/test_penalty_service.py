@@ -304,6 +304,7 @@ def test_negative_penalty_cumulative_second_reduction_rejected():
     assert "0s" in second
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_apply_negative_penalty_reorders(tmp_path):
     """Driver with a -10s penalty moves above a driver with no penalty."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -363,7 +364,7 @@ async def test_apply_negative_penalty_reorders(tmp_path):
             penalty_seconds=-15,  # -15s on P1 → 1200000 - 15000 = 1185000ms < 1210000ms → P1 stays P1
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True)
+    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -379,6 +380,7 @@ async def test_apply_negative_penalty_reorders(tmp_path):
     assert rows[1]["finishing_position"] == 2
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_apply_negative_penalty_reorders_move_up(tmp_path):
     """P2 driver with -15s total adjusted time moves to P1 if beats P1."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -439,7 +441,7 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
             penalty_seconds=-20,
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True)
+    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -453,6 +455,7 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
     assert rows[1]["driver_user_id"] == 1, "Driver 1 should now be P2"
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
     """Two drivers with identical post-penalty times keep their original order."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -514,7 +517,7 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
             penalty_seconds=-10,  # P1 (1210000 - 10000 = 1200000ms) ties with P2 (1200000ms)
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True)
+    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -530,6 +533,7 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
     assert rows[1]["driver_user_id"] == 2, "Driver 2 should be P2"
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     """AC7: DSQ on fastest-lap holder forfeits the bonus; no other driver gains it."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -595,7 +599,7 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
             penalty_seconds=None,
         )
     ]
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True)
+    await apply_penalties(db_path, round_id, division_id, staged, 999, _FakeBot())
 
     # Verify: after DSQ, driver 1's fast-lap bonus is 0
     # and driver 2 does NOT gain the bonus (not redistributed)
@@ -698,6 +702,7 @@ def _nfa(session_type: SessionType) -> StagedPenalty:
 
 
 @pytest.mark.parametrize("phase", ["PENALTY", "APPEAL"])
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_path, phase):
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.penalty_service import apply_penalties
@@ -720,12 +725,13 @@ async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_pa
     before = await _rows()
     await apply_penalties(
         db_path, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, _QuietBot(),
-        _skip_post=True, _phase=phase,
+        _phase=phase,
     )
 
     assert await _rows() == before
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(tmp_path):
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.penalty_service import apply_penalties
@@ -746,12 +752,13 @@ async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(
     before = await _rows()
     await apply_penalties(
         db_path, round_id, division_id, [_nfa(SessionType.FEATURE_QUALIFYING)], 999,
-        _QuietBot(), _skip_post=True,
+        _QuietBot(),
     )
 
     assert await _rows() == before
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     """It alters nothing, but it is still a decision, and the round's verdicts are read from
     the record — its announcement and an amendment's replay both need it there."""
@@ -762,7 +769,6 @@ async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
 
     inserted = await apply_penalties(
         db_path, round_id, division_id, [_nfa(SessionType.FEATURE_RACE)], 999, _QuietBot(),
-        _skip_post=True,
     )
 
     assert [(r["driver_user_id"], r["penalty_type"], r["time_seconds"]) for r in inserted] == [
@@ -783,6 +789,7 @@ async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tmp_path):
     """The guard is on sessions only no further action touches. A real sanction in the same
     session re-sorts it as it always has."""
@@ -800,7 +807,7 @@ async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tm
         ),
     ]
 
-    await apply_penalties(db_path, round_id, division_id, staged, 999, _QuietBot(), _skip_post=True)
+    await apply_penalties(db_path, round_id, division_id, staged, 999, _QuietBot())
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -814,231 +821,45 @@ async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tm
 
 
 # ---------------------------------------------------------------------------
-# apply_penalties reposts when it is not told to skip (#130)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_apply_penalties_reposts_when_not_skipping(tmp_path):
-    """The second, latent instance of the missing-label defect (#130).
-
-    Both production callers pass ``_skip_post=True`` and repost themselves, so this path
-    never runs today — which is exactly why nothing caught that its
-    ``repost_round_results`` call omitted the required ``label`` and would raise
-    ``TypeError`` the moment anything called ``apply_penalties`` without that flag.
-
-    The staged list is deliberately empty: the defect is in the repost that follows the
-    loop, not in the penalty application itself, and an empty list reaches it with the
-    fewest moving parts in between.
-    """
-    from unittest.mock import AsyncMock, MagicMock
-
-    from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.penalty_service import apply_penalties
-
-    path = str(tmp_path / "penalty_repost.db")
-    await run_migrations(path)
-
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 1)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
-            (season_id,),
-        )
-        division_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
-            (division_id,),
-        )
-        cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
-            (division_id,),
-        )
-        round_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-            (round_id, division_id),
-        )
-        await db.commit()
-
-    posted: list[str] = []
-
-    guild = MagicMock()
-    guild.get_member.return_value = None
-    guild.fetch_member = AsyncMock(side_effect=Exception("not found"))
-
-    def get_channel(channel_id):
-        channel = AsyncMock()
-
-        async def fake_send(content=None, **kwargs):
-            posted.append(content or "")
-            msg = MagicMock()
-            msg.id = 4242
-            return msg
-
-        channel.send = fake_send
-        channel.id = channel_id
-        return channel
-
-    guild.get_channel = get_channel
-
-    bot = MagicMock()
-    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
-    bot.get_guild.return_value = guild
-    bot.output_router.post_log = AsyncMock()
-
-    await apply_penalties(
-        path, round_id, division_id, [], applied_by=99, bot=bot,
-    )
-
-    assert posted, "apply_penalties reposted nothing"
-    # The label is the round's own stage, derived rather than demanded of the caller.
-    assert any("Post-Race Penalty Results" in content for content in posted), posted
-
-
-# ---------------------------------------------------------------------------
-# What the repost could not post reaches the log channel (#237)
+# apply_penalties applies and nothing more (#482, F1)
 #
-# `apply_penalties` rescores a championship and then reposts it. The repost's outcome was
-# discarded, an unreachable guild skipped it in silence, and the `PENALTIES_APPLIED |
-# Success` line was written *before* any of it ran — so a penalty could leave every posted
-# standing stale with nobody told.
+# Every caller is an approval or amendment stage that reposts the round and writes the
+# action's one line itself, so apply_penalties neither reposts nor logs.
 # ---------------------------------------------------------------------------
 
 
-async def _seed_for_penalty_log(tmp_path):
-    """A division with one round to apply a penalty to. Returns ``(db_path, division_id,
-    round_id)``."""
-    from leaguebot.core.db.database import get_connection, run_migrations
-
-    path = str(tmp_path / "penalty_log.db")
-    await run_migrations(path)
-
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (1, 10, 20, 30)"
-        )
-        cursor = await db.execute(
-            "INSERT INTO seasons (start_date, status, season_number) "
-            "VALUES ('2026-01-01', 'ACTIVE', 1)"
-        )
-        season_id = cursor.lastrowid
-        cursor = await db.execute(
-            "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (?, 'Alpha', 777)",
-            (season_id,),
-        )
-        division_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO division_results_config "
-            "(division_id, results_channel_id, standings_channel_id) VALUES (?, 501, 502)",
-            (division_id,),
-        )
-        cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
-            (division_id,),
-        )
-        round_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE')",
-            (round_id, division_id),
-        )
-        await db.commit()
-
-    return path, division_id, round_id
-
-
-def _logged_lines(bot) -> str:
-    return "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
-
-
-async def test_apply_penalties_reports_an_unreachable_guild(tmp_path):
-    """`league_guild` returns None out of the cache and raises nothing (#244).
-
-    `if guild:` therefore skipped the repost in silence while the log said Success.
-    """
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: apply_penalties still takes _skip_post, reposts by default and logs PENALTIES_APPLIED",
+)
+async def test_apply_penalties_neither_reposts_nor_logs(tmp_path):
+    import inspect
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from leaguebot.results.services import results_post_service as rps
     from leaguebot.results.services.penalty_service import apply_penalties
 
-    path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
+    assert "_skip_post" not in inspect.signature(apply_penalties).parameters
 
+    db_path, round_id, division_id, _ = await _seed_one_session(tmp_path, "FEATURE_RACE")
     bot = MagicMock()
     bot.output_router.post_log = AsyncMock()
+    recompute = AsyncMock()
+    repost = AsyncMock(return_value=[])
+    staged = [
+        StagedPenalty(
+            driver_user_id=2,
+            session_type=SessionType.FEATURE_RACE,
+            penalty_type="TIME",
+            penalty_seconds=5,
+        )
+    ]
 
-    with patch("leaguebot.core.utils.league_server.league_guild", new=AsyncMock(return_value=None)), \
-            patch.object(rps, "recompute_standings_from_round", new=AsyncMock()):
-        await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
+    with patch.object(rps, "recompute_standings_from_round", new=recompute), \
+            patch.object(rps, "repost_round_results", new=repost):
+        inserted = await apply_penalties(db_path, round_id, division_id, staged, 999, bot)
 
-    logged = _logged_lines(bot)
-    assert "PENALTIES_APPLIED | Incomplete" in logged
-    assert "could not be reached" in logged
-    assert "/results rounds sync" in logged
-
-
-async def test_apply_penalties_reports_what_the_repost_could_not_post(tmp_path):
-    """The repost's return used to be thrown away by this caller."""
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from leaguebot.results.services import results_post_service as rps
-    from leaguebot.results.services.penalty_service import apply_penalties
-
-    path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
-
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock()
-    fault = "**Alpha** — the standings channel <#502> no longer exists."
-
-    with patch("leaguebot.core.utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
-            patch.object(rps, "recompute_standings_from_round", new=AsyncMock()), \
-            patch.object(rps, "repost_round_results", new=AsyncMock(return_value=[fault])):
-        await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
-
-    logged = _logged_lines(bot)
-    assert "PENALTIES_APPLIED | Incomplete" in logged
-    assert fault in logged
-
-
-async def test_apply_penalties_logs_success_only_after_the_repost(tmp_path):
-    """The audit line is written after the posting it describes, not before it.
-
-    Written first, it claimed a success the cascade had not yet earned — and might never
-    earn. `season_end_service` already keeps this ordering.
-    """
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from leaguebot.results.services import results_post_service as rps
-    from leaguebot.results.services.penalty_service import apply_penalties
-
-    path, division_id, round_id = await _seed_for_penalty_log(tmp_path)
-
-    order: list[str] = []
-
-    bot = MagicMock()
-    bot.output_router.post_log = AsyncMock(side_effect=lambda *_a, **_k: order.append("log"))
-
-    async def _repost(*_args, **_kwargs):
-        order.append("repost")
-        return []
-
-    with patch("leaguebot.core.utils.league_server.league_guild", new=AsyncMock(return_value=MagicMock())), \
-            patch.object(rps, "recompute_standings_from_round", new=AsyncMock()), \
-            patch.object(rps, "repost_round_results", new=_repost):
-        await apply_penalties(path, round_id, division_id, [], applied_by=99, bot=bot)
-
-    assert order == ["repost", "log"]
-    assert "PENALTIES_APPLIED | Success" in _logged_lines(bot)
+    assert [r["driver_user_id"] for r in inserted] == [2]
+    recompute.assert_not_awaited()
+    repost.assert_not_awaited()
+    bot.output_router.post_log.assert_not_awaited()
