@@ -1165,6 +1165,9 @@ class ResultsCog(commands.Cog):
         ``scope: Server`` reads the server's store directly and **needs no season**: that is
         the case the issue was raised for, a league between seasons wanting to know what it
         already holds before building the next one.
+
+        A list changes nothing, so it records nothing in the log channel (#482; the core
+        specification's "The record of what changed"): not a success, and not its refusals.
         """
         if not await self._module_gate(interaction, record=False):
             return
@@ -1191,10 +1194,6 @@ class ResultsCog(commands.Cog):
 
         await interaction.followup.send(
             results_formatter.format_config_list(scope_label, rows), ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results config list | Success\n"
-            f"  scope: {scope_label}",
         )
 
     @config_group.command(name="view", description="View a points config from a chosen store.")

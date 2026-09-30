@@ -204,7 +204,6 @@ async def test_the_command_is_gated_on_the_results_module():
     listing.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /results config list still writes a log line")
 async def test_a_listing_writes_no_line():
     """A list changes nothing, so it records nothing (core specification, "The record of what
     changed")."""
