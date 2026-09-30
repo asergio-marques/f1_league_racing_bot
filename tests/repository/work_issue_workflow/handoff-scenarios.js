@@ -128,6 +128,21 @@ module.exports = {
       && labels.indexOf('build:r1:code') > labels.indexOf('build:r1:p2:builder')
       && r.testChanges.map(t => t.nodeid).join() === 'tests/x/test_a.py::test_empty_division,tests/x/test_a.py::test_full_division',
   },
+  // A later piece is told what the pieces before it proposed, and a proposal two pieces make reaches
+  // the owner once.
+  proposedTestChangeNamedToNextPieceAndAskedOnce: {
+    args: { ...B, testsHead: 't0' },
+    respond(label, prompt) {
+      const change = { nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }
+      if (label === 'build:r1:builder') return unfinished({ testChanges: [change] })
+      if (label === 'build:r1:p2:builder') {
+        if (!prompt.includes('proposed already this round') || !prompt.includes(change.nodeid)) throw new Error('the next piece was not told what was proposed')
+        return builder({ tests: [], commits: [{ sha: 'c2', subject: 'rest' }], testChanges: [change] })
+      }
+      return lanesClean(label)
+    },
+    expect: r => r.status === 'question' && r.testChanges.length === 1,
+  },
   handOffStopsWithoutCommit: {
     args: { ...B, maxRounds: 1 },
     respond(label) {

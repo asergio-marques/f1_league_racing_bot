@@ -1007,7 +1007,7 @@ const builderPrompt = (k, earlier = []) => {
   // of the stage, or, after the owner refused the result at acceptance, from a whole earlier pass.
   const last = earlier[earlier.length - 1]
   const start = last
-    ? `You carry on from an earlier builder of this round, which handed off before finishing: read git -C ${worktree} log ${base}..HEAD first, and build on what is there. Its commits, and those of any builder before it this round: ${earlier.flatMap(p => p.commits).map(c => `${c.sha} ${c.subject}`).join('; ')}. What it said remains: ${(last.remaining || []).join('; ') || 'nothing named'}.${last.questions && last.questions.length ? ' The checkers settled the questions it asked: each answer is among the calls taken below, and binds you.' : ''}${answeredBefore.size ? ` The findings it has already fixed or disputed, which are left to the checkers: ${[...answeredBefore].join(', ')}.` : ''} Carry on from there. Report the commits you make, and the findings you fix or dispute, yourself alone: the earlier builders' are reported already${stage === 'tests' ? '; but your tests[] and support[] still cover the whole branch since its base, as below' : ''}.`
+    ? `You carry on from an earlier builder of this round, which handed off before finishing: read git -C ${worktree} log ${base}..HEAD first, and build on what is there. Its commits, and those of any builder before it this round: ${earlier.flatMap(p => p.commits).map(c => `${c.sha} ${c.subject}`).join('; ')}. What it said remains: ${(last.remaining || []).join('; ') || 'nothing named'}.${last.questions && last.questions.length ? ' The checkers settled the questions it asked: each answer is among the calls taken below, and binds you.' : ''}${earlier.some(p => (p.testChanges || []).length) ? ` The test changes proposed already this round, which go to the owner at its end: ${earlier.flatMap(p => p.testChanges || []).map(t => t.nodeid).join(', ')}. Do not propose them again.` : ''}${answeredBefore.size ? ` The findings it has already fixed or disputed, which are left to the checkers: ${[...answeredBefore].join(', ')}.` : ''} Carry on from there. Report the commits you make, and the findings you fix or dispute, yourself alone: the earlier builders' are reported already${stage === 'tests' ? '; but your tests[] and support[] still cover the whole branch since its base, as below' : ''}.`
     : first && !previous
     ? `Start the stage from the plan. Read git -C ${worktree} log ${base}..HEAD first: where the branch already carries work for this issue, the plan is an amendment to it, and you build on what is there.`
     : `Earlier rounds have already worked on this branch: read git -C ${worktree} log ${base}..HEAD first. Fix each open material finding below in a commit of its own, or dispute it with evidence where you judge it wrong; fix the failures below; and finish whatever this stage still owes. Report every finding id you fixed or disputed.`
@@ -1505,7 +1505,8 @@ const mergePieces = parts => {
     fixed: all('fixed'),
     disputed: all('disputed'),
     questions: all('questions'),
-    testChanges: all('testChanges'),
+    // Two pieces proposing the same test change put it to the owner once.
+    testChanges: all('testChanges').filter((t, i, list) => list.findIndex(u => u.nodeid === t.nodeid) === i),
     adjusted: all('adjusted'),
     separateDefects: all('separateDefects'),
     notes: all('notes'),
