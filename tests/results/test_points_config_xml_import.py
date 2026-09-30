@@ -240,9 +240,6 @@ async def test_an_empty_config_reports_no_changes(tmp_path):
     assert "No changes." in _replied(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: an empty import is still logged as SUCCESS, not as nothing changed"
-)
 async def test_an_empty_import_records_that_nothing_changed(tmp_path):
     """An import of a file naming no session changes nothing: no audit entry, and one line
     in the success form saying nothing changed, never a success."""

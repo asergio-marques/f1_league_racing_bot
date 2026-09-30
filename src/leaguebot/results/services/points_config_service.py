@@ -170,6 +170,53 @@ async def set_session_points(
         await db.commit()
 
 
+async def held_position_points(
+    db_path: str,
+    config_name: str,
+    session_type: SessionType,
+    position: int,
+) -> dict[str, int | None]:
+    """The points a configuration holds for one position, read for :func:`values_stand` (#482).
+
+    ``{"points": None}`` where the position was never filled in. Raises
+    :class:`ConfigNotFoundError` where the configuration does not exist, so the caller refuses
+    before it judges anything.
+    """
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, config_name)
+        cursor = await db.execute(
+            "SELECT points FROM points_config_entries "
+            "WHERE config_id = ? AND session_type = ? AND position = ?",
+            (config_id, session_type.value, position),
+        )
+        row = await cursor.fetchone()
+    return {"points": None if row is None else row["points"]}
+
+
+async def held_fastest_lap(
+    db_path: str,
+    config_name: str,
+    session_type: SessionType,
+) -> dict[str, int | None]:
+    """The fastest-lap bonus and position limit a configuration holds for one session, read for
+    :func:`values_stand` (#482).
+
+    Both ``None`` where the session has no fastest-lap row at all. Raises
+    :class:`ConfigNotFoundError` where the configuration does not exist.
+    """
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, config_name)
+        cursor = await db.execute(
+            "SELECT fl_points, fl_position_limit FROM points_config_fl "
+            "WHERE config_id = ? AND session_type = ?",
+            (config_id, session_type.value),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return {"fl_points": None, "fl_position_limit": None}
+    return {"fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"]}
+
+
 async def ordering_warnings(
     db_path: str,
     config_name: str,

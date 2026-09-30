@@ -177,7 +177,6 @@ async def test_detaching_from_a_running_season_is_refused(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a detach that changes nothing is not yet recorded")
 async def test_detaching_what_is_not_attached_is_an_answer(tmp_path):
     """The manager wanted it gone and it is gone. Nothing changed, and the log says so in one
     line, as every request that changes nothing does (#482)."""

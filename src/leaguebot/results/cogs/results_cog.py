@@ -91,6 +91,10 @@ BLOCKS_APPROVAL = "The change has been saved, but a season cannot be approved on
 BLOCKS_AMENDMENT = (
     "The change has been staged, but this amendment cannot be approved on this table."
 )
+#: The same two clauses for a request that changed nothing (#482): there is no change to say
+#: was saved or staged, only who will refuse the table as it stands.
+STANDS_BLOCKS_APPROVAL = "A season cannot be approved on this table."
+STANDS_BLOCKS_AMENDMENT = "This amendment cannot be approved on this table."
 
 
 def _ordering_notice(
@@ -544,6 +548,15 @@ async def _run_xml_import(
     await interaction.followup.send(
         f"✅ Config **{config_name}** updated:\n{summary}", ephemeral=True
     )
+    if not payload.positions and not payload.fastest_laps:
+        # A file naming no session wrote nothing: recorded as that, never as a success.
+        await bot_of(interaction).output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+            "| /results config xml-import | Nothing changed\n"
+            f"  config: {config_name}\n"
+            "  reason: the import named no session",
+        )
+        return
     # The values set, beneath the line, as "The record of what changed" asks.
     values: list[str] = []
     for session_type, pos_dict in payload.positions.items():
@@ -789,6 +802,27 @@ class ResultsCog(commands.Cog):
             return False
         return True
 
+    async def _answer_nothing_changed(
+        self,
+        interaction: discord.Interaction,
+        command: str,
+        reply: str,
+        *details: str,
+    ) -> None:
+        """Answer a request that could have been carried out but changes nothing, and record it.
+
+        The reply is *reply* under an information mark, and the log gets one line in the success
+        form, ``Name (<@id>) | /<command> | Nothing changed``, with *details* beneath it, as
+        "The record of what changed" asks of a no-op (#482). No audit entry is written: the
+        caller has changed nothing to audit. A request that could not be carried out is a
+        refusal and never comes here.
+        """
+        await interaction.followup.send(f"\u2139\ufe0f {reply}", ephemeral=True)
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /{command} | "
+            "Nothing changed" + "".join(f"\n  {detail}" for detail in details),
+        )
+
     async def _sync_gate(self, interaction: discord.Interaction, div) -> bool:
         """Refuse a sync of a division with an amendment open (#345, decided 2026-09-21).
 
@@ -950,14 +984,24 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
+        stands = False
         try:
-            await points_config_service.set_session_points(
-                self.bot.db_path,
-                name,
-                SessionType(session.value),
-                position,
-                points,
+            # The refusal first: a configuration that is not there is refused whatever was
+            # asked, and only a request that could have been carried out can change nothing.
+            stands = points_config_service.values_stand(
+                await points_config_service.held_position_points(
+                    self.bot.db_path, name, SessionType(session.value), position
+                ),
+                {"points": points},
             )
+            if not stands:
+                await points_config_service.set_session_points(
+                    self.bot.db_path,
+                    name,
+                    SessionType(session.value),
+                    position,
+                    points,
+                )
         except ConfigNotFoundError:
             await refuse(interaction, f"\u274c Config **{name}** not found.", what=describe(interaction))
             return
@@ -967,7 +1011,18 @@ class ResultsCog(commands.Cog):
             await points_config_service.ordering_warnings(
                 self.bot.db_path, name, SessionType(session.value)
             ),
+            STANDS_BLOCKS_APPROVAL if stands else BLOCKS_APPROVAL,
         )
+        if stands:
+            await self._answer_nothing_changed(
+                interaction,
+                "results config session",
+                f"Nothing changed: **{session.name}** position {position} already awards "
+                f"{points} pts in config **{name}**." + notice,
+                f"config: {name}",
+                f"session: {session.name}, position: {position}, points: {points}",
+            )
+            return
         await interaction.followup.send(
             f"\u2705 Set **{session.name}** position {position} \u2192 {points} pts in config **{name}**."
             + notice,
@@ -998,6 +1053,22 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         try:
+            if points_config_service.values_stand(
+                await points_config_service.held_fastest_lap(
+                    self.bot.db_path, name, SessionType(session.value)
+                ),
+                {"fl_points": points},
+            ):
+                await self._answer_nothing_changed(
+                    interaction,
+                    "results config fl",
+                    f"Nothing changed: the fastest-lap bonus for **{session.name}** is already "
+                    f"{points} pts "
+                    f"in config **{name}**.",
+                    f"config: {name}",
+                    f"session: {session.name}, fl_bonus: {points}",
+                )
+                return
             await points_config_service.set_fl_bonus(
                 self.bot.db_path, name, SessionType(session.value), points
             )
@@ -1040,6 +1111,21 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
         try:
+            if points_config_service.values_stand(
+                await points_config_service.held_fastest_lap(
+                    self.bot.db_path, name, SessionType(session.value)
+                ),
+                {"fl_position_limit": limit},
+            ):
+                await self._answer_nothing_changed(
+                    interaction,
+                    "results config fl-plimit",
+                    f"Nothing changed: the fastest-lap position limit for **{session.name}** is already "
+                    f"top {limit} in config **{name}**.",
+                    f"config: {name}",
+                    f"session: {session.name}, fl_position_limit: {limit}",
+                )
+                return
             await points_config_service.set_fl_position_limit(
                 self.bot.db_path, name, SessionType(session.value), limit
             )
@@ -1124,8 +1210,12 @@ class ResultsCog(commands.Cog):
             )
             return
         except ConfigNotAttachedError:
-            await interaction.followup.send(
-                f"\u2139\ufe0f Config **{name}** is not attached to this season.", ephemeral=True
+            await self._answer_nothing_changed(
+                interaction,
+                "results config detach",
+                f"Config **{name}** is not attached to this season.",
+                f"config: {name}",
+                "reason: it was not attached",
             )
             return
         await interaction.followup.send(
@@ -1465,6 +1555,15 @@ class ResultsCog(commands.Cog):
             )
             return
 
+        if not state.modified_flag:
+            await self._answer_nothing_changed(
+                interaction,
+                "results amend revert",
+                "Nothing changed: nothing is staged, so the modification store already "
+                "matches the season's points.",
+            )
+            return
+
         await revert_modification_store(self.bot.db_path, season.id)
         await interaction.followup.send(
             "\u2705 Modification store reverted to current season points.", ephemeral=True
@@ -1498,6 +1597,7 @@ class ResultsCog(commands.Cog):
             AmendmentNotActiveError,
             modification_ordering_warnings,
             modify_session_points,
+            staged_position_points,
         )
 
         season = await season_for_command(
@@ -1506,17 +1606,27 @@ class ResultsCog(commands.Cog):
         if season is None:
             return
 
+        stands = False
         try:
-            await modify_session_points(
-                self.bot.db_path,
-                season.id,
-                name,
-                session.value,
-                [(position, points)],
-                actor_id=interaction.user.id,
-                actor_name=str(interaction.user),
-                now=datetime.now(timezone.utc),
+            # A store that is not in amendment mode holds nothing, so a request made outside
+            # the mode never stands: it reaches the store's own refusal, which comes first.
+            stands = points_config_service.values_stand(
+                await staged_position_points(
+                    self.bot.db_path, season.id, name, session.value, position
+                ),
+                {"points": points},
             )
+            if not stands:
+                await modify_session_points(
+                    self.bot.db_path,
+                    season.id,
+                    name,
+                    session.value,
+                    [(position, points)],
+                    actor_id=interaction.user.id,
+                    actor_name=str(interaction.user),
+                    now=datetime.now(timezone.utc),
+                )
         except AmendmentNotActiveError:
             await refuse(
                 interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
@@ -1528,8 +1638,18 @@ class ResultsCog(commands.Cog):
             await modification_ordering_warnings(
                 self.bot.db_path, season.id, name, session.value
             ),
-            BLOCKS_AMENDMENT,
+            STANDS_BLOCKS_AMENDMENT if stands else BLOCKS_AMENDMENT,
         )
+        if stands:
+            await self._answer_nothing_changed(
+                interaction,
+                "results amend session",
+                f"Nothing changed: **{name}** {session.name} P{position} already stands at "
+                f"{points} pts in the modification store." + notice,
+                f"config: {name}",
+                f"session: {session.name}, position: {position}, points: {points}",
+            )
+            return
         await interaction.followup.send(
             f"\u2705 Updated in modification store: **{name}** {session.name} P{position} \u2192 {points} pts."
             + notice,
@@ -1560,7 +1680,11 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.amendment_service import AmendmentNotActiveError, modify_fl_bonus
+        from leaguebot.core.services.amendment_service import (
+            AmendmentNotActiveError,
+            modify_fl_bonus,
+            staged_fastest_lap,
+        )
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl"
@@ -1569,6 +1693,19 @@ class ResultsCog(commands.Cog):
             return
 
         try:
+            if points_config_service.values_stand(
+                await staged_fastest_lap(self.bot.db_path, season.id, name, session.value),
+                {"fl_points": points},
+            ):
+                await self._answer_nothing_changed(
+                    interaction,
+                    "results amend fl",
+                    f"Nothing changed: **{name}** {session.name} FL bonus already stands at "
+                    f"{points} pts in the modification store.",
+                    f"config: {name}",
+                    f"session: {session.name}, fl_bonus: {points}",
+                )
+                return
             await modify_fl_bonus(self.bot.db_path, season.id, name, session.value, points)
         except AmendmentNotActiveError:
             await refuse(
@@ -1604,7 +1741,11 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.amendment_service import AmendmentNotActiveError, modify_fl_position_limit
+        from leaguebot.core.services.amendment_service import (
+            AmendmentNotActiveError,
+            modify_fl_position_limit,
+            staged_fastest_lap,
+        )
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend fl-plimit"
@@ -1613,6 +1754,19 @@ class ResultsCog(commands.Cog):
             return
 
         try:
+            if points_config_service.values_stand(
+                await staged_fastest_lap(self.bot.db_path, season.id, name, session.value),
+                {"fl_position_limit": limit},
+            ):
+                await self._answer_nothing_changed(
+                    interaction,
+                    "results amend fl-plimit",
+                    f"Nothing changed: **{name}** {session.name} FL position limit already "
+                    f"stands at top {limit} in the modification store.",
+                    f"config: {name}",
+                    f"session: {session.name}, fl_position_limit: {limit}",
+                )
+                return
             await modify_fl_position_limit(self.bot.db_path, season.id, name, session.value, limit)
         except AmendmentNotActiveError:
             await refuse(
@@ -1963,9 +2117,12 @@ class ResultsCog(commands.Cog):
                 f"  division: {division}",
             )
         elif status == "no_rounds":
-            await interaction.followup.send(
-                f"\u2139\ufe0f No completed rounds found for **{division}**. No standings to post.",
-                ephemeral=True,
+            await self._answer_nothing_changed(
+                interaction,
+                "results standings sync",
+                f"No completed rounds found for **{division}**. No standings to post.",
+                f"division: {div.name}",
+                "reason: no completed rounds, so nothing was posted",
             )
         else:  # no_channel
             await interaction.followup.send(
@@ -2018,9 +2175,12 @@ class ResultsCog(commands.Cog):
                 f"  division: {division}",
             )
         elif status == "no_rounds":
-            await interaction.followup.send(
-                f"\u2139\ufe0f No completed rounds found for **{division}**. No results to post.",
-                ephemeral=True,
+            await self._answer_nothing_changed(
+                interaction,
+                "results rounds sync",
+                f"No completed rounds found for **{division}**. No results to post.",
+                f"division: {div.name}",
+                "reason: no completed rounds, so nothing was posted",
             )
         else:  # no_channel
             await interaction.followup.send(

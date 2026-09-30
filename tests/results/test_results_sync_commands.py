@@ -245,7 +245,6 @@ async def test_a_division_with_no_channel_configured_is_told_so(tmp_path, label,
     assert "synced" not in replied
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a sync with nothing to post is not yet recorded")
 @pytest.mark.parametrize("label,run", SYNCS)
 async def test_a_sync_with_nothing_to_post_records_that_nothing_changed(tmp_path, label, run):
     """A sync that found no completed round to post changed nothing a league can see: the

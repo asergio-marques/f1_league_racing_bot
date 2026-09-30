@@ -35,8 +35,6 @@ SERVER_ID = 10483
 ACTOR_ID = 4242
 CONFIG = "100%"
 
-_NOT_YET = "#482: a request that changes nothing is still answered and logged as a change"
-
 _RACE = SimpleNamespace(value="FEATURE_RACE", name="Feature Race")
 
 
@@ -179,7 +177,6 @@ def _assert_nothing_changed(cog, interaction, command: str) -> None:
     assert CONFIG in line
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("command", sorted(_CONFIG_SETS))
 async def test_a_config_set_to_the_value_it_holds_changes_nothing(tmp_path, command):
     """100% gives 25 pts for a Feature Race win and 1 pt for its fastest lap in the top 10.
@@ -195,7 +192,6 @@ async def test_a_config_set_to_the_value_it_holds_changes_nothing(tmp_path, comm
     assert await _audit_count(db_path) == before
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("command", sorted(_AMEND_SETS))
 async def test_an_amend_set_to_the_value_staged_changes_nothing(tmp_path, command):
     """The season is in amendment mode with nothing staged; its store gives 25 pts for a win
@@ -213,7 +209,6 @@ async def test_an_amend_set_to_the_value_staged_changes_nothing(tmp_path, comman
     assert await _modified_flag(db_path, season_id) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("command", sorted(_AMEND_SETS))
 async def test_a_same_value_amend_leaves_amendment_mode_free_to_switch_off(tmp_path, command):
     """After an amend that staged nothing, `/results amend toggle` switches amendment mode off,
@@ -234,7 +229,6 @@ async def test_a_same_value_amend_leaves_amendment_mode_free_to_switch_off(tmp_p
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_revert_with_nothing_staged_records_that_nothing_changed(tmp_path):
     """Amendment mode is on and nothing is staged. Alex runs `/results amend revert`: told
     nothing changed, and one nothing-changed line, never a revert."""
@@ -254,7 +248,6 @@ async def test_a_revert_with_nothing_staged_records_that_nothing_changed(tmp_pat
     assert await _modified_flag(db_path, season_id) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize(
     "command", ["results config session", "results amend session"]
 )
