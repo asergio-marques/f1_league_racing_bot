@@ -151,3 +151,33 @@ module.exports = {
     expect: r => r.status === 'passed' && r.lastRound === 4,
   },
 }
+
+// A stage run again after it capped gets a round where the owner has decided something since, as
+// when they approve a test mid-build; with the same decisions it stays capped, and only a raised
+// budget gives it one (#483).
+const cappedTests = decisions => async runOnce => {
+  const capped = await runOnce({ ...base, stage: 'tests', decisions: 'FIRST', maxRounds: 3 }, label => {
+    if (label.endsWith(':builder')) return builder()
+    if (label.endsWith(':tester')) return testsCheck({ otherFailures: [`red in round ${round(label)}`] })
+    return review()
+  })
+  if (capped.status !== 'capped') throw new Error(`the first run was ${capped.status}, not capped`)
+  return { ...base, stage: 'tests', decisions, previous: capped }
+}
+Object.assign(module.exports, {
+  cappedStageRunsAgainAfterNewDecisions: {
+    args: cappedTests('FIRST. OWNER: add test_c'),
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 4 && labels.includes('tests:r4:builder'),
+  },
+  cappedStageStaysCappedWithoutNewDecisions: {
+    args: cappedTests('FIRST'),
+    respond(label) { throw new Error(`${label} ran for a capped stage nobody gave a round`) },
+    expect: (r, { labels }) => r.status === 'capped' && !labels.length,
+  },
+})

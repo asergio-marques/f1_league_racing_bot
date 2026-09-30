@@ -103,6 +103,12 @@ if (stage !== 'check') {
 // ---- text helpers ---------------------------------------------------------------------------
 
 const asText = v => (v === undefined || v === null || (Array.isArray(v) && !v.length)) ? '' : typeof v === 'string' ? v : JSON.stringify(v, null, 2)
+// FNV-1a, 32 bits: for what is compared and never read, such as a list's entries or the owner's decisions; a few hundred of them are far from a collision.
+const fnv = text => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8, '0')
+}
 const section = (title, v) => { const t = asText(v); return t ? `\n\n## ${title}\n\n${t}` : '' }
 // A section of text the plan already holds word for word, as the skill's plan carries its criteria,
 // its checks and often the owner's decisions, is left out: every agent reads the plan, and a copy
@@ -517,11 +523,15 @@ const LANE_NAMES = { issue: 'issue reviewer', code: 'code reviewer', product: 'p
 const previous = ARGS.previous || null
 const offset = previous ? previous.lastRound : 0
 // A raised budget carries to the stage's later runs. A run the owner starts, after answering its
-// questions or asking for changes at its gate, always gets at least one round, so that their answer
+// questions, asking for changes at its gate or deciding anything since, always gets at least one round, so that their answer
 // is acted on rather than met with `capped`; where that round cannot pass, the stage stops as
 // `capped` again and the owner chooses once more.
 const stageBudget = Math.max(Number(ARGS.roundBudget) || 0, (previous && previous.roundBudget) || 0, ROUND_BUDGET[stage])
-const ownerRerun = !!previous && ['passed', 'question'].includes(previous.status)
+// The owner has spoken since a run that stopped short, capped or stalled included, where the
+// decisions differ from those it ran with: a tests stage run again for a test the owner approved
+// after a capped build was met with capped and no agent at all (#482 slice 4).
+const decisionsDigest = fnv(asText(ARGS.decisions))
+const ownerRerun = !!previous && (['passed', 'question'].includes(previous.status) || (previous.decisionsDigest !== undefined && previous.decisionsDigest !== decisionsDigest))
 const left = Math.max(stageBudget - offset, ownerRerun ? 1 : 0)
 const maxRounds = Math.min(left, Number(ARGS.maxRounds) || left)
 const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f }]))
@@ -545,12 +555,6 @@ const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt :
 // has made pass since is the same test.
 const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'what', 'affects']
 const described = (entry, f) => JSON.stringify(f === 'affects' ? [...(entry.affects || [])].sort() : entry[f] || '')
-// FNV-1a, 32 bits: a list of a few hundred entries is far from a collision.
-const fnv = text => {
-  let h = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
-  return h.toString(16).padStart(8, '0')
-}
 const digestOf = e => fnv(DESCRIBED.map(f => described(e, f)).join('|'))
 const compactEntry = (e, support) => e.digest ? e : {
   ...(support ? { file: e.file, name: e.name } : { nodeid: e.nodeid }),
@@ -1810,6 +1814,7 @@ return {
   designFiles: [...designFiles].sort(),
   reviewedAt,
   roundBudget: stageBudget,
+  decisionsDigest,
   stallStreak,
   lastRed,
 }
