@@ -3177,12 +3177,22 @@ class ResultsCog(commands.Cog):
             )
             await _tell_of_failure(amendment_fault_reply(describe_fault(exc), became))
             return
-        await interaction.followup.send(
-            f"✅ Corrected results recorded. Review the reports and appeals of "
-            f"{', '.join(_label(st) for st in chosen)} in {amend_channel.mention} to finish the "
-            "amendment — nothing is published until you do.",
-            ephemeral=True,
-        )
+        # The pastes can outlast the command's fifteen minutes, and Discord then refuses the
+        # reply. The corrections are recorded and stage two stands open in its channel, so a
+        # spent token is a warning in the host's log: raised, it would reach the command tree
+        # and be recorded as a failure of an amendment that succeeded (#482, D2).
+        try:
+            await interaction.followup.send(
+                f"✅ Corrected results recorded. Review the reports and appeals of "
+                f"{', '.join(_label(st) for st in chosen)} in {amend_channel.mention} to finish "
+                "the amendment — nothing is published until you do.",
+                ephemeral=True,
+            )
+        except discord.HTTPException:
+            log.warning(
+                "amend: could not tell the admin that round %s was recorded", rnd.id,
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # /results channel group

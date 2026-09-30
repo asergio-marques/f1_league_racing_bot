@@ -2202,10 +2202,6 @@ async def test_a_session_picker_left_to_lapse_is_recorded_and_answered_as_a_laps
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the closing reply is sent unguarded, so a spent token raises out of the command (D2)",
-)
 async def test_a_closing_reply_that_can_no_longer_be_sent_leaves_stage_two_open(tmp_path, caplog):
     """The corrected results of round 3 (Pro Division) are recorded, but the pastes took longer
     than the command's fifteen minutes, so Discord refuses the closing "✅ Corrected results
