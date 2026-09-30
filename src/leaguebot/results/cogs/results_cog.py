@@ -3025,7 +3025,11 @@ class ResultsCog(commands.Cog):
                 config_name = existing_config_name
             else:
                 from leaguebot.results.services.result_submission_service import _ConfigSelectView
-                cfg_view = _ConfigSelectView(config_names, server_cfg)
+                cfg_view = _ConfigSelectView(
+                    config_names,
+                    server_cfg,
+                    session=f"the {_label(st)} of round {round_number} ({division_name})",
+                )
                 await amend_channel.send(
                     f"Select the points configuration for {_label(st)}:", view=cfg_view
                 )

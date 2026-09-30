@@ -36,6 +36,7 @@ from leaguebot.image.utils.tyre_compound import (
 from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
@@ -3905,26 +3906,44 @@ class _ConfigSelectView(LeagueView):
 
     Choosing how a session is scored is running the league, so it asks the league manager
     tier, the same as the commands that attach a configuration in the first place.
+
+    **Every press is recorded** (#482): a refusal as one refusal line, a choice as one line
+    naming the member, the configuration and the session. A press, not a paste — the pastes
+    around it are out of the rule's reach. *session* says which session of which round the
+    choice is for ("the Feature Race of round 3 (Pro)"), and every caller passes it, so a league
+    reads it in each line. It is optional so that a view built without one still names its
+    button; the lines then say nothing of the session.
     """
 
-    def __init__(self, config_names: list[str], config: Any | None = None) -> None:
+    def __init__(
+        self,
+        config_names: list[str],
+        config: Any | None = None,
+        *,
+        session: str | None = None,
+    ) -> None:
         super().__init__(timeout=None)
         self.selected: str | None = None
         self._config = config
+        self._session = session
         for name in config_names:
             async def _cb(
                 interaction: discord.Interaction,
                 _name: str = name,
             ) -> None:
+                what = self._what(_name)
                 if not self._may_choose(interaction):
-                    await interaction.response.send_message(
+                    await refuse(
+                        interaction,
                         "⛔ Only league managers can choose the points configuration.",
-                        ephemeral=True,
+                        what=what,
+                        reason="Only league managers can choose the points configuration.",
                     )
                     return
                 self.selected = _name
                 self.stop()
                 await interaction.response.defer()
+                await self._record_choice(interaction, what, _name)
 
             button = CallbackButton(
                 label=name[:80],
@@ -3933,6 +3952,29 @@ class _ConfigSelectView(LeagueView):
                 on_press=_cb,
             )
             self.add_item(button)
+
+    def _what(self, name: str) -> str:
+        """The button as the log channel names it, with the choice it belongs to."""
+        named = f"the “{name}” button of the points-configuration choice"
+        return f"{named} for {self._session}" if self._session else named
+
+    async def _record_choice(
+        self, interaction: discord.Interaction, what: str, name: str
+    ) -> None:
+        """Write the one line a choice leaves in the log channel, in the success form.
+
+        Never raises: the press has been answered whether or not the line is.
+        """
+        try:
+            router = getattr(getattr(interaction, "client", None), "output_router", None)
+            if router is None:
+                return
+            await router.post_log(
+                f"{interaction_member(interaction)} | {what} | Success\n"
+                f"  configuration: {name}"
+            )
+        except Exception:  # noqa: BLE001 — the press has still been answered
+            log.warning("could not record in the log channel that %s was pressed", what, exc_info=True)
 
     def _may_choose(self, interaction: discord.Interaction) -> bool:
         """Whether the presser holds the league manager tier.
@@ -4722,7 +4764,11 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                     f"✅ Auto-selected config **{selected_config}** (only one attached)."
                 )
             elif len(config_names) > 1:
-                view = _ConfigSelectView(config_names, server_cfg)
+                view = _ConfigSelectView(
+                    config_names,
+                    server_cfg,
+                    session=f"the {label} of round {round_number} ({division_name})",
+                )
                 config_msg = await sub_channel.send(
                     "🔧 Select the points configuration for this session:",
                     view=view,
@@ -5328,7 +5374,11 @@ async def _resubmit_collection_task(
                 selected_config = config_names[0]
                 await sub_channel.send(f"✅ Auto-selected config **{selected_config}**.")
             elif len(config_names) > 1:
-                view = _ConfigSelectView(config_names, server_cfg)
+                view = _ConfigSelectView(
+                    config_names,
+                    server_cfg,
+                    session=f"the {label} of round {round_number} ({division_name})",
+                )
                 config_msg = await sub_channel.send("🔧 Select the points configuration for this session:", view=view)
                 await view.wait()
                 selected_config = view.selected

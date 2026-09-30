@@ -106,9 +106,6 @@ async def test_the_points_configuration_select_refuses_when_it_cannot_read_the_c
 # it chooses for, and names the button pressed and that session in its lines.
 
 _SESSION = "the Feature Race of round 3 (Pro)"
-_NOT_YET_RECORDED = (
-    "#482: the points-configuration choice is not told its session and records nothing"
-)
 
 
 async def _choose_as(member, config):
@@ -121,7 +118,6 @@ async def _choose_as(member, config):
     return view, [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 @pytest.mark.parametrize("config", ["bystander", "unreadable"])
 async def test_a_refused_choice_of_points_configuration_is_recorded(config):
     """Alex presses “Standard” on the points-configuration choice for the Feature Race of
@@ -140,7 +136,6 @@ async def test_a_refused_choice_of_points_configuration_is_recorded(config):
     ), line
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_choice_of_points_configuration_writes_one_line():
     """The league manager Alex presses “Standard” on the points-configuration choice for the
     Feature Race of round 3 (Pro). The configuration is chosen, and exactly one line records
