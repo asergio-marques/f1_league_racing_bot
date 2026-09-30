@@ -48,6 +48,7 @@ from leaguebot.core.utils.league_server import (
     guild_of,
 )
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.season_gate import season_for_command
 
@@ -190,6 +191,12 @@ def _parse_bulk_lines(
 
 #: What a bulk paste that could not be written tells its member: nothing was saved, and how to retry.
 _PASTE_NOT_SAVED = "Nothing from the paste was saved. Paste it again to retry."
+#: What a Reject, and the amend review panel's lapse, leave beneath their line in the log channel.
+_NOTHING_APPROVED = (
+    "Nothing has been approved. The staged changes and amendment mode remain. "
+    "Run /results amend review again."
+)
+
 #: A form's refusal when the results module has been switched off since it was shown.
 _MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
 
@@ -1919,12 +1926,17 @@ class ResultsCog(commands.Cog):
                 super().__init__(timeout=None)
                 self_v.approved = False
                 self_v.rejected = False
+                # The interaction of the press, answered through from here on: the
+                # command's own token lasts fifteen minutes from the command, and an
+                # approval that rescores and reposts a season can outlast it.
+                self_v.pressed_by: discord.Interaction | None = None
 
             @discord.ui.button(label="\u2705 Approve", style=discord.ButtonStyle.success)
             async def approve(
                 self_v, btn_inter: discord.Interaction, _: discord.ui.Button
             ) -> None:
                 self_v.approved = True
+                self_v.pressed_by = btn_inter
                 self_v.stop()
                 await btn_inter.response.defer()
 
@@ -1933,6 +1945,7 @@ class ResultsCog(commands.Cog):
                 self_v, btn_inter: discord.Interaction, _: discord.ui.Button
             ) -> None:
                 self_v.rejected = True
+                self_v.pressed_by = btn_inter
                 self_v.stop()
                 await btn_inter.response.defer()
 
@@ -1940,12 +1953,23 @@ class ResultsCog(commands.Cog):
         await interaction.followup.send(
             f"{diff}\n\nApprove or reject these changes?", view=view, ephemeral=True
         )
+        await self.bot.output_router.post_log(
+            f"{interaction_member(interaction)} | /results amend review | Review posted"
+        )
         await view.wait()
 
+        # Every reply after the press goes through the press's own interaction (its token is
+        # fresh), the refusals through `refuse` with the command's name.
+        pressed = view.pressed_by or interaction
+        what = describe(interaction)
+
         if view.rejected:
-            await interaction.followup.send(
+            await pressed.followup.send(
                 "\u2139\ufe0f Amendment rejected. Modification store and amendment mode remain active.",
                 ephemeral=True,
+            )
+            await record_abandoned(
+                self.bot, pressed.user, what=what, lapsed=False, detail=_NOTHING_APPROVED
             )
             return
 
@@ -1956,10 +1980,10 @@ class ResultsCog(commands.Cog):
             held = await open_amendment_in_season(self.bot.db_path, season.id)
             if held is not None:
                 await refuse(
-                    interaction,
+                    pressed,
                     "\u23f8\ufe0f Not approved yet. " + _held_text(held)
                     + " **Nothing has been changed**; run `/results amend review` again then.",
-                    what=describe(interaction),
+                    what=what,
                     reason=(
                         f"round {held['round_number']} of {held['division_name']} is being "
                         "amended, so nothing was approved"
@@ -1973,25 +1997,25 @@ class ResultsCog(commands.Cog):
             except NonMonotonicAmendmentError as exc:
                 bullet_list = "\n\u2022 ".join(exc.errors)
                 await refuse(
-                    interaction,
+                    pressed,
                     f"\u274c Amendment not approved \u2014 the points would be out of order:\n"
                     f"\u2022 {bullet_list}\n"
                     f"Nothing has been changed. The staged changes are still there to repair.",
-                    what=describe(interaction),
+                    what=what,
                     reason="the points would be out of order:\n" + "\n".join(exc.errors),
                 )
                 return
             except AmendmentNotDeliverableError as exc:
                 bullet_list = "\n• ".join(exc.faults)
                 await refuse(
-                    interaction,
+                    pressed,
                     f"⛔ Amendment not approved — the result could not be "
                     f"published:\n• {bullet_list}\n"
                     f"**Nothing has been changed** — not the season's points, not the "
                     f"staged changes, not amendment mode. Approving rescores and reposts "
                     f"every round of every division, so it is refused entire rather than "
                     f"left half-published. Repair the channels above and review again.",
-                    what=describe(interaction),
+                    what=what,
                     reason="the result could not be published:\n" + "\n".join(exc.faults),
                 )
                 return
@@ -2003,7 +2027,7 @@ class ResultsCog(commands.Cog):
                     "\n\u26a0\ufe0f But some attendance sanctions did not apply:\n"
                     + "\n".join(f"\u2022 {line}" for line in sanction_failures)
                 )
-            await interaction.followup.send(reply, ephemeral=True)
+            await pressed.followup.send(reply, ephemeral=True)
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results amend review | Success\n"
                 f"  standings recomputed and reposted",

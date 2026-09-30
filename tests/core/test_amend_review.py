@@ -642,7 +642,6 @@ _NOTHING_APPROVED = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a rejection is not recorded")
 async def test_a_rejection_is_recorded_as_a_cancel():
     """Nothing happened to the season, and the line says so and what to do next (#482)."""
     cog = _make_cog()
@@ -691,7 +690,6 @@ async def test_a_panel_nobody_answers_changes_nothing():
     assert not any(line.startswith(("⛔", "↩️")) for line in lines)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: posting the panel writes no line")
 async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     """A later cancel or lapse line reads against it (#482)."""
     cog = _make_cog()
@@ -707,10 +705,6 @@ async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     assert "Success" not in posted[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a press is answered through the command's followup, which a long approval outlasts",
-)
 async def test_a_press_is_answered_through_its_own_interaction():
     """The command's token has run out by the time the approval finishes (D1): the reply
     goes through the press, and the approval is recorded as a success with no failure line."""
