@@ -547,3 +547,57 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
     assert "signup wizard" in line
     assert "refused for Driver (<@7>)" in line
     assert _ALREADY_ANSWERED in line
+
+
+# ---------------------------------------------------------------------------
+# Cancel Signup after the signup ended
+# ---------------------------------------------------------------------------
+
+_ENDED_NOT_REFUSED = (
+    "#482: a Cancel Signup press after the signup ended is answered as withdrawn, and nothing "
+    "is recorded"
+)
+
+#: The reason `withdraw` gives where the signup has already ended (S5-A6).
+_ALREADY_ENDED = "This signup has already ended. Nothing was changed."
+
+
+@pytest.mark.xfail(strict=True, reason=_ENDED_NOT_REFUSED)
+@pytest.mark.parametrize(
+    "view_name, button",
+    [
+        ("WithdrawButtonView", "withdraw_button"),
+        ("NoNotesButtonView", "cancel_button"),
+        ("PlatformButtonView", "cancel"),
+        ("DriverTypeButtonView", "cancel"),
+        ("PreferredTeamsButtonView", "_cancel_callback"),
+        ("NoPreferenceTeammateView", "cancel"),
+    ],
+)
+async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
+    view_name, button
+):
+    """The driver presses a Cancel Signup left in their channel after their signup has ended.
+    `withdraw` says why it did nothing, and the button answers that, not "withdrawn", and
+    records the refusal."""
+    interaction = _interaction()
+    interaction.client.wizard_service.withdraw = AsyncMock(return_value=_ALREADY_ENDED)
+
+    await _press_step(view_name, button, interaction)
+
+    interaction.client.wizard_service.withdraw.assert_awaited_once()
+    replies = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    ]
+    assert f"⛔ {_ALREADY_ENDED}" in replies, replies
+    assert not any("withdrawn" in reply for reply in replies), replies
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith("⛔ the “Cancel Signup” button"), line
+    assert "signup wizard" in line
+    assert "refused for Driver (<@7>)" in line
+    assert _ALREADY_ENDED.split(".")[0] in line

@@ -113,6 +113,8 @@ def lifecycle():
 
     svc._output_router = MagicMock()
     svc._output_router.post_log = AsyncMock(return_value=None)
+    # One log channel, reached through the service's router or the bot's alike.
+    bot.output_router = svc._output_router
 
     return SimpleNamespace(
         svc=svc,
@@ -167,13 +169,63 @@ async def test_withdrawing_cancels_a_pending_correction_window(lifecycle):
     assert DRIVER_ID not in lifecycle.svc._correction_tasks
 
 
-async def test_a_failed_transition_does_not_stop_the_withdrawal(lifecycle):
-    """The driver may already be NOT_SIGNED_UP. They must still be told."""
+_NO_WITHDRAWN_LINE = "#482: a withdrawal writes no line in the log channel"
+_ENDED_NOT_REFUSED = (
+    "#482: a Cancel Signup press after the signup ended posts the notice again and pushes the "
+    "channel's deletion back, instead of being refused"
+)
+_TRANSITION_SWALLOWED = "#457: withdraw swallows every error from the driver's transition"
+
+#: The reason `withdraw` gives where the signup has already ended (S5-A6).
+_ALREADY_ENDED = "This signup has already ended. Nothing was changed."
+
+
+def _alex_on_the_server(lifecycle) -> None:
+    lifecycle.guild.get_member = MagicMock(
+        return_value=SimpleNamespace(id=int(DRIVER_ID), display_name="Alex", mention="<@7>")
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_WITHDRAWN_LINE)
+async def test_withdrawing_writes_one_withdrawn_line(lifecycle):
+    """A withdrawal is the driver's own act through the Cancel Signup button, so it writes one
+    line in the wizard's family (S5-A1)."""
+    _alex_on_the_server(lifecycle)
+
+    refused = await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+
+    assert not refused
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [f"Alex (<@{DRIVER_ID}>) | Signup | Withdrawn"]
+
+
+@pytest.mark.xfail(strict=True, reason=_ENDED_NOT_REFUSED)
+async def test_a_withdrawal_after_the_signup_ended_is_refused_and_changes_nothing(lifecycle):
+    """The driver's transition is refused (`ValueError`) because the signup has already ended:
+    withdrawn, rejected, expired or closed. `withdraw` returns why, for the button to answer and
+    record, and neither posts the notice again nor pushes the channel's deletion back."""
+    _alex_on_the_server(lifecycle)
     lifecycle.driver_service.transition = AsyncMock(side_effect=ValueError("already"))
 
-    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+    refused = await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
-    lifecycle.svc._trigger_channel_hold.assert_awaited_once()
+    assert refused == _ALREADY_ENDED
+    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.xfail(strict=True, reason=_TRANSITION_SWALLOWED)
+async def test_a_withdrawal_whose_transition_fails_otherwise_is_not_swallowed(lifecycle):
+    """Only the expected refusal (`ValueError`) is caught by name; any other error reaches the
+    Cancel Signup button's failure handler, and nothing claims the signup was withdrawn."""
+    _alex_on_the_server(lifecycle)
+    lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    with pytest.raises(RuntimeError):
+        await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+
+    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
