@@ -1973,7 +1973,7 @@ async def test_every_refused_press_of_results_rounds_amend_is_recorded(
     assert line.endswith(f" refused for {who} — {reply.removeprefix('⛔ ')}")
     if case == "cancel-by-a-non-manager":
         assert line.startswith(
-            "⛔ the Cancel Amendment button of `/results rounds amend` of round 3 (Pro Division)"
+            "⛔ the “Cancel Amendment” button of `/results rounds amend` of round 3 (Pro Division)"
         )
     else:
         assert "Continue" in line and "`/results rounds amend`" in line
