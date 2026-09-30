@@ -23,7 +23,6 @@ SERVER_ID = 7731
 MANAGER = 42
 NOT_ENABLED = "Signup module is not enabled"
 
-_GATE = "#482: the signup module gate is still the cog's interaction_check, not in the body"
 _REFUSAL_LINE = "#482: the refusal is answered but not recorded in the log channel"
 
 
@@ -103,7 +102,6 @@ _LISTS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE)
 @pytest.mark.parametrize("method, name, args", _ACTING, ids=[n for _, n, _ in _ACTING])
 async def test_a_command_refused_while_the_module_is_off_is_answered_once_and_recorded(
     tmp_path, method, name, args
@@ -125,7 +123,6 @@ async def test_a_command_refused_while_the_module_is_off_is_answered_once_and_re
     assert NOT_ENABLED in line
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE)
 @pytest.mark.parametrize("method, name", _LISTS, ids=[n for _, n in _LISTS])
 async def test_a_list_refused_while_the_module_is_off_is_answered_and_not_recorded(
     tmp_path, method, name
@@ -167,7 +164,6 @@ async def test_the_configuration_view_still_answers_while_the_module_is_off(tmp_
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE)
 async def test_the_cog_no_longer_gates_through_interaction_check():
     """A cog-wide `interaction_check` that returns False raises `CheckFailure`, which answers a
     second time and writes a failure line; the gate is in each command's body instead."""

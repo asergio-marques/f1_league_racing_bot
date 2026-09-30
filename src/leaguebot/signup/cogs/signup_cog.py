@@ -57,10 +57,6 @@ _DAY_CHOICES = [
     app_commands.Choice(name="Sunday", value="7"),
 ]
 
-# Commands exempt from the signup-module-enabled check (config-view only; the
-# new channel/role config commands require the module to already be enabled)
-_EXEMPT_COMMANDS = {"view"}
-
 _MAX_SLOTS = 25
 
 
@@ -689,19 +685,27 @@ class SignupCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
 
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Gate all commands on signup module enabled, except config subcommands."""
-        cmd = interaction.command
-        if cmd and cmd.name in _EXEMPT_COMMANDS:
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Whether the signup module is on; where it is not, refuse and return False.
+
+        Every `/signup` command but `config view` runs this in its own body, after its tier
+        guard, as the results cog's gate does. It used to be the cog's `interaction_check`,
+        which answered the member and then raised `CheckFailure`: the error handler answered
+        a second time and wrote a failure line for what was only a refusal. One reply, then,
+        and one refusal line — unless *record* is False, which the lists pass, since they
+        change nothing and record nothing. A command run in a DM never gets this far: the
+        tier guard has sent it to the host log.
+        """
+        if await self.bot.module_service.is_signup_enabled():
             return True
-        enabled = await self.bot.module_service.is_signup_enabled()
-        if not enabled:
-            await interaction.response.send_message(
-                "⛔ Signup module is not enabled. Use `/module enable signup` first.",
-                ephemeral=True,
-            )
-            return False
-        return True
+        reply = "⛔ Signup module is not enabled. Use `/module enable signup` first."
+        if record:
+            await refuse(interaction, reply, what=describe(interaction))
+        else:
+            await interaction.response.send_message(reply, ephemeral=True)
+        return False
 
     # ── Wizard message listener ────────────────────────────────────────
 
@@ -856,6 +860,8 @@ class SignupCog(commands.Cog):
     async def signup_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
+        if not await self._module_gate(interaction):
+            return
         if await self._refuse_while_configuration_fixed(interaction, "/signup channel"):
             return
         guild = interaction.guild
@@ -1000,6 +1006,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="nationality", description="Toggle whether nationality is required in signups.")
     @league_manager_only
     async def nationality(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction):
+            return
         if await self._refuse_while_configuration_fixed(interaction, "/signup nationality"):
             return
         settings = await self.bot.signup_module_service.get_settings()
@@ -1034,6 +1042,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="time-type", description="Toggle the time type setting (Time Trial / Short Qualification).")
     @league_manager_only
     async def time_type(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction):
+            return
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-type"):
             return
         settings = await self.bot.signup_module_service.get_settings()
@@ -1070,6 +1080,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="time-image", description="Toggle whether a time image is required in signups.")
     @league_manager_only
     async def time_image(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction):
+            return
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-image"):
             return
         settings = await self.bot.signup_module_service.get_settings()
@@ -1147,6 +1159,8 @@ class SignupCog(commands.Cog):
         day: app_commands.Choice[str],
         time: str,
     ) -> None:
+        if not await self._module_gate(interaction):
+            return
 
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot add"):
             return
@@ -1209,6 +1223,8 @@ class SignupCog(commands.Cog):
     async def time_slot_remove(
         self, interaction: discord.Interaction, slot_id: int
     ) -> None:
+        if not await self._module_gate(interaction):
+            return
 
         if await self._refuse_while_configuration_fixed(interaction, "/signup time-slot remove"):
             return
@@ -1256,6 +1272,8 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @changes_nothing
     async def time_slot_list(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction, record=False):
+            return
         slots = await self.bot.signup_module_service.get_slots()
         await interaction.response.send_message(
             _format_slots(slots), ephemeral=True
@@ -1323,6 +1341,8 @@ class SignupCog(commands.Cog):
     async def close_time_add(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
+        if not await self._module_gate(interaction):
+            return
         cfg = await self._close_time_context(interaction)
         if cfg is None:
             return
@@ -1365,6 +1385,8 @@ class SignupCog(commands.Cog):
     )
     @league_manager_only
     async def close_time_cancel(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction):
+            return
         cfg = await self._close_time_context(interaction)
         if cfg is None:
             return
@@ -1404,6 +1426,8 @@ class SignupCog(commands.Cog):
     async def close_time_modify(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
+        if not await self._module_gate(interaction):
+            return
         cfg = await self._close_time_context(interaction)
         if cfg is None:
             return
@@ -1458,6 +1482,8 @@ class SignupCog(commands.Cog):
         track_ids: str | None = None,
         close_time: str | None = None,
     ) -> None:
+        if not await self._module_gate(interaction):
+            return
 
         # Refused under test mode, for the same reason the Sign Up button is: no real
         # driver may sign up while the server is under test, so a window opened now
@@ -1678,6 +1704,8 @@ class SignupCog(commands.Cog):
     @signup.command(name="close", description="Close the signup window.")
     @league_manager_only
     async def signup_close(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction):
+            return
 
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
@@ -1771,6 +1799,8 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @changes_nothing
     async def signup_unassigned_list(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction, record=False):
+            return
         await interaction.response.defer(ephemeral=True)
         drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()
         if not drivers:
@@ -1843,6 +1873,8 @@ class SignupCog(commands.Cog):
     @league_manager_only
     @changes_nothing
     async def signup_unassigned_export(self, interaction: discord.Interaction) -> None:
+        if not await self._module_gate(interaction, record=False):
+            return
         await interaction.response.defer(ephemeral=True)
 
         slots = await self.bot.signup_module_service.get_slots()
