@@ -491,8 +491,20 @@ Object.assign(scenarios, {
   testsRerunAcceptsTestsBuildMadePass: afterBuild([A, Bn], {
     expect: r => r.status === 'passed' && r.report.includes('*Passes already:* the build has made it pass'),
   }),
-  testsRerunStillFlagsPassingTestNotUnmarked: afterBuild([A], {
-    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Bn} passes already under --runxfail`)) && !r.lastFailures.some(f => f.includes(`${A} passes already`)),
+  // A test added in this run that passes already pins nothing, whatever the build did before it.
+  testsRerunStillFlagsPassingTestNotApproved: {
+    ...afterBuild([A]),
+    respond(label, prompt, opts) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Bn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Cn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' })], changes: changes([[A, 'added'], [Bn, 'added'], [Cn, 'added']]), unmarkedByBuild: [A] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Cn} passes already under --runxfail`)) && !r.lastFailures.some(f => f.includes(`${A} passes already`) || f.includes(`${Bn} passes already`)),
+  },
+  // A test the owner approved at Gate 2 that passes now is one the build made pass, however its
+  // marker was written: here the tool listed only the helper that built its cases.
+  testsRerunAcceptsApprovedTestNowPassing: afterBuild(['tests/x/test_a.py::_case'], {
+    expect: r => r.status === 'passed' && r.tests.filter(t => t.madePassByBuild).length === 2,
   }),
   // Before the build has begun there is nothing it unmarked, and the tester is not asked.
   testerNotAskedWithoutTestsHead: {

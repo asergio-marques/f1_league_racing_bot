@@ -1412,13 +1412,20 @@ const reviewTests = async (k, questions, built) => {
 // pinning nothing. It is one whose marker the build removed since testsHead, or one the build
 // adjusted after a Gate 2 (#483), which the tool then reports as modified rather than unmarked, and
 // which passes as committed, as no test still marked can.
+//
+// And, whatever the markers' form, one the owner approved at the last Gate 2 that passes as committed
+// now: at Gate 2 it failed as the plan said, marked strict, so it passes only unmarked, and only
+// because the change it pins is built. A marker the tool could not read, as one a helper put on a
+// test's cases, left such a test flagged as pinning nothing (#482 slice 4).
 const markMadePass = t => {
   if (!t || !testsHead) return
   const unmarked = new Set((t.unmarkedByBuild || []).map(bareId))
   const touched = new Set(adjusted.map(a => bareId(a.target)))
+  const approved = new Set(shown ? shown.tests.filter(e => e.change !== 'deleted').map(e => bareId(e.nodeid)) : [])
   for (const w of written) {
-    const x = t.tests.find(r => bareId(r.nodeid) === bareId(w.nodeid))
-    if (unmarked.has(bareId(w.nodeid)) || (touched.has(bareId(w.nodeid)) && x && x.outcomeAsCommitted === 'passed')) w.madePassByBuild = true
+    const key = bareId(w.nodeid)
+    const passed = t.tests.some(r => bareId(r.nodeid) === key && r.outcomeAsCommitted === 'passed')
+    if (unmarked.has(key) || (passed && (touched.has(key) || (approved.has(key) && !w.alreadyPasses)))) w.madePassByBuild = true
   }
 }
 
