@@ -693,3 +693,76 @@ async def test_every_appeals_control_refuses_once_the_appeals_are_approved(
     assert line == (
         f"⛔ the “{label}” button {_OF_THE_APPEALS_REVIEW} refused for Alex (<@77>) — {reason}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Every press is recorded (#482)
+#
+# The owner's decision "Every press": each press that changes the appeals review writes one line
+# in the success form, naming the member, the review and what was removed or cleared.
+# ---------------------------------------------------------------------------
+
+
+def _all_lines(interaction, state) -> list[str]:
+    """Every line written, through the press's client or through the review's bot."""
+    return [
+        call.args[0]
+        for call in interaction.client.output_router.post_log.await_args_list
+        + state.bot.output_router.post_log.await_args_list
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason="#482: the appeals review press writes no line")
+@pytest.mark.parametrize(
+    "kind, label",
+    [("review", "Remove #1"), ("clear", _APPEALS_CLEAR)],
+    ids=["remove-correction", "clear"],
+)
+async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind, label):
+    """Round 3's appeals review (division Pro) has two +5s corrections staged, for drivers 101
+    and 102. Alex, a league manager, presses Remove #1, or "Yes, clear and proceed with no
+    corrections" (the approval itself stubbed). The press does what it does today, and exactly
+    one line records it, naming Alex, the button, the review and what was removed or cleared."""
+    db_path = await _make_db(tmp_path, name=f"appeals_press_{kind}")
+    state = _state(db_path, appeals=[_penalty(101), _penalty(102)])
+    view = (
+        _AppealsConfirmClearView(state=state) if kind == "clear"
+        else AppealsReviewView(state=state)
+    )
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1, p2 as appeals, p3, p4:
+        await button.callback(interaction)
+
+    removed = ["<@101>", "<@102>"] if kind == "clear" else ["<@101>"]
+    assert [p.driver_user_id for p in state.staged_appeals] == ([] if kind == "clear" else [102])
+    assert appeals.await_count == (1 if kind == "clear" else 0)
+    (line,) = _all_lines(interaction, state)
+    assert not line.startswith(("⛔", "↩️", "⌛")), line
+    for fragment in ("Alex (<@77>)", label, "appeals review of round 3 (Pro)", "+5s", *removed):
+        assert fragment in line, (fragment, line)
+
+
+async def test_no_changes_writes_no_line_beside_the_approval_s_own(tmp_path):
+    """Round 3's appeals review (division Pro) has nothing staged. Alex presses No Changes /
+    Confirm, which approves the appeals at once; the approval (stubbed) writes its own line. The
+    press writes no second one: one action, one line."""
+    db_path = await _make_db(tmp_path, name="appeals_no_changes_line")
+    state = _state(db_path)
+    view = AppealsReviewView(state=state)
+    interaction = _interaction()
+
+    async def _approved(approving, _state, **_kwargs):
+        await approving.client.output_router.post_log("the approval's own line")
+
+    with _manager(True), patch(
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review",
+        new=AsyncMock(side_effect=_approved),
+    ) as finalise:
+        await _press(view, "no_changes_btn", interaction)
+
+    finalise.assert_awaited_once()
+    assert _all_lines(interaction, state) == ["the approval's own line"]
+

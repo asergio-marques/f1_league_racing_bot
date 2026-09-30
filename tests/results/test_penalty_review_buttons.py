@@ -803,3 +803,108 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
         assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
     else:
         assert line == f"⛔ the “{label}” button {_OF_THE_REVIEW} refused for Alex (<@77>) — {reason}"
+
+
+# ---------------------------------------------------------------------------
+# Every press is recorded (#482)
+#
+# The owner's decision "Every press": each press that changes the review writes one line in the
+# success form, naming the member, the review and what was staged, removed or cleared. The
+# review's bot is the one the press came through, so a line lands in one place whichever of the
+# two writes it.
+# ---------------------------------------------------------------------------
+
+_PRESS_NOT_YET_RECORDED = "#482: the review press writes no line in the log channel"
+
+
+def _press_case(case_id, kind, label, staged, *named):
+    return pytest.param(
+        kind, label, staged, named,
+        id=case_id,
+        marks=pytest.mark.xfail(strict=True, reason=_PRESS_NOT_YET_RECORDED),
+    )
+
+
+_PRESSES = [
+    _press_case("remove-penalty", "review", "Remove #1", (5,), "+5s", f"<@{DRIVER}>"),
+    _press_case("remove-pardon", "review", "Remove Pardon #1", (5,), "ABSENT", f"<@{DRIVER}>"),
+    _press_case("no-penalties-posts-the-question", "review", "No Penalties / Confirm", ()),
+    _press_case("clear", "clear", _CLEAR_BUTTONS[0], (5, 10), "+5s", "+10s"),
+    _press_case("make-changes", "approval", "✏️ Make Changes", (5,)),
+]
+
+
+def _pressed_by_alex(state, channel):
+    """Alex's press on the review's approval message, the review's channel answering with
+    *channel*, and the review's bot writing where the press's does."""
+    interaction = _interaction()
+    interaction.message.id = _APPROVAL_MESSAGE
+    state.bot.get_channel = MagicMock(return_value=channel)
+    state.bot.output_router = interaction.client.output_router
+    return interaction
+
+
+@pytest.mark.parametrize("kind, label, staged, named", _PRESSES)
+async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, staged, named):
+    """Round 3's penalty review (Division 1) has the penalties given staged and one ABSENT
+    pardon. Alex, a league manager, presses Remove #1 or Remove Pardon #1, No Penalties /
+    Confirm with nothing staged (posting the approval question), "Yes, clear and proceed with no
+    penalties", or Make Changes on the approval question. The press does what it does today,
+    and exactly one line records it, naming Alex, the button, the review and what was removed
+    or cleared."""
+    state = _state(staged=[_penalty(s) for s in staged])
+    state.staged_pardons = [_pardon(0)]
+    state.approval_message_id = _APPROVAL_MESSAGE if kind == "approval" else None
+    channel = MagicMock()
+    channel.send = AsyncMock(return_value=MagicMock(id=_APPROVAL_MESSAGE))
+    view = _view(kind, state)
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _pressed_by_alex(state, channel)
+
+    with patch(
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+    ), patch(
+        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+    ):
+        await button.callback(interaction)
+
+    if label == "Remove #1":
+        assert state.staged == []
+    if label == "Remove Pardon #1":
+        assert state.staged_pardons == []
+    if kind == "clear" or label == "No Penalties / Confirm":
+        assert state.staged == []
+        channel.send.assert_awaited_once()
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert not line.startswith(("⛔", "↩️", "⌛")), line
+    for fragment in ("Alex (<@77>)", label, "penalty review of round 3 (Division 1)", *named):
+        assert fragment in line, (fragment, line)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: No Penalties / Confirm with the channel unreachable posts nothing and tells nobody",
+)
+async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorded():
+    """Round 3's penalty review (Division 1) has nothing staged, and its submission channel
+    (4455) can no longer be reached. Alex presses No Penalties / Confirm. No approval question
+    is posted; Alex is told it could not be posted, and exactly one ⛔ line records the refusal,
+    naming the button, the review, Alex and the channel. No success line is written."""
+    state = _state(staged=[])
+    state.submission_channel_id = 4455
+    view = PenaltyReviewView(state)
+    interaction = _pressed_by_alex(state, None)
+
+    with patch(
+        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+    ):
+        await _press(view, "no_penalties_btn", interaction)
+
+    assert state.approval_message_id is None
+    assert "could not be posted" in _replied(interaction)
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line.startswith(
+        f"⛔ the “No Penalties / Confirm” button {_OF_THE_REVIEW} refused for Alex (<@77>) — "
+    ), line
+    assert "4455" in line, line
+

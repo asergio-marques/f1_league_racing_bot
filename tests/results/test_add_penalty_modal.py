@@ -777,3 +777,38 @@ async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path
     (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
     assert line.startswith("⛔ the “Add Correction — Feature Race” form"), line
     assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
+
+
+# ---------------------------------------------------------------------------
+# Staging is recorded (#482)
+#
+# The owner's decision "Every press": staging a penalty or a correction writes one line in the
+# success form, naming the member, the review and what was staged.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason="#482: staging a penalty or correction writes no line")
+@pytest.mark.parametrize("appeals", [False, True], ids=["penalty", "correction"])
+async def test_staging_writes_one_line(tmp_path, appeals):
+    """Alex submits the Add Penalty form of round 3's penalty review (Division 1), or the Add
+    Correction form of its appeals review, giving driver 4001 +5s in the Feature Race. It is
+    staged as today, and exactly one line records it, naming Alex, the review, the driver, the
+    session and the penalty."""
+    round_status = "AWAITING_APPEAL_VERDICTS" if appeals else "AWAITING_REPORT_VERDICTS"
+    state = _state(await _make_db(tmp_path, round_status=round_status))
+    state.bot.output_router.post_log = AsyncMock(return_value=None)
+
+    interaction = await _submit(state, appeals=appeals)
+
+    assert len(state.staged_appeals if appeals else state.staged) == 1
+    (line,) = [
+        call.args[0]
+        for call in interaction.client.output_router.post_log.await_args_list
+        + state.bot.output_router.post_log.await_args_list
+    ]
+    assert not line.startswith(("⛔", "↩️", "⌛")), line
+    review = "appeals review" if appeals else "penalty review"
+    for fragment in (
+        "Alex (<@77>)", f"{review} of round 3 (Division 1)", f"<@{DRIVER}>", "Feature Race", "+5s",
+    ):
+        assert fragment in line, (fragment, line)
