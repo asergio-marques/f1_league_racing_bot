@@ -320,3 +320,25 @@ async def test_a_prompt_whose_report_list_cannot_be_read_is_still_cleared(db_pat
     channel.send.assert_awaited_once()
     assert [line for line in _logged(bot) if line.startswith("⌛ ")]
     assert await _rows(db_path) == []
+
+
+async def test_a_prompt_is_not_recorded_among_its_own_report(db_path):
+    """The review's poster keeps every message it posted, the question included, and hands the
+    list over as the report. The record keeps the report apart from the question, so a restart
+    deletes each message once."""
+    import json
+
+    from leaguebot.core.cogs.season_cog import _ApproveView
+
+    channel, messages = _channel_holding(800, 901, 902)
+    bot = _bot(db_path, channel)
+    cog = MagicMock()
+    cog.bot = bot
+    view = _ApproveView(cog, REVIEWER_ID)
+    view._season_id = 1
+    view.carries([messages[901], messages[902], messages[800]])
+    messages[800].channel = channel
+    await view.bind(messages[800])
+
+    [row] = await _rows(db_path)
+    assert json.loads(row["report_message_ids"]) == [901, 902]

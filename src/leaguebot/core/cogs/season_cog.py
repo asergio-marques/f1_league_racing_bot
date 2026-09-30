@@ -6627,7 +6627,10 @@ class _ApproveView(LeagueView):
                         message.channel.id,
                         self._reviewer_id,
                         self._review_command,
-                        json.dumps([posted.id for posted in self._report]),
+                        # The poster's list holds the question too: kept apart from its report.
+                        json.dumps(
+                            [posted.id for posted in self._report if posted.id != message.id]
+                        ),
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )
