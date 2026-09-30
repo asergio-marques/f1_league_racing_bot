@@ -1950,12 +1950,10 @@ async def _refused_press(case: str, tmp_path):
         pytest.param(
             "continue-with-no-session-chosen", "Choose at least one session first.",
             f"Admin (<@{USER_ID}>)", id="continue-with-no-session-chosen",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
         ),
         pytest.param(
             "cancel-by-a-non-manager", "⛔ Only league managers can cancel.",
             "Driver (<@88>)", id="cancel-by-a-non-manager",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
         ),
     ],
 )
@@ -2160,7 +2158,6 @@ def _ended_line(cog, mark: str) -> tuple[str, str]:
     return head, "\n".join(beneath)
 
 
-@pytest.mark.xfail(strict=True, reason=_PICKER_NOT_YET)
 async def test_cancelling_the_session_picker_is_recorded(tmp_path):
     """The admin runs `/results rounds amend` without naming a session and presses Cancel on
     the session picker: one cancel line naming them, with beneath it that nothing was amended
@@ -2178,7 +2175,6 @@ async def test_cancelling_the_session_picker_is_recorded(tmp_path):
     assert await _amend_rows(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_PICKER_NOT_YET)
 async def test_a_session_picker_left_to_lapse_is_recorded_and_answered_as_a_lapse(tmp_path):
     """The admin runs `/results rounds amend` without naming a session and leaves the session
     picker five minutes: they are told the choice expired, nothing was amended and the command

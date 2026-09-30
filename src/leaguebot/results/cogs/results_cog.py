@@ -205,6 +205,9 @@ _AMEND_REVIEW_LAPSED = (
     "changes and amendment mode remain. Run `/results amend review` again."
 )
 
+#: What a `/results rounds amend` left at its session picker leaves beneath its line.
+_PICKER_ENDED = "Nothing was amended. Run `/results rounds amend` again to amend a round."
+
 #: A form's refusal when the results module has been switched off since it was shown.
 _MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
 
@@ -741,13 +744,23 @@ class _AmendSessionsView(LeagueView):
 
     Posted ephemerally to the member who ran the command, so nobody else can answer it. Times
     out with the paste, rather than holding the command open for ever.
+
+    *what* is the amendment as the log names it; a refused Continue is recorded against it. The
+    command records the Cancel and the lapse, where it reads how the picker ended, and
+    *cancelled_by* is who pressed Cancel.
     """
 
-    def __init__(self, sessions: list[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        sessions: list[tuple[str, str]],
+        what: str = "`/results rounds amend`",
+    ) -> None:
         super().__init__(timeout=300)
+        self._what = what
         #: The session-type values chosen, in the order the select reports them.
         self.selected: list[str] = []
         self.cancelled = False
+        self.cancelled_by: discord.abc.User | None = None
         self._select = CallbackSelect(
             placeholder="Sessions to amend",
             min_values=1,
@@ -778,8 +791,10 @@ class _AmendSessionsView(LeagueView):
 
     async def _continue(self, interaction: discord.Interaction) -> None:
         if not self.selected:
-            await interaction.response.send_message(
-                "Choose at least one session first.", ephemeral=True
+            await refuse(
+                interaction,
+                "Choose at least one session first.",
+                what=f"the \u201cContinue\u201d button of {self._what}",
             )
             return
         self.stop()
@@ -787,6 +802,7 @@ class _AmendSessionsView(LeagueView):
 
     async def _cancel(self, interaction: discord.Interaction) -> None:
         self.cancelled = True
+        self.cancelled_by = interaction.user
         self.stop()
         await interaction.response.defer()
 
@@ -2450,6 +2466,8 @@ class ResultsCog(commands.Cog):
             return
 
         # --- Which sessions ---
+        #: The amendment as its log lines name it.
+        what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
         _stype_order = list(SessionType)
         session_types_present = sorted(
             [SessionType(r["session_type"]) for r in sr_rows], key=_stype_order.index
@@ -2479,7 +2497,7 @@ class ResultsCog(commands.Cog):
             # re-entered one after another and their decisions reviewed in one pass, with the
             # division rebuilt once at the end.
             sv = _AmendSessionsView(
-                [(st.value, _label(st)) for st in session_types_present]
+                [(st.value, _label(st)) for st in session_types_present], what=what_amended
             )
             await interaction.followup.send(
                 "\U0001f4cb Select the sessions to amend. Each is re-entered in turn, and their "
@@ -2488,7 +2506,28 @@ class ResultsCog(commands.Cog):
                 ephemeral=True,
             )
             timed_out = await sv.wait()
-            if timed_out or sv.cancelled or not sv.selected:
+            if timed_out:
+                await record_abandoned(
+                    self.bot,
+                    interaction.user,
+                    what=what_amended,
+                    lapsed=True,
+                    detail=_PICKER_ENDED,
+                )
+                await interaction.followup.send(
+                    "\u231b The choice of sessions lapsed, so nothing was amended. Run "
+                    "`/results rounds amend` again to amend a round.",
+                    ephemeral=True,
+                )
+                return
+            if sv.cancelled or not sv.selected:
+                await record_abandoned(
+                    self.bot,
+                    sv.cancelled_by or interaction.user,
+                    what=what_amended,
+                    lapsed=False,
+                    detail=_PICKER_ENDED,
+                )
                 await interaction.followup.send("ℹ️ Amendment cancelled.", ephemeral=True)
                 return
             chosen = sorted((SessionType(v) for v in sv.selected), key=_stype_order.index)
@@ -2667,8 +2706,6 @@ class ResultsCog(commands.Cog):
         # Who pressed Cancel, which may be a league manager other than the opener: the cancel
         # line names whoever pressed it.
         cancelled_by: list[discord.abc.User | None] = [None]
-        #: The amendment as its log lines name it.
-        what_amended = f"`/results rounds amend` of round {rnd.round_number} ({div.name})"
         from leaguebot.results.services.result_submission_service import (
             AMENDMENT_RE_RUN,
             AMENDMENT_RE_RUN_ONCE_PUT_BACK,
@@ -2722,6 +2759,9 @@ class ResultsCog(commands.Cog):
                     exc_info=True,
                 )
 
+        #: The Cancel Amendment button as a refusal's line names it.
+        cancel_what = f"the \u201cCancel Amendment\u201d button of {what_amended}"
+
         class _CancelView(LeagueView):
             def __init__(self_v) -> None:
                 super().__init__(timeout=None)
@@ -2736,8 +2776,8 @@ class ResultsCog(commands.Cog):
                     and isinstance(bi.user, discord.Member)
                     and is_league_manager(server_cfg, bi.user)
                 ):
-                    await bi.response.send_message(
-                        "⛔ Only league managers can cancel.", ephemeral=True
+                    await refuse(
+                        bi, "⛔ Only league managers can cancel.", what=cancel_what
                     )
                     return
                 if stage_one_writing[0]:
@@ -2745,7 +2785,7 @@ class ResultsCog(commands.Cog):
                         bi,
                         "⏳ The corrected results are being recorded — press **Cancel "
                         "Amendment** again in a moment to undo them.",
-                        what=f"the Cancel Amendment button of {what_amended}",
+                        what=cancel_what,
                     )
                     return
                 if stage_one_done[0]:
@@ -2785,7 +2825,7 @@ class ResultsCog(commands.Cog):
                             bi,
                             "ℹ️ Too late to cancel — the amendment is already being "
                             "committed, or is no longer open.",
-                            what=f"the Cancel Amendment button of {what_amended}",
+                            what=cancel_what,
                         )
                     return
                 cancelled_by[0] = bi.user
