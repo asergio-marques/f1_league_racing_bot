@@ -33,3 +33,27 @@ module.exports = {
     expect: r => r.status === 'passed',
   },
 }
+
+// A plan split between the two paths: the commit points built by hand are named to the builder as
+// not its own, and to each reviewer as not missing.
+module.exports.handBuiltNamedToBuilderAndReviewers = {
+  args: { ...B, handBuilt: ['commit point 5: the refusal sites in season_cog'] },
+  respond(label, prompt) {
+    const named = prompt.includes('commit point 5: the refusal sites in season_cog')
+    if (label.endsWith(':builder') && !(named && prompt.includes('not yours to build'))) throw new Error('the builder was not told what is built by hand')
+    if (/:(issue|code|product)$/.test(label) && !(named && prompt.includes('none is missing work'))) throw new Error(`${label} was not told what is built by hand`)
+    if (label.endsWith(':builder')) return builder({ tests: [] })
+    return lanesClean(label)
+  },
+  expect: r => r.status === 'passed' && r.handBuilt.join() === 'commit point 5: the refusal sites in season_cog',
+}
+module.exports.handBuiltRefusedUnlessList = {
+  args: { ...B, handBuilt: 'commit point 5' },
+  respond(label) { throw new Error(`${label} ran with a handBuilt that should have been refused`) },
+  expectThrow: 'handBuilt is a list',
+}
+module.exports.handBuiltRefusedWithEmptyName = {
+  args: { ...B, handBuilt: ['commit point 5', ' '] },
+  respond(label) { throw new Error(`${label} ran with a handBuilt that should have been refused`) },
+  expectThrow: 'handBuilt is a list',
+}

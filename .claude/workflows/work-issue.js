@@ -60,7 +60,7 @@ const ROLE_DEFAULTS = {
 const MODELS = ['opus', 'sonnet', 'haiku']
 const EFFORTS = ['low', 'medium', 'high']
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, and overruled, the ids of calls the owner has overruled. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, overruled, the ids of calls the owner has overruled, and handBuilt, a list naming the plan's commit points built by hand apart from the workflow. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -92,6 +92,7 @@ const kind = ARGS.kind || 'fix'
 if (!['fix', 'design-pass'].includes(kind)) throw new Error(`kind must be "fix" or "design-pass". ${USAGE}`)
 if (stage === 'check' && !ARGS.commit) throw new Error(`The check stage needs commit. ${USAGE}`)
 if (ARGS.previous && ARGS.previous.stage !== stage) throw new Error(`previous is a ${ARGS.previous.stage} result, and this run is the ${stage} stage.`)
+if (ARGS.handBuilt !== undefined && !(Array.isArray(ARGS.handBuilt) && ARGS.handBuilt.every(x => typeof x === 'string' && x.trim()))) throw new Error(`handBuilt is a list naming commit points of the plan. ${USAGE}`)
 if (stage !== 'check') {
   const missing = ['worktree', 'python', 'branch', 'base'].filter(k => !ARGS[k])
   if (missing.length) throw new Error(`The ${stage} stage needs ${missing.join(', ')}. ${USAGE}`)
@@ -110,6 +111,12 @@ const planned = (title, v) => { const t = asText(v).trim(); return t && String(A
 const ISSUE = `issue #${issue} (read it with: gh issue view ${issue} --json title,body,labels,comments)`
 const SPEC_LIST = modules.map(m => `${m}: ${SPECS[m]}`).join('; ')
 const DESIGN_LIST = modules.map(m => `${m}: ${DESIGN_FILES[m] || 'none yet, so architecture.md alone governs it'}`).join('; ')
+// The plan's commit points the owner chose at Gate 1 to have built by hand, each applying a rule
+// already decided, with a review of their own: the workflow neither builds them nor misses them.
+const HAND_BUILT = ARGS.handBuilt || []
+const handBuiltFor = who => HAND_BUILT.length
+  ? section(`Commit points of the plan built by hand, apart from this workflow, and reviewed apart: ${who === 'builder' ? 'not yours to build and not owed by this stage; leave them out of remaining, and leave their commits alone' : 'none is missing work, and their commits are not yours to review'}`, HAND_BUILT)
+  : ''
 const DESIGN_PASS = kind === 'design-pass'
   ? '\n\nThis is a design pass\'s correction, not a fix: it must change nothing a league sees.'
   : ''
@@ -920,7 +927,7 @@ ${stage === 'tests' ? TESTS_JOB : BUILD_JOB}${DESIGN_PASS}
 
 ${start}${answered}${stage === 'tests' ? section('The list as it stands, under its labels', written.length || supportWritten.length ? { tests: written, support: supportWritten } : '') : ''}
 
-${BUILDER_RULES}${section('The approved plan', plan)}${planned('The checks the plan passed', ARGS.checks)}${planned('What a league should see once it lands', ARGS.criteria)}${planned('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section(`${PROVISIONAL}: they bind you until the owner overrules them`, provisional)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
+${BUILDER_RULES}${section('The approved plan', plan)}${handBuiltFor('builder')}${planned('The checks the plan passed', ARGS.checks)}${planned('What a league should see once it lands', ARGS.criteria)}${planned('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section(`${PROVISIONAL}: they bind you until the owner overrules them`, provisional)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
 
 const TESTS_WRITTEN = 'The tests the builder changed, each under its label, with the scenario and expectation it gives the owner. Name a test by its node id in a finding: a label can change before the gate. One marked alreadyPasses passes already: it is unmarked and must pass. A deleted one is gone, and says why. Every other one is marked xfail(strict=True) and must fail for the reason the plan gives'
@@ -958,7 +965,7 @@ const listFor = (lane, tests, support, whole = false) => {
 
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
-const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${planned('The checks the plan passed', ARGS.checks)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
+const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The checks the plan passed', ARGS.checks)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
 
 // The summary covers the whole work, however little of it a later round reviews.
 const summaryAsk = () => {
@@ -968,7 +975,7 @@ const summaryAsk = () => {
   return `If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. ${whole} Otherwise leave summary empty.`
 }
 
-const productPrompt = (k, questions, testReport, tests, support, whole = false) => `Job 2 — a round of the branch. ${shared(k, 'product', whole)} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${planned('What a league should see once it lands', ARGS.criteria)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support, whole)}${section('The tester\'s report', testReport)}`
+const productPrompt = (k, questions, testReport, tests, support, whole = false) => `Job 2 — a round of the branch. ${shared(k, 'product', whole)} The specs: ${SPEC_LIST}, and the core specification wherever the work touches core's rules. Answer each business question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every engineering question you meet to raised[], untouched. Leave designDocsChanged empty. ${summaryAsk()}${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('What a league should see once it lands', ARGS.criteria)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section('Rules cited so far in this work', citations)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('product')}${section('Business questions from the builder', questions)}${listFor('product', tests, support, whole)}${section('The tester\'s report', testReport)}`
 
 const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed in round ${k} of the tests stage for issue #${issue}, in ${worktree}. You change nothing: no edits, no commits, no installs, and nothing on GitHub.
 
@@ -984,7 +991,7 @@ Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (a deleted test is not among them)', tests)}`
 
-const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('code')}`
+const codePrompt = k => `Review round ${k} of the build. ${shared(k, 'code')} To confirm a behaviour, run python against this checkout's code, never the installed copy: cd ${worktree} && PYTHONPATH=src ${python} -c '...'. Put a question you cannot settle from the code in raised[], with its kind. Leave answers[], escalations[], designDocsChanged and summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('code')}`
 
 const designPrompt = (k, files) => `Job 2 — verify a drafted design file, limited to what this branch changes. ${ISSUE}. ${BRANCH_READ} ${NO_PYTEST} The branch changes ${files.join(', ')}. For each, read git -C ${worktree} diff ${base}...HEAD -- <file>, and the file in full for context, and hold the changed and added text to your seven checks.${sinceReviewed(k, 'design')} Judge the change against what .claude/skills/architecture-review/SKILL.md (Phase 9) and .claude/skills/design-review/SKILL.md (Phases 8 and 10) hold a design file to, against .claude/skills/architecture-review/python-practices.md, and against the owner's decisions below. Those phases also tell the main session how to run a review; that part is not yours, and you run no agent. Report each failure as a finding with an id of the form design-${k}-<n>: material where a check fails on substance, not material where only the wording is at fault. Put any question in raised[]. Leave answers[], escalations[], designDocsChanged and summary empty.${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('design')}`
 
@@ -1617,6 +1624,7 @@ return {
   provisionalNew,
   separateDefects,
   commits,
+  handBuilt: HAND_BUILT,
   ledger: [...ledger.values()],
   designFiles: [...designFiles].sort(),
   reviewedAt,
