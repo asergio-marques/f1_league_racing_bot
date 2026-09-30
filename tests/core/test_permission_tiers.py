@@ -367,12 +367,6 @@ async def test_a_refusal_describes_a_role_that_has_been_deleted():
 
 # ── A refusal is recorded in the log channel (#482) ───────────────────────
 
-_NOT_RECORDED = "#482: a guard refusal is not yet recorded in the log channel"
-_NOT_IN_HOST_LOG = (
-    "#482: a refusal kept out of the log channel does not yet write a host-log line naming "
-    "the command, the user id and the server"
-)
-
 
 async def test_a_wrong_channel_refusal_is_recorded():
     """A manager's command used outside the interaction channel: the member is told, as ever,

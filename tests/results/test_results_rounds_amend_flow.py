@@ -1899,9 +1899,6 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     assert "AMEND_REJECTED" not in line and "AMEND_REFUSED" not in line
 
 
-_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
-
-
 async def _refused_press(case: str, tmp_path):
     """Press, during `/results rounds amend` of round 3 (Pro Division), the button *case*
     names in a way it turns away; return the cog and the press."""
@@ -2117,11 +2114,6 @@ async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path
 # ---------------------------------------------------------------------------
 # The session picker's Cancel and lapse are recorded (#482)
 # ---------------------------------------------------------------------------
-
-_PICKER_NOT_YET = (
-    "#482: the session picker's Cancel and lapse are answered \"Amendment cancelled\" and "
-    "recorded nowhere"
-)
 
 
 async def _left_at_the_picker(tmp_path, *, lapse: bool):

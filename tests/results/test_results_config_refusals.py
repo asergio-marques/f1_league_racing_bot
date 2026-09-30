@@ -32,8 +32,6 @@ OTHER_ADMIN = 5151
 CONFIG = "100%"
 MISSING = "75%"
 
-_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
-
 
 async def _db(tmp_path) -> str:
     """A server holding the one points configuration CONFIG, with no season built on it."""

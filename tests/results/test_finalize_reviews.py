@@ -1082,7 +1082,6 @@ async def test_an_appeals_review_with_no_corrections_applies_nothing(tmp_path):
 
 
 _APPEALS_BEING_APPROVED = "⏳ This round's appeals are being approved."
-_APPEALS_NOT_YET_CLAIMED = "#482: the appeals approval is not claimed, so a second press runs it again (D3)"
 
 
 async def _while_the_appeals_are_approved(state, press):
