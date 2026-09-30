@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from datetime import date, datetime
 
 import aiosqlite
@@ -53,6 +54,48 @@ def validate_division_name(name: str) -> str | None:
     Checked by each command that sets one, before its own test for a duplicate.
     """
     return NAME.check("division name", name).refusal
+
+
+def validate_division_tier(
+    tier: int, other_tiers: Iterable[int], *, within: str = "setup"
+) -> str | None:
+    """Why a division may not take *tier*, or None where it may.
+
+    The core specification's rule: a division's tier is 1 or higher, and no two divisions of a
+    season share one. *other_tiers* are the tiers the season's other divisions hold, so a
+    division amended to keep its own tier is not refused. *within* names the whole in the
+    taken-tier words — "setup", as `/division add` and `/division amend` say it, or "season", as
+    `/division duplicate` has always said it. The reason carries no mark: each command adds its
+    own, and `season_service.add_division` keeps its own guard beneath all three.
+    """
+    if tier < 1:
+        return "Tier must be 1 or higher."
+    if tier in set(other_tiers):
+        return f"A division with tier **{tier}** already exists in this {within}."
+    return None
+
+
+def division_amendment_changes_nothing(
+    division: Division,
+    *,
+    new_name: str | None = None,
+    tier: int | None = None,
+    role_id: int | None = None,
+) -> bool:
+    """Whether a rename or amendment of *division* asks only for the values it already holds.
+
+    `/division rename` to its own name, and `/division amend` with the values that stand, change
+    nothing, and record that nothing was changed rather than writing an audit entry (the core
+    specification's "The record of what changed"). The command asks this before it opens a
+    connection, from the division it has already read. A name in another case is a change: the
+    name is shown as it is written. Where nothing is asked at all this answers False, that being
+    the command's own refusal.
+    """
+    asked = {"name": new_name, "tier": tier, "mention_role_id": role_id}
+    given = {field: value for field, value in asked.items() if value is not None}
+    if not given:
+        return False
+    return all(getattr(division, field) == value for field, value in given.items())
 
 
 class SeasonImmutableError(Exception):

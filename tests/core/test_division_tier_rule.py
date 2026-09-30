@@ -15,9 +15,6 @@ from __future__ import annotations
 
 import pytest
 
-_TIER = pytest.mark.xfail(
-    strict=True, reason="#482: the division tier rule is not yet a function of its own"
-)
 
 
 def _rule():
@@ -26,28 +23,23 @@ def _rule():
     return validate_division_tier
 
 
-@_TIER
 @pytest.mark.parametrize("tier", [0, -1], ids=["zero", "negative"])
 def test_a_tier_below_one_is_refused(tier):
     assert _rule()(tier, [2, 3]) == "Tier must be 1 or higher."
 
 
-@_TIER
 def test_a_tier_another_division_holds_is_refused():
     assert _rule()(2, [1, 2]) == "A division with tier **2** already exists in this setup."
 
 
-@_TIER
 def test_a_free_tier_is_allowed():
     assert _rule()(3, [1, 2]) is None
 
 
-@_TIER
 def test_the_first_division_of_a_season_may_take_any_tier_from_one():
     assert _rule()(1, []) is None
 
 
-@_TIER
 def test_a_division_keeping_its_own_tier_is_allowed():
     """`/division amend` of the tier-2 division to tier 2 passes the others' tiers, 1 and 3."""
     assert _rule()(2, [1, 3]) is None

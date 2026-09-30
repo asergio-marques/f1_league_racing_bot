@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 
-_NO_OP = pytest.mark.xfail(strict=True, reason="#482: the no-op judgements are not yet written")
 
 
 def _division(**overrides):
@@ -31,7 +30,6 @@ def _division(**overrides):
     return Division(**fields)
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "asked",
     [
@@ -48,7 +46,6 @@ def test_a_division_amendment_to_the_values_that_stand_changes_nothing(asked):
     assert division_amendment_changes_nothing(_division(), **asked)
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "asked",
     [
