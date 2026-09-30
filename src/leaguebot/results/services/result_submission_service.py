@@ -577,7 +577,8 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
     checked the review is current and claimed it.
 
     **The approval's line is written last**, once the appeals review has been posted: a review
-    that could not be posted marks it Incomplete, and the manager is told under an
+    that could not be posted, because its channel is out of reach or its send failed, marks it
+    Incomplete, and the manager is told under an
     ``APPEALS_PROMPT | Incomplete`` entry (#482). The prompt stays last of all, so that nobody
     can approve the appeals while this pipeline is still running.
     """
@@ -911,7 +912,13 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
 
         # === END Attendance pipeline ===
 
-    opened = await _post_appeals_prompt(state, guild, bot, db_path)
+    # A send or a render that fails outright is the prompt not opened, as the amendment's is
+    # below: the approval's line is still written, marked Incomplete, and the manager told.
+    try:
+        opened = await _post_appeals_prompt(state, guild, bot, db_path)
+    except Exception:  # noqa: BLE001 — a send, a render or a view may fail outright
+        log.exception("finalize_penalty_review: could not open the appeals stage of round %s", round_id)
+        opened = False
 
     if approval_body is not None:
         outcome = "Incomplete" if (repost_faults or not opened) else "Success"
@@ -931,7 +938,7 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
             heading="APPEALS_PROMPT | Incomplete",
             intro="⚠️ The reports are approved, but the appeals review could not be posted:",
             faults=[
-                "the submission channel could not be reached, so the appeals stage was not opened"
+                "the submission channel could not be reached or written to, so the appeals stage was not opened"
             ],
             hint="The appeals review is posted again when the bot restarts.",
         )
