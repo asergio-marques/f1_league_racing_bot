@@ -435,11 +435,17 @@ async def test_the_close_is_audited_under_the_callers_action(tmp_path):
     assert await _audit(db_path) == [("SIGNUP_TIMER_CLOSE", "open", "closed", "system")]
 
 
+@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
+    """No signup configuration exists: the close returns an outcome with nobody returned and
+    nothing failed, closes nothing and audits nothing."""
     db_path = await _make_db(tmp_path, name="fc_noconfig")
     bot = _bot(db_path, config=None)
 
-    assert await execute_forced_close(bot, audit_action="X") == 0
+    outcome = await execute_forced_close(bot, audit_action="X")
+
+    assert outcome.returned == 0
+    assert list(outcome.failed) == []
 
     bot.signup_module_service.set_window_closed.assert_not_awaited()
     assert await _audit(db_path) == []
@@ -531,3 +537,4 @@ async def test_a_close_given_the_window_still_open_closes_it(tmp_path):
     assert outcome.refused is None
     assert outcome.returned == 1
     bot.signup_module_service.set_window_closed.assert_awaited_once()
+
