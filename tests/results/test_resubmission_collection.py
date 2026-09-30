@@ -172,7 +172,7 @@ async def _run(
     channel = channel if channel is not None else _channel()
 
     class _FakeSelect:
-        def __init__(self, names, server_cfg):
+        def __init__(self, names, server_cfg, **_context):
             self.selected = selected
 
         async def wait(self):
