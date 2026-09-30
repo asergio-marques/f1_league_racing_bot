@@ -6172,7 +6172,10 @@ class SeasonCog(commands.Cog):
                 for _line in _calendar_problems:
                     log.error("_do_approve: calendar fell back to text - %s", _line)
                 if _calendar_problems or _calendar_notices:
-                    _report = ["/season placements-review | Calendar image generation"]
+                    _report = [
+                        f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                        "/season placements-review | Calendar image generation"
+                    ]
                     if _calendar_problems:
                         _report.append("  Fell back to the textual calendar:")
                         _report += [f"    - {line}" for line in _calendar_problems]
@@ -6212,9 +6215,11 @@ class SeasonCog(commands.Cog):
 
                 if _opening_problems:
                     _opening_report = "\n".join(
-                        ["/season placements-review | Opening classification", *(
-                            f"    - {line}" for line in _opening_problems
-                        )]
+                        [
+                            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                            "/season placements-review | Opening classification",
+                            *(f"    - {line}" for line in _opening_problems),
+                        ]
                     )
                     log.error(
                         "_do_approve: opening classification problems - %s",

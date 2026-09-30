@@ -608,10 +608,6 @@ def _report_line(cog, title: str) -> str:
     return line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the approval's calendar report line names nobody",
-)
 async def test_the_calendar_report_names_the_member_who_approved(db_path):
     """The core specification's record of what changed: every line names the member. Manager
     (id 77) approves the season, and division Pro's calendar falls back to text ('no
@@ -633,10 +629,6 @@ async def test_the_calendar_report_names_the_member_who_approved(db_path):
     assert "Pro: no template" in line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the approval's opening classification report line names nobody",
-)
 async def test_the_opening_classification_report_names_the_member_who_approved(db_path):
     """The core specification's record of what changed: every line names the member. Manager
     (id 77) approves the season, and the opening classification reports a problem ('Pro
