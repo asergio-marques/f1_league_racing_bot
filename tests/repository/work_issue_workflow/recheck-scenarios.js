@@ -51,3 +51,20 @@ module.exports = {
     expectThrow: 'previous is a tests result',
   },
 }
+
+// A ref is never reused across a plan's checks: a citation the product owner carries over from the
+// earlier check does not settle, by its old ref, a new question passed on in the re-check (#483).
+const qn = t => ({ kind: 'business', question: t, context: 'c', options: [{ label: 'a', meaning: 'x' }], recommendation: 'a' })
+module.exports.carriedCitationSettlesNoNewQuestion = {
+  args: { ...C, previous: earlier({ product: { ...product(['PRODUCT-EARLIER']), citations: [{ question: 'Qx?', answer: 'y', source: 'core § 1', ref: 'c1' }] } }) },
+  respond(label, prompt) {
+    if (label === 'check:architecture') return { ...architecture(), raised: [qn('Qz?')] }
+    if (label === 'check:design') return design()
+    if (label === 'check:product') {
+      if (prompt.includes('"ref": "c1"') && prompt.includes('Qz?') && prompt.indexOf('Qz?') > prompt.indexOf('passed on to you') && /"question": "Qz\?",[^}]*"ref": "c1"/s.test(prompt)) throw new Error('the new question took an old ref')
+      return { ...product(), citations: [{ question: 'Qx?', answer: 'y', source: 'core § 1', ref: 'c1' }] }
+    }
+    throw new Error('unexpected agent ' + label)
+  },
+  expect: r => r.questions.some(x => x.question === 'Qz?' && x.unframed) && r.refsUsed >= 2,
+}

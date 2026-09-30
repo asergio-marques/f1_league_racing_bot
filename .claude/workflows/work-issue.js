@@ -430,7 +430,12 @@ if (stage === 'check') {
         { ...settingsFor('issue'), label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
   ])
   const ASKED_ALREADY = 'put to the owner already'
-  let refs = 0
+  // A ref is never used twice across a plan's checks: a re-check shows each checker its earlier
+  // result, refs and all, and a product owner carrying over an earlier citation would otherwise
+  // settle by its ref a new question that happens to take the same one. A question passed on counts
+  // as settled only by an entry carrying its ref or its words.
+  let refs = earlier ? Math.max(Number(earlier.refsUsed) || 0, ...(JSON.stringify(earlier).match(/\bc\d+\b/g) || []).map(r => Number(r.slice(1)))) : 0
+  const norm = text => String(text || '').toLowerCase().replace(/\s+/g, ' ').trim()
   const passedOn = [architecture, design].filter(Boolean).flatMap(r => r.raised).map(q => ({ ...q, ref: `c${++refs}` }))
   const forProduct = passedOn.filter(q => q.kind === 'business')
   const passedHandled = [...(architecture ? architecture.questions : []), ...(design ? design.questions : [])].map(q => q.question)
@@ -439,8 +444,10 @@ if (stage === 'check') {
   const failed = [['architecture', architecture], ['design', design], ['product', product]].filter(([, r]) => !r).map(([k]) => k)
   if (failed.length) log(`No result for: ${failed.join(', ')}. Resume the run before relying on the check.`)
 
-  const settledRefs = new Set(product ? [...product.citations, ...product.questions].flatMap(refsIn) : [])
-  const unsettled = forProduct.filter(q => !settledRefs.has(q.ref)).map(q => ({ ...q, unframed: true }))
+  const settling = product ? [...product.citations, ...product.questions] : []
+  const settledRefs = new Set(settling.flatMap(refsIn))
+  const settledWords = new Set(settling.map(x => norm(x.question)))
+  const unsettled = forProduct.filter(q => !settledRefs.has(q.ref) && !settledWords.has(norm(q.question))).map(q => ({ ...q, unframed: true }))
   if (unsettled.length) log(`The product owner left ${unsettled.length} question(s) passed on to it unsettled; they go to the owner.`)
   const raised = [...passedOn.filter(q => q.kind !== 'business'), ...(product ? product.raised : []).map(q => ({ ...q, ref: `c${++refs}` }))]
   const triaged = raised.length
@@ -467,8 +474,9 @@ if (stage === 'check') {
     stage,
     issue,
     commit,
-    // The plan checked, for a re-check of its amendment to be given.
+    // The plan checked, for a re-check of its amendment to be given, and the last ref used.
     plan,
+    refsUsed: refs,
     architecture,
     design,
     product,
