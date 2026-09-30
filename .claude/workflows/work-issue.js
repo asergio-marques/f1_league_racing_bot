@@ -780,6 +780,7 @@ const REVIEW_SCHEMA = {
     escalations: { ...QUESTIONS, description: 'questions of your own ground for the owner' },
     raised: { ...QUESTIONS, description: 'questions outside your ground, passed on untouched' },
     designDocsChanged: { type: 'array', items: { type: 'string' }, description: 'the files under docs/design/ the branch changes since its base' },
+    designDocsChangedSince: { type: 'array', items: { type: 'string' }, description: 'the issue reviewer in the build: the files under docs/design/ that the commits you reviewed this round change' },
     summary: { type: 'string', description: 'the summary your prompt asks for, if it asks for one; otherwise empty' },
     separateDefects: {
       type: 'array',
@@ -1028,7 +1029,7 @@ const listFor = (lane, tests, support, whole = false) => {
 
 const COPY_QUESTION = 'giving each answer or escalation the ref of every question it settles, copying the question word for word into answers[].question, and framing an escalation for the owner as your instructions say'
 
-const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base. Leave summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The checks the plan passed', ARGS.checks)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
+const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base${stage === 'build' ? ', and in designDocsChangedSince those the commits you review this round change' : ''}. Leave summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The checks the plan passed', ARGS.checks)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
 
 // The summary covers the whole work, however little of it a later round reviews.
 const summaryAsk = () => {
@@ -1387,6 +1388,12 @@ const suiteProblems = t => {
 // The four checkers run side by side, and the design verifier follows the issue reviewer once the
 // branch has changed a design file. A checker left undefined was not due this round; one that is
 // null returned nothing.
+//
+// The design verifier is left out of a round it has nothing to do in: it has reviewed the design
+// files before, as far as the issue reviewer has reviewed the branch, none of its findings is
+// pending, and the issue reviewer says the commits it reviewed this round change no design file. In
+// that position it found nothing in three rounds out of four (#482 slice 2). An issue reviewer that
+// returned nothing, or did not say, leaves the verifier to run.
 const reviewBuild = async (k, built, questions) => {
   const quiet = built.blocked && !built.commits.length
   if (quiet) log(`Round ${k}: the builder is blocked and made no commit, so the suite is not run.`)
@@ -1397,6 +1404,10 @@ const reviewBuild = async (k, built, questions) => {
       .then(async issueResult => {
         for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
         if (!designFiles.size) return { issue: issueResult, design: undefined }
+        const idle = reviewedAt.design !== undefined && reviewedAt.design === reviewedAt.issue
+          && ![...ledger.values()].some(f => f.lane === 'design' && materialPending(f))
+          && !!issueResult && Array.isArray(issueResult.designDocsChangedSince) && !issueResult.designDocsChangedSince.length
+        if (idle) { log(`Round ${k}: no design file has changed since the design verifier last reviewed, and it has nothing open, so it is not sent out.`); return { issue: issueResult, design: undefined } }
         const design = await send(designPrompt(k, [...designFiles].sort()), { ...settingsFor('design'), label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
         return { issue: issueResult, design }
       }),

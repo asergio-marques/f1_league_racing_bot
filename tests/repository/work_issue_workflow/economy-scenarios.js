@@ -74,3 +74,27 @@ module.exports.testerGivesOneLineFailure = {
   },
   expect: r => r.status === 'passed',
 }
+
+// The design verifier is left out of a round in which no design file has changed since its last
+// review and it has nothing open; it runs again as soon as one changes (#483).
+const designRounds = touchedInRound2 => ({
+  args: { ...B, maxRounds: 3 },
+  respond(label, prompt) {
+    const k = Number(label.match(/:r(\d+):/)[1])
+    if (label.endsWith(':builder')) return builder({ tests: [], commits: [{ sha: `c${k}`, subject: `round ${k}` }] })
+    if (label.endsWith(':issue')) {
+      if (!prompt.includes('designDocsChangedSince')) throw new Error('the issue reviewer was not asked what changed since')
+      return k === 1 ? review({ designDocsChanged: ['docs/design/steward_module.md'], designDocsChangedSince: ['docs/design/steward_module.md'], findings: [{ id: 'issue-1-1', title: 't', material: true, why: 'w', fix: 'f', evidence: [] }] })
+        : review({ designDocsChanged: ['docs/design/steward_module.md'], designDocsChangedSince: k === 2 && touchedInRound2 ? ['docs/design/steward_module.md'] : [], prior: [{ id: 'issue-1-1', status: 'fixed', grounds: 'ok' }] })
+    }
+    return lanesClean(label)
+  },
+})
+module.exports.idleDesignVerifierSkipped = {
+  ...designRounds(false),
+  expect: (r, { labels }) => r.status === 'passed' && labels.includes('build:r1:design') && !labels.includes('build:r2:design'),
+}
+module.exports.designVerifierRunsWhenDesignFileTouchedAgain = {
+  ...designRounds(true),
+  expect: (r, { labels }) => r.status === 'passed' && labels.includes('build:r1:design') && labels.includes('build:r2:design'),
+}
