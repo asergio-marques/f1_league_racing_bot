@@ -464,3 +464,39 @@ async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_exp
     detail = "\n".join(beneath).lower()
     assert "failed" in detail and "partly" in detail, detail
     assert "nothing has been" not in detail, detail
+
+
+# ── Found in review of the hand-built part (#482) ───────────────────────────────
+
+
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_the_timer_firing_while_a_finished_press_clears_the_review_records_no_lapse(
+    view_class, label, review, helper, verb
+):
+    """Alex's press is worked and finishes, and the review's five minutes run out while its report
+    is being cleared away. The review was answered, so the timer posts no expiry notice and
+    records no lapse: the log holds only what the press itself wrote."""
+    view, cog, message = _review(view_class, helper)
+    report = [MagicMock(), MagicMock()]
+
+    async def _deleted_as_the_timer_fires():
+        view._dispatch_timeout()
+        # A delete is a request to Discord: the timer's task runs while it is awaited.
+        await asyncio.sleep(0.01)
+
+    async def _a_slow_delete():
+        await asyncio.sleep(0.05)
+
+    report[0].delete = AsyncMock(side_effect=_deleted_as_the_timer_fires)
+    report[1].delete = AsyncMock()
+    # The question's own delete takes as long as a request to Discord does.
+    message.delete = AsyncMock(side_effect=_a_slow_delete)
+    view.carries(report)
+
+    await view_class.approve(view, _press(cog), MagicMock())
+    # Whatever the timer set off is given a moment to run its course.
+    await asyncio.sleep(0.2)
+
+    getattr(cog, helper).assert_awaited_once()
+    message.channel.send.assert_not_awaited()
+    assert not any(line.startswith("⌛ ") for line in _logged(cog)), _logged(cog)

@@ -6761,10 +6761,12 @@ class _ApproveView(LeagueView):
 
         async with self._press_worked():
             await self._cog._do_approve(interaction, deadline=self._deadline, what=self._button)
+        # Stopped first: the review is answered, and a timer firing while the clean-up below
+        # awaits Discord would otherwise announce it expired and record a lapse.
+        self.stop()
         await self._forget()
         await self._clear_report()
         self._message = None
-        self.stop()
 
     async def _clear_report(self) -> None:
         """Delete the review, the question included, once the season is approved.
@@ -6888,10 +6890,12 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
 
         async with self._press_worked():
             await self._cog._do_confirm_mid_season_placements(interaction, what=self._button)
+        # Stopped first: the review is answered, and a timer firing while the clean-up below
+        # awaits Discord would otherwise announce it expired and record a lapse.
+        self.stop()
         await self._forget()
         await self._clear_report()
         self._message = None
-        self.stop()
 
 
 class _ConfirmConfigurationView(_ApproveView):
@@ -6944,10 +6948,12 @@ class _ConfirmConfigurationView(_ApproveView):
 
         async with self._press_worked():
             await self._cog._do_confirm_configuration(interaction, what=self._button)
+        # Stopped first: the review is answered, and a timer firing while the clean-up below
+        # awaits Discord would otherwise announce it expired and record a lapse.
+        self.stop()
         await self._forget()
         await self._clear_report()
         self._message = None
-        self.stop()
 
 
 def _round_amend_named(round_number: int | None, division_name: str | None = None) -> str:
