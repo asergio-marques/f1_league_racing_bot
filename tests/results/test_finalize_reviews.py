@@ -1120,7 +1120,6 @@ async def _while_the_appeals_are_approved(state, press):
     return stubs
 
 
-@pytest.mark.xfail(strict=True, reason=_APPEALS_NOT_YET_CLAIMED)
 async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_path):
     """**D3.** The appeals approval reposts every graphic before it makes the round FINAL, and
     until then a second Approve found the round as the first had — so a double click applied
@@ -1149,7 +1148,6 @@ async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_pat
     assert await _round_status(db_path) == "FINAL"
 
 
-@pytest.mark.xfail(strict=True, reason=_APPEALS_NOT_YET_CLAIMED)
 @pytest.mark.parametrize(
     "kind, label",
     [

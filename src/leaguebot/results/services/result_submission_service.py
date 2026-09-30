@@ -1248,166 +1248,180 @@ async def finalize_appeals_review(
     An amendment's appeal stage shares the screens but not this body, and is handed to
     :func:`_approve_amendment_appeals` before anything here runs (#345).
 
+    **Once at a time** (#482), as the report stage's approval is (#402). The approval reposts
+    every graphic before it makes the round FINAL, and until then a second press found the round
+    as the first had, and applied every staged correction again. ``approving`` is claimed after
+    the last await of the checks, so two presses cannot both pass them, and released however the
+    approval ends, so one that fails can be pressed again. A second press meanwhile is refused
+    and recorded.
+
     **A refusal is recorded** as *what* refused (#482): the button pressed and its review, named
     by the button that calls this. A call without one names the appeals review's Approve button
     from *state*, which only a test makes.
     """
-    import json as _json
-    from leaguebot.results.services import results_post_service as _rps
-    from leaguebot.results.services import verdict_announcement_service as _vas
-    from leaguebot.results.services.penalty_wizard import _button
+    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED, _button
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_appeals(interaction, state)
         return
 
-    held = await held_by_amendment(
+    refusal = await held_by_amendment(
         state.db_path, state.round_id, state.division_id,
         then="Approve the appeals again then.",
     )
-    if held:
-        await refuse(interaction, held, what=what or _button("✅ Approve", state, "appeals"))
+    if not refusal and state.approving:
+        refusal = _APPEALS_BEING_APPROVED
+    if refusal:
+        await refuse(interaction, refusal, what=what or _button("✅ Approve", state, "appeals"))
         return
 
-    await interaction.response.defer(ephemeral=True)
+    import json as _json
+    from leaguebot.results.services import results_post_service as _rps
+    from leaguebot.results.services import verdict_announcement_service as _vas
 
-    db_path: str = state.db_path
-    bot = state.bot
-    round_id: int = state.round_id
-    division_id: int = state.division_id
-    guild = guild_of(interaction)
-    actor_id: int = interaction.user.id
+    state.approving = True
+    try:
+        await interaction.response.defer(ephemeral=True)
 
-    applied_correction_records = await _apply_staged_appeals(
-        db_path, round_id, division_id, state.staged_appeals, actor_id, bot
-    )
+        db_path: str = state.db_path
+        bot = state.bot
+        round_id: int = state.round_id
+        division_id: int = state.division_id
+        guild = guild_of(interaction)
+        actor_id: int = interaction.user.id
 
-    # As in `finalize_penalty_review`: the reposts and the appeal announcements are all
-    # graphics. The notice must be gone before `close_submission_channel` below deletes
-    # the channel holding it, which the context manager's exit guarantees by sitting
-    # inside this block rather than around the whole function.
-    _notice_channel = guild.get_channel(state.submission_channel_id) if guild else None
-    async with batch_notice(
-        _notice_channel,
-        "\U0001f3a8 Updating results and standings — one moment.",
-    ):
-        # Repost results/standings with "Final Results" label.
-        #
-        # Collected, not discarded, for the reason given in ``finalize_penalty_review``
-        # (#237) — and it matters more here, because this is where a round becomes FINAL.
-        repost_faults: list[str] = []
-        if guild is None:
-            repost_faults.append(
-                "The league's server could not be reached, so the final results and "
-                "standings were not reposted."
-            )
-        else:
-            repost_faults = _rps.merge_faults(
-                await _rps.delete_and_repost_final_results(
-                    db_path, round_id, division_id, guild,
-                    label="Final Results", bot=bot_of(interaction),
-                ),
-                await _rps.repost_subsequent_standings(
-                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
-                ),
-            )
-
-        # Appeal verdicts are in; the results stand.
-        #
-        # Guarded against a settled round for the reason given on the same write in
-        # ``finalize_penalty_review``: a stale appeals view pressed after the results module was
-        # switched off must not reopen a round that disabling the module already closed, and a
-        # cancelled round must not be raised to FINAL by a view that outlived its cancellation.
-        #
-        # **A round already FINAL is not moved on again** (#345). Its division is already
-        # finished if it was the last, and its season already wound down if that finished it;
-        # repeating the three could finish a division or wind down a season twice. An amendment
-        # never reaches here, but `is_amendment` lives on the in-memory state and a view rebuilt
-        # by restart recovery cannot carry it — so the round's own status is what guards.
-        if not await _round_is_final(db_path, round_id):
-            async with get_connection(db_path) as db:
-                await db.execute(
-                    f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
-                    (RoundStatus.FINAL.value, round_id),
-                )
-                # The round's results are final as of the line above, so this is the moment its
-                # drivers become former drivers (#216) — in the same transaction, because a
-                # round that is FINAL with nobody marked is a season-end deletion of a profile
-                # its results point at.
-                await recompute_former_drivers_for_round(db, round_id)
-                await db.commit()
-
-            # This is the only place a round becomes finished, and so the only place a division
-            # can become finished by racing. Approving the last round's appeals is what ends a
-            # division, and a division ending is what lets `/season complete` run (issue #154).
-            from leaguebot.core.services.season_service import SeasonService
-
-            await SeasonService(db_path).refresh_division_status(division_id)
-
-            # The division finishing may have been the season's last: a season with a window
-            # open or placements to confirm is wound down and moves to Pending completion at
-            # once (#220).
-            try:
-                await bot_of(interaction).season_service.wind_down_ongoing(bot_of(interaction))
-            except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
-                log.exception("could not wind the season down")
-
-        # Audit log APPEALS_REVIEW_APPROVED
-        old_val = _json.dumps({"status": RoundStatus.AWAITING_APPEAL_VERDICTS.value})
-        new_val = _json.dumps(
-            {
-                "status": RoundStatus.FINAL.value,
-                "actor_id": actor_id,
-                "corrections": len(state.staged_appeals),
-            }
+        applied_correction_records = await _apply_staged_appeals(
+            db_path, round_id, division_id, state.staged_appeals, actor_id, bot
         )
-        try:
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                    (division_id,),
-                )
-                srv_row = await cursor.fetchone()
-            if srv_row:
-                n_corrections = len(state.staged_appeals)
-                outcome = "Incomplete" if repost_faults else "Success"
-                summary = (
-                    f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | {outcome}\n"
-                    f"  round: {state.round_number} ({state.division_name})\n"
-                    + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
-                    + f"  old={old_val}\n  new={new_val}"
-                )
-                await bot.output_router.post_log(
-                    summary,
-                )
-        except Exception:
-            log.exception("finalize_appeals_review: error writing audit log for round %s", round_id)
 
-        if repost_faults:
-            await _report_unpostable_results(
-                interaction, bot, db_path, division_id, repost_faults
+        # As in `finalize_penalty_review`: the reposts and the appeal announcements are all
+        # graphics. The notice must be gone before `close_submission_channel` below deletes
+        # the channel holding it, which the context manager's exit guarantees by sitting
+        # inside this block rather than around the whole function.
+        _notice_channel = guild.get_channel(state.submission_channel_id) if guild else None
+        async with batch_notice(
+            _notice_channel,
+            "\U0001f3a8 Updating results and standings — one moment.",
+        ):
+            # Repost results/standings with "Final Results" label.
+            #
+            # Collected, not discarded, for the reason given in ``finalize_penalty_review``
+            # (#237) — and it matters more here, because this is where a round becomes FINAL.
+            repost_faults: list[str] = []
+            if guild is None:
+                repost_faults.append(
+                    "The league's server could not be reached, so the final results and "
+                    "standings were not reposted."
+                )
+            else:
+                repost_faults = _rps.merge_faults(
+                    await _rps.delete_and_repost_final_results(
+                        db_path, round_id, division_id, guild,
+                        label="Final Results", bot=bot_of(interaction),
+                    ),
+                    await _rps.repost_subsequent_standings(
+                        db_path, division_id, round_id, guild, bot=bot_of(interaction),
+                    ),
+                )
+
+            # Appeal verdicts are in; the results stand.
+            #
+            # Guarded against a settled round for the reason given on the same write in
+            # ``finalize_penalty_review``: a stale appeals view pressed after the results module was
+            # switched off must not reopen a round that disabling the module already closed, and a
+            # cancelled round must not be raised to FINAL by a view that outlived its cancellation.
+            #
+            # **A round already FINAL is not moved on again** (#345). Its division is already
+            # finished if it was the last, and its season already wound down if that finished it;
+            # repeating the three could finish a division or wind down a season twice. An amendment
+            # never reaches here, but `is_amendment` lives on the in-memory state and a view rebuilt
+            # by restart recovery cannot carry it — so the round's own status is what guards.
+            if not await _round_is_final(db_path, round_id):
+                async with get_connection(db_path) as db:
+                    await db.execute(
+                        f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
+                        (RoundStatus.FINAL.value, round_id),
+                    )
+                    # The round's results are final as of the line above, so this is the moment its
+                    # drivers become former drivers (#216) — in the same transaction, because a
+                    # round that is FINAL with nobody marked is a season-end deletion of a profile
+                    # its results point at.
+                    await recompute_former_drivers_for_round(db, round_id)
+                    await db.commit()
+
+                # This is the only place a round becomes finished, and so the only place a division
+                # can become finished by racing. Approving the last round's appeals is what ends a
+                # division, and a division ending is what lets `/season complete` run (issue #154).
+                from leaguebot.core.services.season_service import SeasonService
+
+                await SeasonService(db_path).refresh_division_status(division_id)
+
+                # The division finishing may have been the season's last: a season with a window
+                # open or placements to confirm is wound down and moves to Pending completion at
+                # once (#220).
+                try:
+                    await bot_of(interaction).season_service.wind_down_ongoing(bot_of(interaction))
+                except Exception:  # noqa: BLE001 — never fail the approval on the season's next stage
+                    log.exception("could not wind the season down")
+
+            # Audit log APPEALS_REVIEW_APPROVED
+            old_val = _json.dumps({"status": RoundStatus.AWAITING_APPEAL_VERDICTS.value})
+            new_val = _json.dumps(
+                {
+                    "status": RoundStatus.FINAL.value,
+                    "actor_id": actor_id,
+                    "corrections": len(state.staged_appeals),
+                }
             )
-
-        # Post appeal announcements. Non-blocking, but no longer silent (#237).
-        verdict_faults: list[str] = []
-        if applied_correction_records:
             try:
-                verdict_faults = await _vas.post_appeal_announcements(
-                    bot, state, applied_correction_records
+                async with get_connection(db_path) as db:
+                    cursor = await db.execute(
+                        "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
+                        (division_id,),
+                    )
+                    srv_row = await cursor.fetchone()
+                if srv_row:
+                    n_corrections = len(state.staged_appeals)
+                    outcome = "Incomplete" if repost_faults else "Success"
+                    summary = (
+                        f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | {outcome}\n"
+                        f"  round: {state.round_number} ({state.division_name})\n"
+                        + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
+                        + f"  old={old_val}\n  new={new_val}"
+                    )
+                    await bot.output_router.post_log(
+                        summary,
+                    )
+            except Exception:
+                log.exception("finalize_appeals_review: error writing audit log for round %s", round_id)
+
+            if repost_faults:
+                await _report_unpostable_results(
+                    interaction, bot, db_path, division_id, repost_faults
                 )
-            except Exception as exc:  # noqa: BLE001 — the corrections still stand
-                log.exception(
-                    "finalize_appeals_review: error posting appeal announcements for round %s",
-                    round_id,
-                )
-                verdict_faults = [f"No appeal verdict could be announced: {exc}"]
 
-        if verdict_faults:
-            await _report_unannounced_verdicts(interaction, bot, verdict_faults)
+            # Post appeal announcements. Non-blocking, but no longer silent (#237).
+            verdict_faults: list[str] = []
+            if applied_correction_records:
+                try:
+                    verdict_faults = await _vas.post_appeal_announcements(
+                        bot, state, applied_correction_records
+                    )
+                except Exception as exc:  # noqa: BLE001 — the corrections still stand
+                    log.exception(
+                        "finalize_appeals_review: error posting appeal announcements for round %s",
+                        round_id,
+                    )
+                    verdict_faults = [f"No appeal verdict could be announced: {exc}"]
 
-    # Close the submission channel
-    await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)
+            if verdict_faults:
+                await _report_unannounced_verdicts(interaction, bot, verdict_faults)
 
+        # Close the submission channel
+        await close_submission_channel(state.submission_channel_id, round_id, guild, db_path)
+
+    finally:
+        state.approving = False
 
 async def _apply_staged_appeals(
     db_path: str, round_id: int, division_id: int, staged_appeals: list, actor_id: int, bot: LeagueBot

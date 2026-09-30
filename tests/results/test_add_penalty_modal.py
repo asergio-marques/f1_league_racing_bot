@@ -748,10 +748,6 @@ async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, ap
     assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a correction is staged after the appeals are approved (D3)",
-)
 async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path):
     """**D3.** The Add Correction form can outlive its appeals review: submitted once round 3's
     appeals were approved and the round made FINAL, it staged a correction nothing would ever

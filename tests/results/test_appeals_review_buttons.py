@@ -651,10 +651,6 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
         )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the appeals controls still act once the appeals are approved (D3)",
-)
 @pytest.mark.parametrize(
     "kind, label",
     [

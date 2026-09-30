@@ -269,6 +269,10 @@ _BEING_APPROVED = (
 )
 
 
+#: What a review answers while its appeals are being approved (#482).
+_APPEALS_BEING_APPROVED = "⏳ This round's appeals are being approved."
+
+
 async def _review_moved_on(state: PenaltyReviewState) -> str | None:
     """Why this review can no longer be acted on, or None while it can (#402).
 
@@ -352,6 +356,45 @@ async def _require_current(
     The refusal is recorded as *what* refused, named by the caller as `_require_lm`'s is.
     """
     refusal = await _review_moved_on(state)
+    if refusal is not None:
+        await refuse(interaction, refusal, what=what)
+        return False
+    return True
+
+
+async def _appeals_review_moved_on(state: PenaltyReviewState) -> str | None:
+    """Why the appeals review can no longer be acted on, or None while it can (#482).
+
+    The appeals prompt and its clear confirmation outlive the stage they were built for, as the
+    penalty review's do (:func:`_review_moved_on`): pressed after the appeals were approved, or
+    while they are being approved, a control staged a correction that would never be applied, or
+    cleared a list already being applied. Every control of the appeals review asks this first.
+    It is current while its appeals are not being approved and the round still awaits its
+    appeal verdicts. An amendment's appeals stage keeps the rule it had, none here.
+    """
+    if state.is_amendment:
+        return None
+    if state.approving:
+        return _APPEALS_BEING_APPROVED
+    async with get_connection(state.db_path) as db:
+        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (state.round_id,))
+        row = await cursor.fetchone()
+    if row is None or row["status"] != RoundStatus.AWAITING_APPEAL_VERDICTS.value:
+        return "❌ This round's appeals review is over, so nothing here can be changed."
+    return None
+
+
+async def _require_appeals_current(
+    interaction: discord.Interaction,
+    state: PenaltyReviewState,
+    *,
+    what: str,
+) -> bool:
+    """If the appeals review has moved on, refuse, say why and return False (#482).
+
+    The refusal is recorded as *what* refused, named by the caller as `_require_lm`'s is.
+    """
+    refusal = await _appeals_review_moved_on(state)
     if refusal is not None:
         await refuse(interaction, refusal, what=what)
         return False
@@ -705,15 +748,16 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        # The review may have moved on while the form was open (#402). A correction is staged on
-        # the appeals review, which is the stage the round has moved on *to*.
-        if not self.use_appeals_staging:
-            refusal = await _review_moved_on(self.state)
-            if refusal is not None:
-                await refuse(
-                    interaction, refusal, what=describe_form(self)
-                )
-                return
+        # The review may have moved on while the form was open (#402), whichever it stages on:
+        # the penalty review, or the appeals review the round moved on to (#482).
+        refusal = (
+            await _appeals_review_moved_on(self.state)
+            if self.use_appeals_staging
+            else await _review_moved_on(self.state)
+        )
+        if refusal is not None:
+            await refuse(interaction, refusal, what=describe_form(self))
+            return
 
         # Both texts are published in the verdict, so neither may mention a group or carry an
         # emoji (#204).
@@ -1722,6 +1766,10 @@ class AppealsReviewView(LeagueView):
                 interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state, "appeals")
             ):
                 return
+            if not await _require_appeals_current(
+                interaction, self.state, what=_button(f"Remove #{idx + 1}", self.state, "appeals")
+            ):
+                return
             if idx < len(self.state.staged_appeals):
                 removed = self.state.staged_appeals.pop(idx)
                 await interaction.response.defer(ephemeral=True)
@@ -1765,6 +1813,10 @@ class AppealsReviewView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         ):
             return
+        if not await _require_appeals_current(
+            interaction, self.state, what=_button(button.label, self.state, "appeals")
+        ):
+            return
         view = _SessionSelectView(
             state=self.state,
             source_interaction=interaction,
@@ -1791,6 +1843,10 @@ class AppealsReviewView(LeagueView):
             )
             return
         if not await _require_lm(
+            interaction, self.state, what=_button(button.label, self.state, "appeals")
+        ):
+            return
+        if not await _require_appeals_current(
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         ):
             return
@@ -1828,6 +1884,10 @@ class AppealsReviewView(LeagueView):
             )
             return
         if not await _require_lm(
+            interaction, self.state, what=_button(button.label, self.state, "appeals")
+        ):
+            return
+        if not await _require_appeals_current(
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         ):
             return
@@ -1882,6 +1942,10 @@ class _AppealsConfirmClearView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         if not await _require_lm(
+            interaction, self.state, what=_button(button.label, self.state, "appeals")
+        ):
+            return
+        if not await _require_appeals_current(
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         ):
             return
