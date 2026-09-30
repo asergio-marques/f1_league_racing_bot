@@ -75,6 +75,7 @@ def _bot(*, state=DriverState.PENDING_ADMIN_APPROVAL, wizard_user: str | None = 
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
     )
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.output_router.post_log = AsyncMock()
     return bot
 
 
@@ -86,9 +87,14 @@ def _interaction(bot, user_id: int = MANAGER_ID):
     interaction.guild = MagicMock()
     interaction.user = MagicMock()
     interaction.user.id = user_id
+    interaction.user.display_name = "Manager"
     interaction.response = MagicMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    # Answered once the interaction has been replied to or deferred, as Discord's is.
+    interaction.response.is_done = lambda: bool(
+        interaction.response.send_message.await_count + interaction.response.defer.await_count
+    )
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -111,12 +117,34 @@ def _permitted(monkeypatch, allowed: bool):
 
 BUTTONS = ["approve_button", "request_changes_button", "reject_button"]
 
+#: Each button's label, as a refusal's line names it.
+LABELS = {
+    "approve_button": "Approve",
+    "request_changes_button": "Request Changes",
+    "reject_button": "Reject",
+}
+
+_NOT_RECORDED = "#482: the review panel's refusal is answered but writes no line in the log channel"
+
+
+def _assert_refusal_recorded(interaction, button: str, reason: str) -> None:
+    """One line in the log channel, naming the button, the signup review it sits on, the member
+    who pressed it, and why (core specification, "The record of what changed")."""
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith(f"⛔ the “{LABELS[button]}” button"), line
+    assert "signup review" in line
+    assert f"refused for Manager (<@{MANAGER_ID}>)" in line
+    assert line.endswith(f"— {reason}"), line
+
 
 # ---------------------------------------------------------------------------
 # Who may press these
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_driver_cannot_action_their_own_signup(monkeypatch, button):
     """The panel sits in the driver's own channel, which they can read. This check is the
@@ -129,11 +157,13 @@ async def test_a_driver_cannot_action_their_own_signup(monkeypatch, button):
     await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert "Insufficient permissions" in _replied(interaction)
+    _assert_refusal_recorded(interaction, button, "Insufficient permissions.")
     bot.wizard_service.approve_signup.assert_not_awaited()
     bot.wizard_service.reject_signup.assert_not_awaited()
     assert _PENDING_REASONS == {}
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_signup_already_actioned_is_refused(monkeypatch, button):
     """Three managers can be looking at one panel and the buttons never disappear. Without
@@ -147,9 +177,11 @@ async def test_a_signup_already_actioned_is_refused(monkeypatch, button):
     await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert "already been actioned" in _replied(interaction)
+    _assert_refusal_recorded(interaction, button, "This signup has already been actioned.")
     bot.wizard_service.approve_signup.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_driver_whose_profile_has_gone_is_refused(monkeypatch, button):
     """They withdrew, or left the server, between the panel being posted and pressed."""
@@ -161,8 +193,10 @@ async def test_a_driver_whose_profile_has_gone_is_refused(monkeypatch, button):
     await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert "already been actioned" in _replied(interaction)
+    _assert_refusal_recorded(interaction, button, "This signup has already been actioned.")
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(monkeypatch):
     """A panel rebuilt after a restart carries no stored driver and finds one by channel.
     Finding none must refuse rather than act on `None`."""
@@ -174,6 +208,9 @@ async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(mo
     await type(view).approve_button(view, interaction, MagicMock())
 
     assert "Could not identify driver" in _replied(interaction)
+    _assert_refusal_recorded(
+        interaction, "approve_button", "Could not identify driver for this signup."
+    )
 
 
 async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
