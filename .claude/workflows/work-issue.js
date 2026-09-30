@@ -103,6 +103,12 @@ if (stage !== 'check') {
 // ---- text helpers ---------------------------------------------------------------------------
 
 const asText = v => (v === undefined || v === null || (Array.isArray(v) && !v.length)) ? '' : typeof v === 'string' ? v : JSON.stringify(v, null, 2)
+// FNV-1a, 32 bits: for what is compared and never read, such as a list's entries or the owner's decisions; a few hundred of them are far from a collision.
+const fnv = text => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8, '0')
+}
 const section = (title, v) => { const t = asText(v); return t ? `\n\n## ${title}\n\n${t}` : '' }
 // A section of text the plan already holds word for word, as the skill's plan carries its criteria,
 // its checks and often the owner's decisions, is left out: every agent reads the plan, and a copy
@@ -517,11 +523,15 @@ const LANE_NAMES = { issue: 'issue reviewer', code: 'code reviewer', product: 'p
 const previous = ARGS.previous || null
 const offset = previous ? previous.lastRound : 0
 // A raised budget carries to the stage's later runs. A run the owner starts, after answering its
-// questions or asking for changes at its gate, always gets at least one round, so that their answer
+// questions, asking for changes at its gate or deciding anything since, always gets at least one round, so that their answer
 // is acted on rather than met with `capped`; where that round cannot pass, the stage stops as
 // `capped` again and the owner chooses once more.
 const stageBudget = Math.max(Number(ARGS.roundBudget) || 0, (previous && previous.roundBudget) || 0, ROUND_BUDGET[stage])
-const ownerRerun = !!previous && ['passed', 'question'].includes(previous.status)
+// The owner has spoken since a run that stopped short, capped or stalled included, where the
+// decisions differ from those it ran with: a tests stage run again for a test the owner approved
+// after a capped build was met with capped and no agent at all (#482 slice 4).
+const decisionsDigest = fnv(asText(ARGS.decisions))
+const ownerRerun = !!previous && (['passed', 'question'].includes(previous.status) || (previous.decisionsDigest !== undefined && previous.decisionsDigest !== decisionsDigest))
 const left = Math.max(stageBudget - offset, ownerRerun ? 1 : 0)
 const maxRounds = Math.min(left, Number(ARGS.maxRounds) || left)
 const ledger = new Map((previous ? previous.ledger : []).map(f => [f.id, { ...f }]))
@@ -545,13 +555,18 @@ const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt :
 // has made pass since is the same test.
 const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'what', 'affects']
 const described = (entry, f) => JSON.stringify(f === 'affects' ? [...(entry.affects || [])].sort() : entry[f] || '')
-// FNV-1a, 32 bits: a list of a few hundred entries is far from a collision.
-const fnv = text => {
-  let h = 0x811c9dc5
-  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
-  return h.toString(16).padStart(8, '0')
-}
 const digestOf = e => fnv(DESCRIBED.map(f => described(e, f)).join('|'))
+// A parametrised test is one function, whatever cases it runs: it is compared without them.
+const bareId = id => String(id || '').replace(/\[.*\]$/, '')
+const supportKey = s => `${s.file}::${s.name}`
+// The list as a reviewer last saw it: for each entry, a hash of its key against its change and the
+// hash of what it says. Nothing else is read of it, and with the keys written out it was the largest
+// part of a result carried into the next run, which then no longer fitted in a script (#482 slice 4).
+const seenEntry = e => `${e.change}:${e.digest || digestOf(e)}`
+const seenList = (tests, support) => ({
+  t: Object.fromEntries((tests || []).map(t => [fnv(bareId(t.nodeid)), seenEntry(t)])),
+  s: Object.fromEntries((support || []).map(x => [fnv(supportKey(x)), seenEntry(x)])),
+})
 const compactEntry = (e, support) => e.digest ? e : {
   ...(support ? { file: e.file, name: e.name } : { nodeid: e.nodeid }),
   change: e.change,
@@ -564,7 +579,7 @@ const compactList = (tests, support) => ({ tests: (tests || []).map(t => compact
 // only the entries new or changed since in full, the rest in short: the long descriptions are most
 // of a round's prompt, and re-reading them every round is paid for every round. A lane that
 // returned nothing is dropped, and is given the whole list again.
-const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, compactList(seen.tests, seen.support)]))
+const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, seen.t ? seen : seenList(seen.tests, seen.support)]))
 const separateDefects = previous ? [...previous.separateDefects] : []
 // The tests the build adjusted after Gate 2 because the plan's change broke them, for Gate 3.
 // A tests stage run again after the build is given the build's list, as `adjusted`.
@@ -619,12 +634,13 @@ const designFiles = new Set(previous && previous.designFiles ? previous.designFi
 // The owner's rulings, in `rulings` as {<finding id>: "fix" or "leave"}. On a dispute: one left as
 // built is closed, and any other goes back to the builder, which follows the ruling. On a minor
 // finding: one the owner wants made becomes material, so that its checker must confirm it like
-// any other, and one left is closed.
+// any other, and one left is closed. On an open material finding: one left as built is closed, as
+// the owner may rule where its only remedy is a test change they refused (#483).
 const rulings = ARGS.rulings || {}
 const badRulings = Object.entries(rulings).filter(([, v]) => v !== 'fix' && v !== 'leave')
 if (badRulings.length) throw new Error(`A ruling is "fix" or "leave", not: ${badRulings.map(([id, v]) => `${id}: ${JSON.stringify(v)}`).join(', ')}`)
 const unknownRulings = Object.keys(rulings).filter(id => !ledger.has(id))
-if (unknownRulings.length) throw new Error(`rulings name findings previous does not hold: ${unknownRulings.join(', ')}. rulings carries the last result's disputes and minor findings only.`)
+if (unknownRulings.length) throw new Error(`rulings name findings previous does not hold: ${unknownRulings.join(', ')}. rulings carries the last result's findings only.`)
 const unruled = [...ledger.values()].filter(f => f.status === 'upheld' && !rulings[f.id]).map(f => f.id)
 if (unruled.length) throw new Error(`previous holds disputes the owner has not ruled on: ${unruled.join(', ')}. Pass each in rulings as "fix" or "leave".`)
 for (const f of ledger.values()) {
@@ -636,6 +652,11 @@ for (const f of ledger.values()) {
   } else if (f.ownerWants ? ['open', 'fixed', 'disputed'].includes(f.status) : (!f.material && f.status === 'open')) {
     if (ruling === 'fix') { f.material = true; f.ownerWants = true }
     else { f.status = 'closed'; f.ownerLeft = true }
+  } else if (ruling === 'leave' && f.material && ['open', 'fixed', 'disputed'].includes(f.status)) {
+    // An open material finding the owner leaves as built is closed: one whose only remedy is a test
+    // change the owner refused had nowhere else to go, and held a green stage to its round budget.
+    f.status = 'closed'
+    f.ownerLeft = true
   }
 }
 
@@ -677,6 +698,11 @@ const MAX_PIECES = 8
 
 // The command that lists what the branch changes under tests/, which the builder's lists must
 // match entry for entry (tools/changed_tests.py).
+// Every string naming the issue as a reason under tests/: a marker's own, or the constant a marker
+// names it through, which a search for reason="#N: alone missed, leaving a test marked as the build
+// passed (#483). A docstring that opens """#N: is not one: a tests stage may name the issue at the
+// head of a test's docstring, and the build may not change it.
+const MARKER_GREP = `git -C ${worktree} grep -n -E '(^|[^"])"#${issue}:' -- tests/`
 const CHANGED_TESTS = (from, markers = stage === 'build') => `cd ${worktree} && ${python} tools/changed_tests.py --repo ${worktree} --base ${from}${markers ? ` --issue ${issue}` : ''}`
 
 const TESTS_JOB = `This is the tests stage. Make every change to tests/ that this work needs, and no production code at all:
@@ -686,7 +712,7 @@ const TESTS_JOB = `This is the tests stage. Make every change to tests/ that thi
 - change the fixtures, helpers and data under tests/ that these need.
 The one exception is the architecture ratchet lines the plan names as removed: the build deletes each in the commit that removes its breach, and you leave them. After this stage the build may change no test, so anything the plan's change needs of tests/ is made here. Where the build has already begun and stopped to ask for a test change, the branch carries its commits: add yours on top, and still no production code.
 
-Mark each new test, and each changed test that fails before the change, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A failing case added to a parametrised test is marked on the case alone, as pytest.param(<values>, marks=pytest.mark.xfail(strict=True, reason="#${issue}: ...")), so that its passing cases do not XPASS; and a test in a class is marked on its own method, never through the class. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. A test that passes as committed, because it pins behaviour already built or because the build has already made it pass, is left unmarked. Run the tests both ways, as below: with --runxfail each marked test must fail, for the reason the plan gives; without it each marked test must be reported xfailed and each unmarked one must pass, and nothing else in their files may fail. Commit them before any production code the plan adds: as the first commit of this work, unless the plan places them otherwise or the build has already begun.
+Mark each new test, and each changed test that fails before the change, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"), the reason written as the string or as a module-level constant bound to it, never through an alias of the mark itself: the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A failing case added to a parametrised test is marked on the case alone, as pytest.param(<values>, marks=pytest.mark.xfail(strict=True, reason="#${issue}: ...")), so that its passing cases do not XPASS; and a test in a class is marked on its own method, never through the class. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. A test that passes as committed, because it pins behaviour already built or because the build has already made it pass, is left unmarked. Run the tests both ways, as below: with --runxfail each marked test must fail, for the reason the plan gives; without it each marked test must be reported xfailed and each unmarked one must pass, and nothing else in their files may fail. Commit them before any production code the plan adds: as the first commit of this work, unless the plan places them otherwise or the build has already begun.
 
 The workflow keeps the list of every test this work adds, changes, deletes or moves since ${base}, earlier rounds and runs included, and of every fixture, helper, module-level value or file under tests/ that it adds, changes, deletes or moves (support). Where the list already stands, it is given to you below in short, under its labels. Return only what you change in it: in tests[] and support[], each entry you add, and each listed entry whose change or description no longer holds, in full; and in dropped[], the node id of each listed test, and the file::name of each listed support entry, that the branch no longer changes. An entry you do not return stands as it is. With your changes the list must match what ${CHANGED_TESTS(base)} prints, entry for entry, with its node ids, its names and its change for each, the architecture ratchet lists alone excepted: run it before you finish. An import or a patched path that a move rewrites is never a change; one that binds or patches something else is. The owner approves the tests from the list before any code is written, so write each entry in plain terms, as a league manager would follow it:
 - change: added, modified, deleted or moved.
@@ -699,7 +725,7 @@ The workflow keeps the list of every test this work adds, changes, deletes or mo
 Re-describe a listed entry only where its test has changed in meaning or the owner has asked for it, since the owner compares the list with the one they last saw. A label the owner's decisions use names the entry that carries it there, and each such entry is given to you in full.
 Each entry in support[] gives the file and the name as the command prints them, the change, what it now does, and in affects the node ids of the tests that use it.`
 
-const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but four things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; the imports and patched paths that a move of the plan's rewrites, the names they bind or patch unchanged; and a stub, fake, fixture or exact-call assertion that the plan's own change to production code breaks, such as a call whose signature the plan changes, adjusted to the new shape and no further, so that it asserts no less about behaviour than it did. List each such adjustment in adjusted[], by the node id or the file::name that ${CHANGED_TESTS(testsHead)} gives it, with why the plan's change breaks it: the code reviewer judges each, and the owner sees each at acceptance. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
+const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue}, given as the string or as a module-level constant bound to it (${MARKER_GREP} finds both): remove each marker in the commit that makes its test pass, never before, and a reason constant with the last marker that uses it, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but four things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; the imports and patched paths that a move of the plan's rewrites, the names they bind or patch unchanged; and a stub, fake, fixture or exact-call assertion that the plan's own change to production code breaks, such as a call whose signature the plan changes, adjusted to the new shape and no further, so that it asserts no less about behaviour than it did. List each such adjustment in adjusted[], by the node id or the file::name that ${CHANGED_TESTS(testsHead)} gives it, with why the plan's change breaks it: the code reviewer judges each, and the owner sees each at acceptance. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
 
 // ---- the round loop's schemas ---------------------------------------------------------------
 
@@ -844,7 +870,7 @@ const CHANGES = {
 
 const TESTS_CHECK_SCHEMA = {
   type: 'object',
-  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem', 'changes', 'changesError'],
+  required: ['collectionOk', 'collectionDetail', 'tests', 'passing', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem', 'changes', 'changesError'],
   properties: {
     changes: CHANGES,
     changesError: { type: 'string', description: 'empty unless tools/changed_tests.py exited non-zero: what it printed on stderr' },
@@ -864,6 +890,7 @@ const TESTS_CHECK_SCHEMA = {
         },
       },
     },
+    passing: { type: 'array', items: { type: 'string' }, description: 'the node id of each test marked alreadyPasses that passed in both steps; every other test goes in tests[]' },
     otherFailures: { type: 'array', items: { type: 'string' } },
     uncommitted: { type: 'array', items: { type: 'string' }, description: 'every line git status --porcelain --untracked-files=all prints: work left uncommitted, new files included' },
     environmentProblem: { type: 'string', description: 'empty unless the host, not the code, is at fault' },
@@ -905,7 +932,7 @@ const SUITE_SCHEMA = {
     },
     mypyClean: { type: 'boolean' },
     mypyErrors: { type: 'array', items: { type: 'string' } },
-    xfailMarkersLeft: { type: 'integer', description: 'the lines git grep finds for the issue\'s expected-failure reason' },
+    xfailMarkersLeft: { type: 'integer', description: 'the lines git grep finds for the string naming the issue as a reason' },
     uncommitted: { type: 'array', items: { type: 'string' }, description: 'every line git status --porcelain --untracked-files=all prints: work left uncommitted, new files included' },
     tmpFree: { type: 'string' },
     environmentProblem: { type: 'string', description: 'empty unless the host, not the code, is at fault' },
@@ -1014,7 +1041,8 @@ const builderPrompt = (k, earlier = []) => {
   const answered = !(first && previous) ? ''
     : previous.status === 'question' ? ` The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.${previous.testChanges && previous.testChanges.length ? ` The test changes you proposed went to the owner: each made is on the branch now, committed by the tests stage${testsHead ? ` by ${testsHead}` : ''}, and each refused is in the decisions below, to build without.` : ''}`
       : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for changes: those in the decisions below, and any finding below that the owner wants made. Make them: they bind you, and this stage owes them until they are done.'
-        : ''
+        : ownerRerun ? ` The last run stopped ${previous.status}, and the owner has decided something since: this run is for what their decisions below call for, which binds you. Make it first.`
+          : ''
   return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}${earlier.length ? `, piece ${earlier.length + 1}` : ''}.
 
 ${WHERE}
@@ -1040,18 +1068,15 @@ const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ th
 // test entry is given in full, as any of them may use it and its scenario be held to what its setup
 // now does.
 let listTouched = null
-const changedSince = (entry, before, keyOf) => {
-  const was = before.find(b => keyOf(b) === keyOf(entry))
-  return !was || was.change !== entry.change || was.digest !== digestOf(entry)
-}
+const changedSince = (entry, seen, keyOf) => seen[fnv(keyOf(entry))] !== seenEntry(entry)
 const listFor = (lane, tests, support, whole = false) => {
   if (!tests) return ''
   const seen = listSeen[lane]
   if (!seen || whole || !listTouched) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
   const testKey = t => bareId(t.nodeid)
   const touched = listTouched
-  const newTests = tests.filter(t => touched.support.size || changedSince(t, seen.tests || [], testKey) || touched.tests.has(testKey(t)))
-  const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey) || touched.support.has(supportKey(x)))
+  const newTests = tests.filter(t => touched.support.size || changedSince(t, seen.t, testKey) || touched.tests.has(testKey(t)))
+  const newSupport = support.filter(x => changedSince(x, seen.s, supportKey) || touched.support.has(supportKey(x)))
   const short = [
     ...tests.filter(t => !newTests.includes(t)).map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(filled(t.criterion) ? { criterion: t.criterion } : {}) })),
     ...support.filter(x => !newSupport.includes(x)).map(x => ({ label: x.label, file: x.file, name: x.name, change: x.change })),
@@ -1082,6 +1107,7 @@ const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed
 2. Collection: pytest tests/ --collect-only -q must exit 0.
 3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give in realFailure the one line that says why: the assertion or exception pytest reports, at most 200 characters, never the traceback. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
+Report every test below, however many there are: list each test marked alreadyPasses that passed in both steps in passing[], by its node id alone, and every other test in tests[], one entry each. Never leave a test out or sum some up for size: a test missing from both counts as not run.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
 ${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
 ${since ? `7. What has changed under tests/ since ${since}: run ${CHANGED_TESTS(since)}, with a Bash timeout of 600000 ms, and copy what it prints into changedSince, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changedSinceError, and leave the lists in changedSince empty.
@@ -1103,7 +1129,7 @@ const buildTesterPrompt = k => {
 1. Run df -h /tmp, and note in tmpFree what is free.
 2. Start the whole suite detached, as below, with tests/ as the targets and ${logFile} as LOG.
 3. While it runs, run the type check: cd ${worktree} && ${BIN}/mypy, with a Bash timeout of 600000 ms. Note every error.
-4. Count the expected-failure markers left: git -C ${worktree} grep -n -F 'reason="#${issue}:' -- tests/, and report how many lines it finds. List every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted.
+4. Count the expected-failure markers left: ${MARKER_GREP}, and report how many lines it finds. List every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted.
 5. Wait for the suite, as below, until its exit code appears.
 6. Read the outcome: the exit code from ${logFile}.exit; pytest's closing line, from tail -n 5 ${logFile}; and every line grep -E '^(FAILED|ERROR)' ${logFile} finds, each with the reason pytest gives for it further up the log.
 7. A failure spread across unrelated modules is a full /tmp until proved otherwise: run df -h /tmp again, and where it is full or nearly, say so in environmentProblem. Say so there too for an exit code of 75.
@@ -1159,10 +1185,7 @@ const GROUPS = [
   { change: 'deleted', title: 'Deleted', prefix: 'D' },
   { change: 'moved', title: 'Moved', prefix: 'MV' },
 ]
-// A parametrised test is one function, whatever cases it runs: it is compared without them.
-const bareId = id => String(id || '').replace(/\[.*\]$/, '')
 const fileOf = id => bareId(id).split('::')[0]
-const supportKey = s => `${s.file}::${s.name}`
 const filled = v => String(v === undefined || v === null ? '' : v).trim() !== ''
 // Entries in report order: files sorted, and within a file as the builder listed them.
 const byFile = (entries, fileOfEntry) => [...new Set(entries.map(fileOfEntry))].sort().map(f => [f, entries.filter(e => fileOfEntry(e) === f)])
@@ -1312,10 +1335,13 @@ const testsProblems = t => {
   if (!t) return ['the tester returned nothing']
   const problems = hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
+  const passing = new Set((t.passing || []).map(bareId))
   for (const w of written) {
     if (w.change === 'deleted') continue
     const x = t.tests.find(r => r.nodeid === w.nodeid)
-    if (!x) { problems.push(`${w.nodeid} was not run by the tester`); continue }
+    if (!x && !passing.has(bareId(w.nodeid))) { problems.push(`${w.nodeid} was not run by the tester`); continue }
+    if (!x && !(w.alreadyPasses || w.madePassByBuild)) { problems.push(`${w.nodeid} was reported as passing already, but it must fail until the change is built`); continue }
+    if ((w.alreadyPasses || w.madePassByBuild) && !x) continue
     if (w.alreadyPasses || w.madePassByBuild) {
       if (x.outcomeAsCommitted !== 'passed') problems.push(`${w.nodeid} pins behaviour already built, so it must pass, but was ${x.outcomeAsCommitted}`)
       continue
@@ -1356,7 +1382,7 @@ const reviewTests = async (k, questions, built) => {
   const earliest = known && seenAt.length ? Math.min(...seenAt) : undefined
   const since = !seenAt.length || earliest === commits.length ? '' : earliest ? commits[earliest - 1].sha : base
   const test = written.length || supportWritten.length
-    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: (testsHead ? withUnmarked : x => x)(since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA) })
+    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses || w.madePassByBuild ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: (testsHead ? withUnmarked : x => x)(since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA) })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const nothing = { tests: new Set(), support: new Set() }
@@ -1375,7 +1401,7 @@ const reviewTests = async (k, questions, built) => {
   ])
   for (const [lane, result] of [['issue', issueResult], ['product', productResult]]) {
     if (result === undefined) continue
-    if (result) listSeen[lane] = compactList(written, supportWritten)
+    if (result) listSeen[lane] = seenList(written, supportWritten)
     else delete listSeen[lane]
   }
   return { lanes: { issue: issueResult, product: productResult }, test, report, problems, green: !!test && !hostProblem(test) && !problems.length }
@@ -1386,13 +1412,20 @@ const reviewTests = async (k, questions, built) => {
 // pinning nothing. It is one whose marker the build removed since testsHead, or one the build
 // adjusted after a Gate 2 (#483), which the tool then reports as modified rather than unmarked, and
 // which passes as committed, as no test still marked can.
+//
+// And, whatever the markers' form, one the owner approved at the last Gate 2 that passes as committed
+// now: at Gate 2 it failed as the plan said, marked strict, so it passes only unmarked, and only
+// because the change it pins is built. A marker the tool could not read, as one a helper put on a
+// test's cases, left such a test flagged as pinning nothing (#482 slice 4).
 const markMadePass = t => {
   if (!t || !testsHead) return
   const unmarked = new Set((t.unmarkedByBuild || []).map(bareId))
   const touched = new Set(adjusted.map(a => bareId(a.target)))
+  const approved = new Set(shown ? shown.tests.filter(e => e.change !== 'deleted').map(e => bareId(e.nodeid)) : [])
   for (const w of written) {
-    const x = t.tests.find(r => bareId(r.nodeid) === bareId(w.nodeid))
-    if (unmarked.has(bareId(w.nodeid)) || (touched.has(bareId(w.nodeid)) && x && x.outcomeAsCommitted === 'passed')) w.madePassByBuild = true
+    const key = bareId(w.nodeid)
+    const passed = t.tests.some(r => bareId(r.nodeid) === key && r.outcomeAsCommitted === 'passed')
+    if (unmarked.has(key) || (passed && (touched.has(key) || (approved.has(key) && !w.alreadyPasses)))) w.madePassByBuild = true
   }
 }
 
@@ -1403,6 +1436,7 @@ const markMadePass = t => {
 const firstLine = v => (String(v || '').split('\n').find(l => l.trim()) || '').trim().slice(0, 300)
 const compactTest = (t, problems) => !t ? t : {
   problems,
+  passingAsExpected: (t.passing || []).length,
   tests: t.tests.map(x => ({ nodeid: x.nodeid, outcome: x.outcomeAsCommitted, failsWithRunxfail: x.failsWithRunxfail, failure: firstLine(x.realFailure) })),
 }
 
@@ -1701,8 +1735,10 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   const closed = [...pendingBefore].filter(id => !openIds.has(id)).length
   stallStreak = k > 1 && opened >= 1 && opened >= closed ? stallStreak + 1 : 0
   const red = redKey(reviewed)
-  const sameRed = !!red && red === lastRed
-  lastRed = red
+  // Kept as a hash: only whether two rounds failed alike is read of it, and in full it ran to tens of
+  // kilobytes of every result.
+  const sameRed = !!red && fnv(red) === lastRed
+  lastRed = red ? fnv(red) : ''
   const proposed = stage === 'build' ? built.testChanges || [] : []
   rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, opened, closed, green: reviewed.green, questions: stopping.length, provisional: taken.length, testChanges: proposed.length, dead })
   log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${stopping.length} question(s) for the owner; ${proposed.length} test change(s) proposed.`)
@@ -1800,6 +1836,7 @@ return {
   designFiles: [...designFiles].sort(),
   reviewedAt,
   roundBudget: stageBudget,
+  decisionsDigest,
   stallStreak,
   lastRed,
 }

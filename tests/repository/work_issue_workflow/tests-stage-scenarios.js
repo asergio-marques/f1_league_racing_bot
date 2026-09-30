@@ -425,7 +425,8 @@ Object.assign(scenarios, {
         if (label.endsWith(':issue')) return review({ findings: [finding('issue-1-1')] })
         return cleanLanes(label)
       })
-      if (first.status !== 'unfinished' || JSON.stringify(first.listSeen).includes('SCEN-A-LONG') || !first.listSeen.issue.tests[0].digest) throw new Error('the first run did not remember the list as hashes')
+      const seen = JSON.stringify(first.listSeen)
+      if (first.status !== 'unfinished' || seen.includes('SCEN-A-LONG') || seen.includes('test_a') || Object.keys(first.listSeen.issue.t).length !== 1) throw new Error('the first run did not remember the list as hashes, keys included')
       return { ...base, stage: 'tests', previous: first }
     },
     respond(label, prompt) {
@@ -490,8 +491,20 @@ Object.assign(scenarios, {
   testsRerunAcceptsTestsBuildMadePass: afterBuild([A, Bn], {
     expect: r => r.status === 'passed' && r.report.includes('*Passes already:* the build has made it pass'),
   }),
-  testsRerunStillFlagsPassingTestNotUnmarked: afterBuild([A], {
-    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Bn} passes already under --runxfail`)) && !r.lastFailures.some(f => f.includes(`${A} passes already`)),
+  // A test added in this run that passes already pins nothing, whatever the build did before it.
+  testsRerunStillFlagsPassingTestNotApproved: {
+    ...afterBuild([A]),
+    respond(label, prompt, opts) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Bn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Cn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' })], changes: changes([[A, 'added'], [Bn, 'added'], [Cn, 'added']]), unmarkedByBuild: [A] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Cn} passes already under --runxfail`)) && !r.lastFailures.some(f => f.includes(`${A} passes already`) || f.includes(`${Bn} passes already`)),
+  },
+  // A test the owner approved at Gate 2 that passes now is one the build made pass, however its
+  // marker was written: here the tool listed only the helper that built its cases.
+  testsRerunAcceptsApprovedTestNowPassing: afterBuild(['tests/x/test_a.py::_case'], {
+    expect: r => r.status === 'passed' && r.tests.filter(t => t.madePassByBuild).length === 2,
   }),
   // Before the build has begun there is nothing it unmarked, and the tester is not asked.
   testerNotAskedWithoutTestsHead: {
@@ -610,5 +623,42 @@ Object.assign(scenarios, {
     args: { ...base, stage: 'tests', adjusted: 'test_a' },
     respond(label) { throw new Error(`${label} ran with an adjusted that should have been refused`) },
     expectThrow: 'adjusted is the build',
+  },
+})
+
+// The tester reports every test, however many: those known to pass already by node id alone in
+// passing[], the rest one entry each. Slice 4's tester itemised 7 of 129 "for size", and the stage
+// stalled on tests it never reported (#483).
+const knownPassing = { ...base, stage: 'tests', testsHead: 't0', maxRounds: 1, previous: passedTests({ tests: [entry(A, 'added', { madePassByBuild: true }), entry(Bn, 'added')] }) }
+Object.assign(scenarios, {
+  testerListsKnownPassingTestsById: {
+    args: knownPassing,
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) {
+        if (!prompt.includes('Never leave a test out') || !/"nodeid": "tests\/x\/test_a.py::test_a",\s*"change": "added",\s*"alreadyPasses": true/.test(prompt)) throw new Error('the tester was not told which tests pass already, or to report every test')
+        return testsCheck({ tests: [ran(Bn)], passing: [A], changes: changes([[A, 'added'], [Bn, 'added']]), unmarkedByBuild: [] })
+      }
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  mustFailTestReportedAsPassingIsFlagged: {
+    args: knownPassing,
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [], passing: [A, Bn], changes: changes([[A, 'added'], [Bn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Bn} was reported as passing already`)),
+  },
+  testMissingFromBothListsIsNotRun: {
+    args: knownPassing,
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(Bn)], passing: [], changes: changes([[A, 'added'], [Bn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${A} was not run by the tester`)),
   },
 })

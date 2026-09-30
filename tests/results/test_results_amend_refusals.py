@@ -26,8 +26,6 @@ from tests.support.undecorate import undecorate
 ACTOR_ID = 4242
 CONFIG = "100%"
 
-_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
-
 
 async def _db(tmp_path, amendment: str) -> tuple[str, int]:
     """A running season scored by CONFIG (Feature Race P1 25 pts, fastest lap 1 pt in the top

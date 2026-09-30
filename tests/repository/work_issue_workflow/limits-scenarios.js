@@ -151,3 +151,56 @@ module.exports = {
     expect: r => r.status === 'passed' && r.lastRound === 4,
   },
 }
+
+// A stage run again after it capped gets a round where the owner has decided something since, as
+// when they approve a test mid-build; with the same decisions it stays capped, and only a raised
+// budget gives it one (#483).
+const cappedTests = decisions => async runOnce => {
+  const capped = await runOnce({ ...base, stage: 'tests', decisions: 'FIRST', maxRounds: 3 }, label => {
+    if (label.endsWith(':builder')) return builder()
+    if (label.endsWith(':tester')) return testsCheck({ otherFailures: [`red in round ${round(label)}`] })
+    return review()
+  })
+  if (capped.status !== 'capped') throw new Error(`the first run was ${capped.status}, not capped`)
+  return { ...base, stage: 'tests', decisions, previous: capped }
+}
+Object.assign(module.exports, {
+  cappedStageRunsAgainAfterNewDecisions: {
+    args: cappedTests('FIRST. OWNER: add test_c'),
+    respond(label, prompt) {
+      if (label.endsWith(':builder') && !prompt.includes('the owner has decided something since')) throw new Error('the builder was not told why the stage runs again')
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 4 && labels.includes('tests:r4:builder'),
+  },
+  cappedStageStaysCappedWithoutNewDecisions: {
+    args: cappedTests('FIRST'),
+    respond(label) { throw new Error(`${label} ran for a capped stage nobody gave a round`) },
+    expect: (r, { labels }) => r.status === 'capped' && !labels.length,
+  },
+})
+
+// Only whether two rounds failed alike is read of the last failure, so a result carries it as a hash;
+// a stage resumed from that result still stalls on the same failure (#483).
+Object.assign(module.exports, {
+  lastRedCarriedAsHashStillStalls: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', maxRounds: 1 }, label => {
+        if (label.endsWith(':builder')) return builder()
+        if (label.endsWith(':tester')) return testsCheck({ otherFailures: ['THE SAME LONG FAILURE '.repeat(40)] })
+        return review()
+      })
+      if (!/^[0-9a-f]{8}$/.test(first.lastRed)) throw new Error(`lastRed is carried in full: ${first.lastRed.slice(0, 40)}`)
+      return { ...base, stage: 'tests', previous: first }
+    },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck({ otherFailures: ['THE SAME LONG FAILURE '.repeat(40)] })
+      return review()
+    },
+    expect: r => r.status === 'stalled' && r.lastRound === 2,
+  },
+})

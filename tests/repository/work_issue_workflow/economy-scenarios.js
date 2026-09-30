@@ -221,3 +221,17 @@ module.exports.designVerifierRunsWhenFileFirstAppears = {
   },
   expect: (r, { labels }) => labels.includes('build:r2:design'),
 }
+
+// The count of markers left finds a reason given through a constant as well as one written out: a
+// search for reason="#N: alone let a build pass with a test still marked (#483).
+module.exports.markerCountCatchesReasonConstants = {
+  args: B,
+  respond(label, prompt) {
+    const grep = `grep -n -E '(^|[^"])"#999:' -- tests/`
+    if (label.endsWith(':tester') && !prompt.includes(grep)) throw new Error('the tester counts markers by their literal reason alone')
+    if (label.endsWith(':builder') && !(prompt.includes(grep) && prompt.includes('a reason constant with the last marker that uses it'))) throw new Error('the builder is not told how markers are found')
+    if (label.endsWith(':builder')) return builder({ tests: [] })
+    return lanesClean(label)
+  },
+  expect: r => r.status === 'passed',
+}

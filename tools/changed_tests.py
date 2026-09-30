@@ -33,7 +33,13 @@ changed at once is reported as deleted and added.
 **With `--issue N`,** a test whose only change is the loss of its
 `xfail(..., reason="#N: ...")` markers, on the test or on a case of it through
 `pytest.param(..., marks=...)`, is reported under `markersRemoved` rather than as modified: that is
-the one test change the build makes by design.
+the one test change the build makes by design. A reason may be written as the string itself or as
+a module-level constant bound to it (`reason=_NOT_YET_BUILT`): a tests stage writing many markers
+in one file names the reason once, and a marker read only in its literal form was reported as a
+modification the build had no leave to make (#483). Such a constant, deleted with the last marker
+that used it, is part of the markers, and is not reported as support. So is a marker on a case a
+helper builds, `return pytest.param(..., marks=...)`: a helper whose only change is the loss of the
+issue's markers is listed under `markersRemoved` by its `file::name`, as a test is by its node id.
 
 Run it as:
 
@@ -224,54 +230,90 @@ def _test_class(
         _put(support, f"{cls.name}::{CLASS_LEVEL}", None, _shape(shell))
 
 
-def _is_issue_marker(decorator: ast.expr, issue: str) -> bool:
-    """`@pytest.mark.xfail(..., reason="#<issue>: ...")`, the tests stage's marker."""
+def _module_strings(source: str) -> dict[str, str]:
+    """The module-level names a file binds to a string, as `_REASON = "#42: ..."` binds one.
+
+    Each name an assignment binds is read on its own, so `A = B = "..."` binds both. A name bound
+    more than once is left out: which of its values a marker reads cannot be told without running
+    the module, and reading the wrong one could hide a change.
+    """
+    strings: dict[str, str] = {}
+    bound: dict[str, int] = {}
+    for statement in ast.parse(source).body if source else []:
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, (ast.AnnAssign, ast.AugAssign)):
+            targets, value = [statement.target], statement.value
+        else:
+            continue
+        for target in targets:
+            for name in (n.id for n in ast.walk(target) if isinstance(n, ast.Name)):
+                bound[name] = bound.get(name, 0) + 1
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    strings[target.id] = value.value
+    return {name: text for name, text in strings.items() if bound[name] == 1}
+
+
+def _is_issue_marker(decorator: ast.expr, issue: str, strings: dict[str, str] | None = None) -> bool:
+    """`@pytest.mark.xfail(..., reason="#<issue>: ...")`, the tests stage's marker.
+
+    The reason may be the string itself or a module-level name bound to it, found in *strings*.
+    """
     if not isinstance(decorator, ast.Call) or not ast.unparse(decorator.func).endswith("xfail"):
         return False
     for keyword in decorator.keywords:
-        if (
-            keyword.arg == "reason"
-            and isinstance(keyword.value, ast.Constant)
-            and isinstance(keyword.value.value, str)
-        ):
-            return keyword.value.value.startswith(f"#{issue}:")
+        if keyword.arg != "reason":
+            continue
+        value = keyword.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            return value.value.startswith(f"#{issue}:")
+        if isinstance(value, ast.Name) and value.id in (strings or {}):
+            return (strings or {})[value.id].startswith(f"#{issue}:")
     return False
 
 
-def _without_markers(node: ast.AST, issue: str) -> tuple[ast.AST, int]:
-    """A copy of a test less the issue's markers, on it or on its cases, and how many it had."""
+def _without_markers(node: ast.AST, issue: str, strings: dict[str, str] | None = None) -> tuple[ast.AST, int]:
+    """A copy of a test or helper less the issue's markers, and how many it had.
+
+    A marker is read on a test's own decorators and on any case built anywhere in it: in its
+    decorators, or in a helper's body that returns `pytest.param(..., marks=...)` for a test's
+    parametrize list, where a tests stage writing many cases alike puts it.
+    """
     copied = copy.deepcopy(node)
-    if not isinstance(copied, _DEFS):
-        return copied, 0
-    kept = [d for d in copied.decorator_list if not _is_issue_marker(d, issue)]
-    removed = len(copied.decorator_list) - len(kept)
-    copied.decorator_list = kept
-    for decorator in kept:
-        for call in [n for n in ast.walk(decorator) if isinstance(n, ast.Call)]:
-            for keyword in [k for k in call.keywords if k.arg == "marks"]:
-                value = keyword.value
-                if _is_issue_marker(value, issue):
+    removed = 0
+    if isinstance(copied, _DEFS):
+        kept = [d for d in copied.decorator_list if not _is_issue_marker(d, issue, strings)]
+        removed = len(copied.decorator_list) - len(kept)
+        copied.decorator_list = kept
+    for call in [n for n in ast.walk(copied) if isinstance(n, ast.Call)]:
+        for keyword in [k for k in call.keywords if k.arg == "marks"]:
+            value = keyword.value
+            if _is_issue_marker(value, issue, strings):
+                call.keywords.remove(keyword)
+                removed += 1
+            elif isinstance(value, (ast.List, ast.Tuple)):
+                left = [e for e in value.elts if not _is_issue_marker(e, issue, strings)]
+                removed += len(value.elts) - len(left)
+                if left:
+                    value.elts = left
+                else:
                     call.keywords.remove(keyword)
-                    removed += 1
-                elif isinstance(value, (ast.List, ast.Tuple)):
-                    left = [e for e in value.elts if not _is_issue_marker(e, issue)]
-                    removed += len(value.elts) - len(left)
-                    if left:
-                        value.elts = left
-                    else:
-                        call.keywords.remove(keyword)
     return copied, removed
 
 
-def _only_markers_removed(before: _Unit, after: _Unit, issue: str) -> bool:
+def _only_markers_removed(
+    before: _Unit, after: _Unit, issue: str, strings_before: dict[str, str], strings_after: dict[str, str]
+) -> bool:
     """The test lost some of the issue's markers, and nothing else changed.
 
     A name bound twice is never read so: its shadowed binding could have changed unseen.
     """
     if before.node is None or after.node is None or before.bound_twice or after.bound_twice:
         return False
-    was, had = _without_markers(before.node, issue)
-    now, has = _without_markers(after.node, issue)
+    was, had = _without_markers(before.node, issue, strings_before)
+    now, has = _without_markers(after.node, issue, strings_after)
     return had > has and _shape(was) == _shape(now)
 
 
@@ -298,8 +340,11 @@ def changed_tests(repo: str, base: str, head: str = "HEAD", issue: str | None = 
             change = {"A": "added", "D": "deleted"}.get(status, "modified")
             support.append({"file": path, "name": WHOLE_FILE, "change": change})
             continue
-        before_tests, before_support = _units(_side(repo, base_sha, path, status != "A"), path)
-        after_tests, after_support = _units(_side(repo, head_sha, path, status != "D"), path)
+        before_source = _side(repo, base_sha, path, status != "A")
+        after_source = _side(repo, head_sha, path, status != "D")
+        before_tests, before_support = _units(before_source, path)
+        after_tests, after_support = _units(after_source, path)
+        strings_before, strings_after = _module_strings(before_source), _module_strings(after_source)
         for nodeid in sorted(before_tests.keys() | after_tests.keys()):
             before, after = before_tests.get(nodeid), after_tests.get(nodeid)
             if before is None and after is not None:
@@ -307,7 +352,7 @@ def changed_tests(repo: str, base: str, head: str = "HEAD", issue: str | None = 
             elif after is None and before is not None:
                 deleted_tests[nodeid] = before
             elif before is not None and after is not None and before.shape != after.shape:
-                if issue and _only_markers_removed(before, after, issue):
+                if issue and _only_markers_removed(before, after, issue, strings_before, strings_after):
                     markers.append(nodeid)
                 else:
                     tests.append({"nodeid": nodeid, "change": "modified"})
@@ -316,9 +361,14 @@ def changed_tests(repo: str, base: str, head: str = "HEAD", issue: str | None = 
             if before is None and after is not None:
                 added_support[(path, name)] = after
             elif after is None and before is not None:
+                if issue and strings_before.get(name, "").startswith(f"#{issue}:"):
+                    continue
                 deleted_support[(path, name)] = before
             elif before is not None and after is not None and before.shape != after.shape:
-                support.append({"file": path, "name": name, "change": "modified"})
+                if issue and _only_markers_removed(before, after, issue, strings_before, strings_after):
+                    markers.append(f"{path}::{name}")
+                else:
+                    support.append({"file": path, "name": name, "change": "modified"})
     for nodeid, change, origin in _pair_moves(added_tests, deleted_tests, lambda k: k.split("::")[-1]):
         tests.append({"nodeid": nodeid, "change": change, **({"from": origin} if origin else {})})
     for (path, name), change, was in _pair_moves(added_support, deleted_support, lambda k: k[1]):

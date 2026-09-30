@@ -383,3 +383,18 @@ Object.assign(module.exports, {
     expect: r => r.status === 'question' && r.failure.includes('lock'),
   },
 })
+
+// An open material finding the owner leaves as built is closed: one whose only remedy is a test the
+// owner refused otherwise held a green stage until its round budget ran out (#483).
+const openPrev = { stage: 'build', status: 'question', lastRound: 3, testsHead: 't0', ledger: [
+  { id: 'issue-3-1', lane: 'issue', title: 'no test pins the empty division', material: true, why: 'w', fix: 'add the test', evidence: [], status: 'open' },
+  { id: 'code-3-1', lane: 'code', title: 'the empty division is untested', material: true, why: 'w', fix: 'add the test', evidence: [], status: 'open' },
+], citations: [], commits: [{ sha: 'c1', subject: 's' }], separateDefects: [], lastFailures: [], tests: [], designFiles: [], roundBudget: 4 }
+module.exports.leaveClosesAnOpenMaterialFinding = {
+  args: { ...B, testsHead: 't0', decisions: 'OWNER: build without the test', previous: openPrev, rulings: { 'issue-3-1': 'leave', 'code-3-1': 'leave' } },
+  respond(label, prompt) {
+    if (label.endsWith(':builder')) { if (prompt.includes('issue-3-1') || prompt.includes('code-3-1')) throw new Error('the builder still owes a finding the owner left'); return builder({ tests: [], commits: [] }) }
+    return clean(label)
+  },
+  expect: r => r.status === 'passed' && r.openMaterial.length === 0 && r.ledger.every(f => f.status === 'closed' && f.ownerLeft),
+}
