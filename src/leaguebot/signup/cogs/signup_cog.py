@@ -1168,17 +1168,18 @@ class SignupCog(commands.Cog):
         # Guard: max slots
         existing_slots = await self.bot.signup_module_service.get_slots()
         if len(existing_slots) >= _MAX_SLOTS:
-            await interaction.response.send_message(
-                f"❌ Maximum of {_MAX_SLOTS} time slots reached.", ephemeral=True
+            await refuse(
+                interaction, f"❌ Maximum of {_MAX_SLOTS} time slots reached.", what=describe(interaction)
             )
             return
 
         # Parse time
         normalized = _parse_time(time)
         if normalized is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Could not parse time '{time}'. Use HH:MM 24h or 12h with am/pm.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1186,8 +1187,8 @@ class SignupCog(commands.Cog):
         try:
             await self.bot.signup_module_service.add_slot(day_int, normalized)
         except ValueError:
-            await interaction.response.send_message(
-                "❌ That time slot already exists.", ephemeral=True
+            await refuse(
+                interaction, "❌ That time slot already exists.", what=describe(interaction)
             )
             return
 
@@ -1231,15 +1232,15 @@ class SignupCog(commands.Cog):
 
         slots = await self.bot.signup_module_service.get_slots()
         if not slots:
-            await interaction.response.send_message(
-                "❌ No slots configured.", ephemeral=True
+            await refuse(
+                interaction, "❌ No slots configured.", what=describe(interaction)
             )
             return
 
         target = next((s for s in slots if s.slot_sequence_id == slot_id), None)
         if target is None:
-            await interaction.response.send_message(
-                f"❌ Slot #{slot_id} does not exist.", ephemeral=True
+            await refuse(
+                interaction, f"❌ Slot #{slot_id} does not exist.", what=describe(interaction)
             )
             return
 
