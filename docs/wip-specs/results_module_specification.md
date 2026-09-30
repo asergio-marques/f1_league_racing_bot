@@ -169,6 +169,7 @@
     - A command that sets points shall apply the change and then report that the table is out of order, naming every position at fault. It shall not refuse the change. Filling a table in passes through states that are momentarily out of order — a position set before the one above it, a table repaired from the bottom up — and refusing them would put ordinary ways of building a table out of reach.
     - The refusal falls where a table stops being a draft: the first confirmation of a season's placements, and the approval of a mid-season amendment.
     - A command that sets a value to the one the configuration already holds shall change nothing, and shall say so, where it could otherwise have been carried out: a configuration that is not found, or a fastest-lap setting for a qualifying session, is refused as ever. Where the table is out of order, the reply keeps naming the positions at fault. Decided 2026-09-30.
+        - A position with no points set holds no value, whatever the 0 points assumed for it: setting it, to 0 included, is a change. Decided 2026-09-30.
 
 #### Setting many positions at once
 - There shall be a "results config bulk-session" command that intakes the configuration name and a session type and opens a form in which many positions are given at once, one "position, points" pair per line. Blank lines are skipped; a position must be a positive integer and its points non-negative; where a position appears more than once the last value given wins and the override is reported.
@@ -400,6 +401,7 @@ Penalties are not applied by a command. Once every session of a round has been s
     - A resubmission that fails before its results are saved shall end as a cancelled one does, and say so in the channel.
     - A resubmission that fails before any session is pasted (the round is gone, or the division's data cannot be read) shall be recorded as the button's failure, naming who pressed it and saying the earlier results stand.
     - A restart during a resubmission shall keep the submitted results and restore stage one, saying in the channel that the sessions entered so far were lost, and recording in the log channel a lapse naming who started the resubmission. Decided 2026-09-30.
+        - Where the submission channel is gone, the resubmission shall still be ended and its lapse recorded, and nothing posted in the channel. Decided 2026-09-30.
     - The resubmission shall be refused where the submission channel no longer exists, and nothing shall be discarded.
 - **Attendance Pardon** — stages an attendance pardon, per the attendance module specification.
 - One **Remove** button per staged penalty, and one per staged attendance pardon.
