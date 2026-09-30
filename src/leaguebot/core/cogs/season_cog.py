@@ -41,6 +41,7 @@ from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import cancellation_notice_service
+from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
 from leaguebot.results.services import season_points_service
 import leaguebot.core.services.track_service as track_service
 from leaguebot.core.services.season_service import (
@@ -4807,6 +4808,31 @@ class SeasonCog(commands.Cog):
                 results.append(app_commands.Choice(name=label, value=r["name"]))
         return results[:25]
 
+    async def _record_round_unchanged(
+        self,
+        interaction: discord.Interaction,
+        command: str,
+        division_name: str,
+        round_number: int,
+    ) -> None:
+        """Answer and record a `/round amend` given only the values the round already holds.
+
+        It changes nothing, writes no audit entry and offers no confirmation, and records that
+        nothing was changed (the core specification's "The record of what changed").
+        """
+        await interaction.followup.send(
+            f"\u2139\ufe0f Round {round_number} in **{division_name}** already holds those values. "
+            "Nothing was changed.",
+            ephemeral=True,
+        )
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | "
+            "Nothing changed\n"
+            f"  division: {division_name}\n"
+            f"  round: {round_number}\n"
+            "  reason: the values given are the ones it holds",
+        )
+
     @round.command(
         name="amend",
         description="Amend a round's track, moment or format. Says what it costs before it does it.",
@@ -4922,6 +4948,20 @@ class SeasonCog(commands.Cog):
                 "scheduled_at": pend_rnd["scheduled_at"],
                 "track_name": pend_rnd["track_name"],
             }
+            asked = {
+                field: value
+                for field, value in (
+                    ("track_name", new_track),
+                    ("scheduled_at", new_dt),
+                    ("format", new_fmt),
+                )
+                if value is not ...
+            }
+            if amendment_changes_nothing(before, asked):
+                await self._record_round_unchanged(
+                    interaction, "/round amend (pending)", pend_div.name, round_number
+                )
+                return
             if new_fmt is not ...:
                 pend_rnd["format"] = new_fmt
             if new_dt is not ...:
@@ -5031,6 +5071,18 @@ class SeasonCog(commands.Cog):
                 )
                 return
             amendments.append(("format", new_fmt))
+
+        # The values that stand are no amendment: nothing is offered, and nothing changes.
+        standing = {
+            "track_name": rnd.track_name,
+            "scheduled_at": rnd.scheduled_at,
+            "format": rnd.format,
+        }
+        if amendment_changes_nothing(standing, dict(amendments)):
+            await self._record_round_unchanged(
+                interaction, "/round amend", div.name, rnd.round_number
+            )
+            return
 
         # Judged before anything is offered, and judged again when it is confirmed. An
         # amendment the rules refuse never reaches a confirmation at all.

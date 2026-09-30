@@ -638,9 +638,6 @@ async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_vie
 # the active path offers no confirmation for it. Whether the values stand is judged purely
 # (`amendment_rules_service`), and tested there.
 
-_NO_OP = pytest.mark.xfail(
-    strict=True, reason="#482: /round amend does not yet tell an amendment to what stands apart"
-)
 
 
 def _says_nothing_changed(text: str) -> bool:
@@ -657,7 +654,6 @@ def _as_typed(moment: datetime) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%S")
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "fields",
     [
@@ -694,7 +690,6 @@ async def test_an_active_round_amended_to_what_stands_changes_nothing(tmp_path, 
     assert _says_nothing_changed(line)
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "fields",
     [
