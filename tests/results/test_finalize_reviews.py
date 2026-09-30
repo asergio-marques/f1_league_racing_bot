@@ -3089,3 +3089,58 @@ async def test_each_stage_of_an_amendment_names_the_member_who_pressed(tmp_path,
     state = await _amendment_stage(tmp_path, token)
 
     assert _line_under(state, token).startswith(f"{_ALEX} | {token} | {outcome}")
+
+
+def _correction(driver: int = 102, seconds: int = 10) -> StagedPenalty:
+    """An upheld appeal's correction: *seconds* added to *driver*'s Feature Race time."""
+    return StagedPenalty(
+        driver_user_id=driver,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_type="TIME",
+        penalty_seconds=seconds,
+        description="Track limits",
+        justification="Appeal upheld, lap 7",
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the approval and amendment lines do not yet carry what apply_penalties applied",
+)
+@pytest.mark.parametrize(
+    "token, carries",
+    [
+        pytest.param("AMEND_STAGE_2", "applied: +5s for <@101> in FEATURE_RACE", id="amend-reports"),
+        pytest.param(
+            "RESULT_AMENDED", "appeals applied: +10s for <@102> in FEATURE_RACE", id="amend-appeals"
+        ),
+        pytest.param(
+            "APPEALS_REVIEW_APPROVED", "applied: +10s for <@102> in FEATURE_RACE", id="appeals"
+        ),
+    ],
+)
+async def test_amend_stage_two_and_appeals_lines_carry_what_was_applied(tmp_path, token, carries):
+    """With `apply_penalties` writing no line of its own, the line of the stage that applied
+    the verdicts says what was applied. Alex approves the report stage of round 3 (Pro)'s
+    amendment with +5s for driver 101 in the Feature Race staged, then its appeals stage with a
+    +10s correction for driver 102; or approves the appeals of round 3 (Pro), not an amendment,
+    with that correction staged. Each apply runs for real, and the stage's one line names what
+    it applied: the penalty or correction, the driver and the session."""
+    if token == "APPEALS_REVIEW_APPROVED":
+        db_path = await _make_db(
+            tmp_path, name="applied_appeals", round_status="AWAITING_APPEAL_VERDICTS"
+        )
+        await _seed_driver_row(db_path, 102)
+        state = _state(db_path, appeals=[_correction()])
+        await _run_real_apply(finalize_appeals_review, state)
+    else:
+        db_path = await _make_db(tmp_path, name=f"applied_{token}")
+        await _seed_driver_row(db_path)
+        await _seed_driver_row(db_path, 102)
+        state = _state(db_path, staged=[_penalty()], appeals=[_correction()])
+        await _open_amendment(state)
+        await _run_real_apply(finalize_penalty_review, state)
+        if token == "RESULT_AMENDED":
+            await _run_real_apply(finalize_appeals_review, state)
+
+    assert carries in _line_under(state, token)
