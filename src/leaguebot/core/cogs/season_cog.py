@@ -2685,10 +2685,13 @@ class SeasonCog(commands.Cog):
                     ),
                 )
 
-    async def _do_confirm_mid_season_placements(self, interaction: discord.Interaction) -> None:
+    async def _do_confirm_mid_season_placements(
+        self, interaction: discord.Interaction, *, what: str | None = None
+    ) -> None:
         """Commit the new placements and return the season to Ongoing.
 
-        A refusal is recorded as one of the review's button, which is the only press here.
+        A refusal is recorded under *what*, the button pressed, which the button passes in;
+        the review's own Confirm placements button where the caller names none.
 
         **Nothing after the commit may raise out of here** (issue #387), as at approval. The
         placements are committed by then, and a raise reaching the view's error handler would
@@ -2700,7 +2703,8 @@ class SeasonCog(commands.Cog):
         """
         from leaguebot.core.models.season import InvalidStageTransition
 
-        what = _review_button("Confirm placements", "/season placements-review")
+        if what is None:
+            what = _review_button("Confirm placements", "/season placements-review")
         await interaction.response.defer(ephemeral=True)
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
@@ -3166,17 +3170,21 @@ class SeasonCog(commands.Cog):
         await view.bind(message)
         await self._record_review_posted(interaction, "/season config-review")
 
-    async def _do_confirm_configuration(self, interaction: discord.Interaction) -> None:
+    async def _do_confirm_configuration(
+        self, interaction: discord.Interaction, *, what: str | None = None
+    ) -> None:
         """Confirm the configuration: judge the faults afresh, then move the season on.
 
-        A refusal is recorded as one of the review's button, which is the only press here.
+        A refusal is recorded under *what*, the button pressed, which the button passes in;
+        the review's own Confirm configuration button where the caller names none.
 
         To Waiting where the signup module is enabled, or to Placements where it is not or
         the season runs in test mode, test mode never opening a signup window.
         """
         from leaguebot.core.models.season import InvalidStageTransition
 
-        what = _review_button("Confirm configuration", "/season config-review")
+        if what is None:
+            what = _review_button("Confirm configuration", "/season config-review")
         cfg = self._get_pending()
         if cfg is None or not cfg.season_id:
             await refuse(interaction, "⛔ There is no season in configuration.", what=what)
@@ -6683,7 +6691,7 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
                 return
 
         self._press_under_way = True
-        await self._cog._do_confirm_mid_season_placements(interaction)
+        await self._cog._do_confirm_mid_season_placements(interaction, what=self._button)
         self._press_under_way = False
         await self._forget()
         await self._clear_report()
@@ -6737,7 +6745,7 @@ class _ConfirmConfigurationView(_ApproveView):
                 return
 
         self._press_under_way = True
-        await self._cog._do_confirm_configuration(interaction)
+        await self._cog._do_confirm_configuration(interaction, what=self._button)
         self._press_under_way = False
         await self._forget()
         await self._clear_report()

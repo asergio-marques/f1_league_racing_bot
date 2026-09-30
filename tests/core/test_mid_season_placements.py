@@ -837,7 +837,12 @@ async def test_the_reviewer_confirms_the_mid_season_placements():
 
     await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
 
-    cog._do_confirm_mid_season_placements.assert_awaited_once_with(interaction)
+    from leaguebot.core.cogs.season_cog import _review_button
+
+    # The button passes its own name, which the helper records any refusal under.
+    cog._do_confirm_mid_season_placements.assert_awaited_once_with(
+        interaction, what=_review_button("Confirm placements", "/season placements-review")
+    )
     view._clear_report.assert_awaited_once()
 
 

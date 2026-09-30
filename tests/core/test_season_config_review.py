@@ -683,7 +683,12 @@ async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(mo
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
-    cog._do_confirm_configuration.assert_awaited_once_with(interaction)
+    from leaguebot.core.cogs.season_cog import _review_button
+
+    # The button passes its own name, which the helper records any refusal under.
+    cog._do_confirm_configuration.assert_awaited_once_with(
+        interaction, what=_review_button("Confirm configuration", "/season config-review")
+    )
     view._forget.assert_awaited_once()
     view._clear_report.assert_awaited_once()
 
