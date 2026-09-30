@@ -37,8 +37,6 @@ SERVER_ID = 1
 DRIVER_ID = "7"
 CHANNEL_ID = 99
 
-_PICKED_AGAIN = "#482: a team already picked is recorded a second time rather than turned away"
-
 #: The reply a press on a step already answered gets (the plan, commit point 19).
 _ALREADY_ANSWERED = "That step has already been answered."
 
@@ -280,7 +278,6 @@ async def test_a_team_already_picked_is_not_offered_again(service):
     assert "Alpha" not in labels
 
 
-@pytest.mark.xfail(strict=True, reason=_PICKED_AGAIN)
 @pytest.mark.parametrize("correction", [False, True], ids=["signup", "correction"])
 async def test_a_team_already_picked_is_refused_and_changes_nothing(service, correction):
     """Alex picked Alpha, scrolled up and pressed Alpha again on the first sub-step's message,

@@ -93,6 +93,7 @@ async def _wizard_channel_delete_job(discord_user_id: str) -> None:
 _NO_WIZARD = "Wizard session not found."
 _STEP_ANSWERED = "That step has already been answered."
 _NO_WIZARD_CHANNEL = "Wizard channel not found."
+_TEAM_PICKED = "That team has already been picked."
 
 
 def _wizard_gone_or_answered(wizard: SignupWizardRecord | None) -> str:
@@ -1350,7 +1351,12 @@ class WizardService:
         team_name: str | None,
         guild: discord.Guild,
     ) -> str | None:
-        """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps)."""
+        """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps).
+
+        *team_name* is the team the pressed button's own label names (#482, D3), or None for No
+        Preference. A team the driver has already picked is refused, changing nothing: a button
+        on an earlier sub-step's message still offers it.
+        """
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMS:
             return _wizard_gone_or_answered(wizard)
@@ -1360,6 +1366,9 @@ class WizardService:
 
         current_step: int = wizard.draft_answers.get("_pref_teams_step", 0)
         current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
+
+        if team_name is not None and team_name in current_picks:
+            return _TEAM_PICKED
 
         if team_name is None:
             # No Preference — finalise with however many picks accumulated so far

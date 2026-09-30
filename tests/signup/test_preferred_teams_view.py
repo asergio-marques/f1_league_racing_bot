@@ -43,8 +43,6 @@ DRIVER_ID = "4242"
 CHANNEL_ID = 700
 TEAMS = ["Ferrari", "Mercedes", "McLaren"]
 
-_LABEL_RULE = "#482: a team button resolves its index against the live picks, not its own label"
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -216,7 +214,6 @@ async def test_a_button_records_the_team_its_label_names():
     assert _chosen(interaction) == ["Mercedes"]
 
 
-@pytest.mark.xfail(strict=True, reason=_LABEL_RULE)
 async def test_a_press_on_an_earlier_message_records_the_team_its_label_names():
     """The driver picked Ferrari, scrolled up to the first sub-step's message, where Ferrari,
     Mercedes and McLaren are all still shown, and pressed Mercedes. Mercedes is recorded, not
@@ -229,7 +226,6 @@ async def test_a_press_on_an_earlier_message_records_the_team_its_label_names():
     assert _chosen(interaction) == ["Mercedes"]
 
 
-@pytest.mark.xfail(strict=True, reason=_LABEL_RULE)
 async def test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorded():
     """The driver picked Ferrari, scrolled up to the first sub-step's message and pressed
     Ferrari again. The button passes Ferrari to the step handler, which turns it away; the
@@ -247,7 +243,6 @@ async def test_a_team_pressed_again_on_an_earlier_message_is_refused_and_recorde
     assert "That team has already been picked." in _refusal_line(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_LABEL_RULE)
 async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
     """A stale screen: the third team button is pressed, but the message it was pressed on
     carries only two team buttons, so there is no label to name a team. It must not pick a

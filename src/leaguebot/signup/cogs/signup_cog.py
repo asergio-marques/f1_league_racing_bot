@@ -728,43 +728,41 @@ class PreferredTeamsButtonView(LeagueView):
     def _make_team_callback(self, i: int):
         """Create callback for team button at index i.
 
-        Always resolves team name dynamically from current wizard state so
-        the correct team is selected even after a bot restart.
+        **A team button records the team its own label names** (#482, D3). The pressed button
+        is found on the message it sits on by its `custom_id`, and its label is the team, so a
+        press on an earlier sub-step's message, where the buttons sit at other positions than
+        they would among the teams left, records the team pressed, not another. A view
+        re-registered after a restart knows nothing but the `custom_id`, so the message is the
+        only place the name is. A button the message does not carry is refused.
         """
         async def callback(interaction: discord.Interaction) -> None:
             _bot, _user_id = await _resolve_view_context(
                 interaction, self._discord_user_id
             )
+            named = _pressed_label(interaction, "")
+            label = named or f"Team {i + 1}"
             if _user_id is None or str(interaction.user.id) != _user_id:
-                await _not_for_you(interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"))
+                await _not_for_you(interaction, _user_id, label)
                 return
-            # Resolve team name by index from live wizard state
             wizard = await _bot.wizard_service.get_wizard_by_channel(
                 interaction.channel_id
             )
             if wizard is None or wizard.config_snapshot is None:
                 await _refuse_wizard_button(
-                    interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"),
-                    "⛔ Wizard session not found.",
+                    interaction, _user_id, label, "⛔ Wizard session not found."
                 )
                 return
-            current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
-            available = [t for t in wizard.config_snapshot.team_names if t not in current_picks]
-            if i >= len(available):
+            if not named:
                 await _refuse_wizard_button(
-                    interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"),
-                    "⛔ That option is no longer available.",
+                    interaction, _user_id, label, "⛔ That option is no longer available."
                 )
                 return
             await interaction.response.defer(ephemeral=True)
             reason = await _bot.wizard_service.handle_preferred_teams_button(
-                _user_id, available[i], interaction.guild
+                _user_id, named, interaction.guild
             )
             if reason is not None:
-                await _refuse_wizard_button(
-                    interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"),
-                    f"⛔ {reason}",
-                )
+                await _refuse_wizard_button(interaction, _user_id, label, f"⛔ {reason}")
         return callback
 
     async def _no_preference_callback(self, interaction: discord.Interaction) -> None:
