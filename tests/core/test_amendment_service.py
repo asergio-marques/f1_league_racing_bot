@@ -328,6 +328,36 @@ async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and
     assert "track_name" not in body
 
 
+@pytest.mark.asyncio
+async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_held(tmp_path):
+    """Race Control amends round 1, which stands at Bahrain International Circuit in the NORMAL
+    format, giving the track it already has and the SPRINT format. The one line names the format
+    from what to what, and says nothing of the track, which did not change: a line reading
+    'track: Bahrain International Circuit → Bahrain International Circuit' would record a change
+    that was never made."""
+    from datetime import timedelta
+
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW + timedelta(days=30))
+    bot = _amending_bot(path)
+
+    await AmendmentService(path).amend_round(
+        1,
+        _race_control(),
+        [("track_name", "Bahrain International Circuit"), ("format", RoundFormat.SPRINT)],
+        bot,
+        now=_AMEND_NOW,
+    )
+
+    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    head, _, body = line.partition("\n")
+    assert head == "Race Control (<@4242>) | /round amend | Success"
+    assert "  format: NORMAL → SPRINT" in body.splitlines()
+    assert "track:" not in body
+
+
 @pytest.mark.parametrize("fault_in", ["cancelling the round's jobs", "re-running a phase"])
 @pytest.mark.asyncio
 async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
