@@ -337,8 +337,12 @@ const refsIn = x => String((x && x.ref) || '').match(/\b(?:b\d+-\d+|r\d+-\d+|c\d
 // written rule or escalates to the owner. A triager that fails leaves its questions escalated,
 // since asking the owner is the safe way to fail.
 // `handled` holds the questions already answered or put to the owner, so that a question two
-// checkers both met reaches the owner once.
-const triage = async (questions, tag, where, context, handled = []) => {
+// checkers both met reaches the owner once. `jobs` says, for each kind, whose questions these are.
+const RAISED_JOBS = {
+  business: 'Business questions raised by checkers whose ground they are not, for',
+  engineering: 'Engineering questions raised by checkers whose ground they are not, for',
+}
+const triage = async (questions, tag, where, context, handled = [], jobs = RAISED_JOBS) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
   const ask = (qs, who, job) => send(
@@ -346,8 +350,8 @@ const triage = async (questions, tag, where, context, handled = []) => {
     { ...settingsFor('triage'), label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
   const [b, e] = await parallel([
-    () => business.length ? ask(business, 'product', 'Business questions raised by checkers whose ground they are not, for') : Promise.resolve(null),
-    () => engineering.length ? ask(engineering, 'issue', 'Engineering questions raised by checkers whose ground they are not, for') : Promise.resolve(null),
+    () => business.length ? ask(business, 'product', jobs.business) : Promise.resolve(null),
+    () => engineering.length ? ask(engineering, 'issue', jobs.engineering) : Promise.resolve(null),
   ])
   const settled = (r, qs, who) => {
     if (r) return r
@@ -528,6 +532,16 @@ let nextCall = 1 + Math.max(0, ...provisional.map(p => Number(String(p.id || '')
 const takeProvisionally = (qs, k) => {
   const fresh = qs.filter((q, i) => !provisional.some(p => sameCall(p.question) === sameCall(q.question)) && qs.findIndex(x => sameCall(x.question) === sameCall(q.question)) === i)
   provisional.push(...fresh.map(q => ({ id: `p${nextCall++}`, ref: q.ref || '', kind: q.kind, question: q.question, recommendation: q.recommendation, round: k })))
+  return fresh
+}
+// A builder's question a checker settled from a written rule within the round is listed with the
+// calls taken, so that the owner sees it at the gate and can overrule it as any other.
+const takeSettled = (answers, asked, k) => {
+  const fresh = answers.filter((a, i) => !provisional.some(p => sameCall(p.question) === sameCall(a.question)) && answers.findIndex(x => sameCall(x.question) === sameCall(a.question)) === i)
+  provisional.push(...fresh.map(a => {
+    const q = asked.find(x => refsIn(a).includes(x.ref)) || {}
+    return { id: `p${nextCall++}`, ref: a.ref || '', kind: q.kind || '', question: a.question, recommendation: `${a.answer} (${a.source})`, round: k, settled: true }
+  }))
   return fresh
 }
 const PROVISIONAL = 'Calls taken on a checker\'s recommendation, for the owner to confirm or overrule at the gate'
@@ -890,7 +904,7 @@ const builderPrompt = (k, earlier = []) => {
   // of the stage, or, after the owner refused the result at acceptance, from a whole earlier pass.
   const last = earlier[earlier.length - 1]
   const start = last
-    ? `You carry on from an earlier builder of this round, which handed off before finishing: read git -C ${worktree} log ${base}..HEAD first, and build on what is there. Its commits, and those of any builder before it this round: ${earlier.flatMap(p => p.commits).map(c => `${c.sha} ${c.subject}`).join('; ')}. What it said remains: ${(last.remaining || []).join('; ') || 'nothing named'}.${answeredBefore.size ? ` The findings it has already fixed or disputed, which are left to the checkers: ${[...answeredBefore].join(', ')}.` : ''} Carry on from there. Report the commits you make, and the findings you fix or dispute, yourself alone: the earlier builders' are reported already${stage === 'tests' ? '; but your tests[] and support[] still cover the whole branch since its base, as below' : ''}.`
+    ? `You carry on from an earlier builder of this round, which handed off before finishing: read git -C ${worktree} log ${base}..HEAD first, and build on what is there. Its commits, and those of any builder before it this round: ${earlier.flatMap(p => p.commits).map(c => `${c.sha} ${c.subject}`).join('; ')}. What it said remains: ${(last.remaining || []).join('; ') || 'nothing named'}.${last.questions && last.questions.length ? ' The checkers settled the questions it asked: each answer is among the calls taken below, and binds you.' : ''}${answeredBefore.size ? ` The findings it has already fixed or disputed, which are left to the checkers: ${[...answeredBefore].join(', ')}.` : ''} Carry on from there. Report the commits you make, and the findings you fix or dispute, yourself alone: the earlier builders' are reported already${stage === 'tests' ? '; but your tests[] and support[] still cover the whole branch since its base, as below' : ''}.`
     : first && !previous
     ? `Start the stage from the plan. Read git -C ${worktree} log ${base}..HEAD first: where the branch already carries work for this issue, the plan is an amendment to it, and you build on what is there.`
     : `Earlier rounds have already worked on this branch: read git -C ${worktree} log ${base}..HEAD first. Fix each open material finding below in a commit of its own, or dispute it with evidence where you judge it wrong; fix the failures below; and finish whatever this stage still owes. Report every finding id you fixed or disputed.`
@@ -1331,15 +1345,27 @@ const mergePieces = parts => {
 }
 
 // The builder's pieces of round k, one after another. A further piece starts only where the last
-// one committed something, is on the branch, and is neither finished nor blocked, and asked no
-// question and proposed no test change: anything the owner must see goes to the round's review at
-// once, as a round without pieces would. The commits of every piece that returned on the branch
-// are recorded, so that the result says what the branch carries even where a later piece returns
-// nothing; and what those pieces fixed, disputed and unmarked is handed back as `kept`, to be taken
-// in before the stage fails, so that a run resumed from the failure does not give the next builder
-// as still open a finding the branch has fixed.
+// one committed something, is on the branch, and is neither finished nor blocked, and proposed no
+// test change. A piece's questions do not end the hand-off where the checkers settle them: each goes
+// at once to the checker whose ground it is, and where every one is answered from a written rule or
+// taken as a reversible call, the next piece is given the answers and carries on, and the owner sees
+// them at the gate among the calls taken. A question that needs the owner ends the hand-off, and
+// goes to the owner with the round's review, as a round without pieces would; it is not triaged
+// again. Stopping the pieces for a question the checkers could answer left the reviewers a
+// half-built plan to review, round after round (#482 slice 3). The commits of every piece that
+// returned on the branch are recorded, so that the result says what the branch carries even where a
+// later piece returns nothing; and what those pieces fixed, disputed and unmarked is handed back as
+// `kept`, to be taken in before the stage fails, so that a run resumed from the failure does not
+// give the next builder as still open a finding the branch has fixed.
+const PIECE_JOBS = {
+  business: 'Business questions the builder asked part-way through a round, before handing its work to the next builder, for',
+  engineering: 'Engineering questions the builder asked part-way through a round, before handing its work to the next builder, for',
+}
 const buildRound = async k => {
   const parts = []
+  // The questions triaged within the round, by ref, and those of them that stop the stage.
+  const inRound = { refs: new Set(), stopping: [] }
+  let asked = 0
   const record = () => {
     const on = parts.filter(p => p.onBranch)
     if (!on.length) return null
@@ -1354,16 +1380,32 @@ const buildRound = async k => {
       const kept = record()
       return { kept, missing: n === 1 ? `the builder returned nothing in round ${k}` : `the builder returned nothing in round ${k}, piece ${n}` }
     }
+    got.questions = got.questions.map(q => ({ ...q, ref: `b${k}-${++asked}` }))
     parts.push(got)
     // A later piece is given the list as it stands, under its labels.
     if (stage === 'tests' && got.onBranch) ({ tests: written, support: supportWritten } = labelled(got.tests, got.support || []))
-    const handsOff = got.onBranch && got.commits.length && !got.planComplete && !got.blocked && !got.questions.length && !(got.testChanges || []).length
+    const handsOff = got.onBranch && got.commits.length && !got.planComplete && !got.blocked && !(got.testChanges || []).length
     if (!handsOff) break
     if (n === MAX_PIECES) { log(`Round ${k}: the builder handed off ${MAX_PIECES} pieces, the most a round takes, without finishing; the round is reviewed as it stands.`); break }
+    if (got.questions.length) {
+      const handled = [...provisional, ...citations].map(x => x.question)
+      const t = await triage(got.questions, `b${k}p${n}`, BRANCH_READ, TRIAGE_CONTEXT, handled, PIECE_JOBS)
+      for (const q of got.questions) inRound.refs.add(q.ref)
+      for (const f of t.findings) addFindings(f.lane, [f])
+      takeSettled(t.answers, got.questions, k)
+      takeProvisionally(t.escalations.filter(q => !stopsTheStage(q)), k)
+      const stopping = t.escalations.filter(stopsTheStage)
+      if (stopping.length) {
+        inRound.stopping.push(...stopping)
+        log(`Round ${k}: ${stopping.length} of piece ${n}'s question(s) need the owner, so the hand-off stops.`)
+        break
+      }
+      log(`Round ${k}: the checkers settled piece ${n}'s ${got.questions.length} question(s).`)
+    }
     log(`Round ${k}: piece ${n} of the builder made ${got.commits.length} commit(s) and handed off; piece ${n + 1} carries on.`)
   }
   record()
-  return { built: mergePieces(parts) }
+  return { built: mergePieces(parts), inRound }
 }
 
 // What the round's builder changed, taken into the list and the ledger. A claim counts only on a
@@ -1402,7 +1444,7 @@ const redKey = r => {
 for (let k = offset + 1; k <= offset + maxRounds; k++) {
   phase(stage === 'tests' ? 'Tests' : 'Build')
   const pendingBefore = new Set([...ledger.values()].filter(materialPending).map(f => f.id))
-  const { built, kept, missing } = await buildRound(k)
+  const { built, kept, missing, inRound } = await buildRound(k)
   if (missing) { if (kept) takeIn(kept); status = 'failed'; failure = missing; break }
   if (!built.onBranch) { status = 'failed'; failure = `the checkout at ${worktree} is not on ${branch}`; break }
   takeIn(built)
@@ -1416,7 +1458,8 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   // Each question of the builder's gets a ref, which the checker that settles it carries on its
   // answer or escalation: a question counts as heard by its ref, since an escalation is reframed
   // for the owner and need not repeat the builder's words.
-  const builderQuestions = built.questions.map((q, i) => ({ ...q, ref: `b${k}-${i + 1}` }))
+  // A question already triaged within the round is not triaged again.
+  const builderQuestions = built.questions.filter(q => !inRound.refs.has(q.ref))
   const questions = {
     business: builderQuestions.filter(q => q.kind === 'business'),
     engineering: builderQuestions.filter(q => q.kind !== 'business'),
@@ -1440,7 +1483,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   const roundAnswers = got.flatMap(r => r.answers)
   citations.push(...roundAnswers)
   separateDefects.push(...got.flatMap(r => r.separateDefects))
-  const roundEscalations = got.flatMap(r => r.escalations)
+  const roundEscalations = [...inRound.stopping, ...got.flatMap(r => r.escalations)]
   // A checker that returned nothing answered none of the builder's questions routed to it: they
   // go to the owner, as a failed triage's do, and as unframed, since no checker has judged them.
   if (reviewed.lanes.product === null) roundEscalations.push(...questions.business.map(q => ({ ...q, unframed: true })))
@@ -1496,10 +1539,11 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     break
   }
   if (dead.length) { log(`No result from: ${dead.join(', ')}. The round cannot pass; the next one runs them again.`); continue }
-  // A round in which the builder asked anything cannot pass: an answer, even one citing a rule,
-  // reaches the builder only in the next round. Nor can one in which a call was just taken, which
-  // the builder has yet to apply.
-  if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean && !built.questions.length && !taken.length) {
+  // A round in which the builder asked anything the round's review settled cannot pass: an answer,
+  // even one citing a rule, reaches the builder only in the next round. Nor can one in which a call
+  // was just taken, which the builder has yet to apply. A question settled within the round has
+  // reached the pieces after it already.
+  if (reviewed.green && !open.length && built.planComplete && !built.blocked && built.clean && !builderQuestions.length && !taken.length) {
     const product = reviewed.lanes.product
     summary = product.summary
     // The product owner found nothing but left its summary out: ask again. Whatever else the
