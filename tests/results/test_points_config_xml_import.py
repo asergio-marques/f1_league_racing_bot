@@ -240,6 +240,26 @@ async def test_an_empty_config_reports_no_changes(tmp_path):
     assert "No changes." in _replied(interaction)
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#482: an empty import is still logged as SUCCESS, not as nothing changed"
+)
+async def test_an_empty_import_records_that_nothing_changed(tmp_path):
+    """An import of a file naming no session changes nothing: no audit entry, and one line
+    in the success form saying nothing changed, never a success."""
+    db_path = await _make_db(tmp_path)
+    interaction = _interaction()
+    before = await _audit_rows(db_path)
+
+    await _import(db_path, interaction, "<config></config>")
+
+    assert await _audit_rows(db_path) == before
+    [audited] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+    first = audited.split("\n", 1)[0]
+    assert first == f"Manager (<@{ACTOR_ID}>) | /results config xml-import | Nothing changed"
+    assert "SUCCESS" not in audited
+    assert CONFIG in audited
+
+
 async def test_a_warning_rides_along_with_the_success(tmp_path):
     """A duplicate position id is worth telling a manager about, but the import is well
     defined without their intervention — refusing would make them edit a file to remove a
@@ -363,7 +383,14 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
 @pytest.mark.parametrize(
     "xml,fragments",
     [
-        pytest.param(VALID_XML, ["SUCCESS"], id="success"),
+        pytest.param(
+            VALID_XML,
+            [f"Manager (<@{ACTOR_ID}>) | /results config xml-import | Success"],
+            id="success",
+            marks=pytest.mark.xfail(
+                strict=True, reason="#482: the success line is not yet in the usual form"
+            ),
+        ),
         pytest.param(
             MALFORMED_XML,
             ["⛔ ", f"refused for Manager (<@{ACTOR_ID}>)", "XML syntax error"],
