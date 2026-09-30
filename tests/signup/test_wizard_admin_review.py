@@ -79,6 +79,7 @@ def _record(lap_times: dict | None = None):
 @pytest.fixture
 def review():
     """A `WizardService` wired for the three review outcomes, with an ordered call log."""
+    from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.signup.services.wizard_service import WizardService
 
     svc = WizardService.__new__(WizardService)
@@ -96,6 +97,10 @@ def review():
 
     driver_service = MagicMock()
     driver_service.transition = AsyncMock(side_effect=_transition)
+    # Awaiting review, as a driver whose panel a manager presses is (#492).
+    driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState.PENDING_ADMIN_APPROVAL)
+    )
 
     signup_svc = MagicMock()
     # The module's configuration need only exist; the driver role is the league's (#276).
@@ -384,6 +389,76 @@ async def test_a_failed_transition_does_not_stop_the_rejection(review):
     await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
     review.svc._trigger_channel_hold.assert_awaited_once()
+
+
+_TRANSITION_SWALLOWED = (
+    "#457: reject_signup swallows every error from the driver's transition, not only the "
+    "expected refusal"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_TRANSITION_SWALLOWED)
+async def test_a_rejection_whose_transition_fails_otherwise_is_not_swallowed(review):
+    """Only the expected refusal (`ValueError`) is caught by name. Any other error reaches the
+    caller, whose failure handler tells the manager: the driver is not told they were rejected
+    and no Rejected line is written for a rejection that did not happen."""
+    review.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    with pytest.raises(RuntimeError):
+        await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
+
+    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.svc._output_router.post_log.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# A reason arriving after the signup has moved on (#492)
+# ---------------------------------------------------------------------------
+
+_MOVED_ON_ACTED_ON = (
+    "#492: reject_signup and request_changes act on a driver no longer awaiting review"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_MOVED_ON_ACTED_ON)
+@pytest.mark.parametrize("outcome", ["reject_signup", "request_changes"])
+@pytest.mark.parametrize(
+    "state", ["UNASSIGNED", "NOT_SIGNED_UP", "AWAITING_CORRECTION_PARAMETER"],
+    ids=["approved", "withdrawn-or-rejected", "changes-already-requested"],
+)
+async def test_a_signup_that_has_moved_on_is_refused_and_left_as_it_is(review, outcome, state):
+    """The manager pressed Reject or Request Changes, and before their reason arrived the
+    signup moved on: another manager approved it, the driver withdrew or was rejected, or a
+    correction was already asked for. The service acts only on a driver still awaiting review,
+    so it returns why it refused and changes nothing: no transition, no notice to the driver,
+    no correction window, and no line."""
+    from leaguebot.core.models.driver_profile import DriverState
+
+    review.driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState[state])
+    )
+
+    refused = await getattr(review.svc, outcome)(DRIVER_ID, review.guild, review.actor)
+
+    assert isinstance(refused, str) and refused, refused
+    review.driver_service.transition.assert_not_awaited()
+    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.signup_svc.save_wizard.assert_not_awaited()
+    review.channel.send.assert_not_awaited()
+    assert review.svc._correction_tasks == {}
+    review.svc._output_router.post_log.assert_not_awaited()
+
+
+@pytest.mark.parametrize("outcome", ["reject_signup", "request_changes"])
+async def test_a_signup_still_awaiting_review_is_acted_on_and_nothing_is_refused(review, outcome):
+    """The state check does not stop a reason for a driver still awaiting review: the service
+    acts and returns no refusal."""
+    refused = await getattr(review.svc, outcome)(DRIVER_ID, review.guild, review.actor)
+    for task in review.svc._correction_tasks.values():
+        task.cancel()
+
+    assert refused is None
+    assert review.order, "the driver was not moved on"
 
 
 async def test_rejection_cancels_a_pending_correction_window(review):
