@@ -323,10 +323,17 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
     assert order == ["prompt redrawn with 0 staged", "approval question posted"]
 
 
+@pytest.mark.xfail(strict=True, reason="#482: cancelling the clear is not recorded")
 async def test_cancelling_the_clear_keeps_every_penalty():
+    """Round 3's penalty review (Division 1) has two penalties staged, and Alex is asked whether
+    to clear them. Alex presses "Cancel — keep penalties". Both penalties stay staged, no
+    approval question is posted, Alex is told they were kept, and exactly one cancel line
+    records it, naming the review and Alex, with what became of the list and what to do next
+    beneath it."""
     state = _state(staged=[_penalty(), _penalty(10)])
     view = _ConfirmClearView(state)
     interaction = _interaction()
+    state.bot.output_router = interaction.client.output_router
 
     with _approval_step() as approval:
         await type(view).cancel_btn(view, interaction, MagicMock())
@@ -334,6 +341,8 @@ async def test_cancelling_the_clear_keeps_every_penalty():
     assert len(state.staged) == 2
     approval.assert_not_awaited()
     assert "kept intact" in _replied(interaction)
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    _assert_clear_abandoned(line, "cancelled by Alex (<@77>)")
 
 
 @pytest.mark.parametrize("button", ["confirm_btn", "cancel_btn"])
@@ -908,3 +917,49 @@ async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorde
     ), line
     assert "4455" in line, line
 
+
+# ---------------------------------------------------------------------------
+# The clear confirmation's cancel and lapse are recorded (#482)
+#
+# The core specification's "The record of what changed": a cancel and a lapse each write one
+# line naming the member, with what became of the change and what to do next beneath it.
+# ---------------------------------------------------------------------------
+
+_CLEAR_KEPT = "Nothing was cleared; the staged list stands."
+
+
+def _assert_clear_abandoned(line: str, ending: str) -> None:
+    """*line* is one cancel or lapse line of the clear confirmation of round 3's penalty review
+    (Division 1), ending its first line with *ending*, and saying beneath that nothing was
+    cleared and what to do next."""
+    first, *detail = line.splitlines()
+    assert first.startswith(("↩️ ", "⌛ ")), line
+    assert "penalty review of round 3 (Division 1)" in first, line
+    assert first.endswith(ending), line
+    assert _CLEAR_KEPT in "\n".join(detail), line
+    assert not detail[-1].strip().endswith(_CLEAR_KEPT), f"no next step: {line}"
+
+
+@pytest.mark.xfail(strict=True, reason="#482: the clear confirmation's lapse is not recorded")
+async def test_a_clear_confirmation_left_to_lapse_is_recorded():
+    """Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
+    Penalties / Confirm and is asked whether to clear them, then answers nothing until the
+    question lapses. Both penalties stay staged, and exactly one lapse line records it, naming
+    the review and Alex as the one who started it, with what became of the list and what to do
+    next beneath it."""
+    state = _state(staged=[_penalty(), _penalty(10)])
+    view = PenaltyReviewView(state)
+    interaction = _interaction()
+    state.bot.output_router = interaction.client.output_router
+    interaction.edit_original_response = AsyncMock()
+
+    with _approval_step() as approval:
+        await _press(view, "no_penalties_btn", interaction)
+        asked = interaction.response.send_message.await_args.kwargs["view"]
+        await asked.on_timeout()
+
+    assert len(state.staged) == 2
+    approval.assert_not_awaited()
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line.startswith("⌛ "), line
+    _assert_clear_abandoned(line, "lapsed unconfirmed (started by Alex (<@77>))")

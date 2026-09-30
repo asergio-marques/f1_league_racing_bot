@@ -513,20 +513,29 @@ async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     finalise.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#482: going back from the clear is not recorded")
 async def test_going_back_keeps_the_corrections(tmp_path):
     """The whole purpose of the question: a steward who pressed Confirm by habit gets their
-    work back."""
+    work back.
+
+    Round 3's appeals review (division Pro) has one correction staged, and Alex is asked whether
+    to clear it. Alex presses "No, go back". The correction stays staged, nothing is approved,
+    and exactly one cancel line records it, naming the review and Alex, with what became of the
+    list and what to do next beneath it."""
     db_path = await _make_db(tmp_path, name="appeals_goback")
     state = _state(db_path, appeals=[_penalty()])
     view = _AppealsConfirmClearView(state=state)
+    interaction = _interaction()
 
-    with patch(
+    with _manager(True), patch(
         "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
-        await _press(view, "cancel_btn", _interaction())
+        await _press(view, "cancel_btn", interaction)
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+    (line,) = _all_lines(interaction, state)
+    _assert_appeals_clear_abandoned(line, "cancelled by Alex (<@77>)")
 
 
 async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
@@ -766,3 +775,47 @@ async def test_no_changes_writes_no_line_beside_the_approval_s_own(tmp_path):
     finalise.assert_awaited_once()
     assert _all_lines(interaction, state) == ["the approval's own line"]
 
+
+# ---------------------------------------------------------------------------
+# The clear confirmation's cancel and lapse are recorded (#482)
+# ---------------------------------------------------------------------------
+
+_APPEALS_CLEAR_KEPT = "Nothing was cleared; the staged list stands."
+
+
+def _assert_appeals_clear_abandoned(line: str, ending: str) -> None:
+    """*line* is one cancel or lapse line of the clear confirmation of round 3's appeals review
+    (Pro), ending its first line with *ending*, and saying beneath that nothing was cleared and
+    what to do next."""
+    first, *detail = line.splitlines()
+    assert first.startswith(("↩️ ", "⌛ ")), line
+    assert "appeals review of round 3 (Pro)" in first, line
+    assert first.endswith(ending), line
+    assert _APPEALS_CLEAR_KEPT in "\n".join(detail), line
+    assert not detail[-1].strip().endswith(_APPEALS_CLEAR_KEPT), f"no next step: {line}"
+
+
+@pytest.mark.xfail(strict=True, reason="#482: the clear confirmation's lapse is not recorded")
+async def test_an_appeals_clear_confirmation_left_to_lapse_is_recorded(tmp_path):
+    """Round 3's appeals review (division Pro) has one correction staged. Alex presses No
+    Changes / Confirm and is asked whether to clear it, then answers nothing until the question
+    lapses. The correction stays staged, nothing is approved, and exactly one lapse line records
+    it, naming the review and Alex as the one who started it, with what became of the list and
+    what to do next beneath it."""
+    db_path = await _make_db(tmp_path, name="appeals_clear_lapse")
+    state = _state(db_path, appeals=[_penalty()])
+    view = AppealsReviewView(state=state)
+    interaction = _interaction()
+    interaction.edit_original_response = AsyncMock()
+
+    with _manager(True), patch(
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+    ) as finalise:
+        await _press(view, "no_changes_btn", interaction)
+        await _sent_view(interaction).on_timeout()
+
+    assert len(state.staged_appeals) == 1
+    finalise.assert_not_awaited()
+    (line,) = _all_lines(interaction, state)
+    assert line.startswith("⌛ "), line
+    _assert_appeals_clear_abandoned(line, "lapsed unconfirmed (started by Alex (<@77>))")
