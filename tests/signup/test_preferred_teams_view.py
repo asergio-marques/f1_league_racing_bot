@@ -43,6 +43,8 @@ DRIVER_ID = "4242"
 CHANNEL_ID = 700
 TEAMS = ["Ferrari", "Mercedes", "McLaren"]
 
+_NOT_RECORDED = "#482: the team step's button refusal is answered but writes no line in the log channel"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -68,13 +70,23 @@ def _interaction(*, user_id: str = DRIVER_ID, wizard=None):
     interaction.guild = MagicMock()
     interaction.user = MagicMock()
     interaction.user.id = int(user_id)
+    interaction.user.display_name = "Driver" if user_id == DRIVER_ID else "Other"
+    # The response knows whether it has been used, as Discord's does, so a refusal goes where
+    # the real one would.
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
 
     bot = MagicMock()
+    bot.output_router.post_log = AsyncMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.wizard_service = MagicMock()
     bot.wizard_service.get_wizard_by_channel = AsyncMock(
@@ -91,6 +103,18 @@ def _chosen(interaction) -> list:
         call.args[1]
         for call in interaction.client.wizard_service.handle_preferred_teams_button.await_args_list
     ]
+
+
+def _refusal_line(interaction) -> str:
+    """The one line the press wrote in the log channel: a refusal naming a button of the
+    driver's signup wizard and the member who pressed it."""
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith("⛔ the “"), line
+    assert "button" in line and "signup wizard" in line
+    assert f"refused for {interaction.user.display_name} (<@{interaction.user.id}>)" in line
+    return line
 
 
 def _replied(interaction) -> str:
@@ -196,6 +220,7 @@ async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
     assert _chosen(interaction) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_press_in_a_channel_with_no_wizard_is_answered():
     """The channel outlived its wizard — acting on it would advance nothing and raise on
     the snapshot."""
@@ -207,8 +232,10 @@ async def test_a_press_in_a_channel_with_no_wizard_is_answered():
 
     assert "Wizard session not found" in _replied(interaction)
     assert _chosen(interaction) == []
+    assert "Wizard session not found." in _refusal_line(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_wizard_with_no_snapshot_is_answered():
     """There are no team names to resolve against, and reading `.team_names` off `None` is
     the crash this refusal replaces."""
@@ -218,6 +245,7 @@ async def test_a_wizard_with_no_snapshot_is_answered():
     await _press_team(view, 0, interaction)
 
     assert "Wizard session not found" in _replied(interaction)
+    assert "Wizard session not found." in _refusal_line(interaction)
 
 
 async def test_a_driver_with_no_picks_yet_sees_the_whole_list():
@@ -234,6 +262,7 @@ async def test_a_driver_with_no_picks_yet_sees_the_whole_list():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("press", ["team", "no_preference", "cancel"])
 async def test_only_the_driver_whose_wizard_it_is_may_press(press):
     """A private channel can have a manager added to it, and a wizard advanced by somebody
@@ -251,6 +280,7 @@ async def test_only_the_driver_whose_wizard_it_is_may_press(press):
     assert "not for you" in _replied(interaction)
     assert _chosen(interaction) == []
     interaction.client.wizard_service.withdraw.assert_not_awaited()
+    assert "This button is not for you." in _refusal_line(interaction)
 
 
 async def test_after_a_restart_the_owner_is_found_by_channel():
@@ -264,6 +294,7 @@ async def test_after_a_restart_the_owner_is_found_by_channel():
     assert _chosen(interaction) == ["Ferrari"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_restarted_view_in_a_channel_with_no_wizard_refuses():
     """There is nobody to attribute the press to, and `None` must not be treated as a
     matching user id."""
@@ -275,6 +306,7 @@ async def test_a_restarted_view_in_a_channel_with_no_wizard_refuses():
 
     assert "not for you" in _replied(interaction)
     assert _chosen(interaction) == []
+    assert "This button is not for you." in _refusal_line(interaction)
 
 
 # ---------------------------------------------------------------------------

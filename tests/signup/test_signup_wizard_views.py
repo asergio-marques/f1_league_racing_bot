@@ -44,6 +44,8 @@ DRIVER_ID = "7"
 OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
+_NOT_RECORDED = "#482: the wizard's button refusal is answered but writes no line in the log channel"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -68,6 +70,7 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
 
     bot = MagicMock()
     bot.wizard_service = wizard_service
+    bot.output_router.post_log = AsyncMock()
 
     interaction = MagicMock()
     interaction.client = bot
@@ -76,9 +79,18 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
     interaction.guild = MagicMock()
     interaction.user = MagicMock()
     interaction.user.id = user_id
+    interaction.user.display_name = "Driver" if str(user_id) == DRIVER_ID else "Other"
+    # The response knows whether it has been used, as Discord's does, so a refusal goes where
+    # the real one would.
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -88,8 +100,21 @@ def _refused(interaction) -> bool:
     return any(
         "not for you" in str(call.args[0])
         for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
         if call.args
     )
+
+
+def _assert_refusal_recorded(interaction, button: str) -> None:
+    """One line in the log channel, naming the button, the driver's wizard it sits on, the
+    member who pressed it, and why (core specification, "The record of what changed")."""
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith(f"⛔ the “{button}” button"), line
+    assert "signup wizard" in line
+    assert f"refused for {interaction.user.display_name} (<@{interaction.user.id}>)" in line
+    assert "This button is not for you." in line
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +143,7 @@ async def test_each_platform_button_reports_its_own_platform(button, platform):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_answer_a_driver_s_platform_question():
     """The channel is private to its driver, but a league manager can see it."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -128,6 +154,7 @@ async def test_another_member_cannot_answer_a_driver_s_platform_question():
     await type(view).steam(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Steam")
     interaction.client.wizard_service.handle_platform_button.assert_not_awaited()
 
 
@@ -143,6 +170,7 @@ async def test_cancelling_from_the_platform_step_withdraws_the_signup():
     assert "withdrawn" in interaction.followup.send.await_args.args[0]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_a_driver_s_signup():
     """The one button that destroys work."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -153,6 +181,7 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
     await type(view).cancel(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
 
 
@@ -175,6 +204,7 @@ async def test_a_view_rebuilt_after_a_restart_finds_its_driver():
     interaction.client.wizard_service.handle_platform_button.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     """A button left in a channel whose wizard has been cleared up. The lookup finding
     nothing must refuse rather than pass unauthenticated."""
@@ -186,9 +216,11 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     await type(view).steam(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Steam")
     interaction.client.wizard_service.handle_platform_button.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     """The guard has to hold on the recovered identity too, not only the stored one."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -199,6 +231,7 @@ async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     await type(view).steam(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Steam")
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +258,7 @@ async def test_each_driver_type_button_reports_its_own_type(button, driver_type)
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_choose_a_driver_s_type():
     from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
 
@@ -234,6 +268,7 @@ async def test_another_member_cannot_choose_a_driver_s_type():
     await type(view).full_time(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Full-Time Driver")
     interaction.client.wizard_service.handle_driver_type_button.assert_not_awaited()
 
 
@@ -248,6 +283,7 @@ async def test_cancelling_from_the_driver_type_step_withdraws_the_signup():
     interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_from_the_driver_type_step():
     from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
 
@@ -257,6 +293,7 @@ async def test_another_member_cannot_cancel_from_the_driver_type_step():
     await type(view).cancel(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
 
 
@@ -317,6 +354,7 @@ async def test_no_preference_finishes_the_team_step():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_finish_a_driver_s_team_step():
     from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
 
@@ -326,6 +364,7 @@ async def test_another_member_cannot_finish_a_driver_s_team_step():
     await view._no_preference_callback(interaction)
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "No Preference")
     interaction.client.wizard_service.handle_preferred_teams_button.assert_not_awaited()
 
 
@@ -340,6 +379,7 @@ async def test_cancelling_from_the_team_step_withdraws_the_signup():
     interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_from_the_team_step():
     from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
 
@@ -349,6 +389,7 @@ async def test_another_member_cannot_cancel_from_the_team_step():
     await view._cancel_callback(interaction)
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
 
 
@@ -368,6 +409,7 @@ async def test_no_preference_answers_the_teammate_question():
     interaction.client.wizard_service.handle_no_preference_teammate.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_answer_the_teammate_question():
     from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
 
@@ -377,6 +419,7 @@ async def test_another_member_cannot_answer_the_teammate_question():
     await type(view).no_preference(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "No Preference")
     interaction.client.wizard_service.handle_no_preference_teammate.assert_not_awaited()
 
 
@@ -391,6 +434,7 @@ async def test_cancelling_from_the_teammate_step_withdraws_the_signup():
     interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_from_the_teammate_step():
     from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
 
@@ -400,4 +444,40 @@ async def test_another_member_cannot_cancel_from_the_teammate_step():
     await type(view).cancel(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The first-message Cancel Signup, and the notes step
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "view_name, button, label",
+    [
+        pytest.param("WithdrawButtonView", "withdraw_button", "Cancel Signup",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)),
+        pytest.param("NoNotesButtonView", "no_notes_button", "No Notes",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)),
+        pytest.param("NoNotesButtonView", "cancel_button", "Cancel Signup",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)),
+    ],
+)
+async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_and_recorded(
+    view_name, button, label
+):
+    """The Cancel Signup posted with the welcome message, and the notes step's No Notes and
+    Cancel Signup, carry the same guard as every other step, and record its refusal."""
+    from leaguebot.signup.cogs import signup_cog
+
+    view = getattr(signup_cog, view_name)(DRIVER_ID, MagicMock())
+    interaction = _interaction(OTHER_USER_ID)
+    interaction.client.wizard_service.handle_no_notes = AsyncMock(return_value=None)
+
+    await getattr(type(view), button)(view, interaction, MagicMock())
+
+    assert _refused(interaction)
+    interaction.client.wizard_service.withdraw.assert_not_awaited()
+    interaction.client.wizard_service.handle_no_notes.assert_not_awaited()
+    _assert_refusal_recorded(interaction, label)
