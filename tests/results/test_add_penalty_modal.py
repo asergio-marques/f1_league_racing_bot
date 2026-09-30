@@ -152,9 +152,24 @@ def _state(db_path: str, *, staged=(), appeals=()):
 
 
 def _interaction():
+    """A submission by the league manager Alex (id 77), answering as Discord's does — not done
+    until it replies or defers — and connected to a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
+    interaction.user = MagicMock()
+    interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client = MagicMock()
+    interaction.client.output_router = MagicMock()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -669,3 +684,64 @@ async def test_a_signed_id_or_a_role_is_not_a_driver(tmp_path, typed):
     assert state.staged == []
     assert "Could not parse driver" in _replied(interaction)
 
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. A form names itself by its title.
+# ---------------------------------------------------------------------------
+
+_FORM_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
+
+
+def _form_refusal(case_id, appeals, **typed):
+    return pytest.param(
+        appeals, typed,
+        id=f"{'correction' if appeals else 'penalty'}-{case_id}",
+        marks=pytest.mark.xfail(strict=True, reason=_FORM_NOT_YET_RECORDED),
+    )
+
+
+_FORM_REFUSALS = [
+    _form_refusal("review-moved-on", False),
+    *(
+        case
+        for appeals in (False, True)
+        for case in (
+            _form_refusal("unparseable-driver", appeals, driver="Lewis"),
+            _form_refusal("driver-not-in-session", appeals, driver=f"<@{STRANGER}>"),
+            _form_refusal("no-seconds", appeals, penalty="0s"),
+            _form_refusal("group-mention", appeals, description="@everyone look at turn one"),
+        )
+    ),
+]
+
+
+@pytest.mark.parametrize("appeals, typed", _FORM_REFUSALS)
+async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, appeals, typed):
+    """Alex fills in the Add Penalty form of round 3's penalty review (Division 1), or the Add
+    Correction form of its appeals review, for the Feature Race, and is refused: the review has
+    moved on to appeals, the driver cannot be read or is not in the session's results, the
+    penalty is of no seconds, or the description mentions @everyone. The reply is today's,
+    nothing is staged, and exactly one line records the refusal, naming the form, Alex and the
+    reason."""
+    moved_on = not appeals and not typed
+    round_status = (
+        "AWAITING_APPEAL_VERDICTS" if appeals or moved_on else "AWAITING_REPORT_VERDICTS"
+    )
+    state = _state(await _make_db(tmp_path, round_status=round_status))
+
+    interaction = await _submit(state, appeals=appeals, **typed)
+
+    assert state.staged == [] and state.staged_appeals == []
+    (replied,) = [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert "Staged" not in replied
+    if moved_on:
+        assert "already been approved" in replied
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    title = f"{'Add Correction' if appeals else 'Add Penalty'} — Feature Race"
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line.startswith(f"⛔ the “{title}” form"), line
+    assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
