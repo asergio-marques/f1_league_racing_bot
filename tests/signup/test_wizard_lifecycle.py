@@ -33,6 +33,7 @@ The recovery tests compute their times from the real clock rather than pinning a
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -265,6 +266,50 @@ async def test_a_timeout_cancels_a_pending_correction_window(lifecycle):
     task.cancel.assert_called_once()
 
 
+_NO_EXPIRY_LAPSE = "#482: the wizard's 24-hour expiry writes no line in the log channel"
+_EXPIRY_TRANSITION_SWALLOWED = (
+    "#457: the wizard's expiry swallows every error from the driver's transition, and tells the "
+    "driver their session expired all the same"
+)
+
+#: The lapse the wizard's expiry records, naming the driver who started it (S5-A4).
+_EXPIRY_LAPSE = (
+    f"⌛ the signup wizard lapsed unconfirmed (started by Alex (<@{DRIVER_ID}>))\n"
+    "  The signup was cancelled after 24 hours without an answer. "
+    "They may press Sign Up again while signups are open."
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_EXPIRY_LAPSE)
+async def test_an_expired_wizard_records_one_lapse_naming_the_driver(lifecycle):
+    """The 24-hour expiry ends a flow the driver started, so it is recorded as a lapse naming
+    them, saying what became of it and what they may do next (owner, 2026-09-30, "Log both as
+    lapses")."""
+    _alex_on_the_server(lifecycle)
+
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [_EXPIRY_LAPSE]
+
+
+@pytest.mark.xfail(strict=True, reason=_EXPIRY_TRANSITION_SWALLOWED)
+async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
+    lifecycle,
+):
+    """Only the expected refusal (`ValueError`) is caught by name. Any other error goes to the
+    host log with its traceback: the driver is not told their session expired, and no lapse is
+    recorded for a signup that did not end."""
+    _alex_on_the_server(lifecycle)
+    lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    with contextlib.suppress(RuntimeError):
+        await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # A driver leaving the server
 # ---------------------------------------------------------------------------
@@ -402,6 +447,30 @@ async def test_a_failing_record_lookup_does_not_stop_the_log(lifecycle):
     lifecycle.svc._output_router.post_log.assert_awaited_once()
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#457: a member leaving swallows every error from the driver's transition"
+)
+async def test_a_departure_whose_transition_fails_otherwise_is_not_swallowed(lifecycle):
+    """Only the expected refusal (`ValueError`, a driver already moved on) is caught by name; any
+    other error reaches the listener rather than being passed over."""
+    lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    with pytest.raises(RuntimeError):
+        await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
+
+
+async def test_a_departing_driver_already_moved_on_is_still_cleaned_up(lifecycle):
+    """A driver whose transition is refused (`ValueError`) has already moved on; the rest of the
+    cleanup still runs, as it does today."""
+    lifecycle.driver_service.transition = AsyncMock(side_effect=ValueError("already"))
+
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
+
+    lifecycle.channel.delete.assert_awaited_once()
+    lifecycle.signup_svc.delete_wizard.assert_awaited_once()
+    lifecycle.svc._output_router.post_log.assert_awaited_once()
+
+
 # ---------------------------------------------------------------------------
 # Recovery across a restart
 # ---------------------------------------------------------------------------
@@ -494,3 +563,21 @@ async def test_recovery_releases_pending_correction_windows_first(lifecycle):
     await lifecycle.svc.recover_wizards()
 
     lifecycle.svc.recover_correction_timeouts.assert_awaited_once()
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_EXPIRY_LAPSE)
+async def test_a_wizard_expired_at_restart_records_its_lapse(lifecycle):
+    """A wizard whose deadline went by while the bot was down expires at once on restart, and
+    records the same lapse as the 24-hour job would have."""
+    _alex_on_the_server(lifecycle)
+    last = datetime.now(timezone.utc) - timedelta(hours=30)
+    lifecycle.signup_svc.get_all_active_wizards_all_servers = AsyncMock(
+        return_value=[_wizard(last_activity=last.isoformat())]
+    )
+    before = asyncio.all_tasks()
+
+    await lifecycle.svc.recover_wizards()
+    await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [_EXPIRY_LAPSE]
