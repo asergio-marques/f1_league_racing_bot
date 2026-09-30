@@ -149,6 +149,7 @@ def _interaction() -> MagicMock:
     interaction.response.defer = AsyncMock()
     interaction.response.send_message = AsyncMock()
     interaction.followup.send = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
     return interaction
 
 

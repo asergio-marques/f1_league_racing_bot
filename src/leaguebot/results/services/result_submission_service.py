@@ -3966,20 +3966,14 @@ class _ConfigSelectView(LeagueView):
     async def _record_choice(
         self, interaction: discord.Interaction, what: str, name: str
     ) -> None:
-        """Write the one line a choice leaves in the log channel, in the success form.
-
-        Never raises: the press has been answered whether or not the line is.
-        """
-        try:
-            router = getattr(getattr(interaction, "client", None), "output_router", None)
-            if router is None:
-                return
-            await router.post_log(
-                f"{interaction_member(interaction)} | {what} | Success\n"
-                f"  configuration: {name}"
-            )
-        except Exception:  # noqa: BLE001 — the press has still been answered
-            log.warning("could not record in the log channel that %s was pressed", what, exc_info=True)
+        """Write the one line a choice leaves in the log channel, in the success form."""
+        router = getattr(getattr(interaction, "client", None), "output_router", None)
+        if router is None:
+            return
+        await router.post_log(
+            f"{interaction_member(interaction)} | {what} | Success\n"
+            f"  configuration: {name}"
+        )
 
     def _may_choose(self, interaction: discord.Interaction) -> bool:
         """Whether the presser holds the league manager tier.

@@ -317,6 +317,8 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
     ), patch(
         "leaguebot.results.services.penalty_wizard._show_approval_step",
         new=AsyncMock(side_effect=_asked),
+    ), patch(
+        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, _interaction(), MagicMock())
 

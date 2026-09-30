@@ -156,34 +156,24 @@ async def _record_press(interaction: discord.Interaction, what: str, *detail: st
     "Alex (<@77>) | the “Remove #2” button of the penalty review of round 3 (Division 1) |
     Success", with what was staged, removed or cleared beneath it. Every press that changes a
     review writes one, and only that one: the approval's own line is the record of an approval.
-    Written through the interaction's client, as a refusal's is, and never raises: the press has
-    been answered whether or not the line is.
+    Written through the interaction's client, as a refusal's is.
     """
-    try:
-        router = getattr(getattr(interaction, "client", None), "output_router", None)
-        if router is None:
-            return
-        lines = [f"{interaction_member(interaction)} | {what} | Success"]
-        lines += [f"  {line}" for line in detail]
-        await router.post_log("\n".join(lines))
-    except Exception:  # noqa: BLE001 — the press has still been answered
-        log.warning("could not record in the log channel that %s was pressed", what, exc_info=True)
+    router = getattr(getattr(interaction, "client", None), "output_router", None)
+    if router is None:
+        return
+    lines = [f"{interaction_member(interaction)} | {what} | Success"]
+    lines += [f"  {line}" for line in detail]
+    await router.post_log("\n".join(lines))
 
 
 async def _staged_named(state: PenaltyReviewState, penalties: list[StagedPenalty]) -> str:
     """The penalties as a log line names them: "+5s for <@1>, DSQ for <@2>".
 
-    A driver is named by the account they use now (`_shown`); where the database cannot be read
-    the account the penalty carries stands in, since a press that has already changed the review
-    must not fail for the sake of the line that records it.
+    A driver is named by the account they use now (`_shown`), as the Remove presses read it.
     """
     named = []
     for sp in penalties:
-        try:
-            shown = await _shown(state, sp.driver_user_id)
-        except Exception:  # noqa: BLE001 — the line is a record, and the press is done
-            log.warning("could not read the current account of %s", sp.driver_user_id, exc_info=True)
-            shown = sp.driver_user_id
+        shown = await _shown(state, sp.driver_user_id)
         named.append(f"{_pen_label(sp)} for <@{shown}>")
     return ", ".join(named)
 
