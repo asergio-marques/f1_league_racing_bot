@@ -261,7 +261,10 @@ it only to place it; the rules governing it belong to its own specification.
 - The button shall be pressed only by the member who ran the review, or by a league admin. A press by any other member shall be refused, shall say who may confirm, and shall confirm nothing; the refusal is seen by the presser alone.
 - Who is pressing shall be the first thing the button settles, before the state of the season is read.
 - The button shall carry no other action. The season is amended by the commands that amend it and reviewed again.
-- The button shall stand for five minutes from the posting of the review that carries it. Upon their passing its message shall be deleted, and a notice posted in its place naming the reviewer, saying that the review has expired and that it must be run again.
+- The button shall stand for five minutes from the posting of the review that carries it, whatever is pressed meanwhile. Upon their passing its message shall be deleted, and a notice posted in its place naming the reviewer, saying that the review has expired and that it must be run again. A press made after them shall confirm nothing.
+    - A press that fails shall leave the review standing, to be pressed again until its five minutes pass. Decided 2026-09-29.
+    - While a press is being worked the review shall not expire. Where its five minutes pass meanwhile, it shall expire once the press has ended, unless the press confirmed it. Decided 2026-09-30.
+    - A second press made while one is being worked shall be refused and shall confirm nothing. Decided 2026-09-30.
 - A review standing when the bot stops shall be treated as expired when the bot next starts.
 - Placements confirmed shall have the review they were confirmed from deleted, the question and every message of the report alike. A review expired shall have its report deleted on the same terms.
 - The button shall be withheld altogether where the review found something that would prevent the placements being confirmed.
@@ -421,6 +424,7 @@ it only to place it; the rules governing it belong to its own specification.
 ### Amending and cancelling a round
 - A round of a season whose placements have been confirmed may have its track, its moment or its format amended, behind a confirmation.
 - An amendment shall be judged and carried out as one change, however many of the three fields it alters. Where any rule refuses any part of it, none of it shall happen and the round shall stand exactly as it did, and the manager shall be told so.
+- An amendment asking only for the values the round already holds shall change nothing, shall offer no confirmation and shall record that nothing was changed. A round that may not be amended shall be refused as such, whatever values were given. Decided 2026-09-30.
 - Every rule shall read the round as it will stand once amended: its new moment where one is given, its present moment otherwise.
 - The rules shall be judged again at the moment the amendment is confirmed and not only when it is offered, a window being able to pass while the confirmation stands. Where the answer has changed the amendment shall be abandoned and the manager invited to start again.
 - A round shall not be amended once its results have been entered, nor once it has been cancelled. From the moment results are entered the drivers have reports and appeals to lodge against them, and an amendment would take that from them.

@@ -496,7 +496,9 @@ The review ends by asking whether you accept the season, with a **✅ Approve** 
 
 **You can press it if you ran the review, or if you hold the league admin role.** Anybody else who presses is told privately that they cannot, and nothing is approved. Running the review needs only the interaction role, so you may well be able to review a season you cannot approve — that is why the question is posted where everyone can see it rather than to you alone. Show it to a league admin and they can answer it from the same message.
 
-> **The button stands for five minutes, and only for the season it was posted for.** When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season placements-review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, because the five minutes cannot have run while it was off.
+> **The button stands for five minutes from when the question appears, and only for the season it was posted for.** Pressing it — even a press that is turned away — does not buy more time. When they pass, the message is deleted and replaced by one mentioning you to say the review has expired — run `/season placements-review` again. If the bot restarts while a review is waiting, the same thing happens as soon as it comes back up, report and all, because the five minutes cannot have run while it was off.
+>
+> If your press fails on a fault in the bot, the button stays, and you can press it again until the five minutes are up. Press once and wait: while your press is being worked the review will not expire under you, and a second press is turned away.
 >
 > Before it expires, the button still refuses if anything has changed since the report was drawn up — and it tells you what: the rounds, the channels, the seated drivers, the signups still waiting, test mode, the team list and its roles, even a drawing file edited on the bot's computer. Nothing is approved, and the question is cleared away just as an expiry clears it.
 >
@@ -562,7 +564,7 @@ Things change. While the season is ongoing:
 
 | Command | What it does |
 |---|---|
-| `/round amend` | Change a round's track, time or format — any combination of them, judged and applied as one change. Changing the time renumbers the division's rounds, and the new time must still be ahead — a round is never moved into the past. Forecasts are thrown away only where the round has moved far enough that they would not have been drawn yet; the confirmation tells you which before you commit |
+| `/round amend` | Change a round's track, time or format — any combination of them, judged and applied as one change. Changing the time renumbers the division's rounds, and the new time must still be ahead — a round is never moved into the past. Forecasts are thrown away only where the round has moved far enough that they would not have been drawn yet; the confirmation tells you which before you commit. Giving it the values it already holds changes nothing, and it says so; a cancelled round, or one with its results in, is refused whatever you give |
 | `/round cancel` | Call off one round. Needs `CONFIRM`. The bot announces nothing itself — tell your drivers — but the check-in channel carries a notice where attendance is on, and the calendar is reposted with the round struck through. Refused once the round's results have been entered — the drivers' reports and appeals depend on them |
 | `/division cancel` | Call off a whole division. Needs `CONFIRM`. Every round of it you have not yet raced is cancelled with it; rounds you have raced keep their results. Told as `/round cancel` tells it |
 | `/division calendar-sync` | Repost a division's calendar with your changes on it. Refused once every division is done — there is no round left for the calendar to describe |
