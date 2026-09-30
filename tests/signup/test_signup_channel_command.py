@@ -297,6 +297,48 @@ async def test_a_refused_signup_channel_move_says_the_old_channel_was_cleared(db
     )
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: an old signup channel the bot could not unlock goes to the host log only",
+)
+@pytest.mark.parametrize(
+    "fault",
+    [
+        _forbidden,
+        lambda: discord.HTTPException(MagicMock(status=500, reason="Server Error"), "boom"),
+    ],
+    ids=["forbidden", "http-error"],
+)
+async def test_a_move_that_cannot_unlock_the_old_channel_says_so_and_stands(db_path, fault):
+    """The signup channel is <#650>, and the manager moves it to <#700>. Discord will not clear
+    the old channel's permissions, but the new channel is set: the move stands, and both the
+    reply and the one Success line name <#650> as left as it was, to put right by hand."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE signup_module_config SET signup_channel_id = 650")
+        await db.commit()
+    cog = _cog(db_path)
+    old = MagicMock(spec=discord.TextChannel)
+    old.id = 650
+    old.mention = "<#650>"
+    old.edit = AsyncMock(side_effect=fault())
+    guild = _guild()
+    guild.get_channel = MagicMock(side_effect=lambda cid: old if cid == 650 else None)
+    channel = _channel()
+    interaction = _interaction(guild)
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "signup channel"
+
+    await _run(cog, interaction, channel)
+
+    assert await _stored(db_path) == 700
+    replied = _replied(interaction)
+    assert "Signup channel set to <#700>" in replied
+    assert "<#650>" in replied
+    [line] = _lines(cog)
+    assert line.startswith("Manager (<@42>) | /signup channel | Success")
+    assert "<#650>" in line
+
+
 async def test_a_signup_channel_edit_fault_goes_to_the_failure_path(db_path):
     """Anything but Discord's refusal is a fault in the bot: it goes to the command's failure
     path, which gives the standard reply, and nothing is saved."""
