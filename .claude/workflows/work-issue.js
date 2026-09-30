@@ -1041,7 +1041,8 @@ const builderPrompt = (k, earlier = []) => {
   const answered = !(first && previous) ? ''
     : previous.status === 'question' ? ` The last run stopped on questions for the owner. Their answers are in the decisions below, and bind you.${previous.testChanges && previous.testChanges.length ? ` The test changes you proposed went to the owner: each made is on the branch now, committed by the tests stage${testsHead ? ` by ${testsHead}` : ''}, and each refused is in the decisions below, to build without.` : ''}`
       : previous.status === 'passed' ? ' The owner reviewed the last run\'s result at its gate and asked for changes: those in the decisions below, and any finding below that the owner wants made. Make them: they bind you, and this stage owes them until they are done.'
-        : ''
+        : ownerRerun ? ` The last run stopped ${previous.status}, and the owner has decided something since: this run is for what their decisions below call for, which binds you. Make it first.`
+          : ''
   return `You are the builder for ${ISSUE}: ${STAGE_NAME}, round ${k}${earlier.length ? `, piece ${earlier.length + 1}` : ''}.
 
 ${WHERE}

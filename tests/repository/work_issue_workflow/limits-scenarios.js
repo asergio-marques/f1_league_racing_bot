@@ -167,7 +167,8 @@ const cappedTests = decisions => async runOnce => {
 Object.assign(module.exports, {
   cappedStageRunsAgainAfterNewDecisions: {
     args: cappedTests('FIRST. OWNER: add test_c'),
-    respond(label) {
+    respond(label, prompt) {
+      if (label.endsWith(':builder') && !prompt.includes('the owner has decided something since')) throw new Error('the builder was not told why the stage runs again')
       if (label.endsWith(':builder')) return builder()
       if (label.endsWith(':tester')) return testsCheck()
       if (label.endsWith(':product')) return review({ summary: 'S' })
