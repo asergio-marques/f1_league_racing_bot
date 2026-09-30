@@ -352,3 +352,91 @@ async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
 
     bot.signup_module_service.set_window_closed.assert_not_awaited()
     assert await _audit(db_path) == []
+
+
+# ---------------------------------------------------------------------------
+# A close given the window it was asked about (#491)
+# ---------------------------------------------------------------------------
+
+_STALE_WINDOW = "#482: execute_forced_close is given no window and re-checks nothing (#491)"
+
+ARMED = "2099-06-15T20:00:00+00:00"
+
+
+def _window(*, signups_open=True, button=BUTTON_MESSAGE, close_at=None):
+    """The signup configuration as the close re-reads it."""
+    return SimpleNamespace(
+        signup_channel_id=SIGNUP_CHANNEL,
+        signup_button_message_id=button,
+        signups_open=signups_open,
+        close_at=close_at,
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_STALE_WINDOW)
+@pytest.mark.parametrize(
+    "config, refusal",
+    [
+        pytest.param(
+            _window(signups_open=False, button=None),
+            ("Signups are no longer open. Nothing was closed.",),
+            id="closed since",
+        ),
+        pytest.param(
+            _window(button=BUTTON_MESSAGE + 1),
+            ("Signups were reopened since this was asked. Nothing was closed.",),
+            id="reopened since",
+        ),
+        pytest.param(
+            _window(close_at=ARMED),
+            ("auto-close", "<t:", "`/signup close-time cancel`"),
+            id="close time armed since",
+        ),
+    ],
+)
+async def test_a_close_given_a_window_that_has_changed_refuses_and_touches_nothing(
+    tmp_path, config, refusal
+):
+    """A driver is still filling in the wizard. The close is given the Sign Up button message of
+    the window a manager was asked about, but the window has since been closed, reopened on a
+    new button, or given a close time. The close returns the refusal's reason and touches
+    nothing: no driver returned, no job removed, no channel held, no button deleted, no notice
+    posted, the window not closed, and nothing audited."""
+    db_path = await _make_db(
+        tmp_path, drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    bot = _bot(db_path, config=config)
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
+
+    outcome = await execute_forced_close(
+        bot, audit_action="SIGNUP_FORCE_CLOSE", window=BUTTON_MESSAGE
+    )
+
+    for text in refusal:
+        assert text in outcome.refused
+    bot.driver_service.transition.assert_not_awaited()
+    bot.scheduler_service.cancel_job.assert_not_called()
+    bot.wizard_service.trigger_channel_hold.assert_not_awaited()
+    bot._channel.fetch_message.assert_not_awaited()
+    bot._channel.send.assert_not_awaited()
+    bot.signup_module_service.set_window_closed.assert_not_awaited()
+    assert await _audit(db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=_STALE_WINDOW)
+async def test_a_close_given_the_window_still_open_closes_it(tmp_path):
+    """The window the manager was asked about is still open on the same button, with no close
+    time armed: the close goes ahead, refuses nothing, and returns the driver it turned away."""
+    db_path = await _make_db(
+        tmp_path, drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
+    )
+    bot = _bot(db_path, config=_window())
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
+
+    outcome = await execute_forced_close(
+        bot, audit_action="SIGNUP_FORCE_CLOSE", window=BUTTON_MESSAGE
+    )
+
+    assert outcome.refused is None
+    assert outcome.returned == 1
+    bot.signup_module_service.set_window_closed.assert_awaited_once()

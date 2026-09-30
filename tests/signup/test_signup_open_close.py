@@ -1085,3 +1085,60 @@ async def test_a_close_confirmation_left_unanswered_is_recorded_and_its_buttons_
     assert any("Signups remain open." in text for text in beneath)
     asked.edit_original_response.assert_awaited_once()
     assert asked.edit_original_response.await_args.kwargs.get("view", "kept") is None
+
+
+_STALE_CONFIRM = "#482: Confirm Close does not check the window it was asked about (#491)"
+
+# (what changed after `/signup close` asked, as SQL on the window; what the refusal says)
+_SINCE_ASKED = [
+    pytest.param(
+        "UPDATE signup_module_config SET signups_open = 0, signup_button_message_id = NULL",
+        ("Signups are no longer open. Nothing was closed.",),
+        id="closed since",
+    ),
+    pytest.param(
+        f"UPDATE signup_module_config SET signup_button_message_id = {BUTTON_MESSAGE_ID + 1}",
+        ("Signups were reopened since this was asked. Nothing was closed.", "/signup close"),
+        id="reopened since",
+    ),
+    pytest.param(
+        "UPDATE signup_module_config SET close_at = '2099-06-15T20:00:00+00:00'",
+        ("auto-close", "<t:", "`/signup close-time cancel`"),
+        id="close time armed since",
+    ),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=_STALE_CONFIRM)
+@pytest.mark.parametrize("change, refusal", _SINCE_ASKED)
+async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, change, refusal):
+    """A driver is mid-signup and `/signup close` asks. Before the manager presses Confirm
+    Close, the window changes: it was closed, closed and reopened on a new Sign Up button, or
+    given a close time. The press is refused with the reason (the armed case in the command's
+    own words, stating the time and naming `/signup close-time cancel`), one refusal line names
+    the Confirm Close button and the manager, and nothing is closed: the driver is not returned,
+    no notice is posted, the window is as the change left it, and no close is audited."""
+    db_path, cog, asked, view = await _confirmation(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(change)
+        await db.commit()
+    before = await SignupModuleService(db_path).get_config()
+    press = _pressed(cog)
+
+    await view.confirm.callback(press)
+
+    replied = _replied(press)
+    for text in refusal:
+        assert text in replied
+    [line] = _lines(cog)
+    assert line.startswith("⛔ ")
+    assert "Confirm Close" in line
+    assert "refused for Manager (<@42>)" in line
+    cog.bot.driver_service.transition.assert_not_awaited()
+    asked._signup_channel.send.assert_not_awaited()
+    assert await SignupModuleService(db_path).get_config() == before
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'SIGNUP_FORCE_CLOSE'"
+        )
+        assert (await cursor.fetchone())[0] == 0
