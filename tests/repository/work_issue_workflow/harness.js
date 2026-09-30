@@ -11,6 +11,10 @@
 // error instead. The process exits 1 if any scenario fails, printing what the workflow logged and
 // returned.
 //
+// A scenario that carries on from an earlier run gives `args` as an async function of `runOnce(args,
+// respond)`, which runs the workflow once with those stand-ins and returns its result, so that the
+// earlier result is the workflow's own rather than one written by hand.
+//
 // The workflow runtime validates each agent's answer against the call's schema; the stand-ins do
 // not. The one field the harness fills in for them is a triage's `duplicates`, which the triage
 // schema requires and most stand-ins have no reason to give.
@@ -22,6 +26,23 @@ const source = fs.readFileSync(WORKFLOW, 'utf8').replace(/^export const meta/, '
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const scenarios = require(path.resolve(process.argv[2]))
 const only = process.argv[3]
+const parallelOf = logs => async thunks => Promise.all(thunks.map(t => Promise.resolve().then(t).catch(e => {
+  logs.push(`THUNK THREW ${e.message}`)
+  return null
+})))
+const standIn = (respond, seen) => async (prompt, opts) => {
+  if (seen) seen(prompt, opts)
+  const answer = respond(opts.label, prompt, opts)
+  if (answer && opts.label.startsWith('triage:') && !answer.duplicates) answer.duplicates = []
+  return answer === undefined ? null : answer
+}
+const workflow = () => new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'budget', 'workflow', source)
+const runOnce = async (args, respond) => {
+  const logs = []
+  const result = await workflow()(args, standIn(respond), parallelOf(logs), null, () => {}, m => logs.push(m), { total: null }, null)
+  if (logs.some(l => l.startsWith('THUNK THREW'))) throw new Error(`an earlier run's stand-in threw: ${logs.filter(l => l.startsWith('THUNK THREW')).join('; ')}`)
+  return JSON.parse(JSON.stringify(result))
+}
 
 ;(async () => {
   let failed = 0
@@ -30,20 +51,10 @@ const only = process.argv[3]
     const labels = []
     const calls = []
     const logs = []
-    const agent = async (prompt, opts) => {
-      labels.push(opts.label)
-      calls.push({ label: opts.label, opts })
-      const answer = s.respond(opts.label, prompt, opts)
-      if (answer && opts.label.startsWith('triage:') && !answer.duplicates) answer.duplicates = []
-      return answer === undefined ? null : answer
-    }
-    const parallel = async thunks => Promise.all(thunks.map(t => Promise.resolve().then(t).catch(e => {
-      logs.push(`THUNK THREW ${e.message}`)
-      return null
-    })))
-    const run = new AsyncFunction('args', 'agent', 'parallel', 'pipeline', 'phase', 'log', 'budget', 'workflow', source)
+    const agent = standIn(s.respond, (prompt, opts) => { labels.push(opts.label); calls.push({ label: opts.label, opts }) })
     try {
-      const result = await run(s.args, agent, parallel, null, () => {}, m => logs.push(m), { total: null }, null)
+      const args = typeof s.args === 'function' ? await s.args(runOnce) : s.args
+      const result = await workflow()(args, agent, parallelOf(logs), null, () => {}, m => logs.push(m), { total: null }, null)
       const ok = !s.expectThrow && s.expect(result, { labels, calls, logs }) && !logs.some(l => l.startsWith('THUNK THREW'))
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'} ${name}: status=${result.status} lastRound=${result.lastRound} agents=[${labels.join(' ')}]`)

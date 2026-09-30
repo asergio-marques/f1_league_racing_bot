@@ -410,3 +410,60 @@ Object.assign(module.exports, {
     expect: r => r.status === 'passed' && r.counts.deleted === 1,
   },
 })
+
+// What each reviewer and the owner last saw of the list is remembered as one hash per entry, never
+// its text, so that a result stays small enough to carry into the next run whole, and a resumed run
+// still gives each reviewer the unchanged entries in short and the Gate 2 report its marks (#483).
+const Bn = 'tests/x/test_a.py::test_b'
+Object.assign(scenarios, {
+  listSeenSurvivesResumeAsDigests: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', maxRounds: 1 }, label => {
+        if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added', { scenario: 'SCEN-A-LONG' })] })
+        if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A)], changes: changes([[A, 'added']]) })
+        if (label.endsWith(':issue')) return review({ findings: [finding('issue-1-1')] })
+        return cleanLanes(label)
+      })
+      if (first.status !== 'unfinished' || JSON.stringify(first.listSeen).includes('SCEN-A-LONG') || !first.listSeen.issue.tests[0].digest) throw new Error('the first run did not remember the list as hashes')
+      return { ...base, stage: 'tests', previous: first }
+    },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ commits: [{ sha: 'c2', subject: 'b' }], tests: [entry(Bn, 'added')], fixed: [{ id: 'issue-1-1', commit: 'c2' }] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Bn)], changes: changes([[A, 'added'], [Bn, 'added']]), changedSince: changes([[Bn, 'added']]), changedSinceError: '' })
+      if (/:(issue|product)$/.test(label) && (prompt.includes('SCEN-A-LONG') || !prompt.includes('S-test_b') || !prompt.includes('Unchanged since you last reviewed'))) throw new Error(`${label} was not given the unchanged entry in short`)
+      if (label.endsWith(':issue')) return review({ prior: [{ id: 'issue-1-1', status: 'fixed', grounds: 'ok' }] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 2,
+  },
+  gate2MarksSurviveResume: {
+    args: async runOnce => {
+      const lanes = label => label.endsWith(':tester') ? testsCheck({ tests: [ran(A), ran(Bn)], changes: changes([[A, 'added'], [Bn, 'added']]) }) : cleanLanes(label)
+      const gate = await runOnce({ ...base, stage: 'tests' }, label => label.endsWith(':builder') ? builder({ tests: [entry(A, 'added'), entry(Bn, 'added')] }) : lanes(label))
+      const asked = await runOnce({ ...base, stage: 'tests', decisions: 'GATE 2: reword A2', previous: gate }, label => {
+        if (label.endsWith(':builder')) return builder({ tests: [entry(Bn, 'added', { scenario: 'REWORDED' })] })
+        if (label.endsWith(':product')) return review({ escalations: [{ ...q('business', 'which season?'), stops: true }] })
+        return lanes(label)
+      })
+      if (asked.status !== 'question' || JSON.stringify(asked.shown).includes('S-test_a')) throw new Error('the stopped run did not carry the gate as hashes')
+      return { ...base, stage: 'tests', decisions: 'GATE 2: reword A2. OWNER ANSWERED: this one', previous: asked }
+    },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Bn)], changes: changes([[A, 'added'], [Bn, 'added']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.report.includes('`test_b` *(changed since the last Gate 2)*') && r.report.includes('`test_a`\n'),
+  },
+  // The reviewers read what is wrong and each test's first failure line, not the tool's lists.
+  reviewersGetCompactTesterReport: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A, { realFailure: 'AssertionError: no refusal was recorded\nSECOND-LINE-OF-TRACE' })], changes: changes([[A, 'added']], [], [], 'HEAD-SHA-FROM-TOOL') })
+      if (/:(issue|product)$/.test(label) && (!prompt.includes('AssertionError: no refusal was recorded') || prompt.includes('SECOND-LINE-OF-TRACE') || prompt.includes('HEAD-SHA-FROM-TOOL'))) throw new Error(`${label} was not given the compact report`)
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+})

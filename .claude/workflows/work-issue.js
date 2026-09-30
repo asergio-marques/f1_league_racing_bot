@@ -511,12 +511,35 @@ const commits = previous ? [...previous.commits] : []
 // agent re-reading the whole branch every round pays for it every round. A lane that returned
 // nothing is dropped from the map, and reviews in full next time, as one that has never run does.
 const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt : {}) }
+// An entry of the tests stage's lists as it is remembered between rounds and runs: by its key, its
+// change, its label and one short hash of what it says, never its text. The lists as each reviewer
+// and the owner last saw them are compared with the list as it stands, and nothing else is read of
+// them; kept in full, two copies of every entry went into every result, which then grew too large
+// to carry into the next run whole, and a run carried without them sent both reviewers the whole
+// list again and lost the Gate 2 report's marks (#482 slice 3). Not alreadyPasses: a test the build
+// has made pass since is the same test.
+const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'what', 'affects']
+const described = (entry, f) => JSON.stringify(f === 'affects' ? [...(entry.affects || [])].sort() : entry[f] || '')
+// FNV-1a, 32 bits: a list of a few hundred entries is far from a collision.
+const fnv = text => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+  return h.toString(16).padStart(8, '0')
+}
+const digestOf = e => fnv(DESCRIBED.map(f => described(e, f)).join('|'))
+const compactEntry = (e, support) => e.digest ? e : {
+  ...(support ? { file: e.file, name: e.name } : { nodeid: e.nodeid }),
+  change: e.change,
+  ...(e.label ? { label: e.label } : {}),
+  digest: digestOf(e),
+}
+const compactList = (tests, support) => ({ tests: (tests || []).map(t => compactEntry(t, false)), support: (support || []).map(x => compactEntry(x, true)) })
 // The tests stage's lists as each of its reviewers, the issue reviewer and the product owner, was
 // last given them. A reviewer is given every entry with its scenario the first time, and after that
 // only the entries new or changed since in full, the rest in short: the long descriptions are most
 // of a round's prompt, and re-reading them every round is paid for every round. A lane that
 // returned nothing is dropped, and is given the whole list again.
-const listSeen = { ...(previous && previous.listSeen ? previous.listSeen : {}) }
+const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, compactList(seen.tests, seen.support)]))
 const separateDefects = previous ? [...previous.separateDefects] : []
 let lastFailures = previous ? [...previous.lastFailures] : []
 // The reversible calls taken on a checker's recommendation rather than asked (stopsTheStage): they
@@ -558,8 +581,8 @@ let supportWritten = previous && previous.support ? [...previous.support] : []
 // is new or changed since: taken from a run that passed, which is what reached the gate, and
 // carried unchanged through any run that stopped short of it.
 const shown = stage !== 'tests' || !previous ? null
-  : previous.status === 'passed' ? { tests: previous.tests || [], support: previous.support || [] }
-    : previous.shown || null
+  : previous.status === 'passed' ? compactList(previous.tests, previous.support)
+    : previous.shown ? compactList(previous.shown.tests, previous.shown.support) : null
 // Every design file the branch has changed. Once there is one, the design verifier runs in every
 // round, so that a design finding is always judged by the verifier and never closed on the
 // builder's word.
@@ -975,7 +998,7 @@ const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ th
 let listTouched = null
 const changedSince = (entry, before, keyOf) => {
   const was = before.find(b => keyOf(b) === keyOf(entry))
-  return !was || was.change !== entry.change || DESCRIBED.some(f => described(was, f) !== described(entry, f))
+  return !was || was.change !== entry.change || was.digest !== digestOf(entry)
 }
 const listFor = (lane, tests, support, whole = false) => {
   if (!tests) return ''
@@ -1167,14 +1190,11 @@ const listProblems = (t, tests, support) => {
 
 // Against the lists the owner last saw at Gate 2: an entry that was not there, or whose
 // description has changed since.
-// Not alreadyPasses: a test the build has made pass since is the same test.
-const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'what', 'affects']
-const described = (entry, f) => JSON.stringify(f === 'affects' ? [...(entry.affects || [])].sort() : entry[f] || '')
 const sinceShown = (entry, before, keyOf) => {
   if (!shown) return ''
   const was = before.find(b => keyOf(b) === keyOf(entry))
   if (!was || was.change !== entry.change) return ' *(new since the last Gate 2)*'
-  return DESCRIBED.some(f => described(was, f) !== described(entry, f)) ? ' *(changed since the last Gate 2)*' : ''
+  return was.digest !== digestOf(entry) ? ' *(changed since the last Gate 2)*' : ''
 }
 
 const counts = () => ({
@@ -1283,16 +1303,27 @@ const reviewTests = async (k, questions) => {
   listTouched = !since ? nothing
     : !test || filled(test.changedSinceError) || !filled(found(test).head) ? null
       : { tests: new Set(found(test).tests.map(x => bareId(x.nodeid))), support: new Set(found(test).support.map(supportKey)) }
+  const problems = testsProblems(test)
+  const report = compactTest(test, problems)
   const [issueResult, productResult] = await parallel([
-    () => send(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
-    () => send(productPrompt(k, questions.business, test, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => send(issuePrompt(k, questions.engineering, report, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
+    () => send(productPrompt(k, questions.business, report, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   for (const [lane, result] of [['issue', issueResult], ['product', productResult]]) {
-    if (result) listSeen[lane] = { tests: written, support: supportWritten }
+    if (result) listSeen[lane] = compactList(written, supportWritten)
     else delete listSeen[lane]
   }
-  const problems = testsProblems(test)
-  return { lanes: { issue: issueResult, product: productResult }, test, problems, green: !!test && !hostProblem(test) && !problems.length }
+  return { lanes: { issue: issueResult, product: productResult }, test, report, problems, green: !!test && !hostProblem(test) && !problems.length }
+}
+
+// The tester's report as the reviewers read it: what is wrong, and each test's outcome with the first
+// line of its real failure, by which they judge whether it fails for the reason the plan gives. The
+// tool's lists, which the script holds the builder's to itself, are left out: copied whole into both
+// reviewers' prompts, they were most of what a round sent them (#482 slice 3).
+const firstLine = v => (String(v || '').split('\n').find(l => l.trim()) || '').trim().slice(0, 300)
+const compactTest = (t, problems) => !t ? t : {
+  problems,
+  tests: t.tests.map(x => ({ nodeid: x.nodeid, outcome: x.outcomeAsCommitted, failsWithRunxfail: x.failsWithRunxfail, failure: firstLine(x.realFailure) })),
 }
 
 // The host, not the code: what the tester reports as such, and a lock flock gave up on.
@@ -1591,7 +1622,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     // second call is a fresh agent that has seen neither: it reviews the whole branch, and in the
     // tests stage is given the whole list.
     if (!summary) {
-      const asked = await send(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null, true)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      const asked = await send(`${productPrompt(k, [], reviewed.report, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null, true)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
       if (asked) {
         addFindings('product', asked.findings)
         citations.push(...asked.answers)
