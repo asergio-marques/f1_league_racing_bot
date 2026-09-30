@@ -732,10 +732,6 @@ async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_pat
     assert "The earlier results still stand" in _posted(channel)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a restart ending a resubmission is not yet recorded naming who started it",
-)
 async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro) and was part-way
     through pasting when the bot restarted. One line records the resubmission as lapsed, naming

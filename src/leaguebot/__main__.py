@@ -834,14 +834,24 @@ async def _abandon_interrupted_resubmission(
     round_id: int,
     channel: discord.abc.Messageable,
     announcement_id: int | None,
+    *,
+    started_by: int | None,
+    round_label: str,
 ) -> None:
     """Close out a resubmission a restart cut short, leaving the round's results as they were.
 
     The collection ran in memory and is gone. The flag is cleared first, so the review
     channel's message guard is back in force before the prompt returns, and the Cancel button
     on the announcement is taken down because nothing is listening for it any more.
+
+    The lapse is recorded in the log channel as the Resubmit button's, naming who started it
+    (*started_by*, kept on the round's submission channel row when the press was made) and the
+    round (*round_label*); both come from the recovery's own read of that row, so this reads
+    nothing more. A row from before the column existed names nobody's id, and the line names
+    no member.
     """
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.utils.log_lines import record_abandoned
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
@@ -861,6 +871,15 @@ async def _abandon_interrupted_resubmission(
         "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
         "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
         "again to re-enter them."
+    )
+    await record_abandoned(
+        bot, started_by,
+        what=f"the “Resubmit Initial Results” button of {round_label}",
+        lapsed=True,
+        detail=(
+            "The sessions entered were lost. The earlier results stand. "
+            "Press Resubmit again to re-enter them."
+        ),
     )
 
 
@@ -1015,8 +1034,8 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
-                   rsc.resubmitting, rsc.resubmit_prompt_message_id,
-                   r.division_id, r.status
+                   rsc.resubmitting, rsc.resubmit_prompt_message_id, rsc.resubmit_started_by,
+                   r.division_id, r.status, r.round_number, d.name AS division_name
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -1035,6 +1054,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         prompt_message_id: int | None = row["prompt_message_id"]
         resubmitting: int = row["resubmitting"]
         resubmit_prompt_message_id: int | None = row["resubmit_prompt_message_id"]
+        resubmit_started_by: int | None = row["resubmit_started_by"]
         division_id: int = row["division_id"]
         round_status: str = row["status"] or ""
 
@@ -1106,7 +1126,9 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
             try:
                 if resubmitting:
                     await _abandon_interrupted_resubmission(
-                        bot, round_id, channel, resubmit_prompt_message_id
+                        bot, round_id, channel, resubmit_prompt_message_id,
+                        started_by=resubmit_started_by,
+                        round_label=f"round {row['round_number']} ({row['division_name']})",
                     )
 
                 # If staged_penalties is set, penalties were already written to
