@@ -18,15 +18,20 @@ amendment mode is off rather than writing somewhere nothing will read.
 """
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.services.amendment_service import AmendmentNotActiveError
+from leaguebot.core.services.amendment_service import (
+    AmendmentNotActiveError,
+    enable_amendment_mode,
+)
 from leaguebot.results.services.season_points_service import (
     ConfigNotAttachedError,
     SeasonNotInSetupError,
@@ -38,11 +43,36 @@ SEASON_ID = 1
 
 
 _UNSET = object()
+_DB: dict[str, str] = {}
+
+
+@pytest.fixture(autouse=True)
+async def _database(tmp_path):
+    """Season SEASON_ID in amendment mode with nothing in its store, built from the production
+    migrations.
+
+    The store's writes are patched below, but an amend that changes nothing answers so (#482),
+    and to know it reads the value it is asked to set: from this database, where nothing is
+    held for Standard, so every amend here is one that changes something.
+    """
+    path = os.path.join(str(tmp_path), "amend_fl.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
+            (SEASON_ID,),
+        )
+        await db.commit()
+    await enable_amendment_mode(path, SEASON_ID)
+    _DB["path"] = path
+    yield
+    _DB.clear()
 
 
 def _make_cog(*, enabled=True, season=_UNSET):
     bot = MagicMock()
-    bot.db_path = "/tmp/not-read.db"
+    bot.db_path = _DB["path"]
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
     bot.season_service = MagicMock()
@@ -131,26 +161,37 @@ async def test_a_configuration_is_detached(tmp_path):
 
 
 async def test_detaching_from_a_running_season_is_refused(tmp_path):
-    """Its points are snapshotted; `/results amend` is the route once it has started."""
+    """Its points are snapshotted; `/results amend` is the route once it has started. The
+    log records the refusal and its reason."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results config detach"
 
     await _detach(cog, interaction, error=SeasonNotInSetupError("active"))
 
     assert "only allowed for seasons in SETUP" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        "⛔ `/results config detach` refused for Manager (<@77>) — "
+        "Config detachment is only allowed for seasons in SETUP."
+    )
 
 
 async def test_detaching_what_is_not_attached_is_an_answer(tmp_path):
-    """The manager wanted it gone and it is gone."""
+    """The manager wanted it gone and it is gone. Nothing changed, and the log says so in one
+    line, as every request that changes nothing does (#482)."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _detach(cog, interaction, error=ConfigNotAttachedError("Standard"))
 
     assert "is not attached to this season" in _replied(interaction)
     assert "❌" not in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = str(cog.bot.output_router.post_log.await_args.args[0])
+    assert line.splitlines()[0] == "Manager (<@77>) | /results config detach | Nothing changed"
+    assert "Standard" in line
 
 
 async def test_detaching_with_no_season_is_refused(tmp_path):
@@ -201,14 +242,20 @@ async def test_the_modification_store_is_written(tmp_path, command, value, phras
 @pytest.mark.parametrize("command", ["amend_fl", "amend_fl_plimit"])
 async def test_an_amend_outside_amendment_mode_is_refused(tmp_path, command):
     """Writing a store nothing will read would report a change that never reaches the
-    league."""
+    league. The log records the refusal and its reason."""
     cog = _make_cog()
     interaction = _interaction()
+
+    interaction.client = cog.bot
+    name = {"amend_fl": "results amend fl", "amend_fl_plimit": "results amend fl-plimit"}[command]
+    interaction.command.qualified_name = name
 
     await _fl(cog, interaction, command=command, error=AmendmentNotActiveError("off"))
 
     assert "Amendment mode is not active" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/{name}` refused for Manager (<@77>) — Amendment mode is not active."
+    )
 
 
 @pytest.mark.parametrize("command", ["amend_fl", "amend_fl_plimit"])

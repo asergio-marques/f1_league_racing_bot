@@ -128,6 +128,7 @@ def _state(
         bot=bot,
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
+        round_number=3,
         division_name="Division 1",
         submission_channel_id=SUBMISSION_CHANNEL_ID,
         staged=list(staged),
@@ -319,7 +320,7 @@ async def test_the_discarded_penalties_are_logged_in_full(tmp_path):
     await _run(state, _interaction())
 
     logged = _logged(state)
-    assert "RESULTS_RESUBMISSION_STAGED_DISCARD" in logged
+    assert "RESULTS_RESUBMISSION | Started" in logged
     assert "discarded_count: 2" in logged
     assert str(DRIVER_A) in logged
     assert "DSQ" in logged
@@ -376,6 +377,8 @@ async def test_the_resubmission_itself_is_logged(tmp_path):
 
 
 async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
+    """Resubmit pressed with one pardon staged and no penalty: the resubmission's one line
+    counts no penalty and one pardon discarded."""
     db_path = await _make_db(tmp_path)
     state = _state(db_path, pardons=[_pardon()], channel=_channel())
 
@@ -385,8 +388,35 @@ async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
         call.args[0] for call in state.bot.output_router.post_log.await_args_list
         if "RESULTS_RESUBMISSION | Started" in call.args[0]
     )
-    assert "Previous staged penalties discarded: 0" in started
-    assert "Previous staged pardons discarded: 1" in started
+    assert "discarded_count: 0" in started
+    assert "discarded_pardons_count: 1" in started
+
+
+async def test_resubmit_writes_one_line_naming_what_it_discarded(tmp_path):
+    """Alex presses Resubmit on round 3 (Division 1) with a 5-second penalty and an ABSENT pardon
+    justified "Ill" staged: the log channel gets one line, "Alex (<@77>) | RESULTS_RESUBMISSION |
+    Started", which names the discarded penalty and the discarded pardon with its justification."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty(5)], pardons=[_pardon()], channel=_channel())
+    interaction = _interaction()
+    interaction.user.display_name = "Alex"
+
+    await _run(state, interaction)
+
+    lines = [str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    [line] = lines
+    assert line.startswith(f"Alex (<@{ACTOR_ID}>) | RESULTS_RESUBMISSION | Started")
+    discarded = json.loads(
+        next(l for l in line.splitlines() if l.strip().startswith("discarded:"))
+        .split("discarded:", 1)[1]
+    )
+    assert [(d["driver_user_id"], d["penalty_seconds"]) for d in discarded] == [(DRIVER_A, 5)]
+    pardons = json.loads(
+        next(l for l in line.splitlines() if l.strip().startswith("discarded_pardons:"))
+        .split("discarded_pardons:", 1)[1]
+    )
+    assert pardons == [{"driver_user_id": DRIVER_A, "pardon_type": "ABSENT", "justification": "Ill"}]
 
 
 async def test_a_resubmission_with_nothing_staged_still_logs(tmp_path):
@@ -462,6 +492,23 @@ async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path):
         assert (await cursor.fetchone())[0] == ANNOUNCEMENT_ID
 
 
+async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(tmp_path):
+    """Alex (id 77) presses 🔄 Resubmit on round 3 (Division 1). A restart ends the
+    resubmission, and its lapse line names who started it, so the round's submission channel
+    row keeps Alex's id from the moment the resubmission starts."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, channel=_channel())
+
+    await _run(state, _interaction())
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT resubmit_started_by FROM round_submission_channels WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        assert (await cursor.fetchone())[0] == ACTOR_ID
+
+
 async def test_the_manager_is_told_privately_what_to_do_next(tmp_path):
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
@@ -489,3 +536,101 @@ async def test_a_missing_submission_channel_refuses_and_changes_nothing(tmp_path
     assert await _flags(db_path) == (1, 1, 0)
     assert "submission channel could not be found" in interaction.followup.send.await_args.args[0]
     task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. The Resubmit button's own checks are
+# driven with the rest of the penalty review's in `test_penalty_review_buttons.py`; these are the
+# two refusals the resubmission itself makes.
+# ---------------------------------------------------------------------------
+
+
+def _pressing_interaction(*, deferred: bool):
+    """A press by Alex (id 77), answering as Discord's does — done once it replies or defers —
+    and connected to a log channel of its own. Alex holds no league manager tier: the user is
+    not a `discord.Member`, which the penalty review's permission check refuses outright."""
+    answered = {"done": deferred}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction = MagicMock()
+    interaction.guild_id = SERVER_ID
+    interaction.user = MagicMock()
+    interaction.user.id = ACTOR_ID
+    interaction.user.display_name = "Alex"
+    interaction.client = MagicMock()
+    interaction.client.output_router = MagicMock()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
+    interaction.response = MagicMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+@pytest.mark.parametrize(
+    "press, reply",
+    [
+        pytest.param(
+            "resubmit",
+            "❌ The submission channel could not be found, so the results cannot be resubmitted.",
+            id="resubmit-with-the-submission-channel-gone",
+        ),
+        pytest.param(
+            "cancel",
+            "⛔ Only league managers can interact with the penalty review.",
+            id="cancel-by-somebody-without-the-tier",
+        ),
+    ],
+)
+async def test_every_refused_press_of_the_resubmission_is_recorded(tmp_path, press, reply):
+    """Round 3 of Division 1 is in penalty review, one penalty staged. Alex presses 🔄 Resubmit
+    Initial Results after the submission channel was deleted by hand, or presses the Cancel
+    button of a resubmission under way without holding the league manager tier. The reply is
+    today's, nothing changes — the penalty stays staged, the channel is not flagged and the
+    resubmission is not cancelled — and exactly one line records the refusal, naming Alex and
+    the reason."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty()], channel=None)
+
+    if press == "resubmit":
+        interaction = _pressing_interaction(deferred=True)
+        with patch(
+            "leaguebot.results.services.result_submission_service._resubmit_collection_task",
+            new=AsyncMock(),
+        ) as task:
+            await enter_resubmit_flow(interaction, state)
+        task.assert_not_called()
+    else:
+        state.db_path = db_path
+        view = ResubmissionCancelView(state)
+        interaction = _pressing_interaction(deferred=False)
+        await view.cancel_btn.callback(interaction)
+        assert not view.cancelled
+        assert not view.pressed.is_set()
+
+    assert len(state.staged) == 1
+    assert await _flags(db_path) == (1, 1, 0)
+    (replied,) = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    assert replied == reply
+    reason = reply.split(" ", 1)[1]
+    lines = [
+        str(call.args[0])
+        for router in (state.bot.output_router, interaction.client.output_router)
+        for call in router.post_log.await_args_list
+    ]
+    (line,) = lines
+    assert line.startswith("⛔ "), line
+    if press == "cancel":
+        assert line.startswith("⛔ the “Cancel” button"), line
+    assert line.endswith(f" refused for Alex (<@{ACTOR_ID}>) — {reason}"), line

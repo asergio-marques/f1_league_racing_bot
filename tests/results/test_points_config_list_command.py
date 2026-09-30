@@ -204,9 +204,12 @@ async def test_the_command_is_gated_on_the_results_module():
     listing.assert_not_awaited()
 
 
-async def test_a_successful_listing_reaches_the_log():
+async def test_a_listing_writes_no_line():
+    """A list changes nothing, so it records nothing (core specification, "The record of what
+    changed")."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client.output_router.post_log = AsyncMock()
 
     with patch(
         "leaguebot.results.services.points_config_service.list_configs_with_sessions",
@@ -214,8 +217,9 @@ async def test_a_successful_listing_reaches_the_log():
     ):
         await _run(cog, interaction, "SERVER")
 
-    cog.bot.output_router.post_log.assert_awaited_once()
-    assert "/results config list" in cog.bot.output_router.post_log.await_args.args[0]
+    interaction.followup.send.assert_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
+    interaction.client.output_router.post_log.assert_not_awaited()
 
 
 async def test_the_reply_is_ephemeral():

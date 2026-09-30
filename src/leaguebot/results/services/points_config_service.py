@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -167,6 +168,53 @@ async def set_session_points(
             (config_id, session_type.value, position, points),
         )
         await db.commit()
+
+
+async def held_position_points(
+    db_path: str,
+    config_name: str,
+    session_type: SessionType,
+    position: int,
+) -> dict[str, int | None]:
+    """The points a configuration holds for one position, read for :func:`values_stand` (#482).
+
+    ``{"points": None}`` where the position was never filled in. Raises
+    :class:`ConfigNotFoundError` where the configuration does not exist, so the caller refuses
+    before it judges anything.
+    """
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, config_name)
+        cursor = await db.execute(
+            "SELECT points FROM points_config_entries "
+            "WHERE config_id = ? AND session_type = ? AND position = ?",
+            (config_id, session_type.value, position),
+        )
+        row = await cursor.fetchone()
+    return {"points": None if row is None else row["points"]}
+
+
+async def held_fastest_lap(
+    db_path: str,
+    config_name: str,
+    session_type: SessionType,
+) -> dict[str, int | None]:
+    """The fastest-lap bonus and position limit a configuration holds for one session, read for
+    :func:`values_stand` (#482).
+
+    Both ``None`` where the session has no fastest-lap row at all. Raises
+    :class:`ConfigNotFoundError` where the configuration does not exist.
+    """
+    async with get_connection(db_path) as db:
+        config_id = await _get_config_id(db, config_name)
+        cursor = await db.execute(
+            "SELECT fl_points, fl_position_limit FROM points_config_fl "
+            "WHERE config_id = ? AND session_type = ?",
+            (config_id, session_type.value),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return {"fl_points": None, "fl_position_limit": None}
+    return {"fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"]}
 
 
 async def ordering_warnings(
@@ -375,6 +423,23 @@ def group_sessions_by_config(rows) -> list[tuple[str, list[SessionType]]]:
         (name, sorted(sessions, key=lambda s: list(SessionType).index(s)))
         for name, sessions in sorted(grouped.items())
     ]
+
+
+def values_stand(current: Mapping[str, int | None], requested: Mapping[str, int]) -> bool:
+    """Whether a request to set values changes nothing (#482).
+
+    *current* holds the values the caller has already read, ``None`` for one not held at all;
+    *requested* the values asked for. The request changes nothing only where every value asked
+    for is already held: a value never filled in is not the same as one worth nothing, so a
+    ``None`` never stands, and a name *current* does not carry does not either. Only what is
+    asked is compared, so a fastest-lap limit set to the limit it holds stands whatever the
+    bonus is.
+
+    Pure, and called from the results cog alone: ``core/services/amendment_service.py`` may not
+    import results, so the judgement is made where the values were read and never inside the
+    amendment store.
+    """
+    return all(name in current and current[name] == value for name, value in requested.items())
 
 
 async def _position_points(

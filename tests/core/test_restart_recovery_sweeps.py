@@ -58,6 +58,7 @@ ROUND_ID = 21
 CHANNEL_ID = 700
 MESSAGE_ID = 8800
 REVIEWER_ID = 77
+STARTER_ID = 4242
 
 PHASE_1_DAYS = 7
 PHASE_2_DAYS = 3
@@ -467,9 +468,9 @@ async def _seed_amend(db_path):
         )
         await db.execute(
             "INSERT INTO round_amend_channels (round_id, channel_id, "
-            "session_types, created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', "
-            "'2026-02-01T00:00:00+00:00')",
-            (ROUND_ID, CHANNEL_ID),
+            "session_types, created_at, started_by) VALUES (?, ?, '[\"FEATURE_RACE\"]', "
+            "'2026-02-01T00:00:00+00:00', ?)",
+            (ROUND_ID, CHANNEL_ID, STARTER_ID),
         )
         await db.commit()
 
@@ -481,8 +482,15 @@ async def _amend_rows(db_path) -> int:
 
 
 def _amend_guild(*, channel=None):
+    """The league's server: *channel* is the amendment channel, and Alex, who started the
+    amendment, is a member of it."""
     guild = MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
+    guild.get_member = MagicMock(
+        side_effect=lambda member_id: SimpleNamespace(display_name="Alex", id=member_id)
+        if member_id == STARTER_ID
+        else None
+    )
     return guild
 
 
@@ -556,7 +564,7 @@ async def test_the_amend_row_goes_before_the_channel_does(tmp_path):
 
 async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
     """Their amendment vanished with the restart, and an empty channel list is not an
-    explanation."""
+    explanation. Round 3 had nothing to put back, so the line says a restart ended it (#482)."""
     db_path = await _base_db(tmp_path, "amend_notice")
     await _seed_amend(db_path)
     stub = _stub_bot(db_path, guild=_amend_guild())
@@ -564,8 +572,8 @@ async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
     await bot_module._recover_orphaned_amend_channels(stub)
 
     logged = str(stub.output_router.post_log.await_args.args[0])
-    assert "restarted mid-amendment" in logged
-    assert "/results rounds amend" in logged
+    assert "was ended by a restart" in logged
+    assert "re-run /results rounds amend" in logged
 
 
 async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_rounds_amend(tmp_path):
@@ -590,7 +598,8 @@ async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_roun
 
 
 async def test_the_notice_names_the_round_and_the_session(tmp_path):
-    """A manager with four sessions amended over an evening needs to know which one went."""
+    """A manager with four sessions amended over an evening needs to know which one went: the
+    round and its division, as every record names them (#482), and the session beneath."""
     db_path = await _base_db(tmp_path, "amend_notice_names")
     await _seed_amend(db_path)
     stub = _stub_bot(db_path, guild=_amend_guild())
@@ -598,7 +607,7 @@ async def test_the_notice_names_the_round_and_the_session(tmp_path):
     await bot_module._recover_orphaned_amend_channels(stub)
 
     logged = str(stub.output_router.post_log.await_args.args[0])
-    assert "R3" in logged
+    assert "round 3 (Pro)" in logged
     assert "Feature Race" in logged
 
 
@@ -722,6 +731,62 @@ async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_pat
         "  Amendment channel deleted, and the round put back as it was. Please re-run "
         "/results rounds amend."
     ) in logged.splitlines()
+
+
+async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_path):
+    """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
+    bot restarted before the amendment was approved, and the round is put back as it was. The
+    README promises this is recorded as a lapse: one line, naming Alex as its starter, with
+    the session being amended, what became of it and what to do next beneath it."""
+    db_path = await _base_db(tmp_path, "amend_revert_lapse")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=True),
+    ):
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    head, *detail = lines[0].splitlines()
+    assert head == (
+        f"⌛ `/results rounds amend` of round 3 (Pro) lapsed unconfirmed "
+        f"(started by Alex (<@{STARTER_ID}>))"
+    )
+    assert (
+        "  Amendment channel deleted, and the round put back as it was. Please re-run "
+        "/results rounds amend."
+    ) in detail
+    assert "Feature Race" in "\n".join(detail), detail
+
+
+async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_path):
+    """Alex started `/results rounds amend` of round 3 (Pro); at the restart there is nothing to
+    put back, so the bot cannot tell whether the corrections were never entered or the
+    amendment had been approved. One line names Alex and says a restart ended it — never
+    "lapsed" — with both cases, and what to run in each, beneath it."""
+    db_path = await _base_db(tmp_path, "amend_nothing_neutral")
+    await _seed_amend(db_path)
+    bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+        new=AsyncMock(return_value=False),
+    ):
+        await bot_module._recover_orphaned_amend_channels(bot)
+
+    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    head = lines[0].splitlines()[0]
+    assert (
+        f"`/results rounds amend` of round 3 (Pro), started by Alex (<@{STARTER_ID}>), "
+        "was ended by a restart"
+    ) in head
+    assert "lapsed" not in lines[0]
+    assert "If the amendment had not been approved, re-run /results rounds amend." in lines[0]
+    assert "run /results rounds sync and /results standings sync" in lines[0]
 
 
 async def test_a_revert_that_fails_hands_the_round_to_the_sweep(tmp_path):

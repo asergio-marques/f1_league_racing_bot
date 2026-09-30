@@ -136,15 +136,27 @@ def _state(db_path: str, *, appeals=None) -> PenaltyReviewState:
 
 
 def _interaction():
+    """A press by the league manager Alex (id 77), answering as Discord's does — not done until
+    it replies, defers or opens a form — and connected to a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
     interaction.message.id = APPROVAL_MESSAGE_ID
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
     interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client = MagicMock()
+    interaction.client.output_router = MagicMock()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -503,18 +515,26 @@ async def test_confirming_the_clear_discards_and_finalises(tmp_path):
 
 async def test_going_back_keeps_the_corrections(tmp_path):
     """The whole purpose of the question: a steward who pressed Confirm by habit gets their
-    work back."""
+    work back.
+
+    Round 3's appeals review (division Pro) has one correction staged, and Alex is asked whether
+    to clear it. Alex presses "No, go back". The correction stays staged, nothing is approved,
+    and exactly one cancel line records it, naming the review and Alex, with what became of the
+    list and what to do next beneath it."""
     db_path = await _make_db(tmp_path, name="appeals_goback")
     state = _state(db_path, appeals=[_penalty()])
     view = _AppealsConfirmClearView(state=state)
+    interaction = _interaction()
 
-    with patch(
+    with _manager(True), patch(
         "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
     ) as finalise:
-        await _press(view, "cancel_btn", _interaction())
+        await _press(view, "cancel_btn", interaction)
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+    (line,) = _all_lines(interaction, state)
+    _assert_appeals_clear_abandoned(line, "cancelled by Alex (<@77>)")
 
 
 async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
@@ -529,3 +549,264 @@ async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. A button names itself and the review it
+# belongs to; one pressed after a restart has no review to name.
+# ---------------------------------------------------------------------------
+
+_OF_THE_APPEALS_REVIEW = "of the appeals review of round 3 (Pro)"
+_APPEALS_RESTARTED = "⚠️ The bot was restarted. Please wait for the appeals prompt to refresh."
+_APPEALS_NOT_A_MANAGER = "⛔ Only league managers can interact with the penalty review."
+_ENTRY_GONE = "⚠️ That entry no longer exists (the list may have changed)."
+_NOTHING_TO_APPROVE = (
+    "⚠️ No corrections are staged. Use **No Changes / Confirm** to finalise without corrections."
+)
+_APPEALS_BUTTONS = ["➕ Add Correction", "No Changes / Confirm", "✅ Approve"]
+_APPEALS_CLEAR = "Yes, clear and proceed with no corrections"
+
+
+def _appeals_refusal(case_id, kind, label, reply, *, restarted=False, manager=True,
+                     staged=1, remaining=None):
+    return pytest.param(
+        kind, label, reply, restarted, manager, staged, remaining,
+        id=case_id,
+    )
+
+
+_APPEALS_REFUSALS = [
+    *(
+        _appeals_refusal(f"restarted-{label}", "review", label, _APPEALS_RESTARTED,
+                         restarted=True)
+        for label in [*_APPEALS_BUTTONS, "Remove #1"]
+    ),
+    *(
+        _appeals_refusal(f"not-a-manager-{label}", "review", label, _APPEALS_NOT_A_MANAGER,
+                         manager=False)
+        for label in [*_APPEALS_BUTTONS, "Remove #1"]
+    ),
+    _appeals_refusal("not-a-manager-clear", "clear", _APPEALS_CLEAR, _APPEALS_NOT_A_MANAGER,
+                     manager=False),
+    _appeals_refusal("entry-gone-Remove #1", "review", "Remove #1", _ENTRY_GONE, remaining=0),
+    _appeals_refusal("nothing-staged-Approve", "review", "✅ Approve", _NOTHING_TO_APPROVE,
+                     staged=0),
+]
+
+
+@pytest.mark.parametrize(
+    "kind, label, reply, restarted, manager, staged, remaining", _APPEALS_REFUSALS
+)
+async def test_every_refused_press_of_the_appeals_review_is_recorded(
+    tmp_path, kind, label, reply, restarted, manager, staged, remaining
+):
+    """Alex presses a button of round 3's appeals review (division Pro, awaiting appeal
+    verdicts, one correction staged) — the review itself or the clear confirmation — and is
+    refused: after a restart, without the tier, on a Remove whose correction has already gone,
+    or approving with nothing staged. The reply is today's, nothing is staged, removed or
+    approved, and exactly one line records the refusal, naming the button, the review, Alex and
+    the reason."""
+    db_path = await _make_db(tmp_path, name="appeals_refusals")
+    state = None if restarted else _state(db_path, appeals=[_penalty()] * staged)
+    if kind == "clear":
+        view = _AppealsConfirmClearView(state=state)
+    else:
+        view = AppealsReviewView(state=state)
+    if restarted and label.startswith("Remove"):
+        press = view._make_remove_cb(0)
+    else:
+        press = next(
+            item for item in view.children if getattr(item, "label", None) == label
+        ).callback
+    if remaining is not None:
+        del state.staged_appeals[remaining:]
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(manager), p1 as penalty, p2 as appeals, p3 as refresh, p4 as refresh_appeals:
+        await press(interaction)
+
+    penalty.assert_not_awaited()
+    appeals.assert_not_awaited()
+    refresh.assert_not_awaited()
+    refresh_appeals.assert_not_awaited()
+    interaction.response.send_modal.assert_not_awaited()
+    if state is not None:
+        assert len(state.staged_appeals) == (staged if remaining is None else remaining)
+    (replied,) = [
+        call.args[0] for call in interaction.response.send_message.await_args_list
+    ] + [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert replied == reply
+    reason = reply.split(" ", 1)[1]
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    if restarted:
+        assert line.startswith(f"⛔ the “{label}” button"), line
+        assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
+    else:
+        assert line == (
+            f"⛔ the “{label}” button {_OF_THE_APPEALS_REVIEW} refused for Alex (<@77>) — {reason}"
+        )
+
+
+@pytest.mark.parametrize(
+    "kind, label",
+    [
+        *(("review", label) for label in [*_APPEALS_BUTTONS, "Remove #1"]),
+        ("clear", _APPEALS_CLEAR),
+    ],
+)
+async def test_every_appeals_control_refuses_once_the_appeals_are_approved(
+    tmp_path, kind, label
+):
+    """**D3.** Round 3's appeals (division Pro) have been approved and the round is FINAL, but
+    the appeals prompt and its clear confirmation are still on screen with one correction
+    staged. Alex, a league manager, presses one of their buttons. It is refused: nothing is
+    staged, removed, cleared or approved, and exactly one line records the refusal, naming the
+    button, the review, Alex and the reason."""
+    db_path = await _make_db(tmp_path, name="appeals_approved", round_status="FINAL")
+    state = _state(db_path, appeals=[_penalty()])
+    view = (
+        _AppealsConfirmClearView(state=state) if kind == "clear"
+        else AppealsReviewView(state=state)
+    )
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1 as penalty, p2 as appeals, p3 as refresh, p4 as refresh_appeals:
+        await button.callback(interaction)
+
+    penalty.assert_not_awaited()
+    appeals.assert_not_awaited()
+    refresh.assert_not_awaited()
+    refresh_appeals.assert_not_awaited()
+    assert len(state.staged_appeals) == 1
+    assert _sent_view(interaction) is None
+    (replied,) = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line == (
+        f"⛔ the “{label}” button {_OF_THE_APPEALS_REVIEW} refused for Alex (<@77>) — {reason}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Every press is recorded (#482)
+#
+# The owner's decision "Every press": each press that changes the appeals review writes one line
+# in the success form, naming the member, the review and what was removed or cleared.
+# ---------------------------------------------------------------------------
+
+
+def _all_lines(interaction, state) -> list[str]:
+    """Every line written, through the press's client or through the review's bot."""
+    return [
+        call.args[0]
+        for call in interaction.client.output_router.post_log.await_args_list
+        + state.bot.output_router.post_log.await_args_list
+    ]
+
+
+@pytest.mark.parametrize(
+    "kind, label",
+    [("review", "Remove #1"), ("clear", _APPEALS_CLEAR)],
+    ids=["remove-correction", "clear"],
+)
+async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind, label):
+    """Round 3's appeals review (division Pro) has two +5s corrections staged, for drivers 101
+    and 102. Alex, a league manager, presses Remove #1, or "Yes, clear and proceed with no
+    corrections" (the approval itself stubbed). The press does what it does today, and exactly
+    one line records it, naming Alex, the button, the review and what was removed or cleared."""
+    db_path = await _make_db(tmp_path, name=f"appeals_press_{kind}")
+    state = _state(db_path, appeals=[_penalty(101), _penalty(102)])
+    view = (
+        _AppealsConfirmClearView(state=state) if kind == "clear"
+        else AppealsReviewView(state=state)
+    )
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1, p2 as appeals, p3, p4:
+        await button.callback(interaction)
+
+    removed = ["<@101>", "<@102>"] if kind == "clear" else ["<@101>"]
+    assert [p.driver_user_id for p in state.staged_appeals] == ([] if kind == "clear" else [102])
+    assert appeals.await_count == (1 if kind == "clear" else 0)
+    (line,) = _all_lines(interaction, state)
+    assert not line.startswith(("⛔", "↩️", "⌛")), line
+    for fragment in ("Alex (<@77>)", label, "appeals review of round 3 (Pro)", "+5s", *removed):
+        assert fragment in line, (fragment, line)
+
+
+async def test_no_changes_writes_no_line_beside_the_approval_s_own(tmp_path):
+    """Round 3's appeals review (division Pro) has nothing staged. Alex presses No Changes /
+    Confirm, which approves the appeals at once; the approval (stubbed) writes its own line. The
+    press writes no second one: one action, one line."""
+    db_path = await _make_db(tmp_path, name="appeals_no_changes_line")
+    state = _state(db_path)
+    view = AppealsReviewView(state=state)
+    interaction = _interaction()
+
+    async def _approved(approving, _state, **_kwargs):
+        await approving.client.output_router.post_log("the approval's own line")
+
+    with _manager(True), patch(
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review",
+        new=AsyncMock(side_effect=_approved),
+    ) as finalise:
+        await _press(view, "no_changes_btn", interaction)
+
+    finalise.assert_awaited_once()
+    assert _all_lines(interaction, state) == ["the approval's own line"]
+
+
+# ---------------------------------------------------------------------------
+# The clear confirmation's cancel and lapse are recorded (#482)
+# ---------------------------------------------------------------------------
+
+_APPEALS_CLEAR_KEPT = "Nothing was cleared; the staged list stands."
+
+
+def _assert_appeals_clear_abandoned(line: str, ending: str) -> None:
+    """*line* is one cancel or lapse line of the clear confirmation of round 3's appeals review
+    (Pro), ending its first line with *ending*, and saying beneath that nothing was cleared and
+    what to do next."""
+    first, *detail = line.splitlines()
+    assert first.startswith(("↩️ ", "⌛ ")), line
+    assert "appeals review of round 3 (Pro)" in first, line
+    assert first.endswith(ending), line
+    assert _APPEALS_CLEAR_KEPT in "\n".join(detail), line
+    assert not detail[-1].strip().endswith(_APPEALS_CLEAR_KEPT), f"no next step: {line}"
+
+
+async def test_an_appeals_clear_confirmation_left_to_lapse_is_recorded(tmp_path):
+    """Round 3's appeals review (division Pro) has one correction staged. Alex presses No
+    Changes / Confirm and is asked whether to clear it, then answers nothing until the question
+    lapses. The correction stays staged, nothing is approved, and exactly one lapse line records
+    it, naming the review and Alex as the one who started it, with what became of the list and
+    what to do next beneath it."""
+    db_path = await _make_db(tmp_path, name="appeals_clear_lapse")
+    state = _state(db_path, appeals=[_penalty()])
+    view = AppealsReviewView(state=state)
+    interaction = _interaction()
+    interaction.edit_original_response = AsyncMock()
+
+    with _manager(True), patch(
+        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+    ) as finalise:
+        await _press(view, "no_changes_btn", interaction)
+        await _sent_view(interaction).on_timeout()
+
+    assert len(state.staged_appeals) == 1
+    finalise.assert_not_awaited()
+    (line,) = _all_lines(interaction, state)
+    assert line.startswith("⌛ "), line
+    _assert_appeals_clear_abandoned(line, "lapsed unconfirmed (started by Alex (<@77>))")

@@ -262,7 +262,9 @@ Each staged penalty also gets its own **Remove** button, so you can take one bac
 
 **Resubmitting keeps the round's results until you have replaced them.** Pressing it discards anything you have staged, pardons included, takes the prompt and any approval message down, and asks for every session again in the same channel, the same way as the first time. Until the last session is in, the results, tables and standings the league is looking at are the ones you already submitted — then the new ones replace them in one go and are published as provisional again, marked as amended. Changed your mind part-way? The announcement carries a **Cancel** button: it stops the resubmission, leaves the earlier results exactly as they were, and brings the prompt back. The penalties and pardons you had staged do not come back with it; the log channel lists each one, should you want to stage them again.
 
-> **A restart during a resubmission loses what you had pasted, not the round's results.** The earlier results stand and the prompt comes back, with a note in the channel. Press **🔄 Resubmit Initial Results** again to start over.
+> **A restart during a resubmission loses what you had pasted, not the round's results.** The earlier results stand and the prompt comes back, with a note in the channel. Press **🔄 Resubmit Initial Results** again to start over. The log channel records a lapse, naming who started the resubmission. **Cancel** works at any step, including while you are choosing a points configuration.
+
+**Every press on the review is written to the log channel**, naming you, the round and what was staged, removed or cleared. **No Penalties / Confirm** posts its approval message and writes its line only once the message is up: if the bot cannot reach the channel it tells you so instead, and you can press it again once the channel is repaired.
 
 **A sanction is `DSQ` or a number of whole seconds**, positive or negative — `+5s` for the usual thing, `-3s` to give time back, `DSQ` to drop a driver to the bottom of the classification. Qualifying sessions take `DSQ` only, or the `NFA` below. The bot refuses a negative penalty larger than the penalties that driver actually holds, and one that would leave them with a negative race time. Fractions of a second are refused: five and a half seconds cannot be given here.
 
@@ -287,6 +289,8 @@ A second prompt appears in the same channel, with the same shape: **➕ Add Corr
 **Approving here finishes the round.** It republishes everything as **Final Results**, posts a verdict for each correction, updates every later standing, and **deletes the submission channel**. As in stage one, **✅ Approve** commits on the first click, and **No Changes / Confirm** is the one that asks again if you have corrections staged.
 
 **A round with nothing to appeal is one click** — **No Changes / Confirm** — and most rounds will be.
+
+**Pressing approve twice applies nothing twice.** A second **✅ Approve** or **No Changes / Confirm** while the first is working is refused with *"⏳ This round's appeals are being approved."*, and once the approval is under way **➕ Add Correction** and **Remove** refuse too and stage nothing. If the appeals prompt could not be posted when you approved stage one, the reply says the reports are approved and that the appeals review is posted again when the bot restarts; the log shows the approval as `Incomplete`.
 
 > **Nothing about the round can be amended until both stages are done.** `/results rounds amend` refuses a round that has not reached Final Results and tells you so.
 
@@ -360,7 +364,7 @@ Changing what a win is worth halfway through a championship is a bigger thing th
 /results amend review
 ```
 
-`toggle` opens a working copy of the season's tables. Every `session`, `fl`, `fl-plimit` and `bulk-session` change is staged into that copy and **changes nothing anybody can see**. `review` shows you the differences and asks you to approve or reject; approving overwrites the season's tables, **rescores every round of every division from the start of the season**, reposts each of those rounds in the division's results and standings channels, and switches amendment mode back off. Rejecting leaves the working copy alone so you can keep editing.
+`toggle` opens a working copy of the season's tables. Every `session`, `fl`, `fl-plimit` and `bulk-session` change is staged into that copy and **changes nothing anybody can see**. `review` shows you the differences and asks you to approve or reject; approving overwrites the season's tables, **rescores every round of every division from the start of the season**, reposts each of those rounds in the division's results and standings channels, and switches amendment mode back off. Rejecting leaves the working copy alone so you can keep editing, and is written to the log channel. The panel stays open for **five minutes**: left longer, its buttons come down, the bot tells you nothing was approved, and the log channel records that it lapsed. Your staged changes and amendment mode remain, so run `review` again. Staging a value the working copy already holds changes nothing, says so, and does not count as a staged change: it never stops you switching amendment mode off.
 
 `/results amend revert` throws the working copy away and starts it again from the season's real tables. You cannot switch amendment mode off while changes are staged — revert or review them first, and the refusal says so.
 
@@ -479,6 +483,7 @@ Worth knowing so you do not go looking for the setting.
 | No submission channel for a round you moved | `/round amend` re-arms the round's submission whatever your modules. If one still does not open, check the round actually reached its scheduled time |
 | A submission rejected over a team | A role mention where the team's shorthand belongs, the Reserve team in a team column, three lines under one team, or a driver under a different team from the one another session of the round already records |
 | A submission rejected over a driver | Not mentioned, or not seated in that division — a driver placed mid-season whose placement is not yet confirmed counts as not seated. A reserve also needs `/team reserve-role` set |
+| Pressing **No Penalties / Confirm** says the approval question could not be posted | The bot cannot reach the submission channel. Repair its permissions and press it again; the log channel records the refusal |
 | Everything you pasted gone after a restart | Known: a part-finished submission is discarded and reopened from the first session. A part-finished *resubmission* is dropped too, but the round keeps the results it had |
 | Results posted but no standings | Every session of the round was cancelled, so there was nothing to score |
 | Points on the tables you did not expect | The session was scored against whichever configuration was chosen for it. `/results config view scope: Season` shows what the season actually scores by — read the season's copy here, not the server's |
@@ -488,6 +493,7 @@ Worth knowing so you do not go looking for the setting.
 | Attendance charged later than expected | It is charged when the penalty stage is approved, never at provisional results |
 | `/results rounds amend` refused | The round has not reached Final Results yet — or the division already has an amendment open, whose round and channel the refusal names |
 | A paste, an approval or a sync refused, naming a round being amended | A round of the division has an amendment open. Try again once it has finished — it ends when approved, or is undone a little over half an hour after its corrections were pasted |
+| An amend review panel that stopped answering | It lapses after five minutes with nothing approved. Staged changes and amendment mode remain: run `/results amend review` again |
 | An amendment that vanished | Known: it is one attempt. A rejection, a failure or five minutes of silence deletes the channel, and the bot tells you privately which it was; the log channel holds a rejection's reason. Past the paste, half an hour without approval undoes it, and the log channel says it *lapsed unconfirmed*, naming who started it |
 | "❌ The amendment stopped on a fault in the bot" | The bot hit a fault of its own, and the reply names the kind — its database, Discord, or an internal fault — and what became of the round: put back as it was, not put back yet (the bot tries again within minutes), or nothing written. Run `/results rounds amend` again once it is put back. The log channel's `AMEND_FAILED` line names the kind of fault for whoever hosts the bot |
 | A round left unchanged by an approved amendment | It has not been raced, so there was nothing to repost. Only rounds with results are reposted |

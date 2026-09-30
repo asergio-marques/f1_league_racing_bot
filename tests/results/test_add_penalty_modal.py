@@ -152,9 +152,24 @@ def _state(db_path: str, *, staged=(), appeals=()):
 
 
 def _interaction():
+    """A submission by the league manager Alex (id 77), answering as Discord's does — not done
+    until it replies or defers — and connected to a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
+    interaction.user = MagicMock()
+    interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client = MagicMock()
+    interaction.client.output_router = MagicMock()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -321,7 +336,7 @@ async def test_the_reply_names_what_was_staged(tmp_path):
 async def test_an_appeal_correction_is_staged_on_the_appeals_list(tmp_path):
     """Staged onto the penalty list it would be applied a pass too early, against the very
     results the appeal was lodged about."""
-    state = _state(await _make_db(tmp_path))
+    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
 
     interaction = await _submit(state, penalty="+3s", appeals=True)
 
@@ -355,7 +370,7 @@ async def test_a_correction_is_staged_while_the_round_awaits_appeals(tmp_path):
 async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     """Refreshing the wrong one leaves the steward reading a list that does not include
     what they just added."""
-    state = _state(await _make_db(tmp_path))
+    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
     modal = AddPenaltyModal(state, SessionType.FEATURE_RACE, use_appeals_staging=True)
     modal.driver_input._value = f"<@{DRIVER}>"
     modal.penalty_input._value = "+3s"
@@ -448,7 +463,9 @@ async def test_the_appeals_pass_counts_its_own_staged_corrections(tmp_path):
     """Each pass sums the list it stages into, so a penalty staged in the earlier pass
     does not constrain a correction in the later one."""
     state = _state(
-        await _make_db(tmp_path, ingame_ms=6_000),
+        await _make_db(
+            tmp_path, ingame_ms=6_000, round_status="AWAITING_APPEAL_VERDICTS"
+        ),
         appeals=[_penalty(-4)],
     )
 
@@ -493,7 +510,7 @@ async def test_no_further_action_is_staged_for_qualifying(tmp_path):
 async def test_no_further_action_is_staged_as_a_correction(tmp_path):
     """A correction takes the same values as a penalty, so an appeal can be closed with
     no further action as well."""
-    state = _state(await _make_db(tmp_path))
+    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
 
     interaction = await _submit(state, penalty="NFA", appeals=True)
 
@@ -507,7 +524,10 @@ async def test_a_penalty_of_no_seconds_is_refused_pointing_to_no_further_action(
     tmp_path, appeals
 ):
     """Refused in both passes, a correction taking the same values as a penalty."""
-    state = _state(await _make_db(tmp_path))
+    state = _state(await _make_db(
+        tmp_path,
+        round_status="AWAITING_APPEAL_VERDICTS" if appeals else "AWAITING_REPORT_VERDICTS",
+    ))
 
     interaction = await _submit(state, penalty="0s", appeals=appeals)
 
@@ -612,7 +632,7 @@ async def test_a_group_mention_in_the_justification_is_refused(tmp_path):
 async def test_a_correction_carrying_a_group_mention_is_refused(tmp_path):
     """The appeals pass stages through the same form, and its verdict is published the same
     way."""
-    state = _state(await _make_db(tmp_path))
+    state = _state(await _make_db(tmp_path, round_status="AWAITING_APPEAL_VERDICTS"))
 
     await _submit(state, penalty="+3s", appeals=True, justification="@here upheld")
 
@@ -669,3 +689,117 @@ async def test_a_signed_id_or_a_role_is_not_a_driver(tmp_path, typed):
     assert state.staged == []
     assert "Could not parse driver" in _replied(interaction)
 
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. A form names itself by its title.
+# ---------------------------------------------------------------------------
+
+def _form_refusal(case_id, appeals, **typed):
+    return pytest.param(
+        appeals, typed,
+        id=f"{'correction' if appeals else 'penalty'}-{case_id}",
+    )
+
+
+_FORM_REFUSALS = [
+    _form_refusal("review-moved-on", False),
+    *(
+        case
+        for appeals in (False, True)
+        for case in (
+            _form_refusal("unparseable-driver", appeals, driver="Lewis"),
+            _form_refusal("driver-not-in-session", appeals, driver=f"<@{STRANGER}>"),
+            _form_refusal("no-seconds", appeals, penalty="0s"),
+            _form_refusal("group-mention", appeals, description="@everyone look at turn one"),
+        )
+    ),
+]
+
+
+@pytest.mark.parametrize("appeals, typed", _FORM_REFUSALS)
+async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, appeals, typed):
+    """Alex fills in the Add Penalty form of round 3's penalty review (Division 1), or the Add
+    Correction form of its appeals review, for the Feature Race, and is refused: the review has
+    moved on to appeals, the driver cannot be read or is not in the session's results, the
+    penalty is of no seconds, or the description mentions @everyone. The reply is today's,
+    nothing is staged, and exactly one line records the refusal, naming the form, Alex and the
+    reason."""
+    moved_on = not appeals and not typed
+    round_status = (
+        "AWAITING_APPEAL_VERDICTS" if appeals or moved_on else "AWAITING_REPORT_VERDICTS"
+    )
+    state = _state(await _make_db(tmp_path, round_status=round_status))
+
+    interaction = await _submit(state, appeals=appeals, **typed)
+
+    assert state.staged == [] and state.staged_appeals == []
+    (replied,) = [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert "Staged" not in replied
+    if moved_on:
+        assert "already been approved" in replied
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    title = f"{'Add Correction' if appeals else 'Add Penalty'} — Feature Race"
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line.startswith(f"⛔ the “{title}” form"), line
+    assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
+
+
+async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path):
+    """**D3.** The Add Correction form can outlive its appeals review: submitted once round 3's
+    appeals were approved and the round made FINAL, it staged a correction nothing would ever
+    apply, and said it had. Alex submits a +3s correction for the Feature Race then. It is
+    refused, nothing is staged, and exactly one line records the refusal, naming the form, Alex
+    and the reason."""
+    state = _state(await _make_db(tmp_path, round_status="FINAL"))
+
+    interaction = await _submit(state, penalty="+3s", appeals=True)
+
+    assert state.staged == [] and state.staged_appeals == []
+    (replied,) = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    assert "Staged" not in replied
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ the “Add Correction — Feature Race” form"), line
+    assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
+
+
+# ---------------------------------------------------------------------------
+# Staging is recorded (#482)
+#
+# The owner's decision "Every press": staging a penalty or a correction writes one line in the
+# success form, naming the member, the review and what was staged.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("appeals", [False, True], ids=["penalty", "correction"])
+async def test_staging_writes_one_line(tmp_path, appeals):
+    """Alex submits the Add Penalty form of round 3's penalty review (Division 1), or the Add
+    Correction form of its appeals review, giving driver 4001 +5s in the Feature Race. It is
+    staged as today, and exactly one line records it, naming Alex, the review, the driver, the
+    session and the penalty."""
+    round_status = "AWAITING_APPEAL_VERDICTS" if appeals else "AWAITING_REPORT_VERDICTS"
+    state = _state(await _make_db(tmp_path, round_status=round_status))
+    state.bot.output_router.post_log = AsyncMock(return_value=None)
+
+    interaction = await _submit(state, appeals=appeals)
+
+    assert len(state.staged_appeals if appeals else state.staged) == 1
+    (line,) = [
+        call.args[0]
+        for call in interaction.client.output_router.post_log.await_args_list
+        + state.bot.output_router.post_log.await_args_list
+    ]
+    assert not line.startswith(("⛔", "↩️", "⌛")), line
+    review = "appeals review" if appeals else "penalty review"
+    for fragment in (
+        "Alex (<@77>)", f"{review} of round 3 (Division 1)", f"<@{DRIVER}>", "Feature Race", "+5s",
+    ):
+        assert fragment in line, (fragment, line)

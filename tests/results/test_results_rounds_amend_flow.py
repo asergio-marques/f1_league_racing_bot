@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1898,6 +1899,84 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     assert "AMEND_REJECTED" not in line and "AMEND_REFUSED" not in line
 
 
+_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
+
+
+async def _refused_press(case: str, tmp_path):
+    """Press, during `/results rounds amend` of round 3 (Pro Division), the button *case*
+    names in a way it turns away; return the cog and the press."""
+    db_path = await _make_db(tmp_path, name=f"amend_press_{case.replace('-', '_')}")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+
+    if case == "continue-with-no-session-chosen":
+        # The admin presses Continue on the session picker before ticking any session; the
+        # picker is then answered, and the amendment carries on.
+        await _add_qualifying(db_path)
+        from leaguebot.results.cogs.results_cog import _AmendSessionsView
+
+        pressed: dict = {}
+
+        async def _press_continue_first(*_args, **kwargs):
+            view = kwargs.get("view")
+            if isinstance(view, _AmendSessionsView) and "press" not in pressed:
+                press = _press(router=cog.bot.output_router)
+                go = next(i for i in view.children if getattr(i, "label", None) == "Continue")
+                await go.callback(press)
+                pressed["press"] = press
+            return MagicMock()
+
+        interaction.followup.send = AsyncMock(side_effect=_press_continue_first)
+        await _amend(cog, interaction, sessions=[SessionType.FEATURE_RACE])
+        return cog, pressed["press"]
+
+    # A member who neither opened the amendment nor holds the league manager tier presses
+    # Cancel Amendment once the corrected results are in.
+    await _amend(cog, interaction)
+    view = channel.send.await_args_list[0].kwargs["view"]
+    press = _press(88, name="Driver", router=cog.bot.output_router)
+    with patch("leaguebot.results.cogs.results_cog.is_league_manager", return_value=False), patch(
+        "leaguebot.results.services.result_submission_service.cancel_amendment", new=AsyncMock()
+    ) as cancel:
+        await type(view).cancel_btn(view, press, MagicMock())
+    cancel.assert_not_awaited()
+    return cog, press
+
+
+@pytest.mark.parametrize(
+    "case, reply, who",
+    [
+        pytest.param(
+            "continue-with-no-session-chosen", "Choose at least one session first.",
+            f"Admin (<@{USER_ID}>)", id="continue-with-no-session-chosen",
+        ),
+        pytest.param(
+            "cancel-by-a-non-manager", "⛔ Only league managers can cancel.",
+            "Driver (<@88>)", id="cancel-by-a-non-manager",
+        ),
+    ],
+)
+async def test_every_refused_press_of_results_rounds_amend_is_recorded(
+    tmp_path, case, reply, who
+):
+    """The admin presses Continue on the session picker with no session ticked, or a member
+    who is not a league manager presses Cancel Amendment: each is answered as today, and one
+    line records the refusal, naming the button, the amendment, the presser and the reason."""
+    cog, press = await _refused_press(case, tmp_path)
+
+    press.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [line] = [text for text in lines if text.startswith("⛔ ")]
+    assert line.endswith(f" refused for {who} — {reply.removeprefix('⛔ ')}")
+    if case == "cancel-by-a-non-manager":
+        assert line.startswith(
+            "⛔ the “Cancel Amendment” button of `/results rounds amend` of round 3 (Pro Division)"
+        )
+    else:
+        assert "Continue" in line and "`/results rounds amend`" in line
+
+
 # ---------------------------------------------------------------------------
 # Every cancel and every lapse is written in the standard form (#442)
 # ---------------------------------------------------------------------------
@@ -2033,3 +2112,124 @@ async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT started_by FROM round_amend_channels")
         assert (await cursor.fetchone())["started_by"] == USER_ID
+
+
+# ---------------------------------------------------------------------------
+# The session picker's Cancel and lapse are recorded (#482)
+# ---------------------------------------------------------------------------
+
+_PICKER_NOT_YET = (
+    "#482: the session picker's Cancel and lapse are answered \"Amendment cancelled\" and "
+    "recorded nowhere"
+)
+
+
+async def _left_at_the_picker(tmp_path, *, lapse: bool):
+    """Run `/results rounds amend` of round 3 (Pro Division) with no session named, and at the
+    session picker either press its Cancel (*lapse* False) or let it lapse (*lapse* True).
+    Return the database, the cog, the command's interaction and the stubs."""
+    db_path = await _make_db(tmp_path, name="amend_picker_" + ("lapse" if lapse else "cancel"))
+    interaction = _interaction(_amend_channel(), message=_message())
+    cog = _make_cog(db_path)
+    from leaguebot.results.cogs.results_cog import _AmendSessionsView
+
+    async def _send(*_args, **kwargs):
+        view = kwargs.get("view")
+        if isinstance(view, _AmendSessionsView):
+            if lapse:
+                view.wait = AsyncMock(return_value=True)  # the five minutes pass
+            else:
+                cancel = next(
+                    i for i in view.children if "Cancel" in str(getattr(i, "label", ""))
+                )
+                await cancel.callback(_press(router=cog.bot.output_router))
+        return MagicMock()
+
+    interaction.followup.send = AsyncMock(side_effect=_send)
+    stubs = await _amend(cog, interaction, sessions=[SessionType.FEATURE_RACE])
+    return db_path, cog, interaction, stubs
+
+
+def _ended_line(cog, mark: str) -> tuple[str, str]:
+    """The one line starting with *mark*, as its head and what stands beneath it."""
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    [line] = [text for text in lines if text.startswith(mark)]
+    head, *beneath = line.splitlines()
+    return head, "\n".join(beneath)
+
+
+async def test_cancelling_the_session_picker_is_recorded(tmp_path):
+    """The admin runs `/results rounds amend` without naming a session and presses Cancel on
+    the session picker: one cancel line naming them, with beneath it that nothing was amended
+    and the command to run again; nothing is written and no channel is opened."""
+    db_path, cog, interaction, stubs = await _left_at_the_picker(tmp_path, lapse=False)
+
+    head, below = _ended_line(cog, "↩️ ")
+    assert "/results rounds amend" in head
+    assert f"cancelled by Admin (<@{USER_ID}>)" in head
+    assert "nothing" in below.lower()
+    assert "/results rounds amend" in below, "the line gives no next step"
+    assert not any(text.startswith("⌛ ") for text in _logged(cog).splitlines())
+    stubs["amend"].assert_not_awaited()
+    interaction.guild.create_text_channel.assert_not_awaited()
+    assert await _amend_rows(db_path) == 0
+
+
+async def test_a_session_picker_left_to_lapse_is_recorded_and_answered_as_a_lapse(tmp_path):
+    """The admin runs `/results rounds amend` without naming a session and leaves the session
+    picker five minutes: they are told the choice expired, nothing was amended and the command
+    may be run again — not "Amendment cancelled" — and one lapse line names them as its
+    starter, with what became of it and the next step beneath."""
+    db_path, cog, interaction, stubs = await _left_at_the_picker(tmp_path, lapse=True)
+
+    head, below = _ended_line(cog, "⌛ ")
+    assert "/results rounds amend" in head
+    assert f"lapsed unconfirmed (started by Admin (<@{USER_ID}>))" in head
+    assert "nothing" in below.lower()
+    assert "/results rounds amend" in below, "the line gives no next step"
+    told = str(interaction.followup.send.await_args.args[0])
+    assert "Amendment cancelled" not in told
+    assert "expired" in told.lower() or "lapsed" in told.lower()
+    assert "nothing" in told.lower()
+    assert "/results rounds amend" in told
+    assert not any(text.startswith("↩️ ") for text in _logged(cog).splitlines())
+    stubs["amend"].assert_not_awaited()
+    assert await _amend_rows(db_path) == 0
+
+
+# ---------------------------------------------------------------------------
+# D2: the closing reply of `/results rounds amend` outlasting its token (#482)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_closing_reply_that_can_no_longer_be_sent_leaves_stage_two_open(tmp_path, caplog):
+    """The corrected results of round 3 (Pro Division) are recorded, but the pastes took longer
+    than the command's fifteen minutes, so Discord refuses the closing "✅ Corrected results
+    recorded" reply. The command does not fail: no failure line is written, the host's log
+    carries a warning, and the amendment channel stays open for its review stages."""
+    db_path = await _make_db(tmp_path, name="amend_closing_spent")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    cog = _make_cog(db_path)
+    expired = discord.HTTPException(
+        MagicMock(status=401, reason="Unauthorized"), "Invalid Webhook Token"
+    )
+
+    async def _send(content=None, *_args, **_kwargs):
+        if str(content).startswith("✅ Corrected results recorded"):
+            raise expired
+        return MagicMock()
+
+    interaction.followup.send = AsyncMock(side_effect=_send)
+    with caplog.at_level(logging.WARNING):
+        await _amend(cog, interaction)
+
+    logged = _logged(cog)
+    assert "AMEND_FAILED" not in logged
+    assert not any(text.startswith("❌ ") for text in logged.splitlines())
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    channel.delete.assert_not_awaited()
+    assert await _amend_rows(db_path) == 1
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT closed_at FROM round_amend_channels")
+        assert (await cursor.fetchone())["closed_at"] is None

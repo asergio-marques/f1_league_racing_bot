@@ -63,6 +63,8 @@ def _interaction(member: MagicMock) -> MagicMock:
     interaction.guild_id = SERVER_ID
     interaction.guild.id = SERVER_ID
     interaction.user = member
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
     return interaction
@@ -98,6 +100,52 @@ async def test_the_points_configuration_select_refuses_when_it_cannot_read_the_c
     """A view that cannot tell who is pressing must not guess permissively."""
     view, _ = await _press_config_select(_member(MANAGER_ROLE), None)
     assert view.selected is None
+
+
+# Every outcome of the choice is recorded (#482). The view is told which session of which round
+# it chooses for, and names the button pressed and that session in its lines.
+
+_SESSION = "the Feature Race of round 3 (Pro)"
+
+
+async def _choose_as(member, config):
+    from leaguebot.results.services.result_submission_service import _ConfigSelectView
+
+    member.display_name = "Alex"
+    view = _ConfigSelectView(["Standard", "Sprint"], config, session=_SESSION)
+    interaction = _interaction(member)
+    await view.children[0].callback(interaction)
+    return view, [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+
+
+@pytest.mark.parametrize("config", ["bystander", "unreadable"])
+async def test_a_refused_choice_of_points_configuration_is_recorded(config):
+    """Alex presses “Standard” on the points-configuration choice for the Feature Race of
+    round 3 (Pro), either holding no league tier or where the server configuration cannot be
+    read. The reply is today's, nothing is chosen, and exactly one line records the refusal,
+    naming the button, the session, Alex and the reason."""
+    member = _member() if config == "bystander" else _member(MANAGER_ROLE)
+    view, lines = await _choose_as(member, _config() if config == "bystander" else None)
+
+    assert view.selected is None
+    (line,) = lines
+    assert line.startswith("⛔ the “Standard” button"), line
+    assert _SESSION in line
+    assert line.endswith(
+        " refused for Alex (<@7>) — Only league managers can choose the points configuration."
+    ), line
+
+
+async def test_a_choice_of_points_configuration_writes_one_line():
+    """The league manager Alex presses “Standard” on the points-configuration choice for the
+    Feature Race of round 3 (Pro). The configuration is chosen, and exactly one line records
+    it, naming Alex, the configuration and the session."""
+    view, lines = await _choose_as(_member(MANAGER_ROLE), _config())
+
+    assert view.selected == "Standard"
+    (line,) = lines
+    assert not line.startswith("⛔"), line
+    assert "Alex (<@7>)" in line and "Standard" in line and _SESSION in line, line
 
 
 # ── The signup review panel ───────────────────────────────────────────────

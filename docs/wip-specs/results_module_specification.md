@@ -168,6 +168,8 @@
 - For a given configuration and a given session type, a lower finishing position shall never be worth as much as or more than the position above it. Two positive values tying is a violation of this; positions worth nothing below the points-paying places are not.
     - A command that sets points shall apply the change and then report that the table is out of order, naming every position at fault. It shall not refuse the change. Filling a table in passes through states that are momentarily out of order — a position set before the one above it, a table repaired from the bottom up — and refusing them would put ordinary ways of building a table out of reach.
     - The refusal falls where a table stops being a draft: the first confirmation of a season's placements, and the approval of a mid-season amendment.
+    - A command that sets a value to the one the configuration already holds shall change nothing, and shall say so, where it could otherwise have been carried out: a configuration that is not found, or a fastest-lap setting for a qualifying session, is refused as ever. Where the table is out of order, the reply keeps naming the positions at fault. Decided 2026-09-30.
+        - A position with no points set holds no value, whatever the 0 points assumed for it: setting it, to 0 included, is a change. Decided 2026-09-30.
 
 #### Setting many positions at once
 - There shall be a "results config bulk-session" command that intakes the configuration name and a session type and opens a form in which many positions are given at once, one "position, points" pair per line. Blank lines are skipped; a position must be a positive integer and its points non-negative; where a position appears more than once the last value given wins and the override is reported.
@@ -206,7 +208,11 @@
 - <NEW COMMAND> A "results amend fl-plimit" command will intake the string that IDs the points configuration to be changed in the modification schema store, a coded enum for the "session type" (Sprint Quali, Sprint Race, Feature Quali, Feature Race) and an integer signifying the lowest valid position for which a driver is eligible for fastest-lap points (e.g. if this is configured to 10, then if the 11th place driver gets the fastest lap, then they get no points). The session types "Sprint Quali" and "Feature Quali" are invalid for this command.
 - There shall be a "results amend bulk-session" command that intakes the configuration name and a session type and opens a form taking many positions at once, on the same terms as "results config bulk-session". It writes to the modification store, and is invalid if "results amend" is toggled off. It is all or nothing on the same terms, and its line in the log channel lists every value staged.
 - Once one of "results amend session", "results amend fl", "results amend fl-plimit" and "results amend bulk-session" is run successfully, the modified flag is set to true.
+    - A request to set what the modification store already holds changes nothing and says so, on the terms "results config session" holds, and **leaves the modified flag as it stood**, so that it does not stand in the way of toggling amending mode off. Decided 2026-09-30.
 - <NEW COMMAND> A "results amend review" command shall be a league admin's, and will display the contents of the configurations stored in the modification store via the bot, alongside a button to approve or reject. It is seen by the member who ran it alone.
+    - The panel shall lapse after five minutes unanswered: its buttons come down, the member who ran it is told that nothing was approved, and the log channel records the lapse, naming who ran it, with the command to run again beneath. The staged changes and amending mode remain. Decided 2026-09-30.
+    - Rejecting is recorded in the log channel as a cancellation, naming who rejected, with the same words beneath. Nothing changes.
+    - An approval that takes long shall still be answered, however long it takes.
 - An amendment whose staged tables are out of order shall not be approved. The rule is the one confirming a season's placements holds, in the same words: within one configuration and one session type, a lower position shall never be worth as much as or more than the position above it.
     - "results amend review" shall show the offending positions alongside the staged changes, so the fault is visible while the decision is being taken.
     - Approving such an amendment shall change nothing at all — not the season's points, not the modification store, not the amending mode — and shall say why. The staged changes remain, to be repaired.
@@ -222,7 +228,7 @@
     - The attendance recalculation an approval performs shall be applied entire or not at all, the running totals of every later round included.
     - The attendance sanctions the recalculation sets off are the one exception: a sanction that does not apply shall not undo the approval. The reply to the approval shall list each such sanction and the "attendance sync" command that finishes it, as the attendance module specification describes.
 - An approval shall not be recorded as a success before the reposting it claims has been done.
-- If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active.
+- If rejected, nothing happens. The modification store will remain as it is, and the amending mode will remain active. The rejection is recorded.
 
 #### Listing and viewing configs
 - <NEW COMMAND> A "results config list" command shall list the points configurations a store holds. There is one mandatory input, the store to read. For each configuration it shall name the session types that carry at least one points entry, so that a configuration which has been created but never filled in is distinguishable from a complete one; such a configuration shall be reported as holding no entries rather than omitted.
@@ -390,8 +396,12 @@ Penalties are not applied by a command. Once every session of a round has been s
     - The resubmission shall supersede the round's submitted results rather than delete them. The submitted results shall stand, published and counted, until every session has been submitted again, and shall then be replaced all at once. Decided 2026-09-17 (issue #210).
     - Team agreement across the sessions of the round shall be checked against the sessions of the resubmission, not the results being replaced.
     - The resubmission shall carry a button labelled "Cancel", usable by league managers. Pressing it shall end the resubmission, keep the submitted results, and post the stage-one prompt again. The staged penalties and pardons it discarded shall not be restored. Decided 2026-09-17.
+    - Cancel shall end the resubmission at any step, including while the points configuration of a session is being chosen. Decided 2026-09-30.
+    - The press shall be recorded as one entry in the log channel, naming the member who pressed and every staged penalty and pardon discarded. Cancelling shall be recorded as a cancellation naming who cancelled, saying the earlier results stand and that the button is pressed again to start over.
     - A resubmission that fails before its results are saved shall end as a cancelled one does, and say so in the channel.
-    - A restart during a resubmission shall keep the submitted results and restore stage one, saying in the channel that the sessions entered so far were lost.
+    - A resubmission that fails before any session is pasted (the round is gone, or the division's data cannot be read) shall be recorded as the button's failure, naming who pressed it and saying the earlier results stand.
+    - A restart during a resubmission shall keep the submitted results and restore stage one, saying in the channel that the sessions entered so far were lost, and recording in the log channel a lapse naming who started the resubmission. Decided 2026-09-30.
+        - Where the submission channel is gone, the resubmission shall still be ended and its lapse recorded, and nothing posted in the channel. Decided 2026-09-30.
     - The resubmission shall be refused where the submission channel no longer exists, and nothing shall be discarded.
 - **Attendance Pardon** — stages an attendance pardon, per the attendance module specification.
 - One **Remove** button per staged penalty, and one per staged attendance pardon.
@@ -401,10 +411,16 @@ Penalties are not applied by a command. Once every session of a round has been s
 - **A control of stage one shall act only while stage one is the round's current stage.** Decided 2026-09-23 (#402). Once stage one is committed, while a resubmission is collecting, or once a newer prompt has replaced the one pressed, a button or form of the stage shall be refused, saying why, and shall change nothing.
 - Committing stage one shall take down its prompt and its approval message.
 - A second commit pressed while the first is still being applied shall be refused.
+- **Every press of stage one that changes the review shall be recorded in the log channel**, naming the member who pressed, the round and what was staged, removed or cleared: each penalty and pardon staged, each Remove, each clearing, **No Penalties / Confirm** once its approval message is posted, **Make Changes**, and **Approve**. **No Penalties / Confirm** where the approval message cannot be posted shall tell the member so and record that it could not be posted. Decided 2026-09-30.
 - The approval message shall be withdrawn when anything staged changes or **Make Changes** is pressed, and a second one shall replace the first. Its buttons shall act only on the approval message last posted.
 - The approval message shall list the attendance pardons staged, which its **Approve** grants, and shall not say that nothing is staged while any is. Their justifications stay in the log channel (#403).
 
 **Stage two — appeals.** Committing stage one shall post a second prompt to the same channel, carrying **Add Correction**, **No Changes / Confirm**, **Approve** and one **Remove** per staged correction. A correction takes and validates the same values as a penalty, no further action included, and is the surface for overturning one.
+
+**Every press of stage two shall be recorded likewise** (**Add Correction**, each **Remove**, each clearing and the approvals), as shall every refusal. Decided 2026-09-30.
+
+- **A control of stage two shall act only while the round is awaiting its appeal verdicts.** A second approval pressed while the first is being applied shall be refused, and corrections shall be applied once. Once the approval is under way or done, **Add Correction**, **Remove** and the approval controls shall be refused, saying why, and shall stage nothing. Decided 2026-09-30.
+- Where the appeals prompt of stage two cannot be posted after stage one is committed, the manager shall be told that the reports are approved and the appeals review could not be posted, and that it is posted again when the bot restarts. The approval's entry in the log channel shall be marked incomplete. Decided 2026-09-30.
 
 Approving stage two shall apply any staged corrections, republish the round's results and standings under the final state, post a verdict for each correction, recompute the standings of every later round, mark the round final, and delete the submission channel. There shall be no second confirmation on this stage.
 
@@ -415,7 +431,7 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - The points configuration recorded for each amended session shall be kept where it is still attached to the season; otherwise the user shall be asked to choose one for it.
 - **An amendment shall cover as many of a round's sessions as the user chooses.** Decided 2026-09-21. A round's reports and appeals are reviewed together, so the amended sessions shall share one amendment: each shall be entered in turn, in running order, and nothing written until the last is in; their reports and appeals shall be reviewed together; and the division rebuilt once.
     - A paste that is refused shall end the whole amendment, the pastes already accepted included, and nothing shall be written. The sessions are not asked for again one by one: the user prepares every classification before starting. Decided 2026-09-21.
-    - Each classification, and each choice of points configuration the user is asked for, shall be awaited for a set period. Where it passes, the amendment shall end as a refused paste does, and the user who ran the command shall be told that it expired and may be run again (#135).
+    - Each classification, and each choice of points configuration the user is asked for, shall be awaited for a set period. Where it passes, the amendment shall end as a refused paste does, and the user who ran the command shall be told that it expired and may be run again (#135). The session choice lapsing, or being cancelled, shall be recorded as a lapse, or a cancel, naming the member, and the lapse shall be answered as a lapse: nothing was amended.
 
 - **An amendment shall replay the round's lifecycle in three stages.** Decided 2026-09-20 (#345). A round is amended the way it was raced, so that a corrected round is indistinguishable from one submitted correctly the first time.
     - **Stage one — the classification.** The corrected results shall be re-inserted. Nothing shall be posted.
@@ -444,6 +460,7 @@ Approving stage two shall apply any staged corrections, republish the round's re
     - Where the report and appeal stages are not approved within a set period, the round shall be put back as it stood before the amendment began, and the league told in the log channel that the amendment lapsed and may be run again. Nothing shall be reposted, nothing having been posted.
     - The period shall run from the moment the corrected classification is written and cover both stages together. Approving the report stage shall not extend it: the user prepares the review beforehand. Decided 2026-09-21.
     - Abandoning an amendment with its button, a restart during it, or a failure part-way through a stage shall undo it on the same terms rather than leave it part-made.
+    - A restart that puts the round back shall be recorded as a lapse naming who started the amendment. Where the restart finds nothing to put back (the amendment never had its results, or was approved and cut short in its reposts, which the bot cannot tell apart) it shall be recorded neutrally: who started the amendment, that a restart ended it, and what to run in each case. It shall not be called a lapse. Decided 2026-09-30.
     - An amendment cancelled, or lapsed, shall be recorded in the log channel naming the member who cancelled it, or who started it, with what became of the round and the command to run again beneath.
     - Once its last stage has been approved, an amendment can no longer be abandoned.
     - An amendment abandoned before its classification was inserted has nothing to undo, and shall simply end.

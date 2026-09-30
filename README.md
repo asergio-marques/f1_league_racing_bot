@@ -1564,7 +1564,7 @@ submission buttons offer.
 | `position` | Integer | ✅ | Finishing position (1-indexed) |
 | `points` | Integer | ✅ | Points awarded |
 
-The change is always applied. If it leaves that session's table out of order, the confirmation says so and names the positions at fault.
+The change is applied. If it leaves that session's table out of order, the confirmation says so and names the positions at fault. Setting a position to the points it already holds changes nothing: the reply says so, nothing is changed or audited, and the log channel records that nothing changed.
 
 ##### `/results config fl` — Set the fastest-lap bonus
 *Access: League manager*
@@ -1577,6 +1577,8 @@ Only applicable to race session types (`Feature Race`, `Sprint Race`).
 | `session` | Choice | ✅ | Race session type |
 | `points` | Integer | ✅ | Bonus points for fastest lap |
 
+A value the configuration already holds changes nothing, and the reply says so.
+
 ##### `/results config fl-plimit` — Set the fastest-lap position eligibility limit
 *Access: League manager*
 
@@ -1587,6 +1589,8 @@ Only applicable to race session types. For example `limit:10` means only drivers
 | `name` | String | ✅ | Config name |
 | `session` | Choice | ✅ | Race session type |
 | `limit` | Integer | ✅ | Highest eligible position |
+
+A value the configuration already holds changes nothing, and the reply says so.
 
 ##### `/results config append` — Attach a config to the current season
 *Access: League manager*
@@ -1813,7 +1817,7 @@ After all sessions of a round are submitted, the submission channel enters **pen
   - **`NFA` — no further action — clears a driver.** Enter it, in any case, where the incident was investigated and no penalty follows. It changes nothing in the results, and its verdict names the driver and the incident and reads **No further action** where a sanction would stand. It is the way to announce a cleared driver: a zero-second penalty would be published as a sanction, which is why one is refused.
 - **No Penalties / Confirm** — moves to the approval step with no penalty applied. When penalties are staged, it first asks for confirmation that they are to be discarded. Staged attendance pardons are kept.
 - **✅ Approve** — applies the staged penalties immediately (see below). It is greyed out while no penalty is staged, pardons or not: to finish with no penalty applied, use **No Penalties / Confirm**.
-- **🔄 Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes the prompt and any approval message down, and asks for every session again in the same channel, from the first. The results already submitted **stand, published and counted, until the last session is in**, and are then replaced all at once. The resubmission's announcement carries a **Cancel** button: pressing it stops the resubmission, keeps the earlier results, and brings the penalty prompt back — without the staged penalties and pardons, which stay discarded. The log channel's `RESULTS_RESUBMISSION_STAGED_DISCARD` entry lists every one it discarded.
+- **🔄 Resubmit Initial Results** — discards the staged penalties and attendance pardons, takes the prompt and any approval message down, and asks for every session again in the same channel, from the first. The results already submitted **stand, published and counted, until the last session is in**, and are then replaced all at once. The resubmission's announcement carries a **Cancel** button: pressing it stops the resubmission, keeps the earlier results, and brings the penalty prompt back — without the staged penalties and pardons, which stay discarded. The press is written to the log channel as one `RESULTS_RESUBMISSION | Started` entry, naming who pressed it and listing every penalty and pardon it discarded. Cancel works at every step, including while a points configuration is being chosen, and is recorded as a cancel with the earlier results standing.
 - **🏳️ Attendance Pardon** — stages an attendance pardon; see [Attendance Module](#attendance-module). Present regardless of whether that module is enabled.
 - **Remove #N** — a per-entry button appears for each staged penalty, allowing individual removals.
 - **Remove Pardon #N** — the same for each staged attendance pardon. Once the post-race penalties are approved the round's pardons stand and the button is refused; a granted pardon is changed with [`/results rounds amend`](#results-rounds-amend--re-submit-results-for-a-completed-session).
@@ -1830,7 +1834,9 @@ Only members holding the configured interaction role may use these buttons.
 
 > **So is attendance the approval could not record.** Approving a penalty review records who attended and awards the attendance points, and both feed the auto-reserve and auto-sack thresholds. If either fails you get an `ATTENDANCE_RECORD | Incomplete` entry and a line in your reply, ending with the `/attendance sync` that recalculates the round. This is kept separate from the sanctions report on purpose: a failed sheet leaves the record right, and these leave the record wrong.
 
-The separate **approval message**, carrying **✏️ Make Changes** to return to the penalty prompt with the staged list intact and **✅ Approve** to proceed, belongs to the **No Penalties / Confirm** path — it is what the bot posts when the post-race penalties are being approved with none applied, either because none was staged or because a staged list has just been cleared. It lists the attendance pardons still staged, which its **✅ Approve** grants, without their justifications. It confirms the review as it stood when posted, so it is withdrawn as soon as anything is staged or removed, or **✏️ Make Changes** is pressed, and pressing **No Penalties / Confirm** again replaces it.
+The separate **approval message**, carrying **✏️ Make Changes** to return to the penalty prompt with the staged list intact and **✅ Approve** to proceed, belongs to the **No Penalties / Confirm** path — it is what the bot posts when the post-race penalties are being approved with none applied, either because none was staged or because a staged list has just been cleared. It lists the attendance pardons still staged, which its **✅ Approve** grants, without their justifications. It confirms the review as it stood when posted, so it is withdrawn as soon as anything is staged or removed, or **✏️ Make Changes** is pressed, and pressing **No Penalties / Confirm** again replaces it. If the approval message cannot be posted because the channel cannot be reached, **No Penalties / Confirm** tells you so and records that it could not be posted.
+
+**Every press of the review is recorded.** Staging a penalty or a pardon, each **Remove**, clearing the list, posting and withdrawing the approval message and approving each write a line to the log channel naming who pressed it, the round and what was staged, removed or cleared; a refused press writes a refusal. A pardon's line keeps its justification, which appears nowhere else.
 
 **A button from a stage the round has left does nothing.** One pressed on a penalty prompt or approval message after the post-race penalties were approved, while a resubmission is collecting, or on a prompt a newer one has replaced is refused, with a reply saying which, and changes nothing. A client showing a message the bot has since taken down can still press it; this is what that press gets.
 
@@ -1840,6 +1846,10 @@ Approving the penalty stage posts a second prompt to the same channel, carrying 
 
 Approving here — or **No Changes / Confirm** with nothing staged — deletes and reposts everything under the **Final Results** label, records each correction, posts its verdict, cascades subsequent standings, marks the round **FINAL**, and deletes the submission channel. There is no second confirmation step on this stage.
 
+A second **✅ Approve** (or **No Changes / Confirm**) pressed while the first is still being applied is refused, with *"⏳ This round's appeals are being approved."*, and each correction is applied once. Once the approval is under way or done, **➕ Add Correction** and **Remove #N** are refused too and stage nothing. Every press of the stage is written to the log channel, as in the penalty review.
+
+If the appeals prompt cannot be posted after the penalty stage is approved, the reply says the reports are approved but the appeals review could not be posted, and that it is posted again when the bot restarts; the approval's log entry reads `Incomplete` with an `APPEALS_PROMPT | Incomplete` entry.
+
 **Notes:**
 - Any message posted in the submission channel while it is in penalty review state is automatically deleted with an explanatory reply — except while a resubmission is collecting results.
 - Penalties can be positive (`+5s`, `5s`, `5`) or negative (`-3s`, `-3`) for race sessions.
@@ -1847,7 +1857,8 @@ Approving here — or **No Changes / Confirm** with nothing staged — deletes a
 - A round that has been submitted but has not reached **final** blocks `/test-mode advance` until both review stages are approved. The refusal names whichever review is standing.
 - `/round cancel` is refused once the round's results have been entered — from then on the drivers have reports and appeals to lodge, and cancelling would take that from them. It is also refused while a submission channel stands open. The same rule governs `/division cancel` and `/season cancel`, so a round that cannot be cancelled on its own is not cancelled by a cascade either.
 - On bot restart, a channel already in penalty or appeals review is restored and its prompt reposted. A channel still **mid-submission** is not: the round's submitted sessions are discarded and collection restarts from the first session, with a notice in the log channel.
-- A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over.
+- A restart during a **resubmission** loses the sessions pasted so far but not the round's results: the earlier results stand, the penalty prompt comes back, and the channel says what happened. Press **🔄 Resubmit Initial Results** again to start over. The log channel records a lapse naming who started the resubmission.
+- A resubmission that fails before any session is pasted (the round is gone, or the division's data cannot be read) is recorded as that button's failure, naming who pressed it, and the earlier results stand.
 - A resubmission that fails before the new results are saved also leaves the earlier results in place and brings the penalty prompt back, saying so in the channel.
 - A round in which every session is submitted as `CANCELLED` skips both review stages entirely — the channel closes and no standings are computed for it.
 - While another round of the division is being amended, the submission channel refuses a session's results, `CANCELLED` and both approvals, naming the round and the amend channel. The channel stays open: try again once the amendment has finished — it ends when approved, or is undone once half an hour has passed since its corrections were pasted. See [`/results rounds amend`](#results-rounds-amend--re-submit-results-for-a-completed-session).
@@ -1879,7 +1890,7 @@ Opens a temporary, private **amend channel** (named `amend-S{N}-{slug}-R{N}`) in
 2. **The reports.** The bot lists the penalties the chosen sessions already carry, all together. Keep them, change them, remove them, or add new ones — and the same for the round's attendance pardons, each of which has its own **Remove Pardon** button here. Approving without touching anything leaves every decision exactly as it stood. Once approved, neither the reports nor the pardons can be changed: the step's prompt comes down, and a button on it still showing is refused. The first pass's **🔄 Resubmit Initial Results** button is not offered: to redo the classification, cancel and run the command again.
 3. **The appeals.** The same again for their appeals. Approving this last stage is what commits the amendment.
 
-A **❌ Cancel Amendment** button is posted in the channel to abort at any time. Once the corrected classification has been recorded, cancelling puts the round back exactly as it was and says so in the log channel — *"↩️ `/results rounds amend` of round 3 (Pro Division) cancelled by …"*, naming whoever pressed it, with what became of the round beneath; from the moment you approve the appeals it is too late, and the button says so. If `session` is omitted you are asked to choose — one session or several — before the channel is created.
+A **❌ Cancel Amendment** button is posted in the channel to abort at any time. Once the corrected classification has been recorded, cancelling puts the round back exactly as it was and says so in the log channel — *"↩️ `/results rounds amend` of round 3 (Pro Division) cancelled by …"*, naming whoever pressed it, with what became of the round beneath; from the moment you approve the appeals it is too late, and the button says so. If `session` is omitted you are asked to choose — one session or several — before the channel is created; cancelling that choice is recorded as a cancel, and leaving it to lapse as a lapse, answered as one: nothing was amended, and the command may be run again.
 
 **One amendment open in a division at a time.** While any round of a division has an amendment open, running the command for that division again — any round, any session — is refused, naming the round and the channel the open one is in. Finish or cancel that first. The last step reposts the whole division, so an amendment finished beside another would publish the other's unapproved classification.
 
@@ -1887,7 +1898,7 @@ A **❌ Cancel Amendment** button is posted in the channel to abort at any time.
 
 > **Nothing is published until the last step.** The corrected classification is recorded when you paste it, but the round your drivers see is unchanged until you approve the appeals — it is never published half-amended. The sessions you did not choose are left alone; their penalties and appeals are not reopened. To review a session's decisions, include that session in the amendment.
 
-> **An amendment not carried through is undone.** Step one commits, so the bot does not leave a half-amended round standing: if the report and appeal steps go unapproved for half an hour, the round is put back exactly as it was and the log channel records that it *"lapsed unconfirmed (started by …)"*, naming who opened it, and that it can be run again. The half hour runs from when the corrected results are recorded and covers both steps — approving the reports does not restart it — so have your decisions worked out before you start. The same happens if the bot restarts mid-amendment, or if a step fails part-way (`AMEND_FAILED`). Nothing is reposted, because nothing was posted: the channels were still showing the round as it was raced.
+> **An amendment not carried through is undone.** Step one commits, so the bot does not leave a half-amended round standing: if the report and appeal steps go unapproved for half an hour, the round is put back exactly as it was and the log channel records that it *"lapsed unconfirmed (started by …)"*, naming who opened it, and that it can be run again. The half hour runs from when the corrected results are recorded and covers both steps — approving the reports does not restart it — so have your decisions worked out before you start. The same happens if the bot restarts mid-amendment — the lapse is recorded naming who started it — or if a step fails part-way (`AMEND_FAILED`). Where a restart finds nothing to put back (the amendment never had its results, or was approved and cut short while its reposts ran, which the bot cannot tell apart), the log channel instead says *"… started by …, was ended by a restart"*, with what to run in each case, and does not call it a lapse. Nothing is reposted, because nothing was posted: the channels were still showing the round as it was raced.
 
 > **An amendment that stops on a fault says what kind, and what became of the round.** For example: *"❌ The amendment stopped on a fault in the bot, not on anything you entered: the bot could not read or write its database. The round was put back as it was. Re-run `/results rounds amend` to try again."* Where nothing had been written, it says that instead. Where the round could not be put back yet, it says that the bot retries putting it back, and to run `/results rounds amend` again once it has been: until then the amendment still holds the division, and a re-run is refused; the log channel's line then ends on the same step. The log channel's `AMEND_FAILED` line names the kind of fault and never its detail, which is in the host's log. Every refusal of the command, its Cancel button and its stages is written to the log channel too.
 
@@ -1947,7 +1958,7 @@ Requires amendment mode to be active.
 | `position` | Integer | ✅ | Finishing position |
 | `points` | Integer | ✅ | New points value |
 
-The change is always staged. If it leaves that session's staged table out of order, the confirmation says so and names the positions at fault — and `/results amend review` will refuse to approve it until they are repaired.
+The change is staged. If it leaves that session's staged table out of order, the confirmation says so and names the positions at fault — and `/results amend review` will refuse to approve it until they are repaired. Staging the points the working copy already holds changes nothing: the reply says so, and the modified flag stays as it was, so amendment mode can still be switched off.
 
 ##### `/results amend fl` — Stage a fastest-lap bonus change
 *Access: League manager*
@@ -1960,6 +1971,8 @@ Requires amendment mode to be active. Race session types only.
 | `session` | Choice | ✅ | Race session type |
 | `points` | Integer | ✅ | New FL bonus value |
 
+A value already staged changes nothing, says so, and leaves the modified flag as it was.
+
 ##### `/results amend fl-plimit` — Stage a fastest-lap position limit change
 *Access: League manager*
 
@@ -1970,6 +1983,8 @@ Requires amendment mode to be active. Race session types only.
 | `name` | String | ✅ | Config name |
 | `session` | Choice | ✅ | Race session type |
 | `limit` | Integer | ✅ | New position limit |
+
+A value already staged changes nothing, says so, and leaves the modified flag as it was.
 
 ##### `/results amend bulk-session` — Stage many position changes at once via a modal
 *Access: League manager*
@@ -1986,7 +2001,7 @@ Same modal and same input rules as [`/results config bulk-session`](#results-con
 ##### `/results amend review` — Review and approve modification store changes
 *Access: League admin*
 
-No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, repost every round's results and standings in the division's own channels, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are.
+No parameters. Displays a diff of the staged changes against the current season points. Approve to atomically overwrite season points, recalculate all standings for every division from the first round, repost every round's results and standings in the division's own channels, and switch amendment mode back off. Reject to leave the modification store and amendment mode as they are; the rejection is written to the log channel. The panel is left for **five minutes**: after that its buttons come down, you are told that nothing was approved, and the log channel records that it *"lapsed unconfirmed (started by …)"*. The staged changes and amendment mode remain; run `/results amend review` again. An approval that takes a long while is still answered when it finishes.
 
 > **An amendment that would leave the points out of order is refused.** The diff names the positions at fault, and pressing Approve writes nothing — the season keeps the points it has, and the staged changes are left in place to repair. This is the same rule approval holds at the start of a season.
 

@@ -273,7 +273,7 @@ CREATE TABLE round_submission_channels (
                    ON DELETE CASCADE,
     channel_id INTEGER NOT NULL,
     created_at TEXT    NOT NULL,
-    closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, staged_penalties TEXT, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER,
+    closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, staged_penalties TEXT, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER, resubmit_started_by INTEGER,
     UNIQUE (round_id)
 );
 

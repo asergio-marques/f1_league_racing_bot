@@ -92,9 +92,15 @@ def _replied(interaction) -> str:
     )
 
 
-def _state(active: bool | None):
-    """`None` where no store exists at all, which is distinct from one that is off."""
-    return None if active is None else SimpleNamespace(amendment_active=active)
+def _state(active: bool | None, *, modified: bool = True):
+    """`None` where no store exists at all, which is distinct from one that is off. A store
+    holds staged changes unless *modified* is False: a revert of nothing staged changes nothing
+    (#482), so a revert that does something needs something staged."""
+    return (
+        None
+        if active is None
+        else SimpleNamespace(amendment_active=active, modified_flag=modified)
+    )
 
 
 @contextmanager
@@ -271,16 +277,24 @@ async def test_the_refusal_names_both_ways_out():
 
 async def test_a_refused_disable_is_not_logged_as_a_success():
     """The mode is still on, and a log saying otherwise would have a league believe their
-    staged edits were gone."""
+    staged edits were gone: the log records the refusal and its reason instead."""
     cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results amend toggle"
 
     with _amendment(
         state=_state(True),
         disable_amendment_mode=AsyncMock(side_effect=AmendmentModifiedError("pending")),
     ):
-        await _toggle(cog, _interaction())
+        await _toggle(cog, interaction)
 
     assert "disabled" not in _logged(cog)
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results amend toggle` refused for Manager (<@{ACTOR_ID}>) — "
+        "Cannot disable amendment mode — uncommitted changes exist. "
+        "Use `/results amend revert` to discard or `/results amend review` to apply."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -313,13 +327,20 @@ async def test_reverting_is_refused_when_the_mode_is_not_on(active):
     svc["revert_modification_store"].assert_not_awaited()
 
 
-async def test_a_refused_revert_is_not_logged():
+async def test_a_refused_revert_is_recorded_as_a_refusal():
+    """Nothing was reverted, so the log records the refusal and its reason, never a revert."""
     cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results amend revert"
 
     with _amendment(state=_state(False)):
-        await _revert(cog, _interaction())
+        await _revert(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results amend revert` refused for Manager (<@{ACTOR_ID}>) — "
+        "Amendment mode is not active."
+    )
 
 
 async def test_a_successful_revert_is_logged():

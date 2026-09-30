@@ -190,12 +190,22 @@ def _state(db_path, *, staged=(), appeals=(), pardons=(), attendance_enabled=Fal
 
 
 def _interaction(*, guild=True):
+    """A press by the league manager Alex, answering as Discord's does — not done until it
+    replies or defers — whose client reaches a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
     interaction.user = MagicMock()
     interaction.user.id = STEWARD
+    interaction.user.display_name = "Alex"
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     if guild:
         channel = MagicMock()
@@ -408,15 +418,31 @@ async def test_a_settled_round_is_not_reopened_by_a_stale_press(tmp_path, status
     assert await _round_status(db_path) == status
 
 
+def _refusal_recorded(state, interaction) -> None:
+    """Exactly one line reached the log channel, by either route: the refusal, naming Alex and
+    the reply's reason (#482)."""
+    replied = str(interaction.response.send_message.await_args.args[0])
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    lines = [
+        str(call.args[0])
+        for router in (state.bot.output_router, interaction.client.output_router)
+        for call in router.post_log.await_args_list
+    ]
+    (line,) = lines
+    assert line.startswith("⛔ "), line
+    assert line.endswith(f" refused for Alex (<@{STEWARD}>) — {reason}"), line
+
+
 def _refused_untouched(stubs, state, interaction, says: str) -> None:
-    """An approval refused before it started: said why, and nothing applied, posted or logged."""
+    """An approval refused before it started: said why, nothing applied or posted, and the
+    refusal the one line recorded."""
     assert says in interaction.response.send_message.await_args.args[0]
     interaction.response.defer.assert_not_awaited()
     stubs["apply"].assert_not_awaited()
     stubs["repost"].assert_not_awaited()
     stubs["record"].assert_not_awaited()
     stubs["appeals_view"].assert_not_called()
-    state.bot.output_router.post_log.assert_not_awaited()
+    _refusal_recorded(state, interaction)
 
 
 async def test_the_reports_are_not_approved_while_the_results_are_being_resubmitted(tmp_path):
@@ -470,7 +496,8 @@ async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing
 async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     """**The approval draws every graphic before it moves the round on**, and until then a second
     Approve found the round exactly as the first had — so a double click ran the approval twice.
-    The second press here lands while the first is still reposting."""
+    The second press here lands while the first is still reposting, is refused, and its refusal
+    is recorded (#482)."""
     db_path = await _make_db(tmp_path, name="finalize_at_once")
     state = _state(db_path)
     reposting, release = asyncio.Event(), asyncio.Event()
@@ -499,6 +526,8 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
             p.stop()
 
     assert "being approved" in second.response.send_message.await_args.args[0]
+    (line,) = [call.args[0] for call in second.client.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ ") and f" refused for Alex (<@{STEWARD}>) — " in line, line
     stubs["repost"].assert_awaited_once()
     stubs["appeals_view"].assert_called_once()
     assert state.approving is False
@@ -670,6 +699,32 @@ async def test_without_a_guild_the_round_still_moves_on(tmp_path):
 
     stubs["repost"].assert_not_awaited()
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+
+
+async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
+    """The reports are approved, but the submission channel cannot be reached to open the
+    appeals stage. The manager is told, and the approval's line says it is incomplete, with
+    an entry of its own naming what is missing; restart recovery posts the prompt again."""
+    db_path = await _make_db(tmp_path, name="finalize_noappeals")
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+    reachable = interaction.guild.get_channel.return_value
+    interaction.guild.get_channel = MagicMock(
+        side_effect=lambda cid: None if cid == state.submission_channel_id else reachable
+    )
+
+    await _run(finalize_penalty_review, state, interaction)
+
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+    state.bot.add_view.assert_not_called()
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list).lower()
+    assert "approved" in said
+    assert "appeals review could not be posted" in said
+    assert "restart" in said
+    logged = _logged(state)
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in logged
+    assert "PENALTY_REVIEW_APPROVED | Success" not in logged
+    assert "APPEALS_PROMPT | Incomplete" in logged
 
 
 # ---------------------------------------------------------------------------
@@ -1026,6 +1081,130 @@ async def test_an_appeals_review_with_no_corrections_applies_nothing(tmp_path):
     assert "corrections: none" in _logged(state)
 
 
+_APPEALS_BEING_APPROVED = "⏳ This round's appeals are being approved."
+_APPEALS_NOT_YET_CLAIMED = "#482: the appeals approval is not claimed, so a second press runs it again (D3)"
+
+
+async def _while_the_appeals_are_approved(state, press):
+    """Approve round 3's appeals and, while the approval is still reposting, await *press*.
+
+    Returns the stubs, the approval finished."""
+    reposting, release = asyncio.Event(), asyncio.Event()
+
+    async def _slow_repost(*_a, **_k):
+        reposting.set()
+        await release.wait()
+        return []
+
+    patches = _patches(apply_result=[{"race_result_id": None, "qual_result_id": None}])
+    patches["repost"] = patch(
+        "leaguebot.results.services.results_post_service.delete_and_repost_final_results",
+        new=AsyncMock(side_effect=_slow_repost),
+    )
+    stubs = {key: p.start() for key, p in patches.items()}
+    try:
+        first = asyncio.create_task(finalize_appeals_review(_interaction(), state))
+        await reposting.wait()
+        pressed = asyncio.create_task(press())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(first, pressed)
+    finally:
+        for p in patches.values():
+            p.stop()
+    return stubs
+
+
+async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_path):
+    """**D3.** The appeals approval reposts every graphic before it makes the round FINAL, and
+    until then a second Approve found the round as the first had — so a double click applied
+    every correction twice. Round 3 (Pro) awaits its appeal verdicts with one correction staged;
+    Alex approves, and presses again while the first approval is still reposting. The second
+    press is refused, its refusal recorded, and the correction is applied once."""
+    db_path = await _make_db(
+        tmp_path, name="appeals_at_once", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    state = _state(db_path, appeals=[_penalty()])
+    second = _interaction()
+
+    stubs = await _while_the_appeals_are_approved(
+        state, lambda: finalize_appeals_review(second, state)
+    )
+
+    assert second.response.send_message.await_args.args[0] == _APPEALS_BEING_APPROVED
+    second.response.defer.assert_not_awaited()
+    (line,) = [call.args[0] for call in second.client.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ "), line
+    assert line.endswith(
+        f" refused for Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
+    ), line
+    stubs["apply"].assert_awaited_once()
+    stubs["repost"].assert_awaited_once()
+    assert await _round_status(db_path) == "FINAL"
+
+
+@pytest.mark.parametrize(
+    "kind, label",
+    [
+        ("review", "➕ Add Correction"),
+        ("review", "No Changes / Confirm"),
+        ("review", "✅ Approve"),
+        ("review", "Remove #1"),
+        ("clear", "Yes, clear and proceed with no corrections"),
+    ],
+)
+async def test_every_appeals_control_refuses_while_the_appeals_are_being_approved(
+    tmp_path, kind, label
+):
+    """**D3.** Round 3's appeals (Pro) are being approved with one correction staged, and the
+    appeals prompt and its clear confirmation are still on screen. Alex, a league manager,
+    presses one of their buttons meanwhile. It is refused as the approval under way: nothing is
+    staged, removed, cleared or approved a second time, and exactly one line records the
+    refusal, naming the button, the review, Alex and the reason."""
+    from leaguebot.results.services.penalty_wizard import (
+        AppealsReviewView,
+        _AppealsConfirmClearView,
+    )
+
+    db_path = await _make_db(
+        tmp_path, name="appeals_controls", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    state = _state(db_path, appeals=[_penalty()])
+    view = (
+        _AppealsConfirmClearView(state=state) if kind == "clear"
+        else AppealsReviewView(state=state)
+    )
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+
+    with patch(
+        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+    ) as refresh_appeals:
+        stubs = await _while_the_appeals_are_approved(
+            state, lambda: button.callback(interaction)
+        )
+
+    refresh_appeals.assert_not_awaited()
+    assert len(state.staged_appeals) == 1
+    stubs["apply"].assert_awaited_once()
+    stubs["repost"].assert_awaited_once()
+    (replied,) = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    assert replied == _APPEALS_BEING_APPROVED
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line == (
+        f"⛔ the “{label}” button of the appeals review of round 3 (Pro) refused for "
+        f"Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
+    )
+
+
 async def test_a_failing_appeals_audit_does_not_stop_the_close(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_logfail", round_status="AWAITING_APPEAL_VERDICTS")
     state = _state(db_path)
@@ -1375,6 +1554,7 @@ async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_p
     refusal = _refusal(interaction)
     assert f"Round 2 of this division is being amended in <#{AMEND_CHANNEL}>" in refusal
     assert "Approve the reports again then." in refusal
+    _refusal_recorded(state, interaction)
 
 
 async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_path):
@@ -1383,14 +1563,16 @@ async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_p
     )
     await _amend_round_two(db_path)
     interaction = _held_interaction()
+    state = _state(db_path)
 
-    stubs = await _run(finalize_appeals_review, _state(db_path), interaction)
+    stubs = await _run(finalize_appeals_review, state, interaction)
 
     stubs["repost"].assert_not_awaited()
     stubs["close"].assert_not_awaited()
     stubs["refresh"].assert_not_awaited()
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
     assert "Approve the appeals again then." in _refusal(interaction)
+    _refusal_recorded(state, interaction)
 
 
 async def test_the_reports_are_approved_once_the_amendment_has_ended(tmp_path):
@@ -2710,8 +2892,8 @@ async def test_an_amendment_stage_not_yet_put_back_says_to_run_it_again_once_it_
 async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case):
     """The stages of an amendment refuse a press they cannot act on, and each refusal writes
     one line in the standard refusal form, naming `/results rounds amend` or the stage it
-    refused. The ordinary first-pass review's refusals are no part of the amendment and still
-    write nothing."""
+    refused. The ordinary first-pass review's refusals are no part of the amendment: each is
+    recorded as the review's own Approve button."""
     first_pass = case == "a-first-pass-refusal"
     db_path = await _make_db(
         tmp_path, name=f"amend_stage_refused_{case.replace('-', '_')}",
@@ -2733,7 +2915,10 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
 
     lines = _logged(state)
     if first_pass:
-        assert lines == ""
+        # The first pass's own refusal, recorded as the review's Approve button and not as the
+        # amendment (#482).
+        assert lines.startswith("⛔ the “✅ Approve” button of the penalty review of round 3")
+        assert "/results rounds amend" not in lines
         return
     [line] = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
     assert line.startswith("⛔ ")
@@ -2742,3 +2927,208 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     assert "/results rounds amend" in what or "stage" in what.lower(), (
         "the line does not name what was refused"
     )
+
+
+# ---------------------------------------------------------------------------
+# Who approved (#482): each line an approval writes names the member who pressed, by
+# display name and mention, and an approval writes one line of its own, not two.
+# ---------------------------------------------------------------------------
+
+_ALEX = f"Alex (<@{STEWARD}>)"
+
+
+def _line_under(state, heading: str) -> str:
+    """The one line the log channel was given under *heading*."""
+    lines = [
+        str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list
+        if heading in str(c.args[0])
+    ]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+@pytest.mark.parametrize(
+    "fn, status, token",
+    [
+        pytest.param(
+            finalize_penalty_review, "AWAITING_REPORT_VERDICTS", "PENALTY_REVIEW_APPROVED",
+            id="reports",
+        ),
+        pytest.param(
+            finalize_appeals_review, "AWAITING_APPEAL_VERDICTS", "APPEALS_REVIEW_APPROVED",
+            id="appeals",
+        ),
+    ],
+)
+async def test_the_approval_names_the_member_who_approved(tmp_path, fn, status, token):
+    """Alex approves the reports (or the appeals) of round 3 (Pro) with one penalty staged:
+    the approval's line reads "Alex (<@77>) | <TOKEN> | Success"."""
+    db_path = await _make_db(tmp_path, name=f"named_{token}", round_status=status)
+    state = _state(db_path, staged=[_penalty()], appeals=[_penalty()])
+
+    await _run(fn, state)
+
+    assert _line_under(state, token).startswith(f"{_ALEX} | {token} | Success")
+
+
+async def _press_with(tmp_path, heading: str):
+    """Alex approves round 3 (Pro)'s reports with one penalty staged, attendance on where the
+    heading is an attendance one, and the part of the approval under *heading* failing."""
+    db_path = await _make_db(tmp_path, name=f"incomplete_{heading[:8]}", attendance_row=True)
+    attendance = heading.startswith("ATTENDANCE")
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=attendance)
+    interaction = _interaction(guild=heading != "ATTENDANCE_SANCTIONS | Incomplete")
+    faults = {
+        "RESULTS_REPOST | Incomplete": {"repost_faults": [FAULT]},
+        "VERDICTS | Incomplete": {"apply_result": [{"id": 1}], "verdict_faults": [FAULT]},
+        "ATTENDANCE_RECORD | Incomplete": {
+            "attendance_errors": {"record": RuntimeError("disk is full")}
+        },
+        "ATTENDANCE_SANCTIONS | Incomplete": {},
+    }[heading]
+    await _run(finalize_penalty_review, state, interaction, **faults)
+    return state
+
+
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "RESULTS_REPOST | Incomplete",
+        "VERDICTS | Incomplete",
+        "ATTENDANCE_RECORD | Incomplete",
+        "ATTENDANCE_SANCTIONS | Incomplete",
+    ],
+)
+async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_path, heading):
+    """Alex's approval could not repost the results, announce a verdict, record the
+    attendance, or reach the server to run the sanctions: the entry under each heading
+    names Alex, who pressed, as "Alex (<@77>) | <HEADING>"."""
+    state = await _press_with(tmp_path, heading)
+
+    assert _line_under(state, heading).startswith(f"{_ALEX} | {heading}")
+
+
+async def test_an_approval_with_penalties_writes_one_line(tmp_path):
+    """Alex approves round 3 (Pro)'s reports with driver 101 disqualified from the Feature
+    Race, the penalty applied for real: the log channel gets the approval's one line, which
+    counts the penalty, and no PENALTIES_APPLIED line beside it."""
+    db_path = await _make_db(
+        tmp_path, name="one_line", results=[(31, 101, "CLASSIFIED"), (32, 102, "CLASSIFIED")]
+    )
+    dsq = StagedPenalty(
+        driver_user_id=101,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_type="DSQ",
+        penalty_seconds=None,
+        description="Unsafe release",
+        justification="Pit lane, lap 20",
+    )
+    state = _state(db_path, staged=[dsq])
+    patches = _patches()
+    patches.pop("apply")
+    started = [p.start() for p in patches.values()]
+    try:
+        await finalize_penalty_review(_interaction(), state)
+    finally:
+        for p in patches.values():
+            p.stop()
+    assert started
+
+    logged = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1, logged
+    assert "PENALTY_REVIEW_APPROVED | Success" in logged[0]
+    assert "penalties: 1" in logged[0]
+
+
+async def _amendment_stage(tmp_path, token: str):
+    """Alex takes round 3 (Pro)'s amendment through one stage with one report staged: the report
+    stage approved, the appeals stage approved, or the report stage failing part-way."""
+    db_path = await _make_db(tmp_path, name=f"amend_named_{token}")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, staged=[_penalty()], appeals=[_penalty()])
+    await _open_amendment(state)
+    if token == "AMEND_STAGE_2":
+        await _run_real_apply(finalize_penalty_review, state)
+    elif token == "RESULT_AMENDED":
+        await _run(finalize_appeals_review, state)
+    else:
+        with patch(
+            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "leaguebot.results.services.result_submission_service._close_amendment_channel",
+            new=AsyncMock(),
+        ), patch(
+            "leaguebot.results.services.penalty_service.apply_penalties",
+            new=AsyncMock(side_effect=RuntimeError("disk full")),
+        ):
+            await _run_real_apply(finalize_penalty_review, state)
+    return state
+
+
+@pytest.mark.parametrize(
+    "token, outcome",
+    [
+        ("AMEND_STAGE_2", "Recorded"),
+        ("RESULT_AMENDED", "Success"),
+        ("AMEND_FAILED", "Notice"),
+    ],
+)
+async def test_each_stage_of_an_amendment_names_the_member_who_pressed(tmp_path, token, outcome):
+    """Alex approves the report stage of round 3 (Pro)'s amendment, approves its appeals stage,
+    or sees its report stage fail part-way: the line each writes reads
+    "Alex (<@77>) | <TOKEN> | <outcome>"."""
+    state = await _amendment_stage(tmp_path, token)
+
+    assert _line_under(state, token).startswith(f"{_ALEX} | {token} | {outcome}")
+
+
+def _correction(driver: int = 102, seconds: int = 10) -> StagedPenalty:
+    """An upheld appeal's correction: *seconds* added to *driver*'s Feature Race time."""
+    return StagedPenalty(
+        driver_user_id=driver,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_type="TIME",
+        penalty_seconds=seconds,
+        description="Track limits",
+        justification="Appeal upheld, lap 7",
+    )
+
+
+@pytest.mark.parametrize(
+    "token, carries",
+    [
+        pytest.param("AMEND_STAGE_2", "applied: +5s for <@101> in FEATURE_RACE", id="amend-reports"),
+        pytest.param(
+            "RESULT_AMENDED", "appeals applied: +10s for <@102> in FEATURE_RACE", id="amend-appeals"
+        ),
+        pytest.param(
+            "APPEALS_REVIEW_APPROVED", "applied: +10s for <@102> in FEATURE_RACE", id="appeals"
+        ),
+    ],
+)
+async def test_amend_stage_two_and_appeals_lines_carry_what_was_applied(tmp_path, token, carries):
+    """With `apply_penalties` writing no line of its own, the line of the stage that applied
+    the verdicts says what was applied. Alex approves the report stage of round 3 (Pro)'s
+    amendment with +5s for driver 101 in the Feature Race staged, then its appeals stage with a
+    +10s correction for driver 102; or approves the appeals of round 3 (Pro), not an amendment,
+    with that correction staged. Each apply runs for real, and the stage's one line names what
+    it applied: the penalty or correction, the driver and the session."""
+    if token == "APPEALS_REVIEW_APPROVED":
+        db_path = await _make_db(
+            tmp_path, name="applied_appeals", round_status="AWAITING_APPEAL_VERDICTS"
+        )
+        await _seed_driver_row(db_path, 102)
+        state = _state(db_path, appeals=[_correction()])
+        await _run_real_apply(finalize_appeals_review, state)
+    else:
+        db_path = await _make_db(tmp_path, name=f"applied_{token}")
+        await _seed_driver_row(db_path)
+        await _seed_driver_row(db_path, 102)
+        state = _state(db_path, staged=[_penalty()], appeals=[_correction()])
+        await _open_amendment(state)
+        await _run_real_apply(finalize_penalty_review, state)
+        if token == "RESULT_AMENDED":
+            await _run_real_apply(finalize_appeals_review, state)
+
+    assert carries in _line_under(state, token)

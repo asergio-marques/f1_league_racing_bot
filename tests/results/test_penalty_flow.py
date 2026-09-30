@@ -117,7 +117,7 @@ async def test_full_flow_no_penalties(tmp_path):
 
     # Apply with empty staged list
     await apply_penalties(
-        db_path, round_id, division_id, [], 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, [], 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -155,7 +155,7 @@ async def test_full_flow_with_positive_time_penalty(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -191,7 +191,7 @@ async def test_full_flow_with_negative_time_penalty(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -227,7 +227,7 @@ async def test_full_flow_with_dsq(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -268,7 +268,7 @@ async def test_dsq_fastest_lap_not_redistributed_integration(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -431,7 +431,7 @@ async def test_gap_string_penalty_p1_drops(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -464,7 +464,7 @@ async def test_gap_string_penalty_p3_gets_penalty(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -537,7 +537,7 @@ async def test_dsq_reorders_race_session_results(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:
@@ -607,7 +607,7 @@ async def test_dsq_reorders_qualifying_session_results(tmp_path):
         )
     ]
     await apply_penalties(
-        db_path, round_id, division_id, staged, 999, _FakeBot(), _skip_post=True
+        db_path, round_id, division_id, staged, 999, _FakeBot()
     )
 
     async with get_connection(db_path) as db:

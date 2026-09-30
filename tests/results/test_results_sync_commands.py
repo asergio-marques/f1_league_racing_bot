@@ -12,9 +12,9 @@ service returns a status and the command translates it; each branch is tested, b
 collapsing them into a single "done" is the obvious simplification and it destroys the one
 useful thing the command says.
 
-**Only a success is logged.** A sync that found nothing to post did not change anything a
-league can see, and a log line saying otherwise would make the log lie about what a manager
-did.
+**Every outcome is recorded, each as what it was** (#482). A sync that found nothing to post
+changed nothing a league can see, so its line says nothing changed, never a success; a refusal
+is recorded as one, with its reason.
 
 **The reserves toggle reads before it writes, and defaults to showing them.** A division with
 no configuration row at all is showing reserves — that is the schema default and the league
@@ -124,6 +124,25 @@ def _interaction():
     return interaction
 
 
+def _answering_interaction(cog: ResultsCog, command: str):
+    """`/<command>` run by the league manager Alex, answering as Discord's does, its
+    refusals reaching the cog's log."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = command
+    interaction.user.id = 4242
+    interaction.user.display_name = "Alex"
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    return interaction
+
+
 def _replied(interaction) -> str:
     return "\n".join(
         str(call.args[0])
@@ -227,17 +246,18 @@ async def test_a_division_with_no_channel_configured_is_told_so(tmp_path, label,
 
 
 @pytest.mark.parametrize("label,run", SYNCS)
-async def test_only_a_successful_sync_is_logged(tmp_path, label, run):
-    """A sync that found nothing to post did not change anything a league can see, and a
-    log line saying otherwise would make the log lie about what a manager did."""
+async def test_a_sync_with_nothing_to_post_records_that_nothing_changed(tmp_path, label, run):
+    """A sync that found no completed round to post changed nothing a league can see: the
+    log records one line saying nothing changed, naming the division, and never a success."""
     db_path = await _make_db(tmp_path, name=f"sync_log_{label}")
     cog = _make_cog(db_path)
 
     await run(cog, _interaction(), status="no_rounds")
-    cog.bot.output_router.post_log.assert_not_awaited()
 
-    await run(cog, _interaction(), status="ok")
-    cog.bot.output_router.post_log.assert_awaited_once()
+    [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    first, _, rest = line.partition("\n")
+    assert first == f"Manager (<@77>) | /results {label} sync | Nothing changed"
+    assert "Pro" in rest
 
 
 @pytest.mark.parametrize("label,run", SYNCS)
@@ -325,11 +345,11 @@ async def _open_amendment(db_path, *, ended=False):
 async def test_a_sync_waits_while_a_round_of_the_division_is_amended(tmp_path, label, run):
     """#345, decided 2026-09-21. The amendment's corrections are in the database, unapproved;
     a sync reposts from it, so it would publish them, and leave them published if the amendment
-    were then cancelled or lapsed."""
+    were then cancelled or lapsed. The wait is recorded as a refusal, with its reason."""
     db_path = await _make_db(tmp_path, name=f"sync_held_{label}")
     await _open_amendment(db_path)
     cog = _make_cog(db_path)
-    interaction = _interaction()
+    interaction = _answering_interaction(cog, f"results {label} sync")
 
     repost = await run(cog, interaction)
 
@@ -337,7 +357,10 @@ async def test_a_sync_waits_while_a_round_of_the_division_is_amended(tmp_path, l
     replied = _replied(interaction)
     assert "Round 2 of **Pro** is being amended in <#8200>" in replied
     assert "Run this again then." in replied
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results {label} sync` refused for Alex (<@4242>) — "
+        + replied.removeprefix("⏸️ ")
+    )
 
 
 @pytest.mark.parametrize("label,run", SYNCS)
@@ -351,6 +374,52 @@ async def test_an_ended_amendment_does_not_hold_a_sync(tmp_path, label, run):
     repost = await run(cog, _interaction())
 
     repost.assert_awaited_once()
+
+
+def _refusal(case_id, command, run, reply, **kwargs):
+    return pytest.param(command, run, reply, kwargs, id=case_id)
+
+
+@pytest.mark.parametrize(
+    ("command", "run", "reply", "kwargs"),
+    [
+        _refusal(
+            "standings-unknown-division", "results standings sync", _standings_sync,
+            "❌ Division 'Rookie' not found.", division="Rookie",
+        ),
+        _refusal(
+            "standings-no-channel", "results standings sync", _standings_sync,
+            "❌ Division 'Pro' has no standings channel configured.", status="no_channel",
+        ),
+        _refusal(
+            "rounds-unknown-division", "results rounds sync", _rounds_sync,
+            "❌ Division 'Rookie' not found.", division="Rookie",
+        ),
+        _refusal(
+            "rounds-no-channel", "results rounds sync", _rounds_sync,
+            "❌ Division 'Pro' has no results channel configured.", status="no_channel",
+        ),
+        _refusal(
+            "reserves-unknown-division", "results reserves toggle", _toggle,
+            "❌ Division 'Rookie' not found.", division="Rookie",
+        ),
+    ],
+)
+async def test_every_sync_and_toggle_refusal_is_recorded(tmp_path, command, run, reply, kwargs):
+    """The manager Alex names a division the season does not hold, or syncs one with no
+    channel to post in: Alex is refused as today, and one line records the refusal and its
+    reason."""
+    db_path = await _make_db(tmp_path, name="refusals")
+    cog = _make_cog(db_path)
+    interaction = _answering_interaction(cog, command)
+
+    await run(cog, interaction, **kwargs)
+
+    interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/{command}` refused for Alex (<@4242>) — {reply.removeprefix('❌ ')}"
+    )
+    assert await _reserves(db_path) == 1
 
 
 async def test_the_two_syncs_call_different_services(tmp_path):

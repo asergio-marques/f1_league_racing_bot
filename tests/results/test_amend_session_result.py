@@ -631,6 +631,22 @@ async def test_the_amendment_is_logged(tmp_path):
     assert "Nothing is published until" in logged
 
 
+async def test_the_amendment_names_the_member_who_ran_it(tmp_path):
+    """Alex, a member of the league's server, amends round 3's Feature Race: the stage-one line
+    reads "Alex (<@77>) | AMEND_STAGE_1 | Recorded", naming Alex by display name and mention."""
+    db_path = await _make_db(tmp_path, name="amend_log_named")
+    bot = _bot()
+    bot.get_guild.return_value.get_member = MagicMock(
+        side_effect=lambda member_id: SimpleNamespace(display_name="Alex")
+        if member_id == AMENDER else None
+    )
+
+    stubs = await _amend(db_path, [_race_row(101, 1)], bot=bot)
+
+    logged = str(stubs["bot"].output_router.post_log.await_args.args[0])
+    assert logged.startswith(f"Alex (<@{AMENDER}>) | AMEND_STAGE_1 | Recorded")
+
+
 # ---------------------------------------------------------------------------
 # The amendment says what it could not repost (#237)
 #

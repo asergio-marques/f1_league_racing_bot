@@ -832,16 +832,31 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
 async def _abandon_interrupted_resubmission(
     bot: LeagueBot,
     round_id: int,
-    channel: discord.abc.Messageable,
+    channel: discord.abc.Messageable | None,
     announcement_id: int | None,
+    *,
+    started_by: int | None,
+    round_label: str,
 ) -> None:
     """Close out a resubmission a restart cut short, leaving the round's results as they were.
 
     The collection ran in memory and is gone. The flag is cleared first, so the review
     channel's message guard is back in force before the prompt returns, and the Cancel button
     on the announcement is taken down because nothing is listening for it any more.
+
+    The lapse is recorded in the log channel as the Resubmit button's, naming who started it
+    (*started_by*, kept on the round's submission channel row when the press was made) and the
+    round (*round_label*); both come from the recovery's own read of that row, so this reads
+    nothing more. A row from before the column existed names nobody's id, and the line names
+    no member.
+
+    *channel* is ``None`` where the submission channel has since been deleted: there is then
+    nowhere to take the Cancel button down or post the notice, and both are skipped, but the
+    flag still comes down and the lapse is still recorded, so the round is not left stuck as
+    resubmitting.
     """
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.utils.log_lines import record_abandoned
 
     async with get_connection(bot.db_path) as db:
         await db.execute(
@@ -850,17 +865,27 @@ async def _abandon_interrupted_resubmission(
         )
         await db.commit()
 
-    if announcement_id is not None:
-        try:
-            announcement = await channel.fetch_message(announcement_id)
-            await announcement.edit(view=None)
-        except (discord.NotFound, discord.HTTPException):
-            pass  # Already gone; the notice below says what happened either way
+    if channel is not None:
+        if announcement_id is not None:
+            try:
+                announcement = await channel.fetch_message(announcement_id)
+                await announcement.edit(view=None)
+            except (discord.NotFound, discord.HTTPException):
+                pass  # Already gone; the notice below says what happened either way
 
-    await channel.send(
-        "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
-        "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
-        "again to re-enter them."
+        await channel.send(
+            "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
+            "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
+            "again to re-enter them."
+        )
+    await record_abandoned(
+        bot, started_by,
+        what=f"the “Resubmit Initial Results” button of {round_label}",
+        lapsed=True,
+        detail=(
+            "The sessions entered were lost. The earlier results stand. "
+            "Press Resubmit again to re-enter them."
+        ),
     )
 
 
@@ -1015,8 +1040,8 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
             """
             SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
                    rsc.results_posted, rsc.staged_penalties, rsc.prompt_message_id,
-                   rsc.resubmitting, rsc.resubmit_prompt_message_id,
-                   r.division_id, r.status
+                   rsc.resubmitting, rsc.resubmit_prompt_message_id, rsc.resubmit_started_by,
+                   r.division_id, r.status, r.round_number, d.name AS division_name
             FROM round_submission_channels rsc
             JOIN rounds r    ON r.id  = rsc.round_id
             JOIN divisions d ON d.id  = r.division_id
@@ -1035,6 +1060,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         prompt_message_id: int | None = row["prompt_message_id"]
         resubmitting: int = row["resubmitting"]
         resubmit_prompt_message_id: int | None = row["resubmit_prompt_message_id"]
+        resubmit_started_by: int | None = row["resubmit_started_by"]
         division_id: int = row["division_id"]
         round_status: str = row["status"] or ""
 
@@ -1102,11 +1128,20 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
                     "Recovery: channel %s not found, cannot restore penalty review for round %s",
                     channel_id, round_id,
                 )
+                if resubmitting:
+                    # The round must not stay stuck as resubmitting with its channel gone.
+                    await _abandon_interrupted_resubmission(
+                        bot, round_id, None, resubmit_prompt_message_id,
+                        started_by=resubmit_started_by,
+                        round_label=f"round {row['round_number']} ({row['division_name']})",
+                    )
                 continue
             try:
                 if resubmitting:
                     await _abandon_interrupted_resubmission(
-                        bot, round_id, channel, resubmit_prompt_message_id
+                        bot, round_id, channel, resubmit_prompt_message_id,
+                        started_by=resubmit_started_by,
+                        round_label=f"round {row['round_number']} ({row['division_name']})",
                     )
 
                 # If staged_penalties is set, penalties were already written to
@@ -1335,15 +1370,30 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     """Delete any results-amend channels left open by a previous bot process.
 
     The /results rounds amend wait_for loop dies with the process on restart.
-    We detect stale rows in round_amend_channels, notify the log channel so
-    the league manager knows to re-run the command, then delete the Discord
+    We detect stale rows in round_amend_channels, record in the log channel what became of
+    the amendment so the league manager knows to re-run the command, then delete the Discord
     channel and remove the DB row.
+
+    What is recorded depends on what the restart found, and the row cannot always say:
+
+    - Where the round was **put back**, the amendment lapsed unconfirmed, and the record is the
+      lapse of `/results rounds amend`, naming who started it, with the sessions being amended
+      and the wording of what happened and what to run beneath it.
+    - Where there was **nothing to put back**, the corrections were either never entered or had
+      already been approved and were being rebuilt when the bot stopped, and the row cannot say
+      which. That is not a lapse, so the line is a neutral one — who started it, that a restart
+      ended it — with the explanation of both cases and what to run in each beneath it.
+
+    The starter (`started_by`) and the round and its division come from the rows already read
+    here; no further call is made for them.
     """
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.utils.log_lines import name_of_member, record_abandoned
 
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
-            "SELECT id, round_id, channel_id, session_types, closed_at FROM round_amend_channels"
+            "SELECT id, round_id, channel_id, session_types, closed_at, started_by "
+            "FROM round_amend_channels"
         )
         orphans = await cursor.fetchall()
 
@@ -1419,29 +1469,39 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
             continue
         try:
             async with get_connection(bot.db_path) as _rdb:
-                _rcur = await _rdb.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
+                _rcur = await _rdb.execute(
+                    "SELECT r.round_number, d.name AS division_name FROM rounds r "
+                    "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                    (round_id,),
+                )
                 _rrow = await _rcur.fetchone()
-            _round_label = f"R{_rrow['round_number']}" if _rrow else f"id={round_id}"
+            _round_label = (
+                f"round {_rrow['round_number']} ({_rrow['division_name']})"
+                if _rrow else f"round id={round_id}"
+            )
+            _amended = f"`/results rounds amend` of {_round_label}"
             if reverted:
-                _what = (
-                    "  Amendment channel deleted, and the round put back as it was. Please "
-                    "re-run /results rounds amend."
+                await record_abandoned(
+                    bot, row["started_by"], what=_amended, lapsed=True,
+                    detail=(
+                        f"Sessions: {_sessions}\n"
+                        "Amendment channel deleted, and the round put back as it was. Please "
+                        "re-run /results rounds amend."
+                    ),
                 )
             else:
                 # Nothing to put back means one of two things, and the row cannot say which:
                 # the corrected results were never entered, or the amendment had been approved
                 # and its channels were being rebuilt when the bot stopped (#345).
-                _what = (
+                _starter = await name_of_member(bot, row["started_by"])
+                await bot.output_router.post_log(
+                    f"ℹ️ {_amended}, started by {_starter}, was ended by a restart\n"
+                    f"  Sessions: {_sessions}\n"
                     "  Amendment channel deleted; nothing needed putting back. If the "
                     "amendment had not been approved, re-run /results rounds amend. If it had, "
                     "its channels may be part-rebuilt: run /results rounds sync and "
-                    "/results standings sync."
+                    "/results standings sync.",
                 )
-            await bot.output_router.post_log(
-                f"System | Bot restarted mid-amendment | Notice\n"
-                f"  round: {_round_label}, sessions: {_sessions}\n"
-                + _what,
-            )
         except Exception:
             log.exception(
                 "Recovery: failed to post log for orphaned amend channel round %s sessions %s",

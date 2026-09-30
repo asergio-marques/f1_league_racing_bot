@@ -675,6 +675,54 @@ async def _require_amendment_active(db_path: str, season_id: int) -> None:
         raise AmendmentNotActiveError("Amendment mode is not active for this season.")
 
 
+async def staged_position_points(
+    db_path: str,
+    season_id: int,
+    config_name: str,
+    session_type: str,
+    position: int,
+) -> dict[str, int | None]:
+    """The points the modification store holds for one position, read so that the results cog
+    can judge whether a request changes nothing (#482).
+
+    ``{"points": None}`` where nothing is held, and always where the season is not in
+    amendment mode: a request made outside the mode can never stand, so it reaches the
+    store's own refusal, which comes before "nothing changed".
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT e.points FROM season_modification_entries e "
+            "JOIN season_amendment_state s ON s.season_id = e.season_id AND s.amendment_active = 1 "
+            "WHERE e.season_id = ? AND e.config_name = ? AND e.session_type = ? "
+            "AND e.position = ?",
+            (season_id, config_name, session_type, position),
+        )
+        row = await cursor.fetchone()
+    return {"points": None if row is None else row["points"]}
+
+
+async def staged_fastest_lap(
+    db_path: str,
+    season_id: int,
+    config_name: str,
+    session_type: str,
+) -> dict[str, int | None]:
+    """The fastest-lap bonus and position limit the modification store holds for one session,
+    both ``None`` where it holds no row or the season is not in amendment mode (#482). See
+    :func:`staged_position_points`."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT f.fl_points, f.fl_position_limit FROM season_modification_fl f "
+            "JOIN season_amendment_state s ON s.season_id = f.season_id AND s.amendment_active = 1 "
+            "WHERE f.season_id = ? AND f.config_name = ? AND f.session_type = ?",
+            (season_id, config_name, session_type),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return {"fl_points": None, "fl_position_limit": None}
+    return {"fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"]}
+
+
 async def modify_session_points(
     db_path: str,
     season_id: int,

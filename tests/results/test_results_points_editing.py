@@ -27,12 +27,14 @@ the season was configured when it was not.
 """
 from __future__ import annotations
 
+import os
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.core.db.database import run_migrations
 from leaguebot.results.cogs.results_cog import (
     BLOCKS_AMENDMENT,
     BLOCKS_APPROVAL,
@@ -43,6 +45,7 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points_config_service import (
     ConfigNotFoundError,
     InvalidSessionTypeError,
+    create_config,
 )
 from leaguebot.results.services.season_points_service import SeasonNotInSetupError
 from tests.support.undecorate import undecorate
@@ -116,9 +119,28 @@ def test_the_notice_says_which_refusal_is_coming():
 # ---------------------------------------------------------------------------
 
 
+_DB: dict[str, str] = {}
+
+
+@pytest.fixture(autouse=True)
+async def _database(tmp_path):
+    """A server holding CONFIG with an empty table, built from the production migrations.
+
+    The service's writes are patched below, but a command that changes nothing answers so
+    (#482), and to know it reads the values it is asked to set: from this database, where
+    nothing is held yet, so every edit here is one that changes something.
+    """
+    path = os.path.join(str(tmp_path), "points_editing.db")
+    await run_migrations(path)
+    await create_config(path, CONFIG)
+    _DB["path"] = path
+    yield
+    _DB.clear()
+
+
 def _make_cog(*, results_enabled: bool = True, season=SimpleNamespace(id=SEASON_ID, status="SETUP")):
     bot = MagicMock()
-    bot.db_path = "/tmp/does-not-matter.db"
+    bot.db_path = _DB["path"]
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.season_service = MagicMock()
@@ -345,17 +367,26 @@ async def test_the_fastest_lap_commands_report_a_missing_configuration(caller, s
     assert "not found" in _replied(interaction)
 
 
-@pytest.mark.parametrize("caller", [_fl, _plimit], ids=["fl", "fl-plimit"])
-async def test_a_refused_fastest_lap_edit_is_not_logged(caller):
+@pytest.mark.parametrize(
+    "caller,command", [(_fl, "fl"), (_plimit, "fl-plimit")], ids=["fl", "fl-plimit"]
+)
+async def test_a_refused_fastest_lap_edit_is_recorded_as_a_refusal(caller, command):
+    """Nothing changed, so the log records the refusal and its reason, never an edit."""
     cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = f"results config {command}"
 
     with _points_service(
         set_fl_bonus=AsyncMock(side_effect=ConfigNotFoundError(CONFIG)),
         set_fl_position_limit=AsyncMock(side_effect=ConfigNotFoundError(CONFIG)),
     ):
-        await caller(cog, _interaction())
+        await caller(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results config {command}` refused for Manager (<@{ACTOR_ID}>) — "
+        f"Config **{CONFIG}** not found."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -425,10 +456,19 @@ async def test_a_successful_attachment_is_logged():
     assert "config append" in cog.bot.output_router.post_log.await_args.args[0]
 
 
-async def test_a_refused_attachment_is_not_logged():
+async def test_a_refused_attachment_is_recorded_as_a_refusal():
+    """Nothing was attached, so the log records the refusal and its reason, never an
+    attachment."""
     cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results config append"
 
     with _season_service(attach_config=AsyncMock(side_effect=ConfigNotFoundError(CONFIG))):
-        await _append(cog, _interaction())
+        await _append(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results config append` refused for Manager (<@{ACTOR_ID}>) — "
+        f"Config **{CONFIG}** does not exist on this server, so nothing was attached. "
+        "Check the spelling, or create it with `/results config add`."
+    )

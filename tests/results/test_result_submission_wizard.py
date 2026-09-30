@@ -176,7 +176,7 @@ async def _run(
     sub = _channel(SUB_CHANNEL)
 
     class _FakeSelect:
-        def __init__(self, names, server_cfg):
+        def __init__(self, names, server_cfg, **_context):
             self.names = names
             self.selected = selected
 

@@ -172,12 +172,16 @@ async def _run(
     channel = channel if channel is not None else _channel()
 
     class _FakeSelect:
-        def __init__(self, names, server_cfg):
+        def __init__(self, names, server_cfg, **_context):
             self.selected = selected
 
         async def wait(self):
+            # *on_select* may return a coroutine, awaited as the choice: one that never ends
+            # is a manager who never chooses.
             if on_select is not None:
-                on_select()
+                outcome = on_select()
+                if asyncio.iscoroutine(outcome):
+                    await outcome
             return None
 
     patches = {
@@ -696,15 +700,23 @@ async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(t
 
 
 async def test_cancelling_the_resubmission_is_logged(tmp_path):
+    """A cancel is recorded as every cancel is: one line naming who cancelled, by display name
+    and mention, with what became of the change and what to do next beneath it."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_log")
     await _seed_old_results(db_path)
     view = _cancel_view()
     bot = _cancelled_on_second_wait(db_path, view)
+    bot.get_guild.return_value.get_member.return_value.display_name = "Alex"
 
     await _run(bot, cancel_view=view)
 
-    logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
-    assert f"<@{MANAGER}> | RESULTS_RESUBMISSION | Cancelled" in logged
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    [cancel] = [line for line in lines if "cancelled by" in line]
+    assert cancel.startswith("↩️ ")
+    assert f"cancelled by Alex (<@{MANAGER}>)" in cancel.split("\n", 1)[0]
+    assert "The earlier results stand." in cancel
+    assert "Press 🔄 Resubmit Initial Results to start again." in cancel
+    assert not any("RESULTS_RESUBMISSION | Cancelled" in line for line in lines)
 
 
 async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(tmp_path):
@@ -729,6 +741,36 @@ async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(
 
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
     assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+
+
+async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmission(tmp_path):
+    """Alex pastes the qualifying session of a resubmission and, with two configurations
+    attached, is asked to choose one; instead he presses Cancel and never chooses. The
+    resubmission ends there: the earlier results stand, the resubmitting flag is cleared, the
+    round goes back to its penalty review without reposting, and one cancel line names him."""
+    db_path = await _make_db(tmp_path, name="resubmit_cancel_choosing")
+    await _seed_old_results(db_path)
+    view = _cancel_view()
+    bot = _bot(db_path, [QUALI_PASTE])
+    bot.get_guild.return_value.get_member.return_value.display_name = "Alex"
+
+    async def _nobody_chooses():
+        _press_cancel(view)
+        await asyncio.Event().wait()
+
+    stubs = await asyncio.wait_for(
+        _run(bot, configs=("Standard", "Half"), cancel_view=view, on_select=_nobody_chooses),
+        timeout=3,
+    )
+
+    assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
+    assert await _resubmitting(db_path) == 0
+    stubs["penalty"].assert_awaited_once()
+    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+    assert "Resubmission cancelled" in _said(stubs["channel"])
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    [cancel] = [line for line in lines if line.startswith("↩️ ")]
+    assert f"cancelled by Alex (<@{MANAGER}>)" in cancel.split("\n", 1)[0]
 
 
 async def test_a_completed_resubmission_takes_down_the_cancel_button(tmp_path):
@@ -773,11 +815,15 @@ async def test_cancel_refuses_somebody_without_the_tier(monkeypatch):
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
-    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
+    view = ResubmissionCancelView(
+        SimpleNamespace(db_path="", bot=bot, round_number=3, division_name="Division 1")
+    )
     interaction = MagicMock()
     interaction.user = MagicMock(spec=discord.Member)
     interaction.user.id = 5
+    interaction.response.is_done = MagicMock(return_value=False)
     interaction.response.send_message = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
 
     await type(view).cancel_btn(view, interaction, MagicMock())
 
@@ -793,7 +839,9 @@ async def test_cancel_pressed_by_a_league_manager_stops_the_resubmission(monkeyp
     bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=MagicMock())
-    view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=bot))
+    view = ResubmissionCancelView(
+        SimpleNamespace(db_path="", bot=bot, round_number=3, division_name="Division 1")
+    )
     interaction = MagicMock()
     interaction.user = MagicMock(spec=discord.Member)
     interaction.user.id = MANAGER
@@ -851,6 +899,68 @@ async def _press_resubmit_and_collect(bot, state):
         task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{ROUND_ID}")
         await asyncio.wait_for(task, timeout=5)
     return penalty
+
+
+async def _press_resubmit_and_fail(bot, state, *, validation_error=None):
+    """Alex presses Resubmit and the collection it starts fails before any paste: the round is
+    not found (*state* names one that does not exist), or the division's data cannot be read
+    (*validation_error*). Waits for the collection; returns the pressing interaction."""
+    interaction = _pressed_resubmit()
+    interaction.user.display_name = "Alex"
+    interaction.client = bot
+    interaction.response.is_done = MagicMock(return_value=True)
+    with patch(
+        "leaguebot.results.services.result_submission_service._build_division_validation_data",
+        new=AsyncMock(side_effect=validation_error or RuntimeError("never reached")),
+    ), patch(
+        "leaguebot.results.services.season_points_service.get_attached_config_names",
+        new=AsyncMock(return_value=["Standard"]),
+    ), patch(
+        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
+    ):
+        await enter_resubmit_flow(interaction, state)
+        task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{state.round_id}")
+        await asyncio.wait_for(task, timeout=5)
+    return interaction
+
+
+@pytest.mark.parametrize(
+    ("round_found", "notice"),
+    [
+        (False, "Resubmission failed: this round could not be found"),
+        (True, "Resubmission failed: could not load division data"),
+    ],
+    ids=["round-not-found", "division-data-unreadable"],
+)
+async def test_a_resubmission_failing_before_any_paste_is_recorded(tmp_path, round_found, notice):
+    """Alex presses 🔄 Resubmit Initial Results on round 3 (Pro), and the collection fails
+    before any session is pasted: the round is gone, or the division's data cannot be read. The
+    channel is told as today; Alex is told the earlier results stand; and one failure line names
+    Alex as the member who pressed Resubmit."""
+    db_path = await _make_db(tmp_path, name=f"resubmit_fails_{round_found}")
+    await _seed_old_results(db_path)
+    channel = _channel()
+    bot = _bot(db_path, [])
+    bot.get_channel = MagicMock(return_value=channel)
+    state = _review_state(bot)
+    if not round_found:
+        state.round_id = ROUND_ID + 1
+
+    interaction = await _press_resubmit_and_fail(
+        bot, state, validation_error=RuntimeError("team service down") if round_found else None
+    )
+
+    assert notice in _said(channel)
+    bot.wait_for.assert_not_awaited()
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    failures = [line for line in lines if line.startswith("❌")]
+    assert len(failures) == 1, lines
+    assert "Resubmit" in failures[0]
+    assert f"failed for Alex (<@{MANAGER}>)" in failures[0]
+    replies = "\n".join(
+        str(c.args[0]) for c in interaction.followup.send.await_args_list if c.args
+    )
+    assert "The earlier results stand." in replies
 
 
 async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):

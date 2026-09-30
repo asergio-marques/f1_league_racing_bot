@@ -159,13 +159,24 @@ def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
     )
 
 
-def _interaction():
+def _interaction(client=None):
+    """A submission by the steward Alex, answering as Discord's does — not done until it replies
+    or defers — and reaching the log channel through *client*, the review's own bot."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock()
     interaction.user.id = STEWARD_ID
+    interaction.user.display_name = "Alex"
+    interaction.client = client
     interaction.response = MagicMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -178,7 +189,7 @@ async def _submit(
     pardon_type: str = "NO_RSVP",
     justification: str = "Power cut on the night",
 ):
-    interaction = _interaction()
+    interaction = _interaction(state.bot)
     modal = AddPardonModal(state)
     modal.driver_id_input._value = driver_id  # type: ignore[attr-defined]
     modal.pardon_type_input._value = pardon_type  # type: ignore[attr-defined]
@@ -192,6 +203,10 @@ def _replied(interaction) -> str:
     return "\n".join(
         str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args
     )
+
+
+def _logged(state) -> list[str]:
+    return [str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list]
 
 
 def _existing(pardon_type: str = "NO_RSVP") -> StagedPardon:
@@ -306,6 +321,23 @@ async def test_the_justification_is_logged(tmp_path):
     assert "Power cut on the night" in logged
     assert "Pro" in logged
     assert str(STEWARD_ID) in logged
+
+
+async def test_the_pardon_line_names_the_steward(tmp_path):
+    """The steward Alex stages a NO_RSVP pardon for round 3 (Pro). The one line it writes names
+    Alex by display name and mention, as every record does (#482), and keeps its token, the
+    pardon, the driver and the justification."""
+    db_path = await _make_db(tmp_path, name="pardon_names_steward")
+    state = _state(db_path)
+
+    await _submit(state, justification="Power cut on the night")
+
+    lines = _logged(state)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith(f"Alex (<@{STEWARD_ID}>) | ATTENDANCE_PARDON_STAGED"), lines[0]
+    assert "NO_RSVP" in lines[0]
+    assert f"<@{DRIVER_USER_ID}>" in lines[0]
+    assert "justification: Power cut on the night" in lines[0]
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +581,8 @@ async def test_the_same_pardon_for_another_driver_is_allowed(tmp_path):
 @pytest.mark.parametrize("typed", ["<@&987654321098765432> agreed", "@everyone agreed"])
 async def test_a_group_mention_in_the_justification_is_refused(tmp_path, typed):
     """Refused as a penalty's texts are. The log channel it goes to notifies nobody, so this
-    is one rule for every text a steward types rather than a ping prevented."""
+    is one rule for every text a steward types rather than a ping prevented. Nothing is staged
+    and the one line written is the refusal's (#482)."""
     db_path = await _make_db(tmp_path, name="group_mention")
     state = _state(db_path)
 
@@ -557,7 +590,8 @@ async def test_a_group_mention_in_the_justification_is_refused(tmp_path, typed):
 
     assert state.staged_pardons == []
     assert "justification" in _replied(interaction)
-    state.bot.output_router.post_log.assert_not_awaited()
+    (line,) = _logged(state)
+    assert line.startswith("⛔ the “Attendance Pardon” form"), line
     refresh.assert_not_awaited()
 
 
@@ -571,7 +605,8 @@ async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
 
 
 async def test_an_emoji_in_the_justification_is_refused(tmp_path):
-    """One rule for every text a steward types, though this one is only ever logged."""
+    """One rule for every text a steward types, though this one is only ever logged. Nothing is
+    staged and the one line written is the refusal's (#482)."""
     db_path = await _make_db(tmp_path, name="emoji")
     state = _state(db_path)
 
@@ -579,7 +614,8 @@ async def test_an_emoji_in_the_justification_is_refused(tmp_path):
 
     assert state.staged_pardons == []
     assert "emoji" in _replied(interaction)
-    state.bot.output_router.post_log.assert_not_awaited()
+    (line,) = _logged(state)
+    assert line.startswith("⛔ the “Attendance Pardon” form"), line
 
 
 async def test_a_channel_mention_in_the_justification_is_refused(tmp_path):
@@ -590,3 +626,63 @@ async def test_a_channel_mention_in_the_justification_is_refused(tmp_path):
 
     assert state.staged_pardons == []
     assert "channel mention" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. A form names itself by its title.
+# ---------------------------------------------------------------------------
+
+
+def _pardon_refusal(case_id, *, db=None, staged=False, **typed):
+    return pytest.param(
+        db or {}, staged, typed,
+        id=case_id,
+    )
+
+
+_PARDON_REFUSALS = [
+    _pardon_refusal("review-moved-on", db={"round_status": "AWAITING_APPEAL_VERDICTS"}),
+    _pardon_refusal("id-not-numeric", driver_id="@racer"),
+    _pardon_refusal("unknown-pardon-type", pardon_type="FORGIVEN"),
+    _pardon_refusal("group-mention", justification="@everyone agreed"),
+    _pardon_refusal("no-profile-here", driver_id="900000009"),
+    _pardon_refusal("no-attendance-row", db={"attendance_row": False}),
+    _pardon_refusal("no-rsvp-but-answered", db={"rsvp_status": "ACCEPTED"}),
+    _pardon_refusal("absent-but-accepted", db={"rsvp_status": "ACCEPTED"}, pardon_type="ABSENT"),
+    _pardon_refusal("absent-but-raced", db={"in_results": "race"}, pardon_type="ABSENT"),
+    _pardon_refusal("no-show-not-accepted", pardon_type="NO_SHOW"),
+    _pardon_refusal(
+        "no-show-but-raced",
+        db={"rsvp_status": "ACCEPTED", "in_results": "race"},
+        pardon_type="NO_SHOW",
+    ),
+    _pardon_refusal("already-staged", staged=True),
+]
+
+
+@pytest.mark.parametrize("db, staged, typed", _PARDON_REFUSALS)
+async def test_every_refused_pardon_form_is_recorded(tmp_path, db, staged, typed):
+    """The steward Alex fills in the Attendance Pardon form of round 3's penalty review (Pro)
+    and is refused: the reports are already approved, the id is not a number, the pardon type
+    is unknown, the justification mentions @everyone, the driver has no profile here or no
+    attendance row, the pardon does not match the driver's RSVP or the driver is in the
+    results, or the same pardon is already staged. The reply is today's, nothing more is
+    staged, the prompt is not redrawn, and exactly one line records the refusal, naming the
+    form, Alex and the reason."""
+    state = _state(
+        await _make_db(tmp_path, **db), staged_pardons=[_existing()] if staged else None
+    )
+
+    interaction, refresh = await _submit(state, **typed)
+
+    assert len(state.staged_pardons) == (1 if staged else 0)
+    refresh.assert_not_awaited()
+    (replied,) = [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert replied.startswith("❌ ")
+    reason = replied.splitlines()[0].removeprefix("❌ ")
+    (line,) = _logged(state)
+    assert line.startswith("⛔ the “Attendance Pardon” form"), line
+    assert line.endswith(f" refused for Alex (<@{STEWARD_ID}>) — {reason}"), line
