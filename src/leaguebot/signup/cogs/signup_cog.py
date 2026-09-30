@@ -41,6 +41,7 @@ from leaguebot.core.cogs.module_cog import (
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
+from leaguebot.signup.services.wizard_service import SignupNotOpenError
 from leaguebot.core.services import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
@@ -258,7 +259,12 @@ class SignupButtonView(LeagueView):
             return
 
         await interaction.response.defer(ephemeral=True)
-        channel = await bot.wizard_service.start_wizard(interaction)
+        try:
+            channel = await bot.wizard_service.start_wizard(interaction)
+        except SignupNotOpenError:
+            # A button the close could not delete, pressed after the window shut (F1, #482).
+            await refuse(interaction, "⛔ Signups are closed.", what=_SIGN_UP_BUTTON)
+            return
         if channel is None:
             await refuse(
                 interaction,

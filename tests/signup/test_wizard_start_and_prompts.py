@@ -246,9 +246,6 @@ async def test_an_unconfigured_module_starts_nothing(tmp_path):
     svc._bot.driver_service.transition.assert_not_awaited()
 
 
-_F1 = "#482: the Sign Up button starts a wizard whatever the state of the signup window"
-
-
 async def _press_sign_up(svc, guild) -> tuple[list[str], list[str]]:
     """Press the Sign Up button, as a driver with no profile, on a bot whose wizard service is
     *svc*. Returns what the driver was told and what the log channel was given."""
@@ -286,10 +283,8 @@ async def _press_sign_up(svc, guild) -> tuple[list[str], list[str]]:
 @pytest.mark.parametrize(
     "module_enabled, signups_open",
     [
-        pytest.param(True, False, id="signups closed",
-                     marks=pytest.mark.xfail(strict=True, reason=_F1)),
-        pytest.param(False, False, id="module disabled",
-                     marks=pytest.mark.xfail(strict=True, reason=_F1)),
+        pytest.param(True, False, id="signups closed"),
+        pytest.param(False, False, id="module disabled"),
     ],
 )
 async def test_a_leftover_sign_up_button_starts_nothing_once_signups_are_closed(

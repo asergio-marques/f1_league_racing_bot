@@ -87,6 +87,13 @@ async def _wizard_channel_delete_job(discord_user_id: str) -> None:
     await _GLOBAL_WIZARD_SERVICE._execute_channel_delete(discord_user_id)
 
 
+class SignupNotOpenError(Exception):
+    """`WizardService.start_wizard` was asked to start a signup while signups are not open.
+
+    The Sign Up button answers it as a refusal (F1, #482).
+    """
+
+
 # ---------------------------------------------------------------------------
 # WizardService
 # ---------------------------------------------------------------------------
@@ -402,6 +409,12 @@ class WizardService:
 
         Returns the newly created channel, or None if the module is not
         configured (caller is responsible for sending an error response).
+
+        Raises `SignupNotOpenError`, before anything is touched, unless the signup module is
+        enabled and signups are open (F1, #482). The Sign Up button the close could not delete
+        stays in the channel, and pressing it then would otherwise start a signup in a closed
+        window. The check is here, in the service the button calls, and the button turns the
+        error into a refusal.
         """
         assert self._bot is not None
         guild = interaction.guild
@@ -410,6 +423,12 @@ class WizardService:
         assert isinstance(member, discord.Member)
 
         discord_user_id = str(member.id)
+
+        if not await self._bot.module_service.is_signup_enabled():
+            raise SignupNotOpenError
+        signup_cfg = await self._signup_svc.get_config()
+        if signup_cfg is not None and not signup_cfg.signups_open:
+            raise SignupNotOpenError
 
         # T049: delete any existing wizard channel if present
         existing = await self._signup_svc.get_wizard(discord_user_id)
@@ -427,8 +446,6 @@ class WizardService:
             if ckey in self._correction_tasks:
                 self._correction_tasks.pop(ckey).cancel()
 
-        # Load configs
-        signup_cfg = await self._signup_svc.get_config()
         server_cfg = await self._bot.config_service.get_server_config()
         if signup_cfg is None:
             return None
