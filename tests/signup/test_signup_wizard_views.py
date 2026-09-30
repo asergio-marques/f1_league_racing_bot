@@ -534,12 +534,14 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
 
     getattr(interaction.client.wizard_service, handler).assert_awaited_once()
     replies = [
-        str(call.args[0])
+        (str(call.args[0]), call.kwargs.get("ephemeral"))
         for call in interaction.response.send_message.await_args_list
         + interaction.followup.send.await_args_list
         if call.args
     ]
-    assert any(_ALREADY_ANSWERED in reply for reply in replies), replies
+    assert any(_ALREADY_ANSWERED in text and ephemeral is True for text, ephemeral in replies), (
+        replies
+    )
     lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
     assert len(lines) == 1, lines
     line = lines[0]

@@ -33,7 +33,7 @@ The recovery tests compute their times from the real clock rather than pinning a
 from __future__ import annotations
 
 import asyncio
-import contextlib
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -295,17 +295,27 @@ async def test_an_expired_wizard_records_one_lapse_naming_the_driver(lifecycle):
 
 @pytest.mark.xfail(strict=True, reason=_EXPIRY_TRANSITION_SWALLOWED)
 async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
-    lifecycle,
+    lifecycle, caplog,
 ):
     """Only the expected refusal (`ValueError`) is caught by name. Any other error goes to the
-    host log with its traceback: the driver is not told their session expired, and no lapse is
-    recorded for a signup that did not end."""
+    host log with its traceback, whether logged here or raised to the job runner that logs it:
+    the driver is not told their session expired, and no lapse is recorded for a signup that
+    did not end."""
     _alex_on_the_server(lifecycle)
     lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
 
-    with contextlib.suppress(RuntimeError):
-        await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+    raised = False
+    with caplog.at_level(logging.WARNING):
+        try:
+            await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+        except RuntimeError:
+            raised = True
 
+    logged = any(
+        record.exc_info and isinstance(record.exc_info[1], RuntimeError)
+        for record in caplog.records
+    )
+    assert raised or logged, "the error reached neither the job runner nor the host log"
     lifecycle.svc._trigger_channel_hold.assert_not_awaited()
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
