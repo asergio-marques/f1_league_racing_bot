@@ -138,13 +138,13 @@ async def test_a_former_driver_keeps_their_placement_and_history(db_path):
 
 async def test_a_signup_in_review_has_its_channel_closed(db_path):
     bot = MagicMock()
-    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 
     await run_driver_pass(db_path, bot=bot, guild=guild)
 
-    held = [c.args[0] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
+    held = [c.args[0] for c in bot.wizard_service.trigger_channel_hold.await_args_list]
     assert held == ["1004"]
 
 
@@ -195,7 +195,7 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
 async def test_a_signup_channel_that_cannot_be_closed_does_not_stop_the_pass(db_path):
     """A signup channel is never worth a season's end: the drivers still move on."""
     bot = MagicMock()
-    bot.wizard_service._trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
+    bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 
@@ -215,14 +215,14 @@ async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass(db_path):
     scheduler._scheduler.remove_job = MagicMock(side_effect=JobLookupError("no job"))
 
     bot = MagicMock()
-    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
     bot.scheduler_service = scheduler
     guild = MagicMock()
     guild.get_member = MagicMock(return_value=None)
 
     await run_driver_pass(db_path, bot=bot, guild=guild)
 
-    bot.wizard_service._trigger_channel_hold.assert_awaited_once()
+    bot.wizard_service.trigger_channel_hold.assert_awaited_once()
     assert (await _states(db_path))[1] == "NOT_SIGNED_UP"
 
 
@@ -314,7 +314,7 @@ def _bot_for(db_path, directory):
 
     bot = MagicMock()
     bot.db_path = db_path
-    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
     bot.image_config_service.get_config = AsyncMock(
         return_value=SimpleNamespace(driver_image_directory=str(directory))
     )

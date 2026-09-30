@@ -83,7 +83,7 @@ def lifecycle():
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._cancel_channel_delete_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._arm_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    svc.trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc.recover_correction_timeouts = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     signup_svc = MagicMock()
@@ -148,8 +148,8 @@ async def test_withdrawing_holds_the_channel_rather_than_deleting_it(lifecycle):
     """The driver is still here and is being told their signup has ended."""
     await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
-    lifecycle.svc._trigger_channel_hold.assert_awaited_once()
-    assert "cancelled" in lifecycle.svc._trigger_channel_hold.await_args.args[2]
+    lifecycle.svc.trigger_channel_hold.assert_awaited_once()
+    assert "cancelled" in lifecycle.svc.trigger_channel_hold.await_args.args[2]
     lifecycle.channel.delete.assert_not_awaited()
 
 
@@ -211,7 +211,7 @@ async def test_a_withdrawal_after_the_signup_ended_is_refused_and_changes_nothin
     refused = await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
     assert refused == _ALREADY_ENDED
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
@@ -225,7 +225,7 @@ async def test_a_withdrawal_whose_transition_fails_otherwise_is_not_swallowed(li
     with pytest.raises(RuntimeError):
         await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
@@ -243,7 +243,7 @@ async def test_a_timed_out_driver_returns_to_not_signed_up(lifecycle):
 async def test_a_timed_out_driver_is_told_why_in_their_channel(lifecycle):
     await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
-    assert "expired" in lifecycle.svc._trigger_channel_hold.await_args.args[2]
+    assert "expired" in lifecycle.svc.trigger_channel_hold.await_args.args[2]
 
 
 async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(lifecycle):
@@ -254,7 +254,7 @@ async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(life
     await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
 
 
 async def test_a_timeout_cancels_a_pending_correction_window(lifecycle):
@@ -316,7 +316,7 @@ async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_t
         for record in caplog.records
     )
     assert raised or logged, "the error reached neither the job runner nor the host log"
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
@@ -408,7 +408,7 @@ async def test_a_departing_driver_s_channel_is_deleted_rather_than_held(lifecycl
     await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.channel.delete.assert_awaited_once()
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
 
 
 async def test_a_channel_that_cannot_be_deleted_does_not_stop_the_cleanup(lifecycle):

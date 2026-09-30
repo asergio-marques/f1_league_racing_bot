@@ -758,7 +758,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/wizard_service.py", "WizardService._handle_platform"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._handle_platform_id"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._handle_preferred_teams"): (2, PASS["signup"]),
-    ("signup/services/wizard_service.py", "WizardService._trigger_channel_hold"): (1, PASS["signup"]),
+    ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.commit_wizard"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.handle_preferred_teams_button"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.request_changes"): (1, PASS["signup"]),

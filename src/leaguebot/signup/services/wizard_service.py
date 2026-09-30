@@ -633,7 +633,7 @@ class WizardService:
             log.warning("withdraw: driver transition failed for %s", discord_user_id, exc_info=True)
 
         # Post cancellation notice and hold channel
-        await self._trigger_channel_hold(
+        await self.trigger_channel_hold(
             discord_user_id, guild,
             "❌ You have cancelled your signup. "
             "This channel will be automatically deleted in 24 hours.",
@@ -682,7 +682,7 @@ class WizardService:
 
         await self._cancel_inactivity_job(discord_user_id)
 
-        await self._trigger_channel_hold(
+        await self.trigger_channel_hold(
             discord_user_id, guild,
             f"✅ Your signup has been approved by **{actor.display_name}**! "
             "You are now an Unassigned driver. "
@@ -722,7 +722,7 @@ class WizardService:
         except Exception:
             log.warning("reject_signup: driver transition failed for %s", discord_user_id, exc_info=True)
 
-        await self._trigger_channel_hold(
+        await self.trigger_channel_hold(
             discord_user_id, guild,
             f"<@{discord_user_id}> ❌ Your signup has been rejected by **{actor.display_name}**."
             + (f"\n**Reason:** {reason}" if reason else "")
@@ -878,7 +878,7 @@ class WizardService:
                 view=self._build_step_view(target_state, discord_user_id, team_names),
             )
 
-    async def _trigger_channel_hold(
+    async def trigger_channel_hold(
         self,
         discord_user_id: str,
         guild: discord.Guild,
@@ -906,7 +906,7 @@ class WizardService:
         try:
             await channel.send(terminal_message)
         except discord.HTTPException:
-            log.warning("_trigger_channel_hold: failed to post terminal message in %s", channel.id)
+            log.warning("trigger_channel_hold: failed to post terminal message in %s", channel.id)
 
         # Schedule channel deletion (+24 h)
         fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -943,7 +943,7 @@ class WizardService:
             )
 
         if guild is not None:
-            await self._trigger_channel_hold(
+            await self.trigger_channel_hold(
                 discord_user_id, guild,
                 "⏰ Your signup session has expired due to inactivity. "
                 "This channel will be automatically deleted in 24 hours.",

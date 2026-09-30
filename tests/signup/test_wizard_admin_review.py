@@ -87,7 +87,7 @@ def review():
     order: list[str] = []
 
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    svc.trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     async def _transition(user_id, state):
         order.append(f"transition:{state.value if hasattr(state, 'value') else state}")
@@ -293,8 +293,8 @@ async def test_approval_holds_the_channel_rather_than_deleting_it(review):
     message with it."""
     await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
-    review.svc._trigger_channel_hold.assert_awaited_once()
-    notice = review.svc._trigger_channel_hold.await_args.args[2]
+    review.svc.trigger_channel_hold.assert_awaited_once()
+    notice = review.svc.trigger_channel_hold.await_args.args[2]
     assert "approved" in notice
     assert "Manager" in notice
 
@@ -370,7 +370,7 @@ async def test_a_rejection_reason_reaches_the_driver(review):
         DRIVER_ID, review.guild, review.actor, reason="Lap time unverified"
     )
 
-    notice = review.svc._trigger_channel_hold.await_args.args[2]
+    notice = review.svc.trigger_channel_hold.await_args.args[2]
     assert "Lap time unverified" in notice
 
 
@@ -378,7 +378,7 @@ async def test_a_rejection_without_a_reason_omits_the_reason_line(review):
     """An empty **Reason:** would read as a reason nobody gave."""
     await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
-    assert "Reason:" not in review.svc._trigger_channel_hold.await_args.args[2]
+    assert "Reason:" not in review.svc.trigger_channel_hold.await_args.args[2]
 
 
 async def test_a_failed_transition_does_not_stop_the_rejection(review):
@@ -388,7 +388,7 @@ async def test_a_failed_transition_does_not_stop_the_rejection(review):
 
     await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
-    review.svc._trigger_channel_hold.assert_awaited_once()
+    review.svc.trigger_channel_hold.assert_awaited_once()
 
 
 _TRANSITION_SWALLOWED = (
@@ -407,7 +407,7 @@ async def test_a_rejection_whose_transition_fails_otherwise_is_not_swallowed(rev
     with pytest.raises(RuntimeError):
         await review.svc.reject_signup(DRIVER_ID, review.guild, review.actor)
 
-    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.svc.trigger_channel_hold.assert_not_awaited()
     review.svc._output_router.post_log.assert_not_awaited()
 
 
@@ -442,7 +442,7 @@ async def test_a_signup_that_has_moved_on_is_refused_and_left_as_it_is(review, o
 
     assert isinstance(refused, str) and refused, refused
     review.driver_service.transition.assert_not_awaited()
-    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.svc.trigger_channel_hold.assert_not_awaited()
     review.signup_svc.save_wizard.assert_not_awaited()
     review.channel.send.assert_not_awaited()
     assert review.svc._correction_tasks == {}
@@ -714,7 +714,7 @@ async def test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded(
         assert any("Nothing was rejected." in text for text in told), told
     assert not any(text.startswith("✅") for text in told), told
     review.driver_service.transition.assert_not_awaited()
-    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.svc.trigger_channel_hold.assert_not_awaited()
     review.channel.send.assert_not_awaited()
     assert review.svc._correction_tasks == {}
     refusals = [line for line in _logged(review).split("\n") if line.startswith("⛔")]
@@ -746,4 +746,4 @@ async def test_a_rejection_whose_transition_fails_is_reported_to_the_manager(rev
     assert failed[0].startswith("❌ the “Reject” button of"), failed[0]
     assert f"failed for Manager (<@{ACTOR_ID}>)" in failed[0]
     assert "| Rejected" not in lines
-    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.svc.trigger_channel_hold.assert_not_awaited()

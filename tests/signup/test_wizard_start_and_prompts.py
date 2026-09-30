@@ -659,7 +659,7 @@ async def test_ending_a_signup_holds_the_channel(tmp_path):
     member = MagicMock()
     guild.get_member = MagicMock(return_value=member)
 
-    await svc._trigger_channel_hold(DRIVER, guild, "Signups have closed.")
+    await svc.trigger_channel_hold(DRIVER, guild, "Signups have closed.")
 
     assert channel.set_permissions.await_args.kwargs["send_messages"] is False
     channel.send.assert_awaited_once_with("Signups have closed.")
@@ -673,7 +673,7 @@ async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
     guild.get_member = MagicMock(return_value=None)
     before = datetime.now(timezone.utc)
 
-    await svc._trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     fire_at = svc._scheduler._scheduler.add_job.call_args.kwargs["trigger"].run_date
     assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
@@ -686,7 +686,7 @@ async def test_a_notice_that_cannot_be_posted_still_schedules_deletion(tmp_path)
     guild = _guild(old_channel=channel)
     guild.get_member = MagicMock(return_value=None)
 
-    await svc._trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_called_once()
 
@@ -695,7 +695,7 @@ async def test_no_wizard_means_no_hold(tmp_path):
     svc = _service(existing=None)
     guild = _guild()
 
-    await svc._trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_not_called()
 

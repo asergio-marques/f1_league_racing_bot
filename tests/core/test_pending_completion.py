@@ -236,7 +236,7 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
         )
         await db.commit()
     bot = _wind_down_bot(path)
-    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
     role = MagicMock()
     member = MagicMock()
     member.roles = [role]
@@ -248,7 +248,7 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
 
     await lifecycle.wind_down_ongoing(bot)
 
-    held = [c.args[0] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
+    held = [c.args[0] for c in bot.wizard_service.trigger_channel_hold.await_args_list]
     assert held == ["1004"]
     # The two approved drivers turned down lose the driver role; the committed one keeps it.
     assert member.remove_roles.await_count == 2

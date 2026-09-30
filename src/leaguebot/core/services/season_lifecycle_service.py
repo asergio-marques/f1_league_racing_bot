@@ -378,7 +378,7 @@ async def _close_driver_signups(
         if driver["current_state"] in _SIGNUP_IN_PROGRESS and bot is not None:
             try:
                 if guild is not None:
-                    await bot.wizard_service._trigger_channel_hold(uid, guild, notice)
+                    await bot.wizard_service.trigger_channel_hold(uid, guild, notice)
                 # The channel's own deletion job stays armed, and reads the wizard record
                 # when it fires; only the inactivity timeout is cancelled.
                 from leaguebot.signup.services.wizard_service import inactivity_job_id

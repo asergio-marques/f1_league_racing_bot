@@ -102,7 +102,7 @@ def _bot(db_path, *, config=_UNSET, channel=None, guild=True, transition_error=N
     bot.scheduler_service = MagicMock()
     bot.scheduler_service._scheduler = MagicMock()
     bot.wizard_service = MagicMock()
-    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
     channel = channel if channel is not None else _channel()
     g = MagicMock()
     g.get_channel = MagicMock(return_value=channel)
@@ -155,7 +155,7 @@ async def test_a_driver_awaiting_approval_is_left_alone(tmp_path, state):
     await execute_forced_close(bot, audit_action="SIGNUP_FORCE_CLOSE")
 
     bot.driver_service.transition.assert_not_awaited()
-    bot.wizard_service._trigger_channel_hold.assert_not_awaited()
+    bot.wizard_service.trigger_channel_hold.assert_not_awaited()
 
 
 async def test_a_turned_away_drivers_jobs_are_removed(tmp_path):
@@ -205,7 +205,7 @@ async def test_a_turned_away_driver_is_told_and_their_channel_held(tmp_path):
 
     await execute_forced_close(bot, audit_action="X")
 
-    hold = bot.wizard_service._trigger_channel_hold.await_args
+    hold = bot.wizard_service.trigger_channel_hold.await_args
     assert hold.args[0] == "101"
     assert "Signups have closed" in hold.args[2]
 
@@ -256,7 +256,7 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
         tmp_path, name="fc_holdfail", drivers=[("101", DriverState.PENDING_SIGNUP_COMPLETION)]
     )
     bot = _bot(db_path)
-    bot.wizard_service._trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
+    bot.wizard_service.trigger_channel_hold = AsyncMock(side_effect=RuntimeError("gone"))
 
     outcome = await execute_forced_close(bot, audit_action="X")
 
