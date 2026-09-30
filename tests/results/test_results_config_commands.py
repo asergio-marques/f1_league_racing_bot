@@ -319,16 +319,67 @@ async def test_confirming_removes_the_configuration():
     assert "removed" in _replied(interaction)
 
 
+#: What a cancelled or lapsed removal says beneath its line: what became of the change and what
+#: to do next.
+_NOTHING_REMOVED = (
+    f"Nothing was removed; {CONFIG} is still attached. Run /results config remove again to "
+    "remove it."
+)
+
+
+def _assert_removal_abandoned(line: str, ending: str) -> None:
+    first, *detail = line.splitlines()
+    assert first.startswith(("↩️ ", "⌛ ")), line
+    assert "/results config remove" in first, line
+    assert first.endswith(ending), line
+    assert " ".join(text.strip() for text in detail) == _NOTHING_REMOVED, line
+
+
+@pytest.mark.xfail(strict=True, reason="#482: cancelling the removal is not recorded")
 async def test_cancelling_leaves_the_configuration_alone():
+    """Admin (id 77) asked to remove the configuration "100%", which a season in setup is built
+    on, and was asked to confirm. Admin presses Cancel. Nothing is removed, Admin is told it is
+    untouched, and exactly one cancel line records it, naming the command and Admin, with
+    "Nothing was removed; 100% is still attached. Run /results config remove again to remove
+    it." beneath it."""
     cog = _make_cog()
     view = _ConfirmRemoveConfigView(cog, ACTOR_ID, CONFIG)
     interaction = _interaction()
+    interaction.client = cog.bot
 
     with _service() as svc:
         await type(view).cancel(view, interaction, MagicMock())
 
     svc["remove_config"].assert_not_awaited()
     assert "untouched" in _replied(interaction)
+    (line,) = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    _assert_removal_abandoned(line, "cancelled by Admin (<@77>)")
+
+
+@pytest.mark.xfail(strict=True, reason="#482: the removal's confirmation never lapses on record")
+async def test_a_removal_left_to_lapse_is_recorded():
+    """Admin (id 77) asks to remove the configuration "100%", which a season in setup is
+    built on, and is asked to confirm, then answers nothing until the question lapses. Nothing
+    is removed, the buttons are taken down through the command's own reply, and exactly one
+    lapse line records it, naming the command and Admin as the one who started it, with
+    "Nothing was removed; 100% is still attached. Run /results config remove again to remove
+    it." beneath it."""
+    cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.edit_original_response = AsyncMock()
+
+    with _service(setup_seasons_linking=AsyncMock(return_value=[(1, 3)])) as svc:
+        await _remove(cog, interaction)
+        asked = _view_of(interaction)
+        cog.bot.output_router.post_log.reset_mock()
+        await asked.on_timeout()
+
+    svc["remove_config"].assert_not_awaited()
+    interaction.edit_original_response.assert_awaited_once()
+    (line,) = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    assert line.startswith("⌛ "), line
+    _assert_removal_abandoned(line, "lapsed unconfirmed (started by Admin (<@77>))")
 
 
 @pytest.mark.parametrize("button", ["confirm", "cancel"], ids=["confirm", "cancel"])
