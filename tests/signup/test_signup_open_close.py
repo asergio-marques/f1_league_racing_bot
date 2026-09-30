@@ -976,8 +976,6 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
 
 BUTTON_MESSAGE_ID = 880088
 
-_CONFIRM_OUTCOME = "#482: the close confirmation records neither its cancel nor its lapse"
-
 
 async def _confirmation(tmp_path, *, in_progress=("PENDING_SIGNUP_COMPLETION",)):
     """Signups open on the Sign Up button message `BUTTON_MESSAGE_ID`, with *in_progress*
@@ -1041,7 +1039,6 @@ async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     assert "discarded" not in log
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRM_OUTCOME)
 async def test_cancelling_the_close_is_recorded_and_signups_stay_open(tmp_path):
     """A driver is mid-signup, `/signup close` asks, and the manager presses Cancel: signups stay
     open, they are told so, and one line records the cancel by them, saying signups remain open
@@ -1062,7 +1059,6 @@ async def test_cancelling_the_close_is_recorded_and_signups_stay_open(tmp_path):
     assert any("/signup close" in text and "again" in text for text in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRM_OUTCOME)
 async def test_a_close_confirmation_left_unanswered_is_recorded_and_its_buttons_taken_down(
     tmp_path,
 ):

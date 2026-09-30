@@ -42,7 +42,7 @@ from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -302,11 +302,24 @@ def _close_confirmation(returned: list[str], kept: list[str]) -> str:
 
 
 class ConfirmCloseView(LeagueView):
-    """Confirmation dialog for closing signups with in-progress drivers (T018)."""
+    """Confirmation dialog for closing signups with in-progress drivers (T018).
 
-    def __init__(self, bot: LeagueBot) -> None:
+    It keeps the interaction of the `/signup close` that asked, so that a cancel and a lapse
+    are recorded as that command's, naming the manager who ran it, and so that a lapse can take
+    the buttons down through the command's own reply. Asking records nothing by itself: only
+    the outcome does, and a restart that drops the question drops it unrecorded.
+    """
+
+    #: What a cancel and a lapse record as cancelled or lapsed: the command that asked.
+    _WHAT = "`/signup close`"
+
+    #: What a cancel and a lapse leave beneath their line: nothing was closed, and what to do.
+    _STAYS_OPEN = "Signups remain open. Run /signup close again to close them."
+
+    def __init__(self, bot: LeagueBot, asked: discord.Interaction) -> None:
         super().__init__(timeout=300)
         self._bot = bot
+        self._asked = asked
         self.confirmed = False
 
     @discord.ui.button(label="Confirm Close", style=discord.ButtonStyle.danger)
@@ -339,9 +352,32 @@ class ConfirmCloseView(LeagueView):
         await interaction.response.send_message(
             "Action cancelled. Signups remain open.", ephemeral=True
         )
+        await record_abandoned(
+            self._bot,
+            interaction.user,
+            what=self._WHAT,
+            lapsed=False,
+            detail=self._STAYS_OPEN,
+        )
 
     async def on_timeout(self) -> None:
-        pass
+        """Record that nobody answered, and take the buttons down through the command's reply.
+
+        The takedown goes through the command's interaction, never a message's own `.edit`:
+        the confirmation is an ephemeral reply, which has no message the bot may edit. A reply
+        that cannot be edited is left, and does not cost the league its record.
+        """
+        await record_abandoned(
+            self._bot,
+            self._asked.user,
+            what=self._WHAT,
+            lapsed=True,
+            detail=self._STAYS_OPEN,
+        )
+        try:
+            await self._asked.edit_original_response(view=None)
+        except Exception:  # noqa: BLE001 — the lapse is recorded whether or not the reply goes
+            log.warning("could not take the close confirmation's buttons down", exc_info=True)
 
 
 class WithdrawButtonView(LeagueView):
@@ -1758,8 +1794,8 @@ class SignupCog(commands.Cog):
 
         cfg = await self.bot.signup_module_service.get_config()
         if cfg is None or not cfg.signups_open:
-            await interaction.response.send_message(
-                "❌ Signups are not currently open.", ephemeral=True
+            await refuse(
+                interaction, "❌ Signups are not currently open.", what=describe(interaction)
             )
             return
 
@@ -1769,12 +1805,13 @@ class SignupCog(commands.Cog):
         # which never did, leaving `/module disable signup` as the only escape (issue #125).
         if cfg.close_at is not None:
             armed = datetime.fromisoformat(cfg.close_at)
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Signups will auto-close at {discord_ts(armed)} "
                 f"({discord_ts(armed, 'R')}). Clear the timer with "
                 "`/signup close-time cancel` if you need to close manually, or move it "
                 "with `/signup close-time modify`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1824,7 +1861,7 @@ class SignupCog(commands.Cog):
                 line += f" — <#{row['signup_channel_id']}>"
             group.append(line)
 
-        view = ConfirmCloseView(self.bot)
+        view = ConfirmCloseView(self.bot, interaction)
         await interaction.response.send_message(
             _close_confirmation(returned, kept),
             view=view,

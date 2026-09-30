@@ -23,8 +23,6 @@ SERVER_ID = 7731
 MANAGER = 42
 NOT_ENABLED = "Signup module is not enabled"
 
-_REFUSAL_LINE = "#482: the refusal is answered but not recorded in the log channel"
-
 
 def _interaction(bot, command: str):
     """An interaction whose response knows whether it has been used, as Discord's does, and
@@ -272,7 +270,6 @@ _METHODS = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_LINE)
 @pytest.mark.parametrize(
     "name, window, slots, args, said",
     [case[1:] for case in _REFUSALS],
