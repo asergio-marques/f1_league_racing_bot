@@ -965,7 +965,7 @@ const listForBuilder = () => {
   if (!written.length && !supportWritten.length) return ''
   const named = new Set(asText(ARGS.decisions).match(LABEL) || [])
   const short = {
-    tests: written.map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(t.alreadyPasses ? { alreadyPasses: true } : {}) })),
+    tests: written.map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(filled(t.criterion) ? { criterion: t.criterion } : {}), ...(t.alreadyPasses ? { alreadyPasses: true } : {}) })),
     support: supportWritten.map(x => ({ label: x.label, file: x.file, name: x.name, change: x.change })),
   }
   const full = [...written, ...supportWritten].filter(x => named.has(x.label))

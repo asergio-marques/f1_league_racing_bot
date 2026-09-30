@@ -310,10 +310,11 @@ Object.assign(module.exports, {
   // The builder is given the list in short, and in full only the entries the owner's decisions
   // name by label, which it may be asked to reword (#483).
   entryNamedInDecisionsGivenInFull: {
-    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' }), entry('tests/x/test_a.py::test_b', 'added', { label: 'A2', scenario: 'NOT-NAMED-SCENARIO' })] }) },
+    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' }), entry('tests/x/test_a.py::test_b', 'added', { label: 'A2', scenario: 'NOT-NAMED-SCENARIO', criterion: 'CRIT-B' })] }) },
     respond(label, prompt) {
       if (label.endsWith(':builder') && (!prompt.includes('The list as it stands, in short') || !prompt.includes('"label": "A1"') || !prompt.includes('"label": "A2"') || !prompt.includes('THE-SCENARIO-SHOWN'))) throw new Error('builder not given the list, with the named entry in full')
       if (label.endsWith(':builder') && prompt.includes('NOT-NAMED-SCENARIO')) throw new Error('builder given an entry nobody named in full')
+      if (label.endsWith(':builder') && !prompt.includes('"criterion": "CRIT-B"')) throw new Error('the short list lost the criterion')
       if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added', { scenario: 'REWORDED' })] })
       if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran('tests/x/test_a.py::test_b')], changes: changes([[A, 'added'], ['tests/x/test_a.py::test_b', 'added']]) })
       return cleanLanes(label)
