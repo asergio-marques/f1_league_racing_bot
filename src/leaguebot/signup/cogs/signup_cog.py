@@ -35,6 +35,8 @@ from leaguebot.core.cogs.module_cog import (
     RETURNED_BY_CLOSE,
     armed_close_refusal,
     execute_forced_close,
+    failed_steps_lines,
+    failed_steps_reply,
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
@@ -356,12 +358,12 @@ class ConfirmCloseView(LeagueView):
         returned = outcome.returned
         await interaction.followup.send(
             f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
-            "Not Signed Up.",
+            "Not Signed Up." + failed_steps_reply(outcome),
             ephemeral=True,
         )
         await self._bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
-            f"  drivers_returned_to_not_signed_up: {returned}",
+            f"  drivers_returned_to_not_signed_up: {returned}" + failed_steps_lines(outcome),
         )
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
@@ -1854,10 +1856,13 @@ class SignupCog(commands.Cog):
         if not rows:
             # No in-progress drivers — immediate close
             await interaction.response.defer(ephemeral=True)
-            await execute_forced_close(self.bot, audit_action="SIGNUP_CLOSE")
-            await interaction.followup.send("✅ Signups closed.", ephemeral=True)
+            outcome = await execute_forced_close(self.bot, audit_action="SIGNUP_CLOSE")
+            await interaction.followup.send(
+                "✅ Signups closed." + failed_steps_reply(outcome), ephemeral=True
+            )
             await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success",
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success"
+                + failed_steps_lines(outcome),
             )
             return
 

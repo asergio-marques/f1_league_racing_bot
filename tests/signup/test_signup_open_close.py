@@ -1134,13 +1134,10 @@ async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, 
         assert (await cursor.fetchone())[0] == 0
 
 
-_FAILED_STEPS = "#482: /signup close and Confirm Close report none of the forced close's failed steps"
-
 #: One failed step, as the forced close words it for the reply and the line.
 _NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
 
 
-@pytest.mark.xfail(strict=True, reason=_FAILED_STEPS)
 async def test_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(tmp_path):
     """Signups are open and nobody is mid-signup, so `/signup close` closes at once; the close
     shuts the window but cannot post its closed notice. The manager is told of the failed step
@@ -1165,7 +1162,6 @@ async def test_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(tm
     assert any(_NOTICE_NOT_POSTED in text for text in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason=_FAILED_STEPS)
 async def test_confirming_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(
     tmp_path,
 ):

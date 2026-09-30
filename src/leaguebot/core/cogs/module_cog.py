@@ -80,6 +80,28 @@ class ForcedCloseOutcome:
     refused: str | None = None
 
 
+def failed_steps_reply(outcome: ForcedCloseOutcome) -> str:
+    """What a reply adds beneath its own text where the close failed a step, or nothing.
+
+    Starts with a line break, so a caller appends it to its sentence unconditionally.
+    """
+    steps = list(outcome.failed)
+    if not steps:
+        return ""
+    return "\n⚠️ The window is closed, but not every step succeeded:\n" + "\n".join(
+        f"• {step}" for step in steps
+    )
+
+
+def failed_steps_lines(outcome: ForcedCloseOutcome) -> str:
+    """What a log line carries beneath its head where the close failed a step, or nothing.
+
+    One indented line per step, each starting with a line break, in the form the line's other
+    details take.
+    """
+    return "".join(f"\n  failed_step: {step}" for step in outcome.failed)
+
+
 class _Unasked(enum.Enum):
     """The window a close was not asked about: the default of ``execute_forced_close``'s ``window``."""
 
@@ -1151,8 +1173,9 @@ class ModuleCog(commands.Cog):
         signup_cfg = await self.bot.signup_module_service.get_config()
 
         # Force-close if signups are open
+        closed: ForcedCloseOutcome | None = None
         if signup_cfg and signup_cfg.signups_open:
-            await execute_forced_close(self.bot, audit_action="SIGNUP_FORCE_CLOSE")
+            closed = await execute_forced_close(self.bot, audit_action="SIGNUP_FORCE_CLOSE")
 
         # Cancel any active signup close timer
         self.bot.scheduler_service.cancel_signup_close_timer()
@@ -1214,11 +1237,21 @@ class ModuleCog(commands.Cog):
             )
             await db.commit()
 
+        detail = ""
+        notes = ""
+        if closed is not None:
+            detail = (
+                f"\n  drivers_returned_to_not_signed_up: {closed.returned}"
+                + failed_steps_lines(closed)
+            )
+            notes = failed_steps_reply(closed)
         await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable signup | Success",
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable signup | Success"
+            + detail,
         )
         await interaction.followup.send(
             "✅ Signup module disabled. Its channel has been cleared; its time slots and "
-            "question settings are kept, and so are the league's base role and driver role.",
+            "question settings are kept, and so are the league's base role and driver role."
+            + notes,
             ephemeral=True,
         )

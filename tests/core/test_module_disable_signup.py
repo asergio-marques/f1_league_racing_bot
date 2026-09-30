@@ -247,10 +247,6 @@ async def test_the_disable_is_audited(tmp_path):
     assert json.loads(rows[0]["old_value"]) == {"module": "signup"}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /module disable signup reports neither the drivers returned nor a failed step",
-)
 async def test_the_disable_is_logged(tmp_path):
     """Signups are open when the module is disabled, and the forced close returns two drivers
     but cannot post its closed notice: the success line carries the two drivers returned and,
