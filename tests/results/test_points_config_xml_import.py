@@ -384,9 +384,6 @@ async def test_an_xml_import_database_fault_names_the_config_in_one_failure_line
             VALID_XML,
             [f"Manager (<@{ACTOR_ID}>) | /results config xml-import | Success"],
             id="success",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: the success line is not yet in the usual form"
-            ),
         ),
         pytest.param(
             MALFORMED_XML,

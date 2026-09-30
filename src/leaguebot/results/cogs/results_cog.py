@@ -498,12 +498,6 @@ async def _run_xml_import(
 
     what = xml_import_named(config_name)
 
-    async def _audit(msg: str) -> None:
-        await bot_of(interaction).output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-            f"| /results config xml-import | config: {config_name}\n  {msg}",
-        )
-
     # --- parse ------------------------------------------------------------
     try:
         payload, warnings = parse_xml_payload(xml_text)
@@ -585,7 +579,11 @@ async def _run_xml_import(
     for session_type, (fl_pts, fl_limit) in payload.fastest_laps.items():
         limit_text = f", limit P{fl_limit}" if fl_limit is not None else ""
         values.append(f"  {session_type.label()} fastest lap: {fl_pts} pts{limit_text}")
-    await _audit("SUCCESS" + "".join(f"\n{line}" for line in values))
+    await bot_of(interaction).output_router.post_log(
+        f"{interaction.user.display_name} (<@{interaction.user.id}>) "
+        "| /results config xml-import | Success\n"
+        f"  config: {config_name}" + "".join(f"\n{line}" for line in values),
+    )
 
 
 async def _take_down(posted: discord.Interaction | None) -> None:
