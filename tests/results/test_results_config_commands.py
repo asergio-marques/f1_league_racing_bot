@@ -191,15 +191,21 @@ async def test_a_duplicate_name_is_refused():
     assert "already exists" in _replied(interaction)
 
 
-async def test_a_refused_creation_is_not_logged():
-    """The log is the league's record of what changed, and nothing did."""
+@pytest.mark.xfail(strict=True, reason="#482: a refused creation is not yet recorded")
+async def test_a_refused_creation_is_recorded_as_a_refusal():
+    """Nothing changed, so the log records the refusal and its reason, never a creation."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results config add"
 
     with _service(create_config=AsyncMock(side_effect=ConfigAlreadyExistsError(CONFIG))):
         await _add(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results config add` refused for Admin (<@{ACTOR_ID}>) — "
+        f"A config named **{CONFIG}** already exists on this server."
+    )
 
 
 async def test_a_created_configuration_is_logged_by_name():
@@ -378,14 +384,22 @@ async def test_both_routes_log_the_removal_identically():
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#482: the refused removal is not yet recorded")
 async def test_a_removal_that_finds_nothing_is_reported_not_raised():
     """The configuration can go between the existence check and the removal — another
-    admin removing it in the meantime must not raise at this one."""
+    admin removing it in the meantime must not raise at this one, and the removal is
+    recorded as refused, not as done."""
     cog = _make_cog()
     interaction = _interaction()
+
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results config remove"
 
     with _service(remove_config=AsyncMock(side_effect=ConfigNotFoundError(CONFIG))):
         await _remove(cog, interaction)
 
     assert "not found" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results config remove` refused for Admin (<@{ACTOR_ID}>) — "
+        f"Config **{CONFIG}** not found."
+    )

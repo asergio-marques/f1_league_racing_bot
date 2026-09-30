@@ -345,17 +345,27 @@ async def test_the_fastest_lap_commands_report_a_missing_configuration(caller, s
     assert "not found" in _replied(interaction)
 
 
-@pytest.mark.parametrize("caller", [_fl, _plimit], ids=["fl", "fl-plimit"])
-async def test_a_refused_fastest_lap_edit_is_not_logged(caller):
+@pytest.mark.xfail(strict=True, reason="#482: a refused fastest-lap edit is not yet recorded")
+@pytest.mark.parametrize(
+    "caller,command", [(_fl, "fl"), (_plimit, "fl-plimit")], ids=["fl", "fl-plimit"]
+)
+async def test_a_refused_fastest_lap_edit_is_recorded_as_a_refusal(caller, command):
+    """Nothing changed, so the log records the refusal and its reason, never an edit."""
     cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = f"results config {command}"
 
     with _points_service(
         set_fl_bonus=AsyncMock(side_effect=ConfigNotFoundError(CONFIG)),
         set_fl_position_limit=AsyncMock(side_effect=ConfigNotFoundError(CONFIG)),
     ):
-        await caller(cog, _interaction())
+        await caller(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results config {command}` refused for Manager (<@{ACTOR_ID}>) — "
+        f"Config **{CONFIG}** not found."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -425,10 +435,20 @@ async def test_a_successful_attachment_is_logged():
     assert "config append" in cog.bot.output_router.post_log.await_args.args[0]
 
 
-async def test_a_refused_attachment_is_not_logged():
+@pytest.mark.xfail(strict=True, reason="#482: a refused attachment is not yet recorded")
+async def test_a_refused_attachment_is_recorded_as_a_refusal():
+    """Nothing was attached, so the log records the refusal and its reason, never an
+    attachment."""
     cog = _make_cog()
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "results config append"
 
     with _season_service(attach_config=AsyncMock(side_effect=ConfigNotFoundError(CONFIG))):
-        await _append(cog, _interaction())
+        await _append(cog, interaction)
 
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results config append` refused for Manager (<@{ACTOR_ID}>) — "
+        f"Config **{CONFIG}** does not exist on this server, so nothing was attached. "
+        "Check the spelling, or create it with `/results config add`."
+    )
