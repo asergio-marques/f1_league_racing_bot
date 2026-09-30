@@ -492,10 +492,6 @@ async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path):
         assert (await cursor.fetchone())[0] == ANNOUNCEMENT_ID
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: who started a resubmission is not yet kept for the restart sweep",
-)
 async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(tmp_path):
     """Alex (id 77) presses 🔄 Resubmit on round 3 (Division 1). A restart ends the
     resubmission, and its lapse line names who started it, so the round's submission channel

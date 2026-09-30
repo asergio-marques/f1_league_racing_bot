@@ -5170,8 +5170,9 @@ async def enter_resubmit_flow(
 
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE round_submission_channels SET resubmitting = 1 WHERE round_id = ?",
-            (round_id,),
+            "UPDATE round_submission_channels SET resubmitting = 1, resubmit_started_by = ? "
+            "WHERE round_id = ?",
+            (interaction.user.id, round_id),
         )
         await db.commit()
 
