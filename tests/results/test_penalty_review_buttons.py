@@ -325,7 +325,6 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
     assert order == ["prompt redrawn with 0 staged", "approval question posted"]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: cancelling the clear is not recorded")
 async def test_cancelling_the_clear_keeps_every_penalty():
     """Round 3's penalty review (Division 1) has two penalties staged, and Alex is asked whether
     to clear them. Alex presses "Cancel — keep penalties". Both penalties stay staged, no
@@ -936,7 +935,6 @@ def _assert_clear_abandoned(line: str, ending: str) -> None:
     assert not detail[-1].strip().endswith(_CLEAR_KEPT), f"no next step: {line}"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the clear confirmation's lapse is not recorded")
 async def test_a_clear_confirmation_left_to_lapse_is_recorded():
     """Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
     Penalties / Confirm and is asked whether to clear them, then answers nothing until the

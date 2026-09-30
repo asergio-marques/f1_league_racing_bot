@@ -513,7 +513,6 @@ async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     finalise.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: going back from the clear is not recorded")
 async def test_going_back_keeps_the_corrections(tmp_path):
     """The whole purpose of the question: a steward who pressed Confirm by habit gets their
     work back.
@@ -792,7 +791,6 @@ def _assert_appeals_clear_abandoned(line: str, ending: str) -> None:
     assert not detail[-1].strip().endswith(_APPEALS_CLEAR_KEPT), f"no next step: {line}"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the clear confirmation's lapse is not recorded")
 async def test_an_appeals_clear_confirmation_left_to_lapse_is_recorded(tmp_path):
     """Round 3's appeals review (division Pro) has one correction staged. Alex presses No
     Changes / Confirm and is asked whether to clear it, then answers nothing until the question

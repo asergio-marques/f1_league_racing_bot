@@ -26,7 +26,7 @@ from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse
 from leaguebot.core.utils.interaction_errors import describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)
@@ -175,6 +175,32 @@ async def _staged_named(state: PenaltyReviewState, penalties: list[StagedPenalty
     return ", ".join(
         [f"{_pen_label(sp)} for <@{await _shown(state, sp.driver_user_id)}>" for sp in penalties]
     )
+
+
+def _clear_confirmation(state: PenaltyReviewState, review: str) -> str:
+    """Name a review's clear confirmation as the log channel should read it (#482).
+
+    "the clear confirmation of the penalty review of round 3 (Division 1)".
+    """
+    return (
+        f"the clear confirmation of the {review} review of round {state.round_number} "
+        f"({state.division_name})"
+    )
+
+
+async def _take_down_confirmation(posted: discord.Interaction | None) -> None:
+    """Take a lapsed confirmation's buttons down, through the interaction that posted it (#482).
+
+    Never through a message object's ``edit``: the confirmation is an ephemeral reply, which
+    only the interaction that sent it can edit. Left as it is where the interaction is not to
+    hand or Discord will not have it; the lapse is recorded either way.
+    """
+    if posted is None:
+        return
+    try:
+        await posted.edit_original_response(view=None)
+    except discord.HTTPException:
+        log.warning("could not take down a lapsed clear confirmation", exc_info=True)
 
 
 async def _require_lm(
@@ -1034,11 +1060,35 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 # ---------------------------------------------------------------------------
 
 class _ConfirmClearView(LeagueView):
-    """Two-button confirmation for clearing the staged penalty list."""
+    """Two-button confirmation for clearing the staged penalty list.
 
-    def __init__(self, state: PenaltyReviewState) -> None:
+    Cancelling it and leaving it to lapse are each recorded (#482), the lapse naming the member
+    who was asked (*posted* is the press that asked, whose reply the buttons come down from)
+    and the cancel the member who pressed. Neither changes the list.
+    """
+
+    _KEPT = (
+        "Nothing was cleared; the staged list stands. "
+        "Press “No Penalties / Confirm” again to clear it."
+    )
+
+    def __init__(
+        self, state: PenaltyReviewState, *, posted: discord.Interaction | None = None
+    ) -> None:
         super().__init__(timeout=60)
         self.state = state
+        self._posted = posted
+
+    async def on_timeout(self) -> None:
+        """Nobody answered: the buttons come down and the lapse is recorded."""
+        await _take_down_confirmation(self._posted)
+        await record_abandoned(
+            self.state.bot,
+            None if self._posted is None else self._posted.user,
+            what=_clear_confirmation(self.state, "penalty"),
+            lapsed=True,
+            detail=self._KEPT,
+        )
 
     @discord.ui.button(label="Yes, clear and proceed with no penalties", style=discord.ButtonStyle.danger)
     async def confirm_btn(
@@ -1071,6 +1121,13 @@ class _ConfirmClearView(LeagueView):
             return
         await interaction.response.send_message(
             "↩️ Staged penalties kept intact.", ephemeral=True
+        )
+        await record_abandoned(
+            self.state.bot,
+            interaction.user,
+            what=_clear_confirmation(self.state, "penalty"),
+            lapsed=False,
+            detail=self._KEPT,
         )
         self.stop()
 
@@ -1370,7 +1427,7 @@ class PenaltyReviewView(LeagueView):
             )
         else:
             # Ask for explicit confirmation before clearing (T019)
-            view = _ConfirmClearView(state=self.state)
+            view = _ConfirmClearView(state=self.state, posted=interaction)
             await interaction.response.send_message(
                 f"⚠️ You have **{len(self.state.staged)}** staged penalty(ies). "
                 "Clicking **Yes, clear and proceed** will discard all of them and finalize "
@@ -1731,7 +1788,7 @@ class AppealsReviewView(LeagueView):
             )
         else:
             # Ask for explicit confirmation before clearing
-            view = _AppealsConfirmClearView(state=self.state)
+            view = _AppealsConfirmClearView(state=self.state, posted=interaction)
             await interaction.response.send_message(
                 f"⚠️ You have **{len(self.state.staged_appeals)}** staged correction(s). "
                 "Clicking **Yes, clear and proceed** will discard all of them and finalise "
@@ -1775,11 +1832,33 @@ class AppealsReviewView(LeagueView):
 
 
 class _AppealsConfirmClearView(LeagueView):
-    """Two-button confirmation for clearing the staged appeals corrections list."""
+    """Two-button confirmation for clearing the staged appeals corrections list.
 
-    def __init__(self, state: PenaltyReviewState) -> None:
+    Going back and leaving it to lapse are each recorded (#482), as the penalty review's are.
+    """
+
+    _KEPT = (
+        "Nothing was cleared; the staged list stands. "
+        "Press “No Changes / Confirm” again to clear it."
+    )
+
+    def __init__(
+        self, state: PenaltyReviewState, *, posted: discord.Interaction | None = None
+    ) -> None:
         super().__init__(timeout=60)
         self.state = state
+        self._posted = posted
+
+    async def on_timeout(self) -> None:
+        """Nobody answered: the buttons come down and the lapse is recorded."""
+        await _take_down_confirmation(self._posted)
+        await record_abandoned(
+            self.state.bot,
+            None if self._posted is None else self._posted.user,
+            what=_clear_confirmation(self.state, "appeals"),
+            lapsed=True,
+            detail=self._KEPT,
+        )
 
     @discord.ui.button(
         label="Yes, clear and proceed with no corrections",
@@ -1813,5 +1892,12 @@ class _AppealsConfirmClearView(LeagueView):
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
         await interaction.response.defer(ephemeral=True)
+        await record_abandoned(
+            self.state.bot,
+            interaction.user,
+            what=_clear_confirmation(self.state, "appeals"),
+            lapsed=False,
+            detail=self._KEPT,
+        )
         self.stop()
 
