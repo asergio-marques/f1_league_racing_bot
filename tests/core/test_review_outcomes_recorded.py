@@ -519,3 +519,39 @@ async def test_the_five_minutes_run_from_the_posting_of_the_question(
 
     getattr(cog, helper).assert_awaited_once()
     assert not any(line.startswith("⛔ ") for line in _logged(cog)), _logged(cog)
+
+
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_a_second_press_while_one_is_being_worked_is_refused(
+    view_class, label, review, helper, verb
+):
+    """F13. Alex presses his review's button, and presses it again (a double-click) while the
+    first press is still being worked. The second press is refused, privately, and recorded;
+    only the first is worked, so the season is approved (or confirmed) once."""
+    view, cog, message = _review(view_class, helper)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _worked(*_args, **_kwargs):
+        started.set()
+        await release.wait()
+
+    getattr(cog, helper).side_effect = _worked
+    first = asyncio.create_task(view_class.approve(view, _press(cog), MagicMock()))
+    await asyncio.wait_for(started.wait(), timeout=2)
+
+    second = _press(cog)
+    second_press = asyncio.create_task(view_class.approve(view, second, MagicMock()))
+    answered, _ = await asyncio.wait({second_press}, timeout=1)
+    release.set()
+    await asyncio.wait_for(asyncio.gather(first, second_press), timeout=2)
+
+    assert answered, "the second press waited on the first instead of being refused"
+    getattr(cog, helper).assert_awaited_once()
+    reply = second.response.send_message.await_args
+    assert "already being answered" in reply.args[0], reply
+    assert f"Nothing has been {verb}" in reply.args[0], reply
+    assert reply.kwargs["ephemeral"] is True
+    refusals = [line for line in _logged(cog) if line.startswith("⛔ ")]
+    assert len(refusals) == 1, _logged(cog)
+    assert " refused for Alex (<@4242>) — " in refusals[0], refusals

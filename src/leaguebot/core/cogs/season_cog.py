@@ -6463,7 +6463,8 @@ class _ApproveView(LeagueView):
     **A press under way is not expired under it.** Where the timer fires while a press is being
     worked (under test mode the backup question, then the approval), the expiry waits for the
     press to end: a press that finishes has recorded its own outcome and cleared the review, and
-    one that raised leaves the review to expire then, as the timer asked.
+    one that raised leaves the review to expire then, as the timer asked. A second press while one
+    is being worked is refused, so a double-click cannot approve twice.
 
     **What the log holds.** A review left to lapse records one lapse line naming the member who
     ran it, beside the public notice. One ended by `_expire_now` (the season changed under it, or
@@ -6541,6 +6542,23 @@ class _ApproveView(LeagueView):
             reason="the review's five minutes were up",
         )
         await self._expire_now()
+        return True
+
+    async def _refuse_if_under_way(self, interaction: discord.Interaction) -> bool:
+        """Refuse a press made while another press of this review is still being worked.
+
+        A double-click would otherwise run a second approval (or confirmation) beside the
+        first until the first commits. The second confirms nothing, and is recorded.
+        """
+        if not self._pressing:
+            return False
+        await refuse(
+            interaction,
+            "\u26d4 This review is already being answered by another press. "
+            f"**Nothing has been {self._verb} by this one.**",
+            what=self._button,
+            reason="another press of the review was being worked",
+        )
         return True
 
     @asynccontextmanager
@@ -6740,6 +6758,8 @@ class _ApproveView(LeagueView):
 
         if await self._refuse_if_expired(interaction):
             return
+        if await self._refuse_if_under_way(interaction):
+            return
 
         # The report you read is the report you approve. The five-minute life makes a change
         # unlikely; this makes one detectable — and it is what lets the approval trust the
@@ -6873,6 +6893,8 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
 
         if await self._refuse_if_expired(interaction):
             return
+        if await self._refuse_if_under_way(interaction):
+            return
 
         if self._fingerprint is not None and self._season_id is not None:
             from leaguebot.core.services.season_fingerprint_service import take_fingerprint
@@ -6930,6 +6952,8 @@ class _ConfirmConfigurationView(_ApproveView):
             return
 
         if await self._refuse_if_expired(interaction):
+            return
+        if await self._refuse_if_under_way(interaction):
             return
 
         if self._fingerprint is not None and self._season_id is not None:
