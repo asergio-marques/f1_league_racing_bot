@@ -37,11 +37,6 @@ SERVER_ID = 1
 DRIVER_ID = "7"
 CHANNEL_ID = 99
 
-_SILENT = (
-    "#482: a button on a step already answered is turned away in silence, returning no reason "
-    "for the view to answer and record"
-)
-
 _NO_STEP_LINE = "#482: a wizard step answered by a button writes no line in the log channel"
 
 _PICKED_AGAIN = "#482: a team already picked is recorded a second time rather than turned away"
@@ -154,7 +149,6 @@ async def test_a_platform_button_records_the_platform_and_advances(service):
     assert service.advanced == [wizard]
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_platform_button_pressed_on_a_later_step_does_nothing(service):
     """The step-2 buttons are still in the channel when the driver reaches step 5.
     Pressing one must not overwrite an answer and shunt the wizard backwards, and the handler
@@ -171,7 +165,6 @@ async def test_a_platform_button_pressed_on_a_later_step_does_nothing(service):
     assert _ALREADY_ANSWERED in (reason or "")
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_button_from_a_driver_with_no_wizard_does_nothing(service):
     """The wizard channel is deleted when a signup completes, but a button could still be
     pressed from a cached view before the delete lands. The handler says why it did nothing
@@ -184,7 +177,6 @@ async def test_a_button_from_a_driver_with_no_wizard_does_nothing(service):
     assert isinstance(reason, str) and reason
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_button_whose_channel_is_gone_does_not_advance(service):
     """The handler says why it did nothing rather than leaving the press unanswered."""
     from leaguebot.signup.models.signup_module import WizardState
@@ -218,7 +210,6 @@ async def test_a_driver_type_button_records_the_type_and_advances(service):
     assert service.advanced == [wizard]
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_driver_type_button_pressed_on_a_later_step_does_nothing(service):
     from leaguebot.signup.models.signup_module import WizardState
 
@@ -424,7 +415,6 @@ async def test_a_continuing_loop_saves_the_wizard_and_resets_the_timeout(service
     assert wizard.last_activity_at is not None
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_a_team_button_pressed_on_a_later_step_does_nothing(service):
     from leaguebot.signup.models.signup_module import WizardState
 
@@ -457,7 +447,6 @@ async def test_no_preference_for_a_teammate_records_none_and_advances(service):
     assert service.advanced == [wizard]
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_the_teammate_button_pressed_on_a_later_step_does_nothing(service):
     from leaguebot.signup.models.signup_module import WizardState
 
@@ -476,7 +465,6 @@ async def test_the_teammate_button_pressed_on_a_later_step_does_nothing(service)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_SILENT)
 async def test_no_notes_pressed_after_the_signup_was_submitted_does_nothing(service):
     """A driver whose signup has gone to review presses the No Notes left in the channel. It
     must not submit the signup a second time, and the handler says why."""

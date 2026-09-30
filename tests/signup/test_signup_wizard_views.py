@@ -44,11 +44,6 @@ DRIVER_ID = "7"
 OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
-_STEP_REFUSAL_IGNORED = (
-    "#482: the view ignores the reason a step handler gives for turning a press away, so the "
-    "driver is not told and nothing is recorded"
-)
-
 #: The reason a step handler gives for a press on a step already answered (commit point 19).
 _ALREADY_ANSWERED = "That step has already been answered."
 
@@ -493,7 +488,6 @@ async def _press_step(view_name: str, button: str, interaction) -> None:
     await getattr(type(view), button)(view, interaction, MagicMock())
 
 
-@pytest.mark.xfail(strict=True, reason=_STEP_REFUSAL_IGNORED)
 @pytest.mark.parametrize(
     "view_name, button, handler, label",
     [

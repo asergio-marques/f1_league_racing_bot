@@ -44,11 +44,6 @@ CHANNEL_ID = 700
 TEAMS = ["Ferrari", "Mercedes", "McLaren"]
 
 _LABEL_RULE = "#482: a team button resolves its index against the live picks, not its own label"
-_STEP_REFUSAL_IGNORED = (
-    "#482: the team button ignores the reason the step handler gives for turning a press away, "
-    "so the driver is not told and nothing is recorded"
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -294,7 +289,6 @@ async def test_a_wizard_with_no_snapshot_is_answered():
     assert "Wizard session not found." in _refusal_line(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_STEP_REFUSAL_IGNORED)
 async def test_a_team_pressed_on_a_step_already_answered_is_refused_and_recorded():
     """The driver has moved past the team step and presses a team button left above. The step
     handler changes nothing and says why; the button tells the driver so and records the

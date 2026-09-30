@@ -87,6 +87,18 @@ async def _wizard_channel_delete_job(discord_user_id: str) -> None:
     await _GLOBAL_WIZARD_SERVICE._execute_channel_delete(discord_user_id)
 
 
+#: What a button press is told where the wizard it belongs to is gone, where the step it
+#: answers has been answered, and where the wizard's channel is not to be found.
+_NO_WIZARD = "Wizard session not found."
+_STEP_ANSWERED = "That step has already been answered."
+_NO_WIZARD_CHANNEL = "Wizard channel not found."
+
+
+def _wizard_gone_or_answered(wizard: SignupWizardRecord | None) -> str:
+    """Why a button press on a step that is not the wizard's current one did nothing."""
+    return _NO_WIZARD if wizard is None else _STEP_ANSWERED
+
+
 class SignupNotOpenError(Exception):
     """`WizardService.start_wizard` was asked to start a signup while signups are not open.
 
@@ -1293,52 +1305,55 @@ class WizardService:
         discord_user_id: str,
         platform: str,
         guild: discord.Guild,
-    ) -> None:
-        """Handle a platform button press in Step 2."""
+    ) -> str | None:
+        """Handle a platform button press in Step 2.
+
+        **The `handle_*` button handlers share one contract.** Each returns None where it acted,
+        and otherwise why it did nothing, as a sentence: the wizard is gone, the step has
+        already been answered, or its channel is not to be found. It answers nobody itself; the
+        view turns the sentence into the refusal, which answers the driver and is recorded
+        (#482).
+        """
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PLATFORM:
-            return
+            return _wizard_gone_or_answered(wizard)
         wizard.draft_answers["platform"] = platform
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
         await self._advance_wizard_in_channel(wizard, channel, guild)
+        return None
 
     async def handle_driver_type_button(
         self,
         discord_user_id: str,
         driver_type: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle a driver-type button press in Step 5."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_DRIVER_TYPE:
-            return
+            return _wizard_gone_or_answered(wizard)
         wizard.draft_answers["driver_type"] = driver_type
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
         await self._advance_wizard_in_channel(wizard, channel, guild)
+        return None
 
     async def handle_preferred_teams_button(
         self,
         discord_user_id: str,
         team_name: str | None,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps)."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMS:
-            return
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+            return _wizard_gone_or_answered(wizard)
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
 
         current_step: int = wizard.draft_answers.get("_pref_teams_step", 0)
         current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
@@ -1348,7 +1363,7 @@ class WizardService:
             wizard.draft_answers["preferred_teams"] = current_picks
             wizard.draft_answers.pop("_pref_teams_step", None)
             await self._advance_wizard_in_channel(wizard, channel, guild)
-            return
+            return None
 
         # Record this pick
         current_picks.append(team_name)
@@ -1363,7 +1378,7 @@ class WizardService:
             # Done — all 3 picks taken or no teams left
             wizard.draft_answers.pop("_pref_teams_step", None)
             await self._advance_wizard_in_channel(wizard, channel, guild)
-            return
+            return None
 
         # More sub-steps to go — save and send next sub-step prompt
         wizard.draft_answers["_pref_teams_step"] = next_step
@@ -1385,23 +1400,33 @@ class WizardService:
                 discord_user_id, self._bot, team_names, excluded=current_picks
             ),
         )
+        return None
 
     async def handle_no_preference_teammate(
         self,
         discord_user_id: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle the No Preference button press in Step 7."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMMATE:
-            return
+            return _wizard_gone_or_answered(wizard)
         wizard.draft_answers["preferred_teammate"] = None
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
         await self._advance_wizard_in_channel(wizard, channel, guild)
+        return None
+
+    @staticmethod
+    def _wizard_channel(
+        wizard: SignupWizardRecord, guild: discord.Guild
+    ) -> discord.TextChannel | None:
+        """The text channel the wizard runs in, or None where it has none or it is gone."""
+        if wizard.signup_channel_id is None:
+            return None
+        channel = guild.get_channel(wizard.signup_channel_id)
+        return channel if isinstance(channel, discord.TextChannel) else None
 
     async def _handle_nationality(
         self, wizard: SignupWizardRecord, message: discord.Message
@@ -1615,11 +1640,11 @@ class WizardService:
         self,
         discord_user_id: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle the 'No Notes' button press in Step 9."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_NOTES:
-            return
+            return _wizard_gone_or_answered(wizard)
 
         is_correction = wizard.draft_answers.pop("_is_correction", False)
         wizard.draft_answers["notes"] = None
@@ -1629,6 +1654,7 @@ class WizardService:
         else:
             await self._signup_svc.save_wizard(wizard)
             await self.commit_wizard(discord_user_id, guild)
+        return None
 
     # ------------------------------------------------------------------
     # Prompt builder helpers
