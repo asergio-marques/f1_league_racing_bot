@@ -732,6 +732,49 @@ async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_pat
     assert "The earlier results still stand" in _posted(channel)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a restart ending a resubmission is not yet recorded naming who started it",
+)
+async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
+    """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro) and was part-way
+    through pasting when the bot restarted. One line records the resubmission as lapsed, naming
+    Alex as its starter, with what became of it and what to do next beneath it."""
+    from types import SimpleNamespace
+
+    starter = 4242
+    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_lapse")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET resubmit_started_by = ? WHERE round_id = ?",
+            (starter, ROUND_ID),
+        )
+        await db.commit()
+    stub = _bot(db_path, channel=_channel())
+    stub._guild.get_member = MagicMock(
+        side_effect=lambda member_id: SimpleNamespace(display_name="Alex", id=member_id)
+        if member_id == starter
+        else None
+    )
+
+    await _recover(stub)
+
+    records = [
+        str(call.args[0]) for call in stub.output_router.post_log.await_args_list
+        if str(call.args[0]).startswith("⌛")
+    ]
+    assert len(records) == 1, records
+    head, *detail = records[0].splitlines()
+    assert head == (
+        "⌛ the “Resubmit Initial Results” button of round 3 (Pro) lapsed unconfirmed "
+        f"(started by Alex (<@{starter}>))"
+    )
+    assert detail == [
+        "  The sessions entered were lost. The earlier results stand. "
+        "Press Resubmit again to re-enter them."
+    ]
+
+
 async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path):
     """The view was not persistent, so after a restart pressing it would only fail."""
     db_path = await _resubmitting_db(

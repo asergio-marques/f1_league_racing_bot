@@ -462,6 +462,27 @@ async def test_the_announcement_is_recorded_for_the_restart_sweep(tmp_path):
         assert (await cursor.fetchone())[0] == ANNOUNCEMENT_ID
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: who started a resubmission is not yet kept for the restart sweep",
+)
+async def test_who_started_the_resubmission_is_recorded_for_the_restart_sweep(tmp_path):
+    """Alex (id 77) presses 🔄 Resubmit on round 3 (Division 1). A restart ends the
+    resubmission, and its lapse line names who started it, so the round's submission channel
+    row keeps Alex's id from the moment the resubmission starts."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, channel=_channel())
+
+    await _run(state, _interaction())
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT resubmit_started_by FROM round_submission_channels WHERE round_id = ?",
+            (ROUND_ID,),
+        )
+        assert (await cursor.fetchone())[0] == ACTOR_ID
+
+
 async def test_the_manager_is_told_privately_what_to_do_next(tmp_path):
     db_path = await _make_db(tmp_path)
     interaction = _interaction()
