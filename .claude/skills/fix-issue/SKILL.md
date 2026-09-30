@@ -331,10 +331,13 @@ print from it only what is acted on: `status` and `failure`; `escalations`, `tes
 pass back inline, so where a run needs one as `previous`, or a tests stage's `citations`, copy the
 workflow script into `.claude/gates/`, write the saved JSON in place of `ARGS.previous` or
 `ARGS.citations`, and run the copy by `scriptPath`: the Workflow tool runs a script only from the
-working directory. Leave out the result's `report` and `lastTest` as you bake it in: the workflow
-reads neither from `previous`, and they are most of its size. Keep everything else, `listSeen` and
-`shown` included: they are small, and without them the next run sends its reviewers the whole list
-again and the next Gate 2 loses its marks.
+working directory. The Workflow tool takes a script of 512 KiB at most, so bake in only the fields
+the workflow reads from `previous`: `stage`, `status`, `lastRound`, `roundBudget`, `decisionsDigest`,
+`ledger`, `citations`, `provisional`, `commits`, `separateDefects`, `lastFailures`, `lastRed`,
+`stallStreak`, `reviewedAt`, `designFiles`, `testsHead`, `testChanges`, `adjusted`, and for the tests
+stage `tests`, `support`, `shown` and `listSeen`. Leave out the rest, `report` and `lastTest` above
+all. Keep `listSeen` and `shown`: without them the next run sends its reviewers the whole list again
+and the next Gate 2 loses its marks.
 
 - **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
   the product owner framed them, its recommendation first. Merge any two that ask the same thing.
@@ -343,8 +346,7 @@ again and the next Gate 2 loses its marks.
   this result as `previous`, so its rounds carry on. An escalation that carries `finding` is a
   dispute the user rules on: pass their choice as `rulings: { "<finding>": "fix" }` or `"leave"`.
   Every such dispute needs a ruling, or the stage refuses to run; a finding left as built is
-  closed. `rulings` carries the last result's disputes and minor findings only, never an older
-  run's. Where `failure` names the host as well, repair it before the stage runs again.
+  closed. `rulings` carries the last result's findings only, never an older run's. Where `failure` names the host as well, repair it before the stage runs again.
 - **`testChanges`**, on a `question` result from the build, are the test changes it needs and has
   not made. Put each to the user through `AskUserQuestion`, in the question itself: the test, the
   change, its scenario, what it expects, and why the build needs it. The options are to make it, to
@@ -353,7 +355,9 @@ again and the next Gate 2 loses its marks.
   - where one is to be made, run the **tests stage** again with its own last result as `previous`,
     to make it; hold Gate 2 again on the file it writes, where the new entries are marked; and then
     run the build again with its last result as `previous` and the new `testsHead`;
-  - where every one is refused, run the build again with its last result as `previous`.
+  - where every one is refused, run the build again with its last result as `previous`, and pass
+    as `"leave"` in `rulings` each open finding whose only remedy was a refused test change: it has
+    nowhere else to go, and would otherwise hold a green build to its round budget.
 - **`provisional`** are the reversible calls the stage took on a checker's recommendation rather
   than stop for: wording, a log line's form, naming. They bind the builder until overruled. Show
   `provisionalNew`, the calls no gate has shown yet, at the next gate, where the Gate 2 report
@@ -368,7 +372,9 @@ again and the next Gate 2 loses its marks.
   stands and draft what is open as follow-ups. One more round is a run with `previous` and, for a
   capped stage, `roundBudget` one above its `lastRound`, which later runs keep; for a stalled one,
   `maxRounds: 1`. Never raise the budget without the user's word. A run the user starts in any
-  other way, after answering its questions or asking for changes at its gate, always gets a round.
+  other way, after answering its questions, asking for changes at its gate, or deciding anything
+  since the last run, capped or stalled included, always gets a round: the workflow knows it by
+  `decisions`, so write every such answer there before the run.
 - **`unfinished`:** run it again once, with `previous`. A second `unfinished` goes to the user,
   with `openMaterial` and `lastFailures`. A finding there that the user once wanted made, though
   it was found minor, can still be left: pass it as `"leave"` in `rulings`.
