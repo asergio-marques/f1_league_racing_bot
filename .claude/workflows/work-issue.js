@@ -37,26 +37,28 @@ const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
 }
 
-// Each role's model and effort. Every model is set explicitly, so that a session on another model
-// still verifies with Opus. Sonnet runs the build's builder, which implements an approved plan
-// against tests that already exist, and whose every round the suite, mypy and three or four Opus
-// reviewers check; and the tester, which runs commands and copies their output, at low effort.
-// Opus runs every other role: the tests stage's builder, whose tests everything after it is held
-// to, the checkers and reviewers, and triage, each open-ended judgement that nothing later would
-// catch.
+// Each role's model and effort. Every model and effort is set explicitly, so that a session on
+// another model or effort still verifies with Opus at high. Sonnet runs the build's builder, which
+// implements an approved plan against tests that already exist, and whose every round the suite,
+// mypy and three or four Opus reviewers check; and the tester, which runs commands and copies their
+// output, at low effort. Opus runs every other role: the tests stage's builder, whose tests
+// everything after it is held to, the checkers and reviewers, and triage, each open-ended judgement
+// that nothing later would catch.
 const ROLE_DEFAULTS = {
-  testsBuilder: { model: 'opus' },
-  builder: { model: 'sonnet' },
-  issue: { model: 'opus' },
-  code: { model: 'opus' },
-  product: { model: 'opus' },
-  design: { model: 'opus' },
+  testsBuilder: { model: 'opus', effort: 'high' },
+  builder: { model: 'sonnet', effort: 'high' },
+  issue: { model: 'opus', effort: 'high' },
+  code: { model: 'opus', effort: 'high' },
+  product: { model: 'opus', effort: 'high' },
+  design: { model: 'opus', effort: 'high' },
   tester: { model: 'sonnet', effort: 'low' },
-  triage: { model: 'opus' },
+  triage: { model: 'opus', effort: 'high' },
 }
-// fable is left out by the owner's ruling, and is refused like any model not listed.
+// fable is left out by the owner's ruling, and is refused like any model not listed. No effort
+// above high is taken, by the owner's ruling on #483: an agent's cost grows with every step it
+// takes, and a higher effort takes more of them for reviews that already catch what they catch.
 const MODELS = ['opus', 'sonnet', 'haiku']
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+const EFFORTS = ['low', 'medium', 'high']
 
 const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, and overruled, the ids of calls the owner has overruled. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
@@ -73,11 +75,16 @@ for (const [name, allowed] of [['models', MODELS], ['efforts', EFFORTS]]) {
   const wrong = Object.entries(given).filter(([role, v]) => !ROLE_DEFAULTS[role] || !allowed.includes(v))
   if (wrong.length) throw new Error(`${name} names ${wrong.map(([role, v]) => `${role}: ${JSON.stringify(v)}`).join(', ')}, which is not a role or not a value it takes. ${USAGE}`)
 }
-const settingsFor = role => {
-  const model = (ARGS.models || {})[role] || ROLE_DEFAULTS[role].model
-  const effort = (ARGS.efforts || {})[role] || ROLE_DEFAULTS[role].effort
-  return effort ? { model, effort } : { model }
-}
+const settingsFor = role => ({
+  model: (ARGS.models || {})[role] || ROLE_DEFAULTS[role].model,
+  effort: (ARGS.efforts || {})[role] || ROLE_DEFAULTS[role].effort,
+})
+
+// Every agent is asked to answer briefly. An agent re-reads its whole conversation at every step,
+// so every word it writes is paid for again at each step after; and its answer is read by the
+// agents and the session after it. What the owner reads is exempt from the cut, never from the fact.
+const BRIEF = `\n\n## How to answer\n\nBe brief. Make every string exact and as short as it can be: do not restate this prompt, narrate what you did, or hedge, and put in notes[] only what the caller must act on. What reaches the owner (a question, a test's scenario, a summary) stays complete and in plain terms: brevity never drops a fact from it.`
+const send = (prompt, opts) => agent(`${prompt}${BRIEF}`, opts)
 
 const { stage, plan, modules } = ARGS
 const issue = String(ARGS.issue).replace(/^#/, '')
@@ -330,7 +337,7 @@ const refsIn = x => String((x && x.ref) || '').match(/\b(?:b\d+-\d+|r\d+-\d+|c\d
 const triage = async (questions, tag, where, context, handled = []) => {
   const business = questions.filter(q => q.kind === 'business')
   const engineering = questions.filter(q => q.kind !== 'business')
-  const ask = (qs, who, job) => agent(
+  const ask = (qs, who, job) => send(
     `${job} ${ISSUE}. ${where}\n\nAnswer each question below as your instructions say: cite a written rule in answers[], or escalate it to the owner in escalations[], marked stops as your instructions say, keeping the question's ref on what settles it, and copying the question word for word into answers[].question. A question that asks the same as one already handled, listed below, goes in duplicates[] with its ref, and is neither answered nor escalated. Where a cited rule means the work must change, add a material finding saying what, in findings[], with an id of the form ${who}-${tag}-t<n>. Never run pytest.${context}${section('Questions', qs)}${section('Already answered or put to the owner', handled)}`,
     { ...settingsFor('triage'), label: `triage:${tag}:${who}`, phase: 'Triage', agentType: who === 'product' ? 'product-owner' : 'issue-reviewer', schema: TRIAGE_SCHEMA },
   )
@@ -389,7 +396,7 @@ if (stage === 'check') {
   const noDesignFile = !modules.some(m => DESIGN_FILES[m])
   if (noDesignFile) log('No module the plan touches has a design file yet, so no design agent runs.')
   const [architecture, design, product] = await parallel([
-    () => agent(`Job 1 — check a plan against the architecture. ${head}${context}${amended('architecture')}`,
+    () => send(`Job 1 — check a plan against the architecture. ${head}${context}${amended('architecture')}`,
       { ...settingsFor('issue'), label: 'check:architecture', phase: 'Check', agentType: 'issue-reviewer', schema: ARCHITECTURE_SCHEMA }),
     () => noDesignFile
       ? Promise.resolve({
@@ -399,9 +406,9 @@ if (stage === 'check') {
         followUps: [],
         notes: ['No module the plan touches has a design file yet, so no design agent ran: each is held to docs/design/architecture.md alone, which the architecture check covers, and no design document is owed.'],
       })
-      : agent(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}${amended('design')}`,
+      : send(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}${amended('design')}`,
         { ...settingsFor('issue'), label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
-    () => agent(`Job 1 — a plan. ${head} The specs: ${SPEC_LIST}, and the core specification wherever the plan touches core's rules.${context}${amended('product')}`,
+    () => send(`Job 1 — a plan. ${head} The specs: ${SPEC_LIST}, and the core specification wherever the plan touches core's rules.${context}${amended('product')}`,
       { ...settingsFor('product'), label: 'check:product', phase: 'Check', agentType: 'product-owner', schema: PRODUCT_PLAN_SCHEMA }),
   ])
   const failed = [['architecture', architecture], ['design', design], ['product', product]].filter(([, r]) => !r).map(([k]) => k)
@@ -1214,7 +1221,7 @@ const reviewTests = async (k, questions) => {
   const earliest = known && seenAt.length ? Math.min(...seenAt) : undefined
   const since = !seenAt.length || earliest === commits.length ? '' : earliest ? commits[earliest - 1].sha : base
   const test = written.length || supportWritten.length
-    ? await agent(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA })
+    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const nothing = { tests: new Set(), support: new Set() }
@@ -1223,8 +1230,8 @@ const reviewTests = async (k, questions) => {
     : !test || filled(test.changedSinceError) || !filled(found(test).head) ? null
       : { tests: new Set(found(test).tests.map(x => bareId(x.nodeid))), support: new Set(found(test).support.map(supportKey)) }
   const [issueResult, productResult] = await parallel([
-    () => agent(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
-    () => agent(productPrompt(k, questions.business, test, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => send(issuePrompt(k, questions.engineering, test, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
+    () => send(productPrompt(k, questions.business, test, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   for (const [lane, result] of [['issue', issueResult], ['product', productResult]]) {
     if (result) listSeen[lane] = { tests: written, support: supportWritten }
@@ -1271,16 +1278,16 @@ const reviewBuild = async (k, built, questions) => {
   if (quiet) log(`Round ${k}: the builder is blocked and made no commit, so the suite is not run.`)
   // The tester goes first: the suite is the longest wait, and the Pi runs two agents at once.
   const [test, issueAndDesign, code, product] = await parallel([
-    () => quiet ? Promise.resolve(undefined) : agent(buildTesterPrompt(k), { ...settingsFor('tester'), label: `build:r${k}:tester`, phase: 'Review', schema: SUITE_SCHEMA }),
-    () => agent(issuePrompt(k, questions.engineering, null), { ...settingsFor('issue'), label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
+    () => quiet ? Promise.resolve(undefined) : send(buildTesterPrompt(k), { ...settingsFor('tester'), label: `build:r${k}:tester`, phase: 'Review', schema: SUITE_SCHEMA }),
+    () => send(issuePrompt(k, questions.engineering, null), { ...settingsFor('issue'), label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
       .then(async issueResult => {
         for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
         if (!designFiles.size) return { issue: issueResult, design: undefined }
-        const design = await agent(designPrompt(k, [...designFiles].sort()), { ...settingsFor('design'), label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
+        const design = await send(designPrompt(k, [...designFiles].sort()), { ...settingsFor('design'), label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
         return { issue: issueResult, design }
       }),
-    () => agent(codePrompt(k), { ...settingsFor('code'), label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
-    () => agent(productPrompt(k, questions.business, null), { ...settingsFor('product'), label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
+    () => send(codePrompt(k), { ...settingsFor('code'), label: `build:r${k}:code`, phase: 'Review', agentType: 'code-reviewer', schema: REVIEW_SCHEMA }),
+    () => send(productPrompt(k, questions.business, null), { ...settingsFor('product'), label: `build:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   const green = !!test && !hostProblem(test) && test.exitCode === 0 && test.mypyClean && test.xfailMarkersLeft === 0 && !test.uncommitted.length && !unapprovedTestChanges(test).length
   return {
@@ -1338,7 +1345,7 @@ const buildRound = async k => {
     return merged
   }
   for (let n = 1; ; n++) {
-    const got = await agent(builderPrompt(k, parts), { ...settingsFor(stage === 'tests' ? 'testsBuilder' : 'builder'), label: n === 1 ? `${stage}:r${k}:builder` : `${stage}:r${k}:p${n}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
+    const got = await send(builderPrompt(k, parts), { ...settingsFor(stage === 'tests' ? 'testsBuilder' : 'builder'), label: n === 1 ? `${stage}:r${k}:builder` : `${stage}:r${k}:p${n}:builder`, phase: stage === 'tests' ? 'Tests' : 'Build', agentType: 'general-purpose', schema: BUILDER_SCHEMA })
     if (!got) {
       const kept = record()
       return { kept, missing: n === 1 ? `the builder returned nothing in round ${k}` : `the builder returned nothing in round ${k}, piece ${n}` }
@@ -1497,7 +1504,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     // second call is a fresh agent that has seen neither: it reviews the whole branch, and in the
     // tests stage is given the whole list.
     if (!summary) {
-      const asked = await agent(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null, true)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
+      const asked = await send(`${productPrompt(k, [], reviewed.test, stage === 'tests' ? written : null, stage === 'tests' ? supportWritten : null, true)}\n\nThe other checkers found nothing in this round. Write summary now.`, { ...settingsFor('product'), label: `${stage}:r${k}:summary`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA })
       if (asked) {
         addFindings('product', asked.findings)
         citations.push(...asked.answers)
