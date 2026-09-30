@@ -85,6 +85,7 @@ def committer():
     svc._format_review_panel = MagicMock(return_value="panel")  # type: ignore[method-assign]
     svc._revoke_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    svc._grant_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     async def _save_record(record):
         saved.append(record)
@@ -289,6 +290,39 @@ async def test_a_correction_is_logged_as_a_correction(committer):
     await _commit(committer)
 
     assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
+
+
+async def test_no_notes_on_the_first_pass_writes_only_submitted(committer):
+    """Lewis reaches the notes step on his first pass and presses No Notes. That ends the
+    wizard, and the "Submitted" line is the press's one line: No Notes writes no step line of
+    its own (one line per action)."""
+    await committer.svc.handle_no_notes(DRIVER_ID, committer.guild)
+
+    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    assert lines[0].endswith("| Signup | Submitted"), lines[0]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a correction ended by a button press writes no line in the log channel",
+)
+async def test_a_button_answer_that_ends_a_correction_writes_only_correction_submitted(committer):
+    """Lewis was asked to correct his platform and presses Steam. That press ends the
+    correction: it writes one line, "Correction submitted", and no "Platform: Steam" beside it."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    wizard = _wizard({"_is_correction": True})
+    wizard.wizard_state = WizardState.COLLECTING_PLATFORM
+    committer.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+    committer.signup_svc.get_record = AsyncMock(return_value=SimpleNamespace(id=9))
+
+    await committer.svc.handle_platform_button(DRIVER_ID, "Steam", committer.guild)
+
+    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    assert "| Signup | Correction submitted" in lines[0], lines[0]
+    assert "Platform: Steam" not in lines[0]
 
 
 async def test_a_correction_amends_the_signup_it_was_asked_of(committer):

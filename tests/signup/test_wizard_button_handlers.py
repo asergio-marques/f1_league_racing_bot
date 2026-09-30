@@ -42,6 +42,8 @@ _SILENT = (
     "for the view to answer and record"
 )
 
+_NO_STEP_LINE = "#482: a wizard step answered by a button writes no line in the log channel"
+
 #: The reply a press on a step already answered gets (the plan, commit point 19).
 _ALREADY_ANSWERED = "That step has already been answered."
 
@@ -462,3 +464,99 @@ async def test_no_notes_pressed_after_the_signup_was_submitted_does_nothing(serv
     service.svc.commit_wizard.assert_not_awaited()
     assert "notes" not in wizard.draft_answers
     assert _ALREADY_ANSWERED in (reason or "")
+
+
+# ---------------------------------------------------------------------------
+# The line each button answer writes
+# ---------------------------------------------------------------------------
+
+
+async def _press(ctx, handler: str, answer):
+    if handler == "handle_platform_button":
+        return await ctx.svc.handle_platform_button(DRIVER_ID, answer, ctx.guild)
+    if handler == "handle_driver_type_button":
+        return await ctx.svc.handle_driver_type_button(DRIVER_ID, answer, ctx.guild)
+    if handler == "handle_preferred_teams_button":
+        return await ctx.svc.handle_preferred_teams_button(DRIVER_ID, answer, ctx.guild)
+    return await ctx.svc.handle_no_preference_teammate(DRIVER_ID, ctx.guild)
+
+
+#: Each button step, the state it answers, the answer pressed, and what its line must carry.
+_BUTTON_STEPS = [
+    pytest.param("COLLECTING_PLATFORM", "handle_platform_button", "Steam",
+                 ["Platform: Steam"], id="platform"),
+    pytest.param("COLLECTING_DRIVER_TYPE", "handle_driver_type_button", "Reserve Driver",
+                 ["Reserve Driver"], id="driver-type"),
+    pytest.param("COLLECTING_PREFERRED_TEAMS", "handle_preferred_teams_button", "Alpha",
+                 ["Alpha"], id="team"),
+    pytest.param("COLLECTING_PREFERRED_TEAMS", "handle_preferred_teams_button", None,
+                 ["team", "no preference"], id="team-no-preference"),
+    pytest.param("COLLECTING_PREFERRED_TEAMMATE", "handle_no_preference_teammate", None,
+                 ["teammate", "no preference"], id="teammate-no-preference"),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_STEP_LINE)
+@pytest.mark.parametrize("state, handler, answer, carries", _BUTTON_STEPS)
+async def test_a_button_answer_writes_one_line_with_the_answer(
+    service, state, handler, answer, carries
+):
+    """Alex, part-way through the wizard, answers a step by pressing a button: Steam at the
+    platform step, Reserve Driver at the driver-type step, Alpha as a first preferred team, No
+    Preference for teams, No Preference for a teammate. The press is accepted, and it writes
+    one line in the wizard's family, naming Alex and carrying the answer (owner, 2026-09-30,
+    "Log button steps after all")."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    wizard = _wizard(WizardState[state])
+    _serve(service, wizard)
+
+    reason = await _press(service, handler, answer)
+
+    assert reason is None
+    lines = _lines(service)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("Alex (<@7>) | Signup | "), lines[0]
+    for text in carries:
+        assert text.lower() in lines[0].lower(), lines[0]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_STEP_LINE)
+async def test_the_platform_line_reads_as_the_plan_gives_it(service):
+    """The one line whose words are fixed: "Alex (<@7>) | Signup | Platform: Steam"."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    _serve(service, _wizard(WizardState.COLLECTING_PLATFORM))
+
+    await service.svc.handle_platform_button(DRIVER_ID, "Steam", service.guild)
+
+    assert _lines(service) == ["Alex (<@7>) | Signup | Platform: Steam"]
+
+
+@pytest.mark.parametrize(
+    "state, handler, answer",
+    [
+        pytest.param("COLLECTING_PLATFORM", "handle_platform_button", "Steam", id="platform"),
+        pytest.param("COLLECTING_DRIVER_TYPE", "handle_driver_type_button", "Reserve Driver",
+                     id="driver-type"),
+        pytest.param("COLLECTING_PREFERRED_TEAMS", "handle_preferred_teams_button", None,
+                     id="team-no-preference"),
+        pytest.param("COLLECTING_PREFERRED_TEAMMATE", "handle_no_preference_teammate", None,
+                     id="teammate-no-preference"),
+    ],
+)
+async def test_a_button_answer_that_ends_a_correction_writes_no_step_line(
+    service, state, handler, answer
+):
+    """Alex was asked to correct one answer and gives it by pressing a button. That press ends
+    the correction, and the correction's own "Correction submitted" line is its one line: the
+    handler writes no step line beside it (one line per action)."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    wizard = _wizard(WizardState[state], _is_correction=True)
+    _serve(service, wizard)
+
+    await _press(service, handler, answer)
+
+    assert service.advanced == [wizard]
+    assert _lines(service) == []
