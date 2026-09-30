@@ -60,7 +60,7 @@ const ROLE_DEFAULTS = {
 const MODELS = ['opus', 'sonnet', 'haiku']
 const EFFORTS = ['low', 'medium', 'high']
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, overruled, the ids of calls the owner has overruled, and handBuilt, a list naming the plan's commit points built by hand apart from the workflow. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. tests takes testsHead too once the build has begun, and then accepts as passing each test whose marker the build has removed since. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, overruled, the ids of calls the owner has overruled, and handBuilt, a list naming the plan's commit points built by hand apart from the workflow. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. tests takes testsHead too once the build has begun, and the build's adjusted, and then accepts as passing each test whose marker the build has removed since, or that the build adjusted and that passes. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -92,6 +92,7 @@ const kind = ARGS.kind || 'fix'
 if (!['fix', 'design-pass'].includes(kind)) throw new Error(`kind must be "fix" or "design-pass". ${USAGE}`)
 if (stage === 'check' && !ARGS.commit) throw new Error(`The check stage needs commit. ${USAGE}`)
 if (ARGS.previous && ARGS.previous.stage !== stage) throw new Error(`previous is a ${ARGS.previous.stage} result, and this run is the ${stage} stage.`)
+if (ARGS.adjusted !== undefined && !(Array.isArray(ARGS.adjusted) && ARGS.adjusted.every(a => a && typeof a.target === 'string'))) throw new Error(`adjusted is the build's list of {target, why}. ${USAGE}`)
 if (ARGS.handBuilt !== undefined && !(Array.isArray(ARGS.handBuilt) && ARGS.handBuilt.every(x => typeof x === 'string' && x.trim()))) throw new Error(`handBuilt is a list naming commit points of the plan. ${USAGE}`)
 if (stage !== 'check') {
   const missing = ['worktree', 'python', 'branch', 'base'].filter(k => !ARGS[k])
@@ -566,7 +567,9 @@ const compactList = (tests, support) => ({ tests: (tests || []).map(t => compact
 const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, compactList(seen.tests, seen.support)]))
 const separateDefects = previous ? [...previous.separateDefects] : []
 // The tests the build adjusted after Gate 2 because the plan's change broke them, for Gate 3.
-const adjusted = previous && previous.adjusted ? [...previous.adjusted] : []
+// A tests stage run again after the build is given the build's list, as `adjusted`.
+const adjusted = [...(previous && previous.adjusted ? previous.adjusted : []), ...(ARGS.adjusted || [])]
+  .filter((a, i, all) => all.findIndex(b => b.target === a.target) === i)
 let lastFailures = previous ? [...previous.lastFailures] : []
 // The reversible calls taken on a checker's recommendation rather than asked (stopsTheStage): they
 // bind the builder until the owner overrules them at the gate, and no checker asks them again.
@@ -975,7 +978,7 @@ const mergeList = (tests, support, got) => {
   const dropped = new Set((got.dropped || []).map(bareId))
   const merge = (listed, returned, keyOf) => {
     const back = new Map(returned.map(x => [keyOf(x), x]))
-    const kept = listed.filter(x => !dropped.has(keyOf(x))).map(x => back.has(keyOf(x)) ? back.get(keyOf(x)) : x)
+    const kept = listed.filter(x => !dropped.has(keyOf(x))).map(x => back.has(keyOf(x)) ? { ...back.get(keyOf(x)), ...(x.madePassByBuild ? { madePassByBuild: true } : {}) } : x)
     return [...kept, ...returned.filter(x => !listed.some(l => keyOf(l) === keyOf(x)))]
   }
   return { tests: merge(tests, got.tests || [], t => bareId(t.nodeid)), support: merge(support, got.support || [], supportKey) }
@@ -1259,7 +1262,6 @@ const gateReport = (test, summaryText) => {
     `${GROUPS.map(g => `${written.filter(t => t.change === g.change).length} ${g.change}`).join(', ')}; ${supportWritten.length} supporting.`,
   ]
   const field = (name, value) => filled(value) ? [`  - *${name}:* ${value}`] : []
-  const unmarkedByBuild = new Set(((test && test.unmarkedByBuild) || []).map(bareId))
   const movedFrom = new Map(((test && test.changes && test.changes.tests) || []).filter(x => x.from).map(x => [bareId(x.nodeid), x.from]))
   const labelOf = new Map(written.map(t => [bareId(t.nodeid), t.label]))
   const others = written.filter(t => !GROUPS.some(g => g.change === t.change))
@@ -1279,7 +1281,7 @@ const gateReport = (test, summaryText) => {
           ...field('From', from ? `\`${from}\`` : ''),
           ...field(g.change === 'deleted' ? 'Why it goes' : 'Why', t.why),
           ...field('Criterion', t.criterion),
-          ...(t.alreadyPasses ? ['  - *Passes already:* left unmarked'] : unmarkedByBuild.has(bareId(t.nodeid)) ? ['  - *Passes already:* the build has made it pass'] : []),
+          ...(t.alreadyPasses ? ['  - *Passes already:* left unmarked'] : t.madePassByBuild ? ['  - *Passes already:* the build has made it pass'] : []),
         )
       }
     }
@@ -1310,12 +1312,11 @@ const testsProblems = t => {
   if (!t) return ['the tester returned nothing']
   const problems = hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
-  const unmarked = new Set((t.unmarkedByBuild || []).map(bareId))
   for (const w of written) {
     if (w.change === 'deleted') continue
     const x = t.tests.find(r => r.nodeid === w.nodeid)
     if (!x) { problems.push(`${w.nodeid} was not run by the tester`); continue }
-    if (w.alreadyPasses || unmarked.has(bareId(w.nodeid))) {
+    if (w.alreadyPasses || w.madePassByBuild) {
       if (x.outcomeAsCommitted !== 'passed') problems.push(`${w.nodeid} pins behaviour already built, so it must pass, but was ${x.outcomeAsCommitted}`)
       continue
     }
@@ -1363,6 +1364,7 @@ const reviewTests = async (k, questions, built) => {
   listTouched = !since ? nothing
     : !test || filled(test.changedSinceError) || !filled(found(test).head) ? null
       : { tests: new Set(found(test).tests.map(x => bareId(x.nodeid))), support: new Set(found(test).support.map(supportKey)) }
+  markMadePass(test)
   const problems = testsProblems(test)
   const report = compactTest(test, problems)
   const skipIssue = issueIdle && (skipKnown || !test || !!hostProblem(test) || problems.length > 0)
@@ -1377,6 +1379,21 @@ const reviewTests = async (k, questions, built) => {
     else delete listSeen[lane]
   }
   return { lanes: { issue: issueResult, product: productResult }, test, report, problems, green: !!test && !hostProblem(test) && !problems.length }
+}
+
+// A test the build has made pass is marked so on its entry, which carries into every later run: a
+// later tests stage, counting from a later Gate 2, no longer sees its marker go, and would flag it as
+// pinning nothing. It is one whose marker the build removed since testsHead, or one the build
+// adjusted after a Gate 2 (#483), which the tool then reports as modified rather than unmarked, and
+// which passes as committed, as no test still marked can.
+const markMadePass = t => {
+  if (!t || !testsHead) return
+  const unmarked = new Set((t.unmarkedByBuild || []).map(bareId))
+  const touched = new Set(adjusted.map(a => bareId(a.target)))
+  for (const w of written) {
+    const x = t.tests.find(r => bareId(r.nodeid) === bareId(w.nodeid))
+    if (unmarked.has(bareId(w.nodeid)) || (touched.has(bareId(w.nodeid)) && x && x.outcomeAsCommitted === 'passed')) w.madePassByBuild = true
+  }
 }
 
 // The tester's report as the reviewers read it: what is wrong, and each test's outcome with the first

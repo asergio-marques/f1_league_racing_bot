@@ -572,3 +572,41 @@ Object.assign(scenarios, {
     expect: (r, { labels }) => labels.includes('tests:r2:issue'),
   },
 })
+
+// A test the build has made pass stays accepted in a later tests stage run, counting from a later
+// Gate 2, where its marker no longer goes; and so does one the build adjusted, which the tool reports
+// as modified rather than unmarked (#483).
+const passing = nodeid => ran(nodeid, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' })
+Object.assign(scenarios, {
+  testsSecondRerunRemembersBuildMadePass: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', testsHead: 't1', previous: passedTests({ tests: [entry(A, 'added')] }) }, label => {
+        if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+        if (label.endsWith(':tester')) return testsCheck({ tests: [passing(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]), unmarkedByBuild: [A] })
+        return cleanLanes(label)
+      })
+      if (first.status !== 'passed') throw new Error('the first rerun did not pass')
+      return { ...base, stage: 'tests', testsHead: 't2', maxRounds: 1, previous: first }
+    },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added', { scenario: 'REWORDED' })] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [passing(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.report.includes('*Passes already:* the build has made it pass'),
+  },
+  testsRerunAcceptsAdjustedPassingTest: {
+    args: { ...base, stage: 'tests', testsHead: 't0', maxRounds: 1, adjusted: [{ target: A, why: 'the plan renamed its call' }], previous: passedTests({ tests: [entry(A, 'added')] }) },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [passing(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  adjustedMustBeTheBuildsList: {
+    args: { ...base, stage: 'tests', adjusted: 'test_a' },
+    respond(label) { throw new Error(`${label} ran with an adjusted that should have been refused`) },
+    expectThrow: 'adjusted is the build',
+  },
+})
