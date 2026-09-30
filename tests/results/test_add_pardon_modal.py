@@ -326,6 +326,24 @@ async def test_the_justification_is_logged(tmp_path):
     assert str(STEWARD_ID) in logged
 
 
+@pytest.mark.xfail(strict=True, reason="#482: the pardon line names the steward by mention alone")
+async def test_the_pardon_line_names_the_steward(tmp_path):
+    """The steward Alex stages a NO_RSVP pardon for round 3 (Pro). The one line it writes names
+    Alex by display name and mention, as every record does (#482), and keeps its token, the
+    pardon, the driver and the justification."""
+    db_path = await _make_db(tmp_path, name="pardon_names_steward")
+    state = _state(db_path)
+
+    await _submit(state, justification="Power cut on the night")
+
+    lines = _logged(state)
+    assert len(lines) == 1, lines
+    assert lines[0].startswith(f"Alex (<@{STEWARD_ID}>) | ATTENDANCE_PARDON_STAGED"), lines[0]
+    assert "NO_RSVP" in lines[0]
+    assert f"<@{DRIVER_USER_ID}>" in lines[0]
+    assert "justification: Power cut on the night" in lines[0]
+
+
 # ---------------------------------------------------------------------------
 # A pardon that does not
 # ---------------------------------------------------------------------------
