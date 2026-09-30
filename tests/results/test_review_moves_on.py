@@ -189,6 +189,26 @@ async def test_a_review_being_approved_has_moved_on(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _interaction():
+    """A press by the league manager Alex (id 77), answering as Discord's does — not done until
+    it replies, defers or opens a form — and connected to a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction = MagicMock()
+    interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
 def _amendment(db_path: str, *, reports_approved: bool) -> PenaltyReviewState:
     state = _state(db_path, prompt_message_id=990001)
     state.is_amendment = True
@@ -220,11 +240,7 @@ async def test_an_amendments_pardons_close_with_its_reports(tmp_path, control):
             pardon_type="ABSENT", justification="Ill", grantor_id=77,
         )
     ]
-    interaction = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
+    interaction = _interaction()
 
     with patch(
         "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
@@ -327,10 +343,8 @@ async def test_an_approval_message_no_longer_current_approves_nothing(tmp_path, 
     state = _state(await _make_db(tmp_path))
     state.approval_message_id = recorded
     view = ApprovalView(state)
-    interaction = MagicMock()
+    interaction = _interaction()
     interaction.message.id = 990001
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
 
     with patch(
         "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
