@@ -798,6 +798,54 @@ async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recove
     stubs["enter"].assert_awaited_once()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a resubmission whose submission channel is gone is skipped at restart, "
+    "its flag left set and no lapse recorded",
+)
+async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_out(tmp_path):
+    """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro), and the bot
+    restarted part-way through; meanwhile the submission channel was deleted. There is nowhere
+    to post the notice or take down the Cancel button, but the round must not stay stuck as
+    resubmitting: the flag comes down, the round's results stay, and the one lapse line naming
+    Alex is written as it would be with the channel there."""
+    from types import SimpleNamespace
+
+    starter = 4242
+    db_path = await _resubmitting_db(tmp_path, "recover_resubmit_nochannel")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET resubmit_started_by = ? WHERE round_id = ?",
+            (starter, ROUND_ID),
+        )
+        await db.commit()
+    stub = _bot(db_path, channel=None)
+    stub._guild.get_member = MagicMock(
+        side_effect=lambda member_id: SimpleNamespace(display_name="Alex", id=member_id)
+        if member_id == starter
+        else None
+    )
+
+    await _recover(stub)
+
+    assert await _resubmitting_flag(db_path) == 0
+    assert await _rows(db_path, "session_results") == 1
+    records = [
+        str(call.args[0]) for call in stub.output_router.post_log.await_args_list
+        if str(call.args[0]).startswith("⌛")
+    ]
+    assert len(records) == 1, records
+    head, *detail = records[0].splitlines()
+    assert head == (
+        "⌛ the “Resubmit Initial Results” button of round 3 (Pro) lapsed unconfirmed "
+        f"(started by Alex (<@{starter}>))"
+    )
+    assert detail == [
+        "  The sessions entered were lost. The earlier results stand. "
+        "Press Resubmit again to re-enter them."
+    ]
+
+
 async def test_an_ordinary_review_is_not_told_about_a_resubmission(tmp_path):
     db_path = await _make_db(tmp_path, name="recover_not_resubmit", in_penalty_review=1)
     channel = _channel()
