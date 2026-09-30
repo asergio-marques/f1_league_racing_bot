@@ -540,8 +540,13 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
         assert told == REJECT_LAPSED
     lines = _lines(bot)
     assert len(lines) == 2, lines
-    assert lines[1].startswith(f"⌛ the “{label}” button of"), lines[1]
-    assert f"lapsed unconfirmed (started by Manager (<@{MANAGER_ID}>))" in lines[1]
+    head, *detail = lines[1].split("\n")
+    assert head.startswith(f"⌛ the “{label}” button of"), head
+    assert head.endswith(f"lapsed unconfirmed (started by Manager (<@{MANAGER_ID}>))"), head
+    nothing_done = "Nothing was rejected" if label == "Reject" else "No changes were requested"
+    assert [text.strip() for text in detail] == [
+        f"{nothing_done}; the signup still awaits review. Press {label} again to give a reason."
+    ], detail
     bot.wizard_service.reject_signup.assert_not_awaited()
     bot.wizard_service.request_changes.assert_not_awaited()
 
