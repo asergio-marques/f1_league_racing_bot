@@ -384,3 +384,120 @@ def test_a_field_does_not_ask_for_more_than_discord_carries(name, field):
 )
 def test_a_modal_title_fits_discords_limit(title):
     assert len(title) <= 45
+
+
+# ── Every refusal of the two import forms is recorded (#482) ──────────────
+#
+# The core specification's "The record of what changed": a refusal is one line in the log
+# channel naming the member, what was refused and why. A refusal by an import form names the
+# form, and an import rejected for several problems carries every one of them in its line.
+
+_BAD_PASTE = "not a round at all\n2026-06-21T18:00, Wet, 14"
+_BAD_XML = (
+    '<config><division name="Pro"><round><datetime>nope</datetime>'
+    "<timezone>Mars/Olympus</timezone><format>Wet</format><track>14</track>"
+    "</round></division></config>"
+)
+_UNREADABLE_XML = "<config><division name='Pro'></config>"
+_SOUND_PASTE = "2026-06-14T18:00, Normal, 14"
+_SOUND_XML = (
+    '<config><division name="Pro"><round>'
+    "<datetime>2026-06-14T18:00</datetime><timezone>Europe/Lisbon</timezone>"
+    "<format>Normal</format><track>14</track>"
+    "</round></division></config>"
+)
+#: What the season's own rules refuse of a calendar that parsed, as `apply_round_import` says it.
+_SEASON_REFUSES = [
+    "Division `Am` not found in pending setup.",
+    "[Pro] 2026-06-14 18:00 is already held by round 1.",
+]
+
+_NO_SETUP = "No pending season setup. Run `/season setup` first."
+
+
+def _submitted(form: str, value: str):
+    """The form as the manager submitted it: /round add-bulk's for Pro, or /round add-xml's."""
+    if form == "bulk":
+        modal = BulkRoundModal("Pro")
+        modal.entries._value = value
+    else:
+        modal = XmlRoundModal()
+        modal.payload._value = value
+    return modal
+
+
+@pytest.mark.parametrize(
+    "form, title, value, has_setup, season_refuses, reply_says, carried",
+    [
+        pytest.param(
+            "bulk", "Add rounds in bulk", _BAD_PASTE, True, None, "Import rejected — 2 problem(s)",
+            season_cog.parse_bulk_round_lines(_BAD_PASTE)[1],
+            id="bulk_paste_with_bad_lines",
+        ),
+        pytest.param(
+            "bulk", "Add rounds in bulk", "\n   \n", True, None,
+            "Nothing to add — no rounds were given.",
+            ["Nothing to add — no rounds were given."],
+            id="bulk_paste_with_no_rounds",
+        ),
+        pytest.param(
+            "bulk", "Add rounds in bulk", _SOUND_PASTE, False, None, _NO_SETUP, [_NO_SETUP],
+            id="bulk_with_no_season_being_set_up",
+        ),
+        pytest.param(
+            "bulk", "Add rounds in bulk", _SOUND_PASTE, True, _SEASON_REFUSES,
+            "Import rejected — 2 problem(s)", _SEASON_REFUSES,
+            id="bulk_refused_by_the_season",
+        ),
+        pytest.param(
+            "xml", "Add rounds from XML", _BAD_XML, True, None, "Import rejected — 3 problem(s)",
+            season_cog.parse_round_xml(_BAD_XML)[1],
+            id="xml_with_bad_rounds",
+        ),
+        pytest.param(
+            "xml", "Add rounds from XML", _UNREADABLE_XML, True, None,
+            "Import rejected — 1 problem(s)",
+            season_cog.parse_round_xml(_UNREADABLE_XML)[1],
+            id="xml_that_cannot_be_read",
+        ),
+        pytest.param(
+            "xml", "Add rounds from XML", _SOUND_XML, False, None, _NO_SETUP, [_NO_SETUP],
+            id="xml_with_no_season_being_set_up",
+        ),
+        pytest.param(
+            "xml", "Add rounds from XML", _SOUND_XML, True, _SEASON_REFUSES,
+            "Import rejected — 2 problem(s)", _SEASON_REFUSES,
+            id="xml_refused_by_the_season",
+        ),
+    ],
+)
+async def test_every_import_form_refusal_is_recorded(
+    monkeypatch, form, title, value, has_setup, season_refuses, reply_says, carried
+):
+    """Manager (id 42) submits a round import form and it is refused: the reply is today's,
+    nothing is written, and the log channel gets exactly one refusal line naming the form and
+    carrying every problem."""
+    interaction = _interaction()
+    cog = _cog_with(_pending() if has_setup else None)
+    interaction.client = cog.bot
+    cog.bot.get_cog = MagicMock(return_value=cog)
+    if season_refuses is not None:
+        monkeypatch.setattr(
+            season_cog, "apply_round_import", AsyncMock(return_value=({}, season_refuses))
+        )
+
+    await _submitted(form, value).on_submit(interaction)
+
+    replies = "\n".join(call.args[0] for call in interaction.followup.send.await_args_list)
+    assert reply_says in replies
+    cog._snapshot_pending.assert_not_awaited()
+    lines = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    head = line.splitlines()[0]
+    assert head.startswith("⛔ ")
+    assert title in head
+    assert " refused for Manager (<@42>) — " in head
+    assert carried
+    for problem in carried:
+        assert problem in line, (problem, line)

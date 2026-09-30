@@ -487,19 +487,30 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path, 
         assert f"lapsed unconfirmed (started by Manager (<@{USER_ID}>))" in head
 
 
+def _amending_in_earnest(cog, path):
+    """Let the confirmation amend the round through the real amendment service, with weather
+    off, so that every line a confirmed amendment writes is the one a league would read."""
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    cog.bot.amendment_service = AmendmentService(path)
+    cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+
+
 async def test_a_round_amend_logs_the_values_it_set(tmp_path):
-    """The success line names the member, `/round amend` and the round, and states beneath it
-    each field changed, from its old value to its new one, named as the command's parameter
-    (`track`) rather than by its column."""
+    """A confirmed amendment writes one line: it names the member, `/round amend` and the round,
+    and states beneath it each field changed, from its old value to its new one, named as the
+    command's parameter (`track`) rather than by its column. The amendment's own
+    "/round amend (field)" line is gone."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = _cog(path)
-    cog.bot.amendment_service.amend_round = AsyncMock()
+    cog = _cog(path, attendance=False)
+    _amending_in_earnest(cog, path)
     interaction = _interaction()
     _recording(cog, interaction)
 
     await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
 
     [line] = _lines(cog)
+    assert "(field)" not in line
     assert "/round amend" in line
     assert f"<@{USER_ID}>" in line
     assert "round 1" in line.lower()
@@ -508,6 +519,30 @@ async def test_a_round_amend_logs_the_values_it_set(tmp_path):
     assert NEW_TRACK in values, "the new value is not stated"
     assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in values.splitlines()
     assert "track_name" not in values
+
+
+async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_changed(tmp_path):
+    """The manager confirms moving round 1 of Div A from Bahrain International Circuit to
+    Silverstone Circuit, and the amendment is saved, but the reply saying so cannot be sent. The
+    log holds the amendment's one success line, with the track from what to what, beside the
+    failure line for the press."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path, attendance=False)
+    _amending_in_earnest(cog, path)
+    interaction = _interaction()
+    interaction.followup.send = AsyncMock(side_effect=RuntimeError("gateway closed"))
+    _recording(cog, interaction)
+
+    await _view(cog, [("track_name", NEW_TRACK)]).confirm.callback(interaction)
+
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
+        assert (await cursor.fetchone())["track_name"] == NEW_TRACK
+    success, failure = _lines(cog)
+    assert success.startswith(f"Manager (<@{USER_ID}>) | /round amend | Success\n")
+    assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in success.splitlines()
+    assert failure.startswith("\u274c ")
+    assert f"failed for Manager (<@{USER_ID}>)" in failure
 
 
 async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
@@ -591,3 +626,141 @@ async def test_a_round_amend_confirmation_whose_first_answer_fails_stops_its_vie
     assert f"failed for Manager (<@{USER_ID}>)" in line
     assert "RuntimeError" in line
     assert "gateway closed" not in line
+
+
+# ---------------------------------------------------------------------------
+# An amendment to the values that stand changes nothing, and says so (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a command that changes nothing because
+# nothing was asked of it records that nothing was changed. On either path the reply says nothing
+# changed, no audit entry is written and the log holds one line, in the success form, saying so;
+# the active path offers no confirmation for it. Whether the values stand is judged purely
+# (`amendment_rules_service`), and tested there.
+
+
+
+def _says_nothing_changed(text: str) -> bool:
+    return "nothing" in text.lower() and "chang" in text.lower()
+
+
+async def _audit_rows(path: str) -> list:
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT change_type FROM audit_entries")
+        return [tuple(row) for row in await cursor.fetchall()]
+
+
+def _as_typed(moment: datetime) -> str:
+    return moment.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param(("track",), id="its_own_track"),
+        pytest.param(("format",), id="its_own_format"),
+        pytest.param(("scheduled_at",), id="its_own_moment"),
+        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
+    ],
+)
+async def test_an_active_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
+    """Round 1 of Div A, in a season being raced, stands at Bahrain International Circuit, in
+    the NORMAL format, thirty days from now; the manager amends it to values it already holds."""
+    at = (datetime.now(timezone.utc) + timedelta(days=30)).replace(second=0, microsecond=0)
+    path = await _db(tmp_path, scheduled_at=at)
+    cog = _cog(path)
+    cog.bot.amendment_service.amend_round = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+    standing = {
+        "track": "Bahrain International Circuit",
+        "format": "NORMAL",
+        "scheduled_at": _as_typed(at),
+    }
+
+    await _amend(cog, interaction, **{field: standing[field] for field in fields})
+
+    assert not _offered_a_confirmation(interaction)
+    cog.bot.amendment_service.amend_round.assert_not_awaited()
+    assert _says_nothing_changed(_reply(interaction))
+    assert await _audit_rows(path) == []
+    [line] = _lines(cog)
+    assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
+    assert not line.startswith("⛔")
+    assert _says_nothing_changed(line)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param(("track",), id="its_own_track"),
+        pytest.param(("format",), id="its_own_format"),
+        pytest.param(("scheduled_at",), id="its_own_moment"),
+        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
+    ],
+)
+async def test_a_pending_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
+    """Round 1 of Div A, in the season being set up, stands at Bahrain International Circuit, in
+    the NORMAL format, on 1 December 2026 at 18:00 UTC; the manager amends it to values it
+    already holds. Nothing is saved to the season being set up."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    cog = _cog(path)
+    pending = _pending()
+    cog._get_pending = MagicMock(return_value=pending)
+    cog._snapshot_pending = AsyncMock()
+    interaction = _interaction()
+    _recording(cog, interaction)
+    standing = {
+        "track": "Bahrain International Circuit",
+        "format": "NORMAL",
+        "scheduled_at": "2026-12-01T18:00:00",
+    }
+
+    await _amend(cog, interaction, **{field: standing[field] for field in fields})
+
+    cog._snapshot_pending.assert_not_awaited()
+    assert _says_nothing_changed(_reply(interaction))
+    assert "updated and saved" not in _reply(interaction)
+    assert await _audit_rows(path) == []
+    [line] = _lines(cog)
+    assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
+    assert not line.startswith("⛔")
+    assert _says_nothing_changed(line)
+
+
+@pytest.mark.parametrize(
+    "status, refusal",
+    [
+        pytest.param(
+            "CANCELLED",
+            "This round has been cancelled and can no longer be amended.",
+            id="cancelled",
+        ),
+        pytest.param(
+            "AWAITING_REPORT_VERDICTS",
+            "This round's results have been entered",
+            id="results_entered",
+        ),
+    ],
+)
+async def test_a_round_that_cannot_be_amended_is_refused_even_given_what_stands(
+    tmp_path, status, refusal
+):
+    """Round 1 of Div A stands at Bahrain International Circuit, thirty days from now, but can
+    no longer be amended. The manager gives it the track it already has. The owner decided
+    (2026-09-30) that the refusal comes first: the manager is told the round cannot be amended,
+    as before, rather than that nothing changed."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    async with get_connection(path) as db:
+        await db.execute("UPDATE rounds SET status = ? WHERE id = 1", (status,))
+        await db.commit()
+    cog = _cog(path)
+    interaction = _interaction()
+    _recording(cog, interaction)
+
+    await _amend(cog, interaction, track="Bahrain International Circuit")
+
+    assert refusal in _reply(interaction)
+    assert "already holds those values" not in _reply(interaction)
+    [line] = _lines(cog)
+    assert line.startswith("⛔ "), line

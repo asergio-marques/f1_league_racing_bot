@@ -86,11 +86,14 @@ def _make_cog(
     mutable: bool = True,
     divisions=None,
     rounds=None,
+    stage: SeasonStage = SeasonStage.PLACEMENTS,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
 
     bot.season_service = MagicMock()
+    # The stage of the season being set up, which `/round delete` asks before it acts.
+    bot.season_service.get_stage = AsyncMock(return_value=stage)
     bot.season_service.get_setup_season = AsyncMock(return_value=setup_season)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=active_season)
     bot.season_service.assert_season_mutable = AsyncMock(
@@ -205,6 +208,33 @@ async def test_deleting_outside_setup_is_refused():
 
     assert "only be used while the season is in placements" in _replied(interaction)
     cog.bot.season_service.delete_round.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
+    ids=lambda stage: stage.value.lower(),
+)
+async def test_deleting_before_placements_is_refused_and_recorded(stage):
+    """The core specification: rounds are added and deleted only while the season is in
+    Placements. A season being set up, still in configuration, waiting or signups, has round 5
+    in Division 1. The admin deletes it: refused in today's words and recorded, and nothing is
+    deleted. In Placements it still works: every delete test here runs there."""
+    cog = _make_cog(stage=stage)
+    interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "round delete"
+
+    await _delete(cog, interaction)
+
+    reply = "\u274c `/round delete` can only be used while the season is in placements."
+    assert _replied(interaction) == reply
+    cog.bot.season_service.delete_round.assert_not_awaited()
+    logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert logged == [
+        f"\u26d4 `/round delete` refused for Admin (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
 
 
 async def test_deleting_from_an_archived_season_is_refused():
@@ -401,6 +431,30 @@ async def test_cancelling_a_round_winds_a_finished_season_down():
     )
 
 
+async def test_a_wind_down_that_fails_after_a_round_cancel_is_named_as_not_done():
+    """The core specification's record of what changed: an outcome is recorded as it is. Round 5
+    of Division 1, in a season being raced, is cancelled, and the season it may have finished
+    cannot then be wound down (the wind-down raises). The cancellation stands; the reply and the
+    one success line each name the wind-down as not done, saying the season could not be moved
+    to pending completion and that /season complete does it."""
+    cog = _make_cog()
+    cog.bot.season_service.wind_down_ongoing = AsyncMock(side_effect=RuntimeError("disk full"))
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.cancel_round.assert_awaited_once()
+    replied = _replied(interaction)
+    assert replied.startswith("\u2705 Round **5** in **Division 1** cancelled."), replied
+    assert "pending completion" in replied.lower(), replied
+    assert "/season complete" in replied, replied
+    [line] = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    assert line.startswith(f"Admin (<@{ACTOR_ID}>) | /round cancel | Success"), line
+    [not_done] = [row for row in line.splitlines() if row.strip().startswith("not done:")]
+    assert "pending completion" in not_done.lower(), line
+    assert "/season complete" in not_done, line
+
+
 async def test_the_jobs_go_before_the_round_is_recorded_cancelled():
     """A job firing between the two would post a forecast for a round the league has just
     called off."""
@@ -496,3 +550,223 @@ async def test_a_cancelled_round_keeps_its_number():
     await _cancel(cog, interaction)
 
     assert "renumbered" not in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Every other refusal of /round delete and /round cancel is recorded (#482)
+# ---------------------------------------------------------------------------
+
+
+def _run_by_the_admin(cog, interaction, command: str):
+    """The admin's interaction for *command*, connected to the cog's log channel so that a
+    refusal line the command writes can be read. It reads as Discord's does: not answered until
+    the command replies or defers, and answered from then on."""
+    interaction.client = cog.bot
+    interaction.command.qualified_name = command
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    """The lines the command wrote to the log channel, in order."""
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+
+
+_RESULTS_IN = sorted(
+    s.value for s in RoundStatus
+    if s.value not in ROUND_CANCELLABLE and s.value != RoundStatus.CANCELLED.value
+)[0]
+
+
+@pytest.mark.parametrize(
+    "arranged, asked, reply",
+    [
+        pytest.param(
+            {"setup_season_id": None}, {},
+            "❌ `/round delete` can only be used while the season is in placements.",
+            id="no_season_being_set_up",
+        ),
+        pytest.param(
+            {"mutable": False}, {},
+            "❌ This season is archived (COMPLETED) and cannot be modified.",
+            id="an_archived_season",
+        ),
+        pytest.param(
+            {}, {"division": "Division 9"},
+            "❌ Division `Division 9` not found.",
+            id="an_unknown_division",
+        ),
+        pytest.param(
+            {}, {"number": 9},
+            "❌ Round 9 not found in division `Division 1`.",
+            id="an_unknown_round",
+        ),
+    ],
+)
+async def test_every_other_round_delete_refusal_is_recorded(arranged, asked, reply):
+    """A season in placements with round 5 in Division 1, unless the case says otherwise. Each
+    refusal answers as today, deletes nothing, and writes one refusal line (#482, criterion 1)."""
+    cog = _make_cog(**arranged)
+    interaction = _run_by_the_admin(cog, _interaction(), "round delete")
+
+    await _delete(cog, interaction, **asked)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.season_service.delete_round.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/round delete` refused for Admin (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
+
+
+@pytest.mark.parametrize(
+    "arranged, asked, reply",
+    [
+        pytest.param(
+            {}, {"confirm": "confirm"},
+            "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+            id="without_the_exact_word",
+        ),
+        pytest.param(
+            {"active_season": None}, {},
+            "❌ `/round cancel` is available only while the season is ongoing.",
+            id="no_season_being_raced",
+        ),
+        pytest.param(
+            {"mutable": False}, {},
+            "❌ This season is archived (COMPLETED) and cannot be modified.",
+            id="an_archived_season",
+        ),
+        pytest.param(
+            {}, {"division": "Division 9"},
+            "❌ Division `Division 9` not found.",
+            id="an_unknown_division",
+        ),
+        pytest.param(
+            {}, {"number": 9},
+            "❌ Round 9 not found in division `Division 1`.",
+            id="an_unknown_round",
+        ),
+        pytest.param(
+            {"rounds": [_round(status=RoundStatus.CANCELLED.value)]}, {},
+            "❌ Round 5 in **Division 1** is already cancelled.",
+            id="a_round_already_cancelled",
+        ),
+        pytest.param(
+            {"rounds": [_round(status=_RESULTS_IN)]}, {},
+            "❌ Cannot cancel Round 5 — its results have already been entered, and "
+            "the drivers' reports and appeals depend on it.",
+            id="a_round_whose_results_are_in",
+        ),
+        pytest.param(
+            {}, {"submission_open": True},
+            "❌ Cannot cancel Round 5 — a results submission channel is currently "
+            "open. Close the submission first.",
+            id="a_submission_channel_open",
+        ),
+    ],
+)
+async def test_every_round_cancel_refusal_is_recorded(arranged, asked, reply):
+    """A season being raced with round 5 in Division 1, unless the case says otherwise. Each
+    refusal answers as today, cancels nothing, and writes one refusal line (#482, criterion 1)."""
+    cog = _make_cog(**arranged)
+    interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
+
+    announce = await _cancel(cog, interaction, **asked)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    interaction.response.defer.assert_not_awaited()
+    cog.bot.season_service.cancel_round.assert_not_awaited()
+    announce.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/round cancel` refused for Admin (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# /round cancel names the division as it is named (#482, F9)
+# ---------------------------------------------------------------------------
+#
+# The division is found without regard to case, so an admin may type `pro` for Pro. The core
+# specification's Divisions: "its name shall be what the bot displays". The reply and the log
+# line name the division as it stands, never as the admin typed it.
+
+
+@pytest.mark.parametrize(
+    "arranged, answered",
+    [
+        pytest.param({}, "✅ Round **5** in **Pro** cancelled.", id="cancelled"),
+        pytest.param(
+            {"rounds": [_round(status=RoundStatus.CANCELLED.value)]},
+            "❌ Round 5 in **Pro** is already cancelled.",
+            id="already_cancelled",
+        ),
+    ],
+)
+async def test_a_round_cancelled_in_a_division_typed_in_another_case_names_it_as_it_is_named(
+    arranged, answered
+):
+    """A season being raced holds division Pro with round 5. The admin (id 77) runs /round
+    cancel on round 5 with CONFIRM, typing the division's name as 'pro', in two cases: the round
+    is cancelled, or it was already cancelled and the command is refused. The reply opens by
+    naming the division as it is named, **Pro**, and nowhere shows 'pro'; the one log line (the
+    success line, or the refusal line) names Pro and never 'pro'."""
+    cog = _make_cog(divisions=[_division("Pro")], **arranged)
+    interaction = _run_by_the_admin(cog, _interaction(), "round cancel")
+
+    await _cancel(cog, interaction, division="pro")
+
+    replied = _replied(interaction)
+    assert replied.startswith(answered), replied
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert "/round cancel" in line, line
+    assert "Pro" in words, line
+    assert "pro" not in words, line
+
+
+# ---------------------------------------------------------------------------
+# /round delete names the division as it is named (#482, F12)
+# ---------------------------------------------------------------------------
+#
+# As /round cancel: the division is found without regard to case, and the reply and the log line
+# name it as it stands, never as the admin typed it.
+
+
+@pytest.mark.parametrize(
+    "number, answered",
+    [
+        pytest.param(5, "✅ Round **5** deleted from **Pro** and rounds renumbered.", id="deleted"),
+        pytest.param(9, "❌ Round 9 not found in division `Pro`.", id="round_not_found"),
+    ],
+)
+async def test_a_round_deleted_in_a_division_typed_in_another_case_names_it_as_it_is_named(
+    number, answered
+):
+    """A season in placements holds division Pro with round 5. The admin (id 77) runs /round
+    delete typing the division's name as 'pro', in two cases: round 5 is deleted, or round 9,
+    which Pro does not hold, is asked for and the command is refused. The reply opens by naming
+    the division as it is named, **Pro** (or `Pro`), and nowhere shows 'pro'; the one log line
+    (the success line, or the refusal line) names Pro and never 'pro'."""
+    cog = _make_cog(divisions=[_division("Pro")])
+    interaction = _run_by_the_admin(cog, _interaction(), "round delete")
+
+    await _delete(cog, interaction, division="pro", number=number)
+
+    replied = _replied(interaction)
+    assert replied.startswith(answered), replied
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert "/round delete" in line, line
+    assert "Pro" in words, line
+    assert "pro" not in words, line

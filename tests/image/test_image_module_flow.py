@@ -2302,13 +2302,18 @@ def test_the_season_approval_refusal_is_ephemeral():
     graphics and withholds its own button, and the fingerprint proves the season has not
     changed since. The lineup gate below is the image refusal that remains, and the rule
     it must keep is the one this test has always been about.
+
+    The refusal is sent through `refuse` (#482), which answers the member privately by
+    construction and records the refusal in the log channel, so the call it is made in
+    is what shows it is private: the last call opened before the refusal's words is
+    `refuse(`.
     """
     source = (_SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
     marker = "the `lineup` image aspect is on but"
     assert marker in source
 
-    tail = source[source.index(marker):source.index(marker) + 600]
-    assert "ephemeral=True" in tail
+    head = source[:source.index(marker)]
+    assert head[head.rindex("await "):].startswith("await refuse(")
 
 
 # ── 038: test mode changes nothing in the lineup path (T060, FR-035/36) ───

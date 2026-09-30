@@ -39,6 +39,9 @@ def _cog(*, test_mode: bool = True, db_path: str = ":memory:"):
     cog.bot.scheduler_service = SimpleNamespace(
         _jobstore_path=db_path, _scheduler=MagicMock(running=True)
     )
+    # The log channel takes a line, as a real one does, so a save that records itself is not
+    # stopped by the test's own stand-in.
+    cog.bot.output_router.post_log = AsyncMock()
     return cog
 
 
@@ -47,6 +50,7 @@ def _interaction():
     interaction.guild_id = SERVER_ID
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
+    interaction.client.output_router.post_log = AsyncMock()
     return interaction
 
 

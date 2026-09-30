@@ -22,6 +22,7 @@ would be a plausible-looking change that breaks both commands.
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -217,3 +218,59 @@ async def test_season_setup_begins_the_season_in_configuration():
 
     kwargs = cog.bot.season_service.sync_pending_config.await_args.kwargs
     assert kwargs["initial_stage"] is SeasonStage.CONFIGURATION
+
+
+@pytest.mark.parametrize(
+    "standing, reply",
+    [
+        pytest.param(
+            "pending",
+            "\u274c A season setup is already in progress for this server. Use "
+            "`/season placements-review` to approve, or `/season abort` to cancel it first.",
+            id="setup-while-one-is-in-progress",
+        ),
+        pytest.param(
+            "raced",
+            "\u274c A season is currently active for this server. Complete it before starting a "
+            "new one.",
+            id="setup-while-a-season-is-being-raced",
+        ),
+        pytest.param(
+            "saved",
+            "\u274c A season setup is already in progress for this server. Use "
+            "`/season placements-review` to continue, or cancel it first.",
+            id="setup-while-a-saved-one-is-in-progress",
+        ),
+    ],
+)
+async def test_every_season_setup_refusal_is_recorded(standing, reply):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. The manager (id 42) runs /season setup while a setup is in
+    progress in the bot's memory, while a season is being raced, or while a setup is saved but
+    not in memory: they get today's reply word for word and nothing else, no season is begun,
+    and the log channel gets exactly one line, "⛔ `/season setup` refused for Manager (<@42>) — "
+    and the reply's words."""
+    from tests.support.undecorate import undecorate
+
+    cog = _cog(_pending() if standing == "pending" else None)
+    if standing == "raced":
+        cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=SimpleNamespace(id=3))
+    if standing == "saved":
+        cog.bot.season_service.get_setup_season = AsyncMock(return_value=SimpleNamespace(id=7))
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "season setup"
+    answered = {"done": False}
+
+    async def _defer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.defer = AsyncMock(side_effect=_defer)
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+
+    await undecorate(SeasonCog.season_setup)(cog, interaction, game_edition=2026)
+
+    assert [call.args[0] for call in interaction.followup.send.await_args_list] == [reply]
+    cog.bot.season_service.sync_pending_config.assert_not_awaited()
+    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    assert logged == [f"\u26d4 `/season setup` refused for Manager (<@42>) \u2014 {reply[2:]}"]

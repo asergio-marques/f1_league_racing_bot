@@ -12,6 +12,8 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
 from leaguebot.core.models.round import RoundFormat
 from tests.support.undecorate import undecorate
@@ -93,3 +95,130 @@ async def test_an_unreadable_time_is_refused():
 
     assert division.rounds == []
     assert "Invalid datetime" in _replied(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Every refusal of /round add is recorded (#482)
+# ---------------------------------------------------------------------------
+
+#: The moment the division's one standing round is held at, which a clashing round asks for.
+_STANDING_AT = datetime(2026, 6, 14, 18, 0)
+
+_OVERFLOW = (
+    "❌ That would give the division 2 rounds, but the configured calendar template draws "
+    "1. The round was **not** added.\n"
+    "Enlarge the template, or turn the `calendar` image aspect off with `/images config toggle`."
+)
+
+
+@pytest.mark.parametrize(
+    "arranged, asked, reply",
+    [
+        pytest.param(
+            {"setup": False}, {},
+            "❌ No pending season setup. Run `/season setup` first.",
+            id="no_season_being_set_up",
+        ),
+        pytest.param(
+            {}, {"format": "WET"},
+            "❌ Invalid format `WET`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
+            id="an_invalid_format",
+        ),
+        pytest.param(
+            {}, {"format": "NORMAL"},
+            "❌ A track is required for `NORMAL` rounds. Leave track blank only for "
+            "`MYSTERY` rounds.",
+            id="a_track_required",
+        ),
+        pytest.param(
+            {}, {"format": "NORMAL", "track": "Atlantis"},
+            "❌ Unknown track `Atlantis`.\n"
+            "Use `/round add` and type a number or name — autocomplete will guide you.",
+            id="an_unknown_track",
+        ),
+        pytest.param(
+            {}, {"scheduled_at": "14/06/2026 18:00"},
+            "❌ Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
+            id="an_invalid_datetime",
+        ),
+        pytest.param(
+            {}, {"division_name": "Am"},
+            "❌ Division `Am` not found in pending setup.",
+            id="an_unknown_division",
+        ),
+        pytest.param(
+            {}, {"scheduled_at": "2026-06-14T18:00:00"},
+            "❌ **Pro** already holds round 1 at <t:1781460000:F>. Two rounds of one "
+            "division cannot share a moment — the season could not be approved. The round "
+            "was **not** added.",
+            id="a_round_clash",
+        ),
+        pytest.param(
+            {"overflow": _OVERFLOW}, {},
+            _OVERFLOW,
+            id="a_calendar_overflow",
+        ),
+    ],
+)
+async def test_every_round_add_refusal_is_recorded(monkeypatch, arranged, asked, reply):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. A season being set up holds division Pro with one mystery round on
+    14 June 2026 at 18:00 UTC, unless the case says otherwise. The manager (id 77) runs /round add
+    for Pro, a mystery round on 21 June 2026 at 18:00, but with one thing wrong: no season being
+    set up; format WET; a NORMAL round with no track; track Atlantis, which the bot does not know;
+    a moment typed 14/06/2026 18:00; division Am, which does not exist; the moment Pro's round 1
+    already holds; or a round the calendar template has no room for. The manager gets today's
+    reply word for word and nothing else, no round is added, and the log channel gets exactly one
+    line, "⛔ `/round add` refused for Manager (<@77>) — " and the reply's first line."""
+    division = PendingDivision(
+        name="Pro",
+        role_id=1,
+        tier=1,
+        rounds=[
+            {
+                "round_number": 1,
+                "format": RoundFormat.MYSTERY,
+                "track_name": None,
+                "scheduled_at": _STANDING_AT,
+            }
+        ],
+    )
+    cog = _cog(PendingConfig(divisions=[division], season_id=7))
+    if arranged.get("setup") is False:
+        cog._pending = {}
+        cog._get_pending = MagicMock(return_value=None)
+    if "overflow" in arranged:
+        cog._calendar_round_overflow = AsyncMock(return_value=arranged["overflow"])
+    cog.bot.db_path = ":memory:"
+    monkeypatch.setattr(
+        "leaguebot.core.services.track_service.resolve_track_name",
+        AsyncMock(return_value=None),
+    )
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "round add"
+    called = {
+        "division_name": "Pro",
+        "format": "MYSTERY",
+        "scheduled_at": "2026-06-21T18:00:00",
+        "track": "",
+        **asked,
+    }
+
+    await undecorate(SeasonCog.round_add)(
+        cog,
+        interaction,
+        called["division_name"],
+        called["format"],
+        called["scheduled_at"],
+        called["track"],
+    )
+
+    assert [call.args[0] for call in interaction.followup.send.await_args_list] == [reply]
+    assert [r["scheduled_at"] for r in division.rounds] == [_STANDING_AT]
+    cog._snapshot_pending.assert_not_awaited()
+    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    assert logged == [
+        f"⛔ `/round add` refused for Manager (<@{ACTOR_ID}>) — "
+        f"{reply.splitlines()[0][2:]}"
+    ]

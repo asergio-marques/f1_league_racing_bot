@@ -48,6 +48,7 @@ from leaguebot.core.cogs.season_cog import (
 )
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import Round, RoundFormat
+from tests.support.review_prompts import store_review_prompt
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 12608
@@ -597,6 +598,65 @@ async def test_a_failed_calendar_report_does_not_fail_the_approval(db_path):
     stubs["classification"].assert_awaited()
 
 
+def _report_line(cog, title: str) -> str:
+    """The one log line whose first line carries *title*."""
+    [line] = [
+        str(call.args[0])
+        for call in cog.bot.output_router.post_log.await_args_list
+        if title in str(call.args[0]).splitlines()[0]
+    ]
+    return line
+
+
+async def test_the_calendar_report_names_the_member_who_approved(db_path):
+    """The core specification's record of what changed: every line names the member. Manager
+    (id 77) approves the season, and division Pro's calendar falls back to text ('no
+    template'). The log's calendar report opens 'Manager (<@77>) | /season placements-review |
+    Calendar image generation', formed as every other line is, and still lists the problem."""
+    cog = _cog(db_path, divisions=[_division(1, "Pro")])
+    interaction = _interaction()
+
+    await _approve(
+        cog,
+        interaction,
+        calendar_posting=SimpleNamespace(notices=[], problem="no template"),
+    )
+
+    line = _report_line(cog, "Calendar image generation")
+    assert line.splitlines()[0] == (
+        f"Manager (<@{USER_ID}>) | /season placements-review | Calendar image generation"
+    ), line
+    assert "Pro: no template" in line
+
+
+async def test_the_opening_classification_report_names_the_member_who_approved(db_path):
+    """The core specification's record of what changed: every line names the member. Manager
+    (id 77) approves the season, and the opening classification reports a problem ('Pro
+    standings: the template is at fault'). The log's report opens 'Manager (<@77>) |
+    /season placements-review | Opening classification', formed as every other line is, and
+    still lists the problem."""
+    cog = _cog(db_path, divisions=[_division(1, "Pro")])
+    interaction = _interaction()
+
+    with patch(
+        "leaguebot.core.services.calendar_post_service.tracks_by_name",
+        new=AsyncMock(return_value={}),
+    ), patch(
+        "leaguebot.core.services.calendar_post_service.post_division_calendar",
+        new=AsyncMock(return_value=SimpleNamespace(notices=[], problem=None)),
+    ), patch(
+        "leaguebot.core.services.season_classification_service.post_opening_classifications",
+        new=AsyncMock(return_value=["Pro standings: the template is at fault"]),
+    ):
+        await SeasonCog._do_approve(cog, interaction)
+
+    line = _report_line(cog, "Opening classification")
+    assert line.splitlines()[0] == (
+        f"Manager (<@{USER_ID}>) | /season placements-review | Opening classification"
+    ), line
+    assert "Pro standings: the template is at fault" in line
+
+
 async def test_the_opening_classification_is_posted(db_path):
     """The standings and attendance sheets as they stand before a round has been run:
     everybody on zero, the grid empty."""
@@ -1015,13 +1075,15 @@ async def test_a_stumbled_approval_still_clears_its_review(db_path):
     view._season_id = SEASON_ID
     report = [MagicMock(delete=AsyncMock()), MagicMock(delete=AsyncMock())]
     view.carries(report)
-    view._message = prompt = MagicMock(delete=AsyncMock())
+    view._message = prompt = MagicMock(id=800, delete=AsyncMock())
     async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO season_review_prompts "
-            "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
-            "VALUES (1, ?, 700, 800, ?, '2026-03-01T00:00:00+00:00')",
-            (SEASON_ID, USER_ID),
+        await store_review_prompt(
+            db,
+            season_id=SEASON_ID,
+            channel_id=700,
+            message_id=800,
+            reviewer_id=USER_ID,
+            posted_at="2026-03-01T00:00:00+00:00",
         )
         await db.commit()
     interaction = _interaction()

@@ -16,6 +16,7 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.placement_service import PlacementService, PlacementsCommitted
+from tests.support.review_prompts import store_review_prompt
 from tests.support.undecorate import undecorate
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
@@ -138,6 +139,7 @@ def _interaction():
 async def test_the_review_is_refused_in_the_other_ongoing_stages(db_path, stage):
     cog = _cog(db_path, stage)
     interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_review)(cog, interaction)
 
@@ -529,6 +531,8 @@ async def test_confirming_after_the_season_moved_on_still_reports_the_placements
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     cog.bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    # The stage it moved to is read as the real service answers it.
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.CANCELLED)
     interaction = _interaction()
 
     await cog._do_confirm_mid_season_placements(interaction)
@@ -654,6 +658,43 @@ async def test_a_season_not_returned_to_ongoing_names_the_repair(db_path):
     assert "not done: The season could not be returned to Ongoing" in _logged(cog)
 
 
+async def test_a_season_that_had_already_moved_on_is_named_as_not_done(db_path):
+    """The placements are confirmed, but the season was cancelled while the review stood, so it
+    cannot be returned to Ongoing (the move is refused as one its lifecycle does not allow).
+
+    The placements stand. The reply and the log line name the return to Ongoing as not done,
+    saying the season had already moved on and the stage it is in (Cancelled), and do not tell
+    the manager to confirm again: confirming again cannot move a cancelled season.
+    """
+    from leaguebot.core.models.season import InvalidStageTransition
+
+    await _settle_every_signup(db_path)
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    placing = await cog.bot.season_service.get_confirmed_season()
+    cog.bot.season_service.get_confirmed_season = AsyncMock(side_effect=[placing, None])
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.CANCELLED)
+    cog.bot.season_service.set_stage = AsyncMock(
+        side_effect=InvalidStageTransition("CANCELLED -> ONGOING")
+    )
+    interaction = _interaction()
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    cog.bot.placement_service.commit_mid_season_placements.assert_awaited_once()
+    replied = _replied(interaction)
+    assert "1 placement(s) confirmed" in replied
+    assert "Not everything could be done" in replied
+    assert "ongoing again" not in replied
+    not_done = [
+        line for line in _logged(cog).splitlines() if line.strip().startswith("not done:")
+    ]
+    assert len(not_done) == 1, _logged(cog)
+    for text in (replied, not_done[0]):
+        assert "already moved on" in text, text
+        assert "cancelled" in text.lower(), text
+        assert "confirm again" not in text, text
+
+
 async def test_ungranted_drivers_are_named_in_the_reply_and_the_log(db_path):
     """Confirming again finds nothing left to commit, so nothing would grant them later."""
     await _settle_every_signup(db_path)
@@ -726,12 +767,15 @@ async def test_a_stumbled_confirmation_still_clears_its_review(db_path):
     view._season_id = 1
     report = [MagicMock(delete=AsyncMock()), MagicMock(delete=AsyncMock())]
     view.carries(report)
-    view._message = prompt = MagicMock(delete=AsyncMock())
+    view._message = prompt = MagicMock(id=800, delete=AsyncMock())
     async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO season_review_prompts "
-            "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
-            "VALUES (1, 1, 700, 800, 42, '2026-03-01T00:00:00+00:00')"
+        await store_review_prompt(
+            db,
+            season_id=1,
+            channel_id=700,
+            message_id=800,
+            reviewer_id=42,
+            posted_at="2026-03-01T00:00:00+00:00",
         )
         await db.commit()
     interaction = _interaction()
@@ -793,7 +837,12 @@ async def test_the_reviewer_confirms_the_mid_season_placements():
 
     await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
 
-    cog._do_confirm_mid_season_placements.assert_awaited_once_with(interaction)
+    from leaguebot.core.cogs.season_cog import _review_button
+
+    # The button passes its own name, which the helper records any refusal under.
+    cog._do_confirm_mid_season_placements.assert_awaited_once_with(
+        interaction, what=_review_button("Confirm placements", "/season placements-review")
+    )
     view._clear_report.assert_awaited_once()
 
 
@@ -802,6 +851,7 @@ async def test_another_league_manager_may_not_confirm_the_mid_season_placements(
 
     view, cog = _view()
     interaction = _pressed_by(99)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
 
@@ -818,6 +868,7 @@ async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
     view._fingerprint.differs_from = MagicMock(return_value=["the seated drivers"])
     monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
     interaction = _pressed_by(REVIEWER)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmMidSeasonPlacementsView.approve(view, interaction, MagicMock())
 
@@ -872,3 +923,114 @@ async def test_a_member_who_left_is_committed_and_the_lineup_still_posted(db_pat
     assert await service.uncommitted_placements(1) == []
     service._grant_roles.assert_not_awaited()
     service._refresh_lineup_post.assert_awaited_once()
+
+
+# ── What the log channel holds for the mid-season review (#482) ────────────────────
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why, and a review that posts its question writes one line
+# naming who ran it. A refusal by ✅ Confirm placements names the button and the review it
+# belongs to, and one whose reply is a list carries every item of it.
+
+
+def _manager_confirming(cog):
+    """Manager (id 42) pressing ✅ Confirm placements, connected to the cog's log channel."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.user.display_name = "Manager"
+    interaction.response.is_done = MagicMock(return_value=True)
+    return interaction
+
+
+def _gone_by_now(cog):
+    cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
+
+
+def _moved_on(cog):
+    cog.bot.season_service.get_confirmed_season = AsyncMock(
+        return_value=SimpleNamespace(id=1, season_number=1, stage=SeasonStage.ONGOING)
+    )
+
+
+def _faults_on_every_count(cog):
+    cog._placement_confirmation_faults = AsyncMock(
+        return_value=(["**Racer** — awaiting approval"], ["**Pro** has no lineup channel set"])
+    )
+    cog._mid_season_configuration_faults = AsyncMock(
+        return_value=["Inkscape is not installed on this host."]
+    )
+
+
+@pytest.mark.parametrize(
+    "arrange, reply_says, carried",
+    [
+        pytest.param(
+            _gone_by_now, "The season is no longer placing drivers.",
+            ["The season is no longer placing drivers. **Nothing has been confirmed.**"],
+            id="no_season_being_raced",
+        ),
+        pytest.param(
+            _moved_on, "The season is no longer placing drivers.",
+            ["The season is no longer placing drivers. **Nothing has been confirmed.**"],
+            id="the_season_no_longer_placing",
+        ),
+        pytest.param(
+            _faults_on_every_count, "Placements cannot be confirmed:",
+            [
+                "Unsettled signup: **Racer** — awaiting approval",
+                "**Pro** has no lineup channel set",
+                "Inkscape is not installed on this host.",
+            ],
+            id="unsettled_signups_channel_and_image_faults",
+        ),
+    ],
+)
+async def test_every_mid_season_confirmation_refusal_is_recorded(
+    db_path, arrange, reply_says, carried
+):
+    cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
+    arrange(cog)
+    interaction = _manager_confirming(cog)
+
+    await cog._do_confirm_mid_season_placements(interaction)
+
+    replies = "\n".join(call.args[0] for call in interaction.followup.send.await_args_list)
+    assert reply_says in replies
+    assert "Nothing has been confirmed" in replies
+    cog.bot.placement_service.commit_mid_season_placements.assert_not_awaited()
+    cog.bot.season_service.set_stage.assert_not_awaited()
+    lines = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    head = line.splitlines()[0]
+    assert head.startswith("⛔ ")
+    assert "Confirm placements" in head and "/season placements-review" in head
+    assert " refused for Manager (<@42>) — " in head
+    for item in carried:
+        assert item in line, (item, line)
+
+
+async def test_a_posted_mid_season_review_writes_one_line_naming_who_ran_it(monkeypatch):
+    """Manager (id 42) runs /season placements-review on a season being raced whose closed
+    window left one driver to place, with nothing standing in the way, so the question is
+    posted with its ✅ Confirm placements button."""
+    cog = _report_cog(placements=[_placement("1002")])
+    import leaguebot.core.cogs.season_cog as season_cog
+
+    _RecordedView.made = []
+    monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "season placements-review"
+    interaction.user.display_name = "Manager"
+    interaction.followup.send = AsyncMock(return_value=MagicMock())
+
+    await undecorate(SeasonCog.season_review)(cog, interaction)
+
+    (view,) = _RecordedView.made
+    view.bind.assert_awaited_once()
+    logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
+    lines = [line for line in logged if "/season placements-review" in line]
+    assert len(lines) == 1, logged
+    assert lines[0].startswith("Manager (<@42>) | /season placements-review")
+    assert not any(line.startswith("⛔") for line in logged)

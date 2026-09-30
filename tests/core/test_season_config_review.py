@@ -234,6 +234,7 @@ async def test_the_review_is_refused_outside_configuration(stage):
     bot = _bot(stage=stage)
     cog = _cog(bot)
     interaction = _interaction()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_config_review)(cog, interaction)
 
@@ -292,15 +293,36 @@ async def test_confirming_refuses_on_a_fault_found_afresh():
 
 
 async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
+    """The refusal is recorded as one line naming the presser and the review (#482)."""
     bot = _bot()
     bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
     cog = _cog(bot)
     interaction = _interaction()
+    interaction.client = bot
 
     await cog._do_confirm_configuration(interaction)
 
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
-    bot.output_router.post_log.assert_not_awaited()
+    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith("⛔ ")
+    assert "/season config-review" in logged[0]
+    assert "refused for Manager (<@4242>) — " in logged[0]
+    assert "The season is no longer in configuration." in logged[0]
+
+
+async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signup_settings():
+    """F5: the stage moves first, so a refused confirmation writes nothing (#482)."""
+    bot = _bot(signup=True)
+    bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    cog = _cog(bot)
+    interaction = _interaction()
+    interaction.client = bot
+
+    await cog._do_confirm_configuration(interaction)
+
+    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
+    bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
 # ── The button ─────────────────────────────────────────────────────────────────────
@@ -341,6 +363,7 @@ async def test_another_league_manager_may_not_confirm():
     view, cog = _view()
     interaction = _interaction()
     interaction.user = _member(99)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
@@ -630,6 +653,7 @@ async def test_a_configuration_changed_since_the_review_is_not_confirmed(monkeyp
     monkeypatch.setattr(fingerprints, "take_fingerprint", AsyncMock(return_value=MagicMock()))
     interaction = _interaction()
     interaction.user = _member(REVIEWER)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
@@ -654,7 +678,12 @@ async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(mo
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
-    cog._do_confirm_configuration.assert_awaited_once_with(interaction)
+    from leaguebot.core.cogs.season_cog import _review_button
+
+    # The button passes its own name, which the helper records any refusal under.
+    cog._do_confirm_configuration.assert_awaited_once_with(
+        interaction, what=_review_button("Confirm configuration", "/season config-review")
+    )
     view._forget.assert_awaited_once()
     view._clear_report.assert_awaited_once()
 
@@ -673,3 +702,153 @@ async def test_the_confirmation_says_what_comes_next_and_is_logged(signup, expec
     log_line = bot.output_router.post_log.await_args.args[0]
     assert "/season config-review | Confirmed" in log_line
     assert f"stage: {'WAITING' if signup else 'PLACEMENTS'}" in log_line
+
+
+# ── What the review records in the log channel (#482) ─────────────────────────────
+
+
+def _run_by_the_manager(bot, interaction):
+    """The manager's run of `/season config-review`, connected to the bot's log channel so that
+    a line the command writes can be read. It reads as Discord's does: not answered until the
+    command replies or defers, and answered from then on."""
+    interaction.client = bot
+    interaction.command.qualified_name = "season config-review"
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+def _logged(bot) -> list[str]:
+    """The lines written to the log channel, in order."""
+    return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+
+
+_NOT_IN_CONFIGURATION = (
+    "⛔ There is no season in configuration. `/season setup` begins one; a season whose "
+    "configuration is confirmed is reviewed with `/season placements-review`."
+)
+
+
+@pytest.mark.parametrize(
+    "stage, set_up",
+    [
+        pytest.param(SeasonStage.WAITING, True, id="a_season_waiting_for_signups"),
+        pytest.param(SeasonStage.PLACEMENTS, True, id="a_season_in_placements"),
+        pytest.param(None, False, id="no_season_being_set_up"),
+    ],
+)
+async def test_every_config_review_refusal_is_recorded(stage, set_up):
+    """The refusal answers as today and writes one refusal line (#482, criterion 1)."""
+    bot = _bot(stage=stage)
+    cog = _cog(bot)
+    if not set_up:
+        cog._pending = {}
+        cog._get_pending = MagicMock(return_value=None)
+    interaction = _run_by_the_manager(bot, _interaction())
+
+    await undecorate(SeasonCog.season_config_review)(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(
+        _NOT_IN_CONFIGURATION, ephemeral=True
+    )
+    interaction.response.defer.assert_not_awaited()
+    assert _logged(bot) == [
+        f"⛔ `/season config-review` refused for Manager (<@{REVIEWER}>) — "
+        f"{_NOT_IN_CONFIGURATION[2:]}"
+    ]
+
+
+async def test_a_posted_config_review_writes_one_line_naming_who_ran_it(monkeypatch):
+    """A review that posts its question writes one line naming who ran it (#482, criterion 6),
+    so a later lapse line reads against it."""
+    bot = _report_bot(signup=True, test_mode=True)
+    cog = _cog(bot)
+    interaction = _run_by_the_manager(bot, _interaction())
+
+    await _report(cog, interaction, monkeypatch)
+
+    (view,) = _RecordedView.made
+    view.bind.assert_awaited_once()
+    lines = [line for line in _logged(bot) if "/season config-review" in line]
+    assert len(lines) == 1
+    assert lines[0].startswith(f"Manager (<@{REVIEWER}>) | /season config-review")
+    assert not any(line.startswith("⛔") for line in _logged(bot))
+
+
+# ── The confirmation's other refusals are recorded (#482) ───────────────────────────
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why. A refusal by ✅ Confirm configuration names the button and
+# the review it belongs to, and one whose reply is a list carries every item of it.
+
+
+def _manager_confirming(bot):
+    """Manager (id 4242) pressing ✅ Confirm configuration, connected to the bot's log channel,
+    and reading as Discord's does: not answered until it replies or defers."""
+    interaction = _interaction()
+    interaction.client = bot
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded():
+    """The configuration review's question is pressed once no season is being set up."""
+    bot = _bot()
+    cog = _cog(bot)
+    cog._pending.clear()
+    cog._get_pending = MagicMock(return_value=None)
+    interaction = _manager_confirming(bot)
+
+    await cog._do_confirm_configuration(interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(
+        "⛔ There is no season in configuration.", ephemeral=True
+    )
+    bot.season_service.set_stage.assert_not_awaited()
+    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1, logged
+    assert logged[0].startswith("⛔ ")
+    assert "Confirm configuration" in logged[0] and "/season config-review" in logged[0]
+    assert logged[0].endswith(
+        " refused for Manager (<@4242>) — There is no season in configuration."
+    )
+
+
+async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded():
+    """Manager (id 4242) confirms a configuration that now holds two faults."""
+    bot = _bot()
+    cog = _cog(bot)
+    faults = [
+        "The signup module is enabled but has no signup channel — set one with `/signup channel`.",
+        "**Pro** has no lineup channel — set one with `/division lineup-channel`.",
+    ]
+    cog._configuration_faults = AsyncMock(return_value=faults)
+    interaction = _manager_confirming(bot)
+
+    await cog._do_confirm_configuration(interaction)
+
+    reply = interaction.followup.send.await_args.args[0]
+    assert reply.startswith("⛔ The configuration cannot be confirmed:")
+    assert "Nothing has been confirmed" in reply
+    bot.season_service.set_stage.assert_not_awaited()
+    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1, logged
+    head = logged[0].splitlines()[0]
+    assert head.startswith("⛔ ")
+    assert "Confirm configuration" in head and "/season config-review" in head
+    assert " refused for Manager (<@4242>) — " in head
+    for fault in faults:
+        assert fault in logged[0], (fault, logged[0])

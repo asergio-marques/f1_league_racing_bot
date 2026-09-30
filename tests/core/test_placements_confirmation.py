@@ -253,6 +253,7 @@ async def test_the_review_is_refused_outside_placements(db_path, stage):
     interaction.user.id = USER_ID
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await undecorate(SeasonCog.season_review)(cog, interaction)
 

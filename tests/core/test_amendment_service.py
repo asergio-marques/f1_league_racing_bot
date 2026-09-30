@@ -227,6 +227,180 @@ async def test_amend_round_changes_the_field(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# One line for a confirmed /round amend, written straight after the save (#482)
+# ---------------------------------------------------------------------------
+#
+# `/round amend` wrote two success lines for one amendment: this service's "/round amend (field)"
+# line, naming the fields by their columns, and the confirmation's own. The one line now stays
+# here, in the cogs' success form, and is written as soon as the amendment is saved, so it stands
+# whatever fails after the save: the core specification's "The record of what changed".
+
+#: The moment these amendments are made at, pinned so that the round's phases are judged alike
+#: on every run.
+_AMEND_NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
+
+
+async def _round_to_amend(tmp_path, *, scheduled_at: datetime) -> str:
+    """Round 1 of division Div A in season 1, raced, at Bahrain International Circuit in the
+    NORMAL format, at *scheduled_at*, with no forecast drawn yet."""
+    path = str(tmp_path / "amend_line.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO server_configs "
+            "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
+            "VALUES (1, 10, 20, 30)"
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (1, '2026-01-01', 'ACTIVE', 1)"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, forecast_channel_id, "
+            "mention_role_id) VALUES (1, 1, 'Div A', 1, 999, 555)"
+        )
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain International Circuit', ?)",
+            (scheduled_at.isoformat(),),
+        )
+        await db.commit()
+    return path
+
+
+def _amending_bot(path: str, *, weather: bool = False):
+    """The bot an amendment is made through: attendance off, weather as asked, every line the
+    amendment writes kept."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    bot = MagicMock()
+    bot.db_path = path
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    bot.output_router.post_forecast = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.scheduler_service.cancel_round = MagicMock()
+    bot.scheduler_service.schedule_round = MagicMock()
+    return bot
+
+
+def _race_control():
+    from unittest.mock import MagicMock
+
+    actor = MagicMock()
+    actor.id = 4242
+    actor.display_name = "Race Control"
+    return actor
+
+
+@pytest.mark.asyncio
+async def test_a_round_amendment_writes_one_line_naming_the_member_the_round_and_each_change(
+    tmp_path,
+):
+    """Race Control amends round 1 from Bahrain International Circuit in the NORMAL format to
+    Silverstone Circuit in the SPRINT format. One line is written, in the success form, naming
+    Race Control and `/round amend`, the round, and each field from what to what, named as the
+    command's parameter (`track`) rather than by its column."""
+    from datetime import timedelta
+
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW + timedelta(days=30))
+    bot = _amending_bot(path)
+
+    await AmendmentService(path).amend_round(
+        1,
+        _race_control(),
+        [("track_name", "Silverstone Circuit"), ("format", RoundFormat.SPRINT)],
+        bot,
+        now=_AMEND_NOW,
+    )
+
+    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    head, _, body = line.partition("\n")
+    assert head == "Race Control (<@4242>) | /round amend | Success"
+    assert "round 1" in body.lower()
+    changes = body.splitlines()
+    assert "  track: Bahrain International Circuit → Silverstone Circuit" in changes
+    assert "  format: NORMAL → SPRINT" in changes
+    assert "track_name" not in body
+
+
+@pytest.mark.asyncio
+async def test_a_round_amendment_line_leaves_out_a_field_given_at_the_value_it_held(tmp_path):
+    """Race Control amends round 1, which stands at Bahrain International Circuit in the NORMAL
+    format, giving the track it already has and the SPRINT format. The one line names the format
+    from what to what, and says nothing of the track, which did not change: a line reading
+    'track: Bahrain International Circuit → Bahrain International Circuit' would record a change
+    that was never made."""
+    from datetime import timedelta
+
+    from leaguebot.core.models.round import RoundFormat
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW + timedelta(days=30))
+    bot = _amending_bot(path)
+
+    await AmendmentService(path).amend_round(
+        1,
+        _race_control(),
+        [("track_name", "Bahrain International Circuit"), ("format", RoundFormat.SPRINT)],
+        bot,
+        now=_AMEND_NOW,
+    )
+
+    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    head, _, body = line.partition("\n")
+    assert head == "Race Control (<@4242>) | /round amend | Success"
+    assert "  format: NORMAL → SPRINT" in body.splitlines()
+    assert "track:" not in body
+
+
+@pytest.mark.parametrize("fault_in", ["cancelling the round's jobs", "re-running a phase"])
+@pytest.mark.asyncio
+async def test_a_round_amendment_that_fails_after_the_save_still_leaves_its_line(
+    tmp_path, fault_in
+):
+    """Race Control moves round 1, raced a day ago with no forecast drawn, from Bahrain
+    International Circuit to Silverstone Circuit, with weather on. The amendment is saved, then
+    fails: the scheduler cannot cancel the round's jobs, or the first overdue forecast cannot be
+    drawn again. The round stands amended, and its one success line has been written before the
+    fault, so the record holds what changed."""
+    from datetime import timedelta
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from leaguebot.core.services.amendment_service import AmendmentService
+
+    path = await _round_to_amend(tmp_path, scheduled_at=_AMEND_NOW - timedelta(days=1))
+    bot = _amending_bot(path, weather=True)
+    fault = RuntimeError("the fault after the save")
+    if fault_in == "cancelling the round's jobs":
+        bot.scheduler_service.cancel_round = MagicMock(side_effect=fault)
+
+    with patch(
+        "leaguebot.weather.services.phase1_service.run_phase1",
+        new=AsyncMock(side_effect=fault),
+    ), patch(
+        "leaguebot.weather.services.phase2_service.run_phase2", new=AsyncMock()
+    ), patch(
+        "leaguebot.weather.services.phase3_service.run_phase3", new=AsyncMock()
+    ):
+        with pytest.raises(RuntimeError, match="the fault after the save"):
+            await AmendmentService(path).amend_round(
+                1, _race_control(), [("track_name", "Silverstone Circuit")], bot, now=_AMEND_NOW
+            )
+
+    async with get_connection(path) as db:
+        cursor = await db.execute("SELECT track_name FROM rounds WHERE id = 1")
+        assert (await cursor.fetchone())["track_name"] == "Silverstone Circuit"
+    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert line.startswith("Race Control (<@4242>) | /round amend | Success\n")
+    assert "  track: Bahrain International Circuit → Silverstone Circuit" in line.splitlines()
+
+
+# ---------------------------------------------------------------------------
 # A compound amendment is one amendment — issue #115
 # ---------------------------------------------------------------------------
 

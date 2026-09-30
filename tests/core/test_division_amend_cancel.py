@@ -112,10 +112,13 @@ def _make_cog(
     ),
     immutable: bool = False,
     rounds=None,
+    stage: SeasonStage = SeasonStage.PLACEMENTS,
 ) -> SeasonCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
+    # The stage of the season being set up, which the setup commands ask before they act.
+    bot.season_service.get_stage = AsyncMock(return_value=stage)
     divisions = divisions if divisions is not None else [_division()]
     bot.season_service.get_divisions = AsyncMock(
         side_effect=[divisions, remaining if remaining is not None else divisions] * 4
@@ -159,6 +162,18 @@ def _interaction(*, channel=None):
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
+
+
+def _run_by_the_manager(cog, command: str):
+    """The manager's interaction for *command*, connected to the cog's log channel."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = command
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    return [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
 
 
 def _replied(interaction) -> str:
@@ -619,6 +634,31 @@ async def test_cancelling_a_division_winds_a_finished_season_down(tmp_path):
     )
 
 
+async def test_a_wind_down_that_fails_after_a_division_cancel_is_named_as_not_done(tmp_path):
+    """The core specification's record of what changed: an outcome is recorded as it is. Division
+    Pro of a season being raced is cancelled, and the season it may have finished cannot then
+    be wound down (the wind-down raises). The cancellation stands; the reply and the one success
+    line each name the wind-down as not done, saying the season could not be moved to pending
+    completion and that /season complete does it."""
+    db_path = await _make_db(tmp_path, status="ACTIVE", name="division_cancel_wind_down_fails")
+    cog = _make_cog(db_path)
+    cog.bot.season_service.wind_down_ongoing = AsyncMock(side_effect=RuntimeError("disk full"))
+    interaction = _interaction()
+
+    await _cancel(cog, interaction)
+
+    cog.bot.season_service.cancel_division.assert_awaited_once()
+    replied = _replied(interaction)
+    assert replied.startswith("\u2705 Division **Pro** cancelled."), replied
+    assert "pending completion" in replied.lower(), replied
+    assert "/season complete" in replied, replied
+    [line] = _logged(cog)
+    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division cancel | Success"), line
+    [not_done] = [row for row in line.splitlines() if row.strip().startswith("not done:")]
+    assert "pending completion" in not_done.lower(), line
+    assert "/season complete" in not_done, line
+
+
 async def test_cancelling_needs_an_active_season(tmp_path):
     """There is no running division to stand down; in setup `/division delete` is the one
     that applies."""
@@ -833,3 +873,510 @@ async def test_a_division_amended_to_a_name_with_everyone_is_refused(tmp_path):
 
     assert "division name" in _replied(interaction)
     assert (await _division_row(db_path))["name"] == "Pro"
+
+
+# ---------------------------------------------------------------------------
+# /division amend holds a tier to the rule /division add does (#482)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "tier,reply",
+    [
+        pytest.param(0, "\u26d4 Tier must be 1 or higher.", id="zero"),
+        pytest.param(-1, "\u26d4 Tier must be 1 or higher.", id="negative"),
+        pytest.param(
+            2,
+            "\u26d4 A division with tier **2** already exists in this setup.",
+            id="another_divisions_tier",
+        ),
+    ],
+)
+async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_path, tier, reply):
+    """The core specification's Divisions: a tier is unique within its season and no lower than
+    1. Pro holds tier 1 and Am tier 2; the manager amends Pro's tier. The refusal is
+    `/division add`'s, word for word, and is recorded; Pro keeps its tier and nothing is
+    audited."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
+    interaction = _run_by_the_manager(cog, "division amend")
+
+    await _amend(cog, interaction, tier=tier)
+
+    assert _replied(interaction) == reply
+    assert (await _division_row(db_path))["tier"] == 1
+    assert await _audit_rows(db_path) == []
+    assert _logged(cog) == [
+        f"\u26d4 `/division amend` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Asking for what already stands changes nothing, and says so (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a command that changes nothing because
+# nothing was asked of it records that nothing was changed. No audit entry is written, since no
+# value moved; the reply says nothing changed; and the log holds one line, in the success form,
+# saying so. Only an exact match is nothing: "Pro" to "PRO" is a rename (above).
+
+
+
+def _says_nothing_changed(text: str) -> bool:
+    return "nothing" in text.lower() and "chang" in text.lower()
+
+
+async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
+    """Pro, in a season in placements, is renamed to Pro."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, "division rename")
+
+    await _rename(cog, interaction, current="Pro", new="Pro")
+
+    cog.bot.season_service.rename_division.assert_not_awaited()
+    assert _says_nothing_changed(_replied(interaction))
+    assert "renamed to" not in _replied(interaction)
+    assert await _audit_rows(db_path) == []
+    [line] = _logged(cog)
+    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division rename |")
+    assert _says_nothing_changed(line)
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        pytest.param({"new_name": "Pro"}, id="its_own_name"),
+        pytest.param({"tier": 1}, id="its_own_tier"),
+        pytest.param({"role": 555}, id="its_own_role"),
+        pytest.param({"new_name": "Pro", "tier": 1, "role": 555}, id="every_value_as_it_stands"),
+    ],
+)
+async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_path, asked):
+    """Pro, tier 1, role 555, in a season in placements, is amended to values it already holds."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, "division amend")
+    if "role" in asked:
+        asked = {**asked, "role": _role(asked["role"])}
+
+    await _amend(cog, interaction, **asked)
+
+    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert await _audit_rows(db_path) == []
+    assert _says_nothing_changed(_replied(interaction))
+    assert "amended" not in _replied(interaction)
+    [line] = _logged(cog)
+    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division amend |")
+    assert _says_nothing_changed(line)
+
+
+# ---------------------------------------------------------------------------
+# A division is named as it is named, not as it was typed (#482, F8)
+# ---------------------------------------------------------------------------
+#
+# Rename and amend find the division without regard to case, so a manager may type `pro` for
+# Pro. The core specification's Divisions: "its name shall be what the bot displays". The reply
+# and the log line name the division as it stands, never as the manager typed it.
+
+
+@pytest.mark.parametrize(
+    "command,run,done",
+    [
+        pytest.param(
+            "division rename",
+            lambda cog, interaction: _rename(cog, interaction, current="pro", new="Elite"),
+            "renamed to",
+            id="rename",
+        ),
+        pytest.param(
+            "division amend",
+            lambda cog, interaction: _amend(cog, interaction, name="pro", tier=3),
+            "amended",
+            id="amend",
+        ),
+    ],
+)
+async def test_a_division_typed_in_another_case_is_named_as_it_is_named(
+    tmp_path, command, run, done
+):
+    """Pro, in a season in placements, is renamed to Elite, or amended to tier 3, by a manager
+    who typed its name as `pro`."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _run_by_the_manager(cog, command)
+
+    await run(cog, interaction)
+
+    replied = _replied(interaction)
+    first = replied.splitlines()[0]
+    assert done in first
+    assert "**Pro**" in first
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert f"/{command}" in line
+    assert "Pro" in words
+    assert "pro" not in words
+
+
+# ---------------------------------------------------------------------------
+# The setup commands run in Placements alone (#482, F4)
+# ---------------------------------------------------------------------------
+#
+# The core specification: "Divisions shall be created and deleted, and rounds added and deleted,
+# only while the season is in Placements", and "A division may be renamed, and its name, tier
+# and role amended, while its season is in Placements alone". A season being set up but not yet
+# in Placements is refused in the words each command uses today, and the refusal is recorded.
+# In Placements each still works: every test above runs there.
+
+
+
+async def _amend_the_tier(cog, interaction):
+    return await _amend(cog, interaction, tier=2)
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
+    ids=lambda stage: stage.value.lower(),
+)
+@pytest.mark.parametrize(
+    "command, run, reply",
+    [
+        pytest.param(
+            "division delete",
+            _delete,
+            "\u274c `/division delete` can only be used while the season is in placements.",
+            id="delete",
+        ),
+        pytest.param(
+            "division rename",
+            _rename,
+            "\u274c `/division rename` can only be used while the season is in placements.",
+            id="rename",
+        ),
+        pytest.param(
+            "division amend",
+            _amend_the_tier,
+            "\u274c `/division amend` is only permitted while the season is in placements.",
+            id="amend",
+        ),
+    ],
+)
+async def test_a_setup_command_before_placements_is_refused_and_recorded(
+    tmp_path, command, run, reply, stage
+):
+    """A season being set up, still in configuration, waiting or signups, holds division Pro at
+    tier 1. The manager deletes Pro, renames it Elite, or amends it to tier 2. Each is refused
+    in today's words and recorded, and Pro stands as it was."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, stage=stage)
+    interaction = _run_by_the_manager(cog, command)
+
+    await run(cog, interaction)
+
+    assert _replied(interaction) == reply
+    cog.bot.season_service.delete_division.assert_not_awaited()
+    cog.bot.season_service.rename_division.assert_not_awaited()
+    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert await _audit_rows(db_path) == []
+    assert _logged(cog) == [
+        f"\u26d4 `/{command}` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
+    ]
+
+
+
+# ---------------------------------------------------------------------------
+# Every other refusal of /division delete, rename and amend is recorded (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a refusal is one line naming the
+# member, what was refused and why. Each reply stays word for word as today, and goes as today's
+# does, as the first answer to the interaction. /division amend with no option stays a refusal:
+# something was asked for and nothing given.
+
+
+def _as_discord(interaction):
+    """Make *interaction* read as Discord's does: not answered until the command replies or
+    defers, and answered from then on."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    return interaction
+
+
+async def _rename_to_a_mention(cog, interaction):
+    return await _rename(cog, interaction, new="<@123456789012345678>")
+
+
+async def _rename_onto_am(cog, interaction):
+    return await _rename(cog, interaction, new="am")
+
+
+async def _amend_nothing(cog, interaction):
+    return await _amend(cog, interaction)
+
+
+async def _amend_to_a_mention(cog, interaction):
+    return await _amend(cog, interaction, new_name="<@123456789012345678>")
+
+
+async def _amend_onto_am(cog, interaction):
+    return await _amend(cog, interaction, new_name="AM")
+
+
+async def _delete_elite(cog, interaction):
+    return await _delete(cog, interaction, name="Elite")
+
+
+async def _rename_elite(cog, interaction):
+    return await _rename(cog, interaction, current="Elite", new="Rookie")
+
+
+async def _amend_elite(cog, interaction):
+    return await _amend(cog, interaction, name="Elite", tier=3)
+
+
+_A_MENTION_REFUSED = (
+    "❌ A mention of a member in the division name would notify them wherever it is "
+    "posted. Remove it, then try again."
+)
+
+
+@pytest.mark.parametrize(
+    "command, run, arranged, reply",
+    [
+        pytest.param(
+            "division delete", _delete, {"status": "ACTIVE"},
+            "❌ `/division delete` can only be used while the season is in placements.",
+            id="delete-no_season_being_set_up",
+        ),
+        pytest.param(
+            "division delete", _delete_elite, {},
+            "❌ Division `Elite` not found.",
+            id="delete-an_unknown_division",
+        ),
+        pytest.param(
+            "division rename", _rename, {"status": "ACTIVE"},
+            "❌ `/division rename` can only be used while the season is in placements.",
+            id="rename-no_season_being_set_up",
+        ),
+        pytest.param(
+            "division rename", _rename_elite, {},
+            "❌ Division `Elite` not found.",
+            id="rename-an_unknown_division",
+        ),
+        pytest.param(
+            "division rename", _rename_to_a_mention, {},
+            _A_MENTION_REFUSED,
+            id="rename-a_mention_in_the_name",
+        ),
+        pytest.param(
+            "division rename", _rename_onto_am, {},
+            "❌ A division named **am** already exists.",
+            id="rename-a_name_already_taken",
+        ),
+        pytest.param(
+            "division amend", _amend_nothing, {},
+            "❌ Provide at least one of: `new_name`, `tier`, `role`.",
+            id="amend-no_option",
+        ),
+        pytest.param(
+            "division amend", _amend_the_tier, {"status": "ACTIVE"},
+            "❌ `/division amend` is only permitted while the season is in placements.",
+            id="amend-no_season_being_set_up",
+        ),
+        pytest.param(
+            "division amend", _amend_elite, {},
+            "❌ Division `Elite` not found.",
+            id="amend-an_unknown_division",
+        ),
+        pytest.param(
+            "division amend", _amend_to_a_mention, {},
+            _A_MENTION_REFUSED,
+            id="amend-a_mention_in_the_name",
+        ),
+        pytest.param(
+            "division amend", _amend_onto_am, {},
+            "❌ A division named **AM** already exists.",
+            id="amend-a_name_already_taken",
+        ),
+    ],
+)
+async def test_every_other_division_delete_rename_and_amend_refusal_is_recorded(
+    tmp_path, command, run, arranged, reply
+):
+    """A season in placements holding division Pro at tier 1 with role 555, and division Am at
+    tier 2, unless the case says otherwise. The manager (id 77) is refused in eleven cases:
+    /division delete, rename or amend with no season being set up (the season is being raced) or
+    naming division Elite, which does not exist; a rename or an amend of Pro to a member's
+    mention, or onto Am's name in another case; and an amend asking for nothing. The manager gets
+    today's reply word for word and nothing else. Pro stands as it was, nothing is deleted or
+    renamed, and no audit entry is written. The log channel gets exactly one line, "⛔
+    `/division …` refused for Manager (<@77>) — " and the reply's words."""
+    db_path = await _make_db(tmp_path, status=arranged.get("status", "SETUP"))
+    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
+    interaction = _as_discord(_run_by_the_manager(cog, command))
+
+    await run(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.season_service.delete_division.assert_not_awaited()
+    cog.bot.season_service.rename_division.assert_not_awaited()
+    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert await _audit_rows(db_path) == []
+    assert _logged(cog) == [
+        f"⛔ `/{command}` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
+
+
+async def _cancel_as_typed_lower(cog, interaction):
+    return await _cancel(cog, interaction, confirm="confirm")
+
+
+async def _cancel_elite(cog, interaction):
+    return await _cancel(cog, interaction, name="Elite")
+
+
+@pytest.mark.parametrize(
+    "run, arranged, reply",
+    [
+        pytest.param(
+            _cancel_as_typed_lower, {},
+            "❌ Type exactly `CONFIRM` in the `confirm` field to proceed.",
+            id="without_the_exact_word",
+        ),
+        pytest.param(
+            _cancel, {"season": None},
+            "❌ `/division cancel` is available only while the season is ongoing.",
+            id="no_season_being_raced",
+        ),
+        pytest.param(
+            _cancel,
+            {"season": SimpleNamespace(
+                id=SEASON_ID, status="ACTIVE", stage=SeasonStage.PENDING_COMPLETION,
+                season_number=4,
+            )},
+            "❌ `/division cancel` is available only while the season is ongoing.",
+            id="a_season_pending_completion",
+        ),
+        pytest.param(
+            _cancel, {"immutable": True},
+            "❌ This season is archived (COMPLETED) and cannot be modified.",
+            id="an_archived_season",
+        ),
+        pytest.param(
+            _cancel_elite, {},
+            "❌ Division `Elite` not found.",
+            id="an_unknown_division",
+        ),
+        pytest.param(
+            _cancel, {"divisions": [_division(status="CANCELLED")]},
+            "❌ Division **Pro** is already cancelled.",
+            id="a_division_already_cancelled",
+        ),
+    ],
+)
+async def test_every_division_cancel_refusal_is_recorded(tmp_path, run, arranged, reply):
+    """A season being raced holds division Pro, unless the case says otherwise. The admin (the
+    manager here, id 77) runs /division cancel on Pro and is refused in six cases: typing
+    'confirm' rather than CONFIRM; with no season being raced; on a season whose divisions are all
+    done (pending completion); on a season archived as completed; naming division Elite, which
+    does not exist; and on Pro already cancelled. The member gets today's reply word for word and
+    nothing else; nothing is deferred, cancelled or announced. The log channel gets exactly one
+    line, "⛔ `/division cancel` refused for Manager (<@77>) — " and the reply's words."""
+    db_path = await _make_db(tmp_path, status="ACTIVE")
+    cog = _make_cog(db_path, **arranged)
+    interaction = _as_discord(_run_by_the_manager(cog, "division cancel"))
+
+    announce = await run(cog, interaction)
+
+    interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
+    interaction.followup.send.assert_not_awaited()
+    interaction.response.defer.assert_not_awaited()
+    cog.bot.season_service.cancel_division.assert_not_awaited()
+    announce.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/division cancel` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# /division cancel names the division as it is named (#482, F9)
+# ---------------------------------------------------------------------------
+#
+# The division is found without regard to case, so a manager may type `pro` for Pro. The core
+# specification's Divisions: "its name shall be what the bot displays". The reply and the log
+# line name the division as it stands, never as the manager typed it, as rename and amend do.
+
+
+@pytest.mark.parametrize(
+    "arranged, answered",
+    [
+        pytest.param({}, "✅ Division **Pro** cancelled.", id="cancelled"),
+        pytest.param(
+            {"divisions": [_division(status="CANCELLED")]},
+            "❌ Division **Pro** is already cancelled.",
+            id="already_cancelled",
+        ),
+    ],
+)
+async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_named(
+    tmp_path, arranged, answered
+):
+    """A season being raced holds division Pro. The manager (id 77) runs /division cancel with
+    CONFIRM, typing the division's name as 'pro', in two cases: Pro is cancelled, or Pro was
+    already cancelled and the command is refused. The reply opens by naming the division as it
+    is named, **Pro**, and nowhere shows 'pro'; the one log line (the success line, or the
+    refusal line) names Pro and never 'pro'."""
+    db_path = await _make_db(tmp_path, status="ACTIVE")
+    cog = _make_cog(db_path, **arranged)
+    interaction = _as_discord(_run_by_the_manager(cog, "division cancel"))
+
+    await _cancel(cog, interaction, name="pro")
+
+    replied = _replied(interaction)
+    assert replied.startswith(answered), replied
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert "/division cancel" in line, line
+    assert "Pro" in words, line
+    assert "pro" not in words, line
+
+
+# ---------------------------------------------------------------------------
+# /division delete names the division as it is named (#482, F12)
+# ---------------------------------------------------------------------------
+#
+# As rename, amend and cancel: the division is found without regard to case, and the reply and
+# the log line name it as it stands, never as the manager typed it.
+
+
+async def test_a_division_deleted_as_typed_in_another_case_is_named_as_it_is_named(tmp_path):
+    """A season in placements holds divisions Pro and Am. The manager (id 77) runs /division
+    delete typing the division's name as 'pro'. Pro is deleted; the reply opens '✅ Division
+    **Pro** deleted.' and nowhere shows 'pro', and the one log line, naming /division delete,
+    names Pro and never 'pro'."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, remaining=[_division("Am", 2, id=DIVISION_ID + 1)])
+    interaction = _as_discord(_run_by_the_manager(cog, "division delete"))
+
+    await _delete(cog, interaction, name="pro")
+
+    cog.bot.season_service.delete_division.assert_awaited_once_with(DIVISION_ID)
+    replied = _replied(interaction)
+    assert replied.startswith("✅ Division **Pro** deleted."), replied
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert "/division delete" in line, line
+    assert "Pro" in words, line
+    assert "pro" not in words, line

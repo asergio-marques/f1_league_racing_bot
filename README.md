@@ -394,7 +394,7 @@ Deletes the bot's `count` most recent messages in the interaction channel, newes
 
 > It looks back over the last 200 messages to find them. On a busy channel that may be fewer of the bot's than you asked for, and the reply tells you when it was.
 
-> An approved or expired `/season placements-review` clears itself, so this is for the ones that did neither — a review you walked away from, or anything else the bot has left in the channel.
+> An approved or expired `/season placements-review` clears itself, report and all — including one cleared because the bot restarted while it stood — so this is for anything else the bot has left in the channel.
 
 > **Note:** Requires the bot to have **Manage Messages** in the channel (already a required bot permission).
 
@@ -664,7 +664,9 @@ The same list is added to the approval's line in the log channel. A driver who h
 
 **Who may press it.** The person who ran the review, or a **league admin**. Anyone else who presses is told so privately and nothing is approved. That check matters because the question is posted publicly: a league manager can review a season and then ask a league admin to approve it, which is the point of putting it where both can see it.
 
-> **The button stands for five minutes**, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question is cleared at startup rather than left waiting for a press nothing would answer.
+> **The button stands for five minutes**, counted from when the question was posted, whatever is pressed meanwhile, and only for the season it was posted for. When they pass, the message is deleted and replaced by a notice mentioning whoever ran the review, saying it has expired and must be run again. The same happens if the bot restarts while a review is standing — the five minutes cannot have run while it was down, so the question and its report are cleared at startup rather than left waiting for a press nothing would answer.
+>
+> A press that fails on a fault in the bot leaves the button standing, to be pressed again until the five minutes are up. While a press is being worked the review does not expire under it, and a second press meanwhile — a double-click — is refused, so a season is never approved twice.
 >
 > Before it expires, the button refuses if anything about your season has changed since the report was drawn up — a round edited, a channel moved, a driver seated, a signup approved or turned down, test mode or the team list changed, a template file altered — and it names what changed. Nothing is approved, the message is cleared as an expiry clears it, and you are told to run `/season placements-review` again.
 >
@@ -766,6 +768,8 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 | `format` | String | — | New format: `NORMAL`, `SPRINT`, `MYSTERY`, or `ENDURANCE`. Refused while the second forecast, drawn for the current sessions, still stands, or once the round has started. |
 
 **An amendment is one change.** Whatever combination of the three fields you give, the round is judged and amended once. If any rule refuses any part of it, none of it happens and the round is left exactly as it was — so amending a circuit and a date together is a single decision, and a circuit that could not be changed on its own often can be when the round moves with it.
+
+**Giving the values a round already holds changes nothing.** You are told nothing was changed, no confirmation is offered, and the log channel records that nothing changed. A round that cannot be amended at all — cancelled, or with its results entered — is refused as such, whatever you gave.
 
 **It tells you what it will cost before it does it.** The confirmation names the forecasts that will be withdrawn and redrawn, or says the ones already posted will stand, along with anything the round will no longer get — a reminder that can no longer fire, for instance. The rules are checked again when you press Confirm, so an amendment that was fine when offered but is not any more is abandoned rather than applied.
 

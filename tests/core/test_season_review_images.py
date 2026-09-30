@@ -859,6 +859,7 @@ async def test_another_league_manager_may_not_approve():
     view, cog = _approve_view()
     presser = _member(99, league_admin=False)
     interaction = _button_interaction(presser)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ApproveView.approve(view, interaction, MagicMock())
 
@@ -877,6 +878,7 @@ async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set():
     view, cog = _approve_view(admin_role=None)
     presser = _member(99, league_admin=True)
     interaction = _button_interaction(presser)
+    interaction.response.is_done = MagicMock(return_value=False)
 
     await _ApproveView.approve(view, interaction, MagicMock())
 

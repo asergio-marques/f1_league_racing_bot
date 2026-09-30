@@ -116,6 +116,20 @@ async def _sync(cog, interaction, *, name="Pro", posting=None):
     return post
 
 
+def _run_by_the_manager(cog):
+    """The manager's run of /division calendar-sync, connected to the cog's log channel so that
+    a line the command writes can be read."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    interaction.command.qualified_name = "division calendar-sync"
+    return interaction
+
+
+def _logged(cog) -> list[str]:
+    """The lines the command wrote to the log channel, in order."""
+    return [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+
+
 def _replied(interaction) -> str:
     return "\n".join(
         str(c.args[0]) for c in interaction.followup.send.await_args_list if c.args
@@ -156,16 +170,21 @@ async def test_the_reply_says_it_was_posted_as_an_image(tmp_path):
 
 
 async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(tmp_path):
-    """A manager who has just been refused will otherwise assume the channel is empty."""
+    """A manager who has just been refused will otherwise assume the channel is empty. The
+    refusal is recorded (#482): the log channel gets exactly one refusal line, naming the member
+    and carrying the render's problem."""
     cog = _make_cog()
-    interaction = _interaction()
+    interaction = _run_by_the_manager(cog)
 
     await _sync(cog, interaction, posting=_posting(problem="the template has no rows"))
 
     replied = _replied(interaction)
     assert "was not posted — the template has no rows" in replied
     assert "previous calendar still stands" in replied
-    cog.bot.output_router.post_log.assert_not_awaited()
+    assert _logged(cog) == [
+        "⛔ `/division calendar-sync` refused for Manager (<@77>) — The calendar for **Pro** "
+        "was not posted — the template has no rows"
+    ]
 
 
 async def test_render_notices_are_shown_and_logged(tmp_path):
@@ -270,3 +289,42 @@ async def test_a_season_with_no_number_still_draws_and_is_logged(tmp_path, caplo
     assert post.await_args.kwargs["season_number"] is not None
     assert "SEASON 0" in caplog.text
     assert "Pro" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Its other refusals are recorded (#482)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "divisions, name, reply",
+    [
+        pytest.param(
+            None, "Rookie",
+            "❌ Division **Rookie** not found in the current season.",
+            id="an_unknown_division",
+        ),
+        pytest.param(
+            [_division(calendar=None)], "Pro",
+            "❌ **Pro** has no calendar channel configured. Set one with "
+            "`/division calendar-channel` first.",
+            id="no_calendar_channel",
+        ),
+    ],
+)
+async def test_every_other_calendar_sync_refusal_is_recorded(tmp_path, divisions, name, reply):
+    """A season being raced holds division Pro, whose calendar channel is set unless the case
+    says otherwise. The manager (id 77) runs /division calendar-sync for division Rookie, which
+    does not exist, or for Pro with no calendar channel set. The manager gets today's reply word
+    for word and nothing else, no calendar is posted, and the log channel gets exactly one line,
+    "⛔ `/division calendar-sync` refused for Manager (<@77>) — " and the reply's words."""
+    cog = _make_cog(divisions=divisions)
+    interaction = _run_by_the_manager(cog)
+
+    post = await _sync(cog, interaction, name=name)
+
+    assert [c.args[0] for c in interaction.followup.send.await_args_list] == [reply]
+    post.assert_not_awaited()
+    assert _logged(cog) == [
+        f"⛔ `/division calendar-sync` refused for Manager (<@77>) — {reply[2:]}"
+    ]

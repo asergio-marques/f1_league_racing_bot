@@ -21,6 +21,10 @@ from leaguebot.core.services.test_mode_service import count_live_real_drivers
 
 SERVER_ID = 22150
 
+#: Alex, the league admin who runs `/season complete`. The season's end is handed the member
+#: who completes it, so that a line it writes names them (#482).
+_ALEX = SimpleNamespace(id=4242, display_name="Alex")
+
 
 class _Scheduler:
     def cancel_season_end(self):
@@ -94,7 +98,7 @@ async def db_path(tmp_path):
 async def _complete(db_path):
     bot = _bot(db_path)
     with patch("leaguebot.weather.services.forecast_cleanup_service.flush_pending_deletions", new=AsyncMock()):
-        await execute_season_end(1, bot)
+        await execute_season_end(1, bot, actor=_ALEX)
     return bot
 
 

@@ -450,3 +450,83 @@ def test_a_round_nudged_within_its_closed_check_in_stays_closed():
     )
     assert verdict.check_in_stays_closed
     assert not verdict.recall_check_in
+
+
+# ---------------------------------------------------------------------------
+# An amendment that changes nothing (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a command that changes nothing because
+# nothing was asked of it records that nothing was changed. `/round amend` given the values that
+# already stand writes no audit entry, replies that nothing changed and records it. Whether it does
+# is judged here, before the command opens a connection, from the values it has already read. The
+# division commands' own judgement is `season_service`'s, beside every other division rule, and
+# is tested in `test_division_no_op_judgement.py`.
+
+#: A round as `/round amend` holds it before it asks for anything: its track, its format as a
+#: `RoundFormat` and its moment as a naive UTC `datetime`, which is what `_row_to_round` makes of
+#: the stored row on the active path and what the pending path's round already carries.
+_STANDING = {
+    "track_name": "Bahrain International Circuit",
+    "format": RoundFormat.SPRINT,
+    "scheduled_at": datetime(2026, 7, 1, 18, 0),
+}
+
+
+def _asked_moment(text: str) -> datetime:
+    """A moment as `/round amend` holds it once typed: through `parse_datetime`, naive UTC."""
+    from leaguebot.core.utils.input_validator import parse_datetime
+
+    moment = parse_datetime(text)
+    assert moment is not None
+    return moment
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param({"track_name": "Bahrain International Circuit"}, id="the_same_track"),
+        pytest.param({"format": RoundFormat.SPRINT}, id="the_same_format"),
+        pytest.param(
+            {"scheduled_at": _asked_moment("2026-07-01T18:00:00")},
+            id="the_same_moment_given_in_utc",
+        ),
+        pytest.param(
+            {"scheduled_at": _asked_moment("2026-07-01T20:00:00+02:00")},
+            id="the_same_moment_given_in_another_zone",
+        ),
+        pytest.param(
+            {
+                "track_name": "Bahrain International Circuit",
+                "format": RoundFormat.SPRINT,
+                "scheduled_at": _asked_moment("2026-07-01T18:00:00"),
+            },
+            id="every_field_as_it_stands",
+        ),
+    ],
+)
+def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
+    from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+
+    assert amendment_changes_nothing(_STANDING, changes)
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        pytest.param({"track_name": "Silverstone Circuit"}, id="another_track"),
+        pytest.param({"format": RoundFormat.NORMAL}, id="another_format"),
+        pytest.param(
+            {"scheduled_at": _asked_moment("2026-07-01T19:00:00")},
+            id="another_moment",
+        ),
+        pytest.param(
+            {"track_name": "Bahrain International Circuit", "format": RoundFormat.NORMAL},
+            id="one_field_as_it_stands_and_one_changed",
+        ),
+    ],
+)
+def test_a_round_amendment_with_any_value_changed_changes_something(changes):
+    from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+
+    assert not amendment_changes_nothing(_STANDING, changes)

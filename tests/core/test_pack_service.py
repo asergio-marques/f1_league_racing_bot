@@ -16,6 +16,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.pack_service import KEPT_JOBS, PackRefused, pack
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
+from tests.support.review_prompts import store_review_prompt
 
 SERVER = 4242
 
@@ -78,11 +79,12 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
             VALUES ('903', 85);
             INSERT INTO pending_messages (channel_id, content, failure_reason, enqueued_at)
             VALUES (86, 'hello', 'Forbidden', '2026-01-01');
-            INSERT INTO season_review_prompts (id, season_id, channel_id, message_id,
-                reviewer_id, posted_at) VALUES (1, 1, 87, 88, 89, '2026-01-01');
             INSERT INTO audit_entries (actor_id, actor_name, change_type, timestamp)
             VALUES (1, 'a', 'X', '2026-01-01');
         """)
+        await store_review_prompt(
+            db, season_id=1, channel_id=87, message_id=88, reviewer_id=89, posted_at="2026-01-01"
+        )
         await db.commit()
 
 
