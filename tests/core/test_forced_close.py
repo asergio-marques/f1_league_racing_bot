@@ -27,6 +27,7 @@ has to end up closed and audited whatever Discord makes of it.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -538,3 +539,113 @@ async def test_a_close_given_the_window_still_open_closes_it(tmp_path):
     assert outcome.returned == 1
     bot.signup_module_service.set_window_closed.assert_awaited_once()
 
+
+# ---------------------------------------------------------------------------
+# A close nobody ran: the timer, the restart sweep, a season's end, every division done
+# ---------------------------------------------------------------------------
+
+_UNATTENDED = "#482: a close nobody ran writes no line and reports no failed step"
+
+#: The set time a timer closed at, already past.
+SET_TIME = "2026-09-30T18:00:00+00:00"
+
+
+def _unattended_bot(db_path, *, signups_open=True, enabled=True, channel=None):
+    """A bot whose signup module is *enabled* or not, and whose window is open or not, with
+    its close time set at `SET_TIME`, and a log channel that keeps what is posted to it."""
+    bot = _bot(db_path, config=_window(signups_open=signups_open, close_at=SET_TIME), channel=channel)
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
+    bot.output_router.post_log = AsyncMock(return_value=None)
+    return bot
+
+
+def _set_time_shown(line: str) -> bool:
+    """The set time appears in the line, as the timestamp or as a Discord timestamp of it."""
+    epoch = int(datetime.fromisoformat(SET_TIME).timestamp())
+    return SET_TIME in line or f"<t:{epoch}" in line
+
+
+# (the cause the caller gives; what the line's head says; the audit action it is closed under)
+_CAUSES = [
+    pytest.param(
+        "timer", ("🔒 Signups closed automatically at their set time",), "SIGNUP_AUTO_CLOSE",
+        id="timer",
+    ),
+    pytest.param(
+        "restart",
+        ("🔒 Signups closed automatically at their set time", "start-up"),
+        "SIGNUP_AUTO_CLOSE",
+        id="restart sweep",
+    ),
+    pytest.param(
+        "season end", ("🔒 Signups closed as the season ended",), "SIGNUP_SEASON_END_CLOSE",
+        id="season end",
+    ),
+    pytest.param(
+        "divisions done",
+        ("🔒 Signups closed as every division is done",),
+        "SIGNUP_DIVISIONS_DONE_CLOSE",
+        id="divisions done",
+    ),
+]
+
+
+@pytest.mark.xfail(strict=True, reason=_UNATTENDED)
+@pytest.mark.parametrize("cause, heads, audit_action", _CAUSES)
+async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
+    tmp_path, cause, heads, audit_action
+):
+    """Signups are open with two drivers still filling in the wizard, and the window closes
+    with nobody at the keyboard: its set time came, the bot restarted after it, the season
+    ended, or every division finished. The closed notice cannot be posted. The window closes
+    under the cause's audit action, and one line is written naming no member: its head says
+    why signups closed (the set time, for the timer and the restart sweep, which also says it
+    came at start-up), with the two drivers returned and, beneath, the notice as a failed step."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+
+    db_path = await _make_db(
+        tmp_path,
+        drivers=[
+            ("101", DriverState.PENDING_SIGNUP_COMPLETION),
+            ("102", DriverState.PENDING_SIGNUP_COMPLETION),
+        ],
+    )
+    bot = _unattended_bot(db_path, channel=_channel(send_error=RuntimeError("forbidden")))
+
+    await close_signups_unattended(bot, cause=cause)
+
+    bot.signup_module_service.set_window_closed.assert_awaited_once()
+    assert await _audit(db_path) == [(audit_action, "open", "closed", "system")]
+    [call] = bot.output_router.post_log.await_args_list
+    line = str(call.args[0])
+    first, *beneath = line.splitlines()
+    for head in heads:
+        assert head in first
+    if cause in ("timer", "restart"):
+        assert _set_time_shown(first)
+    assert "<@" not in line
+    assert any("2" in text and "returned" in text for text in line.splitlines())
+    assert any("notice" in text for text in beneath)
+
+
+@pytest.mark.xfail(strict=True, reason=_UNATTENDED)
+@pytest.mark.parametrize("cause", ["timer", "restart", "season end", "divisions done"])
+@pytest.mark.parametrize(
+    "signups_open, enabled",
+    [pytest.param(False, True, id="no window open"), pytest.param(True, False, id="module off")],
+)
+async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
+    tmp_path, cause, signups_open, enabled
+):
+    """A close nobody ran finds no window open, or the signup module disabled: it writes no
+    line, since only a window actually closed is recorded and a disabled module produces
+    nothing."""
+    from leaguebot.core.cogs.module_cog import close_signups_unattended
+
+    db_path = await _make_db(tmp_path)
+    bot = _unattended_bot(db_path, signups_open=signups_open, enabled=enabled)
+
+    await close_signups_unattended(bot, cause=cause)
+
+    bot.output_router.post_log.assert_not_awaited()
