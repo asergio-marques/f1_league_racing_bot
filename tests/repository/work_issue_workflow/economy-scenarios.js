@@ -191,3 +191,33 @@ module.exports.adjustmentFromEarlierGateLetsNothingThrough = {
   },
   expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${STUB} is modified since the tests the owner approved at t1`)) && r.adjusted.length === 1,
 }
+
+// A design verifier left out stays out while nothing changes, round after round; and one is never
+// left out in a round where a design file first appears, whatever the issue reviewer says changed.
+module.exports.idleDesignVerifierStaysOut = {
+  args: { ...B, maxRounds: 3 },
+  respond(label) {
+    const k = Number(label.match(/:r(\d+):/)[1])
+    if (label.endsWith(':builder')) return builder({ tests: [], commits: [{ sha: `c${k}`, subject: `round ${k}` }] })
+    if (label.endsWith(':issue')) {
+      const docs = { designDocsChanged: ['docs/design/steward_module.md'], designDocsChangedSince: k === 1 ? ['docs/design/steward_module.md'] : [] }
+      if (k === 1) return review({ ...docs, findings: [{ id: 'issue-1-1', title: 't', material: true, why: 'w', fix: 'f', evidence: [] }] })
+      return review({ ...docs, prior: [{ id: 'issue-1-1', status: k === 3 ? 'fixed' : 'not-fixed', grounds: 'g' }] })
+    }
+    return lanesClean(label)
+  },
+  expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 3 && labels.includes('build:r1:design') && !labels.includes('build:r2:design') && !labels.includes('build:r3:design'),
+}
+module.exports.designVerifierRunsWhenFileFirstAppears = {
+  args: { ...B, maxRounds: 2 },
+  respond(label) {
+    const k = Number(label.match(/:r(\d+):/)[1])
+    if (label.endsWith(':builder')) return builder({ tests: [], commits: [{ sha: `c${k}`, subject: `round ${k}` }] })
+    if (label.endsWith(':issue')) {
+      if (k === 1) return review({ designDocsChanged: ['docs/design/steward_module.md'], designDocsChangedSince: ['docs/design/steward_module.md'], findings: [{ id: 'issue-1-1', title: 't', material: true, why: 'w', fix: 'f', evidence: [] }] })
+      return review({ designDocsChanged: ['docs/design/steward_module.md', 'docs/design/results_module.md'], designDocsChangedSince: [], prior: [{ id: 'issue-1-1', status: 'fixed', grounds: 'g' }] })
+    }
+    return lanesClean(label)
+  },
+  expect: (r, { labels }) => labels.includes('build:r2:design'),
+}

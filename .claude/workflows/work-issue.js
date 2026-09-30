@@ -1461,12 +1461,15 @@ const reviewBuild = async (k, built, questions) => {
     () => quiet ? Promise.resolve(undefined) : send(buildTesterPrompt(k), { ...settingsFor('tester'), label: `build:r${k}:tester`, phase: 'Review', schema: SUITE_SCHEMA }),
     () => send(issuePrompt(k, questions.engineering, null), { ...settingsFor('issue'), label: `build:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA })
       .then(async issueResult => {
+        const known = designFiles.size
         for (const file of issueResult ? issueResult.designDocsChanged : []) designFiles.add(file)
         if (!designFiles.size) return { issue: issueResult, design: undefined }
-        const idle = !(previous && k === offset + 1) && reviewedAt.design !== undefined && reviewedAt.design === reviewedAt.issue
+        const idle = !(previous && k === offset + 1) && designFiles.size === known && reviewedAt.design !== undefined && reviewedAt.design === reviewedAt.issue
           && ![...ledger.values()].some(f => f.lane === 'design' && materialPending(f))
           && !!issueResult && Array.isArray(issueResult.designDocsChangedSince) && !issueResult.designDocsChangedSince.length
-        if (idle) { log(`Round ${k}: no design file has changed since the design verifier last reviewed, and it has nothing open, so it is not sent out.`); return { issue: issueResult, design: undefined } }
+        // A verifier left out has seen all there is to see of the design files, so it is counted as
+        // having reviewed as far as the issue reviewer, and can be left out of the next round too.
+        if (idle) { log(`Round ${k}: no design file has changed since the design verifier last reviewed, and it has nothing open, so it is not sent out.`); reviewedAt.design = commits.length; return { issue: issueResult, design: undefined } }
         const design = await send(designPrompt(k, [...designFiles].sort()), { ...settingsFor('design'), label: `build:r${k}:design`, phase: 'Review', agentType: 'design-verifier', schema: REVIEW_SCHEMA })
         return { issue: issueResult, design }
       }),
