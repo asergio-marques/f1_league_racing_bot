@@ -319,7 +319,7 @@ async def test_the_discarded_penalties_are_logged_in_full(tmp_path):
     await _run(state, _interaction())
 
     logged = _logged(state)
-    assert "RESULTS_RESUBMISSION_STAGED_DISCARD" in logged
+    assert "RESULTS_RESUBMISSION | Started" in logged
     assert "discarded_count: 2" in logged
     assert str(DRIVER_A) in logged
     assert "DSQ" in logged
@@ -375,7 +375,13 @@ async def test_the_resubmission_itself_is_logged(tmp_path):
     assert "RESULTS_RESUBMISSION | Started" in _logged(state)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the resubmission's line counts the discarded pardons on a second line of its own",
+)
 async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
+    """Resubmit pressed with one pardon staged and no penalty: the resubmission's one line
+    counts no penalty and one pardon discarded."""
     db_path = await _make_db(tmp_path)
     state = _state(db_path, pardons=[_pardon()], channel=_channel())
 
@@ -385,8 +391,39 @@ async def test_the_resubmission_counts_the_pardons_it_discarded(tmp_path):
         call.args[0] for call in state.bot.output_router.post_log.await_args_list
         if "RESULTS_RESUBMISSION | Started" in call.args[0]
     )
-    assert "Previous staged penalties discarded: 0" in started
-    assert "Previous staged pardons discarded: 1" in started
+    assert "discarded_count: 0" in started
+    assert "discarded_pardons_count: 1" in started
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the Resubmit press writes two lines, naming the member by mention alone",
+)
+async def test_resubmit_writes_one_line_naming_what_it_discarded(tmp_path):
+    """Alex presses Resubmit on round 3 (Division 1) with a 5-second penalty and an ABSENT pardon
+    justified "Ill" staged: the log channel gets one line, "Alex (<@77>) | RESULTS_RESUBMISSION |
+    Started", which names the discarded penalty and the discarded pardon with its justification."""
+    db_path = await _make_db(tmp_path)
+    state = _state(db_path, staged=[_penalty(5)], pardons=[_pardon()], channel=_channel())
+    interaction = _interaction()
+    interaction.user.display_name = "Alex"
+
+    await _run(state, interaction)
+
+    lines = [str(call.args[0]) for call in state.bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    [line] = lines
+    assert line.startswith(f"Alex (<@{ACTOR_ID}>) | RESULTS_RESUBMISSION | Started")
+    discarded = json.loads(
+        next(l for l in line.splitlines() if l.strip().startswith("discarded:"))
+        .split("discarded:", 1)[1]
+    )
+    assert [(d["driver_user_id"], d["penalty_seconds"]) for d in discarded] == [(DRIVER_A, 5)]
+    pardons = json.loads(
+        next(l for l in line.splitlines() if l.strip().startswith("discarded_pardons:"))
+        .split("discarded_pardons:", 1)[1]
+    )
+    assert pardons == [{"driver_user_id": DRIVER_A, "pardon_type": "ABSENT", "justification": "Ill"}]
 
 
 async def test_a_resubmission_with_nothing_staged_still_logs(tmp_path):
