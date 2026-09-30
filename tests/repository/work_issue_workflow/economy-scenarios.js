@@ -98,3 +98,18 @@ module.exports.designVerifierRunsWhenDesignFileTouchedAgain = {
   ...designRounds(true),
   expect: (r, { labels }) => r.status === 'passed' && labels.includes('build:r1:design') && labels.includes('build:r2:design'),
 }
+
+// The product owner is asked for its summary in every round it finds nothing in, whatever the other
+// checkers find, in the tests stage and the build alike.
+const upFront = stage => ({
+  args: stage === 'tests' ? { ...base, stage } : B,
+  respond(label, prompt) {
+    if (label.endsWith(':product') && !prompt.includes('whatever you expect the other checkers to find')) throw new Error('the summary was not asked for up front')
+    if (label.endsWith(':builder')) return stage === 'tests' ? builder() : builder({ tests: [] })
+    if (label.endsWith(':tester')) return stage === 'tests' ? testsCheck() : suite()
+    return lanesClean(label)
+  },
+  expect: r => r.status === 'passed',
+})
+module.exports.summaryDemandedUpFrontInTests = upFront('tests')
+module.exports.summaryDemandedUpFrontInBuild = upFront('build')

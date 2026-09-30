@@ -1045,9 +1045,12 @@ const COPY_QUESTION = 'giving each answer or escalation the ref of every questio
 
 const issuePrompt = (k, questions, testReport, tests, support) => `Job 3 — review a round of the branch. ${shared(k, 'issue')} The modules: ${modules.join(', ')}; their design files: ${DESIGN_LIST}. Settle each engineering question below by citing a written rule in answers[], or escalate it in escalations[], ${COPY_QUESTION}; where a rule you cite means the work must change, also add a material finding saying what. Pass every business question you meet to raised[], untouched. List in designDocsChanged every file under docs/design/ the branch changes since its base${stage === 'build' ? ', and in designDocsChangedSince those the commits you review this round change' : ''}. Leave summary empty.${section('The approved plan', plan)}${handBuiltFor('reviewer')}${planned('The checks the plan passed', ARGS.checks)}${planned('The owner\'s decisions and answers', ARGS.decisions)}${section(`${PROVISIONAL}: do not ask them again`, provisional)}${priorSection('issue')}${section('Engineering questions from the builder', questions)}${listFor('issue', tests, support)}${section('The tester\'s report', testReport)}`
 
-// The summary covers the whole work, however little of it a later round reviews.
+// The summary covers the whole work, however little of it a later round reviews. It is asked for in
+// every round the product owner finds nothing in, whatever the other checkers find: a round that
+// passed without it sent a second product owner to read the whole branch again for it (#483).
+const UP_FRONT = 'Write it in every round in which you open no material finding and escalate nothing, whatever you expect the other checkers to find: the stage cannot pass without it, and asking for it again sends a second product owner to read the whole branch.'
 const summaryAsk = () => {
-  const whole = `The summary covers the whole work since ${base}, not only what is new since you last reviewed.`
+  const whole = `The summary covers the whole work since ${base}, not only what is new since you last reviewed. ${UP_FRONT}`
   if (stage === 'tests') return `If you find nothing material and escalate nothing, write summary: for the owner to review before any code is written, in plain terms, each acceptance criterion and each spec rule the work touches, numbered, with the labels of the tests that pin it (A1, M1 and so on). The report lists every test with its scenario beside your summary, so do not repeat them. ${whole} Otherwise leave summary empty.`
   if (kind === 'design-pass') return `If you find nothing material and escalate nothing, write summary: a short confirmation that nothing a league sees has changed, and what you checked to be sure. ${whole} Otherwise leave summary empty.`
   return `If you find nothing material and escalate nothing, write summary: the acceptance summary your instructions describe. ${whole} Otherwise leave summary empty.`
