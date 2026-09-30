@@ -259,7 +259,7 @@ Object.assign(module.exports, {
     respond(label) {
       const B = 'tests/x/test_a.py::test_b'
       const C = 'tests/x/test_a.py::test_c'
-      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added'), entry(B, 'added', { scenario: 'REWORDED' }), entry(C, 'added')] })
+      if (label.endsWith(':builder')) return builder({ tests: [entry(B, 'added', { scenario: 'REWORDED' }), entry(C, 'added')], dropped: ['tests/x/test_a.py::test_d'] })
       if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(B), ran(C)], changes: changes([[A, 'added'], [B, 'added'], [C, 'added']]) })
       return cleanLanes(label)
     },
@@ -307,15 +307,49 @@ Object.assign(module.exports, {
     },
     expect: r => r.status === 'passed' && r.report.includes('**A1** `test_b`\n') && r.report.includes('**A2** `test_new` *(new since the last Gate 2)*'),
   },
-  builderGivenTheListToKeep: {
-    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' })] }) },
+  // The builder is given the list in short, and in full only the entries the owner's decisions
+  // name by label, which it may be asked to reword (#483).
+  entryNamedInDecisionsGivenInFull: {
+    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' }), entry('tests/x/test_a.py::test_b', 'added', { label: 'A2', scenario: 'NOT-NAMED-SCENARIO' })] }) },
     respond(label, prompt) {
-      if (label.endsWith(':builder') && (!prompt.includes('The list as it stands') || !prompt.includes('THE-SCENARIO-SHOWN') || !prompt.includes('"label": "A1"') || !prompt.includes('word for word'))) throw new Error('builder not given the list to keep')
-      if (label.endsWith(':builder')) return builder()
-      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':builder') && (!prompt.includes('The list as it stands, in short') || !prompt.includes('"label": "A1"') || !prompt.includes('"label": "A2"') || !prompt.includes('THE-SCENARIO-SHOWN'))) throw new Error('builder not given the list, with the named entry in full')
+      if (label.endsWith(':builder') && prompt.includes('NOT-NAMED-SCENARIO')) throw new Error('builder given an entry nobody named in full')
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added', { scenario: 'REWORDED' })] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran('tests/x/test_a.py::test_b')], changes: changes([[A, 'added'], ['tests/x/test_a.py::test_b', 'added']]) })
       return cleanLanes(label)
     },
-    expect: r => r.status === 'passed',
+    expect: r => r.status === 'passed' && r.tests.length === 2 && r.tests.find(t => t.nodeid === A).scenario === 'REWORDED'
+      && r.tests.find(t => t.nodeid === 'tests/x/test_a.py::test_b').scenario === 'NOT-NAMED-SCENARIO',
+  },
+  // A builder returns only what it changes in the list, piece by piece: an entry it adds joins the
+  // list, one it drops goes, and the rest stand, labels and all. The reviewers are given the merged
+  // list.
+  testsBuilderReturnsOnlyListChanges: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      const Bn = 'tests/x/test_a.py::test_b'
+      const Cn = 'tests/x/test_a.py::test_c'
+      if (label === 'tests:r1:builder') return builder({ planComplete: false, remaining: ['test_c'], tests: [entry(A, 'added', { scenario: 'SCEN-A' }), entry(Bn, 'added')] })
+      if (label === 'tests:r1:p2:builder') {
+        if (!prompt.includes(A) || prompt.includes('SCEN-A')) throw new Error('the second piece was not given the list in short')
+        return builder({ commits: [{ sha: 'c2', subject: 'c' }], tests: [entry(Cn, 'added')], dropped: [Bn] })
+      }
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]) })
+      if (/:(issue|product)$/.test(label) && (!prompt.includes('SCEN-A') || !prompt.includes(Cn) || prompt.includes('tests/x/test_a.py::test_b'))) throw new Error(`${label} not given the merged list`)
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.tests.map(t => t.nodeid).join() === `${A},tests/x/test_a.py::test_c` && r.tests[0].scenario === 'SCEN-A',
+  },
+  // The merged list is still held to what tools/changed_tests.py prints: a changed test the builder
+  // left out of its changes is found.
+  mergedListStillHeldToChangedTests: {
+    args: { ...base, stage: 'tests', maxRounds: 1 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A)], changes: changes([[A, 'added'], ['tests/x/test_a.py::test_e', 'modified']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes('test_e is modified on the branch, but tests[] does not list it')),
   },
   firstBuilderGivenNoList: {
     args: { ...base, stage: 'tests' },

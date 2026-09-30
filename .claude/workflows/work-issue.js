@@ -636,15 +636,15 @@ The one exception is the architecture ratchet lines the plan names as removed: t
 
 Mark each new test, and each changed test that fails before the change, with @pytest.mark.xfail(strict=True, reason="#${issue}: <what is not yet true>"): the suite then stays green on every commit, and the test fails loudly the moment it passes unexpectedly. A failing case added to a parametrised test is marked on the case alone, as pytest.param(<values>, marks=pytest.mark.xfail(strict=True, reason="#${issue}: ...")), so that its passing cases do not XPASS; and a test in a class is marked on its own method, never through the class. A test that uses code the plan has not written yet imports it inside the test, so that its file still collects. A test that passes as committed, because it pins behaviour already built or because the build has already made it pass, is left unmarked. Run the tests both ways, as below: with --runxfail each marked test must fail, for the reason the plan gives; without it each marked test must be reported xfailed and each unmarked one must pass, and nothing else in their files may fail. Commit them before any production code the plan adds: as the first commit of this work, unless the plan places them otherwise or the build has already begun.
 
-List in tests[] every test this work adds, changes, deletes or moves since ${base}, earlier rounds and runs included, and in support[] every fixture, helper, module-level value or file under tests/ that it adds, changes, deletes or moves. Both lists must match what ${CHANGED_TESTS(base)} prints, entry for entry, with its node ids, its names and its change for each, the architecture ratchet lists alone excepted: run it before you finish. An import or a patched path that a move rewrites is never a change; one that binds or patches something else is. The owner approves the tests from these lists before any code is written, so write each entry in plain terms, as a league manager would follow it:
+The workflow keeps the list of every test this work adds, changes, deletes or moves since ${base}, earlier rounds and runs included, and of every fixture, helper, module-level value or file under tests/ that it adds, changes, deletes or moves (support). Where the list already stands, it is given to you below in short, under its labels. Return only what you change in it: in tests[] and support[], each entry you add, and each listed entry whose change or description no longer holds, in full; and in dropped[], the node id of each listed test, and the file::name of each listed support entry, that the branch no longer changes. An entry you do not return stands as it is. With your changes the list must match what ${CHANGED_TESTS(base)} prints, entry for entry, with its node ids, its names and its change for each, the architecture ratchet lists alone excepted: run it before you finish. An import or a patched path that a move rewrites is never a change; one that binds or patches something else is. The owner approves the tests from the list before any code is written, so write each entry in plain terms, as a league manager would follow it:
 - change: added, modified, deleted or moved.
 - scenario: the concrete situation the test sets up and the action it takes: which drivers, seasons, rounds or records, in what state, and which command or call.
 - expects: what it asserts.
 - before: for a modified test, what it set up and expected until now; where only its wording or docstring changes, say so.
 - why: for a deleted test, why it goes, and what pins its rule now if anything does; for a moved one, why it moves.
-Where a list already stands, from an earlier round or run, it is given to you below under its labels: keep each entry's description word for word where its test is unchanged and nobody has asked for it to change, since the owner compares the list with the one they last saw. A label the owner's decisions use names the entry that carries it there.
 - criterion: the acceptance criterion it pins, where there is one.
 - alreadyPasses: true for a test left unmarked because it passes already.
+Re-describe a listed entry only where its test has changed in meaning or the owner has asked for it, since the owner compares the list with the one they last saw. A label the owner's decisions use names the entry that carries it there, and each such entry is given to you in full.
 Each entry in support[] gives the file and the name as the command prints them, the change, what it now does, and in affects the node ids of the tests that use it.`
 
 const BUILD_JOB = `This is the build. Carry out the approved plan, commit point by commit point, in its order. The tests that pin the change are already on the branch, marked xfail(strict=True) with a reason naming #${issue} (git -C ${worktree} grep -n -F 'reason="#${issue}:' finds them): remove each marker in the commit that makes its test pass, never before, and list in tests[] every marker you removed, with change markerRemoved. By the end, none may be left.${testsHead ? ` The owner approved the tests at ${testsHead}, and from there you change nothing under tests/ but three things: those markers, removed; the ratchet lines the plan names as removed, each deleted in the commit that removes its breach; and the imports and patched paths that a move of the plan's rewrites, the names they bind or patch unchanged. Any other change to tests/ the build needs, whether a new test, a changed or deleted one, or a fixture, helper, value or file, is not yours to make: propose it in testChanges[], saying what it would test and why the build needs it, and carry on with whatever it does not block. The owner decides it, and the tests stage makes it. A finding whose fix is a test change is answered the same way, and stays open until then. The round's tester runs ${CHANGED_TESTS(testsHead)}, and any change it reports but those is sent back to you to revert.` : ''}`
@@ -679,7 +679,7 @@ const BUILDER_SCHEMA = {
           alreadyPasses: { type: 'boolean', description: 'the tests stage: a test left unmarked because it passes already' },
         },
       },
-      description: 'the tests stage: every test the work adds, changes, deletes or moves since its base; the build: every xfail marker removed this round',
+      description: 'the tests stage: each test entry you add, or whose change or description you change, in full; the build: every xfail marker removed this round',
     },
     support: {
       type: 'array',
@@ -694,8 +694,9 @@ const BUILDER_SCHEMA = {
           affects: { type: 'array', items: { type: 'string' }, description: 'the node ids of the tests that use it' },
         },
       },
-      description: 'the tests stage: every fixture, helper, module-level value or file under tests/ the work changes since its base; the build: empty',
+      description: 'the tests stage: each support entry you add, or whose change or description you change, in full; the build: empty',
     },
+    dropped: { type: 'array', items: { type: 'string' }, description: 'the tests stage: the node id of each listed test, and the file::name of each listed support entry, that the branch no longer changes; the build: empty' },
     testChanges: {
       type: 'array',
       items: {
@@ -888,6 +889,34 @@ const sinceReviewed = (k, lane) => {
 // and must read all of it to sum it up and to find what its findings still stop.
 const shared = (k, lane, whole = false) => `${ISSUE}, round ${k} of ${STAGE_NAME}. ${BRANCH_READ}${whole ? '' : sinceReviewed(k, lane)} ${NO_PYTEST} Give each new finding an id of the form ${lane}-${k}-<n>. The issue and the approved plan fix the scope: the same fault elsewhere, a neighbouring gap, or a rule or defect the branch neither touches nor causes is neither a finding nor a question; draft it in separateDefects[] for the tracker. What the branch touches or causes, a caller it breaks included, is in scope.${DESIGN_PASS}`
 
+// The list as the tests stage's builder is given it: in short, since it returns only what it
+// changes, and re-sending every entry in full to every piece cost more than all its other reading
+// (#482 slice 3); but in full where the owner's decisions name an entry by its label, which the
+// builder may be asked to reword.
+const LABEL = /\b(?:MV|[AMDSX])\d+\b/g
+const listForBuilder = () => {
+  if (!written.length && !supportWritten.length) return ''
+  const named = new Set(asText(ARGS.decisions).match(LABEL) || [])
+  const short = {
+    tests: written.map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(t.alreadyPasses ? { alreadyPasses: true } : {}) })),
+    support: supportWritten.map(x => ({ label: x.label, file: x.file, name: x.name, change: x.change })),
+  }
+  const full = [...written, ...supportWritten].filter(x => named.has(x.label))
+  return `${section('The list as it stands, in short, under its labels', short)}${section('The entries the owner\'s decisions name, in full', full)}`
+}
+// A builder's changes to the list, taken into it: an entry it returns replaces the one listed under
+// the same key, or is added; one it drops goes. The merged list is still held to what
+// tools/changed_tests.py prints, entry for entry, so an entry the builder left out is found.
+const mergeList = (tests, support, got) => {
+  const dropped = new Set((got.dropped || []).map(bareId))
+  const merge = (listed, returned, keyOf) => {
+    const back = new Map(returned.map(x => [keyOf(x), x]))
+    const kept = listed.filter(x => !dropped.has(keyOf(x))).map(x => back.has(keyOf(x)) ? back.get(keyOf(x)) : x)
+    return [...kept, ...returned.filter(x => !listed.some(l => keyOf(l) === keyOf(x)))]
+  }
+  return { tests: merge(tests, got.tests || [], t => bareId(t.nodeid)), support: merge(support, got.support || [], supportKey) }
+}
+
 // `earlier` holds the results of the round's pieces before this one: a later piece carries on from
 // them, and leaves alone the findings they have already fixed or disputed.
 const builderPrompt = (k, earlier = []) => {
@@ -925,7 +954,7 @@ ${WHERE}
 
 ${stage === 'tests' ? TESTS_JOB : BUILD_JOB}${DESIGN_PASS}
 
-${start}${answered}${stage === 'tests' ? section('The list as it stands, under its labels', written.length || supportWritten.length ? { tests: written, support: supportWritten } : '') : ''}
+${start}${answered}${stage === 'tests' ? listForBuilder() : ''}
 
 ${BUILDER_RULES}${section('The approved plan', plan)}${handBuiltFor('builder')}${planned('The checks the plan passed', ARGS.checks)}${planned('What a league should see once it lands', ARGS.criteria)}${planned('The owner\'s decisions and answers, which bind you', ARGS.decisions)}${section('Rules cited to you by the product owner and the issue reviewer', citations)}${section(`${PROVISIONAL}: they bind you until the owner overrules them`, provisional)}${section('Open material findings', open)}${section('Failing tests, type errors and other problems from the last round', lastFailures)}`
 }
@@ -1331,8 +1360,8 @@ const sameQuestion = text => String(text).toLowerCase().replace(/\s+/g, ' ').tri
 
 // The round's pieces, merged into the one result the round is reviewed and recorded from. The
 // commits, fixes, disputes, questions, test changes and defects of every piece are joined; the
-// tests stage's lists come from the last piece, which lists the whole branch since its base, and
-// the build's markers removed are joined. Whether the stage is done, and what it still owes, is
+// tests stage's lists are the list as every piece's changes have left it, and the build's markers
+// removed are joined. Whether the stage is done, and what it still owes, is
 // the last piece's to say.
 const mergePieces = parts => {
   const last = parts[parts.length - 1]
@@ -1346,8 +1375,8 @@ const mergePieces = parts => {
     testChanges: all('testChanges'),
     separateDefects: all('separateDefects'),
     notes: all('notes'),
-    tests: stage === 'tests' ? last.tests : all('tests'),
-    support: stage === 'tests' ? last.support || [] : all('support'),
+    tests: stage === 'tests' ? written : all('tests'),
+    support: stage === 'tests' ? supportWritten : all('support'),
   }
 }
 
@@ -1391,8 +1420,9 @@ const buildRound = async k => {
     }
     got.questions = got.questions.map(q => ({ ...q, ref: `b${k}-${++asked}` }))
     parts.push(got)
-    // A later piece is given the list as it stands, under its labels.
-    if (stage === 'tests' && got.onBranch) ({ tests: written, support: supportWritten } = labelled(got.tests, got.support || []))
+    // Each piece's changes are taken into the list at once, so that a later piece is given it as it
+    // stands, under its labels.
+    if (stage === 'tests' && got.onBranch) { const m = mergeList(written, supportWritten, got); ({ tests: written, support: supportWritten } = labelled(m.tests, m.support)) }
     const handsOff = got.onBranch && got.commits.length && !got.planComplete && !got.blocked
     if (!handsOff) break
     if (n === MAX_PIECES) { log(`Round ${k}: the builder handed off ${MAX_PIECES} pieces, the most a round takes, without finishing; the round is reviewed as it stands.`); break }
