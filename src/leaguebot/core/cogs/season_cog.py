@@ -5453,7 +5453,11 @@ class SeasonCog(commands.Cog):
         )
 
     async def _do_approve(
-        self, interaction: discord.Interaction, *, deadline: datetime | None = None
+        self,
+        interaction: discord.Interaction,
+        *,
+        deadline: datetime | None = None,
+        what: str | None = None,
     ) -> None:
         """Commit the season, having asked about a backup first where test mode is on.
 
@@ -5476,8 +5480,10 @@ class SeasonCog(commands.Cog):
         # Defer immediately — approval involves heavy work (scheduling, role grants,
         # lineup/calendar posts) that can exceed Discord's 3-second response window.
         await interaction.response.defer(ephemeral=True)
-        # Every gate below refuses through `refuse`, naming this button in the log channel.
-        what = _review_button("Approve", "/season placements-review")
+        # Every gate below refuses through `refuse`, naming the button pressed (*what*, the
+        # review's own Approve button where the caller names none) in the log channel.
+        if what is None:
+            what = _review_button("Approve", "/season placements-review")
 
         cfg = self._pending.get(interaction.user.id) or self._get_pending()
         if cfg is None:
@@ -6550,7 +6556,7 @@ class _ApproveView(LeagueView):
                 return
 
         self._press_under_way = True
-        await self._cog._do_approve(interaction, deadline=self._deadline)
+        await self._cog._do_approve(interaction, deadline=self._deadline, what=self._button)
         self._press_under_way = False
         await self._forget()
         await self._clear_report()
