@@ -1,7 +1,9 @@
 // A builder handed off in pieces within a round: a piece that commits part of the plan and is not
 // finished is followed by another, told what the first did and what is left, and the round is
-// reviewed once, after the last piece. A piece that asks, proposes a test change, or commits
-// nothing ends the hand-off, so that nothing the owner must see is held back.
+// reviewed once, after the last piece. A piece's question the checkers settle does not end the
+// hand-off (#483); one that needs the owner does, as does a piece that commits nothing, so that
+// nothing the owner must see is held back. A proposed test change does not: the owner is given every
+// piece's proposals together, at the round's end.
 const { q, builder, review, testsCheck, suite, finding, base, round, changes } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
 // The piece an agent's label names: `build:r1:p2:builder` is piece 2, and `build:r1:builder` piece 1.
@@ -39,26 +41,107 @@ module.exports = {
         && r.commits.map(c => c.sha).join() === 'c1,c2'
     },
   },
-  handOffStopsOnQuestion: {
+  // A piece's question the checker cannot settle, one that needs the owner, ends the hand-off: the
+  // round is reviewed as it stands, and the question reaches the owner once, not triaged again.
+  handOffStopsOnUnsettledQuestion: {
     args: B,
     respond(label) {
-      if (label.endsWith(':builder')) { if (label !== 'build:r1:builder') throw new Error('a piece followed one that asked a question: ' + label); return unfinished({ questions: [q('business', 'what should the reply say?')] }) }
+      if (label.endsWith(':builder')) { if (label !== 'build:r1:builder') throw new Error('a piece followed one whose question needs the owner: ' + label); return unfinished({ questions: [q('business', 'what should the reply say?')] }) }
+      if (label === 'triage:b1p1:product') return { answers: [], escalations: [{ ...q('business', 'what should the reply say, to a league?'), ref: 'b1-1', stops: true }], findings: [] }
+      if (label.startsWith('triage:')) throw new Error('triaged again: ' + label)
+      if (label === 'build:r1:product') return review({ summary: 'ACCEPTANCE' })
       return lanesClean(label)
     },
     expect: (r, { labels }) => r.status === 'question' && r.lastRound === 1 && pieces(labels, 1).length === 1
-      && labels.includes('build:r1:product') && r.escalations.some(e => e.question === 'what should the reply say?'),
+      && labels.includes('build:r1:product') && r.escalations.length === 1 && r.escalations[0].question === 'what should the reply say, to a league?',
   },
-  handOffStopsOnTestChange: {
+  // A piece's question the checker answers from a written rule does not end the hand-off: the next
+  // piece is given the answer, the round's review is not asked it again, and the owner sees it at
+  // the gate among the calls taken.
+  pieceQuestionSettledCarriesOn: {
+    args: B,
+    respond(label, prompt) {
+      if (label === 'build:r1:builder') return unfinished({ commits: [{ sha: 'c1', subject: 'did commit points 1 to 3' }], questions: [q('business', 'does an empty division post nothing?')] })
+      if (label === 'triage:b1p1:product') {
+        if (!prompt.includes('does an empty division post nothing?') || !prompt.includes('part-way through a round')) throw new Error('triage prompt')
+        return { answers: [{ question: 'does an empty division post nothing?', answer: 'it posts nothing', source: 'results § 4.2', ref: 'b1-1' }], escalations: [], findings: [] }
+      }
+      if (label === 'build:r1:p2:builder') {
+        if (!prompt.includes('it posts nothing') || !prompt.includes('settled the questions it asked')) throw new Error('the next piece was not given the answer')
+        return builder({ tests: [], commits: [{ sha: 'c2', subject: 'did commit point 4' }] })
+      }
+      if (label === 'build:r1:product' && prompt.includes('Business questions from the builder')) throw new Error('the review was asked a settled question again')
+      if (label.startsWith('triage:')) throw new Error('unexpected ' + label)
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 1 && pieces(labels, 1).length === 2
+      && r.provisional.some(p => p.question === 'does an empty division post nothing?' && p.recommendation.includes('results § 4.2'))
+      && r.provisionalNew.some(p => p.question === 'does an empty division post nothing?'),
+  },
+  // A reversible call the checker takes on its recommendation does not end the hand-off either.
+  pieceQuestionReversibleCarriesOn: {
+    args: B,
+    respond(label) {
+      if (label === 'build:r1:builder') return unfinished({ commits: [{ sha: 'c1', subject: 'part' }], questions: [q('engineering', 'name the helper?')] })
+      if (label === 'triage:b1p1:issue') return { answers: [], escalations: [{ ...q('engineering', 'name the helper?'), ref: 'b1-1', stops: false }], findings: [] }
+      if (label === 'build:r1:p2:builder') return builder({ tests: [], commits: [{ sha: 'c2', subject: 'rest' }] })
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && pieces(labels, 1).length === 2 && r.provisionalNew.some(p => p.question === 'name the helper?'),
+  },
+  // Two questions, one answered and one needing the owner: split, so the hand-off stops, the
+  // answered one is listed among the calls taken, and only the other reaches the owner.
+  pieceQuestionsSplitStop: {
+    args: B,
+    respond(label) {
+      if (label.endsWith(':builder')) { if (label !== 'build:r1:builder') throw new Error('a piece followed a split: ' + label); return unfinished({ questions: [q('business', 'biz?'), q('engineering', 'eng?')] }) }
+      if (label === 'triage:b1p1:product') return { answers: [{ question: 'biz?', answer: 'yes', source: 'core § 1', ref: 'b1-1' }], escalations: [], findings: [] }
+      if (label === 'triage:b1p1:issue') return { answers: [], escalations: [{ ...q('engineering', 'eng?'), ref: 'b1-2', stops: true }], findings: [] }
+      if (label.startsWith('triage:')) throw new Error('triaged again: ' + label)
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1
+      && r.escalations.length === 1 && r.escalations[0].question === 'eng?' && r.provisional.some(p => p.question === 'biz?'),
+  },
+  // A triage that returns nothing settles nothing: the question goes to the owner as asked.
+  pieceQuestionTriageDeadStops: {
+    args: B,
+    respond(label) {
+      if (label.endsWith(':builder')) { if (label !== 'build:r1:builder') throw new Error('a piece followed a dead triage: ' + label); return unfinished({ questions: [q('business', 'what should the reply say?')] }) }
+      if (label.startsWith('triage:')) return undefined
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1
+      && r.escalations.some(e => e.question === 'what should the reply say?' && e.unframed),
+  },
+  // A proposed test change does not end the hand-off: the next piece builds on, and the owner is
+  // given every piece's proposals together when the round is reviewed.
+  handOffCarriesOnPastTestChange: {
     args: { ...B, testsHead: 't0' },
     respond(label) {
-      if (label.endsWith(':builder')) {
-        if (label !== 'build:r1:builder') throw new Error('a piece followed one that proposed a test change: ' + label)
-        return unfinished({ testChanges: [{ nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      if (label === 'build:r1:builder') return unfinished({ testChanges: [{ nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      if (label === 'build:r1:p2:builder') return builder({ tests: [], commits: [{ sha: 'c2', subject: 'rest' }], testChanges: [{ nodeid: 'tests/x/test_a.py::test_full_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }] })
+      if (label.endsWith(':builder')) throw new Error('unexpected ' + label)
+      return lanesClean(label)
+    },
+    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 2 && labels.includes('build:r1:code')
+      && labels.indexOf('build:r1:code') > labels.indexOf('build:r1:p2:builder')
+      && r.testChanges.map(t => t.nodeid).join() === 'tests/x/test_a.py::test_empty_division,tests/x/test_a.py::test_full_division',
+  },
+  // A later piece is told what the pieces before it proposed, and a proposal two pieces make reaches
+  // the owner once.
+  proposedTestChangeNamedToNextPieceAndAskedOnce: {
+    args: { ...B, testsHead: 't0' },
+    respond(label, prompt) {
+      const change = { nodeid: 'tests/x/test_a.py::test_empty_division', change: 'added', scenario: 's', expects: 'e', needed: 'n' }
+      if (label === 'build:r1:builder') return unfinished({ testChanges: [change] })
+      if (label === 'build:r1:p2:builder') {
+        if (!prompt.includes('proposed already this round') || !prompt.includes(change.nodeid)) throw new Error('the next piece was not told what was proposed')
+        return builder({ tests: [], commits: [{ sha: 'c2', subject: 'rest' }], testChanges: [change] })
       }
       return lanesClean(label)
     },
-    expect: (r, { labels }) => r.status === 'question' && pieces(labels, 1).length === 1 && labels.includes('build:r1:code')
-      && r.testChanges.length === 1 && r.testChanges[0].nodeid === 'tests/x/test_a.py::test_empty_division',
+    expect: r => r.status === 'question' && r.testChanges.length === 1,
   },
   handOffStopsWithoutCommit: {
     args: { ...B, maxRounds: 1 },

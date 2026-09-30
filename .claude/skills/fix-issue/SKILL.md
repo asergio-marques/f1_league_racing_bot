@@ -82,18 +82,31 @@ Draft the plan. It must carry:
    breaches it removes, with their ratchet lines deleted in the same commit, that it adds none, and
    the changes each touched module's design file needs, or that the module has none yet.
 
-**Propose the light path where the change is mechanical.** It qualifies where all of these hold:
-no rule a league sees is added or changed; no reply, command or post is new or reworded; and the
-schema does not change. A traceback kept, a helper reused, a refactor, and a test-only or tooling
-change qualify. Say so in the plan, and the user chooses the path at Gate 1. On the light path:
+**Propose the light path where the change is mechanical, or only applies a decided rule.** A
+mechanical change qualifies where all of these hold: no rule a league sees is added or changed; no
+reply, command or post is new or reworded; and the schema does not change. A traceback kept, a
+helper reused, a refactor, and a test-only or tooling change qualify. A change that only applies a
+decided rule qualifies too, where every rule a league sees in it is already decided and written in a
+wip-spec or the constitution, and the change applies it site by site, as recording each refusal in
+the log channel applies the core specification's rule. A new or reworded rule, a new command, or a
+schema change still does not qualify. Say so in the plan, and the user chooses the path at Gate 1.
+On the light path:
 
-- no check runs: items 7 and 8 say "none: the change is mechanical", and the architecture's rules
-  are held by the tests that run with the suite;
+- no check runs: items 7 and 8 say "none: the change is mechanical", or for a decided rule, item 7
+  names the rule applied and where it is written; the architecture's rules are held by the tests
+  that run with the suite;
 - after Gate 1 and the claim, the issue is built by hand in its checkout instead of through Phase
   5: each change with its tests in the same commit, then the full suite behind the lock, and mypy;
 - one fresh `code-reviewer` agent, through the `Agent` tool, reviews the whole diff against the
   plan, and what it finds is fixed, each in a commit of its own;
 - then Phase 6 and Phase 7, as for any issue.
+
+**A plan may split between the two paths.** Where only some commit points apply a decided rule, the
+plan marks them, and the user may choose at Gate 1 to build those by hand, with one independent
+review, and the rest through the workflow. Name them in `handBuilt` on every stage: the build
+treats them as done rather than missing, and its reviewers leave their commits to that review.
+Where they depend on nothing the workflow builds, build them first, and record `base` after them;
+otherwise build them after Gate 3, before close-out.
 
 Where the user declines the light path at Gate 1, the plan has not been checked: run the check
 below, and hold Gate 1 again on the plan it returns. Where the build shows the change is not
@@ -112,13 +125,15 @@ Workflow({ name: "work-issue", args: { stage: "check", issue: <N>, commit: "<sho
 If the name does not resolve, pass `scriptPath: ".claude/workflows/work-issue.js"` instead.
 `modules` names the module of every folder under `src/leaguebot/` the plan touches, and the
 module of the issue's label: `core`, `results`, `attendance`, `signup`, `weather`, `image`,
-`steward` or `stats`. Three checkers run side by side:
+`steward` or `stats`. Three checkers run, the first two side by side and the product owner after
+them:
 
 - **the issue reviewer**, against `docs/design/architecture.md` and its ratchet lists;
-- **the issue reviewer again**, against each module's design file, or against the architecture
-  alone where the module has none yet;
+- **the issue reviewer again**, against each module's design file, where a module has one; where
+  none has, no agent runs and the check says so;
 - **the product owner**, against the wip-specs, the constitution, the README and the guides. It
-  alone judges a spec rule, and it asks where the documents do not settle something.
+  alone judges a spec rule, and it asks where the documents do not settle something. It also
+  settles, in the same pass, the business questions the first two met.
 
 Settle what it returns before the user sees the plan:
 
@@ -210,7 +225,10 @@ hand. Pass every stage the same arguments:
   the branch;
 - `python`: the absolute path of that checkout's `.venv/bin/python`;
 - `branch`, and `base`: the commit Phase 4 recorded;
-- `criteria`: the plan's item 7, and `checks`: its item 8;
+- `criteria`: the plan's item 7, and `checks`: its item 8, which the workflow leaves out of a
+  prompt wherever the plan already holds them word for word;
+- `handBuilt`: where the plan is split, the commit points built by hand, by the names the plan
+  gives them;
 - `decisions`: every answer the user has given on this issue, word for word, with its date. A
   spec change an answer calls for is written by the build, as a document owed;
 - `citations`: for the build, the tests stage's `citations`, so that rules cited there carry on;
@@ -220,13 +238,15 @@ hand. Pass every stage the same arguments:
   the last of the tests stage's `commits` then, in this pass or, where a pass after a rejection at
   Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
   branch at all. After a rebase it is that commit as the branch now carries it. From it the build
-  changes no test;
+  changes no test but those the next paragraph allows. Pass it to a tests stage run again once the
+  build has begun too, with the build's last `adjusted`: it then accepts as passing each test whose
+  marker the build has removed, and each the build adjusted that passes;
 - `models` and `efforts`, each `{role: value}`, only to override a role's default. Every stage,
   the check included, takes them. The roles are `testsBuilder` (the tests stage's builder),
   `builder` (the build's), `issue`, `code`, `product`, `design`, `tester` and `triage`. By default
-  Sonnet runs the build's builder, and the tester at low effort, and Opus runs every other role. A
-  model is `opus`, `sonnet` or `haiku`, and `fable` is refused; an effort is `low`, `medium`,
-  `high`, `xhigh` or `max`.
+  Sonnet runs the build's builder, and the tester at low effort, and Opus runs every other role, all
+  at high effort but the tester. A model is `opus`, `sonnet` or `haiku`, and `fable` is refused; an
+  effort is `low`, `medium` or `high`, and none above high is taken.
 
 **Leave the checkout alone while a stage runs:** its builder is working in it.
 
@@ -245,7 +265,8 @@ lines the plan names are the one thing left to the build, which deletes each wit
 
 The builder lists every test it adds, modifies, deletes or moves, each with the scenario it sets
 up, what it expects, what it did before where it is modified, and why it goes where it is deleted;
-and every fixture, helper or value it changes, with what it now does. The tester runs
+and every fixture, helper or value it changes, with what it now does. It returns only what it
+changes in the list, which the workflow keeps and merges. The tester runs
 `tools/changed_tests.py` against the branch, and the round is not green until the list matches it
 entry for entry. The tester shows each test's real failure, and the product owner and the issue
 reviewer judge whether each fails for the right reason, whether each entry says what its test
@@ -279,12 +300,22 @@ design verifier follows the issue reviewer wherever the branch changes a design 
 repeat until nothing material is open, no question is, and the suite and mypy are green, within
 the stage's round budget (see `capped` below). A builder carries out at most three commit points, or three findings, in
 one piece, and hands the rest to a fresh builder, which carries on in the same round; the round is
-reviewed once, after its last piece. Tell the user it takes about ten agents for a fix that passes
-on its second round, and one more for each piece a builder hands off.
+reviewed once, after its last piece. A question a piece asks goes at once to the checker whose
+ground it is: where every one is answered from a written rule or taken on its recommendation, the
+next piece carries on with the answers, which the next gate lists among the calls taken; one that
+needs the user ends the pieces. A proposed test change does not end them: the round's proposals
+reach the user together. Tell the user it takes about ten agents for a fix that passes on its second
+round, one more for each piece a builder hands off, and one or two for each piece whose questions
+are settled mid-round, one for each kind of question it asks;
+the design verifier and, in a tests round that cannot pass, the issue reviewer are left out of a
+round they have nothing to do in.
 
-**The build changes no test the user did not approve at Gate 2.** From `testsHead` it may remove the
-issue's markers, delete the ratchet lines the plan names, and rewrite the imports and patched
-paths that a move of the plan's rewrites; nothing else under `tests/`. The tester runs `tools/changed_tests.py` from `testsHead` each round, and any other
+**The build changes no test the user did not approve at Gate 2,** but four kinds. From `testsHead`
+it may remove the issue's markers, delete the ratchet lines the plan names, rewrite the imports and
+patched paths that a move of the plan's rewrites, and adjust a stub, fake, fixture or exact-call
+assertion that the plan's own change breaks, to the new shape and no further. It lists each
+adjustment in `adjusted`, the code reviewer judges each, and Gate 3 shows each to the user (decided
+2026-09-30, #483); nothing else under `tests/`. The tester runs `tools/changed_tests.py` from `testsHead` each round, and any other
 change goes back to the builder to revert. A test change the build needs, including one a checker's
 finding calls for, is proposed in `testChanges`, and the stage stops for the user.
 
@@ -296,11 +327,14 @@ to the end of the issue. When a stage returns, copy its whole result from the ta
 `.claude/gates/<N>-<stage>.json` in the main checkout (gitignored), a new name for each run, and
 print from it only what is acted on: `status` and `failure`; `escalations`, `testChanges` and
 `provisional`; the ids and titles of `openMaterial` and `minor`, with the `why` and `fix` of those put to the user;
-`counts`; and `report` or `summary`, written straight to the gate's file. A result is too large to
+`counts`; `adjusted`; and `report` or `summary`, written straight to the gate's file. A result is too large to
 pass back inline, so where a run needs one as `previous`, or a tests stage's `citations`, copy the
 workflow script into `.claude/gates/`, write the saved JSON in place of `ARGS.previous` or
 `ARGS.citations`, and run the copy by `scriptPath`: the Workflow tool runs a script only from the
-working directory.
+working directory. Leave out the result's `report` and `lastTest` as you bake it in: the workflow
+reads neither from `previous`, and they are most of its size. Keep everything else, `listSeen` and
+`shown` included: they are small, and without them the next run sends its reviewers the whole list
+again and the next Gate 2 loses its marks.
 
 - **`question`:** put `escalations` to the user through `AskUserQuestion`, the business ones as
   the product owner framed them, its recommendation first. Merge any two that ask the same thing.
@@ -363,8 +397,9 @@ output as PNG, never as SVG in a browser. CI deselects the marker, so nothing el
 
 When the build returns `passed`, put the result to the user through `AskUserQuestion`. Show the
 product owner's acceptance `summary`: what a league will now see, criterion by criterion, with the
-test that proves each, and every rule it cited. List beside it, once, every `provisional` call and
-every `minor` finding, for the user to overrule or name in the same answer. The options are to
+test that proves each, and every rule it cited. List beside it, once, every `provisional` call,
+every `minor` finding, and every test in `adjusted`, with why the build changed it after Gate 2,
+for the user to overrule or name in the same answer. The options are to
 accept it or to reject it.
 
 **On a rejection, ask what should change in terms of behaviour**, and take the answer in the

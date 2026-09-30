@@ -51,6 +51,7 @@ def test_every_scenario_file_is_run() -> None:
         pytest.param("agent-settings-scenarios.js"),
         "build-stage-scenarios.js",
         "check-stage-scenarios.js",
+        "economy-scenarios.js",
         pytest.param("handoff-scenarios.js"),
         pytest.param("incremental-review-scenarios.js"),
         "ledger-scenarios.js",

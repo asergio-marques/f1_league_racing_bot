@@ -259,7 +259,7 @@ Object.assign(module.exports, {
     respond(label) {
       const B = 'tests/x/test_a.py::test_b'
       const C = 'tests/x/test_a.py::test_c'
-      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added'), entry(B, 'added', { scenario: 'REWORDED' }), entry(C, 'added')] })
+      if (label.endsWith(':builder')) return builder({ tests: [entry(B, 'added', { scenario: 'REWORDED' }), entry(C, 'added')], dropped: ['tests/x/test_a.py::test_d'] })
       if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(B), ran(C)], changes: changes([[A, 'added'], [B, 'added'], [C, 'added']]) })
       return cleanLanes(label)
     },
@@ -307,15 +307,50 @@ Object.assign(module.exports, {
     },
     expect: r => r.status === 'passed' && r.report.includes('**A1** `test_b`\n') && r.report.includes('**A2** `test_new` *(new since the last Gate 2)*'),
   },
-  builderGivenTheListToKeep: {
-    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' })] }) },
+  // The builder is given the list in short, and in full only the entries the owner's decisions
+  // name by label, which it may be asked to reword (#483).
+  entryNamedInDecisionsGivenInFull: {
+    args: { ...base, stage: 'tests', decisions: 'GATE 2: reword A1', previous: passedTests({ tests: [entry(A, 'added', { label: 'A1', scenario: 'THE-SCENARIO-SHOWN' }), entry('tests/x/test_a.py::test_b', 'added', { label: 'A2', scenario: 'NOT-NAMED-SCENARIO', criterion: 'CRIT-B' })] }) },
     respond(label, prompt) {
-      if (label.endsWith(':builder') && (!prompt.includes('The list as it stands') || !prompt.includes('THE-SCENARIO-SHOWN') || !prompt.includes('"label": "A1"') || !prompt.includes('word for word'))) throw new Error('builder not given the list to keep')
-      if (label.endsWith(':builder')) return builder()
-      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':builder') && (!prompt.includes('The list as it stands, in short') || !prompt.includes('"label": "A1"') || !prompt.includes('"label": "A2"') || !prompt.includes('THE-SCENARIO-SHOWN'))) throw new Error('builder not given the list, with the named entry in full')
+      if (label.endsWith(':builder') && prompt.includes('NOT-NAMED-SCENARIO')) throw new Error('builder given an entry nobody named in full')
+      if (label.endsWith(':builder') && !prompt.includes('"criterion": "CRIT-B"')) throw new Error('the short list lost the criterion')
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added', { scenario: 'REWORDED' })] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran('tests/x/test_a.py::test_b')], changes: changes([[A, 'added'], ['tests/x/test_a.py::test_b', 'added']]) })
       return cleanLanes(label)
     },
-    expect: r => r.status === 'passed',
+    expect: r => r.status === 'passed' && r.tests.length === 2 && r.tests.find(t => t.nodeid === A).scenario === 'REWORDED'
+      && r.tests.find(t => t.nodeid === 'tests/x/test_a.py::test_b').scenario === 'NOT-NAMED-SCENARIO',
+  },
+  // A builder returns only what it changes in the list, piece by piece: an entry it adds joins the
+  // list, one it drops goes, and the rest stand, labels and all. The reviewers are given the merged
+  // list.
+  testsBuilderReturnsOnlyListChanges: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      const Bn = 'tests/x/test_a.py::test_b'
+      const Cn = 'tests/x/test_a.py::test_c'
+      if (label === 'tests:r1:builder') return builder({ planComplete: false, remaining: ['test_c'], tests: [entry(A, 'added', { scenario: 'SCEN-A' }), entry(Bn, 'added')] })
+      if (label === 'tests:r1:p2:builder') {
+        if (!prompt.includes(A) || prompt.includes('SCEN-A')) throw new Error('the second piece was not given the list in short')
+        return builder({ commits: [{ sha: 'c2', subject: 'c' }], tests: [entry(Cn, 'added')], dropped: [Bn] })
+      }
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]) })
+      if (/:(issue|product)$/.test(label) && (!prompt.includes('SCEN-A') || !prompt.includes(Cn) || prompt.includes('tests/x/test_a.py::test_b'))) throw new Error(`${label} not given the merged list`)
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.tests.map(t => t.nodeid).join() === `${A},tests/x/test_a.py::test_c` && r.tests[0].scenario === 'SCEN-A',
+  },
+  // The merged list is still held to what tools/changed_tests.py prints: a changed test the builder
+  // left out of its changes is found.
+  mergedListStillHeldToChangedTests: {
+    args: { ...base, stage: 'tests', maxRounds: 1 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A)], changes: changes([[A, 'added'], ['tests/x/test_a.py::test_e', 'modified']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes('test_e is modified on the branch, but tests[] does not list it')),
   },
   firstBuilderGivenNoList: {
     args: { ...base, stage: 'tests' },
@@ -374,5 +409,206 @@ Object.assign(module.exports, {
       return cleanLanes(label)
     },
     expect: r => r.status === 'passed' && r.counts.deleted === 1,
+  },
+})
+
+// What each reviewer and the owner last saw of the list is remembered as one hash per entry, never
+// its text, so that a result stays small enough to carry into the next run whole, and a resumed run
+// still gives each reviewer the unchanged entries in short and the Gate 2 report its marks (#483).
+const Bn = 'tests/x/test_a.py::test_b'
+Object.assign(scenarios, {
+  listSeenSurvivesResumeAsDigests: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', maxRounds: 1 }, label => {
+        if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added', { scenario: 'SCEN-A-LONG' })] })
+        if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A)], changes: changes([[A, 'added']]) })
+        if (label.endsWith(':issue')) return review({ findings: [finding('issue-1-1')] })
+        return cleanLanes(label)
+      })
+      if (first.status !== 'unfinished' || JSON.stringify(first.listSeen).includes('SCEN-A-LONG') || !first.listSeen.issue.tests[0].digest) throw new Error('the first run did not remember the list as hashes')
+      return { ...base, stage: 'tests', previous: first }
+    },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ commits: [{ sha: 'c2', subject: 'b' }], tests: [entry(Bn, 'added')], fixed: [{ id: 'issue-1-1', commit: 'c2' }] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Bn)], changes: changes([[A, 'added'], [Bn, 'added']]), changedSince: changes([[Bn, 'added']]), changedSinceError: '' })
+      if (/:(issue|product)$/.test(label) && (prompt.includes('SCEN-A-LONG') || !prompt.includes('S-test_b') || !prompt.includes('Unchanged since you last reviewed'))) throw new Error(`${label} was not given the unchanged entry in short`)
+      if (label.endsWith(':issue')) return review({ prior: [{ id: 'issue-1-1', status: 'fixed', grounds: 'ok' }] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.lastRound === 2,
+  },
+  gate2MarksSurviveResume: {
+    args: async runOnce => {
+      const lanes = label => label.endsWith(':tester') ? testsCheck({ tests: [ran(A), ran(Bn)], changes: changes([[A, 'added'], [Bn, 'added']]) }) : cleanLanes(label)
+      const gate = await runOnce({ ...base, stage: 'tests' }, label => label.endsWith(':builder') ? builder({ tests: [entry(A, 'added'), entry(Bn, 'added')] }) : lanes(label))
+      const asked = await runOnce({ ...base, stage: 'tests', decisions: 'GATE 2: reword A2', previous: gate }, label => {
+        if (label.endsWith(':builder')) return builder({ tests: [entry(Bn, 'added', { scenario: 'REWORDED' })] })
+        if (label.endsWith(':product')) return review({ escalations: [{ ...q('business', 'which season?'), stops: true }] })
+        return lanes(label)
+      })
+      if (asked.status !== 'question' || JSON.stringify(asked.shown).includes('S-test_a')) throw new Error('the stopped run did not carry the gate as hashes')
+      return { ...base, stage: 'tests', decisions: 'GATE 2: reword A2. OWNER ANSWERED: this one', previous: asked }
+    },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A), ran(Bn)], changes: changes([[A, 'added'], [Bn, 'added']]) })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.report.includes('`test_b` *(changed since the last Gate 2)*') && r.report.includes('`test_a`\n'),
+  },
+  // The reviewers read what is wrong and each test's first failure line, not the tool's lists.
+  reviewersGetCompactTesterReport: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(A, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(A, { realFailure: 'AssertionError: no refusal was recorded\nSECOND-LINE-OF-TRACE' })], changes: changes([[A, 'added']], [], [], 'HEAD-SHA-FROM-TOOL') })
+      if (/:(issue|product)$/.test(label) && (!prompt.includes('AssertionError: no refusal was recorded') || prompt.includes('SECOND-LINE-OF-TRACE') || prompt.includes('HEAD-SHA-FROM-TOOL'))) throw new Error(`${label} was not given the compact report`)
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+})
+
+// A tests stage run again after the build began accepts the tests the build has made pass: each
+// passes as committed because its marker is gone, which is not a test that pins nothing. A passing
+// test the build did not unmark is still one (#483).
+const Cn = 'tests/x/test_a.py::test_c'
+const afterBuild = (unmarked, o = {}) => ({
+  args: { ...base, stage: 'tests', testsHead: 't0', decisions: 'OWNER: add test_c', maxRounds: 1, previous: passedTests({ tests: [entry(A, 'added'), entry(Bn, 'added')] }) },
+  respond(label, prompt, opts) {
+    if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+    if (label.endsWith(':tester')) {
+      if (!prompt.includes('--base t0 --issue 999') || !opts.schema.required.includes('unmarkedByBuild')) throw new Error('the tester was not asked what the build unmarked')
+      if (!prompt.includes('7. What the build has made pass')) throw new Error('the tester\'s steps skip a number')
+      return testsCheck({ tests: [ran(A, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Bn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Cn)], changes: changes([[A, 'added'], [Bn, 'added'], [Cn, 'added']]), unmarkedByBuild: unmarked })
+    }
+    return cleanLanes(label)
+  },
+  ...o,
+})
+Object.assign(scenarios, {
+  testsRerunAcceptsTestsBuildMadePass: afterBuild([A, Bn], {
+    expect: r => r.status === 'passed' && r.report.includes('*Passes already:* the build has made it pass'),
+  }),
+  testsRerunStillFlagsPassingTestNotUnmarked: afterBuild([A], {
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Bn} passes already under --runxfail`)) && !r.lastFailures.some(f => f.includes(`${A} passes already`)),
+  }),
+  // Before the build has begun there is nothing it unmarked, and the tester is not asked.
+  testerNotAskedWithoutTestsHead: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt, opts) {
+      if (label.endsWith(':tester') && (prompt.includes('--issue') || opts.schema.required.includes('unmarkedByBuild'))) throw new Error('the tester was asked what a build that has not begun unmarked')
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+})
+
+// The issue reviewer is left out of a later round it has nothing to do in and that cannot pass; it
+// runs in any round that could pass, and whenever it has a finding to judge (#483).
+const red = () => testsCheck({ otherFailures: ['tests/x/test_a.py::test_z failed in its file'] })
+Object.assign(scenarios, {
+  idleIssueReviewerSkippedInRedTestsRound: {
+    args: { ...base, stage: 'tests', maxRounds: 2 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return red()
+      return cleanLanes(label)
+    },
+    expect: (r, { labels, logs }) => labels.includes('tests:r1:issue') && !labels.includes('tests:r2:issue') && labels.includes('tests:r2:product')
+      && logs.some(l => l.includes('the issue reviewer has nothing open')),
+  },
+  idleIssueReviewerSkippedWhilePlanUnfinished: {
+    args: { ...base, stage: 'tests', maxRounds: 2 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ planComplete: false, remaining: ['more tests'], commits: round(label) === 2 ? [] : [{ sha: 'c1', subject: 'a' }] })
+      if (label.endsWith(':tester')) return testsCheck()
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => labels.includes('tests:r1:issue') && !labels.includes('tests:r2:issue'),
+  },
+  idleIssueReviewerRunsWhenRoundCouldPass: {
+    args: { ...base, stage: 'tests' },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return round(label) === 1 ? red() : testsCheck()
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 2 && labels.includes('tests:r2:issue')
+      && labels.indexOf('tests:r2:issue') > labels.indexOf('tests:r2:tester'),
+  },
+  issueReviewerWithOpenFindingNotSkipped: {
+    args: { ...base, stage: 'tests', maxRounds: 2 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return red()
+      if (label === 'tests:r1:issue') return review({ findings: [finding('issue-1-1')] })
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => labels.includes('tests:r2:issue'),
+  },
+})
+
+// A run carried on after the owner's answers sends the issue reviewer in its first round, however
+// idle, since that round holds the whole branch to the new decisions once (#483).
+Object.assign(scenarios, {
+  issueReviewerRunsInFirstRoundOfCarriedRun: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', maxRounds: 1 }, label => {
+        if (label.endsWith(':builder')) return builder()
+        if (label.endsWith(':tester')) return testsCheck()
+        if (label.endsWith(':product')) return review({ escalations: [{ ...q('business', 'which season?'), stops: true }] })
+        return cleanLanes(label)
+      })
+      if (first.status !== 'question') throw new Error('the first run did not stop for the owner')
+      return { ...base, stage: 'tests', maxRounds: 1, decisions: 'OWNER: the current season', previous: first }
+    },
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ planComplete: false, remaining: ['more'] })
+      if (label.endsWith(':tester')) return red()
+      if (label.endsWith(':issue') && !prompt.includes('earlier work they make wrong is in scope too')) throw new Error('the issue reviewer was not asked to hold the branch to the decisions')
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => labels.includes('tests:r2:issue'),
+  },
+})
+
+// A test the build has made pass stays accepted in a later tests stage run, counting from a later
+// Gate 2, where its marker no longer goes; and so does one the build adjusted, which the tool reports
+// as modified rather than unmarked (#483).
+const passing = nodeid => ran(nodeid, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' })
+Object.assign(scenarios, {
+  testsSecondRerunRemembersBuildMadePass: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', testsHead: 't1', previous: passedTests({ tests: [entry(A, 'added')] }) }, label => {
+        if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+        if (label.endsWith(':tester')) return testsCheck({ tests: [passing(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]), unmarkedByBuild: [A] })
+        return cleanLanes(label)
+      })
+      if (first.status !== 'passed') throw new Error('the first rerun did not pass')
+      return { ...base, stage: 'tests', testsHead: 't2', maxRounds: 1, previous: first }
+    },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added', { scenario: 'REWORDED' })] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [passing(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed' && r.report.includes('*Passes already:* the build has made it pass'),
+  },
+  testsRerunAcceptsAdjustedPassingTest: {
+    args: { ...base, stage: 'tests', testsHead: 't0', maxRounds: 1, adjusted: [{ target: A, why: 'the plan renamed its call' }], previous: passedTests({ tests: [entry(A, 'added')] }) },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [passing(A), ran(Cn)], changes: changes([[A, 'added'], [Cn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  adjustedMustBeTheBuildsList: {
+    args: { ...base, stage: 'tests', adjusted: 'test_a' },
+    respond(label) { throw new Error(`${label} ran with an adjusted that should have been refused`) },
+    expectThrow: 'adjusted is the build',
   },
 })

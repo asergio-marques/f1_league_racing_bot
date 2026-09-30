@@ -1,7 +1,8 @@
 // Each role's model and effort: by default Sonnet runs the build's builder and the tester, and Opus
-// every other role, each set explicitly; `models` and `efforts` override a role, and an unknown
-// role, model or effort is refused. The models accepted are opus, sonnet and haiku alone: fable is
-// refused like any unknown model.
+// every other role, each set explicitly, at high effort but the tester's, which is low; `models` and
+// `efforts` override a role, and an unknown role, model or effort is refused. The models accepted
+// are opus, sonnet and haiku alone: fable is refused like any unknown model. No effort above high is
+// accepted (#483). Every agent is asked to answer briefly.
 const { q, builder, review, testsCheck, suite, base } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
 const C = { stage: 'check', issue: '#999', plan: 'PLAN', modules: ['steward'], commit: 'abc123' }
@@ -15,8 +16,8 @@ const roleOf = (label, stage) => {
   if (label.endsWith(':summary')) return 'product'
   return label.split(':').pop()
 }
-const OPUS = { model: 'opus' }
-const DEFAULTS = { testsBuilder: OPUS, builder: { model: 'sonnet' }, tester: { model: 'sonnet', effort: 'low' }, issue: OPUS, code: OPUS, product: OPUS, design: OPUS, triage: OPUS }
+const OPUS = { model: 'opus', effort: 'high' }
+const DEFAULTS = { testsBuilder: OPUS, builder: { model: 'sonnet', effort: 'high' }, tester: { model: 'sonnet', effort: 'low' }, issue: OPUS, code: OPUS, product: OPUS, design: OPUS, triage: OPUS }
 // Every call has its role's model and effort, and no other; and each role named was called.
 const settingsHold = (calls, stage, want, roles) => {
   const wrong = calls.filter(({ label, opts }) => {
@@ -75,7 +76,7 @@ module.exports = {
       return review()
     },
     expect: (r, { calls }) => r.status === 'passed' && settingsHold(calls, 'build', {
-      ...DEFAULTS, builder: { model: 'opus' }, code: { model: 'haiku' }, product: { model: 'opus', effort: 'medium' },
+      ...DEFAULTS, builder: { model: 'opus', effort: 'high' }, code: { model: 'haiku', effort: 'high' }, product: { model: 'opus', effort: 'medium' },
     }, ['builder', 'tester', 'issue', 'code', 'product']),
   },
   checkStageSettings: {
@@ -83,15 +84,47 @@ module.exports = {
     respond(label) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [q('business', 'biz from arch?')], notes: [] }
       if (label === 'check:design') return { modules: [], questions: [], raised: [], notes: [] }
-      if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], notes: [] }
-      if (label === 'triage:check:product') return { answers: [{ question: 'biz from arch?', answer: 'y', source: 'results § X', ref: 'c1' }], escalations: [], findings: [] }
+      if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [q('engineering', 'eng from po?')], notes: [] }
+      if (label === 'triage:check:issue') return { answers: [{ question: 'eng from po?', answer: 'y', source: 'architecture.md § X', ref: 'c2' }], escalations: [], findings: [] }
       throw new Error('unexpected agent ' + label)
     },
-    expect: (r, { calls }) => !r.failed.length && settingsHold(calls, 'check', { ...DEFAULTS, issue: { model: 'sonnet' } }, ['issue', 'product', 'triage'])
+    expect: (r, { calls }) => !r.failed.length && settingsHold(calls, 'check', { ...DEFAULTS, issue: { model: 'sonnet', effort: 'high' } }, ['issue', 'product', 'triage'])
       && calls.filter(c => c.label === 'check:architecture' || c.label === 'check:design').length === 2,
   },
   unknownRoleRefused: refused({ models: { wizard: 'opus' } }),
   unknownModelRefused: refused({ models: { builder: 'gpt-4' } }),
   fableRefused: refused({ models: { tester: 'fable' } }),
   unknownEffortRefused: refused({ efforts: { tester: 'extreme' } }),
+  effortAboveHighRefused: refused({ efforts: { issue: 'max' } }),
+  effortXhighRefused: refused({ efforts: { builder: 'xhigh' } }),
+  // Every prompt, in the check, the tests stage and the build, ends with the rule to answer briefly.
+  everyPromptAsksForBrevity: {
+    args: B,
+    respond(label, prompt, opts) {
+      if (!prompt.includes('## How to answer') || !prompt.includes('Be brief.')) throw new Error(`${label} was not asked to answer briefly`)
+      return buildRespond(label, prompt, opts)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && labels.includes('build:r1:design') && labels.some(l => l.startsWith('triage:')),
+  },
+  everyTestsStagePromptAsksForBrevity: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt) {
+      if (!prompt.includes('Be brief.')) throw new Error(`${label} was not asked to answer briefly`)
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      if (label.endsWith(':product')) return review({ summary: 'S' })
+      return review()
+    },
+    expect: r => r.status === 'passed',
+  },
+  everyCheckPromptAsksForBrevity: {
+    args: C,
+    respond(label, prompt) {
+      if (!prompt.includes('Be brief.')) throw new Error(`${label} was not asked to answer briefly`)
+      if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [], notes: [] }
+      if (label === 'check:design') return { modules: [], questions: [], raised: [], followUps: [], notes: [] }
+      if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], followUps: [], notes: [] }
+    },
+    expect: r => !r.failed.length,
+  },
 }
