@@ -467,3 +467,39 @@ Object.assign(scenarios, {
     expect: r => r.status === 'passed',
   },
 })
+
+// A tests stage run again after the build began accepts the tests the build has made pass: each
+// passes as committed because its marker is gone, which is not a test that pins nothing. A passing
+// test the build did not unmark is still one (#483).
+const Cn = 'tests/x/test_a.py::test_c'
+const afterBuild = (unmarked, o = {}) => ({
+  args: { ...base, stage: 'tests', testsHead: 't0', decisions: 'OWNER: add test_c', maxRounds: 1, previous: passedTests({ tests: [entry(A, 'added'), entry(Bn, 'added')] }) },
+  respond(label, prompt, opts) {
+    if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
+    if (label.endsWith(':tester')) {
+      if (!prompt.includes('--base t0 --issue 999') || !opts.schema.required.includes('unmarkedByBuild')) throw new Error('the tester was not asked what the build unmarked')
+      return testsCheck({ tests: [ran(A, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Bn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Cn)], changes: changes([[A, 'added'], [Bn, 'added'], [Cn, 'added']]), unmarkedByBuild: unmarked })
+    }
+    return cleanLanes(label)
+  },
+  ...o,
+})
+Object.assign(scenarios, {
+  testsRerunAcceptsTestsBuildMadePass: afterBuild([A, Bn], {
+    expect: r => r.status === 'passed' && r.report.includes('*Passes already:* the build has made it pass'),
+  }),
+  testsRerunStillFlagsPassingTestNotUnmarked: afterBuild([A], {
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Bn} passes already under --runxfail`)) && !r.lastFailures.some(f => f.includes(`${A} passes already`)),
+  }),
+  // Before the build has begun there is nothing it unmarked, and the tester is not asked.
+  testerNotAskedWithoutTestsHead: {
+    args: { ...base, stage: 'tests' },
+    respond(label, prompt, opts) {
+      if (label.endsWith(':tester') && (prompt.includes('--issue') || opts.schema.required.includes('unmarkedByBuild'))) throw new Error('the tester was asked what a build that has not begun unmarked')
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck()
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+})

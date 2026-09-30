@@ -60,7 +60,7 @@ const ROLE_DEFAULTS = {
 const MODELS = ['opus', 'sonnet', 'haiku']
 const EFFORTS = ['low', 'medium', 'high']
 
-const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, overruled, the ids of calls the owner has overruled, and handBuilt, a list naming the plan's commit points built by hand apart from the workflow. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
+const USAGE = `work-issue requires args {stage, issue, plan, modules}. stage is check, tests or build; modules lists the modules the plan touches, from ${Object.keys(SPECS).join(', ')}. check also needs commit, the commit the plan was drafted at, and takes worktree and base when it checks an amended plan against a branch already built, and previous, the last check result for this issue, when it checks an amended plan at all. tests and build need worktree and python (absolute paths), branch and base, and take criteria, checks, decisions, citations, previous, rulings, kind ("fix" or "design-pass"), maxRounds, which may only lower what a run takes, roundBudget, the rounds a whole stage may take across its runs (tests 3, build 4 unless the owner raises it, which carries to later runs), provisional, the calls an earlier stage took on a recommendation, overruled, the ids of calls the owner has overruled, and handBuilt, a list naming the plan's commit points built by hand apart from the workflow. build takes testsHead, the commit at which the owner approved the tests at Gate 2: given it, the build may change no test after it but to remove the issue's markers. tests takes testsHead too once the build has begun, and then accepts as passing each test whose marker the build has removed since. Every stage takes models and efforts, each {role: value}, overriding the model or the effort of a role: the roles are ${Object.keys(ROLE_DEFAULTS).join(', ')}; a model is ${MODELS.join(', ')}, and an effort ${EFFORTS.join(', ')}.`
 
 if (!ARGS || !['check', 'tests', 'build'].includes(ARGS.stage) || !ARGS.issue || !ARGS.plan || !Array.isArray(ARGS.modules) || !ARGS.modules.length) {
   throw new Error(USAGE)
@@ -476,7 +476,9 @@ const { worktree, python, branch, base } = ARGS
 // The commit at which the owner approved the tests at Gate 2. From it the build changes no test but
 // to remove the issue's markers, the ratchet lines the plan names and import lines: any other test
 // change it needs goes to the owner as a proposal, and the tests stage makes it.
-const testsHead = stage === 'build' ? ARGS.testsHead || (ARGS.previous && ARGS.previous.testsHead) || null : null
+// The tests stage takes it too where the build has begun, to know which tests the build has made
+// pass since: each of those passes as committed, and is not a test that pins nothing.
+const testsHead = stage !== 'check' ? ARGS.testsHead || (ARGS.previous && ARGS.previous.testsHead) || null : null
 const BIN = python.slice(0, python.lastIndexOf('/'))
 // Every round of a stage counts against its budget, across all its runs: a stage run again after
 // the owner's answers carries on from previous.lastRound instead of starting a fresh allowance, as
@@ -648,7 +650,7 @@ const MAX_PIECES = 8
 
 // The command that lists what the branch changes under tests/, which the builder's lists must
 // match entry for entry (tools/changed_tests.py).
-const CHANGED_TESTS = from => `cd ${worktree} && ${python} tools/changed_tests.py --repo ${worktree} --base ${from}${stage === 'build' ? ` --issue ${issue}` : ''}`
+const CHANGED_TESTS = (from, markers = stage === 'build') => `cd ${worktree} && ${python} tools/changed_tests.py --repo ${worktree} --base ${from}${markers ? ` --issue ${issue}` : ''}`
 
 const TESTS_JOB = `This is the tests stage. Make every change to tests/ that this work needs, and no production code at all:
 - add the tests the plan says fail before the change;
@@ -837,6 +839,15 @@ const TESTS_CHECK_SCHEMA = {
 
 // Where the reviewers have seen the list before, the tester also lists what has changed under tests/
 // since, which decides the entries each is given in full again.
+// Once the build has begun, the tester also lists the tests whose markers the build has removed since
+// the owner approved the tests: each passes as committed because the build has made it pass. A tests
+// stage run again after the build flagged each of them as pinning nothing, and was capped for it
+// (#482 slices 2 and 3).
+const withUnmarked = schema => ({
+  ...schema,
+  required: [...schema.required, 'unmarkedByBuild'],
+  properties: { ...schema.properties, unmarkedByBuild: { type: 'array', items: { type: 'string' }, description: 'the markersRemoved step 8 printed, copied exactly; empty where it failed' } },
+})
 const TESTS_CHECK_SINCE_SCHEMA = {
   ...TESTS_CHECK_SCHEMA,
   required: [...TESTS_CHECK_SCHEMA.required, 'changedSince', 'changedSinceError'],
@@ -1039,6 +1050,8 @@ const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed
 ${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
 ${since ? `7. What has changed under tests/ since ${since}: run ${CHANGED_TESTS(since)}, with a Bash timeout of 600000 ms, and copy what it prints into changedSince, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changedSinceError, and leave the lists in changedSince empty.
 ` : ''}
+${testsHead ? `8. What the build has made pass: run ${CHANGED_TESTS(testsHead, true)}, with a Bash timeout of 600000 ms, and copy the markersRemoved it prints into unmarkedByBuild, exactly. Where it exits non-zero, leave unmarkedByBuild empty and say so in otherFailures.
+` : ''}
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 
 ${RUN_PYTEST}${section('The tests the builder changed, to run in steps 3 and 4 (a deleted test is not among them)', tests)}`
@@ -1213,6 +1226,7 @@ const gateReport = (test, summaryText) => {
     `${GROUPS.map(g => `${written.filter(t => t.change === g.change).length} ${g.change}`).join(', ')}; ${supportWritten.length} supporting.`,
   ]
   const field = (name, value) => filled(value) ? [`  - *${name}:* ${value}`] : []
+  const unmarkedByBuild = new Set(((test && test.unmarkedByBuild) || []).map(bareId))
   const movedFrom = new Map(((test && test.changes && test.changes.tests) || []).filter(x => x.from).map(x => [bareId(x.nodeid), x.from]))
   const labelOf = new Map(written.map(t => [bareId(t.nodeid), t.label]))
   const others = written.filter(t => !GROUPS.some(g => g.change === t.change))
@@ -1232,7 +1246,7 @@ const gateReport = (test, summaryText) => {
           ...field('From', from ? `\`${from}\`` : ''),
           ...field(g.change === 'deleted' ? 'Why it goes' : 'Why', t.why),
           ...field('Criterion', t.criterion),
-          ...(t.alreadyPasses ? ['  - *Passes already:* left unmarked'] : []),
+          ...(t.alreadyPasses ? ['  - *Passes already:* left unmarked'] : unmarkedByBuild.has(bareId(t.nodeid)) ? ['  - *Passes already:* the build has made it pass'] : []),
         )
       }
     }
@@ -1263,11 +1277,12 @@ const testsProblems = t => {
   if (!t) return ['the tester returned nothing']
   const problems = hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
+  const unmarked = new Set((t.unmarkedByBuild || []).map(bareId))
   for (const w of written) {
     if (w.change === 'deleted') continue
     const x = t.tests.find(r => r.nodeid === w.nodeid)
     if (!x) { problems.push(`${w.nodeid} was not run by the tester`); continue }
-    if (w.alreadyPasses) {
+    if (w.alreadyPasses || unmarked.has(bareId(w.nodeid))) {
       if (x.outcomeAsCommitted !== 'passed') problems.push(`${w.nodeid} pins behaviour already built, so it must pass, but was ${x.outcomeAsCommitted}`)
       continue
     }
@@ -1295,7 +1310,7 @@ const reviewTests = async (k, questions) => {
   const earliest = known && seenAt.length ? Math.min(...seenAt) : undefined
   const since = !seenAt.length || earliest === commits.length ? '' : earliest ? commits[earliest - 1].sha : base
   const test = written.length || supportWritten.length
-    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA })
+    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: (testsHead ? withUnmarked : x => x)(since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA) })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const nothing = { tests: new Set(), support: new Set() }
