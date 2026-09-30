@@ -18,15 +18,20 @@ amendment mode is off rather than writing somewhere nothing will read.
 """
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.services.amendment_service import AmendmentNotActiveError
+from leaguebot.core.services.amendment_service import (
+    AmendmentNotActiveError,
+    enable_amendment_mode,
+)
 from leaguebot.results.services.season_points_service import (
     ConfigNotAttachedError,
     SeasonNotInSetupError,
@@ -38,11 +43,36 @@ SEASON_ID = 1
 
 
 _UNSET = object()
+_DB: dict[str, str] = {}
+
+
+@pytest.fixture(autouse=True)
+async def _database(tmp_path):
+    """Season SEASON_ID in amendment mode with nothing in its store, built from the production
+    migrations.
+
+    The store's writes are patched below, but an amend that changes nothing answers so (#482),
+    and to know it reads the value it is asked to set: from this database, where nothing is
+    held for Standard, so every amend here is one that changes something.
+    """
+    path = os.path.join(str(tmp_path), "amend_fl.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-01-01', 'ACTIVE', 1)",
+            (SEASON_ID,),
+        )
+        await db.commit()
+    await enable_amendment_mode(path, SEASON_ID)
+    _DB["path"] = path
+    yield
+    _DB.clear()
 
 
 def _make_cog(*, enabled=True, season=_UNSET):
     bot = MagicMock()
-    bot.db_path = "/tmp/not-read.db"
+    bot.db_path = _DB["path"]
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=enabled)
     bot.season_service = MagicMock()

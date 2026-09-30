@@ -27,12 +27,14 @@ the season was configured when it was not.
 """
 from __future__ import annotations
 
+import os
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.core.db.database import run_migrations
 from leaguebot.results.cogs.results_cog import (
     BLOCKS_AMENDMENT,
     BLOCKS_APPROVAL,
@@ -43,6 +45,7 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points_config_service import (
     ConfigNotFoundError,
     InvalidSessionTypeError,
+    create_config,
 )
 from leaguebot.results.services.season_points_service import SeasonNotInSetupError
 from tests.support.undecorate import undecorate
@@ -116,9 +119,28 @@ def test_the_notice_says_which_refusal_is_coming():
 # ---------------------------------------------------------------------------
 
 
+_DB: dict[str, str] = {}
+
+
+@pytest.fixture(autouse=True)
+async def _database(tmp_path):
+    """A server holding CONFIG with an empty table, built from the production migrations.
+
+    The service's writes are patched below, but a command that changes nothing answers so
+    (#482), and to know it reads the values it is asked to set: from this database, where
+    nothing is held yet, so every edit here is one that changes something.
+    """
+    path = os.path.join(str(tmp_path), "points_editing.db")
+    await run_migrations(path)
+    await create_config(path, CONFIG)
+    _DB["path"] = path
+    yield
+    _DB.clear()
+
+
 def _make_cog(*, results_enabled: bool = True, season=SimpleNamespace(id=SEASON_ID, status="SETUP")):
     bot = MagicMock()
-    bot.db_path = "/tmp/does-not-matter.db"
+    bot.db_path = _DB["path"]
     bot.module_service = MagicMock()
     bot.module_service.is_results_enabled = AsyncMock(return_value=results_enabled)
     bot.season_service = MagicMock()

@@ -92,9 +92,15 @@ def _replied(interaction) -> str:
     )
 
 
-def _state(active: bool | None):
-    """`None` where no store exists at all, which is distinct from one that is off."""
-    return None if active is None else SimpleNamespace(amendment_active=active)
+def _state(active: bool | None, *, modified: bool = True):
+    """`None` where no store exists at all, which is distinct from one that is off. A store
+    holds staged changes unless *modified* is False: a revert of nothing staged changes nothing
+    (#482), so a revert that does something needs something staged."""
+    return (
+        None
+        if active is None
+        else SimpleNamespace(amendment_active=active, modified_flag=modified)
+    )
 
 
 @contextmanager

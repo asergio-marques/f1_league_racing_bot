@@ -126,6 +126,20 @@ async def _plimit(cog, interaction):
     await undecorate(ResultsCog.amend_fl_plimit)(cog, interaction, CONFIG, _RACE, 8)
 
 
+# The same three, asking for the values the store already holds: the refusal comes first
+# (slice 3, decision 23), never "nothing changed".
+async def _session_same(cog, interaction):
+    await undecorate(ResultsCog.amend_session)(cog, interaction, CONFIG, _RACE, 1, 25)
+
+
+async def _fl_same(cog, interaction):
+    await undecorate(ResultsCog.amend_fl)(cog, interaction, CONFIG, _RACE, 1)
+
+
+async def _plimit_same(cog, interaction):
+    await undecorate(ResultsCog.amend_fl_plimit)(cog, interaction, CONFIG, _RACE, 10)
+
+
 _NOT_ACTIVE = "❌ Amendment mode is not active."
 _UNCOMMITTED = (
     "❌ Cannot disable amendment mode — uncommitted changes exist. "
@@ -150,6 +164,12 @@ def _case(case_id, command, run, amendment, reply):
         _case("session-mode-off", "results amend session", _session, "off", _NOT_ACTIVE),
         _case("fl-mode-off", "results amend fl", _fl, "off", _NOT_ACTIVE),
         _case("fl-plimit-mode-off", "results amend fl-plimit", _plimit, "off", _NOT_ACTIVE),
+        _case("session-same-value-mode-off", "results amend session", _session_same, "off", _NOT_ACTIVE),
+        _case("fl-same-value-mode-off", "results amend fl", _fl_same, "off", _NOT_ACTIVE),
+        _case(
+            "fl-plimit-same-value-mode-off", "results amend fl-plimit", _plimit_same, "off",
+            _NOT_ACTIVE,
+        ),
     ],
 )
 async def test_every_amend_refusal_is_recorded(tmp_path, command, run, amendment, reply):
