@@ -879,7 +879,7 @@ const TESTS_CHECK_SCHEMA = {
 const withUnmarked = schema => ({
   ...schema,
   required: [...schema.required, 'unmarkedByBuild'],
-  properties: { ...schema.properties, unmarkedByBuild: { type: 'array', items: { type: 'string' }, description: 'the markersRemoved step 8 printed, copied exactly; empty where it failed' } },
+  properties: { ...schema.properties, unmarkedByBuild: { type: 'array', items: { type: 'string' }, description: 'the markersRemoved the step naming it printed, copied exactly; empty where it failed' } },
 })
 const TESTS_CHECK_SINCE_SCHEMA = {
   ...TESTS_CHECK_SCHEMA,
@@ -1086,7 +1086,7 @@ const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed
 ${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
 ${since ? `7. What has changed under tests/ since ${since}: run ${CHANGED_TESTS(since)}, with a Bash timeout of 600000 ms, and copy what it prints into changedSince, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changedSinceError, and leave the lists in changedSince empty.
 ` : ''}
-${testsHead ? `8. What the build has made pass: run ${CHANGED_TESTS(testsHead, true)}, with a Bash timeout of 600000 ms, and copy the markersRemoved it prints into unmarkedByBuild, exactly. Where it exits non-zero, leave unmarkedByBuild empty and say so in otherFailures.
+${testsHead ? `${since ? 8 : 7}. What the build has made pass: run ${CHANGED_TESTS(testsHead, true)}, with a Bash timeout of 600000 ms, and copy the markersRemoved it prints into unmarkedByBuild, exactly. Where it exits non-zero, leave unmarkedByBuild empty and say so in otherFailures.
 ` : ''}
 Name any log file /tmp/work-issue-${issue}-tests-r${k}-<step>.log.
 

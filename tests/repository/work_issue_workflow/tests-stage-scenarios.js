@@ -479,6 +479,7 @@ const afterBuild = (unmarked, o = {}) => ({
     if (label.endsWith(':builder')) return builder({ tests: [entry(Cn, 'added')] })
     if (label.endsWith(':tester')) {
       if (!prompt.includes('--base t0 --issue 999') || !opts.schema.required.includes('unmarkedByBuild')) throw new Error('the tester was not asked what the build unmarked')
+      if (!prompt.includes('7. What the build has made pass')) throw new Error('the tester\'s steps skip a number')
       return testsCheck({ tests: [ran(A, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Bn, { failsWithRunxfail: false, realFailure: '', outcomeAsCommitted: 'passed' }), ran(Cn)], changes: changes([[A, 'added'], [Bn, 'added'], [Cn, 'added']]), unmarkedByBuild: unmarked })
     }
     return cleanLanes(label)
