@@ -287,7 +287,9 @@ async def test_confirming_the_clear_discards_the_staged_list():
     view = _ConfirmClearView(state)
     interaction = _interaction()
 
-    with _approval_step() as approval:
+    with _approval_step() as approval, patch(
+        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+    ):
         await type(view).confirm_btn(view, interaction, MagicMock())
 
     assert state.staged == []
@@ -821,14 +823,10 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
 # two writes it.
 # ---------------------------------------------------------------------------
 
-_PRESS_NOT_YET_RECORDED = "#482: the review press writes no line in the log channel"
-
-
 def _press_case(case_id, kind, label, staged, *named):
     return pytest.param(
         kind, label, staged, named,
         id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_PRESS_NOT_YET_RECORDED),
     )
 
 

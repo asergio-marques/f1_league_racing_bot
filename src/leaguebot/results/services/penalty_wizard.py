@@ -27,6 +27,7 @@ from leaguebot.core.utils.interaction_errors import describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)
 
@@ -147,6 +148,33 @@ def _button(label: str | None, state: PenaltyReviewState | None, review: str = "
     if state is None:
         return named
     return f"{named} of the {review} review of round {state.round_number} ({state.division_name})"
+
+
+async def _record_press(interaction: discord.Interaction, what: str, *detail: str) -> None:
+    """Write the one line a review press leaves in the log channel (#482), in the success form.
+
+    "Alex (<@77>) | the “Remove #2” button of the penalty review of round 3 (Division 1) |
+    Success", with what was staged, removed or cleared beneath it. Every press that changes a
+    review writes one, and only that one: the approval's own line is the record of an approval.
+    Written through the interaction's client, as a refusal's is, and never raises: the press has
+    been answered whether or not the line is.
+    """
+    try:
+        router = getattr(getattr(interaction, "client", None), "output_router", None)
+        if router is None:
+            return
+        lines = [f"{interaction_member(interaction)} | {what} | Success"]
+        lines += [f"  {line}" for line in detail]
+        await router.post_log("\n".join(lines))
+    except Exception:  # noqa: BLE001 — the press has still been answered
+        log.warning("could not record in the log channel that %s was pressed", what, exc_info=True)
+
+
+async def _staged_named(state: PenaltyReviewState, penalties: list[StagedPenalty]) -> str:
+    """The penalties as a log line names them: "+5s for <@1>, DSQ for <@2>"."""
+    return ", ".join(
+        [f"{_pen_label(sp)} for <@{await _shown(state, sp.driver_user_id)}>" for sp in penalties]
+    )
 
 
 async def _require_lm(
@@ -782,6 +810,14 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         pl = _pen_label(result)
         sl = self.session_type.value.replace("_", " ").title()
         action = "Correction" if self.use_appeals_staging else "Penalty"
+        review = "appeals" if self.use_appeals_staging else "penalty"
+        await _record_press(
+            interaction,
+            describe_form(self),
+            f"review: {review} review of round {self.state.round_number} "
+            f"({self.state.division_name})",
+            f"staged: {action} {pl} for <@{shown_user_id}> in {sl}",
+        )
         await interaction.followup.send(
             f"\u2705 Staged {action}: <@{shown_user_id}> | {sl} | **{pl}**",
             ephemeral=True,
@@ -1016,8 +1052,12 @@ class _ConfirmClearView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
+        cleared = await _staged_named(self.state, self.state.staged)
         self.state.staged.clear()
         await interaction.response.defer(ephemeral=True)
+        await _record_press(
+            interaction, _button(button.label, self.state), f"cleared: {cleared}"
+        )
         await _show_approval_step(interaction, self.state)
         self.stop()
 
@@ -1207,9 +1247,15 @@ class PenaltyReviewView(LeagueView):
                 await interaction.response.defer(ephemeral=True)
                 await _refresh_prompt(self.state)
                 pl = _pen_label(removed)
+                shown = await _shown(self.state, removed.driver_user_id)
                 await interaction.followup.send(
-                    f"🗑️ Removed: <@{await _shown(self.state, removed.driver_user_id)}> | {pl}",
+                    f"🗑️ Removed: <@{shown}> | {pl}",
                     ephemeral=True,
+                )
+                await _record_press(
+                    interaction,
+                    _button(f"Remove #{idx + 1}", self.state),
+                    f"removed: {pl} for <@{shown}>",
                 )
             else:
                 await refuse(
@@ -1242,10 +1288,15 @@ class PenaltyReviewView(LeagueView):
                 removed = self.state.staged_pardons.pop(idx)
                 await interaction.response.defer(ephemeral=True)
                 await _refresh_prompt(self.state)
+                shown = await _shown(self.state, removed.driver_user_id)
                 await interaction.followup.send(
-                    f"🗑️ Removed pardon: <@{await _shown(self.state, removed.driver_user_id)}> "
-                    f"| {removed.pardon_type}",
+                    f"🗑️ Removed pardon: <@{shown}> | {removed.pardon_type}",
                     ephemeral=True,
+                )
+                await _record_press(
+                    interaction,
+                    _button(f"Remove Pardon #{idx + 1}", self.state),
+                    f"removed: {removed.pardon_type} pardon for <@{shown}>",
                 )
             else:
                 await refuse(
@@ -1312,6 +1363,11 @@ class PenaltyReviewView(LeagueView):
             # No penalties — advance directly to approval step (T019)
             await interaction.response.defer(ephemeral=True)
             await _show_approval_step(interaction, self.state)
+            await _record_press(
+                interaction,
+                _button(button.label, self.state),
+                "posted the approval question: no penalties staged",
+            )
         else:
             # Ask for explicit confirmation before clearing (T019)
             view = _ConfirmClearView(state=self.state)
@@ -1482,6 +1538,11 @@ class ApprovalView(LeagueView):
         await interaction.followup.send(
             "↩️ Returned to penalty staging. The staged list is intact.", ephemeral=True
         )
+        await _record_press(
+            interaction,
+            _button(button.label, self.state),
+            "withdrew the approval question; the staged list is intact",
+        )
 
     @discord.ui.button(
         label="✅ Approve",
@@ -1595,9 +1656,15 @@ class AppealsReviewView(LeagueView):
                 await interaction.response.defer(ephemeral=True)
                 await _refresh_appeals_prompt(self.state)
                 pl = _pen_label(removed)
+                shown = await _shown(self.state, removed.driver_user_id)
                 await interaction.followup.send(
-                    f"\U0001f5d1\ufe0f Removed: <@{await _shown(self.state, removed.driver_user_id)}> | {pl}",
+                    f"\U0001f5d1\ufe0f Removed: <@{shown}> | {pl}",
                     ephemeral=True,
+                )
+                await _record_press(
+                    interaction,
+                    _button(f"Remove #{idx + 1}", self.state, "appeals"),
+                    f"removed: {pl} for <@{shown}>",
                 )
             else:
                 await refuse(
@@ -1725,7 +1792,13 @@ class _AppealsConfirmClearView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         ):
             return
+        cleared = await _staged_named(self.state, self.state.staged_appeals)
         self.state.staged_appeals.clear()
+        await _record_press(
+            interaction,
+            _button(button.label, self.state, "appeals"),
+            f"cleared: {cleared}",
+        )
         from leaguebot.results.services.result_submission_service import finalize_appeals_review
         await finalize_appeals_review(
             interaction, self.state, what=_button(button.label, self.state, "appeals")

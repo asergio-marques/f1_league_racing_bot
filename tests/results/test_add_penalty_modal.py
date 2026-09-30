@@ -783,7 +783,6 @@ async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: staging a penalty or correction writes no line")
 @pytest.mark.parametrize("appeals", [False, True], ids=["penalty", "correction"])
 async def test_staging_writes_one_line(tmp_path, appeals):
     """Alex submits the Add Penalty form of round 3's penalty review (Division 1), or the Add

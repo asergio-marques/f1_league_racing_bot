@@ -719,7 +719,6 @@ def _all_lines(interaction, state) -> list[str]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the appeals review press writes no line")
 @pytest.mark.parametrize(
     "kind, label",
     [("review", "Remove #1"), ("clear", _APPEALS_CLEAR)],
