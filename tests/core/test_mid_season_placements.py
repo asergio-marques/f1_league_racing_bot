@@ -531,6 +531,8 @@ async def test_confirming_after_the_season_moved_on_still_reports_the_placements
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
     cog.bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
+    # The stage it moved to is read as the real service answers it.
+    cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.CANCELLED)
     interaction = _interaction()
 
     await cog._do_confirm_mid_season_placements(interaction)
