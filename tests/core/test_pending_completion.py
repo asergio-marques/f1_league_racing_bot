@@ -186,16 +186,24 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
         assert (await cursor.fetchone())[0] == 0
 
 
+_CLOSE_NOBODY_RAN = "#482: a season's wind-down closes signups without writing the close's line"
+
+
+@pytest.mark.xfail(strict=True, reason=_CLOSE_NOBODY_RAN)
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
+    """The season is in Ongoing signups with its only division finished, and signups are open:
+    winding it down closes the window through the close nobody ran, as every division being
+    done, which writes the close's own line, and cancels the close timer."""
     from unittest.mock import AsyncMock, patch
 
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),))
     bot = _wind_down_bot(path, signups_open=True)
 
-    with patch("leaguebot.core.cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
+    with patch("leaguebot.core.cogs.module_cog.close_signups_unattended", new=AsyncMock()) as closed:
         assert await lifecycle.wind_down_ongoing(bot) is True
 
     closed.assert_awaited_once()
+    assert closed.await_args.kwargs["cause"] == "divisions done"
     bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
 
