@@ -296,7 +296,6 @@ async def test_confirming_the_clear_discards_the_staged_list():
     approval.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the clear leaves the old list on the prompt (D5)")
 async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
     """**D5.** Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
     Penalties / Confirm and then "Yes, clear and proceed with no penalties". The list is cleared

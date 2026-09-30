@@ -171,10 +171,21 @@ async def _record_press(interaction: discord.Interaction, what: str, *detail: st
 
 
 async def _staged_named(state: PenaltyReviewState, penalties: list[StagedPenalty]) -> str:
-    """The penalties as a log line names them: "+5s for <@1>, DSQ for <@2>"."""
-    return ", ".join(
-        [f"{_pen_label(sp)} for <@{await _shown(state, sp.driver_user_id)}>" for sp in penalties]
-    )
+    """The penalties as a log line names them: "+5s for <@1>, DSQ for <@2>".
+
+    A driver is named by the account they use now (`_shown`); where the database cannot be read
+    the account the penalty carries stands in, since a press that has already changed the review
+    must not fail for the sake of the line that records it.
+    """
+    named = []
+    for sp in penalties:
+        try:
+            shown = await _shown(state, sp.driver_user_id)
+        except Exception:  # noqa: BLE001 — the line is a record, and the press is done
+            log.warning("could not read the current account of %s", sp.driver_user_id, exc_info=True)
+            shown = sp.driver_user_id
+        named.append(f"{_pen_label(sp)} for <@{shown}>")
+    return ", ".join(named)
 
 
 def _clear_confirmation(state: PenaltyReviewState, review: str) -> str:
@@ -1108,6 +1119,9 @@ class _ConfirmClearView(LeagueView):
         await _record_press(
             interaction, _button(button.label, self.state), f"cleared: {cleared}"
         )
+        # Redrawn before the question is posted, not after: the redraw withdraws any approval
+        # question standing, and would withdraw the one about to be posted.
+        await _refresh_prompt(self.state)
         await _show_approval_step(interaction, self.state)
         self.stop()
 
