@@ -125,13 +125,15 @@ Workflow({ name: "work-issue", args: { stage: "check", issue: <N>, commit: "<sho
 If the name does not resolve, pass `scriptPath: ".claude/workflows/work-issue.js"` instead.
 `modules` names the module of every folder under `src/leaguebot/` the plan touches, and the
 module of the issue's label: `core`, `results`, `attendance`, `signup`, `weather`, `image`,
-`steward` or `stats`. Three checkers run side by side:
+`steward` or `stats`. Three checkers run, the first two side by side and the product owner after
+them:
 
 - **the issue reviewer**, against `docs/design/architecture.md` and its ratchet lists;
-- **the issue reviewer again**, against each module's design file, or against the architecture
-  alone where the module has none yet;
+- **the issue reviewer again**, against each module's design file, where a module has one; where
+  none has, no agent runs and the check says so;
 - **the product owner**, against the wip-specs, the constitution, the README and the guides. It
-  alone judges a spec rule, and it asks where the documents do not settle something.
+  alone judges a spec rule, and it asks where the documents do not settle something. It also
+  settles, in the same pass, the business questions the first two met.
 
 Settle what it returns before the user sees the plan:
 
@@ -302,7 +304,8 @@ ground it is: where every one is answered from a written rule or taken on its re
 next piece carries on with the answers, which the next gate lists among the calls taken; one that
 needs the user ends the pieces. A proposed test change does not end them: the round's proposals
 reach the user together. Tell the user it takes about ten agents for a fix that passes on its second
-round, one more for each piece a builder hands off, and one for each question settled mid-round;
+round, one more for each piece a builder hands off, and one or two for each piece whose questions
+are settled mid-round, one for each kind of question it asks;
 the design verifier and, in a tests round that cannot pass, the issue reviewer are left out of a
 round they have nothing to do in.
 

@@ -227,8 +227,8 @@ effort, and Opus runs every other role, every role but the tester at high effort
 Its calls taken on a recommendation and its minor findings are shown once at the issue's next gate,
 and a stage that returns `capped` or `stalled` goes to the user as one question, all as `fix-issue`
 says. The issues' runs go on concurrently, one run per issue at a time. Tell the user each build
-takes about ten agents, one more for each piece a builder hands off, and one for each question
-settled mid-round, and that the Pi runs two of a workflow's agents at once.
+takes about ten agents, one more for each piece a builder hands off, and one or two for each piece
+whose questions are settled mid-round, and that the Pi runs two of a workflow's agents at once.
 
 **Each issue's Gate 2 file is written to the main checkout's `.claude/gates/<N>-gate-2.md`,** never
 to the issue's worktree, so that every gate file stands in one place in the user's workspace, and a
