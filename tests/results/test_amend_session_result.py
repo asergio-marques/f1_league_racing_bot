@@ -631,9 +631,6 @@ async def test_the_amendment_is_logged(tmp_path):
     assert "Nothing is published until" in logged
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: AMEND_STAGE_1 names the member by mention alone"
-)
 async def test_the_amendment_names_the_member_who_ran_it(tmp_path):
     """Alex, a member of the league's server, amends round 3's Feature Race: the stage-one line
     reads "Alex (<@77>) | AMEND_STAGE_1 | Recorded", naming Alex by display name and mention."""

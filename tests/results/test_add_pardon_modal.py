@@ -323,7 +323,6 @@ async def test_the_justification_is_logged(tmp_path):
     assert str(STEWARD_ID) in logged
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the pardon line names the steward by mention alone")
 async def test_the_pardon_line_names_the_steward(tmp_path):
     """The steward Alex stages a NO_RSVP pardon for round 3 (Pro). The one line it writes names
     Alex by display name and mention, as every record does (#482), and keeps its token, the

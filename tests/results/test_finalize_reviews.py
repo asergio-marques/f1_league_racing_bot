@@ -2952,7 +2952,6 @@ def _line_under(state, heading: str) -> str:
     return lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
 @pytest.mark.parametrize(
     "fn, status, token",
     [
@@ -3077,7 +3076,6 @@ async def _amendment_stage(tmp_path, token: str):
     return state
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
 @pytest.mark.parametrize(
     "token, outcome",
     [

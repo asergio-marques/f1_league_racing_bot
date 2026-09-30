@@ -35,7 +35,7 @@ from leaguebot.image.utils.tyre_compound import (
 )
 from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
-from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
@@ -726,7 +726,7 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
                 n_penalties = len(state.staged)
                 outcome = "Incomplete" if repost_faults else "Success"
                 summary = (
-                    f"<@{actor_id}> | PENALTY_REVIEW_APPROVED | {outcome}\n"
+                    f"{interaction_member(interaction)} | PENALTY_REVIEW_APPROVED | {outcome}\n"
                     f"  round: {state.round_number} ({state.division_name})\n"
                     + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
                     + f"  old={old_val}\n  new={new_val}"
@@ -1385,7 +1385,7 @@ async def finalize_appeals_review(
                     n_corrections = len(state.staged_appeals)
                     outcome = "Incomplete" if repost_faults else "Success"
                     summary = (
-                        f"<@{actor_id}> | APPEALS_REVIEW_APPROVED | {outcome}\n"
+                        f"{interaction_member(interaction)} | APPEALS_REVIEW_APPROVED | {outcome}\n"
                         f"  round: {state.round_number} ({state.division_name})\n"
                         + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
                         + f"  old={old_val}\n  new={new_val}"
@@ -2688,7 +2688,7 @@ async def _approve_amendment_reports(interaction, state) -> None:
 
     try:
         await bot.output_router.post_log(
-            f"<@{interaction.user.id}> | AMEND_STAGE_2 | Recorded\n"
+            f"{interaction_member(interaction)} | AMEND_STAGE_2 | Recorded\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}\n"
             f"  reports: {len(state.staged) or 'none'}\n"
@@ -2837,7 +2837,7 @@ async def _log_result_amended(
     try:
         rctx = await _get_round_context(state.db_path, state.round_id)
         summary = (
-            f"<@{interaction.user.id}> | RESULT_AMENDED | "
+            f"{interaction_member(interaction)} | RESULT_AMENDED | "
             f"{'Incomplete' if faults else 'Success'}\n"
             f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
             f"  round: {rctx['round_number']}, sessions: {_sessions_text(session_types)}"
@@ -2925,7 +2925,7 @@ async def _abandon_failed_amendment(
 
     try:
         await state.bot.output_router.post_log(
-            f"<@{interaction.user.id}> | AMEND_FAILED | Notice\n"
+            f"{interaction_member(interaction)} | AMEND_FAILED | Notice\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}, stage: {stage}\n"
             f"  reason: {reason}\n"
@@ -3165,7 +3165,7 @@ async def amend_round_results(
     # **A stage, not an outcome.** The `RESULT_AMENDED` entry belongs to the final stage.
     rctx = await _get_round_context(db_path, round_id)
     await bot.output_router.post_log(
-        f"<@{amended_by}> | AMEND_STAGE_1 | Recorded\n"
+        f"{await name_of_member(bot, amended_by)} | AMEND_STAGE_1 | Recorded\n"
         f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
         f"  round: {rctx['round_number']}, sessions: "
         + ", ".join(f"{s.session_type.value}={s.config_name}" for s in sessions)

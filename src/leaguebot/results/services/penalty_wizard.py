@@ -1097,7 +1097,8 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
 
         # --- Log justification to calc-log channel only (FR-010) ---
         await self.state.bot.output_router.post_log(
-            f"ATTENDANCE_PARDON_STAGED | <@{interaction.user.id}> granted {pardon_type} pardon\n"
+            f"{interaction_member(interaction)} | ATTENDANCE_PARDON_STAGED | Success\n"
+            f"  pardon: {pardon_type}\n"
             f"  driver: <@{driver_user_id}> | round: {self.state.round_number} "
             f"({self.state.division_name})\n"
             f"  justification: {justification}",
