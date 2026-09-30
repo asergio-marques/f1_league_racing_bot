@@ -3215,11 +3215,10 @@ class SeasonCog(commands.Cog):
         target = (
             SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
         )
-        if signup_on:
-            # The season's signups are made under these settings, fixed from this moment.
-            await self.bot.signup_module_service.snapshot_season_config(
-                cfg.season_id
-            )
+        # The stage moves first, so that a confirmation refused because the season has left
+        # configuration fixes nothing: the refusal's "Nothing has been confirmed" is then true.
+        # Taking both in one transaction would have core hand a connection to the signup
+        # module's service, a reach into a module the architecture does not allow.
         try:
             await self.bot.season_service.set_stage(cfg.season_id, target)
         except InvalidStageTransition:
@@ -3229,6 +3228,11 @@ class SeasonCog(commands.Cog):
                 what=what,
             )
             return
+        if signup_on:
+            # The season's signups are made under these settings, fixed from this moment.
+            await self.bot.signup_module_service.snapshot_season_config(
+                cfg.season_id
+            )
 
         if target is SeasonStage.WAITING:
             next_step = "The season now waits for its signup window — open it with `/signup open`."
