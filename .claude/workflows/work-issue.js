@@ -3,11 +3,11 @@ export const meta = {
   description: 'Work one approved issue in stages, each ending at a gate the owner decides: check the plan against the architecture, the design files and the specs; make every test change, each with the scenario it tests, for the owner to approve before any code is written; then build, review and test until they pass',
   whenToUse: 'Run by the fix-issue, fix-issues and design-review skills, one stage per run. Requires args {stage, issue, plan, modules, ...}; the check at the head of the script says what each stage needs. Each role runs on the model and effort the script sets for it by default, which args models and efforts override. A check of an amended plan takes the last check result as previous. The check stage is read-only. The tests and build stages commit on the given branch in the given checkout, and never push or touch GitHub.',
   phases: [
-    { title: 'Check', detail: 'architecture and design (issue-reviewer), spec and acceptance (product-owner), in parallel' },
+    { title: 'Check', detail: 'architecture and design (issue-reviewer) side by side, then spec and acceptance (product-owner), which settles the business questions they met' },
     { title: 'Tests', detail: 'the builder makes every test change the work needs, those failing marked as expected to fail, and lists each with its scenario' },
     { title: 'Build', detail: 'the builder implements the plan, or fixes what the last round found' },
     { title: 'Review', detail: 'the issue reviewer, the code reviewer, the product owner and the tester; a design verifier where docs/design changed' },
-    { title: 'Triage', detail: 'a question a checker raised outside its ground goes to the product owner (business) or the issue reviewer (engineering)' },
+    { title: 'Triage', detail: 'a question a checker raised outside its ground, or a builder asked part-way through a round, goes to the product owner (business) or the issue reviewer (engineering)' },
   ],
 }
 
