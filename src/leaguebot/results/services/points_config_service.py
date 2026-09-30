@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -375,6 +376,23 @@ def group_sessions_by_config(rows) -> list[tuple[str, list[SessionType]]]:
         (name, sorted(sessions, key=lambda s: list(SessionType).index(s)))
         for name, sessions in sorted(grouped.items())
     ]
+
+
+def values_stand(current: Mapping[str, int | None], requested: Mapping[str, int]) -> bool:
+    """Whether a request to set values changes nothing (#482).
+
+    *current* holds the values the caller has already read, ``None`` for one not held at all;
+    *requested* the values asked for. The request changes nothing only where every value asked
+    for is already held: a value never filled in is not the same as one worth nothing, so a
+    ``None`` never stands, and a name *current* does not carry does not either. Only what is
+    asked is compared, so a fastest-lap limit set to the limit it holds stands whatever the
+    bonus is.
+
+    Pure, and called from the results cog alone: ``core/services/amendment_service.py`` may not
+    import results, so the judgement is made where the values were read and never inside the
+    amendment store.
+    """
+    return all(name in current and current[name] == value for name, value in requested.items())
 
 
 async def _position_points(

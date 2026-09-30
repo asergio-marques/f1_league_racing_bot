@@ -280,7 +280,6 @@ async def test_a_same_value_set_on_an_out_of_order_table_keeps_the_warning(tmp_p
     assert line.splitlines()[0] == f"Alex (<@{ACTOR_ID}>) | /{command} | Nothing changed"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the judgement of values that stand is not yet written")
 @pytest.mark.parametrize(
     ("current", "requested", "stands"),
     [
