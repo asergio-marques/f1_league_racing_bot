@@ -239,7 +239,9 @@ async def test_clearing_the_penalties_keeps_the_pardons_on_the_approval_message(
     channel = _in_channel(state)
     view = _ConfirmClearView(state)
 
-    with _a_league_manager():
+    with _a_league_manager(), patch(
+        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+    ):
         await type(view).confirm_btn(view, _interaction(), MagicMock())
 
     assert state.staged == []
