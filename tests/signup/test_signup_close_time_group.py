@@ -341,10 +341,6 @@ class TestModify:
         assert await _close_at(db_path) == ARMED
         cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="#482: modify to the armed instant still re-arms it, audits it and logs a Success",
-    )
     @pytest.mark.parametrize(
         "typed", [ARMED, ARMED.removesuffix("+00:00")], ids=["as-stored", "naive-utc"]
     )

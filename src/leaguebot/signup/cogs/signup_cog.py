@@ -105,6 +105,20 @@ def _parse_close_time(
     return parsed.isoformat(), None
 
 
+def _same_instant(stored: str, other: str) -> bool:
+    """Whether two ISO 8601 times name one instant, a time with no timezone read as UTC.
+
+    `/signup close-time modify` uses it to tell a replacement from the time already armed:
+    the stored string is normalised, but a manager's need not be spelt the same way.
+    """
+    first, second = datetime.fromisoformat(stored), datetime.fromisoformat(other)
+    if first.tzinfo is None:
+        first = first.replace(tzinfo=timezone.utc)
+    if second.tzinfo is None:
+        second = second.replace(tzinfo=timezone.utc)
+    return first == second
+
+
 def _format_slots(slots: list) -> str:
     if not slots:
         return "No availability slots configured."
@@ -1452,6 +1466,21 @@ class SignupCog(commands.Cog):
         assert close_at_iso is not None
 
         previous = cfg.close_at
+        if _same_instant(previous, close_at_iso):
+            armed = datetime.fromisoformat(previous)
+            await interaction.response.send_message(
+                f"ℹ️ Signups already auto-close at {discord_ts(armed)} "
+                f"({discord_ts(armed, 'R')}). Nothing was changed.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
+                "/signup close-time modify | Nothing changed\n"
+                f"  close_time: {previous}\n"
+                "  reason: it is already the armed time",
+            )
+            return
+
         self.bot.scheduler_service.cancel_signup_close_timer()
         await self.bot.signup_module_service.set_close_at(close_at_iso)
         self.bot.scheduler_service.schedule_signup_close_timer(close_at_iso)
