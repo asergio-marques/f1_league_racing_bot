@@ -18,6 +18,8 @@ from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
 
+_NOT_RECORDED = "#482: the Sign Up button answers its refusal but writes no line in the log channel"
+
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
@@ -103,6 +105,7 @@ async def _open(bot) -> _Interaction:
 
 
 class TestTheSignUpButton:
+    @pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
     async def test_it_is_refused_under_test_mode(self):
         bot = _bot(test_mode=True)
 
@@ -110,6 +113,10 @@ class TestTheSignUpButton:
 
         assert "test mode" in interaction.reply
         bot.wizard_service.start_wizard.assert_not_awaited()
+        lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+        assert len(lines) == 1, lines
+        assert lines[0].startswith("⛔ the “Sign Up” button refused for Tester (<@1>)"), lines[0]
+        assert "test mode" in lines[0]
 
     async def test_the_driver_state_is_not_even_read(self):
         """Rejection at the earliest moment: the refusal precedes every other check."""
