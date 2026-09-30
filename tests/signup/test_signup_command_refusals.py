@@ -143,6 +143,30 @@ async def test_a_list_refused_while_the_module_is_off_is_answered_and_not_record
     bot.output_router.post_log.assert_not_awaited()
 
 
+async def test_the_configuration_view_still_answers_while_the_module_is_off(tmp_path):
+    """Signups disabled, a manager runs `/signup config view`: it is left outside the module
+    gate, as it always was, so the manager sees the configuration rather than a refusal, and
+    a view writes no line."""
+    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+
+    db_path = await _seed(tmp_path, signups_open=False, close_at=None, stage="CONFIGURATION")
+    bot = _module_off_bot(tmp_path)
+    bot.db_path = db_path
+    bot.signup_module_service = SignupModuleService(db_path)
+    bot.config_service = ConfigService(db_path)
+    cog = SignupCog.__new__(SignupCog)
+    cog.bot = bot
+    interaction = _interaction(bot, "signup config view")
+
+    await undecorate(SignupCog.config_view)(cog, interaction)
+
+    [call] = interaction.response.send_message.await_args_list
+    assert call.kwargs["embed"].title == "Signup Module Configuration"
+    assert not any(NOT_ENABLED in reply for reply in _replies(interaction))
+    bot.output_router.post_log.assert_not_awaited()
+
+
 @pytest.mark.xfail(strict=True, reason=_GATE)
 async def test_the_cog_no_longer_gates_through_interaction_check():
     """A cog-wide `interaction_check` that returns False raises `CheckFailure`, which answers a
