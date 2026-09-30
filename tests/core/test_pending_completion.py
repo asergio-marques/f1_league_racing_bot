@@ -186,10 +186,6 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
         assert (await cursor.fetchone())[0] == 0
 
 
-_CLOSE_NOBODY_RAN = "#482: a season's wind-down closes signups without writing the close's line"
-
-
-@pytest.mark.xfail(strict=True, reason=_CLOSE_NOBODY_RAN)
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
     """The season is in Ongoing signups with its only division finished, and signups are open:
     winding it down closes the window through the close nobody ran, as every division being
@@ -217,10 +213,6 @@ async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path
     assert (await _states(path))[3] == "UNASSIGNED"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the placements line still claims signups closed when every division is done",
-)
 async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_kept_off(tmp_path):
     """Every division is done with three placements pending and signups already shut: the
     driver in review has their channel held, the two approved drivers turned down lose the

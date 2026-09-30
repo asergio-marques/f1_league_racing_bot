@@ -144,10 +144,6 @@ async def test_the_season_is_archived_with_history_for_its_former_driver(db_path
     assert rows == [("1001", 1), ("9000000000000000003", None)]
 
 
-_CLOSE_NOBODY_RAN = "#482: a season's end closes signups without writing the close's line"
-
-
-@pytest.mark.xfail(strict=True, reason=_CLOSE_NOBODY_RAN)
 async def test_an_open_signup_window_is_closed(db_path):
     """Signups are open when the season is completed: the window is closed through the close
     nobody ran, as the season ending, which writes the close's own line."""
@@ -178,7 +174,6 @@ async def test_test_mode_that_cannot_be_switched_off_does_not_stop_completion(db
         assert (await cursor.fetchone())[0] == "COMPLETED"
 
 
-@pytest.mark.xfail(strict=True, reason=_CLOSE_NOBODY_RAN)
 async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path):
     """Signups are open when the season is completed, and the close nobody ran fails outright:
     the season still completes its pass, and test mode is still switched off."""
@@ -202,7 +197,6 @@ async def test_a_window_that_cannot_be_closed_does_not_keep_test_mode_on(db_path
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_CLOSE_NOBODY_RAN)
 async def test_the_window_is_closed_before_the_driver_pass(db_path):
     """Closed first, so that nobody begins a signup the driver pass has already gone by. Signups
     are open when the season is completed: the close nobody ran comes before the driver pass."""

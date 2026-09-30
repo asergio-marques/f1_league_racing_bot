@@ -236,12 +236,10 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
         try:
             signup_cfg = await bot.signup_module_service.get_config()
             if signup_cfg is not None and signup_cfg.signups_open:
-                from leaguebot.core.cogs.module_cog import execute_forced_close
+                from leaguebot.core.cogs.module_cog import close_signups_unattended
 
                 bot.scheduler_service.cancel_signup_close_timer()
-                await execute_forced_close(
-                    bot, audit_action="SIGNUP_DIVISIONS_DONE_CLOSE"
-                )
+                await close_signups_unattended(bot, cause="divisions done")
         except Exception:  # noqa: BLE001 — the window's close must not hold the season
             log.exception("wind_down_ongoing: could not close the signup window")
         turned_down = await turn_down_pending_placements(bot, season_id, guild)
@@ -251,8 +249,8 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
         if turned_down:
             try:
                 await bot.output_router.post_log(
-                    "System | Every division is done | Signups closed\n"
-                    f"  pending placements turned down: {len(turned_down)}",
+                    "System | Every division is done | "
+                    f"Pending placements turned down: {len(turned_down)}",
                 )
             except Exception:  # noqa: BLE001
                 log.exception("wind_down_ongoing: could not post the log line")
