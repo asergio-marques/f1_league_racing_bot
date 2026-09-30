@@ -608,3 +608,142 @@ async def test_an_approved_signup_is_marked_as_such(review):
     await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
 
     review.signup_svc.mark_approved.assert_awaited_once_with(DRIVER_ID)
+
+
+# ---------------------------------------------------------------------------
+# The reason typed into the channel, through the panel's listener (#492, #457)
+# ---------------------------------------------------------------------------
+
+_MOVED_ON_REASON_ACTED_ON = (
+    "#492: a reason typed after the signup moved on is acted on, not refused through the press"
+)
+_REASON_FAULT_ESCAPES = (
+    "#457: a rejection's failed transition is swallowed, or escapes the listener, instead of "
+    "being reported through the press"
+)
+
+
+@pytest.fixture
+async def panel(review, monkeypatch):
+    """The review panel over the real review service: a manager (Manager, id 555) presses a
+    button on Lewis's panel, then types the reason into the channel, where the cog's listener
+    takes it. Every line, the panel's and the service's, lands in one log."""
+    import leaguebot.signup.cogs.admin_review_cog as arc
+
+    bot = review.svc._bot
+    bot.wizard_service = review.svc
+    bot.output_router = review.svc._output_router
+    monkeypatch.setattr(arc, "_may_review_signup", AsyncMock(return_value=True))
+    arc._PENDING_REASONS.clear()
+
+    async def press(button: str):
+        interaction = MagicMock()
+        interaction.client = bot
+        interaction.guild_id = SERVER_ID
+        interaction.channel_id = CHANNEL_ID
+        interaction.guild = review.guild
+        interaction.user = review.actor
+        interaction.response = MagicMock()
+        interaction.response.send_message = AsyncMock()
+        interaction.response.defer = AsyncMock()
+        interaction.response.is_done = lambda: bool(
+            interaction.response.send_message.await_count
+            + interaction.response.defer.await_count
+        )
+        interaction.followup = MagicMock()
+        interaction.followup.send = AsyncMock()
+        view = arc.AdminReviewView(DRIVER_ID, bot)
+        await getattr(type(view), button)(view, interaction, MagicMock())
+        return interaction
+
+    async def type_reason(text: str = "Lap time could not be verified."):
+        message = MagicMock()
+        message.content = text
+        message.author = MagicMock()
+        message.author.id = ACTOR_ID
+        message.author.bot = False
+        message.guild = MagicMock()
+        message.guild.id = SERVER_ID
+        message.channel = MagicMock()
+        message.channel.id = CHANNEL_ID
+        message.delete = AsyncMock(return_value=None)
+        await arc.AdminReviewCog(bot).on_message(message)
+
+    yield SimpleNamespace(press=press, type_reason=type_reason)
+
+    for entry in list(arc._PENDING_REASONS.values()):
+        lapse = entry.get("lapse")
+        if lapse is not None:
+            lapse.cancel()
+    arc._PENDING_REASONS.clear()
+    for task in review.svc._correction_tasks.values():
+        task.cancel()
+
+
+def _told(interaction) -> list[str]:
+    return [str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args]
+
+
+@pytest.mark.xfail(strict=True, reason=_MOVED_ON_REASON_ACTED_ON)
+@pytest.mark.parametrize(
+    "button,label",
+    [("reject_button", "Reject"), ("request_changes_button", "Request Changes")],
+    ids=["reject", "request-changes"],
+)
+@pytest.mark.parametrize(
+    "state", ["UNASSIGNED", "NOT_SIGNED_UP"], ids=["after-approve", "after-withdrawal"]
+)
+async def test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded(
+    review, panel, button, label, state
+):
+    """Manager presses Reject or Request Changes on Lewis's panel; before the reason arrives,
+    another manager approves Lewis, or Lewis withdraws. The reason is refused to the manager
+    who pressed, one refusal line names the button, and Lewis is left as he is."""
+    from leaguebot.core.models.driver_profile import DriverState
+
+    interaction = await panel.press(button)
+    review.driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState[state])
+    )
+
+    await panel.type_reason()
+
+    told = _told(interaction)
+    assert any(f"⛔ This signup has moved on since you pressed {label}." in text for text in told), told
+    if label == "Reject":
+        assert any("Nothing was rejected." in text for text in told), told
+    assert not any(text.startswith("✅") for text in told), told
+    review.driver_service.transition.assert_not_awaited()
+    review.svc._trigger_channel_hold.assert_not_awaited()
+    review.channel.send.assert_not_awaited()
+    assert review.svc._correction_tasks == {}
+    refusals = [line for line in _logged(review).split("\n") if line.startswith("⛔")]
+    assert len(refusals) == 1, _logged(review)
+    assert refusals[0].startswith(f"⛔ the “{label}” button of"), refusals[0]
+    assert f"refused for Manager (<@{ACTOR_ID}>)" in refusals[0]
+    assert "has moved on" in refusals[0]
+
+
+@pytest.mark.xfail(strict=True, reason=_REASON_FAULT_ESCAPES)
+async def test_a_rejection_whose_transition_fails_is_reported_to_the_manager(review, panel):
+    """Manager presses Reject and types the reason; moving Lewis to Not Signed Up fails on
+    something other than the expected refusal. The manager is told once that the Reject button
+    failed, one failure line names it, and no Rejected line is written or notice posted for a
+    rejection that did not happen."""
+    interaction = await panel.press("reject_button")
+    review.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    await panel.type_reason()
+
+    told = _told(interaction)
+    failures = [text for text in told if text.startswith("❌")]
+    assert len(failures) == 1, told
+    assert "“Reject” button" in failures[0]
+    assert not any(text.startswith("✅") for text in told), told
+    lines = _logged(review)
+    failed = [line for line in lines.split("\n") if line.startswith("❌")]
+    assert len(failed) == 1, lines
+    assert failed[0].startswith("❌ the “Reject” button of"), failed[0]
+    assert f"failed for Manager (<@{ACTOR_ID}>)" in failed[0]
+    assert "| Rejected" not in lines
+    review.svc._trigger_channel_hold.assert_not_awaited()
