@@ -85,16 +85,30 @@ def _cog(db_path):
 
 
 def _interaction():
+    """An interaction whose response knows whether it has been used, as Discord's does, so a
+    refusal sent through `refuse` goes by the route a test reads."""
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.id = 42
     interaction.user.display_name = "Manager"
-    interaction.response.send_message = AsyncMock()
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
     return interaction
 
 
 def _reply(interaction) -> str:
-    return interaction.response.send_message.await_args.args[0]
+    """The first reply the member was sent, by whichever route it went."""
+    calls = (
+        interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    )
+    return calls[0].args[0]
 
 
 async def _add(cog, interaction, close_time: str = LATER):
