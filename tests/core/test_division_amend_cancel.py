@@ -880,9 +880,6 @@ async def test_a_division_amended_to_a_name_with_everyone_is_refused(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: /division amend does not yet hold a new tier to the tier rule"
-)
 @pytest.mark.parametrize(
     "tier,reply",
     [
@@ -923,16 +920,12 @@ async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_
 # value moved; the reply says nothing changed; and the log holds one line, in the success form,
 # saying so. Only an exact match is nothing: "Pro" to "PRO" is a rename (above).
 
-_NO_OP = pytest.mark.xfail(
-    strict=True, reason="#482: /division rename and /division amend do not yet tell a no-op apart"
-)
 
 
 def _says_nothing_changed(text: str) -> bool:
     return "nothing" in text.lower() and "chang" in text.lower()
 
 
-@_NO_OP
 async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
     """Pro, in a season in placements, is renamed to Pro."""
     db_path = await _make_db(tmp_path)
@@ -950,7 +943,6 @@ async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
     assert _says_nothing_changed(line)
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "asked",
     [
@@ -988,10 +980,6 @@ async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_
 # and the log line name the division as it stands, never as the manager typed it.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /division rename and /division amend name the division as the manager typed it",
-)
 @pytest.mark.parametrize(
     "command,run,done",
     [
@@ -1042,18 +1030,12 @@ async def test_a_division_typed_in_another_case_is_named_as_it_is_named(
 # in Placements is refused in the words each command uses today, and the refusal is recorded.
 # In Placements each still works: every test above runs there.
 
-_PLACEMENTS_ONLY = pytest.mark.xfail(
-    strict=True,
-    reason="#482: /division delete, rename and amend still act on a season being set up "
-    "before it reaches placements",
-)
 
 
 async def _amend_the_tier(cog, interaction):
     return await _amend(cog, interaction, tier=2)
 
 
-@_PLACEMENTS_ONLY
 @pytest.mark.parametrize(
     "stage",
     [SeasonStage.CONFIGURATION, SeasonStage.WAITING, SeasonStage.SIGNUPS],
@@ -1382,10 +1364,6 @@ async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_n
 # the log line name it as it stands, never as the manager typed it.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /division delete names the division as the manager typed it",
-)
 async def test_a_division_deleted_as_typed_in_another_case_is_named_as_it_is_named(tmp_path):
     """A season in placements holds divisions Pro and Am. The manager (id 77) runs /division
     delete typing the division's name as 'pro'. Pro is deleted; the reply opens '✅ Division

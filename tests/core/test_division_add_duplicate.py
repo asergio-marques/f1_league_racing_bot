@@ -801,11 +801,6 @@ async def test_duplicate_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_p
 # there.
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /division duplicate still copies into a season being set up before it "
-    "reaches placements",
-)
 @pytest.mark.parametrize(
     "stage_name", ["CONFIGURATION", "WAITING", "SIGNUPS"], ids=str.lower
 )

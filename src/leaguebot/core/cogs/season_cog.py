@@ -43,7 +43,12 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import cancellation_notice_service
 from leaguebot.results.services import season_points_service
 import leaguebot.core.services.track_service as track_service
-from leaguebot.core.services.season_service import SeasonImmutableError, validate_division_name
+from leaguebot.core.services.season_service import (
+    SeasonImmutableError,
+    division_amendment_changes_nothing,
+    validate_division_name,
+    validate_division_tier,
+)
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.batch_notice import batch_notice
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -3623,6 +3628,20 @@ class SeasonCog(commands.Cog):
         default_permissions=None,
     )
 
+    async def _season_in_placements(self) -> int | None:
+        """The id of the season being set up, where it is in Placements; None otherwise.
+
+        Divisions are created, deleted, renamed and amended, and rounds deleted, in Placements
+        alone (the core specification's "Building a season" and "Divisions"). A season being set
+        up but still in Configuration, Waiting or Signups is refused by each command in its own
+        words, as a season with none is.
+        """
+        season_id = await _get_setup_season_id(self.bot)
+        if season_id is None:
+            return None
+        stage = await self.bot.season_service.get_stage(season_id)
+        return season_id if stage is SeasonStage.PLACEMENTS else None
+
     @division.command(
         name="add",
         description="Add a division to the pending season setup.",
@@ -3670,12 +3689,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if tier < 1:
-            await refuse(
-                interaction,
-                "\u26d4 Tier must be 1 or higher.",
-                what=describe(interaction),
-            )
+        # The tier rule is asked twice, so that a tier below 1 is refused before the name and a
+        # taken tier after it, in the order the refusals have always come.
+        tier_refusal = validate_division_tier(tier, [])
+        if tier_refusal is not None:
+            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
             return
 
         refusal = validate_division_name(name)
@@ -3695,12 +3713,9 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if any(d.tier == tier for d in cfg.divisions if d.name):
-            await refuse(
-                interaction,
-                f"\u26d4 A division with tier **{tier}** already exists in this setup.",
-                what=describe(interaction),
-            )
+        tier_refusal = validate_division_tier(tier, [d.tier for d in cfg.divisions if d.name])
+        if tier_refusal is not None:
+            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
             return
 
         div = PendingDivision(name=name, role_id=role.id, channel_id=None, tier=tier)
@@ -3747,7 +3762,7 @@ class SeasonCog(commands.Cog):
         day_offset: int = 0,
         hour_offset: float = 0.0,
     ) -> None:
-        season_id = await _get_setup_season_id(self.bot)
+        season_id = await self._season_in_placements()
         if season_id is None:
             await refuse(
                 interaction,
@@ -3756,12 +3771,11 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if tier < 1:
-            await refuse(
-                interaction,
-                "\u26d4 Tier must be 1 or higher.",
-                what=describe(interaction),
-            )
+        # The tier rule is asked twice, as `/division add` asks it; this command has always said
+        # "in this season" of a taken tier.
+        tier_refusal = validate_division_tier(tier, [], within="season")
+        if tier_refusal is not None:
+            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
             return
 
         divisions = await self.bot.season_service.get_divisions(season_id)
@@ -3791,12 +3805,9 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        if any(d.tier == tier for d in divisions):
-            await refuse(
-                interaction,
-                f"\u26d4 A division with tier **{tier}** already exists in this season.",
-                what=describe(interaction),
-            )
+        tier_refusal = validate_division_tier(tier, [d.tier for d in divisions], within="season")
+        if tier_refusal is not None:
+            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
             return
 
         from collections import Counter
@@ -3877,7 +3888,7 @@ class SeasonCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
     ) -> None:
-        season_id = await _get_setup_season_id(self.bot)
+        season_id = await self._season_in_placements()
         if season_id is None:
             await refuse(
                 interaction,
@@ -3904,13 +3915,13 @@ class SeasonCog(commands.Cog):
 
         remaining = await self.bot.season_service.get_divisions(season_id)
         await interaction.response.send_message(
-            f"\u2705 Division **{name}** deleted.\n\n"
+            f"\u2705 Division **{div.name}** deleted.\n\n"
             + format_division_list(remaining),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division delete | Success\n"
-            f"  division: {name}",
+            f"  division: {div.name}",
         )
 
     @division.command(
@@ -3928,7 +3939,7 @@ class SeasonCog(commands.Cog):
         current_name: str,
         new_name: str,
     ) -> None:
-        season_id = await _get_setup_season_id(self.bot)
+        season_id = await self._season_in_placements()
         if season_id is None:
             await refuse(
                 interaction,
@@ -3944,6 +3955,20 @@ class SeasonCog(commands.Cog):
                 interaction,
                 f"\u274c Division `{current_name}` not found.",
                 what=describe(interaction),
+            )
+            return
+
+        if division_amendment_changes_nothing(div, new_name=new_name):
+            await interaction.response.send_message(
+                f"\u2139\ufe0f Division **{div.name}** is already named **{div.name}**. "
+                "Nothing was changed.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rename | "
+                "Nothing changed\n"
+                f"  division: {div.name}\n"
+                "  reason: it already bears that name",
             )
             return
 
@@ -3964,6 +3989,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
+        old_name = div.name
         await self.bot.season_service.rename_division(div.id, new_name)
 
         cfg = self._get_pending()
@@ -3975,13 +4001,13 @@ class SeasonCog(commands.Cog):
 
         remaining = await self.bot.season_service.get_divisions(season_id)
         await interaction.response.send_message(
-            f"\u2705 Division **{current_name}** renamed to **{new_name}**.\n\n"
+            f"\u2705 Division **{old_name}** renamed to **{new_name}**.\n\n"
             + format_division_list(remaining),
             ephemeral=True,
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division rename | Success\n"
-            f"  old_name: {current_name}\n"
+            f"  old_name: {old_name}\n"
             f"  new_name: {new_name}",
         )
 
@@ -4014,7 +4040,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        season_id = await _get_setup_season_id(self.bot)
+        season_id = await self._season_in_placements()
         if season_id is None:
             await refuse(
                 interaction,
@@ -4050,6 +4076,30 @@ class SeasonCog(commands.Cog):
                 interaction,
                 f"\u274c A division named **{new_name}** already exists.",
                 what=describe(interaction),
+            )
+            return
+
+        if tier is not None:
+            tier_refusal = validate_division_tier(
+                tier, [d.tier for d in divisions if d.id != div.id]
+            )
+            if tier_refusal is not None:
+                await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
+                return
+
+        if division_amendment_changes_nothing(
+            div, new_name=new_name, tier=tier, role_id=role.id if role is not None else None
+        ):
+            await interaction.response.send_message(
+                f"\u2139\ufe0f Division **{div.name}** already holds those values. "
+                "Nothing was changed.",
+                ephemeral=True,
+            )
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division amend | "
+                "Nothing changed\n"
+                f"  division: {div.name}\n"
+                "  reason: the values given are the ones it holds",
             )
             return
 
@@ -4105,13 +4155,13 @@ class SeasonCog(commands.Cog):
 
         updated_divisions = await self.bot.season_service.get_divisions(season_id)
         await interaction.response.send_message(
-            f"\u2705 Division **{name}** amended.\n\n"
+            f"\u2705 Division **{div.name}** amended.\n\n"
             + format_division_list(updated_divisions),
             ephemeral=True,
         )
 
         log_parts = [f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division amend | Success",
-                     f"  division: {name}"]
+                     f"  division: {div.name}"]
         if new_name is not None:
             log_parts.append(f"  new_name: {new_name}")
         if tier is not None:
