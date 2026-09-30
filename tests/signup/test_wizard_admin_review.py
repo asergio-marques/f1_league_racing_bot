@@ -267,6 +267,38 @@ async def test_approval_is_logged_naming_the_manager_and_the_driver(review):
     assert "Manager" in logged
 
 
+_RAW_ID_NAMING = (
+    "#482: a driver who has left is named by their raw id beside the mention, not by mention "
+    "alone"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_RAW_ID_NAMING)
+@pytest.mark.parametrize(
+    ("outcome", "action"),
+    [
+        ("approve_signup", "Approved"),
+        ("reject_signup", "Rejected"),
+        ("request_changes", "Correction requested"),
+    ],
+)
+async def test_a_driver_who_has_left_is_named_by_mention_alone(review, outcome, action):
+    """A manager's Approve, Reject or Request Changes on a driver no longer on the server names
+    the driver by mention alone beneath the manager's line, never by the raw id beside it (core
+    specification, "The record of what changed")."""
+    review.signup_svc.get_wizard = AsyncMock(return_value=_wizard())
+    review.guild.get_member = MagicMock(return_value=None)
+    review.svc._bot.get_guild = MagicMock(return_value=review.guild)
+
+    await getattr(review.svc, outcome)(DRIVER_ID, review.guild, review.actor)
+    for task in review.svc._correction_tasks.values():
+        task.cancel()
+
+    lines = _logged(review).splitlines()
+    assert lines[0] == f"Manager (<@{ACTOR_ID}>) | Signup | {action}"
+    assert f"  driver: <@{DRIVER_ID}>" in lines
+
+
 # ---------------------------------------------------------------------------
 # Rejection
 # ---------------------------------------------------------------------------

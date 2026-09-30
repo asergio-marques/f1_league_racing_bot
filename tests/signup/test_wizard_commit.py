@@ -371,14 +371,22 @@ async def test_the_prior_state_is_read_before_anything_is_written(committer):
     assert committer.saved[0].id == 9
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a driver who has left is named by their raw id beside the mention, not by "
+    "mention alone",
+)
 async def test_a_driver_who_has_left_is_logged_by_id(committer):
     """`get_member` gives nothing for someone who has left, and the log must still name
-    somebody — the raw id is worse than a name but far better than "None"."""
+    somebody: by mention alone, as every line names a member no longer on the server (core
+    specification, "The record of what changed"), never by the raw id beside it."""
     committer.guild.get_member = MagicMock(return_value=None)
+    committer.svc._bot.get_guild = MagicMock(return_value=committer.guild)
 
     await _commit(committer)
 
-    assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[0]
+    line = committer.svc._output_router.post_log.await_args.args[0]
+    assert line.splitlines()[0] == f"<@{DRIVER_ID}> | Signup | Submitted"
 
 
 def test_every_send_of_the_review_panel_restricts_mentions():
