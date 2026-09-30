@@ -517,10 +517,6 @@ async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
     assert json.loads(row["new_value"])["track_ids"] == ["1"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: /signup open does not state the close time it armed in its line or audit row",
-)
 async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row(tmp_path):
     """A manager opens signups with a close time a week out: the Success line and the
     SIGNUP_OPEN audit row both carry the close time armed."""

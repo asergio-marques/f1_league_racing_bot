@@ -1715,7 +1715,11 @@ class SignupCog(commands.Cog):
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
                 "VALUES (?, ?, NULL, 'SIGNUP_OPEN', '', ?, ?)",
                 (interaction.user.id, str(interaction.user),
-                 json.dumps({"track_ids": track_list}), now),
+                 json.dumps(
+                     {"track_ids": track_list, "close_at": close_at_iso}
+                     if close_at_iso
+                     else {"track_ids": track_list}
+                 ), now),
             )
             await db.commit()
 
@@ -1730,7 +1734,8 @@ class SignupCog(commands.Cog):
         )
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup open | Success"
-            + (f"\n  track_ids: {', '.join(track_list)}" if track_list else ""),
+            + (f"\n  track_ids: {', '.join(track_list)}" if track_list else "")
+            + (f"\n  close_time: {close_at_iso}" if close_at_iso else ""),
         )
 
     # ── /signup close (T019) ──────────────────────────────────────────
