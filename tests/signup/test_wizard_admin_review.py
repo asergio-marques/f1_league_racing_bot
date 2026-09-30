@@ -220,6 +220,49 @@ async def test_a_role_the_bot_cannot_grant_does_not_stop_the_approval(review):
     assert "transition:UNASSIGNED" in review.order
 
 
+_ROLE_NOT_REPORTED = (
+    "#482: a driver role Approve could not grant is left to the host log, and neither the "
+    "manager nor the Approved line is told"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_ROLE_NOT_REPORTED)
+@pytest.mark.parametrize("why", ["role missing", "member left", "Discord refuses"])
+async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(review, why):
+    """The driver role cannot be given: the role has been deleted, the driver has left the
+    server, or Discord refuses it. The approval stands, as the core specification's role rules
+    have it, and `approve_signup` returns one sentence saying the role was not granted, which
+    the Approve button puts in its reply and which is written beneath the Approved line."""
+    if why == "role missing":
+        review.guild.get_role = MagicMock(return_value=None)
+    elif why == "member left":
+        review.guild.get_member = MagicMock(return_value=None)
+    else:
+        review.member.add_roles = AsyncMock(
+            side_effect=discord.HTTPException(MagicMock(), "forbidden")
+        )
+
+    note = await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+
+    assert "transition:UNASSIGNED" in review.order
+    assert isinstance(note, str) and "role" in note.lower(), note
+    lines = _logged(review).splitlines()
+    assert lines[0] == f"Manager (<@{ACTOR_ID}>) | Signup | Approved"
+    assert any(note in line for line in lines[1:]), lines
+
+
+async def test_a_driver_role_granted_adds_nothing_to_the_approval(review):
+    """Where the role is given, there is nothing to report: `approve_signup` returns nothing
+    and the Approved line names only the driver."""
+    note = await review.svc.approve_signup(DRIVER_ID, review.guild, review.actor)
+
+    assert note is None
+    assert _logged(review).splitlines() == [
+        f"Manager (<@{ACTOR_ID}>) | Signup | Approved",
+        f"  driver: Lewis (<@{DRIVER_ID}>)",
+    ]
+
+
 async def test_a_league_with_no_driver_role_configured_still_approves(review):
     review.svc._bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(driver_role_id=None)
