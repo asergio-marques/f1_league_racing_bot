@@ -1080,8 +1080,6 @@ async def test_a_close_confirmation_left_unanswered_is_recorded_and_its_buttons_
     assert asked.edit_original_response.await_args.kwargs.get("view", "kept") is None
 
 
-_STALE_CONFIRM = "#482: Confirm Close does not check the window it was asked about (#491)"
-
 # (what changed after `/signup close` asked, as SQL on the window; what the refusal says)
 _SINCE_ASKED = [
     pytest.param(
@@ -1102,7 +1100,6 @@ _SINCE_ASKED = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_STALE_CONFIRM)
 @pytest.mark.parametrize("change, refusal", _SINCE_ASKED)
 async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, change, refusal):
     """A driver is mid-signup and `/signup close` asks. Before the manager presses Confirm

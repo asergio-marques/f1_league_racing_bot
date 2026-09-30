@@ -442,8 +442,6 @@ async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
 # A close given the window it was asked about (#491)
 # ---------------------------------------------------------------------------
 
-_STALE_WINDOW = "#482: execute_forced_close is given no window and re-checks nothing (#491)"
-
 ARMED = "2099-06-15T20:00:00+00:00"
 
 
@@ -457,7 +455,6 @@ def _window(*, signups_open=True, button=BUTTON_MESSAGE, close_at=None):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_STALE_WINDOW)
 @pytest.mark.parametrize(
     "config, refusal",
     [
@@ -507,7 +504,6 @@ async def test_a_close_given_a_window_that_has_changed_refuses_and_touches_nothi
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_STALE_WINDOW)
 async def test_a_close_given_the_window_still_open_closes_it(tmp_path):
     """The window the manager was asked about is still open on the same button, with no close
     time armed: the close goes ahead, refuses nothing, and returns the driver it turned away."""

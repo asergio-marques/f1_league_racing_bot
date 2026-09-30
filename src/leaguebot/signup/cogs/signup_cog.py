@@ -31,7 +31,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE, execute_forced_close
+from leaguebot.core.cogs.module_cog import (
+    RETURNED_BY_CLOSE,
+    armed_close_refusal,
+    execute_forced_close,
+)
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
@@ -308,6 +312,10 @@ class ConfirmCloseView(LeagueView):
     are recorded as that command's, naming the manager who ran it, and so that a lapse can take
     the buttons down through the command's own reply. Asking records nothing by itself: only
     the outcome does, and a restart that drops the question drops it unrecorded.
+
+    It also keeps the Sign Up button message of the window it asked about. The buttons stand for
+    five minutes, and Confirm hands that message to the close, which refuses where the window is
+    no longer that one (#491); Confirm then answers and records the refusal, and closes nothing.
     """
 
     #: What a cancel and a lapse record as cancelled or lapsed: the command that asked.
@@ -316,10 +324,13 @@ class ConfirmCloseView(LeagueView):
     #: What a cancel and a lapse leave beneath their line: nothing was closed, and what to do.
     _STAYS_OPEN = "Signups remain open. Run /signup close again to close them."
 
-    def __init__(self, bot: LeagueBot, asked: discord.Interaction) -> None:
+    def __init__(
+        self, bot: LeagueBot, asked: discord.Interaction, window: int | None
+    ) -> None:
         super().__init__(timeout=300)
         self._bot = bot
         self._asked = asked
+        self._window = window
         self.confirmed = False
 
     @discord.ui.button(label="Confirm Close", style=discord.ButtonStyle.danger)
@@ -332,8 +343,16 @@ class ConfirmCloseView(LeagueView):
         # The count is the close's own, not the confirmation's: a driver may have finished
         # signing up, or started, in the five minutes the buttons stand (issue #128).
         outcome = await execute_forced_close(
-            self._bot, audit_action="SIGNUP_FORCE_CLOSE"
+            self._bot, audit_action="SIGNUP_FORCE_CLOSE", window=self._window
         )
+        if outcome.refused is not None:
+            await refuse(
+                interaction,
+                f"⛔ {outcome.refused}",
+                what=f"the “Confirm Close” button of {self._WHAT}",
+                reason=outcome.refused,
+            )
+            return
         returned = outcome.returned
         await interaction.followup.send(
             f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
@@ -1805,13 +1824,9 @@ class SignupCog(commands.Cog):
         # `/signup close-time cancel`, which exists; it used to name `/signup cancel-timer`,
         # which never did, leaving `/module disable signup` as the only escape (issue #125).
         if cfg.close_at is not None:
-            armed = datetime.fromisoformat(cfg.close_at)
             await refuse(
                 interaction,
-                f"❌ Signups will auto-close at {discord_ts(armed)} "
-                f"({discord_ts(armed, 'R')}). Clear the timer with "
-                "`/signup close-time cancel` if you need to close manually, or move it "
-                "with `/signup close-time modify`.",
+                f"❌ {armed_close_refusal(cfg.close_at)}",
                 what=describe(interaction),
             )
             return
@@ -1862,7 +1877,7 @@ class SignupCog(commands.Cog):
                 line += f" — <#{row['signup_channel_id']}>"
             group.append(line)
 
-        view = ConfirmCloseView(self.bot, interaction)
+        view = ConfirmCloseView(self.bot, interaction, cfg.signup_button_message_id)
         await interaction.response.send_message(
             _close_confirmation(returned, kept),
             view=view,

@@ -4,6 +4,7 @@ Manages the league's modules.
 """
 from __future__ import annotations
 
+import enum
 import json
 import logging
 from dataclasses import dataclass
@@ -74,10 +75,50 @@ class ForcedCloseOutcome:
     returned: int
     #: One sentence per failed step, in the order the steps run. Empty where nothing failed.
     failed: tuple[str, ...] = ()
+    #: Why the close was refused, when it was given a window and that window is not the one
+    #: still open. Nothing was touched then. ``None`` where the close ran.
+    refused: str | None = None
 
 
-async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> ForcedCloseOutcome:
+class _Unasked(enum.Enum):
+    """The window a close was not asked about: the default of ``execute_forced_close``'s ``window``."""
+
+    UNASKED = enum.auto()
+
+
+def armed_close_refusal(close_at: str) -> str:
+    """Why signups may not be closed by hand while a close time is armed, without its mark.
+
+    It states the armed time and names the command that clears it, as the signup
+    specification requires of ``/signup close``. ``/signup close`` and the Confirm Close it
+    asks with both refuse with it, so the two cannot word it differently.
+    """
+    armed = datetime.fromisoformat(close_at)
+    if armed.tzinfo is None:
+        armed = armed.replace(tzinfo=timezone.utc)
+    return (
+        f"Signups will auto-close at {discord.utils.format_dt(armed, 'F')} "
+        f"({discord.utils.format_dt(armed, 'R')}). "
+        "Clear the timer with `/signup close-time cancel` if you need to close manually, or "
+        "move it with `/signup close-time modify`."
+    )
+
+
+async def execute_forced_close(
+    bot: LeagueBot,
+    *,
+    audit_action: str,
+    window: int | None | _Unasked = _Unasked.UNASKED,
+) -> ForcedCloseOutcome:
     """Force-close the signup window, and return what it did.
+
+    *window* is the Sign Up button message of the window a manager was asked about: the
+    confirmation ``/signup close`` shows stands for five minutes, and the window may have changed
+    in them (#491). Given one, the close re-reads the configuration first and refuses, touching
+    nothing, where signups are no longer open, where they were reopened on another button, or
+    where a close time has been armed since (the timer would close the window a second time).
+    The reason comes back in the outcome's ``refused``, for the caller to answer and record. A
+    caller that was asked nothing passes no window and is not checked.
 
     1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
     2. Delete signup button message (graceful NotFound).
@@ -94,6 +135,19 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> ForcedCl
     confirmation ``/signup close`` shows may be up to five minutes older than that.
     """
     cfg = await bot.signup_module_service.get_config()
+    if window is not _Unasked.UNASKED:
+        if cfg is None or not cfg.signups_open:
+            return ForcedCloseOutcome(
+                returned=0, refused="Signups are no longer open. Nothing was closed."
+            )
+        if cfg.signup_button_message_id != window:
+            return ForcedCloseOutcome(
+                returned=0,
+                refused="Signups were reopened since this was asked. Nothing was closed. "
+                "Run `/signup close` again.",
+            )
+        if cfg.close_at is not None:
+            return ForcedCloseOutcome(returned=0, refused=armed_close_refusal(cfg.close_at))
     if cfg is None:
         return ForcedCloseOutcome(returned=0)
 
