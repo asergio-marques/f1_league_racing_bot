@@ -278,6 +278,50 @@ def test_losing_a_case_s_marker_and_changing_the_case_is_a_modification(repo):
     assert _tests(result) == [(f"{FILE}::test_a", "modified")] and result["markersRemoved"] == []
 
 
+CONSTANT = dedent("""
+    import pytest
+
+    _NOT_YET = "#42: not yet built"
+
+
+    @pytest.mark.xfail(strict=True, reason=_NOT_YET)
+    def test_a():
+        assert 1 == 1
+
+
+    @pytest.mark.parametrize("n", [1, pytest.param(2, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET))])
+    def test_b(n):
+        assert n
+""")
+
+
+def test_losing_a_marker_whose_reason_is_a_constant_is_a_marker_removed(repo):
+    """A tests stage names a reason once and marks many tests with it (#483): the marker is read
+    through the constant, on a test and on a case alike, and the constant, deleted with the last
+    marker that used it, is part of the markers rather than support the build changed."""
+    after = (
+        CONSTANT.replace('@pytest.mark.xfail(strict=True, reason=_NOT_YET)\n', "")
+        .replace(", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)", "")
+        .replace('_NOT_YET = "#42: not yet built"\n', "")
+    )
+    result = _changes(repo, {FILE: CONSTANT}, {FILE: after}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::test_a", f"{FILE}::test_b"]
+    assert result["tests"] == [] and result["support"] == []
+
+
+def test_a_constant_naming_another_issue_is_not_a_marker(repo):
+    before = CONSTANT.replace("#42:", "#7:")
+    after = before.replace('@pytest.mark.xfail(strict=True, reason=_NOT_YET)\n', "")
+    result = _changes(repo, {FILE: before}, {FILE: after}, issue="42")
+    assert _tests(result) == [(f"{FILE}::test_a", "modified")] and result["markersRemoved"] == []
+
+
+def test_a_constant_kept_while_a_marker_still_uses_it_is_not_reported(repo):
+    after = CONSTANT.replace('@pytest.mark.xfail(strict=True, reason=_NOT_YET)\n', "")
+    result = _changes(repo, {FILE: CONSTANT}, {FILE: after}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::test_a"] and result["support"] == []
+
+
 def test_losing_the_marker_and_changing_the_test_is_a_modification(repo):
     after = "import pytest\n" + ONE_TEST.replace("1 == 1", "1 == 2")
     result = _changes(repo, {FILE: MARKED}, {FILE: after}, issue="42")
