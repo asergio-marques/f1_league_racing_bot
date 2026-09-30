@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1142,3 +1143,62 @@ async def test_confirming_a_close_whose_window_has_changed_is_refused(tmp_path, 
             "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'SIGNUP_FORCE_CLOSE'"
         )
         assert (await cursor.fetchone())[0] == 0
+
+
+_FAILED_STEPS = "#482: /signup close and Confirm Close report none of the forced close's failed steps"
+
+#: One failed step, as the forced close words it for the reply and the line.
+_NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
+
+
+@pytest.mark.xfail(strict=True, reason=_FAILED_STEPS)
+async def test_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(tmp_path):
+    """Signups are open and nobody is mid-signup, so `/signup close` closes at once; the close
+    shuts the window but cannot post its closed notice. The manager is told of the failed step
+    in the reply, and the success line carries it beneath."""
+    db_path = await _seed(tmp_path, signups_open=True)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    outcome = SimpleNamespace(returned=0, failed=(_NOTICE_NOT_POSTED,), refused=None)
+
+    with patch(
+        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
+        new=AsyncMock(return_value=outcome),
+    ):
+        await _close(cog, interaction)
+
+    replied = _replied(interaction)
+    assert "Signups closed" in replied
+    assert _NOTICE_NOT_POSTED in replied
+    [line] = _lines(cog)
+    first, *beneath = line.splitlines()
+    assert "/signup close" in first
+    assert any(_NOTICE_NOT_POSTED in text for text in beneath)
+
+
+@pytest.mark.xfail(strict=True, reason=_FAILED_STEPS)
+async def test_confirming_a_close_with_failed_steps_names_them_in_the_reply_and_the_line(
+    tmp_path,
+):
+    """A driver is mid-signup, `/signup close` asks, and the manager presses Confirm Close; the
+    close returns the driver but cannot post its closed notice. The reply says one driver was
+    returned and names the failed step, and the line carries the count and, beneath it, the
+    failed step."""
+    _db_path, cog, _asked, view = await _confirmation(tmp_path)
+    outcome = SimpleNamespace(returned=1, failed=(_NOTICE_NOT_POSTED,), refused=None)
+    press = _pressed(cog)
+
+    with patch(
+        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
+        new=AsyncMock(return_value=outcome),
+    ):
+        await view.confirm.callback(press)
+
+    replied = _replied(press)
+    assert "1 driver(s) still signing up were returned to Not Signed Up" in replied
+    assert _NOTICE_NOT_POSTED in replied
+    [line] = _lines(cog)
+    first, *beneath = line.splitlines()
+    assert "/signup close" in first
+    assert "drivers_returned_to_not_signed_up: 1" in line
+    assert any(_NOTICE_NOT_POSTED in text for text in beneath)
