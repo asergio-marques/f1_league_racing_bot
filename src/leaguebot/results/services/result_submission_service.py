@@ -574,7 +574,13 @@ async def finalize_penalty_review(
 
 async def _apply_approved_reports(interaction: discord.Interaction, state) -> None:
     """What approving a first pass's reports does, once :func:`finalize_penalty_review` has
-    checked the review is current and claimed it."""
+    checked the review is current and claimed it.
+
+    **The approval's line is written last**, once the appeals review has been posted: a review
+    that could not be posted marks it Incomplete, and the manager is told under an
+    ``APPEALS_PROMPT | Incomplete`` entry (#482). The prompt stays last of all, so that nobody
+    can approve the appeals while this pipeline is still running.
+    """
     import json as _json
     from leaguebot.results.services import results_post_service as _rps
     from leaguebot.results.services import penalty_service as _ps
@@ -714,6 +720,9 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
                 "actor_id": actor_id,
             }
         )
+        # Written once the appeals review has been opened, below the pipeline: whether it could
+        # be opened decides whether this line is a success (#482).
+        approval_body: str | None = None
         try:
             async with get_connection(db_path) as db:
                 cursor = await db.execute(
@@ -723,18 +732,13 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
                 srv_row = await cursor.fetchone()
             if srv_row:
                 n_penalties = len(state.staged)
-                outcome = "Incomplete" if repost_faults else "Success"
-                summary = (
-                    f"{interaction_member(interaction)} | PENALTY_REVIEW_APPROVED | {outcome}\n"
+                approval_body = (
                     f"  round: {state.round_number} ({state.division_name})\n"
                     + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
                     + f"  old={old_val}\n  new={new_val}"
                 )
-                await bot.output_router.post_log(
-                    summary,
-                )
         except Exception:
-            log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
+            log.exception("finalize_penalty_review: error reading the season for round %s", round_id)
 
         if repost_faults:
             await _report_unpostable_results(
@@ -907,7 +911,30 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
 
         # === END Attendance pipeline ===
 
-    await _post_appeals_prompt(state, guild, bot, db_path)
+    opened = await _post_appeals_prompt(state, guild, bot, db_path)
+
+    if approval_body is not None:
+        outcome = "Incomplete" if (repost_faults or not opened) else "Success"
+        try:
+            await bot.output_router.post_log(
+                f"{interaction_member(interaction)} | PENALTY_REVIEW_APPROVED | {outcome}\n"
+                + approval_body
+            )
+        except Exception:
+            log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
+
+    if not opened:
+        # The round waits at AWAITING_APPEAL_VERDICTS and restart recovery posts the prompt
+        # again, so nothing is undone: the manager is told, and the log carries the fault.
+        await _report_faults(
+            interaction, bot,
+            heading="APPEALS_PROMPT | Incomplete",
+            intro="⚠️ The reports are approved, but the appeals review could not be posted:",
+            faults=[
+                "the submission channel could not be reached, so the appeals stage was not opened"
+            ],
+            hint="The appeals review is posted again when the bot restarts.",
+        )
 
 
 async def _round_is_final(db_path: str, round_id: int) -> bool:

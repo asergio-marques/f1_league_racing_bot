@@ -701,10 +701,6 @@ async def test_without_a_guild_the_round_still_moves_on(tmp_path):
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: an appeals review that cannot be posted is logged as a success and nobody is told (D6)",
-)
 async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
     """The reports are approved, but the submission channel cannot be reached to open the
     appeals stage. The manager is told, and the approval's line says it is incomplete, with
