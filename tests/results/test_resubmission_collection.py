@@ -695,16 +695,28 @@ async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(t
     view.message.edit.assert_awaited_once_with(view=None)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the cancel is a hand-built RESULTS_RESUBMISSION line naming the manager by mention alone",
+)
 async def test_cancelling_the_resubmission_is_logged(tmp_path):
+    """A cancel is recorded as every cancel is: one line naming who cancelled, by display name
+    and mention, with what became of the change and what to do next beneath it."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_log")
     await _seed_old_results(db_path)
     view = _cancel_view()
     bot = _cancelled_on_second_wait(db_path, view)
+    bot.get_guild.return_value.get_member.return_value.display_name = "Alex"
 
     await _run(bot, cancel_view=view)
 
-    logged = "\n".join(str(c.args[0]) for c in bot.output_router.post_log.await_args_list)
-    assert f"<@{MANAGER}> | RESULTS_RESUBMISSION | Cancelled" in logged
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    [cancel] = [line for line in lines if "cancelled by" in line]
+    assert cancel.startswith("↩️ ")
+    assert f"cancelled by Alex (<@{MANAGER}>)" in cancel.split("\n", 1)[0]
+    assert "The earlier results stand." in cancel
+    assert "Press 🔄 Resubmit Initial Results to start again." in cancel
+    assert not any("RESULTS_RESUBMISSION | Cancelled" in line for line in lines)
 
 
 async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(tmp_path):
