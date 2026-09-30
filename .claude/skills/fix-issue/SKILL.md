@@ -334,8 +334,8 @@ workflow script into `.claude/gates/`, write the saved JSON in place of `ARGS.pr
 working directory. The Workflow tool takes a script of 512 KiB at most, so bake in only the fields
 the workflow reads from `previous`: `stage`, `status`, `lastRound`, `roundBudget`, `decisionsDigest`,
 `ledger`, `citations`, `provisional`, `commits`, `separateDefects`, `lastFailures`, `lastRed`,
-`stallStreak`, `reviewedAt`, `designFiles`, `testsHead`, `testChanges`, `adjusted`, and for the tests
-stage `tests`, `support`, `shown` and `listSeen`. Leave out the rest, `report` and `lastTest` above
+`stallStreak`, `reviewedAt`, `designFiles`, `testsHead`, `testChanges`, `adjusted`, `tests` and
+`support`, and for the tests stage `shown` and `listSeen` as well. Leave out the rest, `report` and `lastTest` above
 all. Keep `listSeen` and `shown`: without them the next run sends its reviewers the whole list again
 and the next Gate 2 loses its marks.
 
