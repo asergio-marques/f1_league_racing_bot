@@ -2939,3 +2939,121 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     assert "/results rounds amend" in what or "stage" in what.lower(), (
         "the line does not name what was refused"
     )
+
+
+# ---------------------------------------------------------------------------
+# Who approved (#482): each line an approval writes names the member who pressed, by
+# display name and mention, and an approval writes one line of its own, not two.
+# ---------------------------------------------------------------------------
+
+_ALEX = f"Alex (<@{STEWARD}>)"
+_NOT_YET_NAMED = "#482: the approval's lines name the member by mention alone, or not at all"
+
+
+def _line_under(state, heading: str) -> str:
+    """The one line the log channel was given under *heading*."""
+    lines = [
+        str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list
+        if heading in str(c.args[0])
+    ]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
+@pytest.mark.parametrize(
+    "fn, status, token",
+    [
+        pytest.param(
+            finalize_penalty_review, "AWAITING_REPORT_VERDICTS", "PENALTY_REVIEW_APPROVED",
+            id="reports",
+        ),
+        pytest.param(
+            finalize_appeals_review, "AWAITING_APPEAL_VERDICTS", "APPEALS_REVIEW_APPROVED",
+            id="appeals",
+        ),
+    ],
+)
+async def test_the_approval_names_the_member_who_approved(tmp_path, fn, status, token):
+    """Alex approves the reports (or the appeals) of round 3 (Pro) with one penalty staged:
+    the approval's line reads "Alex (<@77>) | <TOKEN> | Success"."""
+    db_path = await _make_db(tmp_path, name=f"named_{token}", round_status=status)
+    state = _state(db_path, staged=[_penalty()], appeals=[_penalty()])
+
+    await _run(fn, state)
+
+    assert _line_under(state, token).startswith(f"{_ALEX} | {token} | Success")
+
+
+async def _press_with(tmp_path, heading: str):
+    """Alex approves round 3 (Pro)'s reports with one penalty staged, attendance on where the
+    heading is an attendance one, and the part of the approval under *heading* failing."""
+    db_path = await _make_db(tmp_path, name=f"incomplete_{heading[:8]}", attendance_row=True)
+    attendance = heading.startswith("ATTENDANCE")
+    state = _state(db_path, staged=[_penalty()], attendance_enabled=attendance)
+    interaction = _interaction(guild=heading != "ATTENDANCE_SANCTIONS | Incomplete")
+    faults = {
+        "RESULTS_REPOST | Incomplete": {"repost_faults": [FAULT]},
+        "VERDICTS | Incomplete": {"apply_result": [{"id": 1}], "verdict_faults": [FAULT]},
+        "ATTENDANCE_RECORD | Incomplete": {
+            "attendance_errors": {"record": RuntimeError("disk is full")}
+        },
+        "ATTENDANCE_SANCTIONS | Incomplete": {},
+    }[heading]
+    await _run(finalize_penalty_review, state, interaction, **faults)
+    return state
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
+@pytest.mark.parametrize(
+    "heading",
+    [
+        "RESULTS_REPOST | Incomplete",
+        "VERDICTS | Incomplete",
+        "ATTENDANCE_RECORD | Incomplete",
+        "ATTENDANCE_SANCTIONS | Incomplete",
+    ],
+)
+async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_path, heading):
+    """Alex's approval could not repost the results, announce a verdict, record the
+    attendance, or reach the server to run the sanctions: the entry under each heading
+    names Alex, who pressed, as "Alex (<@77>) | <HEADING>"."""
+    state = await _press_with(tmp_path, heading)
+
+    assert _line_under(state, heading).startswith(f"{_ALEX} | {heading}")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: applying the penalties writes a PENALTIES_APPLIED line beside the approval's",
+)
+async def test_an_approval_with_penalties_writes_one_line(tmp_path):
+    """Alex approves round 3 (Pro)'s reports with driver 101 disqualified from the Feature
+    Race, the penalty applied for real: the log channel gets the approval's one line, which
+    counts the penalty, and no PENALTIES_APPLIED line beside it."""
+    db_path = await _make_db(
+        tmp_path, name="one_line", results=[(31, 101, "CLASSIFIED"), (32, 102, "CLASSIFIED")]
+    )
+    dsq = StagedPenalty(
+        driver_user_id=101,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_type="DSQ",
+        penalty_seconds=None,
+        description="Unsafe release",
+        justification="Pit lane, lap 20",
+    )
+    state = _state(db_path, staged=[dsq])
+    patches = _patches()
+    patches.pop("apply")
+    started = [p.start() for p in patches.values()]
+    try:
+        await finalize_penalty_review(_interaction(), state)
+    finally:
+        for p in patches.values():
+            p.stop()
+    assert started
+
+    logged = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1, logged
+    assert "PENALTY_REVIEW_APPROVED | Success" in logged[0]
+    assert "penalties: 1" in logged[0]
