@@ -526,8 +526,6 @@ async def test_a_close_given_the_window_still_open_closes_it(tmp_path):
 # A close nobody ran: the timer, the restart sweep, a season's end, every division done
 # ---------------------------------------------------------------------------
 
-_UNATTENDED = "#482: a close nobody ran writes no line and reports no failed step"
-
 #: The set time a timer closed at, already past.
 SET_TIME = "2026-09-30T18:00:00+00:00"
 
@@ -573,7 +571,6 @@ _CAUSES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_UNATTENDED)
 @pytest.mark.parametrize("cause, heads, audit_action", _CAUSES)
 async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
     tmp_path, cause, heads, audit_action
@@ -611,7 +608,6 @@ async def test_a_close_nobody_ran_writes_one_line_naming_no_member(
     assert any("notice" in text for text in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason=_UNATTENDED)
 @pytest.mark.parametrize("cause", ["timer", "restart", "season end", "divisions done"])
 @pytest.mark.parametrize(
     "signups_open, enabled",
@@ -631,9 +627,6 @@ async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
     await close_signups_unattended(bot, cause=cause)
 
     bot.output_router.post_log.assert_not_awaited()
-
-
-_WIRING = "#482: the close timer and the restart sweep still call execute_forced_close"
 
 
 def _functions_in_main():
@@ -690,7 +683,6 @@ def _restart_sweep():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_WIRING)
 @pytest.mark.parametrize(
     "find, cause",
     [

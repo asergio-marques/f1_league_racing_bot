@@ -294,6 +294,65 @@ async def execute_forced_close(
     return ForcedCloseOutcome(returned=returned, failed=tuple(failed))
 
 
+#: Why a close nobody ran happened, and the audit action it is recorded under.
+_UNATTENDED_CAUSES: dict[str, str] = {
+    "timer": "SIGNUP_AUTO_CLOSE",
+    "restart": "SIGNUP_AUTO_CLOSE",
+    "season end": "SIGNUP_SEASON_END_CLOSE",
+    "divisions done": "SIGNUP_DIVISIONS_DONE_CLOSE",
+}
+
+_UNATTENDED_HEADS: dict[str, str] = {
+    "season end": "🔒 Signups closed as the season ended",
+    "divisions done": "🔒 Signups closed as every division is done",
+}
+
+
+async def close_signups_unattended(bot: LeagueBot, *, cause: str) -> ForcedCloseOutcome | None:
+    """Close the signup window where no member ran the close, and record it in one line.
+
+    *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
+    after it), ``"season end"`` and ``"divisions done"``; it picks the audit action the close
+    is written under and the line's head. The line names no member, since none closed the
+    window, and carries the drivers returned with each failed step beneath, as the closes a
+    member runs do. Formed here, beside ``execute_forced_close``, so that no caller forms it:
+    the timer and the restart sweep in ``__main__`` and the two season closes keep only the
+    call.
+
+    Written only where a window was actually closed: a module that is disabled produces nothing
+    (the core specification, Modules), and a window not open needs no close, so both return
+    ``None`` having touched nothing. A line that cannot be written is logged, never raised: the
+    window is closed either way.
+    """
+    audit_action = _UNATTENDED_CAUSES[cause]
+    if not await bot.module_service.is_signup_enabled():
+        return None
+    cfg = await bot.signup_module_service.get_config()
+    if cfg is None or not cfg.signups_open:
+        return None
+    close_at = cfg.close_at  # the close clears it, so it is read first
+
+    outcome = await execute_forced_close(bot, audit_action=audit_action)
+
+    head = _UNATTENDED_HEADS.get(cause, "🔒 Signups closed automatically at their set time")
+    if cause in ("timer", "restart") and close_at is not None:
+        armed = datetime.fromisoformat(close_at)
+        if armed.tzinfo is None:
+            armed = armed.replace(tzinfo=timezone.utc)
+        head += f" ({discord.utils.format_dt(armed, 'F')})"
+    if cause == "restart":
+        head += ", at start-up"
+    try:
+        await bot.output_router.post_log(
+            head
+            + f"\n  drivers_returned_to_not_signed_up: {outcome.returned}"
+            + failed_steps_lines(outcome)
+        )
+    except Exception:  # noqa: BLE001 — the window is closed either way
+        log.warning("could not record in the log channel that signups closed (%s)", cause, exc_info=True)
+    return outcome
+
+
 # ---------------------------------------------------------------------------
 # Confirmation for the results → attendance cascade
 # ---------------------------------------------------------------------------
