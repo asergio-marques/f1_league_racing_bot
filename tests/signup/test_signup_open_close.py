@@ -977,20 +977,111 @@ async def test_the_confirmation_warns_what_closing_will_do(tmp_path):
     assert "Not Signed Up" in _replied(interaction)
 
 
+BUTTON_MESSAGE_ID = 880088
+
+_CONFIRM_OUTCOME = "#482: the close confirmation records neither its cancel nor its lapse"
+
+
+async def _confirmation(tmp_path, *, in_progress=("PENDING_SIGNUP_COMPLETION",)):
+    """Signups open on the Sign Up button message `BUTTON_MESSAGE_ID`, with *in_progress*
+    drivers mid-signup: `/signup close` asks, and the view it asks with is returned with the
+    database, the cog and the asking interaction. The close behind the view is the real one."""
+    db_path = await _seed(tmp_path, signups_open=True, in_progress=in_progress)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE signup_module_config SET signup_button_message_id = ?", (BUTTON_MESSAGE_ID,)
+        )
+        await db.commit()
+    cog = _cog(db_path)
+    cog.bot.driver_service.transition = AsyncMock()
+    cog.bot.wizard_service.trigger_channel_hold = AsyncMock()
+    asked = _interaction(members={})
+    asked.client = cog.bot
+    asked.edit_original_response = AsyncMock()
+    cog.bot.get_guild = MagicMock(return_value=asked.guild)
+
+    await _close(cog, asked)
+
+    view = asked.response.send_message.await_args.kwargs["view"]
+    assert isinstance(view, ConfirmCloseView)
+    return db_path, cog, asked, view
+
+
+def _pressed(cog):
+    """A press on the confirmation's buttons: its own interaction, whose response knows whether
+    it has been used, and whose client is the bot, so a refusal's line lands where it is read."""
+    interaction = _interaction()
+    interaction.client = cog.bot
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    return interaction
+
+
 async def test_confirming_reports_how_many_drivers_the_close_returned(tmp_path):
     """The reply and the log say what the close did, not what the confirmation feared. The log
     used to record `in_progress_drivers_discarded: true` whoever was waiting (issue #128).
-    The number is the close's own, since a driver may have moved on while the buttons stood."""
-    db_path = await _seed(tmp_path, signups_open=True)
-    cog = _cog(db_path)
-    interaction = _interaction()
-    view = ConfirmCloseView(cog.bot)
+    The number is the close's own, since a driver may have moved on while the buttons stood.
 
-    with patch("leaguebot.signup.cogs.signup_cog.execute_forced_close", new=AsyncMock(return_value=2)) as forced:
-        await view.confirm.callback(interaction)
+    Two drivers are still filling in the wizard; the manager confirms the close `/signup close`
+    asked about, and the real close returns both."""
+    db_path, cog, _asked, view = await _confirmation(
+        tmp_path, in_progress=("PENDING_SIGNUP_COMPLETION", "PENDING_SIGNUP_COMPLETION")
+    )
+    press = _pressed(cog)
 
-    forced.assert_awaited_once()
-    assert "2 driver(s) still signing up were returned to Not Signed Up" in _replied(interaction)
-    log = cog.bot.output_router.post_log.await_args.args[0]
+    await view.confirm.callback(press)
+
+    assert not await _is_open(db_path)
+    assert "2 driver(s) still signing up were returned to Not Signed Up" in _replied(press)
+    log = _lines(cog)[-1]
     assert "drivers_returned_to_not_signed_up: 2" in log
     assert "discarded" not in log
+
+
+@pytest.mark.xfail(strict=True, reason=_CONFIRM_OUTCOME)
+async def test_cancelling_the_close_is_recorded_and_signups_stay_open(tmp_path):
+    """A driver is mid-signup, `/signup close` asks, and the manager presses Cancel: signups stay
+    open, they are told so, and one line records the cancel by them, saying signups remain open
+    and to run `/signup close` again to close them."""
+    db_path, cog, _asked, view = await _confirmation(tmp_path)
+    press = _pressed(cog)
+
+    await view.cancel.callback(press)
+
+    assert await _is_open(db_path)
+    assert "Signups remain open" in _replied(press)
+    [line] = _lines(cog)
+    first, *beneath = line.splitlines()
+    assert first.startswith("↩️ ")
+    assert "/signup close" in first
+    assert first.endswith("cancelled by Manager (<@42>)")
+    assert any("Signups remain open." in text for text in beneath)
+    assert any("/signup close" in text and "again" in text for text in beneath)
+
+
+@pytest.mark.xfail(strict=True, reason=_CONFIRM_OUTCOME)
+async def test_a_close_confirmation_left_unanswered_is_recorded_and_its_buttons_taken_down(
+    tmp_path,
+):
+    """A driver is mid-signup, `/signup close` asks, and nobody presses anything for five
+    minutes: signups stay open, one line records the lapse as started by the manager, saying
+    signups remain open, and the buttons are taken down through the command's own reply."""
+    db_path, cog, asked, view = await _confirmation(tmp_path)
+
+    await view.on_timeout()
+
+    assert await _is_open(db_path)
+    [line] = _lines(cog)
+    first, *beneath = line.splitlines()
+    assert first.startswith("⌛ ")
+    assert "/signup close" in first
+    assert first.endswith("lapsed unconfirmed (started by Manager (<@42>))")
+    assert any("Signups remain open." in text for text in beneath)
+    asked.edit_original_response.assert_awaited_once()
+    assert asked.edit_original_response.await_args.kwargs.get("view", "kept") is None
