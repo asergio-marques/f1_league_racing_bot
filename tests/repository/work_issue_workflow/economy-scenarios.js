@@ -227,7 +227,7 @@ module.exports.designVerifierRunsWhenFileFirstAppears = {
 module.exports.markerCountCatchesReasonConstants = {
   args: B,
   respond(label, prompt) {
-    const grep = `grep -n -F '"#999:' -- tests/`
+    const grep = `grep -n -E '(^|[^"])"#999:' -- tests/`
     if (label.endsWith(':tester') && !prompt.includes(grep)) throw new Error('the tester counts markers by their literal reason alone')
     if (label.endsWith(':builder') && !(prompt.includes(grep) && prompt.includes('a reason constant with the last marker that uses it'))) throw new Error('the builder is not told how markers are found')
     if (label.endsWith(':builder')) return builder({ tests: [] })

@@ -700,8 +700,9 @@ const MAX_PIECES = 8
 // match entry for entry (tools/changed_tests.py).
 // Every string naming the issue as a reason under tests/: a marker's own, or the constant a marker
 // names it through, which a search for reason="#N: alone missed, leaving a test marked as the build
-// passed (#483).
-const MARKER_GREP = `git -C ${worktree} grep -n -F '"#${issue}:' -- tests/`
+// passed (#483). A docstring that opens """#N: is not one: a tests stage may name the issue at the
+// head of a test's docstring, and the build may not change it.
+const MARKER_GREP = `git -C ${worktree} grep -n -E '(^|[^"])"#${issue}:' -- tests/`
 const CHANGED_TESTS = (from, markers = stage === 'build') => `cd ${worktree} && ${python} tools/changed_tests.py --repo ${worktree} --base ${from}${markers ? ` --issue ${issue}` : ''}`
 
 const TESTS_JOB = `This is the tests stage. Make every change to tests/ that this work needs, and no production code at all:
