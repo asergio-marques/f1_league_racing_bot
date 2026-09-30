@@ -832,7 +832,7 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
 async def _abandon_interrupted_resubmission(
     bot: LeagueBot,
     round_id: int,
-    channel: discord.abc.Messageable,
+    channel: discord.abc.Messageable | None,
     announcement_id: int | None,
     *,
     started_by: int | None,
@@ -849,6 +849,11 @@ async def _abandon_interrupted_resubmission(
     round (*round_label*); both come from the recovery's own read of that row, so this reads
     nothing more. A row from before the column existed names nobody's id, and the line names
     no member.
+
+    *channel* is ``None`` where the submission channel has since been deleted: there is then
+    nowhere to take the Cancel button down or post the notice, and both are skipped, but the
+    flag still comes down and the lapse is still recorded, so the round is not left stuck as
+    resubmitting.
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.utils.log_lines import record_abandoned
@@ -860,18 +865,19 @@ async def _abandon_interrupted_resubmission(
         )
         await db.commit()
 
-    if announcement_id is not None:
-        try:
-            announcement = await channel.fetch_message(announcement_id)
-            await announcement.edit(view=None)
-        except (discord.NotFound, discord.HTTPException):
-            pass  # Already gone; the notice below says what happened either way
+    if channel is not None:
+        if announcement_id is not None:
+            try:
+                announcement = await channel.fetch_message(announcement_id)
+                await announcement.edit(view=None)
+            except (discord.NotFound, discord.HTTPException):
+                pass  # Already gone; the notice below says what happened either way
 
-    await channel.send(
-        "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
-        "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
-        "again to re-enter them."
-    )
+        await channel.send(
+            "⚠️ **The bot restarted during a results resubmission**, and the sessions entered so "
+            "far were lost. The earlier results still stand. Press **🔄 Resubmit Initial Results** "
+            "again to re-enter them."
+        )
     await record_abandoned(
         bot, started_by,
         what=f"the “Resubmit Initial Results” button of {round_label}",
@@ -1122,6 +1128,13 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
                     "Recovery: channel %s not found, cannot restore penalty review for round %s",
                     channel_id, round_id,
                 )
+                if resubmitting:
+                    # The round must not stay stuck as resubmitting with its channel gone.
+                    await _abandon_interrupted_resubmission(
+                        bot, round_id, None, resubmit_prompt_message_id,
+                        started_by=resubmit_started_by,
+                        round_label=f"round {row['round_number']} ({row['division_name']})",
+                    )
                 continue
             try:
                 if resubmitting:

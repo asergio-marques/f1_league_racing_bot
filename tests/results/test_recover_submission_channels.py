@@ -798,11 +798,6 @@ async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recove
     stubs["enter"].assert_awaited_once()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a resubmission whose submission channel is gone is skipped at restart, "
-    "its flag left set and no lapse recorded",
-)
 async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_out(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro), and the bot
     restarted part-way through; meanwhile the submission channel was deleted. There is nowhere
