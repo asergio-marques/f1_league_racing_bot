@@ -148,16 +148,22 @@ async def test_detaching_from_a_running_season_is_refused(tmp_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#482: a detach that changes nothing is not yet recorded")
 async def test_detaching_what_is_not_attached_is_an_answer(tmp_path):
-    """The manager wanted it gone and it is gone."""
+    """The manager wanted it gone and it is gone. Nothing changed, and the log says so in one
+    line, as every request that changes nothing does (#482)."""
     cog = _make_cog()
     interaction = _interaction()
+    interaction.client = cog.bot
 
     await _detach(cog, interaction, error=ConfigNotAttachedError("Standard"))
 
     assert "is not attached to this season" in _replied(interaction)
     assert "❌" not in _replied(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_awaited_once()
+    line = str(cog.bot.output_router.post_log.await_args.args[0])
+    assert line.splitlines()[0] == "Manager (<@77>) | /results config detach | Nothing changed"
+    assert "Standard" in line
 
 
 async def test_detaching_with_no_season_is_refused(tmp_path):
