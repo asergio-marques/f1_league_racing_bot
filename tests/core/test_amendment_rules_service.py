@@ -463,8 +463,6 @@ def test_a_round_nudged_within_its_closed_check_in_stays_closed():
 # division commands' own judgement is `season_service`'s, beside every other division rule, and
 # is tested in `test_division_no_op_judgement.py`.
 
-_NO_OP = pytest.mark.xfail(strict=True, reason="#482: the no-op judgements are not yet written")
-
 #: A round as `/round amend` holds it before it asks for anything: its track, its format as a
 #: `RoundFormat` and its moment as a naive UTC `datetime`, which is what `_row_to_round` makes of
 #: the stored row on the active path and what the pending path's round already carries.
@@ -484,7 +482,6 @@ def _asked_moment(text: str) -> datetime:
     return moment
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "changes",
     [
@@ -514,7 +511,6 @@ def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
     assert amendment_changes_nothing(_STANDING, changes)
 
 
-@_NO_OP
 @pytest.mark.parametrize(
     "changes",
     [

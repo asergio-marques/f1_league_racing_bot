@@ -3,8 +3,9 @@
 A round of an active season may have its track, its moment or its format amended. Each of those
 costs the round something — a forecast drawn for a circuit it is no longer run at, a check-in
 called for a date that has moved — and some of them cost so much that the amendment must not
-happen at all. This module decides which, and nothing else: it computes no consequence, writes
-nothing and posts nothing. `amendment_service` carries the answer out.
+happen at all. This module decides which, and whether an amendment changes anything at all, and
+nothing else: it computes no consequence, writes nothing and posts nothing. `amendment_service`
+carries the answer out.
 
 **Pure by design**: no database, no Discord, and ``now`` passed in rather than read from the wall
 clock, so the tests can pin a date and a moment together. Modelled on `approval_window_service`,
@@ -43,6 +44,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from collections.abc import Mapping
 from typing import Any
 
 from leaguebot.core.models.round import ROUND_CANCELLABLE, Round, RoundFormat, RoundStatus
@@ -127,6 +129,35 @@ def _amended_moment(rnd: Round, changes: dict[str, Any]) -> datetime:
     if not isinstance(moment, datetime):
         moment = datetime.fromisoformat(str(moment))
     return _as_utc(moment)
+
+
+def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str, Any]) -> bool:
+    """Whether *changes* asks for nothing but the values *standing* already holds.
+
+    `/round amend` given what stands changes nothing, and records that nothing was changed rather
+    than amending the round (the core specification's "The record of what changed"). The command
+    asks this before it opens a connection, from the round it has already read.
+
+    Args:
+        standing: The round's present values, by field: its ``track_name``, its ``format`` and its
+                  ``scheduled_at`` (naive datetimes are UTC, as out of the database).
+        changes:  ``{field: new value}``, as `judge_amendment` takes it. An empty set asks for
+                  nothing to be judged here: it is `judge_amendment`'s to refuse.
+
+    Returns:
+        True where every field asked for already holds the value asked, a moment being the same
+        moment whatever zone it was given in; False where any differs, or nothing was asked.
+    """
+    if not changes:
+        return False
+    for field, value in changes.items():
+        held = standing.get(field)
+        if isinstance(value, datetime) and isinstance(held, datetime):
+            if _as_utc(value) != _as_utc(held):
+                return False
+        elif value != held:
+            return False
+    return True
 
 
 def judge_amendment(
