@@ -1158,6 +1158,9 @@ class _ConfirmClearView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
+        # Stopped before the work, not after it: the approval that follows can run past the
+        # minute, and a view still listening then would record a lapse for a list that has gone.
+        self.stop()
         cleared = await _staged_named(self.state, self.state.staged)
         self.state.staged.clear()
         await interaction.response.defer(ephemeral=True)
@@ -1168,7 +1171,6 @@ class _ConfirmClearView(LeagueView):
         # question standing, and would withdraw the one about to be posted.
         await _refresh_prompt(self.state)
         await _show_approval_step(interaction, self.state)
-        self.stop()
 
     @discord.ui.button(label="Cancel — keep penalties", style=discord.ButtonStyle.secondary)
     async def cancel_btn(
@@ -1950,6 +1952,8 @@ class _AppealsConfirmClearView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         ):
             return
+        # Stopped before the approval, which can run past the minute (see the penalty clear).
+        self.stop()
         cleared = await _staged_named(self.state, self.state.staged_appeals)
         self.state.staged_appeals.clear()
         await _record_press(
@@ -1961,7 +1965,6 @@ class _AppealsConfirmClearView(LeagueView):
         await finalize_appeals_review(
             interaction, self.state, what=_button(button.label, self.state, "appeals")
         )
-        self.stop()
 
     @discord.ui.button(
         label="No, go back",
