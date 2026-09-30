@@ -1,6 +1,6 @@
 // What the workflow sends its agents, cut to what each needs (#483): text the plan already holds is
 // not sent a second time, and the product owner is asked for its summary up front.
-const { builder, review, suite, base } = require('./stubs')
+const { builder, review, suite, testsCheck, base } = require('./stubs')
 const B = { ...base, stage: 'build', criteria: 'CRIT', checks: 'CHECKS' }
 const lanesClean = label => {
   if (label.endsWith(':tester')) return suite()
@@ -56,4 +56,21 @@ module.exports.handBuiltRefusedWithEmptyName = {
   args: { ...B, handBuilt: ['commit point 5', ' '] },
   respond(label) { throw new Error(`${label} ran with a handBuilt that should have been refused`) },
   expectThrow: 'handBuilt is a list',
+}
+
+// The tester gives each test's real failure as one line, never the traceback: the reviewers judge
+// a test's failing by that line, and every word the tester copies is read again by both.
+module.exports.testerGivesOneLineFailure = {
+  args: { ...base, stage: 'tests' },
+  respond(label, prompt, opts) {
+    if (label.endsWith(':tester')) {
+      const failure = opts.schema.properties.tests.items.properties.realFailure.description
+      if (!prompt.includes('at most 200 characters, never the traceback') || !failure.includes('one line')) throw new Error('the tester was not asked for one line')
+      return testsCheck()
+    }
+    if (label.endsWith(':builder')) return builder()
+    if (label.endsWith(':product')) return review({ summary: 'S' })
+    return review()
+  },
+  expect: r => r.status === 'passed',
 }

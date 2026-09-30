@@ -824,7 +824,7 @@ const TESTS_CHECK_SCHEMA = {
         properties: {
           nodeid: { type: 'string' },
           failsWithRunxfail: { type: 'boolean' },
-          realFailure: { type: 'string', description: 'the assertion or exception pytest reports under --runxfail, with its line; empty where it passed' },
+          realFailure: { type: 'string', description: 'the one line of the assertion or exception pytest reports under --runxfail, at most 200 characters; empty where it passed' },
           outcomeAsCommitted: { type: 'string', enum: ['xfailed', 'passed', 'failed', 'xpassed', 'error', 'not run'] },
         },
       },
@@ -1033,7 +1033,7 @@ const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed
 
 1. What is committed: list every line git -C ${worktree} status --porcelain --untracked-files=all prints, in uncommitted. The tests must be committed to count.
 2. Collection: pytest tests/ --collect-only -q must exit 0.
-3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give the failure pytest reports: the assertion or exception, and its line. A test marked alreadyPasses must pass here too.
+3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give in realFailure the one line that says why: the assertion or exception pytest reports, at most 200 characters, never the traceback. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
 ${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
