@@ -190,12 +190,22 @@ def _state(db_path, *, staged=(), appeals=(), pardons=(), attendance_enabled=Fal
 
 
 def _interaction(*, guild=True):
+    """A press by the league manager Alex, answering as Discord's does — not done until it
+    replies or defers — whose client reaches a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
     interaction.user = MagicMock()
     interaction.user.id = STEWARD
+    interaction.user.display_name = "Alex"
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     if guild:
         channel = MagicMock()
@@ -408,17 +418,37 @@ async def test_a_settled_round_is_not_reopened_by_a_stale_press(tmp_path, status
     assert await _round_status(db_path) == status
 
 
+def _refusal_recorded(state, interaction) -> None:
+    """Exactly one line reached the log channel, by either route: the refusal, naming Alex and
+    the reply's reason (#482)."""
+    replied = str(interaction.response.send_message.await_args.args[0])
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    lines = [
+        str(call.args[0])
+        for router in (state.bot.output_router, interaction.client.output_router)
+        for call in router.post_log.await_args_list
+    ]
+    (line,) = lines
+    assert line.startswith("⛔ "), line
+    assert line.endswith(f" refused for Alex (<@{STEWARD}>) — {reason}"), line
+
+
+_REFUSAL_NOT_YET_RECORDED = "#482: the approval's refusal is answered but not recorded"
+
+
 def _refused_untouched(stubs, state, interaction, says: str) -> None:
-    """An approval refused before it started: said why, and nothing applied, posted or logged."""
+    """An approval refused before it started: said why, nothing applied or posted, and the
+    refusal the one line recorded."""
     assert says in interaction.response.send_message.await_args.args[0]
     interaction.response.defer.assert_not_awaited()
     stubs["apply"].assert_not_awaited()
     stubs["repost"].assert_not_awaited()
     stubs["record"].assert_not_awaited()
     stubs["appeals_view"].assert_not_called()
-    state.bot.output_router.post_log.assert_not_awaited()
+    _refusal_recorded(state, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_reports_are_not_approved_while_the_results_are_being_resubmitted(tmp_path):
     """**#402, as reported.** Resubmit took the review prompt down and left the approval message,
     whose Approve finalised the round on the results the manager had just said were wrong:
@@ -434,6 +464,7 @@ async def test_the_reports_are_not_approved_while_the_results_are_being_resubmit
     assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
 
 
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     """**#402's second half.** The review prompt stayed up through the appeals stage, and its
     Approve ran the report approval again: the results reposted, the attendance pipeline run a
@@ -452,6 +483,7 @@ async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing(tmp_path):
     """Cancelling a resubmission posts a fresh review and left the old approval message standing
     beside it, still bound to the review from before. The round is back where it was, so only the
@@ -467,10 +499,12 @@ async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing
     assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
 
 
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     """**The approval draws every graphic before it moves the round on**, and until then a second
     Approve found the round exactly as the first had — so a double click ran the approval twice.
-    The second press here lands while the first is still reposting."""
+    The second press here lands while the first is still reposting, is refused, and its refusal
+    is recorded (#482)."""
     db_path = await _make_db(tmp_path, name="finalize_at_once")
     state = _state(db_path)
     reposting, release = asyncio.Event(), asyncio.Event()
@@ -499,6 +533,8 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
             p.stop()
 
     assert "being approved" in second.response.send_message.await_args.args[0]
+    (line,) = [call.args[0] for call in second.client.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ ") and f" refused for Alex (<@{STEWARD}>) — " in line, line
     stubs["repost"].assert_awaited_once()
     stubs["appeals_view"].assert_called_once()
     assert state.approving is False
@@ -1357,6 +1393,7 @@ def _refusal(interaction) -> str:
     return str(interaction.response.send_message.await_args.args[0])
 
 
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="held_reports")
     await _amend_round_two(db_path)
@@ -1375,22 +1412,26 @@ async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_p
     refusal = _refusal(interaction)
     assert f"Round 2 of this division is being amended in <#{AMEND_CHANNEL}>" in refusal
     assert "Approve the reports again then." in refusal
+    _refusal_recorded(state, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(
         tmp_path, name="held_appeals", round_status="AWAITING_APPEAL_VERDICTS"
     )
     await _amend_round_two(db_path)
     interaction = _held_interaction()
+    state = _state(db_path)
 
-    stubs = await _run(finalize_appeals_review, _state(db_path), interaction)
+    stubs = await _run(finalize_appeals_review, state, interaction)
 
     stubs["repost"].assert_not_awaited()
     stubs["close"].assert_not_awaited()
     stubs["refresh"].assert_not_awaited()
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
     assert "Approve the appeals again then." in _refusal(interaction)
+    _refusal_recorded(state, interaction)
 
 
 async def test_the_reports_are_approved_once_the_amendment_has_ended(tmp_path):
