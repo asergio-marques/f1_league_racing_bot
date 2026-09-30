@@ -43,7 +43,6 @@ DRIVER_ID = "4242"
 CHANNEL_ID = 700
 TEAMS = ["Ferrari", "Mercedes", "McLaren"]
 
-_NOT_RECORDED = "#482: the team step's button refusal is answered but writes no line in the log channel"
 _LABEL_RULE = "#482: a team button resolves its index against the live picks, not its own label"
 _STEP_REFUSAL_IGNORED = (
     "#482: the team button ignores the reason the step handler gives for turning a press away, "
@@ -269,7 +268,6 @@ async def test_a_button_past_the_end_of_the_list_is_answered(tmp_path):
     assert "That option is no longer available." in _refusal_line(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_press_in_a_channel_with_no_wizard_is_answered():
     """The channel outlived its wizard — acting on it would advance nothing and raise on
     the snapshot."""
@@ -284,7 +282,6 @@ async def test_a_press_in_a_channel_with_no_wizard_is_answered():
     assert "Wizard session not found." in _refusal_line(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_wizard_with_no_snapshot_is_answered():
     """There are no team names to resolve against, and reading `.team_names` off `None` is
     the crash this refusal replaces."""
@@ -328,7 +325,6 @@ async def test_a_driver_with_no_picks_yet_sees_the_whole_list():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("press", ["team", "no_preference", "cancel"])
 async def test_only_the_driver_whose_wizard_it_is_may_press(press):
     """A private channel can have a manager added to it, and a wizard advanced by somebody
@@ -360,7 +356,6 @@ async def test_after_a_restart_the_owner_is_found_by_channel():
     assert _chosen(interaction) == ["Ferrari"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_restarted_view_in_a_channel_with_no_wizard_refuses():
     """There is nobody to attribute the press to, and `None` must not be treated as a
     matching user id."""

@@ -44,7 +44,6 @@ DRIVER_ID = "7"
 OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
-_NOT_RECORDED = "#482: the wizard's button refusal is answered but writes no line in the log channel"
 _STEP_REFUSAL_IGNORED = (
     "#482: the view ignores the reason a step handler gives for turning a press away, so the "
     "driver is not told and nothing is recorded"
@@ -151,7 +150,6 @@ async def test_each_platform_button_reports_its_own_platform(button, platform):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_answer_a_driver_s_platform_question():
     """The channel is private to its driver, but a league manager can see it."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -178,7 +176,6 @@ async def test_cancelling_from_the_platform_step_withdraws_the_signup():
     assert "withdrawn" in interaction.followup.send.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_a_driver_s_signup():
     """The one button that destroys work."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -212,7 +209,6 @@ async def test_a_view_rebuilt_after_a_restart_finds_its_driver():
     interaction.client.wizard_service.handle_platform_button.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     """A button left in a channel whose wizard has been cleared up. The lookup finding
     nothing must refuse rather than pass unauthenticated."""
@@ -228,7 +224,6 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     interaction.client.wizard_service.handle_platform_button.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     """The guard has to hold on the recovered identity too, not only the stored one."""
     from leaguebot.signup.cogs.signup_cog import PlatformButtonView
@@ -266,7 +261,6 @@ async def test_each_driver_type_button_reports_its_own_type(button, driver_type)
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_choose_a_driver_s_type():
     from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
 
@@ -291,7 +285,6 @@ async def test_cancelling_from_the_driver_type_step_withdraws_the_signup():
     interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_from_the_driver_type_step():
     from leaguebot.signup.cogs.signup_cog import DriverTypeButtonView
 
@@ -362,7 +355,6 @@ async def test_no_preference_finishes_the_team_step():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_finish_a_driver_s_team_step():
     from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
 
@@ -387,7 +379,6 @@ async def test_cancelling_from_the_team_step_withdraws_the_signup():
     interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_from_the_team_step():
     from leaguebot.signup.cogs.signup_cog import PreferredTeamsButtonView
 
@@ -417,7 +408,6 @@ async def test_no_preference_answers_the_teammate_question():
     interaction.client.wizard_service.handle_no_preference_teammate.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_answer_the_teammate_question():
     from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
 
@@ -442,7 +432,6 @@ async def test_cancelling_from_the_teammate_step_withdraws_the_signup():
     interaction.client.wizard_service.withdraw.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_another_member_cannot_cancel_from_the_teammate_step():
     from leaguebot.signup.cogs.signup_cog import NoPreferenceTeammateView
 
@@ -464,12 +453,9 @@ async def test_another_member_cannot_cancel_from_the_teammate_step():
 @pytest.mark.parametrize(
     "view_name, button, label",
     [
-        pytest.param("WithdrawButtonView", "withdraw_button", "Cancel Signup",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)),
-        pytest.param("NoNotesButtonView", "no_notes_button", "No Notes",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)),
-        pytest.param("NoNotesButtonView", "cancel_button", "Cancel Signup",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)),
+        pytest.param("WithdrawButtonView", "withdraw_button", "Cancel Signup"),
+        pytest.param("NoNotesButtonView", "no_notes_button", "No Notes"),
+        pytest.param("NoNotesButtonView", "cancel_button", "Cancel Signup"),
     ],
 )
 async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_and_recorded(

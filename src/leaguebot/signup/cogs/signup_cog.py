@@ -157,6 +157,61 @@ async def _resolve_view_context(
     return bot, (wizard.discord_user_id if wizard else None)
 
 
+def _wizard_owner(interaction: discord.Interaction, owner_id: str | None) -> str:
+    """Whose signup wizard a button sits on, as the log channel names it: "Alex's", by the display
+    name the league's server gives them, or their mention where the name is not to be had. Nobody
+    (a channel whose wizard is gone) is "a"."""
+    if owner_id is None:
+        return "a"
+    name = None
+    if str(interaction.user.id) == owner_id:
+        name = getattr(interaction.user, "display_name", None)
+    else:
+        guild = interaction.guild
+        member = guild.get_member(int(owner_id)) if guild is not None else None
+        name = getattr(member, "display_name", None)
+    return f"{name if isinstance(name, str) else f'<@{owner_id}>'}'s"
+
+
+def _pressed_label(interaction: discord.Interaction, fallback: str) -> str:
+    """The label of the button that was pressed, read from its own message by its `custom_id`;
+    *fallback* where the message does not carry it."""
+    data = interaction.data
+    custom_id = data.get("custom_id") if isinstance(data, dict) else None
+    for row in getattr(interaction.message, "components", None) or []:
+        for child in getattr(row, "children", None) or []:
+            label = getattr(child, "label", None)
+            if custom_id is not None and getattr(child, "custom_id", None) == custom_id and isinstance(label, str):
+                return label
+    return fallback
+
+
+async def _refuse_wizard_button(
+    interaction: discord.Interaction,
+    owner_id: str | None,
+    label: str,
+    reply: str,
+) -> None:
+    """Turn a press on a signup wizard's button away with *reply*, and record it.
+
+    The line names the button and whose wizard it sits on, "the “Steam” button of Alex's signup
+    wizard", and the member who pressed it (`refuse`). *owner_id* is the wizard's driver, None
+    where the channel holds no wizard.
+    """
+    await refuse(
+        interaction,
+        reply,
+        what=f"the “{label}” button of {_wizard_owner(interaction, owner_id)} signup wizard",
+    )
+
+
+async def _not_for_you(
+    interaction: discord.Interaction, owner_id: str | None, label: str
+) -> None:
+    """Refuse a press by somebody who does not own the wizard the button is on."""
+    await _refuse_wizard_button(interaction, owner_id, label, "⛔ This button is not for you.")
+
+
 #: The states a driver may stand in when they press Sign Up having already got a profile,
 #: split by the refusal each earns. Between them they cover every state that is not
 #: ``NOT_SIGNED_UP``, which is what lets the callback below use a bare ``else`` for the
@@ -448,9 +503,7 @@ class WithdrawButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message(
-                "⛔ This button is not for you.", ephemeral=True
-            )
+            await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(
@@ -485,9 +538,7 @@ class NoNotesButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message(
-                "⛔ This button is not for you.", ephemeral=True
-            )
+            await _not_for_you(interaction, _user_id, "No Notes")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_no_notes(
@@ -506,9 +557,7 @@ class NoNotesButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message(
-                "⛔ This button is not for you.", ephemeral=True
-            )
+            await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(
@@ -536,7 +585,7 @@ class PlatformButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, platform)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_platform_button(
@@ -565,7 +614,7 @@ class PlatformButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(
@@ -591,7 +640,7 @@ class DriverTypeButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, driver_type)
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_driver_type_button(
@@ -612,7 +661,7 @@ class DriverTypeButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(
@@ -683,19 +732,25 @@ class PreferredTeamsButtonView(LeagueView):
                 interaction, self._discord_user_id
             )
             if _user_id is None or str(interaction.user.id) != _user_id:
-                await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+                await _not_for_you(interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"))
                 return
             # Resolve team name by index from live wizard state
             wizard = await _bot.wizard_service.get_wizard_by_channel(
                 interaction.channel_id
             )
             if wizard is None or wizard.config_snapshot is None:
-                await interaction.response.send_message("⛔ Wizard session not found.", ephemeral=True)
+                await _refuse_wizard_button(
+                    interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"),
+                    "⛔ Wizard session not found.",
+                )
                 return
             current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
             available = [t for t in wizard.config_snapshot.team_names if t not in current_picks]
             if i >= len(available):
-                await interaction.response.send_message("⛔ That option is no longer available.", ephemeral=True)
+                await _refuse_wizard_button(
+                    interaction, _user_id, _pressed_label(interaction, f"Team {i + 1}"),
+                    "⛔ That option is no longer available.",
+                )
                 return
             await interaction.response.defer(ephemeral=True)
             await _bot.wizard_service.handle_preferred_teams_button(
@@ -708,7 +763,7 @@ class PreferredTeamsButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, "No Preference")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_preferred_teams_button(
@@ -720,7 +775,7 @@ class PreferredTeamsButtonView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(
@@ -747,7 +802,7 @@ class NoPreferenceTeammateView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, "No Preference")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.handle_no_preference_teammate(
@@ -760,7 +815,7 @@ class NoPreferenceTeammateView(LeagueView):
             interaction, self._discord_user_id
         )
         if _user_id is None or str(interaction.user.id) != _user_id:
-            await interaction.response.send_message("⛔ This button is not for you.", ephemeral=True)
+            await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
         await interaction.response.defer(ephemeral=True)
         await _bot.wizard_service.withdraw(
