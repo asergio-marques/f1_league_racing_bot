@@ -341,6 +341,35 @@ class TestModify:
         assert await _close_at(db_path) == ARMED
         cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="#482: modify to the armed instant still re-arms it, audits it and logs a Success",
+    )
+    @pytest.mark.parametrize(
+        "typed", [ARMED, ARMED.removesuffix("+00:00")], ids=["as-stored", "naive-utc"]
+    )
+    async def test_modify_to_the_armed_instant_changes_nothing_and_says_so(
+        self, tmp_path, typed
+    ):
+        """The manager gives the instant already armed, as stored or as a naive time read as
+        UTC: they are told nothing changed, no audit row is written, the timer is neither
+        cancelled nor re-armed, and one line records that nothing changed."""
+        db_path = await _seed(tmp_path, close_at=ARMED)
+        cog = _cog(db_path)
+        interaction = _interaction()
+
+        await _modify(cog, interaction, typed)
+
+        assert re.search(r"[Nn]othing (was )?changed", _reply(interaction))
+        assert await _close_at(db_path) == ARMED
+        assert await _audit_types(db_path) == []
+        cog.bot.scheduler_service.cancel_signup_close_timer.assert_not_called()
+        cog.bot.scheduler_service.schedule_signup_close_timer.assert_not_called()
+        [line] = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+        assert line.startswith(
+            "Manager (<@42>) | /signup close-time modify | Nothing changed"
+        )
+
     async def test_it_records_the_time_it_replaced(self, tmp_path):
         db_path = await _seed(tmp_path, close_at=ARMED)
 
