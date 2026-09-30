@@ -869,7 +869,7 @@ const CHANGES = {
 
 const TESTS_CHECK_SCHEMA = {
   type: 'object',
-  required: ['collectionOk', 'collectionDetail', 'tests', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem', 'changes', 'changesError'],
+  required: ['collectionOk', 'collectionDetail', 'tests', 'passing', 'otherFailures', 'uncommitted', 'lockTimedOut', 'environmentProblem', 'changes', 'changesError'],
   properties: {
     changes: CHANGES,
     changesError: { type: 'string', description: 'empty unless tools/changed_tests.py exited non-zero: what it printed on stderr' },
@@ -889,6 +889,7 @@ const TESTS_CHECK_SCHEMA = {
         },
       },
     },
+    passing: { type: 'array', items: { type: 'string' }, description: 'the node id of each test marked alreadyPasses that passed in both steps; every other test goes in tests[]' },
     otherFailures: { type: 'array', items: { type: 'string' } },
     uncommitted: { type: 'array', items: { type: 'string' }, description: 'every line git status --porcelain --untracked-files=all prints: work left uncommitted, new files included' },
     environmentProblem: { type: 'string', description: 'empty unless the host, not the code, is at fault' },
@@ -1104,6 +1105,7 @@ const testsTesterPrompt = (k, tests, since = '') => `You check the tests changed
 2. Collection: pytest tests/ --collect-only -q must exit 0.
 3. The real failures: pytest <every nodeid below> -q --runxfail --tb=short. Each test not marked alreadyPasses must fail; for each, give in realFailure the one line that says why: the assertion or exception pytest reports, at most 200 characters, never the traceback. A test marked alreadyPasses must pass here too.
 4. As committed: pytest <the files holding them> -q -rxX, and give each listed test's outcome. A test not marked alreadyPasses must be reported xfailed, and one marked alreadyPasses must pass. Nothing else in those files may fail, and nothing may XPASS.
+Report every test below, however many there are: list each test marked alreadyPasses that passed in both steps in passing[], by its node id alone, and every other test in tests[], one entry each. Never leave a test out or sum some up for size: a test missing from both counts as not run.
 5. If anything fails across the board, run df -h /tmp: where it is full or nearly, report environmentProblem. Set lockTimedOut where any run exited 75.
 ${tests.length ? '' : 'Every change this round is a deletion or to support alone, so there is no test to run: skip steps 3 and 4.\n'}6. What the branch changes under tests/: run ${CHANGED_TESTS(base)}, with a Bash timeout of 600000 ms, and copy the head, tests, support and markersRemoved it prints into changes, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changesError, and leave the lists in changes empty.
 ${since ? `7. What has changed under tests/ since ${since}: run ${CHANGED_TESTS(since)}, with a Bash timeout of 600000 ms, and copy what it prints into changedSince, exactly, leaving nothing out. Where it exits non-zero, put what it printed on stderr in changedSinceError, and leave the lists in changedSince empty.
@@ -1331,10 +1333,13 @@ const testsProblems = t => {
   if (!t) return ['the tester returned nothing']
   const problems = hostProblem(t) ? [`the host: ${hostProblem(t)}`] : []
   if (!t.collectionOk) problems.push(`the suite does not collect: ${t.collectionDetail}`)
+  const passing = new Set((t.passing || []).map(bareId))
   for (const w of written) {
     if (w.change === 'deleted') continue
     const x = t.tests.find(r => r.nodeid === w.nodeid)
-    if (!x) { problems.push(`${w.nodeid} was not run by the tester`); continue }
+    if (!x && !passing.has(bareId(w.nodeid))) { problems.push(`${w.nodeid} was not run by the tester`); continue }
+    if (!x && !(w.alreadyPasses || w.madePassByBuild)) { problems.push(`${w.nodeid} was reported as passing already, but it must fail until the change is built`); continue }
+    if ((w.alreadyPasses || w.madePassByBuild) && !x) continue
     if (w.alreadyPasses || w.madePassByBuild) {
       if (x.outcomeAsCommitted !== 'passed') problems.push(`${w.nodeid} pins behaviour already built, so it must pass, but was ${x.outcomeAsCommitted}`)
       continue
@@ -1375,7 +1380,7 @@ const reviewTests = async (k, questions, built) => {
   const earliest = known && seenAt.length ? Math.min(...seenAt) : undefined
   const since = !seenAt.length || earliest === commits.length ? '' : earliest ? commits[earliest - 1].sha : base
   const test = written.length || supportWritten.length
-    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: (testsHead ? withUnmarked : x => x)(since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA) })
+    ? await send(testsTesterPrompt(k, run.map(w => ({ nodeid: w.nodeid, change: w.change, ...(w.alreadyPasses || w.madePassByBuild ? { alreadyPasses: true } : {}) })), since), { ...settingsFor('tester'), label: `tests:r${k}:tester`, phase: 'Review', schema: (testsHead ? withUnmarked : x => x)(since ? TESTS_CHECK_SINCE_SCHEMA : TESTS_CHECK_SCHEMA) })
     : undefined
   if (test === undefined) log(`Round ${k}: no test is changed yet, so the tester is not sent out.`)
   const nothing = { tests: new Set(), support: new Set() }
@@ -1422,6 +1427,7 @@ const markMadePass = t => {
 const firstLine = v => (String(v || '').split('\n').find(l => l.trim()) || '').trim().slice(0, 300)
 const compactTest = (t, problems) => !t ? t : {
   problems,
+  passingAsExpected: (t.passing || []).length,
   tests: t.tests.map(x => ({ nodeid: x.nodeid, outcome: x.outcomeAsCommitted, failsWithRunxfail: x.failsWithRunxfail, failure: firstLine(x.realFailure) })),
 }
 

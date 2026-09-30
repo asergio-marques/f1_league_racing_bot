@@ -613,3 +613,40 @@ Object.assign(scenarios, {
     expectThrow: 'adjusted is the build',
   },
 })
+
+// The tester reports every test, however many: those known to pass already by node id alone in
+// passing[], the rest one entry each. Slice 4's tester itemised 7 of 129 "for size", and the stage
+// stalled on tests it never reported (#483).
+const knownPassing = { ...base, stage: 'tests', testsHead: 't0', maxRounds: 1, previous: passedTests({ tests: [entry(A, 'added', { madePassByBuild: true }), entry(Bn, 'added')] }) }
+Object.assign(scenarios, {
+  testerListsKnownPassingTestsById: {
+    args: knownPassing,
+    respond(label, prompt) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) {
+        if (!prompt.includes('Never leave a test out') || !/"nodeid": "tests\/x\/test_a.py::test_a",\s*"change": "added",\s*"alreadyPasses": true/.test(prompt)) throw new Error('the tester was not told which tests pass already, or to report every test')
+        return testsCheck({ tests: [ran(Bn)], passing: [A], changes: changes([[A, 'added'], [Bn, 'added']]), unmarkedByBuild: [] })
+      }
+      return cleanLanes(label)
+    },
+    expect: r => r.status === 'passed',
+  },
+  mustFailTestReportedAsPassingIsFlagged: {
+    args: knownPassing,
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [], passing: [A, Bn], changes: changes([[A, 'added'], [Bn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${Bn} was reported as passing already`)),
+  },
+  testMissingFromBothListsIsNotRun: {
+    args: knownPassing,
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ tests: [] })
+      if (label.endsWith(':tester')) return testsCheck({ tests: [ran(Bn)], passing: [], changes: changes([[A, 'added'], [Bn, 'added']]), unmarkedByBuild: [] })
+      return cleanLanes(label)
+    },
+    expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes(`${A} was not run by the tester`)),
+  },
+})
