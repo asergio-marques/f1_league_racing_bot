@@ -1303,9 +1303,20 @@ const testsProblems = t => {
 // answer that lacks it is not one the runtime passes on. An answer whose list carries no head, and no
 // error either, does not show that the step ran, as with `changes`: what changed is then unknown,
 // and every entry is given in full.
-const reviewTests = async (k, questions) => {
+//
+// The issue reviewer is left out of a round it has nothing to do in: it has reviewed the list before,
+// none of its findings is pending, no engineering question is routed to it, and the round cannot
+// pass, because the plan is not complete or the tester found something wrong. In that position it
+// found nothing in ten rounds out of ten (#482 slices 2 and 3). It runs in any round that could
+// pass, so that no stage passes without both reviewers on the list as it stands; and the product
+// owner, which in that position still found something, runs in every round. Where the plan is not
+// complete the skip is known before the tester runs, and what the tester lists as changed since is
+// counted from the product owner's last review alone.
+const reviewTests = async (k, questions, built) => {
   const run = written.filter(w => w.change !== 'deleted')
-  const seenAt = ['issue', 'product'].filter(l => listSeen[l]).map(l => reviewedAt[l])
+  const issueIdle = !!listSeen.issue && reviewedAt.issue !== undefined && ![...ledger.values()].some(f => f.lane === 'issue' && materialPending(f)) && !questions.engineering.length
+  const skipKnown = issueIdle && (!built.planComplete || built.blocked)
+  const seenAt = (skipKnown ? ['product'] : ['issue', 'product']).filter(l => listSeen[l]).map(l => reviewedAt[l])
   const known = seenAt.every(at => at !== undefined && at <= commits.length)
   const earliest = known && seenAt.length ? Math.min(...seenAt) : undefined
   const since = !seenAt.length || earliest === commits.length ? '' : earliest ? commits[earliest - 1].sha : base
@@ -1320,11 +1331,14 @@ const reviewTests = async (k, questions) => {
       : { tests: new Set(found(test).tests.map(x => bareId(x.nodeid))), support: new Set(found(test).support.map(supportKey)) }
   const problems = testsProblems(test)
   const report = compactTest(test, problems)
+  const skipIssue = issueIdle && (skipKnown || !test || !!hostProblem(test) || problems.length > 0)
+  if (skipIssue) log(`Round ${k}: the issue reviewer has nothing open and the round cannot pass, so it is not sent out.`)
   const [issueResult, productResult] = await parallel([
-    () => send(issuePrompt(k, questions.engineering, report, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
+    () => skipIssue ? Promise.resolve(undefined) : send(issuePrompt(k, questions.engineering, report, written, supportWritten), { ...settingsFor('issue'), label: `tests:r${k}:issue`, phase: 'Review', agentType: 'issue-reviewer', schema: REVIEW_SCHEMA }),
     () => send(productPrompt(k, questions.business, report, written, supportWritten), { ...settingsFor('product'), label: `tests:r${k}:product`, phase: 'Review', agentType: 'product-owner', schema: REVIEW_SCHEMA }),
   ])
   for (const [lane, result] of [['issue', issueResult], ['product', productResult]]) {
+    if (result === undefined) continue
     if (result) listSeen[lane] = compactList(written, supportWritten)
     else delete listSeen[lane]
   }
@@ -1549,7 +1563,7 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
     business: builderQuestions.filter(q => q.kind === 'business'),
     engineering: builderQuestions.filter(q => q.kind !== 'business'),
   }
-  const reviewed = stage === 'tests' ? await reviewTests(k, questions) : await reviewBuild(k, built, questions)
+  const reviewed = stage === 'tests' ? await reviewTests(k, questions, built) : await reviewBuild(k, built, questions)
   const dead = []
   for (const [lane, result] of Object.entries(reviewed.lanes)) {
     if (result === undefined) continue

@@ -503,3 +503,48 @@ Object.assign(scenarios, {
     expect: r => r.status === 'passed',
   },
 })
+
+// The issue reviewer is left out of a later round it has nothing to do in and that cannot pass; it
+// runs in any round that could pass, and whenever it has a finding to judge (#483).
+const red = () => testsCheck({ otherFailures: ['tests/x/test_a.py::test_z failed in its file'] })
+Object.assign(scenarios, {
+  idleIssueReviewerSkippedInRedTestsRound: {
+    args: { ...base, stage: 'tests', maxRounds: 2 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return red()
+      return cleanLanes(label)
+    },
+    expect: (r, { labels, logs }) => labels.includes('tests:r1:issue') && !labels.includes('tests:r2:issue') && labels.includes('tests:r2:product')
+      && logs.some(l => l.includes('the issue reviewer has nothing open')),
+  },
+  idleIssueReviewerSkippedWhilePlanUnfinished: {
+    args: { ...base, stage: 'tests', maxRounds: 2 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder({ planComplete: false, remaining: ['more tests'], commits: round(label) === 2 ? [] : [{ sha: 'c1', subject: 'a' }] })
+      if (label.endsWith(':tester')) return testsCheck()
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => labels.includes('tests:r1:issue') && !labels.includes('tests:r2:issue'),
+  },
+  idleIssueReviewerRunsWhenRoundCouldPass: {
+    args: { ...base, stage: 'tests' },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return round(label) === 1 ? red() : testsCheck()
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => r.status === 'passed' && r.lastRound === 2 && labels.includes('tests:r2:issue')
+      && labels.indexOf('tests:r2:issue') > labels.indexOf('tests:r2:tester'),
+  },
+  issueReviewerWithOpenFindingNotSkipped: {
+    args: { ...base, stage: 'tests', maxRounds: 2 },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return red()
+      if (label === 'tests:r1:issue') return review({ findings: [finding('issue-1-1')] })
+      return cleanLanes(label)
+    },
+    expect: (r, { labels }) => labels.includes('tests:r2:issue'),
+  },
+})
