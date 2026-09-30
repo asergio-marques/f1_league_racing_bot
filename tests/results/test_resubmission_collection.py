@@ -743,11 +743,6 @@ async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(
     assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the configuration choice is not raced against Cancel, so the resubmission "
-    "waits on a choice nobody makes (D4)",
-)
 async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmission(tmp_path):
     """Alex pastes the qualifying session of a resubmission and, with two configurations
     attached, is asked to choose one; instead he presses Cancel and never chooses. The

@@ -5223,6 +5223,8 @@ async def _resubmit_collection_task(
     *cancel_view* is the announcement's Cancel button. Pressed, or where the resubmission fails
     before the swap, the round goes back to penalty review with the results it had.
     """
+    import asyncio
+
     if sub_channel is None:
         log.error("_resubmit_collection_task: sub_channel not found for round %s", round_id)
         return
@@ -5386,12 +5388,37 @@ async def _resubmit_collection_task(
                     session=f"the {label} of round {round_number} ({division_name})",
                 )
                 config_msg = await sub_channel.send("🔧 Select the points configuration for this session:", view=view)
-                await view.wait()
-                selected_config = view.selected
+                # **Raced against Cancel**, as the amendment's choice is. Waited on alone, a
+                # Cancel pressed here was answered "cancelled" while the resubmission sat on
+                # a choice nobody would make. Both waits are held by name and the one left
+                # pending is cancelled; where both land together the cancel wins.
+                choice_wait = asyncio.ensure_future(view.wait())
+                cancel_wait = (
+                    asyncio.ensure_future(cancel_view.pressed.wait())
+                    if cancel_view is not None
+                    else None
+                )
+                waits = {choice_wait} if cancel_wait is None else {choice_wait, cancel_wait}
+                await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
+                for pending in waits:
+                    if not pending.done():
+                        pending.cancel()
+                stopped = cancel_view is not None and cancel_view.cancelled
+                selected_config = None if stopped else view.selected
                 try:
-                    await config_msg.edit(content=f"🔧 Config selected: **{selected_config}**", view=None)
+                    await config_msg.edit(
+                        content=(
+                            "🔧 Resubmission cancelled."
+                            if stopped
+                            else f"🔧 Config selected: **{selected_config}**"
+                        ),
+                        view=None,
+                    )
                 except discord.HTTPException:
                     pass
+                if stopped:
+                    await _cancelled()
+                    return
 
             held = await held_by_amendment(
                 db_path, round_id, division_id, then=f"Paste **{label}** again then."
