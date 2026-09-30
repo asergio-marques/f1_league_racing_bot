@@ -1352,7 +1352,9 @@ class PenaltyReviewView(LeagueView):
             )
             return
         from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(interaction, self.state)
+        await finalize_penalty_review(
+            interaction, self.state, what=_button(button.label, self.state)
+        )
 
     @discord.ui.button(
         label="🔄 Resubmit Initial Results",
@@ -1533,7 +1535,9 @@ class ApprovalView(LeagueView):
             return
         # T007: wire to finalize_penalty_review
         from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(interaction, self.state)
+        await finalize_penalty_review(
+            interaction, self.state, what=_button(button.label, self.state)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1655,7 +1659,9 @@ class AppealsReviewView(LeagueView):
         if not self.state.staged_appeals:
             # No corrections — finalise directly
             from leaguebot.results.services.result_submission_service import finalize_appeals_review
-            await finalize_appeals_review(interaction, self.state)
+            await finalize_appeals_review(
+                interaction, self.state, what=_button(button.label, self.state, "appeals")
+            )
         else:
             # Ask for explicit confirmation before clearing
             view = _AppealsConfirmClearView(state=self.state)
@@ -1696,7 +1702,9 @@ class AppealsReviewView(LeagueView):
             )
             return
         from leaguebot.results.services.result_submission_service import finalize_appeals_review
-        await finalize_appeals_review(interaction, self.state)
+        await finalize_appeals_review(
+            interaction, self.state, what=_button(button.label, self.state, "appeals")
+        )
 
 
 class _AppealsConfirmClearView(LeagueView):
@@ -1719,7 +1727,9 @@ class _AppealsConfirmClearView(LeagueView):
             return
         self.state.staged_appeals.clear()
         from leaguebot.results.services.result_submission_service import finalize_appeals_review
-        await finalize_appeals_review(interaction, self.state)
+        await finalize_appeals_review(
+            interaction, self.state, what=_button(button.label, self.state, "appeals")
+        )
         self.stop()
 
     @discord.ui.button(

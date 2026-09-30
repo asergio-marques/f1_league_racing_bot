@@ -512,6 +512,8 @@ async def enter_penalty_state(
 async def finalize_penalty_review(
     interaction: discord.Interaction,
     state,  # PenaltyReviewState — forward-ref to avoid import cycle
+    *,
+    what: str | None = None,
 ) -> None:
     """Apply staged penalties, repost with 'Post-Race Penalty Results' label, and
     transition the submission channel to appeals review.
@@ -535,8 +537,16 @@ async def finalize_penalty_review(
     round on, and a second press in that time found the round exactly as the first had.
     ``approving`` is claimed after the last await of the checks, so two presses cannot both pass
     them, and released however the approval ends, so one that fails can be pressed again.
+
+    **A refusal is recorded** as *what* refused (#482): the button pressed and its review, named
+    by the button that calls this. A call without one names the review's Approve button from
+    *state*, which only a test makes.
     """
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED, _review_moved_on
+    from leaguebot.results.services.penalty_wizard import (
+        _BEING_APPROVED,
+        _button,
+        _review_moved_on,
+    )
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_reports(interaction, state)
@@ -551,7 +561,7 @@ async def finalize_penalty_review(
     if refusal is None and state.approving:
         refusal = _BEING_APPROVED
     if refusal is not None:
-        await interaction.response.send_message(refusal, ephemeral=True)
+        await refuse(interaction, refusal, what=what or _button("✅ Approve", state))
         return
 
     state.approving = True
@@ -1226,6 +1236,8 @@ async def _report_unannounced_verdicts(interaction, bot: LeagueBot, faults: list
 async def finalize_appeals_review(
     interaction: discord.Interaction,
     state,  # PenaltyReviewState — forward-ref to avoid import cycle
+    *,
+    what: str | None = None,
 ) -> None:
     """Advance the round to FINAL, repost with 'Final Results' label, and close
     the submission channel.
@@ -1235,10 +1247,15 @@ async def finalize_appeals_review(
 
     An amendment's appeal stage shares the screens but not this body, and is handed to
     :func:`_approve_amendment_appeals` before anything here runs (#345).
+
+    **A refusal is recorded** as *what* refused (#482): the button pressed and its review, named
+    by the button that calls this. A call without one names the appeals review's Approve button
+    from *state*, which only a test makes.
     """
     import json as _json
     from leaguebot.results.services import results_post_service as _rps
     from leaguebot.results.services import verdict_announcement_service as _vas
+    from leaguebot.results.services.penalty_wizard import _button
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_appeals(interaction, state)
@@ -1249,7 +1266,7 @@ async def finalize_appeals_review(
         then="Approve the appeals again then.",
     )
     if held:
-        await interaction.response.send_message(held, ephemeral=True)
+        await refuse(interaction, held, what=what or _button("✅ Approve", state, "appeals"))
         return
 
     await interaction.response.defer(ephemeral=True)

@@ -433,9 +433,6 @@ def _refusal_recorded(state, interaction) -> None:
     assert line.endswith(f" refused for Alex (<@{STEWARD}>) — {reason}"), line
 
 
-_REFUSAL_NOT_YET_RECORDED = "#482: the approval's refusal is answered but not recorded"
-
-
 def _refused_untouched(stubs, state, interaction, says: str) -> None:
     """An approval refused before it started: said why, nothing applied or posted, and the
     refusal the one line recorded."""
@@ -448,7 +445,6 @@ def _refused_untouched(stubs, state, interaction, says: str) -> None:
     _refusal_recorded(state, interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_reports_are_not_approved_while_the_results_are_being_resubmitted(tmp_path):
     """**#402, as reported.** Resubmit took the review prompt down and left the approval message,
     whose Approve finalised the round on the results the manager had just said were wrong:
@@ -464,7 +460,6 @@ async def test_the_reports_are_not_approved_while_the_results_are_being_resubmit
     assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     """**#402's second half.** The review prompt stayed up through the appeals stage, and its
     Approve ran the report approval again: the results reposted, the attendance pipeline run a
@@ -483,7 +478,6 @@ async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing(tmp_path):
     """Cancelling a resubmission posts a fresh review and left the old approval message standing
     beside it, still bound to the review from before. The round is back where it was, so only the
@@ -499,7 +493,6 @@ async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing
     assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     """**The approval draws every graphic before it moves the round on**, and until then a second
     Approve found the round exactly as the first had — so a double click ran the approval twice.
@@ -1549,7 +1542,6 @@ def _refusal(interaction) -> str:
     return str(interaction.response.send_message.await_args.args[0])
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="held_reports")
     await _amend_round_two(db_path)
@@ -1571,7 +1563,6 @@ async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_p
     _refusal_recorded(state, interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_YET_RECORDED)
 async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(
         tmp_path, name="held_appeals", round_status="AWAITING_APPEAL_VERDICTS"
@@ -2907,8 +2898,8 @@ async def test_an_amendment_stage_not_yet_put_back_says_to_run_it_again_once_it_
 async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case):
     """The stages of an amendment refuse a press they cannot act on, and each refusal writes
     one line in the standard refusal form, naming `/results rounds amend` or the stage it
-    refused. The ordinary first-pass review's refusals are no part of the amendment and still
-    write nothing."""
+    refused. The ordinary first-pass review's refusals are no part of the amendment: each is
+    recorded as the review's own Approve button."""
     first_pass = case == "a-first-pass-refusal"
     db_path = await _make_db(
         tmp_path, name=f"amend_stage_refused_{case.replace('-', '_')}",
@@ -2930,7 +2921,10 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
 
     lines = _logged(state)
     if first_pass:
-        assert lines == ""
+        # The first pass's own refusal, recorded as the review's Approve button and not as the
+        # amendment (#482).
+        assert lines.startswith("⛔ the “✅ Approve” button of the penalty review of round 3")
+        assert "/results rounds amend" not in lines
         return
     [line] = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
     assert line.startswith("⛔ ")
