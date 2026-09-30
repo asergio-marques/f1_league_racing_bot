@@ -73,6 +73,7 @@ async def _make_db(tmp_path, *, config: bool = True) -> str:
 def _make_cog(db_path: str) -> SignupCog:
     bot = MagicMock()
     bot.db_path = db_path
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.config_service = ConfigService(db_path)
     bot.output_router = MagicMock()

@@ -374,6 +374,7 @@ def _close_cog(db_path: str):
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.driver_service = DriverService(db_path)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.get_guild = MagicMock(return_value=None)
     bot.output_router.post_log = AsyncMock()

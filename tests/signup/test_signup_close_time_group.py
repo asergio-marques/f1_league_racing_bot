@@ -75,6 +75,7 @@ def _cog(db_path):
 
     bot = MagicMock()
     bot.db_path = db_path
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.scheduler_service = MagicMock()
     bot.output_router.post_log = AsyncMock()

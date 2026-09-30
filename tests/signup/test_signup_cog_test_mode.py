@@ -74,6 +74,7 @@ def _bot(*, test_mode: bool):
         ),
         wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
         signup_module_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
+        module_service=SimpleNamespace(is_signup_enabled=AsyncMock(return_value=True)),
         output_router=SimpleNamespace(post_log=AsyncMock()),
     )
 
