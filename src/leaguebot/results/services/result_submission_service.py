@@ -33,7 +33,7 @@ from leaguebot.image.utils.tyre_compound import (
     records_no_tyre,
     tyre_compound_list,
 )
-from leaguebot.core.utils.interaction_errors import describe_fault
+from leaguebot.core.utils.interaction_errors import describe_fault, report_failure
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, guild_of, league_guild
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -5203,7 +5203,15 @@ async def enter_resubmit_flow(
         log.exception("enter_resubmit_flow: could not record the announcement (round %s)", round_id)
 
     asyncio.create_task(
-        _resubmit_collection_task(round_id, division_id, bot, sub_channel, cancel_view),
+        _resubmit_collection_task(
+            round_id,
+            division_id,
+            bot,
+            sub_channel,
+            cancel_view,
+            interaction=interaction,
+            what=what,
+        ),
         name=f"resubmit_r{round_id}",
     )
 
@@ -5239,6 +5247,9 @@ async def _resubmit_collection_task(
     bot: LeagueBot,
     sub_channel: discord.TextChannel | None,
     cancel_view: ResubmissionCancelView | None = None,
+    *,
+    interaction: discord.Interaction | None = None,
+    what: str | None = None,
 ) -> None:
     """Re-run the session collection loop against an existing submission channel.
 
@@ -5250,8 +5261,24 @@ async def _resubmit_collection_task(
 
     *cancel_view* is the announcement's Cancel button. Pressed, or where the resubmission fails
     before the swap, the round goes back to penalty review with the results it had.
+
+    *interaction* is the Resubmit press that started this, and *what* names its button and
+    review, as the press's refusals do; without one the button alone is named. A resubmission
+    that fails before any paste (the round is gone, or the division's data cannot be read) is
+    recorded as that button's failure, through `report_failure`, naming who pressed it and
+    saying the earlier results stand (#482). The notices to the submission channel stay.
+    Without an *interaction*, which only a test makes, nothing is recorded.
     """
     import asyncio
+
+    async def _record_failure(error: BaseException) -> None:
+        if interaction is not None:
+            await report_failure(
+                interaction,
+                error,
+                what=what or "the “🔄 Resubmit Initial Results” button",
+                outcome="The earlier results stand.",
+            )
 
     if sub_channel is None:
         log.error("_resubmit_collection_task: sub_channel not found for round %s", round_id)
@@ -5263,9 +5290,10 @@ async def _resubmit_collection_task(
     # to paste the results again would be left pasting into a channel nothing reads.
     try:
         ctx = await _get_round_context(db_path, round_id)
-    except ValueError:
+    except ValueError as exc:
         log.exception("_resubmit_collection_task: round %s not found", round_id)
         await sub_channel.send("❌ Resubmission failed: this round could not be found.")
+        await _record_failure(exc)
         return
 
     season_id: int = ctx["season_id"]
@@ -5308,11 +5336,12 @@ async def _resubmit_collection_task(
             team_names,
             team_of_shorthand,
         ) = await _build_division_validation_data(division_id, bot)
-    except Exception:
+    except Exception as exc:
         log.exception("_resubmit_collection_task: failed to build validation data for round %s", round_id)
         await sub_channel.send(
             "❌ Resubmission failed: could not load division data. The earlier results still stand."
         )
+        await _record_failure(exc)
         await _return_to_review(
             bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
         )

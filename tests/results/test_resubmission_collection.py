@@ -924,10 +924,6 @@ async def _press_resubmit_and_fail(bot, state, *, validation_error=None):
     return interaction
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a resubmission failing before any paste tells only the channel and records nothing",
-)
 @pytest.mark.parametrize(
     ("round_found", "notice"),
     [
