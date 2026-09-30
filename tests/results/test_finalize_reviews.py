@@ -708,6 +708,36 @@ async def test_without_a_guild_the_round_still_moves_on(tmp_path):
     assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: an appeals review that cannot be posted is logged as a success and nobody is told (D6)",
+)
+async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
+    """The reports are approved, but the submission channel cannot be reached to open the
+    appeals stage. The manager is told, and the approval's line says it is incomplete, with
+    an entry of its own naming what is missing; restart recovery posts the prompt again."""
+    db_path = await _make_db(tmp_path, name="finalize_noappeals")
+    state = _state(db_path, staged=[_penalty()])
+    interaction = _interaction()
+    reachable = interaction.guild.get_channel.return_value
+    interaction.guild.get_channel = MagicMock(
+        side_effect=lambda cid: None if cid == state.submission_channel_id else reachable
+    )
+
+    await _run(finalize_penalty_review, state, interaction)
+
+    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+    state.bot.add_view.assert_not_called()
+    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list).lower()
+    assert "approved" in said
+    assert "appeals review could not be posted" in said
+    assert "restart" in said
+    logged = _logged(state)
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in logged
+    assert "PENALTY_REVIEW_APPROVED | Success" not in logged
+    assert "APPEALS_PROMPT | Incomplete" in logged
+
+
 # ---------------------------------------------------------------------------
 # The attendance pipeline inside it
 # ---------------------------------------------------------------------------
