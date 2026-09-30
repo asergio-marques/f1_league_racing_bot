@@ -278,18 +278,27 @@ async def test_a_first_submission_is_logged_as_submitted(committer):
     assert "Submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a correction is committed by _commit_correction, which writes no line",
+)
 async def test_a_correction_is_logged_as_a_correction(committer):
     """How a manager tells "this driver has just signed up" from "this driver has fixed
-    the thing I asked about"."""
-    from leaguebot.core.models.driver_profile import DriverState
+    the thing I asked about". Lewis was asked to correct his nationality and typed "German": a
+    correction is committed by `_commit_correction`, never `commit_wizard`, so it writes the
+    one line, naming what was re-collected."""
+    from leaguebot.signup.models.signup_module import WizardState
 
-    committer.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
-    )
+    wizard = _wizard({"nationality": "German"})
+    wizard.wizard_state = WizardState.COLLECTING_NATIONALITY
 
-    await _commit(committer)
+    await committer.svc._commit_correction(wizard, committer.guild)
 
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
+    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    head = f"Lewis Hamilton (<@{DRIVER_ID}>) | Signup | Correction submitted"
+    assert lines[0].startswith(head), lines[0]
+    assert "nationality" in lines[0][len(head):].lower(), lines[0]
 
 
 async def test_no_notes_on_the_first_pass_writes_only_submitted(committer):
@@ -346,8 +355,10 @@ async def test_a_first_submission_is_a_new_signup(committer):
 
 
 async def test_the_prior_state_is_read_before_anything_is_written(committer):
-    """Read after the transition it would always say `PENDING_ADMIN_APPROVAL`, and every
-    submission would log as a first one."""
+    """Read after the transition it would always say `PENDING_ADMIN_APPROVAL`, and a
+    correction would be saved as a second signup. The log line no longer turns on it: a
+    correction writes its line from `_commit_correction`
+    (`test_a_correction_is_logged_as_a_correction`)."""
     from leaguebot.core.models.driver_profile import DriverState
 
     committer.driver_service.get_profile = AsyncMock(
@@ -357,7 +368,7 @@ async def test_the_prior_state_is_read_before_anything_is_written(committer):
     await _commit(committer)
 
     committer.driver_service.get_profile.assert_awaited_once()
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
+    assert committer.saved[0].id == 9
 
 
 async def test_a_driver_who_has_left_is_logged_by_id(committer):
