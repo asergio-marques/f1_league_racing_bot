@@ -1265,7 +1265,11 @@ async def finalize_appeals_review(
     by the button that calls this. A call without one names the appeals review's Approve button
     from *state*, which only a test makes.
     """
-    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED, _button
+    from leaguebot.results.services.penalty_wizard import (
+        _APPEALS_BEING_APPROVED,
+        _applied_named,
+        _button,
+    )
 
     if getattr(state, "is_amendment", False):
         await _approve_amendment_appeals(interaction, state)
@@ -1393,6 +1397,11 @@ async def finalize_appeals_review(
                         f"{interaction_member(interaction)} | APPEALS_REVIEW_APPROVED | {outcome}\n"
                         f"  round: {state.round_number} ({state.division_name})\n"
                         + (f"  corrections: {n_corrections}\n" if n_corrections else "  corrections: none\n")
+                        + (
+                            f"  applied: {await _applied_named(state, state.staged_appeals)}\n"
+                            if n_corrections
+                            else ""
+                        )
                         + f"  old={old_val}\n  new={new_val}"
                     )
                     await bot.output_router.post_log(
@@ -2692,11 +2701,17 @@ async def _approve_amendment_reports(interaction, state) -> None:
     await _take_down_report_stage(state)
 
     try:
+        from leaguebot.results.services.penalty_wizard import _applied_named
+
+        applied = (
+            f"  applied: {await _applied_named(state, state.staged)}\n" if state.staged else ""
+        )
         await bot.output_router.post_log(
             f"{interaction_member(interaction)} | AMEND_STAGE_2 | Recorded\n"
             f"  round: {state.round_number} ({state.division_name}), "
             f"sessions: {_sessions_text(session_types)}\n"
             f"  reports: {len(state.staged) or 'none'}\n"
+            f"{applied}"
             "  Nothing is published until the appeal stage is approved."
         )
     except Exception:  # noqa: BLE001 — the stage stands whether or not it was logged
@@ -2847,6 +2862,10 @@ async def _log_result_amended(
             f"  season: {rctx['season_number']}, division: {rctx['division_name']!r}\n"
             f"  round: {rctx['round_number']}, sessions: {_sessions_text(session_types)}"
         )
+        if state.staged_appeals:
+            from leaguebot.results.services.penalty_wizard import _applied_named
+
+            summary += f"\n  appeals applied: {await _applied_named(state, state.staged_appeals)}"
         if faults:
             summary += "\n" + "\n".join(f"  {line}" for line in faults) + f"\n  {hint}"
         await bot.output_router.post_log(summary)

@@ -3103,10 +3103,6 @@ def _correction(driver: int = 102, seconds: int = 10) -> StagedPenalty:
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the approval and amendment lines do not yet carry what apply_penalties applied",
-)
 @pytest.mark.parametrize(
     "token, carries",
     [

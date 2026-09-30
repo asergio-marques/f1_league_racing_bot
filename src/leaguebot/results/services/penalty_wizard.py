@@ -178,6 +178,20 @@ async def _staged_named(state: PenaltyReviewState, penalties: list[StagedPenalty
     return ", ".join(named)
 
 
+async def _applied_named(state: PenaltyReviewState, penalties: list[StagedPenalty]) -> str:
+    """What an approval applied, as the line that records it names it (#482).
+
+    "+5s for <@1> in FEATURE_RACE, DSQ for <@2> in SPRINT_RACE": each penalty or correction,
+    the driver by the account they use now, and the session. The approval's own line carries it
+    because `apply_penalties` writes none.
+    """
+    named = []
+    for sp in penalties:
+        shown = await _shown(state, sp.driver_user_id)
+        named.append(f"{_pen_label(sp)} for <@{shown}> in {sp.session_type.value}")
+    return ", ".join(named)
+
+
 def _clear_confirmation(state: PenaltyReviewState, review: str) -> str:
     """Name a review's clear confirmation as the log channel should read it (#482).
 
