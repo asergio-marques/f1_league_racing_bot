@@ -556,6 +556,17 @@ const reviewedAt = { ...(previous && previous.reviewedAt ? previous.reviewedAt :
 const DESCRIBED = ['scenario', 'expects', 'before', 'why', 'criterion', 'what', 'affects']
 const described = (entry, f) => JSON.stringify(f === 'affects' ? [...(entry.affects || [])].sort() : entry[f] || '')
 const digestOf = e => fnv(DESCRIBED.map(f => described(e, f)).join('|'))
+// A parametrised test is one function, whatever cases it runs: it is compared without them.
+const bareId = id => String(id || '').replace(/\[.*\]$/, '')
+const supportKey = s => `${s.file}::${s.name}`
+// The list as a reviewer last saw it: for each entry, a hash of its key against its change and the
+// hash of what it says. Nothing else is read of it, and with the keys written out it was the largest
+// part of a result carried into the next run, which then no longer fitted in a script (#482 slice 4).
+const seenEntry = e => `${e.change}:${e.digest || digestOf(e)}`
+const seenList = (tests, support) => ({
+  t: Object.fromEntries((tests || []).map(t => [fnv(bareId(t.nodeid)), seenEntry(t)])),
+  s: Object.fromEntries((support || []).map(x => [fnv(supportKey(x)), seenEntry(x)])),
+})
 const compactEntry = (e, support) => e.digest ? e : {
   ...(support ? { file: e.file, name: e.name } : { nodeid: e.nodeid }),
   change: e.change,
@@ -568,7 +579,7 @@ const compactList = (tests, support) => ({ tests: (tests || []).map(t => compact
 // only the entries new or changed since in full, the rest in short: the long descriptions are most
 // of a round's prompt, and re-reading them every round is paid for every round. A lane that
 // returned nothing is dropped, and is given the whole list again.
-const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, compactList(seen.tests, seen.support)]))
+const listSeen = Object.fromEntries(Object.entries(previous && previous.listSeen ? previous.listSeen : {}).map(([lane, seen]) => [lane, seen.t ? seen : seenList(seen.tests, seen.support)]))
 const separateDefects = previous ? [...previous.separateDefects] : []
 // The tests the build adjusted after Gate 2 because the plan's change broke them, for Gate 3.
 // A tests stage run again after the build is given the build's list, as `adjusted`.
@@ -1054,18 +1065,15 @@ const SUPPORT_WRITTEN = 'The fixtures, helpers, values and files under tests/ th
 // test entry is given in full, as any of them may use it and its scenario be held to what its setup
 // now does.
 let listTouched = null
-const changedSince = (entry, before, keyOf) => {
-  const was = before.find(b => keyOf(b) === keyOf(entry))
-  return !was || was.change !== entry.change || was.digest !== digestOf(entry)
-}
+const changedSince = (entry, seen, keyOf) => seen[fnv(keyOf(entry))] !== seenEntry(entry)
 const listFor = (lane, tests, support, whole = false) => {
   if (!tests) return ''
   const seen = listSeen[lane]
   if (!seen || whole || !listTouched) return `${section(TESTS_WRITTEN, tests)}${section(SUPPORT_WRITTEN, support)}`
   const testKey = t => bareId(t.nodeid)
   const touched = listTouched
-  const newTests = tests.filter(t => touched.support.size || changedSince(t, seen.tests || [], testKey) || touched.tests.has(testKey(t)))
-  const newSupport = support.filter(x => changedSince(x, seen.support || [], supportKey) || touched.support.has(supportKey(x)))
+  const newTests = tests.filter(t => touched.support.size || changedSince(t, seen.t, testKey) || touched.tests.has(testKey(t)))
+  const newSupport = support.filter(x => changedSince(x, seen.s, supportKey) || touched.support.has(supportKey(x)))
   const short = [
     ...tests.filter(t => !newTests.includes(t)).map(t => ({ label: t.label, nodeid: t.nodeid, change: t.change, ...(filled(t.criterion) ? { criterion: t.criterion } : {}) })),
     ...support.filter(x => !newSupport.includes(x)).map(x => ({ label: x.label, file: x.file, name: x.name, change: x.change })),
@@ -1173,10 +1181,7 @@ const GROUPS = [
   { change: 'deleted', title: 'Deleted', prefix: 'D' },
   { change: 'moved', title: 'Moved', prefix: 'MV' },
 ]
-// A parametrised test is one function, whatever cases it runs: it is compared without them.
-const bareId = id => String(id || '').replace(/\[.*\]$/, '')
 const fileOf = id => bareId(id).split('::')[0]
-const supportKey = s => `${s.file}::${s.name}`
 const filled = v => String(v === undefined || v === null ? '' : v).trim() !== ''
 // Entries in report order: files sorted, and within a file as the builder listed them.
 const byFile = (entries, fileOfEntry) => [...new Set(entries.map(fileOfEntry))].sort().map(f => [f, entries.filter(e => fileOfEntry(e) === f)])
@@ -1389,7 +1394,7 @@ const reviewTests = async (k, questions, built) => {
   ])
   for (const [lane, result] of [['issue', issueResult], ['product', productResult]]) {
     if (result === undefined) continue
-    if (result) listSeen[lane] = compactList(written, supportWritten)
+    if (result) listSeen[lane] = seenList(written, supportWritten)
     else delete listSeen[lane]
   }
   return { lanes: { issue: issueResult, product: productResult }, test, report, problems, green: !!test && !hostProblem(test) && !problems.length }
@@ -1715,8 +1720,10 @@ for (let k = offset + 1; k <= offset + maxRounds; k++) {
   const closed = [...pendingBefore].filter(id => !openIds.has(id)).length
   stallStreak = k > 1 && opened >= 1 && opened >= closed ? stallStreak + 1 : 0
   const red = redKey(reviewed)
-  const sameRed = !!red && red === lastRed
-  lastRed = red
+  // Kept as a hash: only whether two rounds failed alike is read of it, and in full it ran to tens of
+  // kilobytes of every result.
+  const sameRed = !!red && fnv(red) === lastRed
+  lastRed = red ? fnv(red) : ''
   const proposed = stage === 'build' ? built.testChanges || [] : []
   rounds.push({ round: k, commits: built.commits.map(c => c.subject), openMaterial: open.length, opened, closed, green: reviewed.green, questions: stopping.length, provisional: taken.length, testChanges: proposed.length, dead })
   log(`Round ${k}: ${built.commits.length} commit(s); ${open.length} material finding(s) open; ${stage === 'tests' ? 'tests' : 'suite'} ${reviewed.green ? 'green' : 'not green'}; ${stopping.length} question(s) for the owner; ${proposed.length} test change(s) proposed.`)

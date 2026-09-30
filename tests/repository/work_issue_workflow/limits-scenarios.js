@@ -181,3 +181,25 @@ Object.assign(module.exports, {
     expect: (r, { labels }) => r.status === 'capped' && !labels.length,
   },
 })
+
+// Only whether two rounds failed alike is read of the last failure, so a result carries it as a hash;
+// a stage resumed from that result still stalls on the same failure (#483).
+Object.assign(module.exports, {
+  lastRedCarriedAsHashStillStalls: {
+    args: async runOnce => {
+      const first = await runOnce({ ...base, stage: 'tests', maxRounds: 1 }, label => {
+        if (label.endsWith(':builder')) return builder()
+        if (label.endsWith(':tester')) return testsCheck({ otherFailures: ['THE SAME LONG FAILURE '.repeat(40)] })
+        return review()
+      })
+      if (!/^[0-9a-f]{8}$/.test(first.lastRed)) throw new Error(`lastRed is carried in full: ${first.lastRed.slice(0, 40)}`)
+      return { ...base, stage: 'tests', previous: first }
+    },
+    respond(label) {
+      if (label.endsWith(':builder')) return builder()
+      if (label.endsWith(':tester')) return testsCheck({ otherFailures: ['THE SAME LONG FAILURE '.repeat(40)] })
+      return review()
+    },
+    expect: r => r.status === 'stalled' && r.lastRound === 2,
+  },
+})

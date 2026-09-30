@@ -425,7 +425,8 @@ Object.assign(scenarios, {
         if (label.endsWith(':issue')) return review({ findings: [finding('issue-1-1')] })
         return cleanLanes(label)
       })
-      if (first.status !== 'unfinished' || JSON.stringify(first.listSeen).includes('SCEN-A-LONG') || !first.listSeen.issue.tests[0].digest) throw new Error('the first run did not remember the list as hashes')
+      const seen = JSON.stringify(first.listSeen)
+      if (first.status !== 'unfinished' || seen.includes('SCEN-A-LONG') || seen.includes('test_a') || Object.keys(first.listSeen.issue.t).length !== 1) throw new Error('the first run did not remember the list as hashes, keys included')
       return { ...base, stage: 'tests', previous: first }
     },
     respond(label, prompt) {
