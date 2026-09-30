@@ -1372,3 +1372,37 @@ async def test_a_division_cancelled_as_typed_in_another_case_is_named_as_it_is_n
     assert "/division cancel" in line, line
     assert "Pro" in words, line
     assert "pro" not in words, line
+
+
+# ---------------------------------------------------------------------------
+# /division delete names the division as it is named (#482, F12)
+# ---------------------------------------------------------------------------
+#
+# As rename, amend and cancel: the division is found without regard to case, and the reply and
+# the log line name it as it stands, never as the manager typed it.
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /division delete names the division as the manager typed it",
+)
+async def test_a_division_deleted_as_typed_in_another_case_is_named_as_it_is_named(tmp_path):
+    """A season in placements holds divisions Pro and Am. The manager (id 77) runs /division
+    delete typing the division's name as 'pro'. Pro is deleted; the reply opens '✅ Division
+    **Pro** deleted.' and nowhere shows 'pro', and the one log line, naming /division delete,
+    names Pro and never 'pro'."""
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, remaining=[_division("Am", 2, id=DIVISION_ID + 1)])
+    interaction = _as_discord(_run_by_the_manager(cog, "division delete"))
+
+    await _delete(cog, interaction, name="pro")
+
+    cog.bot.season_service.delete_division.assert_awaited_once_with(DIVISION_ID)
+    replied = _replied(interaction)
+    assert replied.startswith("✅ Division **Pro** deleted."), replied
+    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}, replied
+    [line] = _logged(cog)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert "/division delete" in line, line
+    assert "Pro" in words, line
+    assert "pro" not in words, line
