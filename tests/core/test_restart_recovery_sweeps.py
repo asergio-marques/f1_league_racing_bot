@@ -744,7 +744,7 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
     bot restarted before the amendment was approved, and the round is put back as it was. The
     README promises this is recorded as a lapse: one line, naming Alex as its starter, with
-    what became of it and what to do next beneath it."""
+    the session being amended, what became of it and what to do next beneath it."""
     db_path = await _base_db(tmp_path, "amend_revert_lapse")
     await _seed_amend(db_path)
     bot = _stub_bot(db_path, guild=_amend_guild(channel=None))
@@ -766,6 +766,7 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
         "  Amendment channel deleted, and the round put back as it was. Please re-run "
         "/results rounds amend."
     ) in detail
+    assert "Feature Race" in "\n".join(detail), detail
 
 
 @pytest.mark.xfail(strict=True, reason=_RESTART_NOT_YET)
