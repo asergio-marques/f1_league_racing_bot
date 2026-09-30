@@ -191,10 +191,6 @@ def test_the_member_naming_helpers_import_from_member_names_and_log_lines_alike(
     assert log_lines.interaction_member is member_names.interaction_member
 
 
-_NO_RECORD_REFUSAL = "#482: record_refusal does not exist yet"
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_RECORD_REFUSAL)
 @pytest.mark.parametrize(
     "case", ["member object", "member id", "member has left", "nobody recorded", "post fails"]
 )
@@ -239,7 +235,6 @@ async def test_record_refusal_writes_the_standard_line_without_answering(case):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_RECORD_REFUSAL)
 async def test_refuse_forms_its_line_through_record_refusal(monkeypatch):
     """`refuse` writes its line through `record_refusal`, so the refusal's line is formed in one
     place; the line itself is unchanged (`test_refuse_replies_to_the_member_and_logs_one_line`)."""
