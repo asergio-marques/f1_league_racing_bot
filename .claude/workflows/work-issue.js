@@ -1419,10 +1419,13 @@ const unapprovedTestChanges = t => {
   if (t.changesError) return [`tools/changed_tests.py could not list what the build changed under tests/: ${t.changesError}`]
   if (!filled(t.changes.head)) return ['the tester did not show that it ran tools/changed_tests.py: changes carries no head']
   const since = `since the tests the owner approved at ${testsHead}: revert it, and propose it in testChanges[] if the build needs it, or list it in adjusted[] where the plan's change broke it`
+  // An adjustment to the new shape only ever modifies: a test or support added, deleted or moved is
+  // never one, whatever the builder lists.
   const listed = new Set(adjusted.map(a => bareId(a.target)))
+  const adjustedOnly = (x, key) => x.change === 'modified' && listed.has(key)
   return [
-    ...t.changes.tests.filter(x => !listed.has(bareId(x.nodeid))).map(x => `${x.nodeid} is ${x.change} ${since}`),
-    ...t.changes.support.filter(x => !isRatchet(x) && !listed.has(supportKey(x))).map(x => `${supportKey(x)} is ${x.change} ${since}`),
+    ...t.changes.tests.filter(x => !adjustedOnly(x, bareId(x.nodeid))).map(x => `${x.nodeid} is ${x.change} ${since}`),
+    ...t.changes.support.filter(x => !isRatchet(x) && !adjustedOnly(x, supportKey(x))).map(x => `${supportKey(x)} is ${x.change} ${since}`),
   ]
 }
 

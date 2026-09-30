@@ -160,3 +160,14 @@ module.exports.designVerifierRunsInFirstRoundOfCarriedRun = {
   },
   expect: (r, { labels }) => labels.includes('build:r2:design'),
 }
+
+// A test the build deletes or adds is never an adjustment, whatever the builder lists.
+module.exports.deletedTestListedAsAdjustedStillFlagged = {
+  args: { ...B, testsHead: 't0', maxRounds: 1 },
+  respond(label) {
+    if (label.endsWith(':builder')) return builder({ tests: [], adjusted: [{ target: 'tests/x/test_a.py::test_old', why: 'the plan broke it' }] })
+    if (label.endsWith(':tester')) return suite({ changes: changes([['tests/x/test_a.py::test_old', 'deleted']], [], [], 'h1') })
+    return lanesClean(label)
+  },
+  expect: r => r.status !== 'passed' && r.lastFailures.some(f => f.includes('tests/x/test_a.py::test_old is deleted since the tests the owner approved')),
+}
