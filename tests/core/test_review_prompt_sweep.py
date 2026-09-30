@@ -206,18 +206,6 @@ async def test_an_unreadable_database_is_survived():
 # ── #482: what the sweep records, and one row per standing prompt ─────────────────────────
 
 
-_SWEEP_RECORDED = pytest.mark.xfail(
-    strict=True, reason="#482: the start-up sweep records no lapse for a prompt it clears"
-)
-_ONE_ROW_PER_PROMPT = pytest.mark.xfail(
-    strict=True,
-    reason="#482: season_review_prompts holds one row for the whole server, and forgetting a "
-    "review deletes every row",
-)
-_REPORT_SWEPT = pytest.mark.xfail(
-    strict=True,
-    reason="#482: a review's report messages are not recorded, so a restart leaves them standing",
-)
 
 
 def _logged(bot) -> list[str]:
@@ -234,7 +222,6 @@ def _channel_holding(*message_ids: int):
     return channel, messages
 
 
-@_SWEEP_RECORDED
 @pytest.mark.parametrize("review", ["/season placements-review", "/season config-review"])
 async def test_a_cleared_prompt_records_its_lapse_naming_the_reviewer_and_the_review(
     db_path, review
@@ -256,7 +243,6 @@ async def test_a_cleared_prompt_records_its_lapse_naming_the_reviewer_and_the_re
     assert review in beneath and "again" in beneath, lines[0]
 
 
-@_ONE_ROW_PER_PROMPT
 async def test_an_older_review_lapsing_leaves_a_newer_ones_record_for_the_restart(db_path):
     """F1. Two placements reviews stand in channel 700, Alex's older one (message 800) and his
     newer one (message 801). The older lapses; the bot then restarts with the newer still
@@ -293,7 +279,6 @@ async def test_an_older_review_lapsing_leaves_a_newer_ones_record_for_the_restar
     assert await _rows(db_path) == []
 
 
-@_REPORT_SWEPT
 async def test_a_review_standing_at_a_restart_has_its_report_deleted_with_its_prompt(db_path):
     """F2. Alex's placements review stands in channel 700: its report (messages 901 and 902) and
     its question (message 800). The bot restarts; the report goes with the question, as it

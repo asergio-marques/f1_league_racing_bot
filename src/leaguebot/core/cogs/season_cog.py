@@ -23,6 +23,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field
@@ -6510,7 +6511,13 @@ class _ApproveView(LeagueView):
         self._fingerprint = await take_fingerprint(self._cog.bot, season_id)
 
     async def bind(self, message: discord.Message) -> None:
-        """Remember the message, and record it so a restart can find it again."""
+        """Remember the message, and record it so a restart can find it again.
+
+        The record is this prompt's own row, beside any other review's, and carries the review
+        it belongs to and the report above it (`carries` runs first), so that a restart can
+        expire it on the terms a timeout would: its report deleted with it, and its lapse
+        naming its review.
+        """
         self._message = message
         if self._season_id is None:
             return
@@ -6518,18 +6525,16 @@ class _ApproveView(LeagueView):
             async with get_connection(self._cog.bot.db_path) as db:
                 await db.execute(
                     "INSERT INTO season_review_prompts "
-                    "(id, season_id, channel_id, message_id, reviewer_id, posted_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(id) DO UPDATE SET "
-                    "season_id = excluded.season_id, channel_id = excluded.channel_id, "
-                    "message_id = excluded.message_id, reviewer_id = excluded.reviewer_id, "
-                    "posted_at = excluded.posted_at",
+                    "(message_id, season_id, channel_id, reviewer_id, review, "
+                    "report_message_ids, posted_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
-                        1,
+                        message.id,
                         self._season_id,
                         message.channel.id,
-                        message.id,
                         self._reviewer_id,
+                        self._review_command,
+                        json.dumps([posted.id for posted in self._report]),
                         datetime.now(timezone.utc).isoformat(),
                     ),
                 )
@@ -6538,13 +6543,15 @@ class _ApproveView(LeagueView):
             log.exception("season review: could not record the approve prompt")
 
     async def _forget(self) -> None:
-        """Drop the record. The message has been answered, has expired, or is gone."""
-        if self._season_id is None:
+        """Drop this prompt's record, and no other review's. The message has been answered, has
+        expired, or is gone."""
+        if self._season_id is None or self._message is None:
             return
         try:
             async with get_connection(self._cog.bot.db_path) as db:
                 await db.execute(
-                    "DELETE FROM season_review_prompts",
+                    "DELETE FROM season_review_prompts WHERE message_id = ?",
+                    (self._message.id,),
                 )
                 await db.commit()
         except Exception:  # noqa: BLE001

@@ -1227,16 +1227,18 @@ async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
 
     Every row that survives to startup is expired by definition: the bot was down, so the
     five minutes cannot have been served, and no view exists to serve them now. Each is
-    therefore deleted and replaced with the same notice a timeout would have posted, the
-    reviewer pinged so they learn of it without watching the channel.
+    therefore deleted, its report with it, and replaced with the same notice a timeout would
+    have posted, the reviewer pinged so they learn of it without watching the channel. Its lapse
+    is recorded in the log channel as a timeout's is, naming the reviewer and the review.
     """
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.utils.log_lines import record_abandoned
 
     try:
         async with get_connection(bot.db_path) as db:
             cursor = await db.execute(
-                "SELECT channel_id, message_id, reviewer_id, posted_at "
-                "FROM season_review_prompts"
+                "SELECT channel_id, message_id, reviewer_id, review, report_message_ids, "
+                "posted_at FROM season_review_prompts"
             )
             prompts = await cursor.fetchall()
     except Exception:
@@ -1257,29 +1259,45 @@ async def _recover_expired_review_prompts(bot: LeagueBot) -> None:
             except discord.HTTPException as exc:
                 log.warning("could not fetch the channel of a standing review: %s", exc)
                 channel = None
+        review = str(row["review"])
         if channel is not None:
-            try:
-                message = await channel.fetch_message(int(row["message_id"]))
-                await message.delete()
-            except discord.NotFound:
-                # Already gone — deleted by hand, or the channel with it. The row is
-                # cleared below regardless, which is the point of the sweep.
-                pass
-            except (discord.HTTPException, discord.Forbidden) as exc:
-                log.warning("could not delete the expired review prompt: %s", exc)
+            # The question, then the report above it: the report goes with it, as it does
+            # when the review expires while the bot runs.
+            standing = [int(row["message_id"]), *json.loads(row["report_message_ids"] or "[]")]
+            for message_id in standing:
+                try:
+                    message = await channel.fetch_message(message_id)
+                    await message.delete()
+                except discord.NotFound:
+                    # Already gone — deleted by hand, or the channel with it. The row is
+                    # cleared below regardless, which is the point of the sweep.
+                    pass
+                except (discord.HTTPException, discord.Forbidden) as exc:
+                    log.warning("could not delete an expired review's message: %s", exc)
             try:
                 await channel.send(
                     f"⏱️ <@{int(row['reviewer_id'])}> your review expired while the bot was "
-                    f"restarting and can no longer be answered. Run `/season config-review` "
-                    f"or `/season placements-review` again, whichever you were answering."
+                    f"restarting and can no longer be answered. Run `{review}` again."
                 )
             except (discord.HTTPException, discord.Forbidden) as exc:
                 log.warning("could not post the review expiry notice: %s", exc)
 
+        await record_abandoned(
+            bot,
+            int(row["reviewer_id"]),
+            what=f"`{review}`",
+            lapsed=True,
+            detail=(
+                "The bot restarted while it stood, so it can no longer be answered, and "
+                f"nothing has been confirmed. Run `{review}` again."
+            ),
+        )
+
         try:
             async with get_connection(bot.db_path) as db:
                 await db.execute(
-                    "DELETE FROM season_review_prompts"
+                    "DELETE FROM season_review_prompts WHERE message_id = ?",
+                    (int(row["message_id"]),),
                 )
                 await db.commit()
         except Exception:
