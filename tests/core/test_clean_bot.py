@@ -189,7 +189,6 @@ def _run_by_alex(cog, interaction):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason="#482: /clean-bot's refusal is not yet recorded")
 async def test_a_non_text_channel_refusal_is_recorded():
     """The core specification's "The record of what changed": a refusal is one line naming
     the member, what was refused and why. The reply is today's."""
@@ -220,9 +219,6 @@ async def test_a_non_text_channel_refusal_is_recorded():
             3,
             3,
             1,
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: /clean-bot's success is not yet recorded"
-            ),
             id="three_deleted_one_would_not",
         ),
         pytest.param(
@@ -230,9 +226,6 @@ async def test_a_non_text_channel_refusal_is_recorded():
             5,
             0,
             0,
-            marks=pytest.mark.xfail(
-                strict=True, reason="#482: /clean-bot's success is not yet recorded"
-            ),
             id="none_deleted",
         ),
     ],

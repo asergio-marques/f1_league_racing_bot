@@ -19,7 +19,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.utils.channel_guard import league_admin_only
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -59,8 +61,10 @@ class CleanCog(commands.Cog):
 
         channel = interaction.channel
         if not isinstance(channel, discord.TextChannel):
-            await interaction.followup.send(
-                "⛔ This command can only be used in a text channel.", ephemeral=True
+            await refuse(
+                interaction,
+                "⛔ This command can only be used in a text channel.",
+                what=describe(interaction),
             )
             return
 
@@ -94,6 +98,14 @@ class CleanCog(commands.Cog):
         if errors:
             parts.append(f"⚠️ {errors} message(s) could not be deleted.")
         await interaction.followup.send(" ".join(parts), ephemeral=True)
+        # A clean that deleted nothing is still recorded: the command acted, and found nothing.
+        await self.bot.output_router.post_log(
+            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /clean-bot | Success\n"
+            f"  channel: <#{channel.id}>\n"
+            f"  asked: {count}\n"
+            f"  deleted: {deleted}\n"
+            f"  could not delete: {errors}"
+        )
 
         log.info(
             "clean-bot: channel=%s asked=%d deleted=%d errors=%d by %s",
