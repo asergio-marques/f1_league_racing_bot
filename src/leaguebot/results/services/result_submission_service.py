@@ -625,7 +625,6 @@ async def _apply_approved_reports(interaction: discord.Interaction, state) -> No
         applied_records = await _ps.apply_penalties(
             db_path, round_id, division_id, state.staged,
             applied_by=actor_id, bot=bot,
-            _skip_post=True,
         )
         await _recompute_session_points(db_path, round_id)
 
@@ -1456,7 +1455,6 @@ async def _apply_staged_appeals(
     applied_pr = await _ps.apply_penalties(
         db_path, round_id, division_id, staged_appeals,
         applied_by=actor_id, bot=bot,
-        _skip_post=True,
         _phase="APPEAL",
     )
     await _recompute_session_points(db_path, round_id)
@@ -2662,7 +2660,6 @@ async def _approve_amendment_reports(interaction, state) -> None:
             await _ps.apply_penalties(
                 db_path, round_id, state.division_id, state.staged,
                 applied_by=interaction.user.id, bot=bot,
-                _skip_post=True,
             )
             await _recompute_session_points(db_path, round_id)
     except Exception as exc:  # noqa: BLE001 — undone, and the manager told

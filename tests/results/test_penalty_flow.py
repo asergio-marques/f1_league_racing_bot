@@ -108,7 +108,6 @@ class _FakeBot:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_full_flow_no_penalties(tmp_path):
     """With empty staged list apply_penalties is a no-op; positions unchanged."""
     db_path = str(tmp_path / "test.db")
@@ -140,7 +139,6 @@ async def test_full_flow_no_penalties(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_full_flow_with_positive_time_penalty(tmp_path):
     """Stage +30s on P1 driver; P1 drops behind P2 after apply_penalties."""
     db_path = str(tmp_path / "test.db")
@@ -177,7 +175,6 @@ async def test_full_flow_with_positive_time_penalty(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_full_flow_with_negative_time_penalty(tmp_path):
     """Stage -20s on P2 driver; P2 overtakes P1."""
     db_path = str(tmp_path / "test.db")
@@ -214,7 +211,6 @@ async def test_full_flow_with_negative_time_penalty(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_full_flow_with_dsq(tmp_path):
     """DSQ on P1 driver; driver moved to last position with 0 points."""
     db_path = str(tmp_path / "test.db")
@@ -256,7 +252,6 @@ async def test_full_flow_with_dsq(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_dsq_fastest_lap_not_redistributed_integration(tmp_path):
     """AC7 integration: DSQ on fastest-lap holder; no other driver gains bonus."""
     db_path = str(tmp_path / "test.db")
@@ -420,7 +415,6 @@ async def _insert_race_with_gap_strings(db_path: str, round_id: int, division_id
     return sr_id
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_gap_string_penalty_p1_drops(tmp_path):
     """P1 gets +10s; P1 should drop behind P2 who has a smaller total time."""
     db_path = str(tmp_path / "test.db")
@@ -454,7 +448,6 @@ async def test_gap_string_penalty_p1_drops(tmp_path):
     assert rows[2]["driver_user_id"] == 3, "Driver 3 should remain P3"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_gap_string_penalty_p3_gets_penalty(tmp_path):
     """P3 gets +120s penalty; P3 should remain P3 since no-one is behind to overtake."""
     db_path = str(tmp_path / "test.db")
@@ -528,7 +521,6 @@ async def _insert_race_and_new_tables(db_path: str, round_id: int, division_id: 
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_dsq_reorders_race_session_results(tmp_path):
     """DSQ on P1 driver; race_session_results must promote P2 to P1 and move DSQ driver last."""
     db_path = str(tmp_path / "test.db")
@@ -599,7 +591,6 @@ async def _insert_qualifying_and_new_tables(db_path: str, round_id: int, divisio
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_dsq_reorders_qualifying_session_results(tmp_path):
     """DSQ on P1 qualifier; qualifying_session_results must promote P2 to P1, DSQ driver to last."""
     db_path = str(tmp_path / "test.db")

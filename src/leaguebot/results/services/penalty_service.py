@@ -1,7 +1,6 @@
 """penalty_service.py — Post-race penalty staging and application."""
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -202,40 +201,24 @@ async def apply_penalties(
     applied_by: int,
     bot: LeagueBot,
     *,
-    _skip_post: bool = False,
     _phase: Literal["PENALTY", "APPEAL"] = "PENALTY",
 ) -> list[dict]:
-    """Apply a list of staged penalties to the DB and cascade standings.
+    """Apply a list of staged penalties to the DB.
 
     Inserts one row into ``penalty_records`` per staged penalty and returns
     the list of inserted record dicts (including ``id`` from the DB).
 
-    When *_skip_post* is ``True`` the internal cascade-recompute and
-    ``repost_round_results`` calls are skipped.  Pass ``True`` when the
-    caller (e.g. ``finalize_penalty_review``) will handle reposting itself.
+    This applies and nothing more (#482): it writes no line to the log channel and does not
+    recompute or repost, because every caller is an approval or an amendment stage that does
+    both itself and whose own line carries what was applied.
     """
     import datetime
-
-    from leaguebot.results.services import results_post_service
 
     # Map (session_type_value, driver_user_id) -> new table row id (race or qual)
     driver_to_new_result_id: dict[tuple[str, int], int] = {}
     inserted_records: list[dict] = []
 
     async with get_connection(db_path) as db:
-        # Load season_id for audit log
-        cursor = await db.execute(
-            """
-            SELECT d.season_id
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-        season_id: int | None = row["season_id"] if row else None
-
         # Group staged penalties by session_type
         session_types = {sp.session_type for sp in staged}
 
@@ -430,73 +413,6 @@ async def apply_penalties(
             )
 
         await db.commit()
-
-    # Audit log
-    details = json.dumps(
-        [
-            {
-                "driver_user_id": sp.driver_user_id,
-                "session_type": sp.session_type.value,
-                "penalty_type": sp.penalty_type,
-                "penalty_seconds": sp.penalty_seconds,
-            }
-            for sp in staged
-        ]
-    )
-    async with get_connection(db_path) as db2:
-        cursor2 = await db2.execute(
-            "SELECT 1 FROM divisions WHERE id = ?", (division_id,)
-        )
-        srv_row = await cursor2.fetchone()
-
-    # Cascade recompute standings, then repost. The guild is resolved first so the
-    # recomputation orders a full tie on the names the repost below will draw.
-    repost_faults: list[str] = []
-    if not _skip_post:
-        guild = None
-        async with get_connection(db_path) as db3:
-            cursor3 = await db3.execute(
-                "SELECT 1 FROM divisions WHERE id = ?", (division_id,)
-            )
-            row3 = await cursor3.fetchone()
-        if row3:
-            from leaguebot.core.utils.league_server import league_guild
-
-            guild = await league_guild(bot)
-
-        await results_post_service.recompute_standings_from_round(
-            db_path, division_id, round_id, guild, bot
-        )
-
-        # An unreachable guild is a fault, not a reason to skip in silence (#237, #244).
-        # ``league_guild`` returns None both where the guild is out of the gateway cache
-        # and where no league is set up, and neither raises — so a penalty could rescore
-        # the championship and leave every posted standing stale with nobody told.
-        if guild is None:
-            repost_faults.append(
-                "The league's server could not be reached, so the round's results and "
-                "standings were not reposted."
-            )
-        else:
-            repost_faults += await results_post_service.repost_round_results(
-                db_path, round_id, division_id, guild, bot=bot
-            )
-
-    # The audit line is written *after* the posting, and says what the posting achieved
-    # (#237). Posting it first reported a success the cascade below had not yet earned and
-    # might never earn — the ordering ``season_end_service`` already keeps.
-    if srv_row:
-        outcome = "Incomplete" if repost_faults else "Success"
-        details_msg = (
-            f"<@{applied_by}> | PENALTIES_APPLIED | {outcome}\n"
-            f"  round_id: {round_id}\n"
-            f"  penalties: {details}"
-        )
-        if repost_faults:
-            hint = await results_post_service.results_sync_hint(db_path, division_id)
-            details_msg += "\n" + "\n".join(f"  {line}" for line in repost_faults)
-            details_msg += f"\n  {hint}"
-        await bot.output_router.post_log(details_msg)
 
     return inserted_records
 

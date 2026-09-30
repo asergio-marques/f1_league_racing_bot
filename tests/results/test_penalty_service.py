@@ -304,7 +304,6 @@ def test_negative_penalty_cumulative_second_reduction_rejected():
     assert "0s" in second
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_apply_negative_penalty_reorders(tmp_path):
     """Driver with a -10s penalty moves above a driver with no penalty."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -380,7 +379,6 @@ async def test_apply_negative_penalty_reorders(tmp_path):
     assert rows[1]["finishing_position"] == 2
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_apply_negative_penalty_reorders_move_up(tmp_path):
     """P2 driver with -15s total adjusted time moves to P1 if beats P1."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -455,7 +453,6 @@ async def test_apply_negative_penalty_reorders_move_up(tmp_path):
     assert rows[1]["driver_user_id"] == 1, "Driver 1 should now be P2"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
     """Two drivers with identical post-penalty times keep their original order."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -533,7 +530,6 @@ async def test_tiebreak_identical_times_preserves_earlier_position(tmp_path):
     assert rows[1]["driver_user_id"] == 2, "Driver 2 should be P2"
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     """AC7: DSQ on fastest-lap holder forfeits the bonus; no other driver gains it."""
     from leaguebot.core.db.database import get_connection, run_migrations
@@ -702,7 +698,6 @@ def _nfa(session_type: SessionType) -> StagedPenalty:
 
 
 @pytest.mark.parametrize("phase", ["PENALTY", "APPEAL"])
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_path, phase):
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.penalty_service import apply_penalties
@@ -731,7 +726,6 @@ async def test_no_further_action_leaves_a_race_classification_as_it_stood(tmp_pa
     assert await _rows() == before
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(tmp_path):
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.penalty_service import apply_penalties
@@ -758,7 +752,6 @@ async def test_no_further_action_leaves_a_qualifying_classification_as_it_stood(
     assert await _rows() == before
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     """It alters nothing, but it is still a decision, and the round's verdicts are read from
     the record — its announcement and an amendment's replay both need it there."""
@@ -789,7 +782,6 @@ async def test_no_further_action_is_recorded_as_a_verdict(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: apply_penalties still reposts unless told to skip, and the stub bot cannot serve the repost")
 async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tmp_path):
     """The guard is on sessions only no further action touches. A real sanction in the same
     session re-sorts it as it always has."""
@@ -828,10 +820,6 @@ async def test_a_sanction_beside_no_further_action_still_reorders_its_session(tm
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: apply_penalties still takes _skip_post, reposts by default and logs PENALTIES_APPLIED",
-)
 async def test_apply_penalties_neither_reposts_nor_logs(tmp_path):
     import inspect
     from unittest.mock import AsyncMock, MagicMock, patch

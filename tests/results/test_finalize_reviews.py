@@ -3012,10 +3012,6 @@ async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_
     assert _line_under(state, heading).startswith(f"{_ALEX} | {heading}")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: applying the penalties writes a PENALTIES_APPLIED line beside the approval's",
-)
 async def test_an_approval_with_penalties_writes_one_line(tmp_path):
     """Alex approves round 3 (Pro)'s reports with driver 101 disqualified from the Feature
     Race, the penalty applied for real: the log channel gets the approval's one line, which
