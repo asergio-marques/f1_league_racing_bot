@@ -275,7 +275,6 @@ async def test_the_refusal_names_both_ways_out():
     assert "/results amend review" in replied
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused disable is not yet recorded")
 async def test_a_refused_disable_is_not_logged_as_a_success():
     """The mode is still on, and a log saying otherwise would have a league believe their
     staged edits were gone: the log records the refusal and its reason instead."""
@@ -328,7 +327,6 @@ async def test_reverting_is_refused_when_the_mode_is_not_on(active):
     svc["revert_modification_store"].assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused revert is not yet recorded")
 async def test_a_refused_revert_is_recorded_as_a_refusal():
     """Nothing was reverted, so the log records the refusal and its reason, never a revert."""
     cog = _make_cog()

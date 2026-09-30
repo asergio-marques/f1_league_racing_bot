@@ -151,7 +151,6 @@ def _case(case_id, command, run, amendment, reply):
     return pytest.param(
         command, run, amendment, reply,
         id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
     )
 
 

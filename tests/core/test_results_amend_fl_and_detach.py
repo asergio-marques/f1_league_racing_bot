@@ -160,7 +160,6 @@ async def test_a_configuration_is_detached(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused detachment is not yet recorded")
 async def test_detaching_from_a_running_season_is_refused(tmp_path):
     """Its points are snapshotted; `/results amend` is the route once it has started. The
     log records the refusal and its reason."""
@@ -241,7 +240,6 @@ async def test_the_modification_store_is_written(tmp_path, command, value, phras
     assert logged in str(cog.bot.output_router.post_log.await_args.args[0])
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a refused amend is not yet recorded")
 @pytest.mark.parametrize("command", ["amend_fl", "amend_fl_plimit"])
 async def test_an_amend_outside_amendment_mode_is_refused(tmp_path, command):
     """Writing a store nothing will read would report a change that never reaches the

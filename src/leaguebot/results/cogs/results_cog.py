@@ -1432,10 +1432,11 @@ class ResultsCog(commands.Cog):
                     f"  amendment_mode: disabled",
                 )
             except AmendmentModifiedError:
-                await interaction.followup.send(
+                await refuse(
+                    interaction,
                     "\u274c Cannot disable amendment mode \u2014 uncommitted changes exist. "
                     "Use `/results amend revert` to discard or `/results amend review` to apply.",
-                    ephemeral=True,
+                    what=describe(interaction),
                 )
 
     @amend_group.command(name="revert", description="Revert all modification store changes to the season points.")
@@ -1459,7 +1460,9 @@ class ResultsCog(commands.Cog):
 
         state = await get_amendment_state(self.bot.db_path, season.id)
         if state is None or not state.amendment_active:
-            await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
+            await refuse(
+                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
+            )
             return
 
         await revert_modification_store(self.bot.db_path, season.id)
@@ -1515,7 +1518,9 @@ class ResultsCog(commands.Cog):
                 now=datetime.now(timezone.utc),
             )
         except AmendmentNotActiveError:
-            await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
+            await refuse(
+                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
+            )
             return
         notice = _ordering_notice(
             name,
@@ -1566,7 +1571,9 @@ class ResultsCog(commands.Cog):
         try:
             await modify_fl_bonus(self.bot.db_path, season.id, name, session.value, points)
         except AmendmentNotActiveError:
-            await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
+            await refuse(
+                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
+            )
             return
         await interaction.followup.send(
             f"\u2705 Updated in modification store: **{name}** {session.name} FL bonus \u2192 {points} pts.",
@@ -1608,7 +1615,9 @@ class ResultsCog(commands.Cog):
         try:
             await modify_fl_position_limit(self.bot.db_path, season.id, name, session.value, limit)
         except AmendmentNotActiveError:
-            await interaction.followup.send("\u274c Amendment mode is not active.", ephemeral=True)
+            await refuse(
+                interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
+            )
             return
         await interaction.followup.send(
             f"\u2705 Updated in modification store: **{name}** {session.name} FL position limit \u2192 top {limit}.",
