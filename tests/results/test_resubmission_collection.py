@@ -904,6 +904,72 @@ async def _press_resubmit_and_collect(bot, state):
     return penalty
 
 
+async def _press_resubmit_and_fail(bot, state, *, validation_error=None):
+    """Alex presses Resubmit and the collection it starts fails before any paste: the round is
+    not found (*state* names one that does not exist), or the division's data cannot be read
+    (*validation_error*). Waits for the collection; returns the pressing interaction."""
+    interaction = _pressed_resubmit()
+    interaction.user.display_name = "Alex"
+    interaction.client = bot
+    interaction.response.is_done = MagicMock(return_value=True)
+    with patch(
+        "leaguebot.results.services.result_submission_service._build_division_validation_data",
+        new=AsyncMock(side_effect=validation_error or RuntimeError("never reached")),
+    ), patch(
+        "leaguebot.results.services.season_points_service.get_attached_config_names",
+        new=AsyncMock(return_value=["Standard"]),
+    ), patch(
+        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
+    ):
+        await enter_resubmit_flow(interaction, state)
+        task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{state.round_id}")
+        await asyncio.wait_for(task, timeout=5)
+    return interaction
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: a resubmission failing before any paste tells only the channel and records nothing",
+)
+@pytest.mark.parametrize(
+    ("round_found", "notice"),
+    [
+        (False, "Resubmission failed: this round could not be found"),
+        (True, "Resubmission failed: could not load division data"),
+    ],
+    ids=["round-not-found", "division-data-unreadable"],
+)
+async def test_a_resubmission_failing_before_any_paste_is_recorded(tmp_path, round_found, notice):
+    """Alex presses 🔄 Resubmit Initial Results on round 3 (Pro), and the collection fails
+    before any session is pasted: the round is gone, or the division's data cannot be read. The
+    channel is told as today; Alex is told the earlier results stand; and one failure line names
+    Alex as the member who pressed Resubmit."""
+    db_path = await _make_db(tmp_path, name=f"resubmit_fails_{round_found}")
+    await _seed_old_results(db_path)
+    channel = _channel()
+    bot = _bot(db_path, [])
+    bot.get_channel = MagicMock(return_value=channel)
+    state = _review_state(bot)
+    if not round_found:
+        state.round_id = ROUND_ID + 1
+
+    interaction = await _press_resubmit_and_fail(
+        bot, state, validation_error=RuntimeError("team service down") if round_found else None
+    )
+
+    assert notice in _said(channel)
+    bot.wait_for.assert_not_awaited()
+    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    failures = [line for line in lines if line.startswith("❌")]
+    assert len(failures) == 1, lines
+    assert "Resubmit" in failures[0]
+    assert f"failed for Alex (<@{MANAGER}>)" in failures[0]
+    replies = "\n".join(
+        str(c.args[0]) for c in interaction.followup.send.await_args_list if c.args
+    )
+    assert "The earlier results stand." in replies
+
+
 async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):
     """Issue #210, end to end. The button used to delete the results and start a collection
     that raised on its first line; every part of it was tested with the next part stubbed."""
