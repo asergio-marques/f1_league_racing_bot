@@ -32,6 +32,7 @@ either side.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -103,14 +104,26 @@ def _state(*, staged=()) -> PenaltyReviewState:
 
 
 def _interaction():
+    """A press by the league manager Alex (id 77), answering as Discord's does — not done until
+    it replies, defers or opens a form — and connected to a log channel of its own."""
+    answered = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        answered["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user = MagicMock(spec=discord.Member)
     interaction.user.id = 77
+    interaction.user.display_name = "Alex"
+    interaction.client = MagicMock()
+    interaction.client.output_router = MagicMock()
+    interaction.client.output_router.post_log = AsyncMock(return_value=None)
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.send_modal = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: answered["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.send_modal = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -585,3 +598,179 @@ async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_cla
     assert len(state.staged) == 1
     approval.assert_not_awaited()
     refresh.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded (#482)
+#
+# The core specification's "The record of what changed": a refusal replies as today and writes
+# one line naming the member, what was refused and why. A button names itself and the review it
+# belongs to; one pressed after a restart has no review to name.
+# ---------------------------------------------------------------------------
+
+_OF_THE_REVIEW = "of the penalty review of round 3 (Division 1)"
+_RESTARTED = "⚠️ The bot was restarted. Please wait for the penalty prompt to refresh."
+_NOT_A_MANAGER = "⛔ Only league managers can interact with the penalty review."
+_MOVED_ON = "⏳ This round's reports are being approved."
+_WITHDRAWN = (
+    "❌ This approval message was withdrawn when the review changed or moved on, so it can "
+    "no longer be used."
+)
+_ARCHIVED = "❌ This season is archived (COMPLETED) and cannot be modified."
+_NOTHING_STAGED = "⚠️ No penalties are staged."
+_APPROVAL_MESSAGE = 900
+_NOT_YET_RECORDED = "#482: the refusal is answered but not recorded in the log channel"
+
+#: The penalty review's buttons, by label, and the view each is on.
+_REVIEW_BUTTONS = [
+    "➕ Add Penalty",
+    "No Penalties / Confirm",
+    "✅ Approve",
+    "🔄 Resubmit Initial Results",
+    "🏳️ Attendance Pardon",
+]
+_APPROVAL_BUTTONS = ["✏️ Make Changes", "✅ Approve"]
+_CLEAR_BUTTONS = ["Yes, clear and proceed with no penalties", "Cancel — keep penalties"]
+
+
+def _reviewed_state():
+    """Round 3 of Division 1 under review, one penalty and one pardon staged, its approval
+    question posted as message 900."""
+    state = _state(staged=[_penalty()])
+    state.staged_pardons = [_pardon(0)]
+    state.approval_message_id = _APPROVAL_MESSAGE
+    return state
+
+
+def _view(kind: str, state):
+    return {
+        "review": PenaltyReviewView,
+        "approval": ApprovalView,
+        "clear": _ConfirmClearView,
+    }[kind](state)
+
+
+def _not_a_manager(monkeypatch):
+    monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
+
+
+def _moved_on(monkeypatch):
+    monkeypatch.setattr(pw, "_review_moved_on", AsyncMock(return_value=_MOVED_ON))
+
+
+def _archived(monkeypatch):
+    """The round's season reads as COMPLETED."""
+
+    class _Cursor:
+        async def fetchone(self):
+            return {"season_status": "COMPLETED"}
+
+    class _Db:
+        async def execute(self, *_args):
+            return _Cursor()
+
+    @asynccontextmanager
+    async def _connection(_path):
+        yield _Db()
+
+    monkeypatch.setattr("leaguebot.core.db.database.get_connection", _connection)
+
+
+def _refusal(case_id, kind, label, reply, *, setup=None, restarted=False, on_message=True,
+             nothing_staged=False):
+    return pytest.param(
+        kind, label, reply, setup, restarted, on_message, nothing_staged,
+        id=case_id,
+        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED),
+    )
+
+
+_REFUSALS = [
+    *(
+        _refusal(f"restarted-review-{label}", "review", label, _RESTARTED, restarted=True)
+        for label in _REVIEW_BUTTONS
+    ),
+    *(
+        _refusal(f"restarted-approval-{label}", "approval", label, _RESTARTED, restarted=True)
+        for label in _APPROVAL_BUTTONS
+    ),
+    *(
+        _refusal(f"not-a-manager-review-{label}", "review", label, _NOT_A_MANAGER,
+                 setup=_not_a_manager)
+        for label in [*_REVIEW_BUTTONS, "Remove #1", "Remove Pardon #1"]
+    ),
+    *(
+        _refusal(f"not-a-manager-approval-{label}", "approval", label, _NOT_A_MANAGER,
+                 setup=_not_a_manager)
+        for label in _APPROVAL_BUTTONS
+    ),
+    *(
+        _refusal(f"not-a-manager-clear-{label}", "clear", label, _NOT_A_MANAGER,
+                 setup=_not_a_manager)
+        for label in _CLEAR_BUTTONS
+    ),
+    *(
+        _refusal(f"moved-on-review-{label}", "review", label, _MOVED_ON, setup=_moved_on)
+        for label in [
+            "➕ Add Penalty", "No Penalties / Confirm", "🔄 Resubmit Initial Results",
+            "🏳️ Attendance Pardon", "Remove #1", "Remove Pardon #1",
+        ]
+    ),
+    _refusal("moved-on-approval-Make Changes", "approval", "✏️ Make Changes", _MOVED_ON,
+             setup=_moved_on),
+    _refusal("moved-on-clear-confirm", "clear", _CLEAR_BUTTONS[0], _MOVED_ON, setup=_moved_on),
+    *(
+        _refusal(f"withdrawn-approval-{label}", "approval", label, _WITHDRAWN, on_message=False)
+        for label in _APPROVAL_BUTTONS
+    ),
+    _refusal("archived-approval-Approve", "approval", "✅ Approve", _ARCHIVED, setup=_archived),
+    _refusal("nothing-staged-review-Approve", "review", "✅ Approve", _NOTHING_STAGED,
+             nothing_staged=True),
+]
+
+
+@pytest.mark.parametrize(
+    "kind, label, reply, setup, restarted, on_message, nothing_staged", _REFUSALS
+)
+async def test_every_refused_press_of_the_penalty_review_is_recorded(
+    monkeypatch, kind, label, reply, setup, restarted, on_message, nothing_staged
+):
+    """Alex presses a button of round 3's penalty review (Division 1) — the review itself, its
+    approval question, or the clear confirmation — and is refused: after a restart, without
+    the tier, once the review has moved on, on a withdrawn approval message, in an archived
+    season, or approving with nothing staged. The reply is today's, and exactly one line
+    records the refusal, naming the button, the review, Alex and the reason."""
+    if setup is not None:
+        setup(monkeypatch)
+    state = None if restarted else _reviewed_state()
+    if nothing_staged:
+        state.staged = []
+    view = _view(kind, state)
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+    interaction.message.id = _APPROVAL_MESSAGE if on_message else _APPROVAL_MESSAGE + 1
+
+    with _approval_step() as approval, patch(
+        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
+        new=AsyncMock(return_value=None),
+    ) as finalise, patch(
+        "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
+        new=AsyncMock(return_value=None),
+    ) as resubmit:
+        await button.callback(interaction)
+
+    approval.assert_not_awaited()
+    finalise.assert_not_awaited()
+    resubmit.assert_not_awaited()
+    interaction.response.send_modal.assert_not_awaited()
+    (replied,) = [
+        call.args[0] for call in interaction.response.send_message.await_args_list
+    ] + [call.args[0] for call in interaction.followup.send.await_args_list]
+    assert replied.startswith(reply)
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    if restarted:
+        assert line.startswith(f"⛔ the “{label}” button"), line
+        assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
+    else:
+        assert line == f"⛔ the “{label}” button {_OF_THE_REVIEW} refused for Alex (<@77>) — {reason}"
