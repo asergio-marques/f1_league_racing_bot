@@ -84,8 +84,8 @@ module.exports = {
     respond(label) {
       if (label === 'check:architecture') return { rulesTouched: [], breachesRemoved: [], breachesAdded: [], notYetBuilt: [], planChanges: [], questions: [], raised: [q('business', 'biz from arch?')], notes: [] }
       if (label === 'check:design') return { modules: [], questions: [], raised: [], notes: [] }
-      if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [], notes: [] }
-      if (label === 'triage:check:product') return { answers: [{ question: 'biz from arch?', answer: 'y', source: 'results § X', ref: 'c1' }], escalations: [], findings: [] }
+      if (label === 'check:product') return { specRules: [], criteria: [], questions: [], citations: [], documentsOwed: [], raised: [q('engineering', 'eng from po?')], notes: [] }
+      if (label === 'triage:check:issue') return { answers: [{ question: 'eng from po?', answer: 'y', source: 'architecture.md § X', ref: 'c2' }], escalations: [], findings: [] }
       throw new Error('unexpected agent ' + label)
     },
     expect: (r, { calls }) => !r.failed.length && settingsHold(calls, 'check', { ...DEFAULTS, issue: { model: 'sonnet', effort: 'high' } }, ['issue', 'product', 'triage'])

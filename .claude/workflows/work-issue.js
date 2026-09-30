@@ -293,8 +293,8 @@ const PRODUCT_PLAN_SCHEMA = {
         properties: { criterion: { type: 'string', description: 'one thing a league will see once the work lands' }, source: { type: 'string' } },
       },
     },
-    questions: { ...QUESTIONS, description: 'for the owner: every rule the plan would change, every spec silent, ambiguous or at odds with the code, where the plan cannot be built without the answer' },
-    citations: { type: 'array', items: ANSWER, description: 'questions the plan raises that a written rule settles' },
+    questions: { ...QUESTIONS, description: 'for the owner: every rule the plan would change, every spec silent, ambiguous or at odds with the code, where the plan cannot be built without the answer; and each question passed on to you that no written rule settles, with its ref' },
+    citations: { type: 'array', items: ANSWER, description: 'questions the plan raises, or passed on to you with a ref, that a written rule settles' },
     documentsOwed: {
       type: 'array',
       items: { type: 'object', required: ['document', 'section', 'why'], properties: { document: { type: 'string' }, section: { type: 'string' }, why: { type: 'string' } } },
@@ -410,7 +410,12 @@ if (stage === 'check') {
   // it would give is written here instead, and says so.
   const noDesignFile = !modules.some(m => DESIGN_FILES[m])
   if (noDesignFile) log('No module the plan touches has a design file yet, so no design agent runs.')
-  const [architecture, design, product] = await parallel([
+  // The architecture and design checks run first, side by side, and the product owner after them,
+  // settling in the same pass the business questions they met: triaging those apart cost an agent in
+  // every check that raised one (#483), for the same judgement. Only the engineering questions the
+  // product owner meets still go to a triage of their own. A question passed on that the product
+  // owner neither settles nor asks goes to the owner as it was asked.
+  const [architecture, design] = await parallel([
     () => send(`Job 1 — check a plan against the architecture. ${head}${context}${amended('architecture')}`,
       { ...settingsFor('issue'), label: 'check:architecture', phase: 'Check', agentType: 'issue-reviewer', schema: ARCHITECTURE_SCHEMA }),
     () => noDesignFile
@@ -423,13 +428,21 @@ if (stage === 'check') {
       })
       : send(`Job 2 — check a plan against the design files. ${head} The design file for each: ${DESIGN_LIST}.${context}${amended('design')}`,
         { ...settingsFor('issue'), label: 'check:design', phase: 'Check', agentType: 'issue-reviewer', schema: DESIGN_SCHEMA }),
-    () => send(`Job 1 — a plan. ${head} The specs: ${SPEC_LIST}, and the core specification wherever the plan touches core's rules.${context}${amended('product')}`,
-      { ...settingsFor('product'), label: 'check:product', phase: 'Check', agentType: 'product-owner', schema: PRODUCT_PLAN_SCHEMA }),
   ])
+  const ASKED_ALREADY = 'put to the owner already'
+  let refs = 0
+  const passedOn = [architecture, design].filter(Boolean).flatMap(r => r.raised).map(q => ({ ...q, ref: `c${++refs}` }))
+  const forProduct = passedOn.filter(q => q.kind === 'business')
+  const passedHandled = [...(architecture ? architecture.questions : []), ...(design ? design.questions : [])].map(q => q.question)
+  const product = await send(`Job 1 — a plan. ${head} The specs: ${SPEC_LIST}, and the core specification wherever the plan touches core's rules.${context}${amended('product')}${forProduct.length ? `${section('Business questions the architecture and design checks met, passed on to you', forProduct)}${section('Already put to the owner', passedHandled)}\n\nSettle each question passed on to you as one of your own, keeping its ref on what settles it: cite a written rule in citations[], copying the question word for word, or put it to the owner in questions[]. One that asks the same as a question already put to the owner is settled by it: cite that in citations[] with the question's ref, as source "${ASKED_ALREADY}".` : ''}`,
+    { ...settingsFor('product'), label: 'check:product', phase: 'Check', agentType: 'product-owner', schema: PRODUCT_PLAN_SCHEMA })
   const failed = [['architecture', architecture], ['design', design], ['product', product]].filter(([, r]) => !r).map(([k]) => k)
   if (failed.length) log(`No result for: ${failed.join(', ')}. Resume the run before relying on the check.`)
 
-  const raised = [architecture, design, product].filter(Boolean).flatMap(r => r.raised).map((q, i) => ({ ...q, ref: `c${i + 1}` }))
+  const settledRefs = new Set(product ? [...product.citations, ...product.questions].flatMap(refsIn) : [])
+  const unsettled = forProduct.filter(q => !settledRefs.has(q.ref)).map(q => ({ ...q, unframed: true }))
+  if (unsettled.length) log(`The product owner left ${unsettled.length} question(s) passed on to it unsettled; they go to the owner.`)
+  const raised = [...passedOn.filter(q => q.kind !== 'business'), ...(product ? product.raised : []).map(q => ({ ...q, ref: `c${++refs}` }))]
   const triaged = raised.length
     ? await triage(raised, 'check', `The plan was drafted at commit ${commit}.${branchNote}`, context,
       [...(product ? product.questions : []), ...(architecture ? architecture.questions : []), ...(design ? design.questions : [])].map(q => q.question))
@@ -439,6 +452,7 @@ if (stage === 'check') {
     ...(product ? product.questions : []),
     ...(architecture ? architecture.questions : []),
     ...(design ? design.questions : []),
+    ...unsettled,
     ...triaged.escalations,
   ]
   // A reversible call is assumed on its recommendation and listed in the plan for the owner to
@@ -461,7 +475,7 @@ if (stage === 'check') {
     questions,
     assumed,
     specRulesToSettle,
-    citations: [...(product ? product.citations : []), ...triaged.answers],
+    citations: [...(product ? product.citations.filter(c => c.source !== ASKED_ALREADY) : []), ...triaged.answers],
     planChanges: [...(architecture ? architecture.planChanges : []), ...triaged.findings.map(f => f.fix)],
     // Drafts for the tracker, shown at Gate 1 beside the plan, never put to the owner as questions.
     followUps: [['architecture', architecture], ['design', design], ['product', product]]
