@@ -399,3 +399,84 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
     assert seen["lines"] == [], seen["lines"]
     message.channel.send.assert_not_awaited()
     assert _logged(cog) == [own_line]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the review's timer firing while a press is under way deletes the review and "
+    "posts the expiry notice under the press, before the press has ended",
+)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_expire_once_it_ends(
+    view_class, label, review, helper, verb
+):
+    """Alex presses his review's button, through Discord's own dispatch, and while the approval
+    (or confirmation) is being worked the review's five minutes run out and its timer fires, as
+    discord.py fires it, in a task of its own. The press then hits a fault ('the database is
+    locked') and raises.
+
+    While the press is under way nothing is deleted and no notice posted. Once it has ended, the
+    question and both report messages are deleted and today's public notice pinging Alex is
+    posted, once. The log holds two lines: the press's failure line, and one lapse line naming
+    Alex that says an earlier press failed and may have been partly done.
+    """
+    view, cog, message = _review(view_class, helper)
+    report = [MagicMock(), MagicMock()]
+    for part in report:
+        part.delete = AsyncMock()
+    view.carries(report)
+    seen: dict = {}
+
+    def _deleted() -> int:
+        return message.delete.await_count + sum(part.delete.await_count for part in report)
+
+    async def _worked(*_args, **_kwargs):
+        # discord.py's timer: the view is stopped and `on_timeout` is run as a task.
+        view._dispatch_timeout()
+        [timer] = [
+            task for task in asyncio.all_tasks()
+            if task.get_name() == f"discord-ui-view-timeout-{view.id}"
+        ]
+        seen["timer"] = timer
+        # Long enough for the timer to have done whatever it will do while the press is worked.
+        await asyncio.wait({timer}, timeout=0.5)
+        seen["deleted"] = _deleted()
+        seen["notices"] = message.channel.send.await_count
+        seen["lines"] = list(_logged(cog))
+        raise RuntimeError("the database is locked")
+
+    getattr(cog, helper).side_effect = _worked
+    button = next(item for item in view.children if isinstance(item, discord.ui.Button))
+
+    # What discord.py does with a press: the button runs in a task, and a raise reaches
+    # the view's `on_error`, which records the failure.
+    pressed = view._dispatch_item(button, _press(cog))
+    assert pressed is not None
+    await asyncio.wait_for(pressed, timeout=2)
+    await asyncio.wait_for(seen["timer"], timeout=2)
+    # Whatever the end of the press sets off is given a moment to run its course.
+    loop = asyncio.get_running_loop()
+    settled_by = loop.time() + 1.0
+    while loop.time() < settled_by and (
+        not message.channel.send.await_count or len(_logged(cog)) < 2
+    ):
+        await asyncio.sleep(0.02)
+
+    assert seen["deleted"] == 0, "the review was deleted while its press was under way"
+    assert seen["notices"] == 0, "the expiry notice was posted while the press was under way"
+    assert not any(line.startswith("⌛ ") for line in seen["lines"]), seen["lines"]
+    message.delete.assert_awaited_once()
+    for part in report:
+        part.delete.assert_awaited_once()
+    message.channel.send.assert_awaited_once()
+    assert "<@4242> your review has expired" in message.channel.send.await_args.args[0]
+    lines = _logged(cog)
+    assert len(lines) == 2, lines
+    [failure] = [line for line in lines if line.startswith("❌ ")]
+    assert "failed for Alex (<@4242>)" in failure, failure
+    [lapse] = [line for line in lines if line.startswith("⌛ ")]
+    head, *beneath = lapse.splitlines()
+    assert head.endswith("lapsed unconfirmed (started by Alex (<@4242>))"), head
+    detail = "\n".join(beneath).lower()
+    assert "failed" in detail and "partly" in detail, detail
+    assert "nothing has been" not in detail, detail
