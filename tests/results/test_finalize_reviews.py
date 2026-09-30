@@ -3057,3 +3057,47 @@ async def test_an_approval_with_penalties_writes_one_line(tmp_path):
     assert len(logged) == 1, logged
     assert "PENALTY_REVIEW_APPROVED | Success" in logged[0]
     assert "penalties: 1" in logged[0]
+
+
+async def _amendment_stage(tmp_path, token: str):
+    """Alex takes round 3 (Pro)'s amendment through one stage with one report staged: the report
+    stage approved, the appeals stage approved, or the report stage failing part-way."""
+    db_path = await _make_db(tmp_path, name=f"amend_named_{token}")
+    await _seed_driver_row(db_path)
+    state = _state(db_path, staged=[_penalty()], appeals=[_penalty()])
+    await _open_amendment(state)
+    if token == "AMEND_STAGE_2":
+        await _run_real_apply(finalize_penalty_review, state)
+    elif token == "RESULT_AMENDED":
+        await _run(finalize_appeals_review, state)
+    else:
+        with patch(
+            "leaguebot.results.services.result_submission_service.revert_abandoned_amendment",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "leaguebot.results.services.result_submission_service._close_amendment_channel",
+            new=AsyncMock(),
+        ), patch(
+            "leaguebot.results.services.penalty_service.apply_penalties",
+            new=AsyncMock(side_effect=RuntimeError("disk full")),
+        ):
+            await _run_real_apply(finalize_penalty_review, state)
+    return state
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_NAMED)
+@pytest.mark.parametrize(
+    "token, outcome",
+    [
+        ("AMEND_STAGE_2", "Recorded"),
+        ("RESULT_AMENDED", "Success"),
+        ("AMEND_FAILED", "Notice"),
+    ],
+)
+async def test_each_stage_of_an_amendment_names_the_member_who_pressed(tmp_path, token, outcome):
+    """Alex approves the report stage of round 3 (Pro)'s amendment, approves its appeals stage,
+    or sees its report stage fail part-way: the line each writes reads
+    "Alex (<@77>) | <TOKEN> | <outcome>"."""
+    state = await _amendment_stage(tmp_path, token)
+
+    assert _line_under(state, token).startswith(f"{_ALEX} | {token} | {outcome}")
