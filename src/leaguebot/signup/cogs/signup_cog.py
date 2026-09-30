@@ -331,9 +331,10 @@ class ConfirmCloseView(LeagueView):
         await interaction.response.defer(ephemeral=True)
         # The count is the close's own, not the confirmation's: a driver may have finished
         # signing up, or started, in the five minutes the buttons stand (issue #128).
-        returned = await execute_forced_close(
+        outcome = await execute_forced_close(
             self._bot, audit_action="SIGNUP_FORCE_CLOSE"
         )
+        returned = outcome.returned
         await interaction.followup.send(
             f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
             "Not Signed Up.",

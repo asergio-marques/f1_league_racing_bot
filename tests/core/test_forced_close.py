@@ -210,10 +210,6 @@ async def test_a_turned_away_driver_is_told_and_their_channel_held(tmp_path):
     assert "Signups have closed" in hold.args[2]
 
 
-_OUTCOME = "#482: the forced close returns a bare count and swallows every failed step"
-
-
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_failing_transition_does_not_stop_the_close(tmp_path):
     """Driver 101 is still filling in the wizard and their transition fails with an error other
     than the expected refusal: the window still closes, and the outcome names driver 101 as a
@@ -231,7 +227,6 @@ async def test_a_failing_transition_does_not_stop_the_close(tmp_path):
     assert "101" in failed
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_path):
     """Driver 101's transition is refused as the state machine refuses a driver who has moved
     on since the close read them (`ValueError`): the window closes, they are not counted as
@@ -248,7 +243,6 @@ async def test_a_driver_already_moved_on_is_neither_counted_nor_a_failure(tmp_pa
     assert list(outcome.failed) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     """Driver 101 is returned, but their channel cannot be given its notice: the window still
     closes, 101 is counted, and the outcome names 101 as a driver not told."""
@@ -266,7 +260,6 @@ async def test_a_failing_channel_hold_does_not_stop_the_close(tmp_path):
     assert "101" in failed
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
     """The confirm button reports this number (issue #128). A driver awaiting approval is not
     turned away, so is not counted."""
@@ -286,7 +279,6 @@ async def test_the_close_returns_how_many_drivers_it_turned_away(tmp_path):
     assert list(outcome.failed) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_driver_whose_transition_failed_is_not_counted(tmp_path):
     """They are still mid-signup, so saying they were turned away would be false."""
     db_path = await _make_db(
@@ -320,13 +312,11 @@ async def test_the_signup_button_is_deleted(tmp_path):
         pytest.param(
             discord.NotFound(MagicMock(status=404), "gone"),
             False,
-            marks=pytest.mark.xfail(strict=True, reason=_OUTCOME),
             id="already gone",
         ),
         pytest.param(
             RuntimeError("forbidden"),
             True,
-            marks=pytest.mark.xfail(strict=True, reason=_OUTCOME),
             id="not removed",
         ),
     ],
@@ -373,7 +363,6 @@ async def test_a_closed_notice_is_posted_and_its_id_kept(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_notice_that_cannot_be_posted_still_closes_the_window(tmp_path):
     """The signup channel refuses the "Signups are now closed" notice: the window still closes,
     with no notice id kept, and the outcome names the notice as a failed step."""
@@ -389,7 +378,6 @@ async def test_a_notice_that_cannot_be_posted_still_closes_the_window(tmp_path):
     assert "notice" in step
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_guild_the_bot_has_left_still_closes_the_window(tmp_path):
     """The league's server cannot be reached: the window still closes, and the outcome names
     both the Sign Up button left standing and the notice not posted as failed steps."""
@@ -405,7 +393,6 @@ async def test_a_guild_the_bot_has_left_still_closes_the_window(tmp_path):
     assert any("notice" in step for step in outcome.failed)
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_season_that_cannot_be_moved_on_is_a_failed_step(tmp_path, monkeypatch):
     """Moving the season on after the close fails: the window still closes and is audited, and
     the outcome names the season as a failed step."""
@@ -436,7 +423,6 @@ async def test_the_close_is_audited_under_the_callers_action(tmp_path):
     assert await _audit(db_path) == [("SIGNUP_TIMER_CLOSE", "open", "closed", "system")]
 
 
-@pytest.mark.xfail(strict=True, reason=_OUTCOME)
 async def test_a_server_with_no_signup_configuration_does_nothing(tmp_path):
     """No signup configuration exists: the close returns an outcome with nobody returned and
     nothing failed, closes nothing and audits nothing."""

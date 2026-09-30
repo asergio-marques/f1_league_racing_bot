@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import discord
@@ -51,8 +52,32 @@ _MODULE_CHOICES = [
 RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNUP_COMPLETION})
 
 
-async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
-    """Force-close the signup window, and return how many drivers it turned away.
+#: The forced close's failed steps that do not name a driver, worded once for every caller.
+_BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup channel."
+_NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
+
+
+@dataclass(frozen=True)
+class ForcedCloseOutcome:
+    """What a forced close did: the drivers it turned away, and each step that failed.
+
+    Every step of the close runs whatever the one before did, because the window has to end up
+    closed and audited whatever Discord makes of it. So a step that fails cannot stop the close;
+    it is named here instead, one plain sentence each, for the caller to tell the member and
+    write beneath its line. Each failure's traceback stays in the host log.
+
+    It lives in core, beside the function that returns it: core callers (the season's end, the
+    close timer) use it too, and core imports nothing from the signup module for it.
+    """
+
+    #: How many drivers were returned to Not Signed Up, read at the moment of closing.
+    returned: int
+    #: One sentence per failed step, in the order the steps run. Empty where nothing failed.
+    failed: tuple[str, ...] = ()
+
+
+async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> ForcedCloseOutcome:
+    """Force-close the signup window, and return what it did.
 
     1. Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP.
     2. Delete signup button message (graceful NotFound).
@@ -60,12 +85,19 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
     4. Set window closed.
     5. Emit audit entry.
 
+    Every step runs whatever the one before did. A step that fails is named in the outcome's
+    ``failed`` and its traceback is logged; it is never swallowed. A driver whose transition the
+    state machine refuses (``ValueError``) has moved on since the close read them: they are not
+    counted as returned, and it is not a failure. Any other error from that transition is.
+
     The count is of transitions that succeeded, read at the moment of closing. The
     confirmation ``/signup close`` shows may be up to five minutes older than that.
     """
     cfg = await bot.signup_module_service.get_config()
     if cfg is None:
-        return 0
+        return ForcedCloseOutcome(returned=0)
+
+    failed: list[str] = []
 
     # 1. Transition the drivers still filling in the wizard
     async with get_connection(bot.db_path) as db:
@@ -84,8 +116,14 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
                 row["discord_user_id"], DriverState.NOT_SIGNED_UP
             )
             returned += 1
+        except ValueError:
+            # The state machine's refusal: the driver moved on since they were read.
+            log.info("forced_close: driver %s had moved on", row["discord_user_id"])
         except Exception:
             log.exception("forced_close: failed to transition driver %s", row["discord_user_id"])
+            failed.append(
+                f"<@{row['discord_user_id']}> could not be returned to Not Signed Up."
+            )
 
     # T046: cancel wizard APScheduler jobs for each force-transitioned driver
     svc = bot.scheduler_service
@@ -100,7 +138,9 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
     # This mirrors the withdraw() path so drivers see a message and the channel
     # is cleaned up after a 24-hour hold.
     _guild = await league_guild(bot)
-    if _guild is not None:
+    if _guild is None:
+        failed.extend(f"<@{row['discord_user_id']}> was not told signups had closed." for row in rows)
+    else:
         _wizard_svc = bot.wizard_service
         for row in rows:
             try:
@@ -110,32 +150,45 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
                 )
             except Exception:
                 log.exception("forced_close: trigger_channel_hold failed for driver %s", row["discord_user_id"])
+                failed.append(f"<@{row['discord_user_id']}> was not told signups had closed.")
 
     # 2. Delete button message
     if cfg.signup_button_message_id:
         guild = await league_guild(bot)
-        if guild and cfg.signup_channel_id is not None:
-            channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
-            if channel:
-                try:
-                    msg = await channel.fetch_message(cfg.signup_button_message_id)
-                    await msg.delete()
-                except discord.NotFound:
-                    pass
-                except Exception:
-                    log.exception("forced_close: could not delete button message")
+        channel = (
+            as_text_channel(guild.get_channel(cfg.signup_channel_id))
+            if guild and cfg.signup_channel_id is not None
+            else None
+        )
+        if channel:
+            try:
+                msg = await channel.fetch_message(cfg.signup_button_message_id)
+                await msg.delete()
+            except discord.NotFound:
+                pass
+            except Exception:
+                log.exception("forced_close: could not delete button message")
+                failed.append(_BUTTON_NOT_REMOVED)
+        else:
+            failed.append(_BUTTON_NOT_REMOVED)
 
     # 3. Post closed message; capture ID so it can be deleted when re-opening
     closed_msg_id: int | None = None
     guild = await league_guild(bot)
-    if guild and cfg.signup_channel_id is not None:
-        channel = as_text_channel(guild.get_channel(cfg.signup_channel_id))
-        if channel:
-            try:
-                closed_msg = await channel.send("🔒 Signups are now closed.")
-                closed_msg_id = closed_msg.id
-            except Exception:
-                log.exception("forced_close: could not post closed message")
+    channel = (
+        as_text_channel(guild.get_channel(cfg.signup_channel_id))
+        if guild and cfg.signup_channel_id is not None
+        else None
+    )
+    if channel:
+        try:
+            closed_msg = await channel.send("🔒 Signups are now closed.")
+            closed_msg_id = closed_msg.id
+        except Exception:
+            log.exception("forced_close: could not post closed message")
+            failed.append(_NOTICE_NOT_POSTED)
+    else:
+        failed.append(_NOTICE_NOT_POSTED)
 
     # 4. Set window closed (persists closed_msg_id)
     await bot.signup_module_service.set_window_closed(closed_msg_id=closed_msg_id)
@@ -149,6 +202,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
         await advance_on_window_close(bot.db_path)
     except Exception:  # noqa: BLE001
         log.exception("forced_close: could not move the season on")
+        failed.append("The season could not be moved on.")
 
     # 5. Audit entry
     now = datetime.now(timezone.utc).isoformat()
@@ -161,7 +215,7 @@ async def execute_forced_close(bot: LeagueBot, *, audit_action: str) -> int:
         )
         await db.commit()
 
-    return returned
+    return ForcedCloseOutcome(returned=returned, failed=tuple(failed))
 
 
 # ---------------------------------------------------------------------------
