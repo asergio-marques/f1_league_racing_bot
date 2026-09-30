@@ -516,6 +516,31 @@ async def test_opening_is_audited_with_the_tracks_chosen(tmp_path):
     assert json.loads(row["new_value"])["track_ids"] == ["1"]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /signup open does not state the close time it armed in its line or audit row",
+)
+async def test_opening_with_a_close_time_states_it_in_the_line_and_the_audit_row(tmp_path):
+    """A manager opens signups with a close time a week out: the Success line and the
+    SIGNUP_OPEN audit row both carry the close time armed."""
+    db_path = await _seed(tmp_path)
+    cog = _cog(db_path)
+
+    await _open(cog, _interaction(), close_time=_future(7))
+
+    armed = (await SignupModuleService(db_path).get_config()).close_at
+    assert armed is not None
+    [line] = _lines(cog)
+    assert line.startswith("Manager (<@42>) | /signup open | Success")
+    assert armed in line
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT new_value FROM audit_entries WHERE change_type = 'SIGNUP_OPEN'",
+        )
+        row = await cursor.fetchone()
+    assert armed in json.loads(row["new_value"]).values()
+
+
 async def test_a_previous_closed_notice_is_taken_down(tmp_path):
     """Otherwise the channel carries a "signups are closed" message above an open button."""
     db_path = await _seed(tmp_path)
