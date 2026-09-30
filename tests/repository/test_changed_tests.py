@@ -322,6 +322,52 @@ def test_a_constant_kept_while_a_marker_still_uses_it_is_not_reported(repo):
     assert result["markersRemoved"] == [f"{FILE}::test_a"] and result["support"] == []
 
 
+HELPER = dedent("""
+    import pytest
+
+    _NOT_YET = "#42: not yet built"
+
+
+    def _case(n):
+        return pytest.param(n, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET))
+
+
+    @pytest.mark.parametrize("n", [_case(1), _case(2)])
+    def test_c(n):
+        assert n
+""")
+
+
+def test_losing_the_marker_a_helper_puts_on_its_cases_is_a_marker_removed(repo):
+    """A tests stage writing many cases alike builds them in a helper (#483): a helper whose only
+    change is the loss of the issue's marker is listed with the markers, not as changed support."""
+    after = HELPER.replace(", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)", "").replace('_NOT_YET = "#42: not yet built"\n', "")
+    result = _changes(repo, {FILE: HELPER}, {FILE: after}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::_case"]
+    assert result["tests"] == [] and result["support"] == []
+
+
+def test_a_helper_changed_beyond_its_marker_is_modified_support(repo):
+    after = HELPER.replace(", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)", "").replace("return pytest.param(n", "return pytest.param(n + 1")
+    result = _changes(repo, {FILE: HELPER}, {FILE: after}, issue="42")
+    assert (FILE, "_case", "modified") in [(x["file"], x["name"], x["change"]) for x in result["support"]]
+    assert result["markersRemoved"] == []
+
+
+def test_a_reason_bound_through_a_chained_assignment_is_read(repo):
+    before = CONSTANT.replace('_NOT_YET = "#42: not yet built"', '_NOT_YET = _ALSO = "#42: not yet built"')
+    after = before.replace('@pytest.mark.xfail(strict=True, reason=_NOT_YET)\n', "")
+    result = _changes(repo, {FILE: before}, {FILE: after}, issue="42")
+    assert result["markersRemoved"] == [f"{FILE}::test_a"]
+
+
+def test_a_reason_bound_twice_is_not_read_as_a_marker(repo):
+    before = CONSTANT.replace('_NOT_YET = "#42: not yet built"', '_NOT_YET = "#42: not yet built"\n_NOT_YET = "something else"')
+    after = before.replace('@pytest.mark.xfail(strict=True, reason=_NOT_YET)\n', "")
+    result = _changes(repo, {FILE: before}, {FILE: after}, issue="42")
+    assert _tests(result) == [(f"{FILE}::test_a", "modified")] and result["markersRemoved"] == []
+
+
 def test_losing_the_marker_and_changing_the_test_is_a_modification(repo):
     after = "import pytest\n" + ONE_TEST.replace("1 == 1", "1 == 2")
     result = _changes(repo, {FILE: MARKED}, {FILE: after}, issue="42")

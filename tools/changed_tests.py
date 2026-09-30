@@ -37,7 +37,9 @@ the one test change the build makes by design. A reason may be written as the st
 a module-level constant bound to it (`reason=_NOT_YET_BUILT`): a tests stage writing many markers
 in one file names the reason once, and a marker read only in its literal form was reported as a
 modification the build had no leave to make (#483). Such a constant, deleted with the last marker
-that used it, is part of the markers, and is not reported as support.
+that used it, is part of the markers, and is not reported as support. So is a marker on a case a
+helper builds, `return pytest.param(..., marks=...)`: a helper whose only change is the loss of the
+issue's markers is listed under `markersRemoved` by its `file::name`, as a test is by its node id.
 
 Run it as:
 
@@ -229,14 +231,29 @@ def _test_class(
 
 
 def _module_strings(source: str) -> dict[str, str]:
-    """The module-level names a file binds to a string, as `_REASON = "#42: ..."` binds one."""
+    """The module-level names a file binds to a string, as `_REASON = "#42: ..."` binds one.
+
+    Each name an assignment binds is read on its own, so `A = B = "..."` binds both. A name bound
+    more than once is left out: which of its values a marker reads cannot be told without running
+    the module, and reading the wrong one could hide a change.
+    """
     strings: dict[str, str] = {}
+    bound: dict[str, int] = {}
     for statement in ast.parse(source).body if source else []:
-        value = statement.value if isinstance(statement, (ast.Assign, ast.AnnAssign)) else None
-        name = _bound_name(statement)
-        if name is not None and isinstance(value, ast.Constant) and isinstance(value.value, str):
-            strings[name] = value.value
-    return strings
+        if isinstance(statement, ast.Assign):
+            targets, value = statement.targets, statement.value
+        elif isinstance(statement, (ast.AnnAssign, ast.AugAssign)):
+            targets, value = [statement.target], statement.value
+        else:
+            continue
+        for target in targets:
+            for name in (n.id for n in ast.walk(target) if isinstance(n, ast.Name)):
+                bound[name] = bound.get(name, 0) + 1
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    strings[target.id] = value.value
+    return {name: text for name, text in strings.items() if bound[name] == 1}
 
 
 def _is_issue_marker(decorator: ast.expr, issue: str, strings: dict[str, str] | None = None) -> bool:
@@ -258,27 +275,31 @@ def _is_issue_marker(decorator: ast.expr, issue: str, strings: dict[str, str] | 
 
 
 def _without_markers(node: ast.AST, issue: str, strings: dict[str, str] | None = None) -> tuple[ast.AST, int]:
-    """A copy of a test less the issue's markers, on it or on its cases, and how many it had."""
+    """A copy of a test or helper less the issue's markers, and how many it had.
+
+    A marker is read on a test's own decorators and on any case built anywhere in it: in its
+    decorators, or in a helper's body that returns `pytest.param(..., marks=...)` for a test's
+    parametrize list, where a tests stage writing many cases alike puts it.
+    """
     copied = copy.deepcopy(node)
-    if not isinstance(copied, _DEFS):
-        return copied, 0
-    kept = [d for d in copied.decorator_list if not _is_issue_marker(d, issue, strings)]
-    removed = len(copied.decorator_list) - len(kept)
-    copied.decorator_list = kept
-    for decorator in kept:
-        for call in [n for n in ast.walk(decorator) if isinstance(n, ast.Call)]:
-            for keyword in [k for k in call.keywords if k.arg == "marks"]:
-                value = keyword.value
-                if _is_issue_marker(value, issue, strings):
+    removed = 0
+    if isinstance(copied, _DEFS):
+        kept = [d for d in copied.decorator_list if not _is_issue_marker(d, issue, strings)]
+        removed = len(copied.decorator_list) - len(kept)
+        copied.decorator_list = kept
+    for call in [n for n in ast.walk(copied) if isinstance(n, ast.Call)]:
+        for keyword in [k for k in call.keywords if k.arg == "marks"]:
+            value = keyword.value
+            if _is_issue_marker(value, issue, strings):
+                call.keywords.remove(keyword)
+                removed += 1
+            elif isinstance(value, (ast.List, ast.Tuple)):
+                left = [e for e in value.elts if not _is_issue_marker(e, issue, strings)]
+                removed += len(value.elts) - len(left)
+                if left:
+                    value.elts = left
+                else:
                     call.keywords.remove(keyword)
-                    removed += 1
-                elif isinstance(value, (ast.List, ast.Tuple)):
-                    left = [e for e in value.elts if not _is_issue_marker(e, issue, strings)]
-                    removed += len(value.elts) - len(left)
-                    if left:
-                        value.elts = left
-                    else:
-                        call.keywords.remove(keyword)
     return copied, removed
 
 
@@ -344,7 +365,10 @@ def changed_tests(repo: str, base: str, head: str = "HEAD", issue: str | None = 
                     continue
                 deleted_support[(path, name)] = before
             elif before is not None and after is not None and before.shape != after.shape:
-                support.append({"file": path, "name": name, "change": "modified"})
+                if issue and _only_markers_removed(before, after, issue, strings_before, strings_after):
+                    markers.append(f"{path}::{name}")
+                else:
+                    support.append({"file": path, "name": name, "change": "modified"})
     for nodeid, change, origin in _pair_moves(added_tests, deleted_tests, lambda k: k.split("::")[-1]):
         tests.append({"nodeid": nodeid, "change": change, **({"from": origin} if origin else {})})
     for (path, name), change, was in _pair_moves(added_support, deleted_support, lambda k: k[1]):
