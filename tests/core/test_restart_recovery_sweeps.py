@@ -494,10 +494,6 @@ def _amend_guild(*, channel=None):
     return guild
 
 
-#: Not yet true: #482 records the restart that ends an amendment in the record's own form.
-_RESTART_NOT_YET = "#482: a restart ending an amendment is not yet recorded naming who started it"
-
-
 def test_amendments_are_reverted_before_submission_channels_resume():
     """**The amend sweep runs before the submission-channel one** (#345, decided 2026-09-21).
 
@@ -566,7 +562,6 @@ async def test_the_amend_row_goes_before_the_channel_does(tmp_path):
     assert seen["rows"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_RESTART_NOT_YET)
 async def test_the_league_manager_is_told_to_re_run_the_command(tmp_path):
     """Their amendment vanished with the restart, and an empty channel list is not an
     explanation. Round 3 had nothing to put back, so the line says a restart ended it (#482)."""
@@ -602,7 +597,6 @@ async def test_an_amendment_with_nothing_to_put_back_says_to_re_run_results_roun
     ) in logged.splitlines()
 
 
-@pytest.mark.xfail(strict=True, reason=_RESTART_NOT_YET)
 async def test_the_notice_names_the_round_and_the_session(tmp_path):
     """A manager with four sessions amended over an evening needs to know which one went: the
     round and its division, as every record names them (#482), and the session beneath."""
@@ -739,7 +733,6 @@ async def test_an_amendment_put_back_says_to_re_run_results_rounds_amend(tmp_pat
     ) in logged.splitlines()
 
 
-@pytest.mark.xfail(strict=True, reason=_RESTART_NOT_YET)
 async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
     bot restarted before the amendment was approved, and the round is put back as it was. The
@@ -769,7 +762,6 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
     assert "Feature Race" in "\n".join(detail), detail
 
 
-@pytest.mark.xfail(strict=True, reason=_RESTART_NOT_YET)
 async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro); at the restart there is nothing to
     put back, so the bot cannot tell whether the corrections were never entered or the
