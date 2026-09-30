@@ -823,7 +823,9 @@ class ResultsCog(commands.Cog):
             "Nothing changed" + "".join(f"\n  {detail}" for detail in details),
         )
 
-    async def _sync_gate(self, interaction: discord.Interaction, div) -> bool:
+    async def _sync_gate(
+        self, interaction: discord.Interaction, div, *, what: str
+    ) -> bool:
         """Refuse a sync of a division with an amendment open (#345, decided 2026-09-21).
 
         An amendment's first stage writes its corrections and recalculates the division,
@@ -831,6 +833,9 @@ class ResultsCog(commands.Cog):
         the same database, so it would publish them unapproved — and leave them published if
         the amendment were then cancelled or lapsed, its revert posting nothing. It waits, as a
         submission of another of the division's rounds does.
+
+        The wait is a refusal and is recorded as one (#482), *what* being the caller's own name
+        of the command as the log channel should read it.
         """
         from leaguebot.results.services.result_submission_service import (
             amendment_wait_text,
@@ -840,12 +845,13 @@ class ResultsCog(commands.Cog):
         row = await open_amendment_in_division(self.bot.db_path, div.id)
         if row is None:
             return True
-        await interaction.followup.send(
+        await refuse(
+            interaction,
             f"\u23f8\ufe0f Round {row['round_number']} of **{div.name}** is being amended in "
             f"<#{row['channel_id']}>, and its corrections are not approved yet, so the "
             f"division cannot be synced until that ends — {amendment_wait_text()}. "
             "Run this again then.",
-            ephemeral=True,
+            what=what,
         )
         return False
 
@@ -2032,7 +2038,9 @@ class ResultsCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
-            await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
+            await refuse(
+                interaction, f"\u274c Division '{division}' not found.", what=describe(interaction)
+            )
             return
 
         from leaguebot.core.db.database import get_connection
@@ -2097,9 +2105,11 @@ class ResultsCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
-            await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
+            await refuse(
+                interaction, f"\u274c Division '{division}' not found.", what=describe(interaction)
+            )
             return
-        if not await self._sync_gate(interaction, div):
+        if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
         from leaguebot.results.services.results_post_service import repost_standings_for_division
@@ -2125,9 +2135,10 @@ class ResultsCog(commands.Cog):
                 "reason: no completed rounds, so nothing was posted",
             )
         else:  # no_channel
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Division '{division}' has no standings channel configured.",
-                ephemeral=True,
+                what=describe(interaction),
             )
 
     # ------------------------------------------------------------------
@@ -2155,9 +2166,11 @@ class ResultsCog(commands.Cog):
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == division.lower()), None)
         if div is None:
-            await interaction.followup.send(f"\u274c Division '{division}' not found.", ephemeral=True)
+            await refuse(
+                interaction, f"\u274c Division '{division}' not found.", what=describe(interaction)
+            )
             return
-        if not await self._sync_gate(interaction, div):
+        if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
         from leaguebot.results.services.results_post_service import repost_results_for_division
@@ -2183,9 +2196,10 @@ class ResultsCog(commands.Cog):
                 "reason: no completed rounds, so nothing was posted",
             )
         else:  # no_channel
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Division '{division}' has no results channel configured.",
-                ephemeral=True,
+                what=describe(interaction),
             )
 
     # ------------------------------------------------------------------

@@ -341,7 +341,6 @@ async def _open_amendment(db_path, *, ended=False):
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the held sync is not yet recorded as refused")
 @pytest.mark.parametrize("label,run", SYNCS)
 async def test_a_sync_waits_while_a_round_of_the_division_is_amended(tmp_path, label, run):
     """#345, decided 2026-09-21. The amendment's corrections are in the database, unapproved;
@@ -377,15 +376,8 @@ async def test_an_ended_amendment_does_not_hold_a_sync(tmp_path, label, run):
     repost.assert_awaited_once()
 
 
-_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
-
-
 def _refusal(case_id, command, run, reply, **kwargs):
-    return pytest.param(
-        command, run, reply, kwargs,
-        id=case_id,
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET),
-    )
+    return pytest.param(command, run, reply, kwargs, id=case_id)
 
 
 @pytest.mark.parametrize(
