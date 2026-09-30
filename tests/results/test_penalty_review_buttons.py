@@ -294,6 +294,35 @@ async def test_confirming_the_clear_discards_the_staged_list():
     approval.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#482: the clear leaves the old list on the prompt (D5)")
+async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged():
+    """**D5.** Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
+    Penalties / Confirm and then "Yes, clear and proceed with no penalties". The list is cleared
+    and the prompt is redrawn from it, listing nothing staged, before the approval question is
+    posted — redrawn after, it would withdraw the question it had just posted."""
+    state = _state(staged=[_penalty(), _penalty(10)])
+    view = _ConfirmClearView(state)
+    order: list[str] = []
+
+    async def _redrawn(drawn_state):
+        order.append(f"prompt redrawn with {len(drawn_state.staged)} staged")
+
+    async def _asked(*_args, **_kwargs):
+        order.append("approval question posted")
+
+    with patch(
+        "leaguebot.results.services.penalty_wizard._refresh_prompt",
+        new=AsyncMock(side_effect=_redrawn),
+    ), patch(
+        "leaguebot.results.services.penalty_wizard._show_approval_step",
+        new=AsyncMock(side_effect=_asked),
+    ):
+        await type(view).confirm_btn(view, _interaction(), MagicMock())
+
+    assert state.staged == []
+    assert order == ["prompt redrawn with 0 staged", "approval question posted"]
+
+
 async def test_cancelling_the_clear_keeps_every_penalty():
     state = _state(staged=[_penalty(), _penalty(10)])
     view = _ConfirmClearView(state)
