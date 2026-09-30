@@ -78,16 +78,27 @@ def _make_cog(
     return cog
 
 
-def _interaction():
+def _interaction(cog: ResultsCog | None = None):
+    """`/results amend review` run by the league admin Admin, answering as Discord's does:
+    done once responded to or deferred. Given *cog*, a refusal's line reaches that cog's log."""
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
+    interaction.command.qualified_name = "results amend review"
     interaction.user = MagicMock()
     interaction.user.id = 77
     interaction.user.display_name = "Admin"
     interaction.client = MagicMock()
+    if cog is not None:
+        interaction.client.output_router = cog.bot.output_router
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -175,6 +186,18 @@ def _logged(cog) -> str:
     )
 
 
+def _assert_refusal_recorded(cog, interaction) -> None:
+    """Exactly one line records the refusal: the command, the admin, and the reply's first
+    line as the reason (#482)."""
+    reason = _replied(interaction).splitlines()[0].removeprefix("❌ ")
+    cog.bot.output_router.post_log.assert_awaited_once_with(
+        f"⛔ `/results amend review` refused for Admin (<@77>) — {reason}"
+    )
+
+
+_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
+
+
 # ---------------------------------------------------------------------------
 # Getting as far as the panel
 # ---------------------------------------------------------------------------
@@ -193,9 +216,11 @@ async def test_the_panel_shows_the_staged_changes():
     assert "Approve or reject" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_server_with_no_season_is_refused():
+    """The refusal is recorded (#482)."""
     cog = _make_cog(season=None)
-    interaction = _interaction()
+    interaction = _interaction(cog)
 
     stubs = await _review(cog, interaction)
 
@@ -205,40 +230,52 @@ async def test_a_server_with_no_season_is_refused():
     assert "there is none" in _replied(interaction)
     assert "archive" in _replied(interaction)
     stubs["approve"].assert_not_awaited()
+    _assert_refusal_recorded(cog, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_season_not_in_amendment_mode_is_refused():
     """There is no modification store to review; `/results amend toggle` is what opens one,
-    and approving against an inactive mode would write nothing while reporting success."""
+    and approving against an inactive mode would write nothing while reporting success. The
+    refusal is recorded (#482)."""
     cog = _make_cog()
-    interaction = _interaction()
+    interaction = _interaction(cog)
 
     stubs = await _review(cog, interaction, state=SimpleNamespace(amendment_active=False))
 
-    assert "Amendment mode is not active" in _replied(interaction)
+    assert _replied(interaction) == "❌ Amendment mode is not active."
     stubs["approve"].assert_not_awaited()
+    _assert_refusal_recorded(cog, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_season_that_never_entered_amendment_mode_is_refused():
     """No state row at all, as against a row saying inactive — the same answer, and the
-    `None` would otherwise be read for an attribute."""
+    `None` would otherwise be read for an attribute. The refusal is recorded (#482)."""
     cog = _make_cog()
-    interaction = _interaction()
+    interaction = _interaction(cog)
 
     stubs = await _review(cog, interaction, state=None)
 
-    assert "Amendment mode is not active" in _replied(interaction)
+    assert _replied(interaction) == "❌ Amendment mode is not active."
     stubs["approve"].assert_not_awaited()
+    _assert_refusal_recorded(cog, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_command_is_refused_while_the_module_is_off():
+    """Refused before it defers, as today; the refusal is recorded (#482)."""
     cog = _make_cog(enabled=False)
-    interaction = _interaction()
+    interaction = _interaction(cog)
 
     stubs = await _review(cog, interaction)
 
+    assert _replied(interaction) == (
+        "❌ The Results & Standings module is not enabled on this server."
+    )
     interaction.response.defer.assert_not_awaited()
     stubs["approve"].assert_not_awaited()
+    _assert_refusal_recorded(cog, interaction)
 
 
 async def test_the_command_defers_before_reading():
