@@ -431,7 +431,6 @@ def _assert_nothing_done(cog, interaction, refused: str, command: str) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the refusal is not yet recorded in the log channel")
 @pytest.mark.parametrize(
     "command", ["channel_results", "channel_standings"]
 )
@@ -492,7 +491,6 @@ async def _verdicts(cog, interaction, *, name: str = "Division 1", channel=None)
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the refusal is not yet recorded in the log channel")
 async def test_the_verdicts_channel_is_refused_while_results_is_off(tmp_path, monkeypatch):
     """Word for word: the results cog's own gate is worded differently, and the command keeps
     the words it had before it moved. Nothing is deferred or written; one line records the
@@ -623,7 +621,6 @@ async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path,
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the refusal is not yet recorded in the log channel")
 async def test_re_setting_the_verdicts_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
     """The command's body names its own setting to the check, so the channel the division's
     verdicts already go to is refused in its own words, not as a clash a manager would go
@@ -703,8 +700,6 @@ async def test_the_verdicts_channel_is_logged_under_results_channel_verdicts(
 # Every refusal is recorded (#482)
 # ---------------------------------------------------------------------------
 
-_NOT_YET = "#482: the refusal is answered but not recorded in the log channel"
-
 _NO_SEASON = (
     "❌ No season is live. A division's channels belong to the season being built or raced "
     "— start one with `/season setup`."
@@ -712,9 +707,7 @@ _NO_SEASON = (
 
 
 def _refusal(case_id, command, reply, **setup):
-    return pytest.param(
-        command, reply, setup, id=case_id, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)
-    )
+    return pytest.param(command, reply, setup, id=case_id)
 
 
 def _channel_refusals(setting: str, unknown: str):

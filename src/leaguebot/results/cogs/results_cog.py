@@ -3125,21 +3125,26 @@ class ResultsCog(commands.Cog):
         refusal leaves the configuration exactly as it stood — the value the setting already
         holds included. The change is recorded by core's `audit_service`, as it was when core
         wrote it: `DIVISION_CHANNEL_SET`, with its `channel_type`.
+
+        Every refusal is recorded (#482): `refuse` answers as before and writes one line naming
+        the command, which is read from the interaction.
         """
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division **{name}** not found in the current season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -3147,7 +3152,7 @@ class ResultsCog(commands.Cog):
             self.bot.db_path, channel, channel_type, division_name=div.name
         )
         if refused is not None:
-            await interaction.response.send_message(refused, ephemeral=True)
+            await refuse(interaction, refused, what=describe(interaction))
             return
 
         if channel_type == "results":
@@ -3193,8 +3198,10 @@ class ResultsCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Results & Standings module is not enabled.",
+                what=describe(interaction),
             )
             return
         await self._set_division_channel(interaction, name, channel, "results")
@@ -3212,8 +3219,10 @@ class ResultsCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Results & Standings module is not enabled.",
+                what=describe(interaction),
             )
             return
         await self._set_division_channel(interaction, name, channel, "standings")
@@ -3238,8 +3247,10 @@ class ResultsCog(commands.Cog):
         change is recorded by core's `audit_service` as `VERDICTS_CHANNEL_SET`.
         """
         if not await self.bot.module_service.is_results_enabled():
-            await interaction.response.send_message(
-                "\u274c The Results & Standings module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Results & Standings module is not enabled.",
+                what=describe(interaction),
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -3248,26 +3259,27 @@ class ResultsCog(commands.Cog):
 
         # Validate bot access
         if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.followup.send(
-                f"\u274c Division \"{name}\" not found.",
-                ephemeral=True,
+            await refuse(
+                interaction, f"\u274c Division \"{name}\" not found.", what=describe(interaction)
             )
             return
 
@@ -3275,7 +3287,7 @@ class ResultsCog(commands.Cog):
             self.bot.db_path, channel, "verdicts", division_name=div.name
         )
         if refused is not None:
-            await interaction.followup.send(refused, ephemeral=True)
+            await refuse(interaction, refused, what=describe(interaction))
             return
 
         old_id = await self.bot.season_service.set_division_penalty_channel(div.id, channel.id)
