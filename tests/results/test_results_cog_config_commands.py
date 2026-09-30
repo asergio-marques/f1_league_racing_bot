@@ -353,13 +353,12 @@ async def test_the_results_module_gate_logs_its_refusal_unless_record_is_false(r
     [
         pytest.param("config_list", "results config list", 1, False, id="config-list-module-off"),
         pytest.param("config_view", "results config view", 3, False, id="config-view-module-off"),
-        pytest.param("amend_review", "results amend review", 0, False, id="amend-review-module-off"),
-        pytest.param("amend_review", "results amend review", 0, True, id="amend-review-no-season"),
     ],
 )
 async def test_a_view_refused_by_a_shared_check_writes_no_log_line(command, name, args, results_on):
-    """Views, lists and previews change nothing and record nothing: a view the module gate or
-    the season gate turns away is answered, and the log channel is not written."""
+    """Views, lists and previews change nothing and record nothing: a view the module gate turns
+    away is answered, and the log channel is not written. `/results amend review` leads to a
+    change, so its refusals are recorded, and tests/core/test_amend_review.py pins them."""
     bot = _gate_bot(results_on=results_on)
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = bot
