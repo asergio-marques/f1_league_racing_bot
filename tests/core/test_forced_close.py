@@ -649,3 +649,82 @@ async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
     await close_signups_unattended(bot, cause=cause)
 
     bot.output_router.post_log.assert_not_awaited()
+
+
+_WIRING = "#482: the close timer and the restart sweep still call execute_forced_close"
+
+
+def _functions_in_main():
+    """Every function `__main__` defines, the closures inside `on_ready` included."""
+    import ast
+    import inspect
+
+    import leaguebot.__main__ as bot_main
+
+    tree = ast.parse(inspect.getsource(bot_main))
+    return [
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+
+
+def _calls_to(node, name: str) -> list:
+    """The calls under *node* to a function or method called *name*."""
+    import ast
+
+    return [
+        call for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and name in (getattr(call.func, "id", None), getattr(call.func, "attr", None))
+    ]
+
+
+def _cause_of(call):
+    import ast
+
+    for keyword in call.keywords:
+        if keyword.arg == "cause" and isinstance(keyword.value, ast.Constant):
+            return keyword.value.value
+    return None
+
+
+def _close_timer_callback():
+    """The function registered as the signup close timer's callback."""
+    functions = _functions_in_main()
+    register = next(
+        call for function in functions
+        for call in _calls_to(function, "register_signup_close_callback")
+    )
+    name = register.args[0].id
+    return next(function for function in functions if function.name == name)
+
+
+def _restart_sweep():
+    """The innermost function that re-arms the signup close timer at start-up: the sweep
+    whose other branch closes a window whose set time passed while the bot was down."""
+    return min(
+        (f for f in _functions_in_main() if _calls_to(f, "schedule_signup_close_timer")),
+        key=lambda f: f.end_lineno - f.lineno,
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_WIRING)
+@pytest.mark.parametrize(
+    "find, cause",
+    [
+        pytest.param(_close_timer_callback, "timer", id="close timer"),
+        pytest.param(_restart_sweep, "restart", id="restart sweep"),
+    ],
+)
+def test_the_close_timer_and_the_restart_sweep_call_the_close_nobody_ran(find, cause):
+    """Signups close at their set time, or the bot restarts after it: the job that runs then
+    closes them through `close_signups_unattended` with its own cause, so its one line naming
+    no member is written, and never through `execute_forced_close`, which writes none. Both
+    are closures inside `on_ready`, which no test drives whole, so the wiring is read from the
+    source, as `test_hub_hooks.py` reads the hub's."""
+    function = find()
+
+    closes = _calls_to(function, "close_signups_unattended")
+    assert closes, f"{function.name} does not call close_signups_unattended"
+    assert [_cause_of(call) for call in closes] == [cause] * len(closes)
+    assert _calls_to(function, "execute_forced_close") == []
