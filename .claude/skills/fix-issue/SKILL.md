@@ -239,7 +239,8 @@ hand. Pass every stage the same arguments:
   Gate 3 skipped the stage, an earlier one. It is `base` only where no tests stage has run on the
   branch at all. After a rebase it is that commit as the branch now carries it. From it the build
   changes no test but those the next paragraph allows. Pass it to a tests stage run again once the
-  build has begun too: it then accepts each test whose marker the build has removed as passing;
+  build has begun too, with the build's last `adjusted`: it then accepts as passing each test whose
+  marker the build has removed, and each the build adjusted that passes;
 - `models` and `efforts`, each `{role: value}`, only to override a role's default. Every stage,
   the check included, takes them. The roles are `testsBuilder` (the tests stage's builder),
   `builder` (the build's), `issue`, `code`, `product`, `design`, `tester` and `triage`. By default
