@@ -247,13 +247,33 @@ async def test_the_disable_is_audited(tmp_path):
     assert json.loads(rows[0]["old_value"]) == {"module": "signup"}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: /module disable signup reports neither the drivers returned nor a failed step",
+)
 async def test_the_disable_is_logged(tmp_path):
+    """Signups are open when the module is disabled, and the forced close returns two drivers
+    but cannot post its closed notice: the success line carries the two drivers returned and,
+    beneath it, the failed step, and the admin is told of the failed step in the reply."""
     db_path = await _make_db(tmp_path, name="disable_log")
-    cog = _make_cog(db_path)
+    cog = _make_cog(db_path, config=_config(signups_open=True))
+    interaction = _interaction()
+    step = "The closed notice could not be posted in the signup channel."
+    outcome = SimpleNamespace(returned=2, failed=(step,), refused=None)
 
-    await _disable(cog, _interaction())
+    with patch(
+        "leaguebot.core.cogs.module_cog.execute_forced_close",
+        new=AsyncMock(return_value=outcome),
+    ) as close:
+        await cog._disable_signup(interaction)
 
-    assert "/module disable signup" in str(cog.bot.output_router.post_log.await_args.args[0])
+    close.assert_awaited_once()
+    line = str(cog.bot.output_router.post_log.await_args.args[0])
+    first, *beneath = line.splitlines()
+    assert "/module disable signup" in first
+    assert any("2" in text and "returned" in text for text in line.splitlines())
+    assert any(step in text for text in beneath)
+    assert step in _replied(interaction)
 
 
 async def test_the_configuration_is_cleared(tmp_path):
