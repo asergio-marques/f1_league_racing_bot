@@ -1062,6 +1062,132 @@ async def test_an_appeals_review_with_no_corrections_applies_nothing(tmp_path):
     assert "corrections: none" in _logged(state)
 
 
+_APPEALS_BEING_APPROVED = "⏳ This round's appeals are being approved."
+_APPEALS_NOT_YET_CLAIMED = "#482: the appeals approval is not claimed, so a second press runs it again (D3)"
+
+
+async def _while_the_appeals_are_approved(state, press):
+    """Approve round 3's appeals and, while the approval is still reposting, await *press*.
+
+    Returns the stubs, the approval finished."""
+    reposting, release = asyncio.Event(), asyncio.Event()
+
+    async def _slow_repost(*_a, **_k):
+        reposting.set()
+        await release.wait()
+        return []
+
+    patches = _patches(apply_result=[{"race_result_id": None, "qual_result_id": None}])
+    patches["repost"] = patch(
+        "leaguebot.results.services.results_post_service.delete_and_repost_final_results",
+        new=AsyncMock(side_effect=_slow_repost),
+    )
+    stubs = {key: p.start() for key, p in patches.items()}
+    try:
+        first = asyncio.create_task(finalize_appeals_review(_interaction(), state))
+        await reposting.wait()
+        pressed = asyncio.create_task(press())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(first, pressed)
+    finally:
+        for p in patches.values():
+            p.stop()
+    return stubs
+
+
+@pytest.mark.xfail(strict=True, reason=_APPEALS_NOT_YET_CLAIMED)
+async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_path):
+    """**D3.** The appeals approval reposts every graphic before it makes the round FINAL, and
+    until then a second Approve found the round as the first had — so a double click applied
+    every correction twice. Round 3 (Pro) awaits its appeal verdicts with one correction staged;
+    Alex approves, and presses again while the first approval is still reposting. The second
+    press is refused, its refusal recorded, and the correction is applied once."""
+    db_path = await _make_db(
+        tmp_path, name="appeals_at_once", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    state = _state(db_path, appeals=[_penalty()])
+    second = _interaction()
+
+    stubs = await _while_the_appeals_are_approved(
+        state, lambda: finalize_appeals_review(second, state)
+    )
+
+    assert second.response.send_message.await_args.args[0] == _APPEALS_BEING_APPROVED
+    second.response.defer.assert_not_awaited()
+    (line,) = [call.args[0] for call in second.client.output_router.post_log.await_args_list]
+    assert line.startswith("⛔ "), line
+    assert line.endswith(
+        f" refused for Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
+    ), line
+    stubs["apply"].assert_awaited_once()
+    stubs["repost"].assert_awaited_once()
+    assert await _round_status(db_path) == "FINAL"
+
+
+@pytest.mark.xfail(strict=True, reason=_APPEALS_NOT_YET_CLAIMED)
+@pytest.mark.parametrize(
+    "kind, label",
+    [
+        ("review", "➕ Add Correction"),
+        ("review", "No Changes / Confirm"),
+        ("review", "✅ Approve"),
+        ("review", "Remove #1"),
+        ("clear", "Yes, clear and proceed with no corrections"),
+    ],
+)
+async def test_every_appeals_control_refuses_while_the_appeals_are_being_approved(
+    tmp_path, kind, label
+):
+    """**D3.** Round 3's appeals (Pro) are being approved with one correction staged, and the
+    appeals prompt and its clear confirmation are still on screen. Alex, a league manager,
+    presses one of their buttons meanwhile. It is refused as the approval under way: nothing is
+    staged, removed, cleared or approved a second time, and exactly one line records the
+    refusal, naming the button, the review, Alex and the reason."""
+    from leaguebot.results.services.penalty_wizard import (
+        AppealsReviewView,
+        _AppealsConfirmClearView,
+    )
+
+    db_path = await _make_db(
+        tmp_path, name="appeals_controls", round_status="AWAITING_APPEAL_VERDICTS"
+    )
+    state = _state(db_path, appeals=[_penalty()])
+    view = (
+        _AppealsConfirmClearView(state=state) if kind == "clear"
+        else AppealsReviewView(state=state)
+    )
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+
+    with patch(
+        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        new=AsyncMock(return_value=True),
+    ), patch(
+        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+    ) as refresh_appeals:
+        stubs = await _while_the_appeals_are_approved(
+            state, lambda: button.callback(interaction)
+        )
+
+    refresh_appeals.assert_not_awaited()
+    assert len(state.staged_appeals) == 1
+    stubs["apply"].assert_awaited_once()
+    stubs["repost"].assert_awaited_once()
+    (replied,) = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    assert replied == _APPEALS_BEING_APPROVED
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line == (
+        f"⛔ the “{label}” button of the appeals review of round 3 (Pro) refused for "
+        f"Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
+    )
+
+
 async def test_a_failing_appeals_audit_does_not_stop_the_close(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_logfail", round_status="AWAITING_APPEAL_VERDICTS")
     state = _state(db_path)

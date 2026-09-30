@@ -643,3 +643,53 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
         assert line == (
             f"⛔ the “{label}” button {_OF_THE_APPEALS_REVIEW} refused for Alex (<@77>) — {reason}"
         )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the appeals controls still act once the appeals are approved (D3)",
+)
+@pytest.mark.parametrize(
+    "kind, label",
+    [
+        *(("review", label) for label in [*_APPEALS_BUTTONS, "Remove #1"]),
+        ("clear", _APPEALS_CLEAR),
+    ],
+)
+async def test_every_appeals_control_refuses_once_the_appeals_are_approved(
+    tmp_path, kind, label
+):
+    """**D3.** Round 3's appeals (division Pro) have been approved and the round is FINAL, but
+    the appeals prompt and its clear confirmation are still on screen with one correction
+    staged. Alex, a league manager, presses one of their buttons. It is refused: nothing is
+    staged, removed, cleared or approved, and exactly one line records the refusal, naming the
+    button, the review, Alex and the reason."""
+    db_path = await _make_db(tmp_path, name="appeals_approved", round_status="FINAL")
+    state = _state(db_path, appeals=[_penalty()])
+    view = (
+        _AppealsConfirmClearView(state=state) if kind == "clear"
+        else AppealsReviewView(state=state)
+    )
+    button = next(item for item in view.children if getattr(item, "label", None) == label)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1 as penalty, p2 as appeals, p3 as refresh, p4 as refresh_appeals:
+        await button.callback(interaction)
+
+    penalty.assert_not_awaited()
+    appeals.assert_not_awaited()
+    refresh.assert_not_awaited()
+    refresh_appeals.assert_not_awaited()
+    assert len(state.staged_appeals) == 1
+    assert _sent_view(interaction) is None
+    (replied,) = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    reason = replied.splitlines()[0].split(" ", 1)[1]
+    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
+    assert line == (
+        f"⛔ the “{label}” button {_OF_THE_APPEALS_REVIEW} refused for Alex (<@77>) — {reason}"
+    )
