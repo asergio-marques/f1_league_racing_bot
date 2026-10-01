@@ -514,9 +514,11 @@ REFUSALS = [
         (command, name, value, {"cfg": None}, "No attendance configuration found.")
         for (command, value, _m, _e), name in zip(CONFIG_SETTERS, CONFIG_SETTER_IDS)
     ],
-    (S.config_rsvp_notice, "rsvp-notice", 1, {}, ""),
-    (S.config_rsvp_last_notice, "rsvp-last-notice", 200, {}, ""),
-    (S.config_rsvp_deadline, "rsvp-deadline", 30, {}, ""),
+    (S.config_rsvp_notice, "rsvp-notice", 1, {}, "must be greater than `rsvp_last_notice_hours`"),
+    (S.config_rsvp_last_notice, "rsvp-last-notice", 200, {},
+     "must be greater than `rsvp_last_notice_hours` (200h)"),
+    (S.config_rsvp_deadline, "rsvp-deadline", 30, {},
+     "must be greater than `rsvp_deadline_hours` (30h)"),
     (
         S.config_autosack, "autosack", 8, {"cfg": {"autoreserve_threshold": 5}},
         "Cannot set auto-sack while auto-reserve is active.",
