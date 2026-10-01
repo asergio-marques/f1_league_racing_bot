@@ -20,7 +20,8 @@ from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import report_failure
-from leaguebot.core.utils.log_lines import interaction_member, record_abandoned, refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.member_names import interaction_member
 
 log = logging.getLogger(__name__)
 
