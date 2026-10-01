@@ -10,14 +10,19 @@ of `tests/support/image_cog_doubles.py`.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 from discord import app_commands
 
 from leaguebot.core.utils.messages import chunk_message
-from leaguebot.image.cogs.image_cog import ImageCog
+import leaguebot.core.utils.paths as paths
+import leaguebot.image.cogs.image_cog as cog_module
+import leaguebot.image.services.image_validity_service as validity
+from leaguebot.image.cogs.image_cog import ImageCog, TierPaletteModal
+from leaguebot.image.models.image_constants import ASSET_DIRECTORIES
 from leaguebot.image.services.image_validity_service import Problem
 from tests.support.image_cog_doubles import (
     assert_one_refusal,
@@ -25,6 +30,7 @@ from tests.support.image_cog_doubles import (
     log_bot,
     logged,
     said,
+    scheduler,
 )
 from tests.support.undecorate import undecorate
 
@@ -169,3 +175,234 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts():
     assert len(asked.said) > 1
     assert "fault 5: " in reply
     assert "Searched: `resources/mine`" in reply
+
+
+# ── A5: each command's own refusal ────────────────────────────────────────
+
+_REFUSAL_NOT_RECORDED = "#482: an image command's own refusal is not yet recorded as a refusal"
+
+#: Where the cog stores a folder it was given, whatever the host's own path.
+FOLDER = "resources/league/mine"
+#: The colour form a pasted palette arrives through, as its refusals name it.
+BULK_FORM = "the “Set one tier's colours” form"
+
+
+def _working_cog(monkeypatch, tmp_path, *, changed=True, **config) -> ImageCog:
+    """The real cog with the module on, every drawing and folder sound, and a store whose
+    setters report each value as a change (or, where *changed* is false, as already held).
+
+    *config* overrides the stored configuration: portraits obtained from Discord, updated
+    before each drawing and not daily, per-tier colours on.
+    """
+    bot = log_bot()
+    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    store = bot.image_config_service
+    store.set_field = AsyncMock(return_value=changed)
+    store.set_flag = AsyncMock(return_value=changed)
+    store.set_tier_colour = AsyncMock(return_value=changed)
+    store.set_tier_colours = AsyncMock(
+        side_effect=lambda division, colours: len(colours) if changed else 0
+    )
+    store.set_pfp_flag = AsyncMock()
+    store.set_aspect = AsyncMock()
+    store.is_aspect_enabled = AsyncMock(return_value=False)
+    store.get_toggles = AsyncMock(return_value={})
+    store.candidate_config = AsyncMock(return_value=SimpleNamespace())
+    values = {
+        "use_pfp": True,
+        "pfp_prerender": True,
+        "pfp_daily": False,
+        "pfp_daily_time": "03:00",
+        "per_tier_colour_enabled": True,
+    }
+    values.update(config)
+    store.get_config = AsyncMock(return_value=SimpleNamespace(**values))
+    bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
+    bot.scheduler_service = scheduler()
+
+    cog = ImageCog(bot)
+    cog._declared_colour_slots = AsyncMock(return_value={"accent", "ink"})
+    cog._aspect_blocking_reasons_if_enabled = AsyncMock(return_value=[])
+    cog._measure_fastest_lap_contrast = AsyncMock()
+    monkeypatch.setattr(cog_module, "fastest_lap_contrast_lines", lambda reading: [])
+    monkeypatch.setattr(paths, "resolve_within_project_root", lambda value, root=None: tmp_path)
+    monkeypatch.setattr(cog_module, "relative_to_root", lambda resolved: FOLDER)
+    monkeypatch.setattr(validity, "check_template", lambda proposed, column: None)
+    monkeypatch.setattr(validity, "blocking_template_problems", lambda proposed, toggles: [])
+    monkeypatch.setattr(cog_module, "is_known_zone", lambda zone: zone == "Europe/Lisbon")
+    return cog
+
+
+async def _run_with(cog: ImageCog, name: str, *arguments):
+    """Run `/<name>` through *cog* with *arguments*, past its permission guard."""
+    asked = interaction(name, bot=cog.bot)
+    await undecorate(_command(name))(cog, asked, *arguments)
+    return asked
+
+
+def _attached(raw: bytes) -> MagicMock:
+    """A file attached to `/images config colour-xml-import`, holding *raw*."""
+    attachment = MagicMock()
+    attachment.size = len(raw)
+    attachment.read = AsyncMock(return_value=raw)
+    return attachment
+
+
+def _empty_folder(monkeypatch):
+    def _refuse(value, root=None):
+        raise ValueError("Directory cannot be empty.")
+
+    monkeypatch.setattr(paths, "resolve_within_project_root", _refuse)
+
+
+def _broken_drawing(monkeypatch):
+    broken = MagicMock()
+    broken.message.return_value = "the calendar drawing marks no title."
+    monkeypatch.setattr(validity, "check_template", lambda proposed, column: broken)
+
+
+def _no_configuration(cog):
+    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
+
+
+def _nothing_to_amend(cog):
+    cog.bot.image_config_service.candidate_config = AsyncMock(return_value=None)
+
+
+#: Each refusal of plan section 2 not pinned in a module's own test file: the command, what
+#: it is given, how the server stands, and a phrase of the reply it gives today.
+OWN_REFUSALS = [
+    pytest.param(
+        "images use-pfp prerender-toggle", (), {"use_pfp": False}, None,
+        "Driver portraits are not being obtained from Discord",
+        id="prerender-toggle-portraits-off",
+    ),
+    pytest.param(
+        "images use-pfp daily-toggle", (), {"use_pfp": False}, None,
+        "Driver portraits are not being obtained from Discord",
+        id="daily-toggle-portraits-off",
+    ),
+    pytest.param(
+        "images use-pfp prerender-toggle", (), {"pfp_prerender": True, "pfp_daily": False}, None,
+        "Cannot disable pre-render updates",
+        id="prerender-toggle-last-trigger",
+    ),
+    pytest.param(
+        "images use-pfp toggle", (), {}, _no_configuration,
+        "The image module has no configuration yet.",
+        id="use-pfp-toggle-no-configuration",
+    ),
+    pytest.param(
+        "images config template-directory", ("",), {}, "empty folder",
+        "Directory cannot be empty.",
+        id="template-directory-empty",
+    ),
+    pytest.param(
+        "images config template-directory", (FOLDER,), {}, _nothing_to_amend,
+        "this server has no image configuration to amend.",
+        id="template-directory-no-configuration",
+    ),
+    pytest.param(
+        "images config track-image-directory", ("",), {}, "empty folder",
+        "Directory cannot be empty.",
+        id="asset-directory-empty",
+    ),
+    pytest.param(
+        "images template calendar", ("drawings/calendar.svg",), {}, None,
+        "not a path",
+        id="template-given-a-path",
+    ),
+    pytest.param(
+        "images template calendar", ("calendar.svg",), {}, _nothing_to_amend,
+        "this server has no image configuration to amend.",
+        id="template-no-configuration",
+    ),
+    pytest.param(
+        "images template calendar", ("calendar.svg",), {}, "broken drawing",
+        "the calendar drawing marks no title.",
+        id="template-invalid",
+    ),
+    pytest.param(
+        "images config fastest-lap-colour", ("purple",), {}, None,
+        "The stored colour is unchanged.",
+        id="fastest-lap-colour-invalid",
+    ),
+    pytest.param(
+        "images config per-tier-set-colour", ("Division 1", "not a slot!", "#A78BFA"), {}, None,
+        "Nothing was stored.",
+        id="per-tier-set-colour-invalid-slot",
+    ),
+    pytest.param(
+        "images config per-tier-set-colour", ("Division 1", "accent", "purple"), {}, None,
+        "Nothing was stored.",
+        id="per-tier-set-colour-invalid-colour",
+    ),
+    pytest.param(
+        "images config colour-xml-import", (_attached(b""),), {}, None,
+        "The attached file is empty.",
+        id="colour-xml-import-empty",
+    ),
+    pytest.param(
+        "images config colour-xml-import", (_attached(b"\xff\xfe<palettes>"),), {}, None,
+        "could not be decoded as UTF-8",
+        id="colour-xml-import-not-utf-8",
+    ),
+    pytest.param(
+        "images config colour-xml-import",
+        (
+            _attached(
+                b'<palettes><division name="Bad"><colour slot="accent">purple</colour>'
+                b"</division></palettes>"
+            ),
+        ),
+        {}, None,
+        "Bad",
+        id="colour-xml-import-every-block-rejected",
+    ),
+    pytest.param(
+        "images config time-zone", ("Mars/Olympus",), {}, None,
+        "is not a recognised time zone",
+        id="time-zone-unknown",
+    ),
+]
+
+_SETUPS = {"empty folder": _empty_folder, "broken drawing": _broken_drawing}
+
+
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_RECORDED)
+@pytest.mark.parametrize("name, arguments, config, setup, reply", OWN_REFUSALS)
+async def test_a_command_s_own_refusal_records_one_line_naming_it(
+    monkeypatch, tmp_path, name, arguments, config, setup, reply
+):
+    """The reply is the one given today; the log channel gains one "⛔" line naming the
+    command, and nothing is stored."""
+    cog = _working_cog(monkeypatch, tmp_path, **config)
+    if isinstance(setup, str):
+        _SETUPS[setup](monkeypatch)
+    elif setup is not None:
+        setup(cog)
+
+    asked = await _run_with(cog, name, *arguments)
+
+    assert reply in said(asked)
+    store = cog.bot.image_config_service
+    for setter in ("set_field", "set_flag", "set_tier_colour", "set_tier_colours", "set_pfp_flag"):
+        getattr(store, setter).assert_not_awaited()
+    assert_one_refusal(cog.bot, f"`/{name}`")
+
+
+@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_RECORDED)
+async def test_a_pasted_palette_with_an_unreadable_line_is_refused_by_the_form(
+    monkeypatch, tmp_path
+):
+    """The colour form refuses the whole palette, as today, and the line names the form."""
+    cog = _working_cog(monkeypatch, tmp_path)
+    form = TierPaletteModal(cog, "Division 1")
+    form.block._value = "accent #A78BFA\nink not-a-colour"
+    submitted = interaction(None, bot=cog.bot)
+
+    await form.on_submit(submitted)
+
+    assert "could not be read" in said(submitted)
+    cog.bot.image_config_service.set_tier_colours.assert_not_awaited()
+    assert_one_refusal(cog.bot, BULK_FORM)
