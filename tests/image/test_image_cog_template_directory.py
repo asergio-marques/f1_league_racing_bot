@@ -45,7 +45,6 @@ from tests.support.image_cog_doubles import (
 
 COMMAND = "images config template-directory"
 
-_NOT_YET_RECORDED = "#482: a template-directory refusal is not yet recorded as a refusal"
 _SIX_ONLY = "#482: a refused template folder still names only six templates at fault"
 
 
@@ -153,7 +152,6 @@ async def test_an_invalid_template_is_refused_the_same_way(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_path_escaping_the_project_root_is_refused_before_any_parsing(
     monkeypatch,
 ):
@@ -245,7 +243,6 @@ async def test_a_wholesale_failure_names_every_template_at_fault():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_refusal_is_logged_like_an_accepted_change():
     """Principle V: a refused configuration is as much a part of the audit trail. It is
     recorded as one "⛔" line naming the command, with the reason it was refused."""

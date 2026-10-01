@@ -35,7 +35,6 @@ from tests.support.image_cog_doubles import (
 )
 from tests.support.undecorate import undecorate
 
-_REPLY_CUT = "#482: a refused folder's reply is still cut at 1,900 characters"
 
 
 def _commands() -> list[app_commands.Command]:
@@ -146,7 +145,6 @@ async def test_a_long_configuration_report_is_sent_in_the_parts_core_splits_it_i
 # ── A22: a refused folder's reply arrives whole ───────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_REPLY_CUT)
 async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts():
     cog = ImageCog(log_bot())
     asked = interaction("images config template-directory", bot=cog.bot)

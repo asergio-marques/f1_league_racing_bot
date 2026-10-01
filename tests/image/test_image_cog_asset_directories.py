@@ -34,7 +34,6 @@ from tests.support.image_cog_doubles import (
     said,
 )
 
-_NOT_YET_RECORDED = "#482: an artwork folder's outcome is not yet recorded in its command's own line"
 
 
 def _cog(monkeypatch, *, resolved: Path | None = None, contained=True):
@@ -132,7 +131,6 @@ async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(
     assert "✅ **Division logos** set to" in said(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_folder_that_exists_reports_that_it_resolves(monkeypatch, tmp_path):
     """And records one success line naming the command itself, the folder set beneath."""
     cog = _cog(monkeypatch, resolved=tmp_path)
@@ -157,7 +155,6 @@ async def test_a_path_that_is_a_file_is_stored_but_called_out(monkeypatch, tmp_p
 # ── containment ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_path_escaping_the_project_root_is_refused_and_stores_nothing(
     monkeypatch,
 ):

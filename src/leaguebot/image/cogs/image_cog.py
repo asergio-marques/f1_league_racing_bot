@@ -335,6 +335,32 @@ class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
         await self._cog.apply_tier_xml(interaction, self.payload.value)
 
 
+def _command(interaction: discord.Interaction) -> str:
+    """The slash command *interaction* ran, as a success line names it: "/images config view"."""
+    return describe_command(interaction).strip("`")
+
+
+async def _record(
+    bot: LeagueBot,
+    interaction: discord.Interaction,
+    what: str,
+    outcome: str,
+    *details: str,
+) -> None:
+    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
+
+    For a success and for nothing changed; *what* is the command as the line names it,
+    "/images config time-zone". The post is bare: a line reporting that nothing went wrong
+    is no place for a catch-all, so a post that raises reaches the command's error handling.
+    A refusal, a cancel, a lapse and a fault have lines of their own
+    (`core/utils/log_lines.py`, `report_failure`).
+    """
+    await bot.output_router.post_log(
+        f"{interaction_member(interaction)} | {what} | {outcome}"
+        + "".join(f"\n  {detail}" for detail in details)
+    )
+
+
 class ImageCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -421,26 +447,6 @@ class ImageCog(commands.Cog):
             else:
                 await interaction.response.send_message(part, ephemeral=True)
 
-    async def _record(
-        self,
-        interaction: discord.Interaction,
-        what: str,
-        outcome: str,
-        *details: str,
-    ) -> None:
-        """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
-
-        For a success and for nothing changed; *what* is the command as the line names it,
-        "/images config time-zone". The post is bare: a line reporting that nothing went wrong
-        is no place for a catch-all, so a post that raises reaches the command's error handling.
-        A refusal, a cancel, a lapse and a fault have lines of their own
-        (`core/utils/log_lines.py`, `report_failure`).
-        """
-        await self.bot.output_router.post_log(
-            f"{interaction_member(interaction)} | {what} | {outcome}"
-            + "".join(f"\n  {detail}" for detail in details)
-        )
-
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str, label: str
     ) -> None:
@@ -458,14 +464,15 @@ class ImageCog(commands.Cog):
         try:
             resolved = resolve_within_project_root(value)
         except PathContainmentError as exc:
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ {exc}\nDirectories must sit inside the project root. "
                 f"The stored value is unchanged.",
+                what=describe_command(interaction),
             )
             return
         except ValueError as exc:
-            await self._reply(interaction, f"❌ {exc}")
+            await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
         stored = relative_to_root(resolved)
@@ -489,7 +496,7 @@ class ImageCog(commands.Cog):
             interaction,
             f"✅ **{label}** set to `{stored}`.\n{verdict}\nSearched: `{resolved}`",
         )
-        await self._log(interaction, f"{label} = {stored}")
+        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
 
     async def _set_template_filename(
         self, interaction: discord.Interaction, column: str, filename: str
@@ -740,14 +747,15 @@ class ImageCog(commands.Cog):
         try:
             resolved = resolve_within_project_root(directory)
         except PathContainmentError as exc:
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ {exc}\nDirectories must sit inside the project root. "
                 f"The stored value is unchanged.",
+                what=describe_command(interaction),
             )
             return
         except ValueError as exc:
-            await self._reply(interaction, f"❌ {exc}")
+            await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
         stored = relative_to_root(resolved)
@@ -795,7 +803,7 @@ class ImageCog(commands.Cog):
             f"✅ Every drawing the outputs you have switched on need is present and "
             f"valid.\nSearched: `{resolved}`",
         )
-        await self._log(interaction, f"{label} = {stored}")
+        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
 
     async def _reject_directory(
         self,
@@ -808,8 +816,8 @@ class ImageCog(commands.Cog):
     ) -> None:
         """Refuse a directory change, naming every fault and leaving the config alone.
 
-        Logged like an accepted change: a refused configuration is as much a part of the
-        audit trail as a stored one (Principle V).
+        Recorded in the log channel as a refusal of the command, and the whole reply goes, in as
+        many parts as it needs: a manager fixing a folder needs every template at fault.
         """
         from leaguebot.image.services.image_validity_service import describe
 
@@ -835,12 +843,7 @@ class ImageCog(commands.Cog):
             lines.append("")
             lines.append(f"Searched: `{searched}`")
 
-        await self._reply(interaction, "\n".join(lines)[:1900])
-        await self._log(
-            interaction,
-            f"{label} REJECTED — {reason}"
-            + (f" ({len(problems)} template(s) unusable)" if problems else ""),
-        )
+        await refuse(interaction, "\n".join(lines), what=describe_command(interaction))
 
     # ── The sixteen template filename commands ────────────────────────────
     #
