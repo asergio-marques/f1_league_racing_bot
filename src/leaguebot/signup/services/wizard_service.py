@@ -24,7 +24,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
-from leaguebot.core.utils.log_lines import record_refusal
+from leaguebot.core.utils.log_lines import record_abandoned, record_refusal
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
 
@@ -966,9 +966,17 @@ class WizardService:
     ) -> None:
         """APScheduler callback: 24-h inactivity deadline reached (T043-T045).
 
-        Cancels pending tasks/jobs, transitions driver to NOT_SIGNED_UP,
-        and holds the channel.
+        Cancels pending tasks/jobs, transitions driver to NOT_SIGNED_UP, records the lapse
+        and holds the channel. The restart's sweep (`recover_wizards`) calls this for a
+        deadline that passed while the bot was down, so one record serves both.
         FR-047, FR-048.
+
+        The lapse is recorded as "the signup wizard lapsed unconfirmed", naming the driver who
+        started it, with what became of it and what they may do next (owner, 2026-09-30). The
+        transition's `ValueError` is a driver who has already moved on: the signup did not
+        lapse, so nothing is recorded and the driver is not told it expired. Any other error
+        reaches the job runner, which logs it with its traceback (#457), and again nothing is
+        recorded or posted.
         """
         # Cancel asyncio correction task if any
         ckey = discord_user_id
@@ -985,11 +993,23 @@ class WizardService:
             await self._driver_service.transition(
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
-        except Exception:
-            log.warning(
-                "handle_inactivity_timeout: transition failed for %s",
-                discord_user_id, exc_info=True,
+        except ValueError:
+            log.info(
+                "handle_inactivity_timeout: %s has already moved on; nothing expired",
+                discord_user_id,
             )
+            return
+
+        await record_abandoned(
+            self._league_bot,
+            int(discord_user_id),
+            what="the signup wizard",
+            lapsed=True,
+            detail=(
+                "The signup was cancelled after 24 hours without an answer. "
+                "They may press Sign Up again while signups are open."
+            ),
+        )
 
         if guild is not None:
             await self.trigger_channel_hold(
@@ -1039,10 +1059,12 @@ class WizardService:
             await self._driver_service.transition(
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
-        except Exception:
-            log.warning(
-                "handle_member_remove: transition failed for %s",
-                discord_user_id, exc_info=True,
+        except ValueError:
+            # A driver who has already moved on: the rest of the cleanup still runs. Any other
+            # error is not swallowed (#457).
+            log.info(
+                "handle_member_remove: %s has already moved on; cleaning up the channel",
+                discord_user_id,
             )
 
         # Delete channel immediately (no hold)
