@@ -37,8 +37,6 @@ IMPORT = "images config colour-xml-import"
 #: A division name with no letter or digit in it: nothing an artwork file could be named for.
 UNSTORABLE = "***"
 
-_FORM_NOT_RECHECKED = "#482: a colour form does not yet check the module on submit"
-
 
 def _interaction(cog, command=None):
     """An interaction for *command* through *cog*'s bot, kept on the cog for `_said`.
@@ -456,7 +454,6 @@ _SWITCHED_OFF = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_FORM_NOT_RECHECKED)
 async def test_the_bulk_form_stores_nothing_once_the_module_is_switched_off():
     from leaguebot.image.cogs.image_cog import TierPaletteModal
 
@@ -471,7 +468,6 @@ async def test_the_bulk_form_stores_nothing_once_the_module_is_switched_off():
     assert_one_refusal(cog.bot, "the “Set one tier's colours” form")
 
 
-@pytest.mark.xfail(strict=True, reason=_FORM_NOT_RECHECKED)
 async def test_the_import_form_stores_nothing_once_the_module_is_switched_off():
     from leaguebot.image.cogs.image_cog import TierPaletteXmlModal
 

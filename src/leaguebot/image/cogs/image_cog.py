@@ -311,6 +311,8 @@ class TierPaletteModal(LeagueModal, title="Set one tier's colours"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
+        if not await _module_still_on(self._cog, interaction, self):
+            return
         await self._cog.apply_tier_block(
             interaction, self._division, self.block.value, form=self
         )
@@ -334,7 +336,26 @@ class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
+        if not await _module_still_on(self._cog, interaction, self):
+            return
         await self._cog.apply_tier_xml(interaction, self.payload.value, form=self)
+
+
+async def _module_still_on(cog, interaction: discord.Interaction, form: discord.ui.Modal) -> bool:
+    """Whether the Image module is still on as *form* is submitted; where it is not, refuse.
+
+    A form can stay open on a manager's screen while `/module disable images` is run, and what
+    it would store belongs to a module that is off. Nothing is written then: the submit is
+    refused and recorded under the form's name.
+    """
+    if await cog.bot.module_service.is_images_enabled():
+        return True
+    await refuse(
+        interaction,
+        "❌ The Image module was switched off while this form was open. Nothing was stored.",
+        what=describe_form(form),
+    )
+    return False
 
 
 def _command(interaction: discord.Interaction) -> str:
