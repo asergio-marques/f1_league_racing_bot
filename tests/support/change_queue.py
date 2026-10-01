@@ -120,11 +120,12 @@ async def restart_queue(bot: Any) -> Any:
     queue = ChangeQueue(setup.db_path, bot, setup.router, clock=setup.clock)
     bot.change_queue = queue
     _register(bot, queue, setup)
-    await _maybe_await(queue.start())
+    await maybe_await(queue.start())
     return queue
 
 
-async def _maybe_await(value: Any) -> Any:
+async def maybe_await(value: Any) -> Any:
+    """Await *value* where it is awaitable: a queue method the test need not know the colour of."""
     if hasattr(value, "__await__"):
         return await value
     return value
