@@ -126,7 +126,7 @@ class TestOutputRouterEnqueuesOnFailure:
 
     @pytest.mark.asyncio
     async def test_no_enqueue_when_the_caller_does_not_want_one(self, tmp_path):
-        """The interaction-channel last resort asks for no retry, and gets none."""
+        """The factory reset's line to a given channel asks for no retry, and gets none."""
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
@@ -188,7 +188,9 @@ class TestAttemptDeliverySuccess:
 
         with patch("leaguebot.core.services.retry_service._safe_post_log"):
             await attempt_delivery(entry, bot)
-        mock_channel.send.assert_called_once_with("hello world")
+        # The content alone: how it is sent, mentioning nobody, is test_retry_service's to pin.
+        (call,) = mock_channel.send.call_args_list
+        assert (call.args[0] if call.args else call.kwargs["content"]) == "hello world"
 
 
 # ---------------------------------------------------------------------------
