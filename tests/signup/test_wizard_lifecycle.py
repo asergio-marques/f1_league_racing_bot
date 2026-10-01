@@ -302,10 +302,6 @@ async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_t
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: an expiry whose driver has already moved on still returns without holding the channel",
-)
 async def test_an_expiry_for_a_driver_already_moved_on_still_holds_the_channel(lifecycle):
     """The 24-hour job can fire for a driver who has already moved on, the transition refusing
     with `ValueError`. The channel is still held, with the expiry notice and its deletion 24 hours

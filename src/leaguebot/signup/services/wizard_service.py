@@ -1050,9 +1050,11 @@ class WizardService:
         The lapse is recorded as "the signup wizard lapsed unconfirmed", naming the driver who
         started it, with what became of it and what they may do next (owner, 2026-09-30). The
         transition's `ValueError` is a driver who has already moved on: the signup did not
-        lapse, so nothing is recorded and the driver is not told it expired. Any other error
-        reaches the job runner, which logs it with its traceback (#457), and again nothing is
-        recorded or posted.
+        lapse, so no lapse is recorded, but the channel is still held, with the expiry notice
+        and its deletion 24 hours on (owner, 2026-10-01). Any other error is not caught (#457):
+        for the scheduled job APScheduler logs it with its traceback, and for the restart's
+        sweep, whose task is dropped, it may never be reported (#439, #453). Either way nothing
+        is recorded or posted.
         """
         # Cancel asyncio correction task if any
         ckey = discord_user_id
@@ -1071,21 +1073,20 @@ class WizardService:
             )
         except ValueError:
             log.info(
-                "handle_inactivity_timeout: %s has already moved on; nothing expired",
+                "handle_inactivity_timeout: %s has already moved on; no lapse recorded",
                 discord_user_id,
             )
-            return
-
-        await record_abandoned(
-            self._league_bot,
-            int(discord_user_id),
-            what="the signup wizard",
-            lapsed=True,
-            detail=(
-                "The signup was cancelled after 24 hours without an answer. "
-                "They may press Sign Up again while signups are open."
-            ),
-        )
+        else:
+            await record_abandoned(
+                self._league_bot,
+                int(discord_user_id),
+                what="the signup wizard",
+                lapsed=True,
+                detail=(
+                    "The signup was cancelled after 24 hours without an answer. "
+                    "They may press Sign Up again while signups are open."
+                ),
+            )
 
         if guild is not None:
             await self.trigger_channel_hold(
