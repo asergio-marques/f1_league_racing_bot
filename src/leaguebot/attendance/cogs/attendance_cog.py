@@ -50,6 +50,15 @@ def _command(interaction: discord.Interaction) -> str:
     return describe(interaction).strip("`")
 
 
+def _line(
+    interaction: discord.Interaction, what: str, outcome: str, details: tuple[str, ...]
+) -> str:
+    return (
+        f"{interaction_member(interaction)} | {what} | {outcome}"
+        + "".join(f"\n  {detail}" for detail in details)
+    )
+
+
 async def _record(
     bot: LeagueBot,
     interaction: discord.Interaction,
@@ -59,17 +68,28 @@ async def _record(
 ) -> None:
     """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
 
-    For every outcome but a refusal, a cancel, a lapse and a fault, which have lines of their
-    own (`core/utils/log_lines.py`, `report_failure`): a success, nothing changed, and a press
-    that failed without raising. Never raises: it runs where the member has been answered.
+    For a success and for nothing changed. The post is bare: a line reporting that nothing went
+    wrong is no place for a catch-all, so a post that raises reaches the command's error
+    handling. A press that failed without raising has `_record_failed`, and a refusal, a cancel,
+    a lapse and a fault have lines of their own (`core/utils/log_lines.py`, `report_failure`).
+    """
+    await bot.output_router.post_log(_line(interaction, what, outcome, details))
+
+
+async def _record_failed(
+    bot: LeagueBot, interaction: discord.Interaction, what: str, *details: str
+) -> None:
+    """Write the "Failed" line of *what*, as `/attendance post-check-in`'s does.
+
+    It reports a failure, and, as `report_failure` does, it must not raise where the member has
+    been answered: a log channel that is down is the host's log's to hear of, and nothing else's.
     """
     try:
-        await bot.output_router.post_log(
-            f"{interaction_member(interaction)} | {what} | {outcome}"
-            + "".join(f"\n  {detail}" for detail in details)
+        await bot.output_router.post_log(_line(interaction, what, "Failed", details))
+    except Exception as exc:  # noqa: BLE001 — the report itself might fail; the member is answered
+        log.error(
+            "could not record in the log channel that %s failed: %s", what, exc, exc_info=True
         )
-    except Exception:  # noqa: BLE001 — the member has already been answered
-        log.warning("could not record in the log channel that %s ended %s", what, outcome, exc_info=True)
 
 
 def _days(value: int | None) -> str:
@@ -1627,9 +1647,8 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
             "not assume you are signed up for this round.",
             ephemeral=True,
         )
-        await _record(
-            bot, interaction, what, "Failed",
-            f"answer: {_STATUS_WORDS[new_status]}", "not recorded",
+        await _record_failed(
+            bot, interaction, what, f"answer: {_STATUS_WORDS[new_status]}", "not recorded"
         )
         return
 

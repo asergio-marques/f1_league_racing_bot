@@ -722,9 +722,6 @@ async def test_a_value_already_held_records_that_nothing_changed(
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: _record swallows a success or nothing-changed line it cannot post"
-)
 @pytest.mark.parametrize(
     "start,outcome",
     [({}, "Success"), ({"no_show_penalty": 4}, "Nothing changed")],
