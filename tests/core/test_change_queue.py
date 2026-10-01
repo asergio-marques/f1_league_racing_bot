@@ -320,7 +320,7 @@ async def test_a_change_whose_check_fails_when_it_runs_is_refused_and_says_why(e
 
     assert acknowledgement(interaction) == ACKNOWLEDGEMENT
     assert updated_reply(interaction) == "⚠️ Not now."
-    assert f"⛔ {WHAT} refused for {NAMED} — ⚠️ Not now." in "\n".join(await _lines(env))
+    assert f"⛔ {WHAT} refused for {NAMED} — Not now." in "\n".join(await _lines(env))
     assert await _states(env) == ["REFUSED"]
     assert ran == []
 
@@ -389,14 +389,15 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
     await _ask(env, interaction=first)
     await _ask(env, interaction=second)
 
-    repeat = (
-        f"⚠️ {DOING} has already been asked for and has not started yet, "
+    reason = (
+        f"{DOING} has already been asked for and has not started yet, "
         "so it was not asked for again."
     )
     assert acknowledgement(first) == ACKNOWLEDGEMENT
-    assert acknowledgement(second) == repeat
+    assert acknowledgement(second) == f"⚠️ {reason}"
     assert len(await change_rows(env.db_path)) == 1
-    assert f"⛔ {WHAT} refused for {NAMED} — {repeat}" in "\n".join(await _lines(env))
+    # The line drops the reply's opening mark, which its own mark replaces.
+    assert f"⛔ {WHAT} refused for {NAMED} — {reason}" in "\n".join(await _lines(env))
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
