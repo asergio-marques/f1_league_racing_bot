@@ -127,6 +127,9 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - It shall be disabled by default, and the time of day shall be "03:00" until a league names another.
     - On being used to enable the updates, a modal shall be presented in which the league names the time of day, prefilled with the time presently configured, and the setting shall be committed only upon a confirmation given after that modal. Where the league cancels at either step the command shall fail and the configuration be left as it stood.
     - On being used to disable them, no time is required and no modal shall be presented.
+    - The confirmation shall be recorded whichever way it ends: its commitment, its cancellation, and its lapse unanswered, the lapse naming the league manager who opened it. The cancellation and the lapse shall say that the updates are unchanged and what to run to enable them. Its buttons shall come down at each ending. A second answer to a confirmation already answered shall change nothing, shall be refused, and shall be recorded as a refusal. Decided 2026-10-01.
+    - The module, the toggle "images use-pfp toggle" and the daily updates shall be checked again when the modal is submitted and when the confirmation is given. Where the module or the toggle was disabled, or the updates enabled, while either stood open, nothing shall be stored and the refusal shall say why. Decided 2026-10-01.
+    - Where the setting is stored but the daily update cannot be scheduled, the league shall be told that it failed, that the setting is stored, and that the update will be scheduled when the bot next starts, and no success shall be recorded. The same holds of "images use-pfp toggle" where it cannot schedule the update. Decided 2026-10-01.
     - The time named shall be read as UTC, and the modal shall say so. A league naming a time without being told the zone it is read in would read it as its own, and the bot would update at an hour the league did not choose.
     - The command shall fail where the images module is not enabled, and where "images use-pfp toggle" is disabled.
 - Where "images use-pfp toggle" is enabled, at least one of "images use-pfp prerender-toggle" and "images use-pfp daily-toggle" shall be enabled, and both may be. A configuration enabling neither obtains a portrait at no moment whatever, which is what disabling the feature outright already provides, and is not a configuration the module shall hold.
@@ -152,10 +155,12 @@ For this purpose, the Discord bot shall require three new dependencies: one with
 
 - <NEW COMMAND> A new "images config per-tier-colour-toggle" command will be made available to league managers which will take in a boolean stating whether the graphics shall be drawn in each tier's own colours.
     - By default, per-tier colours shall be off. While they are off no colour shall be injected into any template and no colour shall be demanded of any division.
+    - Given the value it already holds, the command shall change nothing and shall say "Nothing changed" alone, without listing the slots still lacking a colour. Decided 2026-10-01.
 - <NEW COMMAND> A new "images config per-tier-set-colour" command will be made available to league managers which will take in the name of a division, the identifier of a colour slot, and a colour in hexadecimal notation.
     - The colour shall be stored against the division's name, normalized as every datum of every asset class is, so that a tier keeps its colours across a change of season.
     - A slot identifier shall consist of between one and sixty-four characters, each a lower-case letter, a digit, a hyphen or an underscore, and shall be lower-cased on being accepted. An identifier outside that set shall be refused and nothing shall be stored.
     - A malformed colour shall be refused and nothing shall be stored.
+    - A division name carrying no letter and no digit, which cannot be normalized into an identity to store colours under, shall be refused before anything is stored, and shall not be described as a fault of the bot. The bulk form refuses it likewise, and an import passes its block over with the other blocks it rejects. Decided 2026-10-01.
     - A slot no template declares shall be stored all the same, and the manager shall be told that no template declares it. A colour may be set before the template that uses it is drawn.
     - Storing a colour while per-tier colours are off shall be permitted, and the manager shall be told that it is stored but not drawn.
     - There shall be no command to clear a colour. A tier meant to draw in the colour the template was authored in shall be given that colour explicitly.
@@ -169,7 +174,9 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - Otherwise **the division shall be the unit of atomicity**: a block naming no division, naming one twice, carrying a slot or colour that cannot be read, or carrying no colours at all, shall be rejected in its entirety while every other block is imported. A division shall never be half-applied.
     - The reply shall name every tier imported and every block rejected, with the reason for each.
     - Both the success and the failure of an import shall be recorded in the log channel.
-    - An attached file shall be refused where it is empty, where it is not UTF-8, or where it exceeds the size the module sets for it.
+    - An attached file shall be refused where it is empty, where it is not UTF-8, or where it exceeds the size the module sets for it, the size being checked before the file is read.
+    - The module shall be checked again when either form is submitted. Where it was switched off while the form stood open, nothing shall be stored and the refusal shall say so. Decided 2026-10-01.
+- Any configuration command of this module that sets a value (the directories, the templates, the fastest-lap colour, the per-tier colour toggle and colours, the time zone, the time format and the date format) given the value its setting already holds shall change nothing and shall say so, the log channel recording that nothing changed. The bulk form and the import do likewise where every colour they name is already held, the import still naming each block it rejected. Every refusal shall be made before it. A command that flips a setting is not subject to it. Decided 2026-10-01.
 - The colours a league has set shall be reported by "images config view", grouped by division, together with whether per-tier colours are on.
 
 ### Verification of template files configured
