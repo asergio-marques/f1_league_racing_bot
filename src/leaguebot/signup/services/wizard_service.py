@@ -2010,14 +2010,16 @@ class WizardService:
             )
             return
 
-        # Transition driver back to PENDING_ADMIN_APPROVAL
+        # Transition driver back to PENDING_ADMIN_APPROVAL. A driver who has moved on in the
+        # meantime (`ValueError`, the transition's refusal) has no window left to lapse: nothing
+        # is posted and no lapse recorded. Any other error is not swallowed (#457).
         try:
             await self._driver_service.transition(
                 discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
             )
-        except Exception:
+        except ValueError:
             log.warning(
-                "_correction_timeout_callback: transition failed for %s",
+                "_correction_timeout_callback: transition refused for %s",
                 discord_user_id, exc_info=True,
             )
             return
@@ -2026,6 +2028,7 @@ class WizardService:
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         guild = await self._get_guild()
         if wizard is None or guild is None:
+            await self._record_correction_lapse(discord_user_id, guild, None, panel=False)
             return
 
         # Read who asked before clearing it — the mention below is the last use.
@@ -2040,6 +2043,7 @@ class WizardService:
         await self._signup_svc.save_wizard(wizard)
 
         # Re-post admin review panel
+        panel_posted = False
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
@@ -2072,6 +2076,41 @@ class WizardService:
                         view=AdminReviewView(discord_user_id, self._bot),
                         allowed_mentions=_REVIEW_PANEL_MENTIONS,
                     )
+                    panel_posted = True
+        await self._record_correction_lapse(
+            discord_user_id, guild, requested_by, panel=panel_posted
+        )
+
+    async def _record_correction_lapse(
+        self,
+        discord_user_id: str,
+        guild: discord.Guild | None,
+        requested_by: str | None,
+        *,
+        panel: bool,
+    ) -> None:
+        """Record a correction request that lapsed unconfirmed, naming the manager who asked.
+
+        The line is `record_abandoned`'s: "⌛ the correction request for Lewis's signup lapsed
+        unconfirmed (started by Toto (<@id>))", with the driver's return to the approval queue
+        beneath, and a fresh review panel in their channel where one was posted (*panel*). A
+        manager recorded nowhere, for a window opened before the requester was kept, is "a
+        member". The five minutes and the restart sweep both reach it.
+        """
+        member = guild.get_member(int(discord_user_id)) if guild is not None else None
+        driver = getattr(member, "display_name", None)
+        if not isinstance(driver, str):
+            driver = f"<@{discord_user_id}>"
+        await record_abandoned(
+            self._league_bot,
+            int(requested_by) if requested_by else None,
+            what=f"the correction request for {driver}'s signup",
+            lapsed=True,
+            detail=(
+                f"{driver} is back in the approval queue"
+                + ("; a fresh review panel is in their channel." if panel else ".")
+            ),
+        )
 
     async def _commit_correction(
         self,

@@ -175,11 +175,6 @@ _CORRECTION_LAPSE = [
     "  Lewis Hamilton is back in the approval queue; a fresh review panel is in their channel.",
 ]
 
-_NO_CORRECTION_LAPSE = (
-    "#482: the correction window's lapse is posted in the driver's channel but writes no line "
-    "in the log channel"
-)
-
 
 def _lines(svc) -> list[str]:
     """Every line written to the league's log channel, split on new lines."""
@@ -247,7 +242,6 @@ async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
     assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CORRECTION_LAPSE)
 async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_path):
     """Toto pressed Request Changes on Lewis Hamilton's signup and the bot restarted before a
     parameter was chosen. Toto is mentioned in Lewis's channel, and one lapse naming Toto is
@@ -263,7 +257,6 @@ async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_pat
     assert _lines(svc) == _CORRECTION_LAPSE
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CORRECTION_LAPSE)
 async def test_a_restart_says_that_the_bot_restarted(tmp_path):
     """The two lapse reasons read differently, so a manager knows which happened."""
     db_path = await _seed(tmp_path)
@@ -336,7 +329,6 @@ async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
 # ── The ordinary five-minute lapse ────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CORRECTION_LAPSE)
 async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
     """Toto pressed Request Changes on Lewis Hamilton's signup and chose no parameter within
     five minutes. Lewis is back awaiting review, Toto is mentioned in Lewis's channel, and one
