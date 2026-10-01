@@ -223,6 +223,8 @@ asking for a time of day; type it and confirm. **That time is UTC**, not your lo
 the box says so. It starts at `03:00`, and most spellings work — `3`, `03:00`, `3am`, `1530`.
 Running the command again turns the daily refresh off, and needs no time.
 
+The confirmation is recorded in the log channel whichever way it ends. Confirm and the daily refresh is on; press Cancel, or leave it unanswered until it lapses, and the log says the refresh is unchanged and to run the command again, naming who opened it. The buttons come down either way, and pressing Confirm twice saves once. If the module, the photo feature or the daily refresh changes while the box or the confirmation is open, nothing is stored and the bot tells you why. If the bot stores the setting but cannot set the overnight job going, it says so: the setting is kept and the job starts the next time the bot does, so a restart is what you are waiting for, not a fault in your settings.
+
 You can have both on at once. One of the two must stay on while the feature is enabled: if
 you try to switch off the last one, the bot refuses and changes nothing, because neither on
 would mean no photo is ever fetched — which is what `/images use-pfp toggle` already does.
@@ -512,7 +514,7 @@ The division name completes as you type. Set it even for the tier you want left 
 /images config per-tier-bulk-colour division:Division 2
 ```
 
-opens a form. Paste one `slot colour` per line — `accent #A78BFA` — and they all go in together. Lines starting with `#` are ignored, so you can paste the tool's output whole without tidying it first.
+opens a form. Paste one `slot colour` per line — `accent #A78BFA` — and they all go in together. Lines starting with `#` are ignored, so you can paste the tool's output whole without tidying it first. If the image module is switched off while the form is open, the submission stores nothing and says so; the same goes for the pasted form of the import below.
 
 ```
 /images config colour-xml-import
@@ -536,7 +538,7 @@ does several tiers at once. Attach an XML file, or leave `file` off and paste th
 
 > **One bad tier does not spoil the rest.** Each `<division>` is taken on its own: a block with a colour it cannot read, no name, or the same name twice is skipped and reported, and the others still import. A tier is never left half-set. A file that is not valid XML at all is refused outright.
 
-Both tell you exactly what went in and what did not.
+Both tell you exactly what went in and what did not. A division name with no letter or digit in it cannot be stored under, so it is refused (a block in an import is passed over like any other bad block). Colours that are all held already change nothing, and the bot says so.
 
 **Choosing the other nine, once you have picked the accent.** If you have slotted a whole palette, the grounds and the inks want to agree with the tier's accent without becoming coloured themselves. Two rules make that reliable, and both were arrived at by rendering the alternatives rather than by eye:
 
