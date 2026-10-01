@@ -18,7 +18,7 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import interaction_member, refuse
 
 log = logging.getLogger(__name__)
 
@@ -151,6 +151,36 @@ class AdminReviewView(LeagueView):
             reply += f"\n⚠️ {role_note}"
         await interaction.followup.send(reply, ephemeral=True)
 
+    async def _ask_for_reason(
+        self,
+        interaction: discord.Interaction,
+        user_id: str,
+        label: str,
+        action: str,
+        prompt: str,
+    ) -> None:
+        """Park the press, which the manager's next message in this channel completes, and say so.
+
+        The entry keeps the press's own interaction, through which the reason step answers the
+        manager and records what became of it, and the press is written to the log channel
+        ("Manager (<@id>) | the “Reject” button of Alex's signup review | Asked for a reason").
+        """
+        await interaction.response.defer(ephemeral=True)
+        _PENDING_REASONS[(channel_id_of(interaction), interaction.user.id)] = {
+            "action": action,
+            "discord_user_id": user_id,
+            "actor": interaction.user,
+            "guild": interaction.guild,
+            "interaction": interaction,
+            "followup": interaction.followup,
+        }
+        await interaction.followup.send(prompt, ephemeral=True)
+        await bot_of(interaction).output_router.post_log(
+            f"{interaction_member(interaction)} | "
+            f"the “{label}” button of {_review_owner(interaction, user_id)} signup review | "
+            "Asked for a reason"
+        )
+
     @discord.ui.button(label="Request Changes", style=discord.ButtonStyle.secondary, custom_id="admin_request_changes")
     async def request_changes_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
@@ -158,18 +188,10 @@ class AdminReviewView(LeagueView):
         ok, _bot, _user_id = await self._guard(interaction, "Request Changes")
         if not ok:
             return
-        await interaction.response.defer(ephemeral=True)
-        _PENDING_REASONS[(channel_id_of(interaction), interaction.user.id)] = {
-            "action": "request_changes",
-            "discord_user_id": _user_id,
-            "actor": interaction.user,
-            "guild": interaction.guild,
-            "followup": interaction.followup,
-        }
-        await interaction.followup.send(
+        await self._ask_for_reason(
+            interaction, _user_id, "Request Changes", "request_changes",
             "Please type the reason for requesting changes in this channel. "
             "Your message will be automatically deleted.",
-            ephemeral=True,
         )
 
     @discord.ui.button(label="Reject", style=discord.ButtonStyle.danger, custom_id="admin_reject")
@@ -179,18 +201,10 @@ class AdminReviewView(LeagueView):
         ok, _bot, _user_id = await self._guard(interaction, "Reject")
         if not ok:
             return
-        await interaction.response.defer(ephemeral=True)
-        _PENDING_REASONS[(channel_id_of(interaction), interaction.user.id)] = {
-            "action": "reject",
-            "discord_user_id": _user_id,
-            "actor": interaction.user,
-            "guild": interaction.guild,
-            "followup": interaction.followup,
-        }
-        await interaction.followup.send(
+        await self._ask_for_reason(
+            interaction, _user_id, "Reject", "reject",
             "Please type the reason for rejecting this signup in this channel. "
             "Your message will be automatically deleted.",
-            ephemeral=True,
         )
 
 

@@ -487,7 +487,6 @@ async def _press(bot, button: str, user_id: int = MANAGER_ID):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_the_negative_buttons_write_their_press_line_and_park_the_press(
     monkeypatch, button, label
