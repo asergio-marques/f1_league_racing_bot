@@ -33,6 +33,7 @@
     - By default, this value will be set to 2.
 - The input from all commands shall be validated against the current settings so that the RSVP Deadline always happens after the RSVP Notice and the RSVP Last Notice, and the RSVP Last Notice always happens after RSVP Notice. Ergo, the configuration shall follow the rule Notice\*24 > LastNotice\*24 > Deadline.
 - If the season's placements have been confirmed, all three commands must be rejected.
+- Any configuration command of this module given the value its setting already holds shall change nothing and shall say so. Decided 2026-10-01.
 - A season holding a round whose RSVP Notice, RSVP Last Notice or RSVP Deadline has already passed shall fail validation. The placements review shall report it and shall withhold the button confirming placements; the confirmation shall refuse it again, with nothing committed.
     - The report shall name the latest offending round of a division and the earliest-due of that round's elapsed windows, and shall say when it was due. It shall not name every offending round, nor every window of the round it names: the round named bounds the division's calendar, and the window named bounds how far that round must move.
     - Both shall read one and the same evaluation, so that the review and the confirmation cannot disagree. The confirmation shall evaluate it afresh rather than trust the review, a round being able to cross a window while the review stands.
@@ -205,5 +206,6 @@
     - A driver omitted from the entries shall keep the status they hold. No entry shall return a driver to not having checked in.
     - An entry naming a driver without a profile, or without an attendance record for the round, or carrying a status that cannot be read, shall be reported and passed over; the remaining entries shall still be applied.
     - The check-in call shall be redrawn once after the entries are applied, and the change shall be written to the log channel.
+    - Test mode, the module and the check-in call shall be checked again when the entries are submitted. Where test mode or the module was disabled while the form stood open, or the call it was opened on was taken down or posted afresh, nothing shall be set and the refusal shall say why. Decided 2026-10-01.
 - The test mode "advance" command shall fire the deletion of a round's check-in messages in its turn, as it fires the call, the last notice and the deadline. Decided 2026-09-24 (#425).
 - While test mode is enabled, the bot shall post no check-in call late when it starts; the test mode "advance" command shall post it in its turn. Decided 2026-09-24 (#429).
