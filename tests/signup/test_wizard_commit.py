@@ -282,7 +282,8 @@ async def test_a_correction_is_logged_as_a_correction(committer):
     """How a manager tells "this driver has just signed up" from "this driver has fixed
     the thing I asked about". Lewis was asked to correct his nationality and typed "German": a
     correction is committed by `_commit_correction`, never `commit_wizard`, so it writes the
-    one line, naming what was re-collected."""
+    one line, naming what was re-collected by its review button's label, as the "Correction
+    requested" line names it (owner, 2026-10-01, Gate 3)."""
     from leaguebot.signup.models.signup_module import WizardState
 
     wizard = _wizard({"nationality": "German"})
@@ -292,9 +293,9 @@ async def test_a_correction_is_logged_as_a_correction(committer):
 
     lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
     assert len(lines) == 1, lines
-    head = f"Lewis Hamilton (<@{DRIVER_ID}>) | Signup | Correction submitted"
-    assert lines[0].startswith(head), lines[0]
-    assert "nationality" in lines[0][len(head):].lower(), lines[0]
+    assert lines[0] == (
+        f"Lewis Hamilton (<@{DRIVER_ID}>) | Signup | Correction submitted: Nationality"
+    ), lines[0]
 
 
 async def test_no_notes_on_the_first_pass_writes_only_submitted(committer):
