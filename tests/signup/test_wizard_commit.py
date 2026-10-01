@@ -278,10 +278,6 @@ async def test_a_first_submission_is_logged_as_submitted(committer):
     assert "Submitted" in committer.svc._output_router.post_log.await_args.args[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a correction is committed by _commit_correction, which writes no line",
-)
 async def test_a_correction_is_logged_as_a_correction(committer):
     """How a manager tells "this driver has just signed up" from "this driver has fixed
     the thing I asked about". Lewis was asked to correct his nationality and typed "German": a
@@ -312,10 +308,6 @@ async def test_no_notes_on_the_first_pass_writes_only_submitted(committer):
     assert lines[0].endswith("| Signup | Submitted"), lines[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a correction ended by a button press writes no line in the log channel",
-)
 async def test_a_button_answer_that_ends_a_correction_writes_only_correction_submitted(committer):
     """Lewis was asked to correct his platform and presses Steam. That press ends the
     correction: it writes one line, "Correction submitted", and no "Platform: Steam" beside it."""

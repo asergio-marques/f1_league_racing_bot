@@ -114,6 +114,21 @@ class SignupNotOpenError(Exception):
 # ---------------------------------------------------------------------------
 
 
+#: The answer a manager may ask a driver to correct, by the key the review's buttons carry, and
+#: the wizard step that re-collects it. `_commit_correction` reads it backwards to name what was
+#: corrected.
+_CORRECTION_PARAMETER_STATES: dict[str, WizardState] = {
+    "nationality":          WizardState.COLLECTING_NATIONALITY,
+    "platform":             WizardState.COLLECTING_PLATFORM,
+    "platform_id":          WizardState.COLLECTING_PLATFORM_ID,
+    "availability":         WizardState.COLLECTING_AVAILABILITY,
+    "driver_type":          WizardState.COLLECTING_DRIVER_TYPE,
+    "preferred_teams":      WizardState.COLLECTING_PREFERRED_TEAMS,
+    "preferred_teammate":   WizardState.COLLECTING_PREFERRED_TEAMMATE,
+    "lap_times":            WizardState.COLLECTING_LAP_TIME,
+    "notes":                WizardState.COLLECTING_NOTES,
+}
+
 #: What `WizardService.withdraw` returns where the signup has already ended (S5-A6).
 _SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 
@@ -634,11 +649,11 @@ class WizardService:
                     allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
 
+        # A correction is committed by `_commit_correction`, which writes its own line.
         member = guild.get_member(int(discord_user_id))
         display_name = member.display_name if member else discord_user_id
-        log_action = "Correction submitted" if is_correction else "Submitted"
         await self._output_router.post_log(
-            f"{display_name} (<@{discord_user_id}>) | Signup | {log_action}",
+            f"{display_name} (<@{discord_user_id}>) | Signup | Submitted",
         )
 
     async def withdraw(
@@ -855,18 +870,7 @@ class WizardService:
         and posts the re-collection prompt.
         FR-044.
         """
-        _PARAM_STATE_MAP: dict[str, WizardState] = {
-            "nationality":          WizardState.COLLECTING_NATIONALITY,
-            "platform":             WizardState.COLLECTING_PLATFORM,
-            "platform_id":          WizardState.COLLECTING_PLATFORM_ID,
-            "availability":         WizardState.COLLECTING_AVAILABILITY,
-            "driver_type":          WizardState.COLLECTING_DRIVER_TYPE,
-            "preferred_teams":      WizardState.COLLECTING_PREFERRED_TEAMS,
-            "preferred_teammate":   WizardState.COLLECTING_PREFERRED_TEAMMATE,
-            "lap_times":            WizardState.COLLECTING_LAP_TIME,
-            "notes":                WizardState.COLLECTING_NOTES,
-        }
-        target_state = _PARAM_STATE_MAP.get(parameter)
+        target_state = _CORRECTION_PARAMETER_STATES.get(parameter)
         if target_state is None:
             log.warning("select_correction_parameter: unknown parameter %r", parameter)
             return
@@ -1989,7 +1993,8 @@ class WizardService:
 
         Used by _advance_wizard_in_channel when the _is_correction flag is set in
         draft_answers.  Updates the existing SignupRecord with the corrected
-        field(s), transitions driver state, and posts a fresh AdminReviewView.
+        field(s), transitions driver state, writes the "Correction submitted" line naming the
+        parameter re-collected (the wizard step it stands at), and posts a fresh AdminReviewView.
         """
         discord_user_id = wizard.discord_user_id
 
@@ -2021,9 +2026,21 @@ class WizardService:
         )
 
         # Clear correction state from wizard record
+        corrected = next(
+            (
+                key for key, state in _CORRECTION_PARAMETER_STATES.items()
+                if state == wizard.wizard_state
+            ),
+            None,
+        )
         wizard.wizard_state = WizardState.UNENGAGED
         wizard.draft_answers = {}
         await self._signup_svc.save_wizard(wizard)
+
+        await self._record_signup_line(
+            discord_user_id, guild,
+            "Correction submitted" if corrected is None else f"Correction submitted: {corrected}",
+        )
 
         # Post fresh admin review panel
         if wizard.signup_channel_id is not None:
