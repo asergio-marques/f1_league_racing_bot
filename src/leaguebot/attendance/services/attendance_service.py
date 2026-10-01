@@ -263,63 +263,6 @@ class AttendanceService:
             await db.commit()
         return SettingChange(changed=True, old=old)
 
-
-    async def update_rsvp_notice_days(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET rsvp_notice_days = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_rsvp_last_notice_hours(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET rsvp_last_notice_hours = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_rsvp_deadline_hours(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET rsvp_deadline_hours = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_no_rsvp_penalty(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET no_rsvp_penalty = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_absent_penalty(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET absent_penalty = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_no_show_penalty(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET no_show_penalty = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_autosack_threshold(self, value: int | None) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET autosack_threshold = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_autoreserve_threshold(self, value: int | None) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET autoreserve_threshold = ?", (value,)
-            )
-            await db.commit()
-
     # ── driver_round_attendance CRUD ───────────────────────────────────────
 
     async def bulk_insert_attendance_rows(
