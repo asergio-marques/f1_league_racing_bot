@@ -15,10 +15,6 @@ import pytest
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 
-#: Why the two long-reply tests below fail until the build: a preview's reply is cut short.
-_CUT_AT_1900 = "#482: a preview's reply is cut at 1,900 characters rather than sent whole in parts"
-
-
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
 
@@ -342,7 +338,6 @@ class TestTheReply:
 
         assert "Asset directories" not in interaction.followup.messages[0]
 
-    @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
     async def test_the_reply_stays_within_discords_message_limit(self, cog, tmp_path):
         """Forty asset folders that did not resolve must not push a part of the reply past
         what Discord accepts, nor cost the end of the reply: every fault arrives, in as many
@@ -729,7 +724,6 @@ class TestTheNoticeBlock:
         assert "×20" in reply
         assert reply.count("no `marker` image") == 1
 
-    @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
     async def test_the_reply_survives_a_render_that_degraded_heavily(self, cog, tmp_path):
         """Forty notices that do not group make a reply past Discord's limit. It arrives
         whole, in as many parts as it needs, each within the limit and seen by the manager

@@ -2761,9 +2761,12 @@ class ImageCog(commands.Cog):
         from leaguebot.image.services.image_render_service import discard_attachment
 
         try:
-            await interaction.followup.send(
-                "\n".join(lines)[:1900], files=files, ephemeral=True
-            )
+            # The whole reply goes, in parts: cut short it would stop partway through a list
+            # with no sign. The picture rides with the first part only, so it arrives once.
+            for number, part in enumerate(chunk_message("\n".join(lines))):
+                await interaction.followup.send(
+                    part, files=files if number == 0 else [], ephemeral=True
+                )
         finally:
             discard_attachment(*files)
 
