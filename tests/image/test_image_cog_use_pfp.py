@@ -467,7 +467,7 @@ async def test_the_confirmation_is_not_stopped_until_cancel_and_confirm_have_fin
     assert cancelled.is_finished() and confirmed.is_finished()
 
 
-# ── Checked again on submit (F5)──────────────────────────────────────────
+# ── Checked again on submit (F5) ──────────────────────────────────────────
 
 _CHANGED_SINCE_OPENING = [
     pytest.param(
