@@ -272,6 +272,62 @@ async def test_the_disable_is_logged(tmp_path):
     assert step in _replied(interaction)
 
 
+#: Why a disable whose close failed hundreds of steps is not yet replied to in parts.
+_SENT_IN_PARTS = (
+    "#482: a long list of failed steps is cut short with '…and N more' rather than sent in parts"
+)
+
+
+@pytest.mark.parametrize(
+    "count",
+    [
+        pytest.param(2, id="two_steps"),
+        pytest.param(
+            300,
+            id="three_hundred_steps",
+            marks=pytest.mark.xfail(strict=True, reason=_SENT_IN_PARTS),
+        ),
+    ],
+)
+async def test_a_disable_with_many_failed_steps_is_replied_in_parts(tmp_path, count):
+    """Signups are open when the module is disabled, and the forced close returns two drivers
+    but fails *count* steps. The reply names every one, in as many messages as Discord's limit
+    of 2,000 characters needs and no more, never cut short; and the success line names every
+    one beneath it."""
+    db_path = await _make_db(tmp_path, name="disable_parts")
+    cog = _make_cog(db_path, config=_config(signups_open=True))
+    interaction = _interaction()
+    steps = tuple(
+        f"Driver {n:03d} could not be returned to Not Signed Up: Discord refused the change."
+        for n in range(1, count + 1)
+    )
+    outcome = SimpleNamespace(returned=2, failed=steps, refused=None)
+
+    with patch(
+        "leaguebot.core.cogs.module_cog.execute_forced_close",
+        new=AsyncMock(return_value=outcome),
+    ):
+        await cog._disable_signup(interaction)
+
+    parts = [
+        (str(call.args[0]) if call.args else str(call.kwargs.get("content")), call.kwargs)
+        for call in interaction.followup.send.await_args_list
+    ]
+    texts = [text for text, _ in parts]
+    assert "Signup module disabled" in texts[0]
+    assert all(len(text) <= 2000 for text in texts)
+    assert all(kwargs.get("ephemeral") is True for _, kwargs in parts)
+    for step in steps:
+        assert sum(step in text for text in texts) == 1, step
+    assert not any("more, listed in the log channel" in text for text in texts)
+    if count == 2:
+        assert len(texts) == 1
+    else:
+        assert len(texts) > 1
+    line = str(cog.bot.output_router.post_log.await_args.args[0])
+    assert all(step in line for step in steps)
+
+
 async def test_the_configuration_is_cleared(tmp_path):
     """The configuration row, which holds the channel, is deleted. What survives it is
     pinned by `test_time_slots_and_settings_stand_again_after_a_re_enable`."""

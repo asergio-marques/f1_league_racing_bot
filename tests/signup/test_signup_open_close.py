@@ -1187,3 +1187,101 @@ async def test_confirming_a_close_with_failed_steps_names_them_in_the_reply_and_
     assert "/signup close" in first
     assert "drivers_returned_to_not_signed_up: 1" in line
     assert any(_NOTICE_NOT_POSTED in text for text in beneath)
+
+
+#: Why a close with hundreds of failed steps is not yet replied to in parts.
+_SENT_IN_PARTS = (
+    "#482: a long list of failed steps is cut short with '…and N more' rather than sent in parts"
+)
+
+#: Discord's limit on one message, in characters.
+_DISCORD_LIMIT = 2000
+
+#: How many failed steps each case has: two fit in one message, three hundred cannot.
+_STEP_COUNTS = [
+    pytest.param(2, id="two_steps"),
+    pytest.param(
+        300,
+        id="three_hundred_steps",
+        marks=pytest.mark.xfail(strict=True, reason=_SENT_IN_PARTS),
+    ),
+]
+
+
+def _failed_steps(count: int) -> tuple[str, ...]:
+    """*count* failed steps, each its own sentence naming its own driver."""
+    return tuple(
+        f"Driver {n:03d} could not be returned to Not Signed Up: Discord refused the change."
+        for n in range(1, count + 1)
+    )
+
+
+def _parts(interaction) -> list[tuple[str, dict]]:
+    """Each message the member was sent after the close was deferred, with how it was sent."""
+    return [
+        (str(call.args[0]) if call.args else str(call.kwargs.get("content")), call.kwargs)
+        for call in interaction.followup.send.await_args_list
+    ]
+
+
+def _assert_replied_in_parts(parts: list[tuple[str, dict]], steps: tuple[str, ...]) -> None:
+    """Every step reaches the member whole, in messages each inside Discord's limit and each
+    seen only by them, with nothing cut short: two steps fit in one message, hundreds do not."""
+    texts = [text for text, _ in parts]
+    assert all(len(text) <= _DISCORD_LIMIT for text in texts)
+    assert all(kwargs.get("ephemeral") is True for _, kwargs in parts)
+    for step in steps:
+        assert sum(step in text for text in texts) == 1, step
+    assert not any("more, listed in the log channel" in text for text in texts)
+    if len(steps) == 2:
+        assert len(texts) == 1
+    else:
+        assert len(texts) > 1
+
+
+@pytest.mark.parametrize("count", _STEP_COUNTS)
+async def test_a_close_with_many_failed_steps_is_replied_in_parts(tmp_path, count):
+    """Signups are open and nobody is mid-signup, so `/signup close` closes at once, but the
+    close fails *count* steps. The reply names every one, in as many messages as Discord's limit
+    needs and no more, never cut short; and the success line names every one beneath it."""
+    db_path = await _seed(tmp_path, signups_open=True)
+    cog = _cog(db_path)
+    interaction = _interaction()
+    steps = _failed_steps(count)
+    outcome = SimpleNamespace(returned=0, failed=steps, refused=None)
+
+    with patch(
+        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
+        new=AsyncMock(return_value=outcome),
+    ):
+        await _close(cog, interaction)
+
+    parts = _parts(interaction)
+    assert "Signups closed" in parts[0][0]
+    _assert_replied_in_parts(parts, steps)
+    [line] = _lines(cog)
+    assert all(step in line for step in steps)
+
+
+@pytest.mark.parametrize("count", _STEP_COUNTS)
+async def test_confirming_a_close_with_many_failed_steps_is_replied_in_parts(tmp_path, count):
+    """A driver is mid-signup, `/signup close` asks, and the manager presses Confirm Close; the
+    close returns the driver but fails *count* steps. The reply names every one, in as many
+    messages as Discord's limit needs and no more, never cut short; and the success line names
+    every one beneath it."""
+    _db_path, cog, _asked, view = await _confirmation(tmp_path)
+    steps = _failed_steps(count)
+    outcome = SimpleNamespace(returned=1, failed=steps, refused=None)
+    press = _pressed(cog)
+
+    with patch(
+        "leaguebot.signup.cogs.signup_cog.execute_forced_close",
+        new=AsyncMock(return_value=outcome),
+    ):
+        await view.confirm.callback(press)
+
+    parts = _parts(press)
+    assert "1 driver(s) still signing up were returned to Not Signed Up" in parts[0][0]
+    _assert_replied_in_parts(parts, steps)
+    [line] = _lines(cog)
+    assert all(step in line for step in steps)
