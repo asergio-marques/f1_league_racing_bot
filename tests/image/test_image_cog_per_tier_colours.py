@@ -476,6 +476,8 @@ async def test_an_import_naming_one_tier_twice_under_two_spellings_stores_only_t
 
     assert await service.get_tier_palette("Division 1") == {"accent": "#3DD6F5"}
     said_text = _said(cog)
+    assert "across 1 tier(s)" in said_text, said_text
+    assert "**Division-1**" not in said_text, said_text
     assert "not imported" in said_text, said_text
     assert any(
         "Division-1" in line and "Division 1" in line
