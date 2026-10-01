@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -35,6 +35,7 @@ from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
     change_rows,
+    http_error,
     league_double,
     maybe_await,
     member_interaction,
@@ -42,6 +43,7 @@ from tests.support.change_queue import (
     restart_queue,
     run_queue,
     seed_server,
+    step_rows,
     updated_reply,
 )
 from tests.support.teams import seed_team_instances
@@ -680,6 +682,43 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_wind_down_discord_keeps_failing_is_reported_as_still_at_work_after_an_hour(
+    tmp_path, monkeypatch,
+):
+    """The wind-down is not tried once: Discord failing it is retried, and reported after an hour."""
+    from leaguebot.core.services import season_lifecycle_service
+
+    monkeypatch.setattr(
+        season_lifecycle_service, "wind_down_ongoing",
+        AsyncMock(side_effect=http_error(discord.Forbidden, status=403, text="Missing Access")),
+    )
+    seeded = await _seed(tmp_path, stage="ONGOING_PLACEMENTS")
+    bot = _league(seeded.db_path)
+    await _confirm(bot)
+    await run_queue(bot)
+
+    def _still_at_work(lines: list[str]) -> list[str]:
+        return [line for line in lines if "is still at work" in line]
+
+    while bot.clock.now - NOW < timedelta(hours=1):
+        assert _still_at_work(await _lines(bot)) == []
+        [step] = [s for s in await step_rows(seeded.db_path)
+                  if s["done_at"] is None and s["next_try_at"]]
+        bot.clock.now = datetime.fromisoformat(step["next_try_at"])
+        await run_queue(bot)
+
+    [line] = _still_at_work(await _lines(bot))
+    assert line.startswith(
+        f"⚠️ Winding the season down after {WHAT} for {NAMED} is still at work: it has failed "
+        "for over an hour ("
+    )
+    assert "Missing Access" in line
+    assert line.endswith("). The bot keeps trying.")
+    assert (await _change(seeded.db_path, "season.wind_down"))["state"] == "WAITING"
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path, monkeypatch):
     from leaguebot.core.services import hub_service
 
@@ -789,6 +828,29 @@ async def test_a_switch_off_asked_before_pending_completion_and_run_after_it_is_
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "REFUSED"
     assert await _flag(seeded.db_path) == 1
     assert await _count(seeded.db_path, "session_results") == 1
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_switch_off_asked_while_results_is_on_and_run_once_it_is_off_is_refused(tmp_path):
+    """Two presses not repeats of each other, with and without the cascade, are both queued; the
+    first turns results off, so the second is refused when it runs."""
+    seeded = await _seed(tmp_path, attendance=True)
+    bot = _league(seeded.db_path)
+    first = await _confirm(bot, cascade=True)
+    second = await _confirm(bot)
+
+    await run_queue(bot)
+
+    refusal = "⚠️ Results & Standings module is already disabled."
+    assert acknowledgement(second) == ACKNOWLEDGEMENT
+    assert updated_reply(second) == refusal
+    assert f"⛔ {WHAT} refused for {NAMED} — Results & Standings module is already disabled." in (
+        "\n".join(await _lines(bot))
+    )
+    assert updated_reply(first).startswith(SUCCESS)
+    assert [row["state"] for row in await change_rows(seeded.db_path)
+            if row["kind"] == "module.off:results"] == ["DONE", "REFUSED"]
+    assert (await _audit_types(seeded.db_path)).count("MODULE_DISABLE") == 1
 
 
 # ---------------------------------------------------------------------------
