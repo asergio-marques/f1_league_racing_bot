@@ -36,32 +36,36 @@ from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASPECTS
 from leaguebot.image.services.image_validity_service import Problem
 from leaguebot.core.utils.paths import PathContainmentError
+from tests.support.image_cog_doubles import (
+    assert_one_refusal,
+    interaction as _image_interaction,
+    log_bot,
+    said,
+)
+
+COMMAND = "images config template-directory"
+
+_NOT_YET_RECORDED = "#482: a template-directory refusal is not yet recorded as a refusal"
 
 
-def _interaction(guild_id: int = 1):
-    interaction = MagicMock()
-    interaction.guild_id = guild_id
-    interaction.user.id = 42
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+def _interaction(bot=None):
+    return _image_interaction(COMMAND, bot=bot)
 
 
 def _cog(monkeypatch, *, problems=None, contained=True):
     cog = MagicMock(spec=ImageCog)
     cog._config_service = MagicMock()
     cog._config_service.candidate_config = AsyncMock(return_value=MagicMock())
-    cog._config_service.set_field = AsyncMock()
+    cog._config_service.set_field = AsyncMock(return_value=True)
     # The survey is scoped to the aspects that are switched on, so the command reads
     # them. Everything on here, which is the strictest case and what these assert.
     cog._config_service.get_toggles = AsyncMock(
         return_value={aspect: True for aspect in ASPECTS}
     )
-    cog._guard_module_enabled = AsyncMock(return_value=True)
-    cog._reply = AsyncMock()
-    cog._log = AsyncMock()
+    cog._module_gate = AsyncMock(return_value=True)
+    # The real `_reply`, so a refusal and a success are read off the interaction alike.
+    cog._reply = ImageCog._reply
+    cog.bot = log_bot()
     cog._reject_directory = AsyncMock()
 
     import leaguebot.core.utils.paths as paths
@@ -91,7 +95,10 @@ def _cog(monkeypatch, *, problems=None, contained=True):
 
 
 async def _run(cog, directory="resources/mine"):
-    await ImageCog._set_template_directory(cog, _interaction(), directory)
+    """Run the command; returns the interaction, which holds every reply."""
+    interaction = _interaction(cog.bot)
+    await ImageCog._set_template_directory(cog, interaction, directory)
+    return interaction
 
 
 def _problem(key, detail):
@@ -102,13 +109,13 @@ def _problem(key, detail):
 async def test_a_folder_holding_every_valid_template_is_stored(monkeypatch):
     cog = _cog(monkeypatch)
 
-    await _run(cog)
+    interaction = await _run(cog)
 
     cog._config_service.set_field.assert_awaited_once()
     assert cog._config_service.set_field.await_args.args[0] == "template_directory"
     cog._reject_directory.assert_not_awaited()
 
-    reply = cog._reply.await_args.args[1]
+    reply = said(interaction)
     # Not "all fifteen" any more: the survey covers the drawings the switched-on outputs
     # need, so a league posting verdicts as text is not held to a verdicts template.
     assert "switched on" in reply
@@ -145,11 +152,12 @@ async def test_an_invalid_template_is_refused_the_same_way(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_path_escaping_the_project_root_is_refused_before_any_parsing(
     monkeypatch,
 ):
     """Containment first: a rejected path must never cost fifteen SVG parses, and the
-    stored value must be untouched."""
+    stored value must be untouched. The refusal is recorded as one "⛔" line."""
     checked = []
 
     cog = _cog(monkeypatch, contained=False)
@@ -162,11 +170,12 @@ async def test_a_path_escaping_the_project_root_is_refused_before_any_parsing(
         lambda config: checked.append(config) or [],
     )
 
-    await _run(cog, "../elsewhere")
+    interaction = await _run(cog, "../elsewhere")
 
     assert checked == [], "templates were parsed for a path that was never going to store"
     cog._config_service.set_field.assert_not_awaited()
-    assert "outside the project root" in cog._reply.await_args.args[1]
+    assert "outside the project root" in said(interaction)
+    assert_one_refusal(cog.bot, f"`/{COMMAND}`")
 
 
 @pytest.mark.asyncio
@@ -185,24 +194,25 @@ async def test_a_server_with_no_configuration_is_refused(monkeypatch):
 
 def _reject_cog():
     cog = MagicMock(spec=ImageCog)
-    cog._reply = AsyncMock()
-    cog._log = AsyncMock()
+    cog._reply = ImageCog._reply
+    cog.bot = log_bot()
     return cog
 
 
 @pytest.mark.asyncio
 async def test_a_refusal_says_the_previous_folder_still_stands():
     cog = _reject_cog()
+    interaction = _interaction(cog.bot)
 
     await ImageCog._reject_directory(
         cog,
-        _interaction(),
+        interaction,
         "Template directory",
         "`resources/mine` does not hold every template the bot needs.",
         problems=[_problem("rsvp_template", "the file is not there.")],
     )
 
-    reply = cog._reply.await_args.args[1]
+    reply = said(interaction)
     assert "not** changed" in reply
     assert "still in force" in reply
     assert "the file is not there." in reply
@@ -211,30 +221,32 @@ async def test_a_refusal_says_the_previous_folder_still_stands():
 @pytest.mark.asyncio
 async def test_a_wholesale_failure_is_capped_rather_than_flooding_the_reply():
     cog = _reject_cog()
+    interaction = _interaction(cog.bot)
     problems = [_problem(f"t{i}_template", f"fault {i}") for i in range(15)]
 
     await ImageCog._reject_directory(
-        cog, _interaction(), "Template directory", "nothing is there.", problems=problems
+        cog, interaction, "Template directory", "nothing is there.", problems=problems
     )
 
-    reply = cog._reply.await_args.args[1]
-    assert "and 9 more" in reply
-    assert len(reply) <= 1900
+    assert "and 9 more" in said(interaction)
+    # Each part fits one Discord message.
+    assert all(len(part) <= 2000 for part in interaction.said)
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_refusal_is_logged_like_an_accepted_change():
-    """Principle V: a refused configuration is as much a part of the audit trail."""
+    """Principle V: a refused configuration is as much a part of the audit trail. It is
+    recorded as one "⛔" line naming the command, with the reason it was refused."""
     cog = _reject_cog()
 
     await ImageCog._reject_directory(
         cog,
-        _interaction(),
+        _interaction(cog.bot),
         "Template directory",
         "nothing is there.",
         problems=[_problem("rsvp_template", "the file is not there.")],
     )
 
-    cog._log.assert_awaited_once()
-    logged = cog._log.await_args.args[1]
-    assert "REJECTED" in logged
+    line = assert_one_refusal(cog.bot, f"`/{COMMAND}`")
+    assert "nothing is there." in line

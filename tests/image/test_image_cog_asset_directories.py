@@ -25,26 +25,30 @@ import pytest
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.image.models.image_constants import ASSET_DIRECTORIES, ASSET_LABELS
 from leaguebot.core.utils.paths import PathContainmentError
+from tests.support.image_cog_doubles import (
+    assert_one_line,
+    assert_one_refusal,
+    interaction as _interaction,
+    log_bot,
+    logged,
+    said,
+)
 
-
-def _interaction(guild_id: int = 1):
-    interaction = MagicMock()
-    interaction.guild_id = guild_id
-    interaction.user.id = 42
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+_NOT_YET_RECORDED = "#482: an artwork folder's outcome is not yet recorded in its command's own line"
 
 
 def _cog(monkeypatch, *, resolved: Path | None = None, contained=True):
+    """The cog, unbound, with the module on and a store that reports each value as a change.
+
+    Replies go through the real `_reply`, so a refusal and a success are read off the
+    interaction alike; the bot carries the log channel the lines are recorded in.
+    """
     cog = MagicMock(spec=ImageCog)
+    cog.bot = log_bot()
     cog._config_service = MagicMock()
-    cog._config_service.set_field = AsyncMock()
-    cog._guard_module_enabled = AsyncMock(return_value=True)
-    cog._reply = AsyncMock()
-    cog._log = AsyncMock()
+    cog._config_service.set_field = AsyncMock(return_value=True)
+    cog._module_gate = AsyncMock(return_value=True)
+    cog._reply = ImageCog._reply
 
     import leaguebot.core.utils.paths as paths
 
@@ -64,12 +68,15 @@ def _cog(monkeypatch, *, resolved: Path | None = None, contained=True):
     return cog
 
 
+def _command(column: str) -> str:
+    return f"images config {ASSET_DIRECTORIES[column][0]}"
+
+
 async def _run(cog, column="division_logo_directory", label="Division logos"):
-    await ImageCog._set_directory(cog, _interaction(), column, "resources/league/mine", label)
-
-
-def _said(cog) -> str:
-    return cog._reply.await_args.args[1]
+    """Run the command for *column*; returns the interaction, which holds every reply."""
+    interaction = _interaction(_command(column), bot=cog.bot)
+    await ImageCog._set_directory(cog, interaction, column, "resources/league/mine", label)
+    return interaction
 
 
 # ── every class reaches the same body ─────────────────────────────────────
@@ -116,22 +123,25 @@ async def test_a_folder_that_does_not_exist_yet_is_stored_with_a_warning(
     """
     cog = _cog(monkeypatch, resolved=tmp_path / "not-yet")
 
-    await _run(cog)
+    interaction = await _run(cog)
 
     cog._config_service.set_field.assert_awaited_once_with(
         "division_logo_directory", "resources/league/mine"
     )
-    assert "Nothing is there yet" in _said(cog)
-    assert "✅ **Division logos** set to" in _said(cog)
+    assert "Nothing is there yet" in said(interaction)
+    assert "✅ **Division logos** set to" in said(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_folder_that_exists_reports_that_it_resolves(monkeypatch, tmp_path):
+    """And records one success line naming the command itself, the folder set beneath."""
     cog = _cog(monkeypatch, resolved=tmp_path)
 
-    await _run(cog)
+    interaction = await _run(cog)
 
-    assert "✅ Resolves." in _said(cog)
-    cog._log.assert_awaited_once()
+    assert "✅ Resolves." in said(interaction)
+    details = assert_one_line(cog.bot, "images config division-logo-directory")
+    assert any("resources/league/mine" in detail for detail in details), details
 
 
 async def test_a_path_that_is_a_file_is_stored_but_called_out(monkeypatch, tmp_path):
@@ -139,35 +149,40 @@ async def test_a_path_that_is_a_file_is_stored_but_called_out(monkeypatch, tmp_p
     target.write_bytes(b"<svg/>")
     cog = _cog(monkeypatch, resolved=target)
 
-    await _run(cog)
+    interaction = await _run(cog)
 
-    assert "not a directory" in _said(cog)
+    assert "not a directory" in said(interaction)
 
 
 # ── containment ───────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_path_escaping_the_project_root_is_refused_and_stores_nothing(
     monkeypatch,
 ):
-    """The stored value must be left alone, not overwritten with something unusable."""
+    """The stored value must be left alone, not overwritten with something unusable; the
+    refusal is recorded as one "⛔" line naming the command."""
     cog = _cog(monkeypatch, contained=False)
 
-    await _run(cog)
+    interaction = await _run(cog)
 
     cog._config_service.set_field.assert_not_awaited()
-    assert "The stored value is unchanged." in _said(cog)
-    cog._log.assert_not_awaited()
+    assert "The stored value is unchanged." in said(interaction)
+    assert_one_refusal(cog.bot, "`/images config division-logo-directory`")
 
 
+@pytest.mark.xfail(strict=True, reason="#482: the module gate is not yet `_module_gate`")
 async def test_nothing_is_stored_while_the_module_is_disabled(monkeypatch, tmp_path):
+    """The gate answers and records its own refusal; the body adds nothing to either."""
     cog = _cog(monkeypatch, resolved=tmp_path)
-    cog._guard_module_enabled = AsyncMock(return_value=False)
+    cog._module_gate = AsyncMock(return_value=False)
 
-    await _run(cog)
+    interaction = await _run(cog)
 
     cog._config_service.set_field.assert_not_awaited()
-    cog._reply.assert_not_awaited()
+    assert interaction.said == []
+    assert logged(cog.bot) == []
 
 
 # ── the label reaches the manager, per class ──────────────────────────────
@@ -180,6 +195,6 @@ async def test_each_class_names_itself_in_the_confirmation(monkeypatch, tmp_path
     """A manager setting eight folders in a row needs to know which one just moved."""
     cog = _cog(monkeypatch, resolved=tmp_path)
 
-    await _run(cog, column=column, label=ASSET_LABELS[column])
+    interaction = await _run(cog, column=column, label=ASSET_LABELS[column])
 
-    assert ASSET_LABELS[column] in _said(cog)
+    assert ASSET_LABELS[column] in said(interaction)

@@ -21,27 +21,19 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.image.cogs.image_cog import ImageCog
-
-
-def _interaction(guild_id: int = 1):
-    interaction = MagicMock()
-    interaction.guild_id = guild_id
-    interaction.user.id = 42
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
+from tests.support.image_cog_doubles import interaction as _interaction, log_bot
 
 
 def _cog(monkeypatch, *, problem=None):
     cog = MagicMock(spec=ImageCog)
     cog._config_service = MagicMock()
     cog._config_service.candidate_config = AsyncMock(return_value=MagicMock())
-    cog._config_service.set_field = AsyncMock()
-    cog._guard_module_enabled = AsyncMock(return_value=True)
+    # A store reporting each filename as a change, so the success path is the one taken.
+    cog._config_service.set_field = AsyncMock(return_value=True)
+    cog._module_gate = AsyncMock(return_value=True)
     cog._reject = AsyncMock()
     cog._reply = AsyncMock()
-    cog._log = AsyncMock()
+    cog.bot = log_bot()
 
     import leaguebot.image.services.image_validity_service as validity
 
@@ -50,7 +42,10 @@ def _cog(monkeypatch, *, problem=None):
 
 
 async def _run(cog, column, filename="lineup_template.svg"):
-    await ImageCog._set_template_filename(cog, _interaction(), column, filename)
+    command = "images template " + column.removesuffix("_template").replace("_", "-")
+    await ImageCog._set_template_filename(
+        cog, _interaction(command, bot=cog.bot), column, filename
+    )
 
 
 @pytest.mark.asyncio
