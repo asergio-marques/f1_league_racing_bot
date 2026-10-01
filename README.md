@@ -297,7 +297,8 @@ previews and the hub's About change nothing and record nothing. A refusal to som
 another server, to a command used in a direct message, or made before `/bot init` or after
 `/bot pack` is answered as ever but written to the host's log alone: there is no log channel to
 write it in, or no way to tell whether the person belongs to the league. A results paste into a
-submission channel is a message, not a command, and is not covered. Some commands do not yet record
+submission channel is a message, not a command, and is not covered; so is an answer typed into the
+signup wizard, which records only its refusal. Some commands do not yet record
 every outcome in this form; they are being brought in line.
 
 ### `/bot init` — One-time server setup
