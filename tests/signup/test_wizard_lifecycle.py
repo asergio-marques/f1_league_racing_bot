@@ -302,6 +302,30 @@ async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_t
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: an expiry whose driver has already moved on still returns without holding the channel",
+)
+async def test_an_expiry_for_a_driver_already_moved_on_still_holds_the_channel(lifecycle):
+    """The 24-hour job can fire for a driver who has already moved on, the transition refusing
+    with `ValueError`. The channel is still held, with the expiry notice and its deletion 24 hours
+    on, but no lapse is recorded: the signup did not lapse (owner, 2026-10-01, Gate 3, "Still hold
+    the channel")."""
+    _alex_on_the_server(lifecycle)
+    lifecycle.driver_service.transition = AsyncMock(
+        side_effect=ValueError("illegal transition")
+    )
+
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    lifecycle.svc.trigger_channel_hold.assert_awaited_once()
+    held = lifecycle.svc.trigger_channel_hold.await_args.args
+    assert held[0] == DRIVER_ID
+    assert held[1] is lifecycle.guild
+    assert "expired" in held[2]
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # A driver leaving the server
 # ---------------------------------------------------------------------------
