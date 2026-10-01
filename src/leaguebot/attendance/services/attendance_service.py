@@ -100,8 +100,6 @@ def derive_checkin_deadline(
     This is the deadline held against **full-time** drivers. The later deadline a reserve is
     held to is carried by neither the graphic nor the embed, and is not this function's.
     """
-    from datetime import timedelta
-
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
     return scheduled_at - timedelta(hours=deadline_hours)
