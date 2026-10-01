@@ -1479,17 +1479,19 @@ class ImageCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        raw = await file.read()
-        if not raw:
-            await refuse(
-                interaction, "❌ The attached file is empty.", what=describe_command(interaction)
-            )
-            return
-        if len(raw) > MAX_PALETTE_IMPORT_BYTES:
+        # The size Discord reports is checked before the file is read: an oversized file is
+        # refused without being downloaded whole.
+        if file.size > MAX_PALETTE_IMPORT_BYTES:
             await refuse(
                 interaction,
                 f"❌ File is too large (max {MAX_PALETTE_IMPORT_BYTES // 1000} KB).",
                 what=describe_command(interaction),
+            )
+            return
+        raw = await file.read()
+        if not raw:
+            await refuse(
+                interaction, "❌ The attached file is empty.", what=describe_command(interaction)
             )
             return
         try:

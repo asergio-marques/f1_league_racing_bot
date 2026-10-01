@@ -506,7 +506,6 @@ async def test_a_long_bulk_reply_arrives_in_parts_and_is_recorded():
 
 # ── An attached palette too large to be one (F6) ─────────────────────────
 
-@pytest.mark.xfail(strict=True, reason="#482: an attached palette is read before its size is checked")
 async def test_an_oversized_file_is_refused_without_being_read():
     cog = _bulk_cog()
     cog._module_gate = AsyncMock(return_value=True)
