@@ -15,6 +15,9 @@ import pytest
 from leaguebot.image.cogs.image_cog import ImageCog
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 
+#: Why the two long-reply tests below fail until the build: a preview's reply is cut short.
+_CUT_AT_1900 = "#482: a preview's reply is cut at 1,900 characters rather than sent whole in parts"
+
 
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
@@ -336,8 +339,11 @@ class TestTheReply:
 
         assert "Asset directories" not in interaction.followup.messages[0]
 
+    @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
     async def test_the_reply_stays_within_discords_message_limit(self, cog):
-        """A division of many drivers must not push the reply past what Discord accepts."""
+        """A division of many drivers must not push a part of the reply past what Discord
+        accepts, nor cost the end of the reply: every fault arrives, in as many parts as it
+        needs."""
         from leaguebot.image.services.image_preview_service import DirectoryFault
 
         interaction = _Interaction()
@@ -358,7 +364,9 @@ class TestTheReply:
             outcomes=[("Standings", "standings_drivers_template", _outcome())],
         )
 
-        assert len(interaction.followup.messages[0]) <= 1900
+        parts = interaction.followup.messages
+        assert all(len(part) <= 2000 for part in parts)
+        assert all(f"`class_{n}`" in "\n".join(parts) for n in range(40))
 
 
 # ── The twelve, and their parameters (T016, T026, T031) ───────────────────
@@ -712,18 +720,30 @@ class TestTheNoticeBlock:
         assert "×20" in reply
         assert reply.count("no `marker` image") == 1
 
+    @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
     async def test_the_reply_survives_a_render_that_degraded_heavily(self, cog):
-        """Grouping is what keeps a busy render's notices inside Discord's limit, rather
-        than being cut off mid-list by the 1900-character trim."""
+        """Forty notices that do not group make a reply past Discord's limit. It arrives
+        whole, in as many parts as it needs, each within the limit, rather than cut off
+        mid-list."""
         cog.bot = self._bot()
         notices = [
             self._notice(f"no `team` image for “Team {i}”", f"row_{i}_team")
             for i in range(40)
         ]
+        interaction = _Interaction()
 
-        reply = await self._run(cog, notices)
+        await cog._send_preview(
+            interaction,
+            title="Standings",
+            context=_context(),
+            outcomes=[
+                ("Standings", "standings_drivers_template", _outcome(notices=notices))
+            ],
+        )
 
-        assert len(reply) <= 1900
+        parts = interaction.followup.messages
+        assert all(len(part) <= 2000 for part in parts)
+        assert all(f"“Team {i}”" in "\n".join(parts) for i in range(40))
 
     async def test_a_clean_render_says_nothing_about_notices(self, cog):
         cog.bot = self._bot()
