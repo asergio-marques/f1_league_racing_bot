@@ -54,9 +54,9 @@ DB_PATH = "/nonexistent/weather.db"  # never opened: every service call is patch
 #: reach, a legal value to pass, and the deadline it sets, as its replies name it with that
 #: value in its unit.
 COMMANDS = [
-    (WeatherCog.phase_1_deadline, "set_phase_1_days", 10, ("phase 1", "10 day(s)")),
-    (WeatherCog.phase_2_deadline, "set_phase_2_days", 3, ("phase 2", "3 day(s)")),
-    (WeatherCog.phase_3_deadline, "set_phase_3_hours", 6, ("phase 3", "6 hour(s)")),
+    (WeatherCog.phase_1_deadline, "set_phase_1_days", 10, ("Phase 1", "10 day(s)")),
+    (WeatherCog.phase_2_deadline, "set_phase_2_days", 3, ("Phase 2", "3 day(s)")),
+    (WeatherCog.phase_3_deadline, "set_phase_3_hours", 6, ("Phase 3", "6 hour(s)")),
 ]
 
 #: The member every interaction here belongs to, as the log channel names them.
@@ -382,9 +382,9 @@ async def test_success_is_written_to_the_log_channel(command, setter, value, _lo
     (logged_text,) = cog.bot.output_router.post_log.await_args.args
     assert logged_text.splitlines() == [
         f"{MEMBER} | /{command.qualified_name} | Success",
-        "  phase 1: 9 day(s)",
-        "  phase 2: 4 day(s)",
-        "  phase 3: 8 hour(s)",
+        "  Phase 1: 9 day(s)",
+        "  Phase 2: 4 day(s)",
+        "  Phase 3: 8 hour(s)",
     ]
 
 
