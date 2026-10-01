@@ -164,12 +164,6 @@ async def test_an_unknown_parameter_changes_nothing(correction):
     correction.signup_svc.save_wizard.assert_not_awaited()
 
 
-_GONE_ANSWERED = (
-    "#482: a correction choice whose wizard is gone returns nothing, so the button answers ✅"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_GONE_ANSWERED)
 async def test_a_driver_with_no_wizard_is_left_alone(correction):
     """The driver's wizard is gone when the manager chooses a parameter. Nothing is changed,
     and the service returns why it refused, so the button refuses rather than answering that
@@ -184,13 +178,6 @@ async def test_a_driver_with_no_wizard_is_left_alone(correction):
     correction.driver_service.transition.assert_not_awaited()
 
 
-_ENDED_ACTED_ON = (
-    "#482: select_correction_parameter acts on a correction request that has ended, and the "
-    "transition's refusal reaches the manager as a fault"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_ENDED_ACTED_ON)
 @pytest.mark.parametrize(
     "state",
     ["PENDING_ADMIN_APPROVAL", "PENDING_DRIVER_CORRECTION", "UNASSIGNED", "NOT_SIGNED_UP"],

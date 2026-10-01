@@ -330,9 +330,15 @@ class CorrectionParameterView(LeagueView):
                         )
                         return
                     await inter.response.defer(ephemeral=True)
-                    await _bot.wizard_service.select_correction_parameter(
+                    # The service acts only while the request is open (D2) and says why where
+                    # it is not: a choice made after the window lapsed, after another was
+                    # chosen or after the signup was decided is refused, not a fault.
+                    ended = await _bot.wizard_service.select_correction_parameter(
                         _user_id, p, guild_of(inter)
                     )
+                    if ended is not None:
+                        await _refuse_review_button(inter, _user_id, label, f"⛔ {ended}")
+                        return
                     await inter.followup.send(
                         f"✅ Re-collecting **{p.replace('_', ' ')}**.", ephemeral=True
                     )

@@ -129,6 +129,9 @@ _CORRECTION_PARAMETER_STATES: dict[str, WizardState] = {
     "notes":                WizardState.COLLECTING_NOTES,
 }
 
+#: What `WizardService.select_correction_parameter` returns where the request has ended (D2).
+_CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
+
 #: What `WizardService.withdraw` returns where the signup has already ended (S5-A6).
 _SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 
@@ -904,18 +907,28 @@ class WizardService:
         discord_user_id: str,
         parameter: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Admin selects the parameter to re-collect (T037).
 
         Cancels the 5-minute asyncio timeout, transitions driver to
         PENDING_DRIVER_CORRECTION, sets WizardState to the target step,
         and posts the re-collection prompt.
         FR-044.
+
+        Acts only while the driver is awaiting a correction parameter (D2): where the request
+        has ended — its five minutes lapsed, another parameter was chosen, the signup was
+        approved or rejected, or the wizard is gone — it changes nothing and returns why, which
+        the review panel's button turns into a refusal. None where it acted (or where the
+        parameter is not one the wizard knows, which a stale button from an older bot may carry).
         """
         target_state = _CORRECTION_PARAMETER_STATES.get(parameter)
         if target_state is None:
             log.warning("select_correction_parameter: unknown parameter %r", parameter)
-            return
+            return None
+
+        profile = await self._driver_service.get_profile(discord_user_id)
+        if profile is None or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER:
+            return _CORRECTION_ENDED
 
         # Cancel the 5-minute selection timeout
         ckey = discord_user_id
@@ -924,7 +937,7 @@ class WizardService:
 
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
-            return
+            return _CORRECTION_ENDED
 
         # Transition driver to PENDING_DRIVER_CORRECTION
         await self._driver_service.transition(
@@ -968,6 +981,7 @@ class WizardService:
                 + self._prompt_for_state(target_state, wizard.config_snapshot, wizard, track_name_map=track_map),
                 view=self._build_step_view(target_state, discord_user_id, team_names),
             )
+        return None
 
     async def trigger_channel_hold(
         self,

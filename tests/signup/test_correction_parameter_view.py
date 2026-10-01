@@ -218,14 +218,9 @@ async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(monk
     bot.wizard_service.select_correction_parameter.assert_not_awaited()
 
 
-_STALE_CHOICE = (
-    "#482: a correction choice pressed after its request ended is not refused through the "
-    "service's reason"
-)
 _ENDED = "This correction request has ended. Nothing was changed."
 
 
-@pytest.mark.xfail(strict=True, reason=_STALE_CHOICE)
 async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(monkeypatch):
     """A manager presses "Platform" on Alex's correction panel after the request has ended: its
     five minutes lapsed, another parameter was already chosen, or the signup was approved or
