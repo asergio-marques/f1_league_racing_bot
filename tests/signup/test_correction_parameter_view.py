@@ -283,10 +283,6 @@ async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(mon
     interaction.guild.get_channel.assert_not_called()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the choice line names the answer in lower case, not by its button's label",
-)
 async def test_a_choice_writes_one_line_naming_the_parameter(monkeypatch):
     """Manager presses "Platform" on Alex's correction panel while the request is still open.
     Alex is sent back to the platform question, and one line records the choice, naming the

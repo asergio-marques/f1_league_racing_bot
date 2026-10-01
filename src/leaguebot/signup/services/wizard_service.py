@@ -131,7 +131,7 @@ _CORRECTION_PARAMETER_STATES: dict[str, WizardState] = {
 
 #: Each correctable answer by the label its review button shows, which the log names it by:
 #: "Correction submitted: Lap Times". The cog's `CorrectionParameterView._PARAMETERS` carries the
-#: same labels, and its choice line writes them in lower case.
+#: same labels, and its choice line, "Correction requested: Lap Times", writes them the same way.
 _CORRECTION_LABELS: dict[str, str] = {
     "nationality":          "Nationality",
     "platform":             "Platform",

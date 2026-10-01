@@ -345,7 +345,7 @@ class CorrectionParameterView(LeagueView):
                     await _bot.output_router.post_log(
                         f"{interaction_member(inter)} | "
                         f"{_review_button(inter, _user_id, label)} | "
-                        f"Correction requested: {label.lower()}"
+                        f"Correction requested: {label}"
                     )
                 return callback
 
