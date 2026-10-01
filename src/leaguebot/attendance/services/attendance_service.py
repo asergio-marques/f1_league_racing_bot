@@ -318,8 +318,8 @@ class AttendanceService:
         - Re-accepting after a non-ACCEPTED status: reset accepted_at to *now*.
         - Transitioning AWAY from 'ACCEPTED': set accepted_at to NULL.
 
-        Returns whether a row now carries the answer, so a caller can tell a driver the truth
-        rather than assume the write landed.
+        Returns whether a row now carries the answer, so that the bulk-set form lists as applied
+        only what was saved, rather than assume the write landed.
 
         **It inserts, and that is the point** (issue #209). This was two bare ``UPDATE``
         statements despite its name, so a driver holding no ``driver_round_attendance`` row
