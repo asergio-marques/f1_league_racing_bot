@@ -258,14 +258,15 @@ async def test_every_config_command_calls_a_method_the_service_defines(
 async def test_every_config_command_is_refused_while_the_module_is_disabled(
     command, value, column, expected
 ):
-    """A disabled module writes nothing, whichever setter is used."""
+    """A disabled module writes nothing, whichever setter is used: it refuses before it so much
+    as reads the configuration."""
     cog = _make_cog()
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
     interaction = _interaction()
 
     await _invoke(command, cog, interaction, value)
 
-    assert _written(cog) == []
+    assert cog.bot.attendance_service.method_calls == []
     interaction.response.send_message.assert_awaited_once()
     assert "not enabled" in interaction.response.send_message.await_args.args[0]
 
