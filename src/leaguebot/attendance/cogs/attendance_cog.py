@@ -204,6 +204,9 @@ class AttendanceCog(commands.Cog):
         with the value, and a log line with the new value and the one it replaced.
         """
         command = _command(interaction)
+        # Deferred first: the save can wait on the database for longer than Discord gives an
+        # interaction to be answered, and the reply must not be lost after the change stood.
+        await interaction.response.defer(ephemeral=True)
         change = await self.bot.attendance_service.set_setting(
             column,
             value,
@@ -212,14 +215,13 @@ class AttendanceCog(commands.Cog):
             now=datetime.now(timezone.utc),
         )
         if not change.changed:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"ℹ️ Nothing changed: the {name} is already **{shown(value)}**.",
                 ephemeral=True,
             )
             await _record(self.bot, interaction, command, "Nothing changed", f"{name}: {shown(value)}")
             return
 
-        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(reply, ephemeral=True)
         await _record(
             self.bot, interaction, command, "Success", f"{name}: {shown(value)} (was {shown(change.old)})"

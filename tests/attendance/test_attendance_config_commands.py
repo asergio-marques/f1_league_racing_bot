@@ -689,10 +689,6 @@ UNCHANGED = [
 ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the nothing-changed reply is sent as the response, not after a deferral",
-)
 @pytest.mark.parametrize(
     "command,name,value,column,stored,detail", UNCHANGED, ids=[c[1] for c in UNCHANGED]
 )
@@ -736,7 +732,6 @@ async def test_a_line_that_cannot_be_posted_is_not_swallowed(start, outcome):
         await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a setter saves before it defers the interaction")
 @pytest.mark.parametrize(
     "command,value,column,stored",
     CONFIG_SETTERS + [(S.config_no_show_penalty, 1, "no_show_penalty", 1)],
