@@ -60,6 +60,19 @@ async def _record(
     )
 
 
+async def _nothing_changed(
+    bot: LeagueBot, interaction: discord.Interaction, phase: str, shown: str
+) -> None:
+    """Answer a deadline given the value it already holds, and record that nothing changed.
+
+    *phase* is "Phase 1", and *shown* the value in its unit, "6 day(s)".
+    """
+    await _record(bot, interaction, _command(interaction), "Nothing changed", f"{phase}: {shown}")
+    await interaction.followup.send(
+        f"ℹ️ Nothing changed: the {phase} deadline is already **{shown}**.", ephemeral=True
+    )
+
+
 class WeatherCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -135,6 +148,9 @@ class WeatherCog(commands.Cog):
         if isinstance(result, str):
             await refuse(interaction, f"❌ {result}", what=describe(interaction))
             return
+        if result is None:
+            await _nothing_changed(self.bot, interaction, "Phase 1", f"{days} day(s)")
+            return
 
         await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
@@ -172,6 +188,9 @@ class WeatherCog(commands.Cog):
         if isinstance(result, str):
             await refuse(interaction, f"❌ {result}", what=describe(interaction))
             return
+        if result is None:
+            await _nothing_changed(self.bot, interaction, "Phase 2", f"{days} day(s)")
+            return
 
         await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
@@ -208,6 +227,9 @@ class WeatherCog(commands.Cog):
 
         if isinstance(result, str):
             await refuse(interaction, f"❌ {result}", what=describe(interaction))
+            return
+        if result is None:
+            await _nothing_changed(self.bot, interaction, "Phase 3", f"{hours} hour(s)")
             return
 
         await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))

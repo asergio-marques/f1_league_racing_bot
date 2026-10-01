@@ -300,10 +300,7 @@ async def test_a_violation_is_judged_against_the_stored_values_not_the_defaults(
 # A value already held
 # ---------------------------------------------------------------------------
 
-_HELD_NOT_YET_REPORTED = "#482: a setter given the value it holds writes it again"
 
-
-@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
 @pytest.mark.parametrize(
     "setter, held",
     [(set_phase_1_days, 5), (set_phase_2_days, 2), (set_phase_3_hours, 2)],
@@ -321,7 +318,6 @@ async def test_the_packaged_value_given_again_writes_nothing(setter, held, tmp_p
     assert await _stored(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
 @pytest.mark.parametrize(
     "setter, value, expected", SETTERS, ids=["phase_1", "phase_2", "phase_3"]
 )

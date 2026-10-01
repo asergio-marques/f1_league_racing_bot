@@ -407,9 +407,6 @@ async def test_success_defers_before_touching_the_database(command, setter, valu
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a deadline given the value it holds is reported as a change"
-)
 @pytest.mark.parametrize("command, setter, value, deadline", COMMANDS, ids=COMMAND_IDS)
 async def test_a_held_value_changes_nothing(command, setter, value, deadline):
     """A deadline given the value it already holds is not a change: the reply says so, and the
