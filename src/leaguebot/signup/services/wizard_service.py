@@ -771,19 +771,40 @@ class WizardService:
         await self._output_router.post_log(line)
         return role_note
 
+    async def _not_awaiting_review(self, discord_user_id: str) -> str | None:
+        """Why a reason typed for *discord_user_id* cannot be acted on, or None where it can.
+
+        A manager's Reject or Request Changes is completed by a reason typed afterwards, and the
+        signup may have moved on between the two: approved by another manager, withdrawn,
+        rejected, or already sent back for a correction. The two services act only on a driver
+        still awaiting review, so a late reason cannot undo what has since been decided (#492).
+        """
+        profile = await self._driver_service.get_profile(discord_user_id)
+        if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
+            return "This signup is no longer awaiting review."
+        return None
+
     async def reject_signup(
         self,
         discord_user_id: str,
         guild: discord.Guild,
         actor: discord.Member,
         reason: str = "",
-    ) -> None:
+    ) -> str | None:
         """Admin rejects the signup (T042).
 
         Posts rejection notice, transitions driver to NOT_SIGNED_UP,
         and holds the channel for 24 hours before deletion.
         FR-041.
+
+        Acts only while the driver is awaiting review (#492): where they are not, it changes
+        nothing and returns why, which the review panel's listener turns into a refusal. None
+        where it acted. The driver's transition refusing (`ValueError`, a driver already moved
+        on) does not stop the notice and the hold; any other error is not swallowed (#457).
         """
+        if (refused := await self._not_awaiting_review(discord_user_id)) is not None:
+            return refused
+
         await self._cancel_inactivity_job(discord_user_id)
 
         ckey = discord_user_id
@@ -794,8 +815,8 @@ class WizardService:
             await self._driver_service.transition(
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
-        except Exception:
-            log.warning("reject_signup: driver transition failed for %s", discord_user_id, exc_info=True)
+        except ValueError:
+            log.warning("reject_signup: driver transition refused for %s", discord_user_id, exc_info=True)
 
         await self.trigger_channel_hold(
             discord_user_id, guild,
@@ -809,6 +830,7 @@ class WizardService:
         if reason:
             msg += f"\n  reason: {reason}"
         await self._output_router.post_log(msg)
+        return None
 
     async def request_changes(
         self,
@@ -816,16 +838,22 @@ class WizardService:
         guild: discord.Guild,
         actor: discord.Member,
         reason: str = "",
-    ) -> None:
+    ) -> str | None:
         """Admin requests correction (T036).
 
         Transitions driver to AWAITING_CORRECTION_PARAMETER, posts
         CorrectionParameterView, and arms a 5-minute asyncio timeout.
         FR-042, FR-043.
+
+        Acts only while the driver is awaiting review, as `reject_signup` does (#492): where
+        they are not, it changes nothing and returns why. None where it acted.
         """
+        if (refused := await self._not_awaiting_review(discord_user_id)) is not None:
+            return refused
+
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
-            return
+            return None
 
         await self._driver_service.transition(
             discord_user_id, DriverState.AWAITING_CORRECTION_PARAMETER
@@ -869,6 +897,7 @@ class WizardService:
         if reason:
             msg += f"\n  reason: {reason}"
         await self._output_router.post_log(msg)
+        return None
 
     async def select_correction_parameter(
         self,

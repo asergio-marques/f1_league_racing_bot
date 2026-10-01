@@ -377,13 +377,6 @@ async def test_a_failed_transition_does_not_stop_the_rejection(review):
     review.svc.trigger_channel_hold.assert_awaited_once()
 
 
-_TRANSITION_SWALLOWED = (
-    "#457: reject_signup swallows every error from the driver's transition, not only the "
-    "expected refusal"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_TRANSITION_SWALLOWED)
 async def test_a_rejection_whose_transition_fails_otherwise_is_not_swallowed(review):
     """Only the expected refusal (`ValueError`) is caught by name. Any other error reaches the
     caller, whose failure handler tells the manager: the driver is not told they were rejected
@@ -401,12 +394,6 @@ async def test_a_rejection_whose_transition_fails_otherwise_is_not_swallowed(rev
 # A reason arriving after the signup has moved on (#492)
 # ---------------------------------------------------------------------------
 
-_MOVED_ON_ACTED_ON = (
-    "#492: reject_signup and request_changes act on a driver no longer awaiting review"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_MOVED_ON_ACTED_ON)
 @pytest.mark.parametrize("outcome", ["reject_signup", "request_changes"])
 @pytest.mark.parametrize(
     "state", ["UNASSIGNED", "NOT_SIGNED_UP", "AWAITING_CORRECTION_PARAMETER"],
@@ -600,9 +587,6 @@ async def test_an_approved_signup_is_marked_as_such(review):
 # The reason typed into the channel, through the panel's listener (#492, #457)
 # ---------------------------------------------------------------------------
 
-_MOVED_ON_REASON_ACTED_ON = (
-    "#492: a reason typed after the signup moved on is acted on, not refused through the press"
-)
 _REASON_FAULT_ESCAPES = (
     "#457: a rejection's failed transition is swallowed, or escapes the listener, instead of "
     "being reported through the press"
@@ -670,7 +654,6 @@ def _told(interaction) -> list[str]:
     return [str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args]
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVED_ON_REASON_ACTED_ON)
 @pytest.mark.parametrize(
     "button,label",
     [("reject_button", "Reject"), ("request_changes_button", "Request Changes")],

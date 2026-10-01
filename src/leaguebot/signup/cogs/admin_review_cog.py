@@ -40,6 +40,12 @@ _PENDING_REASONS: dict[tuple[int, int], dict] = {}
 #: How long a manager has to type the reason after pressing Reject or Request Changes.
 _REASON_LAPSE_SECONDS = 5 * 60
 
+#: The button that parks each pending action, as the log channel names it.
+_BUTTON_OF = {"reject": "Reject", "request_changes": "Request Changes"}
+
+#: What did not happen, said where a pending reason lapses or arrives too late.
+_NOTHING_DONE = {"reject": "Nothing was rejected", "request_changes": "No changes were requested"}
+
 
 def clear_pending_reasons() -> None:
     """Drop every pending reason and cancel its five-minute lapse, so none fires after.
@@ -66,8 +72,8 @@ async def _lapse_pending_reason(key: tuple[int, int], entry: dict) -> None:
     del _PENDING_REASONS[key]
     interaction: discord.Interaction = entry["interaction"]
     followup: discord.Webhook = entry["followup"]
-    label: str = entry["label"]
-    nothing_done = "Nothing was rejected" if entry["action"] == "reject" else "No changes were requested"
+    label = _BUTTON_OF[entry["action"]]
+    nothing_done = _NOTHING_DONE[entry["action"]]
     try:
         await followup.send(
             f"⌛ No reason arrived within five minutes. {nothing_done}; the signup still awaits review.",
@@ -227,7 +233,6 @@ class AdminReviewView(LeagueView):
         key = (channel_id_of(interaction), interaction.user.id)
         entry: dict = {
             "action": action,
-            "label": label,
             "discord_user_id": user_id,
             "actor": interaction.user,
             "guild": interaction.guild,
@@ -365,17 +370,32 @@ class AdminReviewCog(commands.Cog):
 
         action = pending["action"]
         followup: discord.Webhook = pending["followup"]
+        interaction: discord.Interaction = pending["interaction"]
         if action == "request_changes":
-            await self.bot.wizard_service.request_changes(
+            refused = await self.bot.wizard_service.request_changes(
                 pending["discord_user_id"], pending["guild"], pending["actor"], reason=reason,
             )
-            await followup.send("✅ Correction requested.", ephemeral=True)
+            done = "✅ Correction requested."
         elif action == "reject":
-            await self.bot.wizard_service.reject_signup(
+            refused = await self.bot.wizard_service.reject_signup(
                 pending["discord_user_id"],
                 pending["guild"], pending["actor"], reason=reason,
             )
-            await followup.send("✅ Signup rejected.", ephemeral=True)
+            done = "✅ Signup rejected."
+        else:
+            return
+        if refused is not None:
+            # The signup moved on while the reason was being typed (#492): nothing was done,
+            # and the driver keeps the status they have.
+            button = _BUTTON_OF[action]
+            await _refuse_review_button(
+                interaction,
+                pending["discord_user_id"],
+                button,
+                f"⛔ This signup has moved on since you pressed {button}. {_NOTHING_DONE[action]}.",
+            )
+            return
+        await followup.send(done, ephemeral=True)
 
 
 async def setup(bot: LeagueBot) -> None:
