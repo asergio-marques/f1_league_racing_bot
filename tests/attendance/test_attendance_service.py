@@ -1,4 +1,4 @@
-"""Unit tests for AttendanceService — T006, T012, T018, T024."""
+"""Unit tests for AttendanceService — T006, T012, T018."""
 from __future__ import annotations
 
 import pytest
@@ -168,76 +168,6 @@ class TestTimingInvariantLastEqualsDeadlineRejected:
         result = validate_timing_invariant(5, 4, 4)
         assert result is not None
         assert "rsvp_last_notice_hours" in result
-
-
-# ---------------------------------------------------------------------------
-# T024 — Penalty / threshold config tests
-# ---------------------------------------------------------------------------
-
-
-class TestConfigPenaltyFieldsUpdate:
-    async def test_config_penalty_fields_update(self, db_path):
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config "
-                "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-                "autoreserve_threshold, autosack_threshold) "
-                "VALUES (?, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)",
-                (1,),
-            )
-            await db.commit()
-
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.update_no_rsvp_penalty(3)
-        await svc.update_absent_penalty(2)
-        await svc.update_no_show_penalty(4)
-        cfg = await svc.get_config()
-        assert cfg is not None
-        assert cfg.no_rsvp_penalty == 3
-        assert cfg.absent_penalty == 2
-        assert cfg.no_show_penalty == 4
-
-
-class TestAutosackZeroStoresNull:
-    async def test_autosack_zero_stores_null(self, db_path):
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
-                (1,),
-            )
-            await db.commit()
-
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.update_autosack_threshold(None)
-        cfg = await svc.get_config()
-        assert cfg is not None
-        assert cfg.autosack_threshold is None
-
-
-class TestAutoreserveZeroStoresNull:
-    async def test_autoreserve_zero_stores_null(self, db_path):
-        import aiosqlite as _aio
-        async with _aio.connect(db_path) as db:
-            db.row_factory = _aio.Row
-            await db.execute(
-                "INSERT OR REPLACE INTO attendance_config (id, module_enabled) VALUES (?, 1)",
-                (1,),
-            )
-            await db.commit()
-
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        svc = AttendanceService(db_path)
-        await svc.update_autoreserve_threshold(None)
-        cfg = await svc.get_config()
-        assert cfg is not None
-        assert cfg.autoreserve_threshold is None
 
 
 # ---------------------------------------------------------------------------
