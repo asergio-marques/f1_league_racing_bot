@@ -205,13 +205,17 @@ def _assert_one_refusal_line(cog: WeatherCog, interaction, command) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the module refusal spells the Weather module in lower case and is not recorded",
+)
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
 async def test_command_is_refused_while_the_weather_module_is_disabled(
     command, setter, value, _log
 ):
     """"All three commands shall be rejected while the weather module is disabled." The
-    refusal is recorded in the log channel, as every refusal of a command is."""
+    refusal is recorded in the log channel, as every refusal of a command is, and names the
+    module as `/weather channel` and the other modules do: "The Weather module"."""
     cog = _make_cog(weather_enabled=False)
     interaction = _interaction()
 
@@ -223,7 +227,7 @@ async def test_command_is_refused_while_the_weather_module_is_disabled(
             mocks[name].assert_not_awaited()
 
     interaction.response.send_message.assert_awaited_once()
-    assert _sent_text(interaction) == "❌ The weather module is not enabled."
+    assert _sent_text(interaction) == "❌ The Weather module is not enabled."
     _assert_one_refusal_line(cog, interaction, command)
 
 
