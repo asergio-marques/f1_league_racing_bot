@@ -34,7 +34,11 @@ from leaguebot.image.models.image_constants import (
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
-from leaguebot.core.utils.interaction_errors import describe as describe_command, describe_form
+from leaguebot.core.utils.interaction_errors import (
+    describe as describe_command,
+    describe_form,
+    report_failure,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -384,6 +388,13 @@ async def _record(
     )
 
 
+#: What a failure to schedule the daily portrait job says became of the change: the setting is
+#: stored before the job is scheduled, and the start-up recovery arms it.
+DAILY_JOB_NOT_SCHEDULED = (
+    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+)
+
+
 class ImageCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
@@ -609,10 +620,11 @@ class ImageCog(commands.Cog):
             return None
         config = await self._config_service.get_config()
         if config is None or not config.use_pfp:
-            await self._reply(
+            await refuse(
                 interaction,
                 "❌ Driver portraits are not being obtained from Discord. "
                 "Use `/images use-pfp toggle` first.",
+                what=describe_command(interaction),
             )
             return None
         return config
@@ -623,14 +635,22 @@ class ImageCog(commands.Cog):
         """Write one toggle, or refuse and leave the configuration as it stood."""
         refusal = pfp_change_refusal(config, column, enabled)
         if refusal is not None:
-            await self._reply(interaction, f"❌ {refusal}")
+            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
             return False
 
         await self._config_service.set_pfp_flag(column, enabled)
+        await self._pfp_flag_written(interaction, label, enabled)
+        return True
+
+    async def _pfp_flag_written(
+        self, interaction: discord.Interaction, label: str, enabled: bool
+    ) -> None:
+        """Tell the member a toggle is written, and record it under the command that ran."""
         state = "enabled" if enabled else "disabled"
         await self._reply(interaction, f"{'✅' if enabled else '❌'} **{label}** {state}.")
-        await self._log(interaction, f"{label} {state}")
-        return True
+        await _record(
+            self.bot, interaction, _command(interaction), "Success", f"{label}: {state}"
+        )
 
     async def commit_daily_portraits(
         self, interaction: discord.Interaction, normalised: str
@@ -662,24 +682,36 @@ class ImageCog(commands.Cog):
 
         config = await self._config_service.get_config()
         if config is None:
-            await self._reply(interaction, "❌ The image module has no configuration yet.")
+            await refuse(
+                interaction,
+                "❌ The image module has no configuration yet.",
+                what=describe_command(interaction),
+            )
             return
 
         enabling = not config.use_pfp
-        if not await self._apply_pfp_flag(
-            interaction, config, "use_pfp", enabling, "Discord profile pictures"
-        ):
-            return
+        await self._config_service.set_pfp_flag("use_pfp", enabling)
 
         # The daily job is armed by the master toggle as well as by its own, so that turning
         # the feature off stops the fetching rather than leaving a job running against a
-        # setting that says no.
+        # setting that says no. The job is scheduled before the member is told anything: a
+        # job that cannot be scheduled is a failure, with the setting stored, and not a
+        # success followed by an apology.
         if enabling and config.pfp_daily:
-            self.bot.scheduler_service.schedule_portrait_refresh(
-                config.pfp_daily_time
-            )
+            try:
+                self.bot.scheduler_service.schedule_portrait_refresh(config.pfp_daily_time)
+            except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
+                await report_failure(
+                    interaction,
+                    exc,
+                    what=describe_command(interaction),
+                    outcome=DAILY_JOB_NOT_SCHEDULED,
+                )
+                return
         elif not enabling:
             self.bot.scheduler_service.cancel_portrait_refresh()
+
+        await self._pfp_flag_written(interaction, "Discord profile pictures", enabling)
 
     @use_pfp.command(
         name="prerender-toggle",

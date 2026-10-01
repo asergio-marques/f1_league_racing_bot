@@ -174,8 +174,6 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts():
 
 # ── A5: each command's own refusal ────────────────────────────────────────
 
-_REFUSAL_NOT_RECORDED = "#482: an image command's own refusal is not yet recorded as a refusal"
-
 #: Where the cog stores a folder it was given, whatever the host's own path.
 FOLDER = "resources/league/mine"
 #: The colour form a pasted palette arrives through, as its refusals name it.
@@ -364,7 +362,6 @@ OWN_REFUSALS = [
 _SETUPS = {"empty folder": _empty_folder, "broken drawing": _broken_drawing}
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_RECORDED)
 @pytest.mark.parametrize("name, arguments, config, setup, reply", OWN_REFUSALS)
 async def test_a_command_s_own_refusal_records_one_line_naming_it(
     monkeypatch, tmp_path, name, arguments, config, setup, reply
@@ -495,7 +492,6 @@ def _carries(details: list[str], forms: tuple[str, ...]) -> bool:
     return any(form.casefold() in detail.casefold() for detail in details for form in forms)
 
 
-@pytest.mark.xfail(strict=True, reason=_SUCCESS_UNNAMED)
 @pytest.mark.parametrize("name, arguments, config, values", SUCCESSES)
 async def test_a_success_records_one_line_naming_its_own_command(
     monkeypatch, tmp_path, name, arguments, config, values
@@ -563,7 +559,6 @@ async def test_a_part_applied_import_lists_the_blocks_it_passed_over(monkeypatch
     assert "Bad" in "\n".join(details[passed_over[0]:]), details
 
 
-@pytest.mark.xfail(strict=True, reason="#482: image lines still read \"| /images config |\" bare")
 async def test_no_line_names_the_config_group_bare(monkeypatch, tmp_path):
     """A8: across every success and every refusal above, no line reads "| /images config |",
     the name every image line carried whatever the command."""

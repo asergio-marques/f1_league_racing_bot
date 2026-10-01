@@ -46,7 +46,6 @@ ENDED = (
 
 _ENDING_NOT_RECORDED = "#482: the confirmation's cancel and lapse are not yet recorded"
 _FAILURE_AS_SUCCESS = "#482: a daily job that cannot be scheduled is still answered as a success"
-_REPLIES_FIRST = "#482: /images use-pfp toggle still replies before it schedules the daily job"
 _PRESSED_TWICE = "#482: a second Confirm press still saves again"
 _NOT_RECHECKED = "#482: the portrait form and its Confirm do not yet check again on submit"
 _FORM_NOT_RECORDED = "#482: the portrait-time form's refusal is not yet recorded"
@@ -408,7 +407,6 @@ async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(end
 # ── The daily job is scheduled before the master toggle answers (F2) ─────
 
 
-@pytest.mark.xfail(strict=True, reason=_REPLIES_FIRST)
 async def test_the_master_toggle_arms_the_daily_job_before_it_replies():
     cog, bot = _cog(use_pfp=False, pfp_daily=True, pfp_daily_time="07:45")
     interaction = _interaction(bot, "images use-pfp toggle")
@@ -423,7 +421,6 @@ async def test_the_master_toggle_arms_the_daily_job_before_it_replies():
     assert_one_line(bot, "images use-pfp toggle")
 
 
-@pytest.mark.xfail(strict=True, reason=_REPLIES_FIRST)
 async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_success():
     cog, bot = _cog(use_pfp=False, pfp_daily=True)
     bot.scheduler_service = scheduler(fails=True)
