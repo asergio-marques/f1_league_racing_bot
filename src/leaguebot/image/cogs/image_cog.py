@@ -562,6 +562,18 @@ class ImageCog(commands.Cog):
             else:
                 await interaction.response.send_message(part, ephemeral=True)
 
+    async def _already_held(
+        self, interaction: discord.Interaction, setting: str, value: str, detail: str
+    ) -> None:
+        """Answer a setting given the value it already holds: nothing is changed or written.
+
+        The reply says so in the form results and attendance use, and one "Nothing changed"
+        line records it, with *detail* beneath. Only a command that would otherwise have been
+        carried out gets here: every refusal has been made first.
+        """
+        await self._reply(interaction, f"ℹ️ Nothing changed: {setting} is already **{value}**.")
+        await _record(self.bot, interaction, _command(interaction), "Nothing changed", detail)
+
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str, label: str
     ) -> None:
@@ -591,7 +603,9 @@ class ImageCog(commands.Cog):
             return
 
         stored = relative_to_root(resolved)
-        await self._config_service.set_field(column, stored)
+        if not await self._config_service.set_field(column, stored):
+            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
+            return
 
         # Report the effect immediately, so the administrator does not need a second
         # command to learn whether the new location resolves.
@@ -665,7 +679,12 @@ class ImageCog(commands.Cog):
         # Every field of every template is now verifiable against the file alone, so
         # `check_template` above either passes or refuses and nothing is left to warn
         # about (047 FR-024).
-        await self._config_service.set_field(column, candidate)
+        if not await self._config_service.set_field(column, candidate):
+            await self._already_held(
+                interaction, f"the {label} template", f"`{candidate}`",
+                f"{label} template: {candidate}",
+            )
+            return
 
         lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
 
@@ -968,9 +987,9 @@ class ImageCog(commands.Cog):
             )
             return
 
-        await self._config_service.set_field(
-            "template_directory", stored
-        )
+        if not await self._config_service.set_field("template_directory", stored):
+            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
+            return
         await self._reply(
             interaction,
             f"✅ **{label}** set to `{stored}`.\n"
@@ -1383,9 +1402,12 @@ class ImageCog(commands.Cog):
 
         # 2. Store it. Storing *before* measuring is deliberate: an unmeasurable
         #    contrast must never cost the manager their input (FR-026, FR-027).
-        await self._config_service.set_field(
-            "fastest_lap_colour", canonical
-        )
+        if not await self._config_service.set_field("fastest_lap_colour", canonical):
+            await self._already_held(
+                interaction, "the fastest-lap colour", f"`{canonical}`",
+                f"Fastest-lap colour: {canonical}",
+            )
+            return
         lines = [f"✅ Fastest-lap colour set to `{canonical}`."]
 
         # 3. Measure and report the contrast against the template's own background.
@@ -1429,9 +1451,12 @@ class ImageCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        await self._config_service.set_flag(
-            "per_tier_colour_enabled", enable
-        )
+        state = "on" if enable else "off"
+        if not await self._config_service.set_flag("per_tier_colour_enabled", enable):
+            await self._already_held(
+                interaction, "per-tier colours", state, f"Per-tier colours: {state}"
+            )
+            return
         lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
 
         if enable:
@@ -1516,9 +1541,16 @@ class ImageCog(commands.Cog):
             )
             return
 
-        await self._config_service.set_tier_colour(
+        if not await self._config_service.set_tier_colour(
             division, canonical_slot, canonical_colour
-        )
+        ):
+            await self._already_held(
+                interaction,
+                f"`{canonical_slot}` for **{division}**",
+                f"`{canonical_colour}`",
+                f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
+            )
+            return
         lines = [f"✅ **{division}** — `{canonical_slot}` set to `{canonical_colour}`."]
 
         # A slot no template marks is stored all the same and merely reported, exactly as
@@ -1595,6 +1627,17 @@ class ImageCog(commands.Cog):
         written = await self._config_service.set_tier_colours(
             division, colours
         )
+        if not written:
+            await self._reply(
+                interaction,
+                f"ℹ️ Nothing changed: every colour named is already **{division}**'s.",
+            )
+            await _record(
+                self.bot, interaction, "/images config per-tier-bulk-colour", "Nothing changed",
+                f"Tier colours: {division}",
+                *(f"{slot} = {colour}" for slot, colour in colours.items()),
+            )
+            return
         lines = [f"✅ **{division}** — {written} colour(s) set."]
         lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
 
@@ -1709,7 +1752,9 @@ class ImageCog(commands.Cog):
             )
 
         lines = []
-        if blocks:
+        if blocks and not written:
+            lines.append("ℹ️ Nothing changed: every colour named is already held.")
+        elif blocks:
             lines.append(
                 f"✅ Imported {written} colour(s) across {len(blocks)} tier(s)."
             )
@@ -1726,7 +1771,8 @@ class ImageCog(commands.Cog):
             details.append("passed over:")
             details += [f"  {problem}" for problem in problems]
         await _record(
-            self.bot, interaction, "/images config colour-xml-import", "Success", *details
+            self.bot, interaction, "/images config colour-xml-import",
+            "Success" if written else "Nothing changed", *details,
         )
 
     async def _declared_colour_slots(self) -> set[str]:
@@ -1860,7 +1906,11 @@ class ImageCog(commands.Cog):
             )
             return
 
-        await self._config_service.set_field("time_zone", candidate)
+        if not await self._config_service.set_field("time_zone", candidate):
+            await self._already_held(
+                interaction, "the time zone", f"`{candidate}`", f"Time zone: {candidate}"
+            )
+            return
         await self._reply(
             interaction,
             f"✅ Time zone set to `{candidate}`.\n"
@@ -1906,9 +1956,12 @@ class ImageCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await self._config_service.set_field(
-            "time_format", clock.value
-        )
+        if not await self._config_service.set_field("time_format", clock.value):
+            await self._already_held(
+                interaction, "the clock format", clock.name,
+                f"Clock format: {clock.name} ({clock.value})",
+            )
+            return
         await self._reply(interaction, f"✅ Clock format set to **{clock.name}**.")
         await _record(
             self.bot, interaction, _command(interaction), "Success",
@@ -1953,9 +2006,12 @@ class ImageCog(commands.Cog):
     ) -> None:
         if not await self._module_gate(interaction):
             return
-        await self._config_service.set_field(
-            "date_format", style.value
-        )
+        if not await self._config_service.set_field("date_format", style.value):
+            await self._already_held(
+                interaction, "the date format", style.name,
+                f"Date format: {style.name} ({style.value})",
+            )
+            return
         await self._reply(interaction, f"✅ Date format set to **{style.name}**.")
         await _record(
             self.bot, interaction, _command(interaction), "Success",

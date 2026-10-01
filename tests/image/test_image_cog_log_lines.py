@@ -578,8 +578,6 @@ async def test_no_line_names_the_config_group_bare(monkeypatch, tmp_path):
 
 # ── A20 (N1): a value already held changes nothing ────────────────────────
 
-_HELD_AS_CHANGE = "#482: a value already held is still answered and recorded as a change"
-
 #: Each image setting given the value it holds: the command, what it is given, the setter
 #: that reports the value held, and the value the reply and the line must carry.
 HELD = (
@@ -628,7 +626,6 @@ HELD = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
 @pytest.mark.parametrize("name, arguments, setter, values", HELD)
 async def test_a_value_already_held_changes_nothing(
     monkeypatch, tmp_path, name, arguments, setter, values
@@ -649,7 +646,6 @@ async def test_a_value_already_held_changes_nothing(
         assert _carries(details, forms), (forms, details)
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
 async def test_per_tier_colours_already_on_say_nothing_changed_alone(monkeypatch, tmp_path):
     """Turning per-tier colours on when they are already on lists no missing colour, though
     some are missing: the owner's decision of 2026-10-01."""
@@ -666,7 +662,6 @@ async def test_per_tier_colours_already_on_say_nothing_changed_alone(monkeypatch
     assert_one_line(cog.bot, "images config per-tier-colour-toggle", "Nothing changed")
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
 async def test_a_pasted_palette_already_held_changes_nothing(monkeypatch, tmp_path):
     """Every colour in the pasted palette is already the tier's: the form says so, and the
     line names the command that opened it."""
@@ -681,7 +676,6 @@ async def test_a_pasted_palette_already_held_changes_nothing(monkeypatch, tmp_pa
     assert_one_line(cog.bot, "images config per-tier-bulk-colour", "Nothing changed")
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
 @pytest.mark.parametrize(
     "document, passed_over",
     [
