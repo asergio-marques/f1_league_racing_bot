@@ -44,13 +44,6 @@ ENDED = (
     "\n  Run `/images use-pfp daily-toggle` again to enable them."
 )
 
-_ENDING_NOT_RECORDED = "#482: the confirmation's cancel and lapse are not yet recorded"
-_FAILURE_AS_SUCCESS = "#482: a daily job that cannot be scheduled is still answered as a success"
-_PRESSED_TWICE = "#482: a second Confirm press still saves again"
-_NOT_RECHECKED = "#482: the portrait form and its Confirm do not yet check again on submit"
-_FORM_NOT_RECORDED = "#482: the portrait-time form's refusal is not yet recorded"
-_BUTTONS_LEFT_UP = "#482: pressing Confirm does not yet take the buttons down"
-
 
 def _unwrap(command):
     """Past whatever tier guard the command wears, to the body."""
@@ -293,7 +286,6 @@ async def test_a_readable_time_asks_for_confirmation_before_committing():
     bot.image_config_service.set_pfp_flag.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_LEFT_UP)
 async def test_confirming_stores_the_time_enables_the_job_and_arms_it():
     """Confirm stores the time, enables daily updates, arms the job and takes its buttons down,
     so the same confirmation cannot be pressed again."""
@@ -330,7 +322,6 @@ async def test_cancelling_the_confirmation_changes_nothing():
     bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=_FAILURE_AS_SUCCESS)
 async def test_a_scheduler_failure_does_not_lose_the_setting():
     """The setting is stored first, so startup recovery arms the job on the next restart; the
     member is told so as a failure, never as a success (F1)."""
@@ -359,7 +350,6 @@ def _http_error() -> discord.HTTPException:
     return discord.HTTPException(MagicMock(status=500, reason="Server Error"), "gone")
 
 
-@pytest.mark.xfail(strict=True, reason=_ENDING_NOT_RECORDED)
 async def test_cancelling_is_recorded_and_takes_the_buttons_down():
     cog, bot = _cog(use_pfp=True)
     view, _submitted = await _confirmation(cog, bot)
@@ -372,7 +362,6 @@ async def test_cancelling_is_recorded_and_takes_the_buttons_down():
     assert press.response.edit_message.await_args.kwargs.get("view", "kept") is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ENDING_NOT_RECORDED)
 async def test_a_lapse_is_recorded_naming_who_opened_it_and_takes_the_buttons_down():
     cog, bot = _cog(use_pfp=True)
     view, submitted = await _confirmation(cog, bot)
@@ -384,7 +373,6 @@ async def test_a_lapse_is_recorded_naming_who_opened_it_and_takes_the_buttons_do
     assert submitted.edit_original_response.await_args.kwargs.get("view", "kept") is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ENDING_NOT_RECORDED)
 @pytest.mark.parametrize("ending", ["cancel", "lapse"])
 async def test_an_ending_is_recorded_though_the_buttons_cannot_be_taken_down(ending):
     cog, bot = _cog(use_pfp=True)
@@ -439,7 +427,6 @@ async def test_a_scheduler_failure_on_the_master_toggle_is_one_failure_not_a_suc
 # ── One save per confirmation (F10) ───────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESSED_TWICE)
 async def test_a_second_press_of_confirm_saves_nothing_and_is_refused():
     cog, bot = _cog(use_pfp=True)
     view, _submitted = await _confirmation(cog, bot)
@@ -504,7 +491,6 @@ def _change_since_opening(bot, setting, value) -> None:
         setattr(bot.image_config_service.get_config.return_value, setting, value)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECHECKED)
 @pytest.mark.parametrize(("setting", "value", "reply"), _CONFIRM_CHANGED_SINCE_OPENING)
 async def test_confirm_writes_nothing_once_things_changed_since_opening(setting, value, reply):
     cog, bot = _cog(use_pfp=True)
@@ -523,7 +509,6 @@ async def test_confirm_writes_nothing_once_things_changed_since_opening(setting,
     assert lines[0].startswith("⛔ ") and f"refused for {MEMBER} — " in lines[0], lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECHECKED)
 @pytest.mark.parametrize(("setting", "value", "reply"), _CHANGED_SINCE_OPENING)
 async def test_the_form_asks_for_no_confirmation_once_things_changed_since_opening(
     setting, value, reply
@@ -541,7 +526,6 @@ async def test_the_form_asks_for_no_confirmation_once_things_changed_since_openi
     assert_one_refusal(bot, FORM)
 
 
-@pytest.mark.xfail(strict=True, reason=_FORM_NOT_RECORDED)
 async def test_an_unreadable_time_is_recorded_as_a_refusal_of_the_form():
     cog, bot = _cog(use_pfp=True)
     modal = await _form(cog, bot)

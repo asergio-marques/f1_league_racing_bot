@@ -40,7 +40,7 @@ from leaguebot.core.utils.interaction_errors import (
     report_failure,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
@@ -240,51 +240,132 @@ class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
         self.time_of_day.default = current
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        what = describe_form(self)
         normalised = parse_time_of_day(str(self.time_of_day.value))
         if normalised is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Could not read `{self.time_of_day.value}` as a time of day. "
                 f"Try `03:00`, `3am` or `1530`. Nothing was changed.",
-                ephemeral=True,
+                what=what,
             )
+            return
+
+        # The form may have stood open while another manager changed the module or the setting,
+        # and a confirmation offered for a change that can no longer be made would only be
+        # refused at the end of it.
+        stale = await self._cog.daily_portraits_refusal(form=True)
+        if stale is not None:
+            await refuse(interaction, stale, what=what)
             return
 
         await interaction.response.send_message(
             f"Daily driver-portrait updates will run at **{normalised} UTC**.\n"
             f"The bot runs on UTC, so this is not your local time unless you are on it.\n"
             f"Confirm to enable them.",
-            view=PortraitTimeConfirm(self._cog, normalised),
+            view=PortraitTimeConfirm(self._cog, normalised, interaction),
             ephemeral=True,
         )
+
+
+#: The command the portrait confirmation belongs to, as the log channel names it.
+DAILY_TOGGLE = "/images use-pfp daily-toggle"
 
 
 class PortraitTimeConfirm(LeagueView):
     """The confirmation the specification requires after the time-of-day modal.
 
     Not persistent, and deliberately: it is a step within one command rather than a control
-    a league comes back to, and an unanswered one simply expires having changed nothing.
+    a league comes back to. Every ending is recorded in the log channel: a Confirm as the
+    command's success, its refusal or its failure; a Cancel as cancelled; and an unanswered
+    one, which changes nothing, as lapsed, naming the member who opened it. Each takes the
+    buttons down, so that none can be pressed again, through the interaction alone.
+
+    It answers once: a second press, which can arrive before the first has finished, is
+    refused rather than saved again.
     """
 
-    def __init__(self, cog: "ImageCog", normalised: str) -> None:
+    def __init__(
+        self, cog: "ImageCog", normalised: str, opened: discord.Interaction
+    ) -> None:
         super().__init__(timeout=120)
         self._cog = cog
         self._normalised = normalised
+        #: The form's submission, whose reply carries these buttons and whose member opened them.
+        self._opened = opened
+        self._answered = False
+
+    @staticmethod
+    async def _take_down(edit) -> None:
+        """Take the buttons down with *edit*; a message Discord will not edit is left as it is."""
+        try:
+            await edit(view=None)
+        except discord.HTTPException as exc:
+            log.warning("could not take the portrait confirmation's buttons down: %s", exc)
+
+    async def _already_answered(self, interaction: discord.Interaction) -> bool:
+        """Refuse a press once the confirmation has been answered; otherwise mark it answered."""
+        if self._answered:
+            await refuse(
+                interaction,
+                "ℹ️ This confirmation has already been answered.",
+                what=f"`{DAILY_TOGGLE}`",
+            )
+            return True
+        self._answered = True
+        return False
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
     async def confirm(
         self, interaction: discord.Interaction, _button: discord.ui.Button
     ) -> None:
-        await self._cog.commit_daily_portraits(interaction, self._normalised)
-        self.stop()
+        if await self._already_answered(interaction):
+            return
+        try:
+            await self._take_down(interaction.response.edit_message)
+            await self._cog.commit_daily_portraits(interaction, self._normalised)
+        finally:
+            self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
         self, interaction: discord.Interaction, _button: discord.ui.Button
     ) -> None:
-        await interaction.response.send_message(
-            "❌ Cancelled. Daily driver-portrait updates are unchanged.", ephemeral=True
-        )
+        if await self._already_answered(interaction):
+            return
         self.stop()
+        await record_abandoned(
+            self._cog.bot,
+            interaction.user,
+            what=f"`{DAILY_TOGGLE}`",
+            lapsed=False,
+            detail=_UNCHANGED_DETAIL,
+        )
+        await self._take_down(interaction.response.edit_message)
+        await ImageCog._reply(
+            interaction, "❌ Cancelled. Daily driver-portrait updates are unchanged."
+        )
+
+    async def on_timeout(self) -> None:
+        """Record the lapse, naming who opened the confirmation, and take its buttons down."""
+        if self._answered:
+            return
+        self._answered = True
+        await record_abandoned(
+            self._cog.bot,
+            self._opened.user,
+            what=f"`{DAILY_TOGGLE}`",
+            lapsed=True,
+            detail=_UNCHANGED_DETAIL,
+        )
+        await self._take_down(self._opened.edit_original_response)
+
+
+#: What a cancelled or lapsed confirmation leaves, and what to do next, as the log line says.
+_UNCHANGED_DETAIL = (
+    "Daily driver-portrait updates are unchanged.\n"
+    f"Run `{DAILY_TOGGLE}` again to enable them."
+)
 
 
 #: The largest palette file a league may attach. A palette is a few hundred bytes per
@@ -652,24 +733,61 @@ class ImageCog(commands.Cog):
             self.bot, interaction, _command(interaction), "Success", f"{label}: {state}"
         )
 
+    async def daily_portraits_refusal(self, *, form: bool) -> str | None:
+        """Why daily portrait updates can no longer be enabled, or None if they still can.
+
+        Asked again when the time-of-day form is submitted and when its confirmation is
+        pressed, since either may have stood open while another manager switched the module
+        or portraits off, or enabled the daily updates. *form* says which is asking, so that
+        a confirmation does not call itself a form.
+        """
+        if not await self.bot.module_service.is_images_enabled():
+            return (
+                f"❌ The Image module was switched off while this {'form ' if form else ''}"
+                f"was open. Nothing was stored."
+            )
+        config = await self._config_service.get_config()
+        if config is None or not config.use_pfp:
+            return (
+                "❌ Driver portraits stopped being obtained from Discord while this was open. "
+                "Nothing was changed."
+            )
+        if config.pfp_daily:
+            return (
+                "ℹ️ Daily driver-portrait updates were already enabled while this was open. "
+                "Nothing was changed."
+            )
+        return None
+
     async def commit_daily_portraits(
         self, interaction: discord.Interaction, normalised: str
     ) -> None:
-        """Enable the daily refresh at *normalised* UTC and arm the scheduled job."""
+        """Enable the daily refresh at *normalised* UTC and arm the scheduled job.
+
+        The job is armed before the member is told anything, so that one that cannot be armed
+        is a failure with the setting stored, which start-up recovery arms on the next restart.
+        """
+        what = f"`{DAILY_TOGGLE}`"
+        stale = await self.daily_portraits_refusal(form=False)
+        if stale is not None:
+            await refuse(interaction, stale, what=what)
+            return
+
         await self._config_service.set_field("pfp_daily_time", normalised)
         await self._config_service.set_pfp_flag("pfp_daily", True)
         try:
-            self.bot.scheduler_service.schedule_portrait_refresh(
-                normalised
-            )
-        except Exception as exc:  # the setting is stored; recovery re-arms it on restart
-            log.error("could not arm the daily portrait refresh: %s", exc, exc_info=True)
+            self.bot.scheduler_service.schedule_portrait_refresh(normalised)
+        except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
+            await report_failure(interaction, exc, what=what, outcome=DAILY_JOB_NOT_SCHEDULED)
+            return
         await self._reply(
             interaction,
             f"✅ **Daily driver-portrait updates** enabled, running at "
             f"**{normalised} UTC** each day.",
         )
-        await self._log(interaction, f"Daily driver-portrait updates enabled at {normalised} UTC")
+        await _record(
+            self.bot, interaction, DAILY_TOGGLE, "Success", f"time of day: {normalised} UTC"
+        )
 
     @use_pfp.command(
         name="toggle",

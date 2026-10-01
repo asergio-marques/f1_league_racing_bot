@@ -401,8 +401,6 @@ async def test_a_pasted_palette_with_an_unreadable_line_is_refused_by_the_form(
 
 # ── A6, A7, A8: each success is recorded under its own command ────────────
 
-_SUCCESS_UNNAMED = "#482: an image success line does not yet name its own command"
-
 #: A palette file whose one block a league could store.
 ONE_TIER = (
     b'<palettes><division name="Division 1"><colour slot="accent">#A78BFA</colour>'
@@ -508,7 +506,6 @@ async def test_a_success_records_one_line_naming_its_own_command(
         assert _carries(details, forms), (forms, details)
 
 
-@pytest.mark.xfail(strict=True, reason=_SUCCESS_UNNAMED)
 async def test_confirming_daily_portraits_records_one_line_naming_the_command(
     monkeypatch, tmp_path
 ):
