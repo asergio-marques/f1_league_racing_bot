@@ -132,7 +132,8 @@ class SettingChange:
 class RsvpOutcome(Enum):
     """What `AttendanceService.answer_rsvp` did with one press of a check-in button."""
 
-    LOCKED_AT_DEADLINE = "locked at the deadline"  # a full-time driver, or a deadline of 0
+    # a full-time driver, at the deadline (the round's start where it is 0)
+    LOCKED_AT_DEADLINE = "locked at the deadline"
     LOCKED_ACCEPTED = "locked, accepted"  # a reserve who has accepted, at the deadline
     LOCKED_AT_START = "locked at the start"  # any other reserve, at the round's start
     UNCHANGED = "unchanged"  # the answer was already held
