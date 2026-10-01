@@ -627,8 +627,6 @@ def test_the_rule_does_not_bind_while_portraits_are_disabled():
 # "Writes nothing" is observed through triggers on a table of the test's own, which count every
 # statement that inserts or updates a row, an update to the same value included.
 
-_HELD_NOT_YET_REPORTED = "#482: an image setter given the value it holds writes it again"
-
 
 async def _count_writes(db_path: str) -> None:
     """Install the counting triggers on `image_config` and `image_tier_colour`."""
@@ -657,7 +655,6 @@ async def _writes(db_path: str) -> int:
     return row["n"]
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
 async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_path):
     await service.create_with_defaults()
     assert await service.set_field("template_directory", "resources/custom") is True
@@ -669,7 +666,6 @@ async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_pat
     assert (await service.get_config()).template_directory == "resources/custom"
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
 async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path):
     await service.create_with_defaults()
     assert await service.set_flag("per_tier_colour_enabled", True) is True
@@ -681,7 +677,6 @@ async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path
     assert (await service.get_config()).per_tier_colour_enabled is True
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
 async def test_set_tier_colour_reports_a_held_colour_and_writes_nothing(service, db_path):
     """Held as the league would type it again: the division and slot in another case name the
     same stored colour."""
@@ -694,7 +689,6 @@ async def test_set_tier_colour_reports_a_held_colour_and_writes_nothing(service,
     assert await service.get_tier_palette("Division 1") == {"accent": "#A78BFA"}
 
 
-@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
 async def test_set_tier_colours_counts_only_the_slots_it_changes(service, db_path):
     """A bulk set returns how many slots it changed: a slot already holding its colour is not
     one of them, and where every slot named is held, nothing is written at all."""
