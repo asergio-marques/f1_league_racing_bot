@@ -83,6 +83,8 @@
     - They shall nonetheless be listed upon the standing call itself, showing no answer, since the call is drawn from the division's roster as it stands rather than from the answers recorded. A driver shown upon a call with no attendance record behind them is therefore expected, not a fault.
 - Full-time drivers will be allowed to change their chosen option until the RSVP deadline is met. After that point, the choices are locked.
 - Reserve drivers will be allowed to change their chosen option until the time of the round, provided they have NOT accepted the check-in. After that point, the choices are locked.
+- A reserve who has accepted the check-in is locked at the deadline, like a full-time driver, and stays locked whatever presses follow it, however soon after the accept. Decided 2026-10-01.
+- A press for the answer the driver already holds shall change nothing and say so, however soon after another press, and shall leave a reserve's accept time as it was. Decided 2026-10-01.
 - A driver shall never be told their answer was recorded where it was not.
 - RSVP status shall be persisted under the round data entries in the database, as they will be necessary later.
 
