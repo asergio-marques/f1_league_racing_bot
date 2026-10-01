@@ -7,7 +7,9 @@ the log channel — a success, a refusal or a failure, whoever used it (the core
 is formed in one place:
 
 - **`refuse`** answers the member, seen by them alone, and writes one line:
-  "⛔ {what} refused for {member} — {reason}".
+  "⛔ {what} refused for {member} — {reason}". The line itself is **`record_refusal`**'s, which
+  writes it without answering, for a refusal whose reply is not an interaction's: an answer
+  typed into the signup wizard is a message, refused by a public reply in the driver's channel.
 - **`record_abandoned`** writes the line for a confirmation cancelled or left to lapse:
   "↩️ {what} cancelled by {member}", or "⌛ {what} lapsed unconfirmed (started by {member})".
 
@@ -38,7 +40,7 @@ from typing import Any
 import discord
 
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.utils.member_names import interaction_member, member_named
+from leaguebot.core.utils.member_names import interaction_member, member_named  # noqa: F401
 from leaguebot.core.utils.messages import chunk_message
 
 log = logging.getLogger(__name__)
@@ -74,6 +76,36 @@ def _first_line(reply: str) -> str:
     return first
 
 
+async def _named(bot: Any, member: int | discord.abc.User | None) -> str:
+    """*member* named as the log channel names them: a member object by the display name it
+    carries, an id (or an object with no name) found on the league's server, nobody as "a member"."""
+    if member is None or isinstance(member, int):
+        return await name_of_member(bot, member)
+    if isinstance(getattr(member, "display_name", None), str):
+        return member_named(member.display_name, member.id)
+    return await name_of_member(bot, member.id)
+
+
+async def record_refusal(
+    bot: Any,
+    member: int | discord.abc.User | None,
+    *,
+    what: str,
+    reason: str,
+) -> None:
+    """Record that *what* was refused for *member*, because of *reason*, without answering anyone.
+
+    The one place a refusal's line is formed: `refuse` writes its own through here. For a
+    refusal whose reply is not an interaction's, and so has no `refuse`; *member* is named as
+    `record_abandoned` names its own. Never raises.
+    """
+    try:
+        named = await _named(bot, member)
+        await bot.output_router.post_log(f"⛔ {what} refused for {named} — {reason}")
+    except Exception:  # noqa: BLE001 — the refusal has already been answered
+        log.warning("could not record in the log channel that %s was refused", what, exc_info=True)
+
+
 async def refuse(
     interaction: discord.Interaction,
     reply: str,
@@ -101,14 +133,15 @@ async def refuse(
     except Exception:  # noqa: BLE001 — the refusal is still recorded
         log.warning("could not tell user %s that %s was refused", user_id, what, exc_info=True)
 
-    try:
-        router = getattr(getattr(interaction, "client", None), "output_router", None)
-        if router is None:
-            return
-        detail = reason if reason is not None else _first_line(reply)
-        await router.post_log(f"⛔ {what} refused for {interaction_member(interaction)} — {detail}")
-    except Exception:  # noqa: BLE001 — the member has still been answered
-        log.warning("could not record in the log channel that %s was refused", what, exc_info=True)
+    bot = getattr(interaction, "client", None)
+    if getattr(bot, "output_router", None) is None:
+        return
+    await record_refusal(
+        bot,
+        interaction.user,
+        what=what,
+        reason=reason if reason is not None else _first_line(reply),
+    )
 
 
 async def record_abandoned(
@@ -128,12 +161,7 @@ async def record_abandoned(
     the line: what became of the change and what to do next. Never raises.
     """
     try:
-        if member is None or isinstance(member, int):
-            named = await name_of_member(bot, member)
-        elif isinstance(getattr(member, "display_name", None), str):
-            named = member_named(member.display_name, member.id)
-        else:
-            named = await name_of_member(bot, member.id)
+        named = await _named(bot, member)
         line = (
             f"⌛ {what} lapsed unconfirmed (started by {named})"
             if lapsed

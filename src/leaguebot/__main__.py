@@ -282,8 +282,8 @@ async def main() -> None:
         from datetime import datetime as _dt, timezone as _tz
 
         async def _signup_close_cb() -> None:
-            from leaguebot.core.cogs.module_cog import execute_forced_close
-            await execute_forced_close(bot, audit_action="SIGNUP_AUTO_CLOSE")
+            from leaguebot.core.cogs.module_cog import close_signups_unattended
+            await close_signups_unattended(bot, cause="timer")
 
         bot.scheduler_service.register_signup_close_callback(_signup_close_cb)
 
@@ -306,8 +306,8 @@ async def main() -> None:
                 return
             if _close_dt <= now_utc:
                 log.info("on_ready: signup close_at is past — running forced close")
-                from leaguebot.core.cogs.module_cog import execute_forced_close
-                await execute_forced_close(bot, audit_action="SIGNUP_AUTO_CLOSE")
+                from leaguebot.core.cogs.module_cog import close_signups_unattended
+                await close_signups_unattended(bot, cause="restart")
             else:
                 from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
                 if bot.scheduler_service._scheduler.get_job(SIGNUP_CLOSE_JOB_ID) is None:

@@ -44,6 +44,9 @@ DRIVER_ID = "7"
 OTHER_USER_ID = 8
 CHANNEL_ID = 99
 
+#: The reason a step handler gives for a press on a step already answered (commit point 19).
+_ALREADY_ANSWERED = "That step has already been answered."
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -61,6 +64,7 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
     wizard_service.handle_driver_type_button = AsyncMock(return_value=None)
     wizard_service.handle_preferred_teams_button = AsyncMock(return_value=None)
     wizard_service.handle_no_preference_teammate = AsyncMock(return_value=None)
+    wizard_service.handle_no_notes = AsyncMock(return_value=None)
     wizard_service.withdraw = AsyncMock(return_value=None)
     wizard_service.get_wizard_by_channel = AsyncMock(
         return_value=SimpleNamespace(discord_user_id=wizard_user) if wizard_user else None
@@ -68,6 +72,7 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
 
     bot = MagicMock()
     bot.wizard_service = wizard_service
+    bot.output_router.post_log = AsyncMock()
 
     interaction = MagicMock()
     interaction.client = bot
@@ -76,9 +81,18 @@ def _interaction(user_id: int = int(DRIVER_ID), *, wizard_user: str | None = DRI
     interaction.guild = MagicMock()
     interaction.user = MagicMock()
     interaction.user.id = user_id
+    interaction.user.display_name = "Driver" if str(user_id) == DRIVER_ID else "Other"
+    # The response knows whether it has been used, as Discord's does, so a refusal goes where
+    # the real one would.
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
     interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.response.defer = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -88,8 +102,21 @@ def _refused(interaction) -> bool:
     return any(
         "not for you" in str(call.args[0])
         for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
         if call.args
     )
+
+
+def _assert_refusal_recorded(interaction, button: str) -> None:
+    """One line in the log channel, naming the button, the driver's wizard it sits on, the
+    member who pressed it, and why (core specification, "The record of what changed")."""
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith(f"⛔ the “{button}” button"), line
+    assert "signup wizard" in line
+    assert f"refused for {interaction.user.display_name} (<@{interaction.user.id}>)" in line
+    assert "This button is not for you." in line
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +155,7 @@ async def test_another_member_cannot_answer_a_driver_s_platform_question():
     await type(view).steam(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Steam")
     interaction.client.wizard_service.handle_platform_button.assert_not_awaited()
 
 
@@ -153,6 +181,7 @@ async def test_another_member_cannot_cancel_a_driver_s_signup():
     await type(view).cancel(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
 
 
@@ -186,6 +215,7 @@ async def test_a_view_whose_channel_has_no_wizard_refuses_everyone():
     await type(view).steam(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Steam")
     interaction.client.wizard_service.handle_platform_button.assert_not_awaited()
 
 
@@ -199,6 +229,7 @@ async def test_a_rebuilt_view_still_refuses_the_wrong_member():
     await type(view).steam(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Steam")
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +265,7 @@ async def test_another_member_cannot_choose_a_driver_s_type():
     await type(view).full_time(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Full-Time Driver")
     interaction.client.wizard_service.handle_driver_type_button.assert_not_awaited()
 
 
@@ -257,6 +289,7 @@ async def test_another_member_cannot_cancel_from_the_driver_type_step():
     await type(view).cancel(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
 
 
@@ -326,6 +359,7 @@ async def test_another_member_cannot_finish_a_driver_s_team_step():
     await view._no_preference_callback(interaction)
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "No Preference")
     interaction.client.wizard_service.handle_preferred_teams_button.assert_not_awaited()
 
 
@@ -349,6 +383,7 @@ async def test_another_member_cannot_cancel_from_the_team_step():
     await view._cancel_callback(interaction)
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
 
 
@@ -377,6 +412,7 @@ async def test_another_member_cannot_answer_the_teammate_question():
     await type(view).no_preference(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "No Preference")
     interaction.client.wizard_service.handle_no_preference_teammate.assert_not_awaited()
 
 
@@ -400,4 +436,144 @@ async def test_another_member_cannot_cancel_from_the_teammate_step():
     await type(view).cancel(view, interaction, MagicMock())
 
     assert _refused(interaction)
+    _assert_refusal_recorded(interaction, "Cancel Signup")
     interaction.client.wizard_service.withdraw.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The first-message Cancel Signup, and the notes step
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "view_name, button, label",
+    [
+        pytest.param("WithdrawButtonView", "withdraw_button", "Cancel Signup"),
+        pytest.param("NoNotesButtonView", "no_notes_button", "No Notes"),
+        pytest.param("NoNotesButtonView", "cancel_button", "Cancel Signup"),
+    ],
+)
+async def test_another_member_pressing_the_welcome_or_notes_buttons_is_refused_and_recorded(
+    view_name, button, label
+):
+    """The Cancel Signup posted with the welcome message, and the notes step's No Notes and
+    Cancel Signup, carry the same guard as every other step, and record its refusal."""
+    from leaguebot.signup.cogs import signup_cog
+
+    view = getattr(signup_cog, view_name)(DRIVER_ID, MagicMock())
+    interaction = _interaction(OTHER_USER_ID)
+    interaction.client.wizard_service.handle_no_notes = AsyncMock(return_value=None)
+
+    await getattr(type(view), button)(view, interaction, MagicMock())
+
+    assert _refused(interaction)
+    interaction.client.wizard_service.withdraw.assert_not_awaited()
+    interaction.client.wizard_service.handle_no_notes.assert_not_awaited()
+    _assert_refusal_recorded(interaction, label)
+
+
+# ---------------------------------------------------------------------------
+# A step already answered
+# ---------------------------------------------------------------------------
+
+
+async def _press_step(view_name: str, button: str, interaction) -> None:
+    from leaguebot.signup.cogs import signup_cog
+
+    if view_name == "PreferredTeamsButtonView":
+        view = signup_cog.PreferredTeamsButtonView(DRIVER_ID, MagicMock(), ["Ferrari"])
+        await getattr(view, button)(interaction)
+        return
+    view = getattr(signup_cog, view_name)(DRIVER_ID, MagicMock())
+    await getattr(type(view), button)(view, interaction, MagicMock())
+
+
+@pytest.mark.parametrize(
+    "view_name, button, handler, label",
+    [
+        ("PlatformButtonView", "steam", "handle_platform_button", "Steam"),
+        ("DriverTypeButtonView", "full_time", "handle_driver_type_button", "Full-Time Driver"),
+        ("PreferredTeamsButtonView", "_no_preference_callback", "handle_preferred_teams_button",
+         "No Preference"),
+        ("NoPreferenceTeammateView", "no_preference", "handle_no_preference_teammate",
+         "No Preference"),
+        ("NoNotesButtonView", "no_notes_button", "handle_no_notes", "No Notes"),
+    ],
+)
+async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
+    view_name, button, handler, label
+):
+    """The driver scrolls up and presses a button from a step they have already answered. The
+    step handler changes nothing and says why; the view tells the driver so, seen by them alone,
+    and records the refusal: one line naming the button, the driver's wizard it sits on, the
+    driver, and the reason. Until now the press was answered with nothing at all."""
+    interaction = _interaction()
+    setattr(interaction.client.wizard_service, handler, AsyncMock(return_value=_ALREADY_ANSWERED))
+
+    await _press_step(view_name, button, interaction)
+
+    getattr(interaction.client.wizard_service, handler).assert_awaited_once()
+    replies = [
+        (str(call.args[0]), call.kwargs.get("ephemeral"))
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    ]
+    assert any(_ALREADY_ANSWERED in text and ephemeral is True for text, ephemeral in replies), (
+        replies
+    )
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith(f"⛔ the “{label}” button"), line
+    assert "signup wizard" in line
+    assert "refused for Driver (<@7>)" in line
+    assert _ALREADY_ANSWERED in line
+
+
+# ---------------------------------------------------------------------------
+# Cancel Signup after the signup ended
+# ---------------------------------------------------------------------------
+
+#: The reason `withdraw` gives where the signup has already ended (S5-A6).
+_ALREADY_ENDED = "This signup has already ended. Nothing was changed."
+
+
+@pytest.mark.parametrize(
+    "view_name, button",
+    [
+        ("WithdrawButtonView", "withdraw_button"),
+        ("NoNotesButtonView", "cancel_button"),
+        ("PlatformButtonView", "cancel"),
+        ("DriverTypeButtonView", "cancel"),
+        ("PreferredTeamsButtonView", "_cancel_callback"),
+        ("NoPreferenceTeammateView", "cancel"),
+    ],
+)
+async def test_a_cancel_signup_press_after_the_signup_ended_is_refused_and_recorded(
+    view_name, button
+):
+    """The driver presses a Cancel Signup left in their channel after their signup has ended.
+    `withdraw` says why it did nothing, and the button answers that, not "withdrawn", and
+    records the refusal."""
+    interaction = _interaction()
+    interaction.client.wizard_service.withdraw = AsyncMock(return_value=_ALREADY_ENDED)
+
+    await _press_step(view_name, button, interaction)
+
+    interaction.client.wizard_service.withdraw.assert_awaited_once()
+    replies = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+        if call.args
+    ]
+    assert f"⛔ {_ALREADY_ENDED}" in replies, replies
+    assert not any("withdrawn" in reply for reply in replies), replies
+    lines = [str(call.args[0]) for call in interaction.client.output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    line = lines[0]
+    assert line.startswith("⛔ the “Cancel Signup” button"), line
+    assert "signup wizard" in line
+    assert "refused for Driver (<@7>)" in line
+    assert _ALREADY_ENDED.split(".")[0] in line

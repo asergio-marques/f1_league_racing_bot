@@ -187,15 +187,19 @@ async def test_a_season_whose_divisions_are_done_is_wound_down_to_pending_comple
 
 
 async def test_an_open_window_is_closed_before_the_pending_placements_are_turned_down(tmp_path):
+    """The season is in Ongoing signups with its only division finished, and signups are open:
+    winding it down closes the window through the close nobody ran, as every division being
+    done, which writes the close's own line, and cancels the close timer."""
     from unittest.mock import AsyncMock, patch
 
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_SIGNUPS, divisions=(("FINISHED", None),))
     bot = _wind_down_bot(path, signups_open=True)
 
-    with patch("leaguebot.core.cogs.module_cog.execute_forced_close", new=AsyncMock()) as closed:
+    with patch("leaguebot.core.cogs.module_cog.close_signups_unattended", new=AsyncMock()) as closed:
         assert await lifecycle.wind_down_ongoing(bot) is True
 
     closed.assert_awaited_once()
+    assert closed.await_args.kwargs["cause"] == "divisions done"
     bot.scheduler_service.cancel_signup_close_timer.assert_called_once_with()
 
 
@@ -210,6 +214,10 @@ async def test_a_season_with_a_division_still_running_is_not_wound_down(tmp_path
 
 
 async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_kept_off(tmp_path):
+    """Every division is done with three placements pending and signups already shut: the
+    driver in review has their channel held, the two approved drivers turned down lose the
+    driver role, and the line says only that the pending placements were turned down, with no
+    claim that signups closed."""
     from unittest.mock import AsyncMock, MagicMock
 
     path = await _db(tmp_path, stage=SeasonStage.ONGOING_PLACEMENTS, divisions=(("FINISHED", None),))
@@ -220,7 +228,7 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
         )
         await db.commit()
     bot = _wind_down_bot(path)
-    bot.wizard_service._trigger_channel_hold = AsyncMock()
+    bot.wizard_service.trigger_channel_hold = AsyncMock()
     role = MagicMock()
     member = MagicMock()
     member.roles = [role]
@@ -232,11 +240,12 @@ async def test_a_turned_down_driver_in_review_has_their_channel_closed_and_role_
 
     await lifecycle.wind_down_ongoing(bot)
 
-    held = [c.args[0] for c in bot.wizard_service._trigger_channel_hold.await_args_list]
+    held = [c.args[0] for c in bot.wizard_service.trigger_channel_hold.await_args_list]
     assert held == ["1004"]
     # The two approved drivers turned down lose the driver role; the committed one keeps it.
     assert member.remove_roles.await_count == 2
-    assert "pending placements turned down: 3" in bot.output_router.post_log.await_args.args[0]
+    line = str(bot.output_router.post_log.await_args.args[0])
+    assert line == "System | Every division is done | Pending placements turned down: 3"
 
 
 async def test_completing_winds_a_finished_season_down_first(tmp_path):

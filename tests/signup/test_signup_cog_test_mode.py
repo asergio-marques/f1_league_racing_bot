@@ -18,7 +18,6 @@ from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
 
-
 # ── Stubs ─────────────────────────────────────────────────────────────────
 
 
@@ -74,6 +73,7 @@ def _bot(*, test_mode: bool):
         ),
         wizard_service=SimpleNamespace(start_wizard=AsyncMock(return_value=None)),
         signup_module_service=SimpleNamespace(get_config=AsyncMock(return_value=None)),
+        module_service=SimpleNamespace(is_signup_enabled=AsyncMock(return_value=True)),
         output_router=SimpleNamespace(post_log=AsyncMock()),
     )
 
@@ -109,6 +109,10 @@ class TestTheSignUpButton:
 
         assert "test mode" in interaction.reply
         bot.wizard_service.start_wizard.assert_not_awaited()
+        lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+        assert len(lines) == 1, lines
+        assert lines[0].startswith("⛔ the “Sign Up” button refused for Tester (<@1>)"), lines[0]
+        assert "test mode" in lines[0]
 
     async def test_the_driver_state_is_not_even_read(self):
         """Rejection at the earliest moment: the refusal precedes every other check."""

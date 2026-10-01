@@ -1,6 +1,38 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-01 — v14.8.0 → v14.9.0: MINOR — a typed signup wizard answer records only its refusal (issue #482)]
+  Version change    : 14.8.0 → 14.9.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.8.0: guidance is added inside an
+                      existing principle and nothing is removed or redefined. Principle V's
+                      exception for a results paste gains its companion for the signup wizard.
+
+  Modified sections :
+    - Principle V, Observability & Change Audit Trail — the exception paragraph: an answer typed
+      into the signup wizard is a message, so an accepted one records nothing and one turned away
+      records that refusal; an answer given by a wizard button is a button press and records the
+      answer.
+
+  Why the constitution is the document that moved:
+    - `docs/wip-specs/core_specification.md`, "The record of what changed", gains the same
+      sentence on the same branch and remains the governing statement of it.
+    - The owner decided on 2026-09-30 that typed wizard answers record only their refusals and
+      that wizard button answers are recorded with the answer.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/482-log-signup-outcomes.
+
+  Templates / docs  : none. The core specification, the signup specification and the README are
+                      corrected on the same branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-09-29 — v14.7.0 → v14.8.0: MINOR — a refusal outside the league's own server goes to the host's log alone (issue #482)]
   Version change    : 14.7.0 → 14.8.0
   Bump rationale    : MINOR, on the precedent of v14.1.0: an exception is added inside an existing
@@ -5361,7 +5393,10 @@ About change nothing and record nothing.
 One exception: a refusal to someone on another server, to a command used in a direct message,
 or made before the bot is set up — where there is no log channel to record it in — is written
 to the host's log alone, the member being answered as ever. A results paste into a submission
-channel is a message, not a command, and this rule does not reach it.
+channel is a message, not a command, and this rule does not reach it. Nor does it reach an
+answer typed into the signup wizard beyond a refusal: such an answer is a message, so one
+accepted records nothing and one the wizard turns away records that refusal. An answer given by
+pressing a wizard button is a button press, and records the answer.
 
 **Rationale**: A league's managers, its admins and its drivers need an unambiguous,
 channel-visible record of computations and changes, especially when disputing weather
@@ -8652,4 +8687,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.8.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-09-29
+**Version**: 14.9.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-01

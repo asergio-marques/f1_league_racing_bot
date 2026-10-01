@@ -190,6 +190,7 @@ async def test_the_signup_channel_is_open_to_both_roles(admin_role_id, expected,
     cfg = MagicMock()
     cfg.signup_channel_id = None
     bot.signup_module_service.get_config = AsyncMock(return_value=cfg)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service.save_config = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     bot.db_path = await _seed(tmp_path, admin_role_id=admin_role_id)

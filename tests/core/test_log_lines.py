@@ -189,3 +189,67 @@ def test_the_member_naming_helpers_import_from_member_names_and_log_lines_alike(
 
     assert log_lines.member_named is member_names.member_named
     assert log_lines.interaction_member is member_names.interaction_member
+
+
+@pytest.mark.parametrize(
+    "case", ["member object", "member id", "member has left", "nobody recorded", "post fails"]
+)
+async def test_record_refusal_writes_the_standard_line_without_answering(case):
+    """A typed wizard answer is refused by a public reply in the driver's channel, not by an
+    interaction's, so `record_refusal` writes the refusal's line alone. It never raises."""
+    from leaguebot.core.utils.log_lines import record_refusal
+
+    bot = _bot(None if case == "member has left" else "Alex")
+    if case == "post fails":
+        bot.output_router.post_log.side_effect = RuntimeError("database is locked")
+    member: object
+    if case == "member object":
+        member = MagicMock(spec=discord.Member)
+        member.id = USER
+        member.display_name = "Alex"
+    elif case == "nobody recorded":
+        member = None
+    else:
+        member = USER
+
+    await record_refusal(  # must not raise
+        bot,
+        member,
+        what="the Availability step of Alex's signup wizard",
+        reason="That time slot number is not in the list.",
+    )
+
+    if case == "post fails":
+        bot.output_router.post_log.assert_awaited_once()
+        return
+    [line] = _lines(bot)
+    named = {
+        "member object": f"Alex (<@{USER}>)",
+        "member id": f"Alex (<@{USER}>)",
+        "member has left": f"<@{USER}>",
+        "nobody recorded": "a member",
+    }[case]
+    assert line == (
+        f"⛔ the Availability step of Alex's signup wizard refused for {named} — "
+        "That time slot number is not in the list."
+    )
+
+
+async def test_refuse_forms_its_line_through_record_refusal(monkeypatch):
+    """`refuse` writes its line through `record_refusal`, so the refusal's line is formed in one
+    place; the line itself is unchanged (`test_refuse_replies_to_the_member_and_logs_one_line`)."""
+    from leaguebot.core.utils import log_lines
+
+    seen: list[dict] = []
+
+    async def _record(bot, member, *, what, reason):
+        seen.append({"bot": bot, "what": what, "reason": reason})
+
+    monkeypatch.setattr(log_lines, "record_refusal", _record)
+    interaction = _interaction()
+
+    await log_lines.refuse(interaction, "⛔ Signups are closed.", what="the “Sign Up” button")
+
+    assert seen == [
+        {"bot": interaction.client, "what": "the “Sign Up” button", "reason": "Signups are closed."}
+    ]

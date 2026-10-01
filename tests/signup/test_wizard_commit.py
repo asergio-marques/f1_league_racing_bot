@@ -85,6 +85,7 @@ def committer():
     svc._format_review_panel = MagicMock(return_value="panel")  # type: ignore[method-assign]
     svc._revoke_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    svc._grant_driver_write = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     async def _save_record(record):
         saved.append(record)
@@ -279,16 +280,51 @@ async def test_a_first_submission_is_logged_as_submitted(committer):
 
 async def test_a_correction_is_logged_as_a_correction(committer):
     """How a manager tells "this driver has just signed up" from "this driver has fixed
-    the thing I asked about"."""
-    from leaguebot.core.models.driver_profile import DriverState
+    the thing I asked about". Lewis was asked to correct his nationality and typed "German": a
+    correction is committed by `_commit_correction`, never `commit_wizard`, so it writes the
+    one line, naming what was re-collected by its review button's label, as the "Correction
+    requested" line names it (owner, 2026-10-01, Gate 3)."""
+    from leaguebot.signup.models.signup_module import WizardState
 
-    committer.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(current_state=DriverState.PENDING_DRIVER_CORRECTION)
-    )
+    wizard = _wizard({"nationality": "German"})
+    wizard.wizard_state = WizardState.COLLECTING_NATIONALITY
 
-    await _commit(committer)
+    await committer.svc._commit_correction(wizard, committer.guild)
 
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
+    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    assert lines[0] == (
+        f"Lewis Hamilton (<@{DRIVER_ID}>) | Signup | Correction submitted: Nationality"
+    ), lines[0]
+
+
+async def test_no_notes_on_the_first_pass_writes_only_submitted(committer):
+    """Lewis reaches the notes step on his first pass and presses No Notes. That ends the
+    wizard, and the "Submitted" line is the press's one line: No Notes writes no step line of
+    its own (one line per action)."""
+    await committer.svc.handle_no_notes(DRIVER_ID, committer.guild)
+
+    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    assert lines[0].endswith("| Signup | Submitted"), lines[0]
+
+
+async def test_a_button_answer_that_ends_a_correction_writes_only_correction_submitted(committer):
+    """Lewis was asked to correct his platform and presses Steam. That press ends the
+    correction: it writes one line, "Correction submitted", and no "Platform: Steam" beside it."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    wizard = _wizard({"_is_correction": True})
+    wizard.wizard_state = WizardState.COLLECTING_PLATFORM
+    committer.signup_svc.get_wizard = AsyncMock(return_value=wizard)
+    committer.signup_svc.get_record = AsyncMock(return_value=SimpleNamespace(id=9))
+
+    await committer.svc.handle_platform_button(DRIVER_ID, "Steam", committer.guild)
+
+    lines = [str(call.args[0]) for call in committer.svc._output_router.post_log.await_args_list]
+    assert len(lines) == 1, lines
+    assert "| Signup | Correction submitted" in lines[0], lines[0]
+    assert "Platform: Steam" not in lines[0]
 
 
 async def test_a_correction_amends_the_signup_it_was_asked_of(committer):
@@ -312,8 +348,10 @@ async def test_a_first_submission_is_a_new_signup(committer):
 
 
 async def test_the_prior_state_is_read_before_anything_is_written(committer):
-    """Read after the transition it would always say `PENDING_ADMIN_APPROVAL`, and every
-    submission would log as a first one."""
+    """Read after the transition it would always say `PENDING_ADMIN_APPROVAL`, and a
+    correction would be saved as a second signup. The log line no longer turns on it: a
+    correction writes its line from `_commit_correction`
+    (`test_a_correction_is_logged_as_a_correction`)."""
     from leaguebot.core.models.driver_profile import DriverState
 
     committer.driver_service.get_profile = AsyncMock(
@@ -323,17 +361,20 @@ async def test_the_prior_state_is_read_before_anything_is_written(committer):
     await _commit(committer)
 
     committer.driver_service.get_profile.assert_awaited_once()
-    assert "Correction submitted" in committer.svc._output_router.post_log.await_args.args[0]
+    assert committer.saved[0].id == 9
 
 
 async def test_a_driver_who_has_left_is_logged_by_id(committer):
     """`get_member` gives nothing for someone who has left, and the log must still name
-    somebody — the raw id is worse than a name but far better than "None"."""
+    somebody: by mention alone, as every line names a member no longer on the server (core
+    specification, "The record of what changed"), never by the raw id beside it."""
     committer.guild.get_member = MagicMock(return_value=None)
+    committer.svc._bot.get_guild = MagicMock(return_value=committer.guild)
 
     await _commit(committer)
 
-    assert DRIVER_ID in committer.svc._output_router.post_log.await_args.args[0]
+    line = committer.svc._output_router.post_log.await_args.args[0]
+    assert line.splitlines()[0] == f"<@{DRIVER_ID}> | Signup | Submitted"
 
 
 def test_every_send_of_the_review_panel_restricts_mentions():

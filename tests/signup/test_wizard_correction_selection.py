@@ -96,8 +96,14 @@ def correction():
     signup_svc.get_wizard = AsyncMock(return_value=_wizard())
     signup_svc.save_wizard = AsyncMock(return_value=None)
 
+    from leaguebot.core.models.driver_profile import DriverState
+
     driver_service = MagicMock()
     driver_service.transition = AsyncMock(return_value=None)
+    # Awaiting a correction parameter, as a driver whose panel a manager presses is (D2).
+    driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState.AWAITING_CORRECTION_PARAMETER)
+    )
 
     bot = MagicMock()
     bot.signup_module_service = signup_svc
@@ -159,13 +165,79 @@ async def test_an_unknown_parameter_changes_nothing(correction):
 
 
 async def test_a_driver_with_no_wizard_is_left_alone(correction):
+    """The driver's wizard is gone when the manager chooses a parameter. Nothing is changed,
+    and the service returns why it refused, so the button refuses rather than answering that
+    it is re-collecting."""
     correction.signup_svc.get_wizard = AsyncMock(return_value=None)
 
-    await correction.svc.select_correction_parameter(
+    refused = await correction.svc.select_correction_parameter(
         DRIVER_ID, "platform", correction.guild
     )
 
+    assert isinstance(refused, str) and refused, refused
     correction.driver_service.transition.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "state",
+    ["PENDING_ADMIN_APPROVAL", "PENDING_DRIVER_CORRECTION", "UNASSIGNED", "NOT_SIGNED_UP"],
+    ids=["window-lapsed", "already-chosen", "approved", "rejected"],
+)
+async def test_a_request_that_has_ended_is_refused_and_changes_nothing(correction, state):
+    """A manager chooses a parameter after the correction request has ended: its five minutes
+    lapsed and the driver is back awaiting review, another parameter was already chosen, or
+    the signup was approved or rejected. The service acts only on a driver still awaiting a
+    correction parameter, so it returns "This correction request has ended. Nothing was
+    changed." and changes nothing: no transition, no wizard saved, no deadline armed and no
+    prompt posted (D2)."""
+    from leaguebot.core.models.driver_profile import DriverState
+
+    correction.driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState[state])
+    )
+
+    refused = await correction.svc.select_correction_parameter(
+        DRIVER_ID, "platform", correction.guild
+    )
+
+    assert refused == "This correction request has ended. Nothing was changed."
+    correction.driver_service.transition.assert_not_awaited()
+    correction.signup_svc.save_wizard.assert_not_awaited()
+    correction.svc._arm_inactivity_job.assert_not_awaited()
+    correction.channel.send.assert_not_awaited()
+
+
+async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(correction):
+    """A manager chooses "platform" at the moment the correction request ends: the five minutes
+    lapse, or a second manager's choice lands first, just after the service has read the driver
+    as still awaiting a correction parameter. The state change that follows is refused, so the
+    request has ended all the same: the service returns "This correction request has ended.
+    Nothing was changed." and changes nothing, with no wizard saved, no deadline armed and no
+    prompt posted."""
+    correction.driver_service.transition = AsyncMock(
+        side_effect=ValueError("Illegal transition: PENDING_ADMIN_APPROVAL -> PENDING_DRIVER_CORRECTION")
+    )
+
+    refused = await correction.svc.select_correction_parameter(
+        DRIVER_ID, "platform", correction.guild
+    )
+
+    assert refused == "This correction request has ended. Nothing was changed."
+    correction.driver_service.transition.assert_awaited_once()
+    correction.signup_svc.save_wizard.assert_not_awaited()
+    correction.svc._arm_inactivity_job.assert_not_awaited()
+    correction.channel.send.assert_not_awaited()
+
+
+async def test_a_request_still_awaiting_a_choice_is_acted_on_and_nothing_is_refused(correction):
+    """The state check does not stop a choice made while the request is open: the driver is
+    sent back to the question and nothing is refused."""
+    refused = await correction.svc.select_correction_parameter(
+        DRIVER_ID, "platform", correction.guild
+    )
+
+    assert refused is None
+    correction.driver_service.transition.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------

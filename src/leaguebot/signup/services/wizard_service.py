@@ -24,6 +24,8 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
+from leaguebot.core.utils.log_lines import record_abandoned, record_refusal
+from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
 
 if TYPE_CHECKING:
@@ -87,9 +89,66 @@ async def _wizard_channel_delete_job(discord_user_id: str) -> None:
     await _GLOBAL_WIZARD_SERVICE._execute_channel_delete(discord_user_id)
 
 
+#: What a button press is told where the wizard it belongs to is gone, where the step it
+#: answers has been answered, and where the wizard's channel is not to be found.
+_NO_WIZARD = "Wizard session not found."
+_STEP_ANSWERED = "That step has already been answered."
+_NO_WIZARD_CHANNEL = "Wizard channel not found."
+_TEAM_PICKED = "That team has already been picked."
+
+
+def _wizard_gone_or_answered(wizard: SignupWizardRecord | None) -> str:
+    """Why a button press on a step that is not the wizard's current one did nothing."""
+    return _NO_WIZARD if wizard is None else _STEP_ANSWERED
+
+
+class SignupNotOpenError(Exception):
+    """`WizardService.start_wizard` was asked to start a signup while signups are not open.
+
+    The Sign Up button answers it as a refusal (F1, #482).
+    """
+
+
 # ---------------------------------------------------------------------------
 # WizardService
 # ---------------------------------------------------------------------------
+
+
+#: The answer a manager may ask a driver to correct, by the key the review's buttons carry, and
+#: the wizard step that re-collects it. `_commit_correction` reads it backwards to name what was
+#: corrected.
+_CORRECTION_PARAMETER_STATES: dict[str, WizardState] = {
+    "nationality":          WizardState.COLLECTING_NATIONALITY,
+    "platform":             WizardState.COLLECTING_PLATFORM,
+    "platform_id":          WizardState.COLLECTING_PLATFORM_ID,
+    "availability":         WizardState.COLLECTING_AVAILABILITY,
+    "driver_type":          WizardState.COLLECTING_DRIVER_TYPE,
+    "preferred_teams":      WizardState.COLLECTING_PREFERRED_TEAMS,
+    "preferred_teammate":   WizardState.COLLECTING_PREFERRED_TEAMMATE,
+    "lap_times":            WizardState.COLLECTING_LAP_TIME,
+    "notes":                WizardState.COLLECTING_NOTES,
+}
+
+#: Each correctable answer by the label its review button shows, which the log names it by:
+#: "Correction submitted: Lap Times". The cog's `CorrectionParameterView._PARAMETERS` carries the
+#: same labels, and its choice line, "Correction requested: Lap Times", writes them the same way.
+_CORRECTION_LABELS: dict[str, str] = {
+    "nationality":          "Nationality",
+    "platform":             "Platform",
+    "platform_id":          "Platform ID",
+    "availability":         "Availability",
+    "driver_type":          "Driver Type",
+    "preferred_teams":      "Preferred Teams",
+    "preferred_teammate":   "Preferred Teammate",
+    "lap_times":            "Lap Times",
+    "notes":                "Notes",
+}
+
+#: What `WizardService.select_correction_parameter` returns where the request has ended (D2).
+_CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
+
+#: What `WizardService.withdraw` returns where the signup has already ended (S5-A6).
+_SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
 
 
 class WizardService:
@@ -402,6 +461,12 @@ class WizardService:
 
         Returns the newly created channel, or None if the module is not
         configured (caller is responsible for sending an error response).
+
+        Raises `SignupNotOpenError`, before anything is touched, unless the signup module is
+        enabled and signups are open (F1, #482). The Sign Up button the close could not delete
+        stays in the channel, and pressing it then would otherwise start a signup in a closed
+        window. The check is here, in the service the button calls, and the button turns the
+        error into a refusal.
         """
         assert self._bot is not None
         guild = interaction.guild
@@ -410,6 +475,12 @@ class WizardService:
         assert isinstance(member, discord.Member)
 
         discord_user_id = str(member.id)
+
+        if not await self._module_svc.is_signup_enabled():
+            raise SignupNotOpenError
+        signup_cfg = await self._signup_svc.get_config()
+        if signup_cfg is not None and not signup_cfg.signups_open:
+            raise SignupNotOpenError
 
         # T049: delete any existing wizard channel if present
         existing = await self._signup_svc.get_wizard(discord_user_id)
@@ -427,8 +498,6 @@ class WizardService:
             if ckey in self._correction_tasks:
                 self._correction_tasks.pop(ckey).cancel()
 
-        # Load configs
-        signup_cfg = await self._signup_svc.get_config()
         server_cfg = await self._bot.config_service.get_server_config()
         if signup_cfg is None:
             return None
@@ -598,24 +667,34 @@ class WizardService:
                     allowed_mentions=_REVIEW_PANEL_MENTIONS,
                 )
 
-        member = guild.get_member(int(discord_user_id))
-        display_name = member.display_name if member else discord_user_id
-        log_action = "Correction submitted" if is_correction else "Submitted"
-        await self._output_router.post_log(
-            f"{display_name} (<@{discord_user_id}>) | Signup | {log_action}",
-        )
+        # A correction is committed by `_commit_correction`, which writes its own line.
+        await self._record_signup_line(discord_user_id, guild, "Submitted")
 
     async def withdraw(
         self,
         discord_user_id: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Voluntarily withdraw from the signup wizard (T040).
 
-        Cancels pending jobs/tasks, transitions driver to NOT_SIGNED_UP,
-        posts cancellation notice, and schedules channel deletion.
+        Transitions the driver to NOT_SIGNED_UP, cancels pending jobs/tasks, writes the
+        withdrawal's line, posts the cancellation notice and schedules channel deletion.
         FR-033, FR-036.
+
+        Returns None where the signup was withdrawn, and otherwise why nothing was changed, for
+        the Cancel Signup button to answer and record: the transition is refused (`ValueError`)
+        where the signup has already ended, withdrawn, rejected, expired or closed, which a
+        leftover button can still press. Nothing is posted again and the channel's deletion is
+        not pushed back. Only that refusal is caught: any other error from the transition
+        reaches the button's failure handler (#457), and nothing is cancelled or claimed.
         """
+        try:
+            await self._driver_service.transition(
+                discord_user_id, DriverState.NOT_SIGNED_UP
+            )
+        except ValueError:
+            return _SIGNUP_ENDED
+
         # Cancel asyncio correction task if any
         ckey = discord_user_id
         if ckey in self._correction_tasks:
@@ -624,48 +703,59 @@ class WizardService:
         # Cancel inactivity APScheduler job
         await self._cancel_inactivity_job(discord_user_id)
 
-        # Transition driver to NOT_SIGNED_UP
-        try:
-            await self._driver_service.transition(
-                discord_user_id, DriverState.NOT_SIGNED_UP
-            )
-        except Exception:
-            log.warning("withdraw: driver transition failed for %s", discord_user_id, exc_info=True)
+        await self._record_signup_line(discord_user_id, guild, "Withdrawn")
 
         # Post cancellation notice and hold channel
-        await self._trigger_channel_hold(
+        await self.trigger_channel_hold(
             discord_user_id, guild,
             "❌ You have cancelled your signup. "
             "This channel will be automatically deleted in 24 hours.",
         )
+        return None
 
     async def approve_signup(
         self,
         discord_user_id: str,
         guild: discord.Guild,
         actor: discord.Member,
-    ) -> None:
+    ) -> str | None:
         """Admin approves the signup (T032).
 
         Grants the driver role, transitions driver to UNASSIGNED,
         and holds the channel for 24 hours before deletion.
         FR-040. The driver role is the league's, read from core (issue #276).
+
+        Returns None where the driver role was given, or none is configured, and otherwise one
+        sentence saying it could not be: the role is gone, the driver has left the server, or
+        Discord refused it. The approval stands, as the core specification's role rules have it.
+        The Approve button tells the manager the sentence, and it is written beneath the
+        Approved line, where it is not left to the host log (#482).
         """
         signup_cfg = await self._signup_svc.get_config()
         if signup_cfg is None:
-            return
+            return None
 
         # Grant the driver role
         server_cfg = await self._league_bot.config_service.get_server_config()
         driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         member = guild.get_member(int(discord_user_id))
-        if member is not None and driver_role_id:
+        role_note: str | None = None
+        if driver_role_id:
             role = guild.get_role(driver_role_id)
-            if role is not None:
+            if member is None:
+                role_note = "The driver role could not be granted: the driver is no longer on the server."
+            elif role is None:
+                role_note = "The driver role could not be granted: the role no longer exists on the server."
+            else:
                 try:
                     await member.add_roles(role, reason="Signup approved")
                 except discord.HTTPException:
-                    log.warning("approve_signup: could not add the driver role for %s", discord_user_id)
+                    log.warning(
+                        "approve_signup: could not add the driver role for %s",
+                        discord_user_id,
+                        exc_info=True,
+                    )
+                    role_note = "The driver role could not be granted: Discord refused it."
 
         # Compute and persist total_lap_ms before transitioning state
         signup_record = await self._signup_svc.get_record(discord_user_id)
@@ -682,19 +772,35 @@ class WizardService:
 
         await self._cancel_inactivity_job(discord_user_id)
 
-        await self._trigger_channel_hold(
+        await self.trigger_channel_hold(
             discord_user_id, guild,
             f"✅ Your signup has been approved by **{actor.display_name}**! "
             "You are now an Unassigned driver. "
             "This channel will be automatically deleted in 24 hours.",
         )
 
-        driver_member = guild.get_member(int(discord_user_id))
-        driver_name = driver_member.display_name if driver_member else discord_user_id
-        await self._output_router.post_log(
+        driver_named = self._member_named_in(guild, discord_user_id)
+        line = (
             f"{actor.display_name} (<@{actor.id}>) | Signup | Approved\n"
-            f"  driver: {driver_name} (<@{discord_user_id}>)",
+            f"  driver: {driver_named}"
         )
+        if role_note is not None:
+            line += f"\n  {role_note}"
+        await self._output_router.post_log(line)
+        return role_note
+
+    async def _not_awaiting_review(self, discord_user_id: str) -> str | None:
+        """Why a reason typed for *discord_user_id* cannot be acted on, or None where it can.
+
+        A manager's Reject or Request Changes is completed by a reason typed afterwards, and the
+        signup may have moved on between the two: approved by another manager, withdrawn,
+        rejected, or already sent back for a correction. The two services act only on a driver
+        still awaiting review, so a late reason cannot undo what has since been decided (#492).
+        """
+        profile = await self._driver_service.get_profile(discord_user_id)
+        if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
+            return "This signup is no longer awaiting review."
+        return None
 
     async def reject_signup(
         self,
@@ -702,13 +808,21 @@ class WizardService:
         guild: discord.Guild,
         actor: discord.Member,
         reason: str = "",
-    ) -> None:
+    ) -> str | None:
         """Admin rejects the signup (T042).
 
         Posts rejection notice, transitions driver to NOT_SIGNED_UP,
         and holds the channel for 24 hours before deletion.
         FR-041.
+
+        Acts only while the driver is awaiting review (#492): where they are not, it changes
+        nothing and returns why, which the review panel's listener turns into a refusal. None
+        where it acted. The driver's transition refusing (`ValueError`, a driver already moved
+        on) does not stop the notice and the hold; any other error is not swallowed (#457).
         """
+        if (refused := await self._not_awaiting_review(discord_user_id)) is not None:
+            return refused
+
         await self._cancel_inactivity_job(discord_user_id)
 
         ckey = discord_user_id
@@ -719,22 +833,22 @@ class WizardService:
             await self._driver_service.transition(
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
-        except Exception:
-            log.warning("reject_signup: driver transition failed for %s", discord_user_id, exc_info=True)
+        except ValueError:
+            log.warning("reject_signup: driver transition refused for %s", discord_user_id, exc_info=True)
 
-        await self._trigger_channel_hold(
+        await self.trigger_channel_hold(
             discord_user_id, guild,
             f"<@{discord_user_id}> ❌ Your signup has been rejected by **{actor.display_name}**."
             + (f"\n**Reason:** {reason}" if reason else "")
             + "\nThis channel will be automatically deleted in 24 hours.",
         )
 
-        driver_member = guild.get_member(int(discord_user_id))
-        driver_name = driver_member.display_name if driver_member else discord_user_id
-        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Rejected\n  driver: {driver_name} (<@{discord_user_id}>)"
+        driver_named = self._member_named_in(guild, discord_user_id)
+        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Rejected\n  driver: {driver_named}"
         if reason:
             msg += f"\n  reason: {reason}"
         await self._output_router.post_log(msg)
+        return None
 
     async def request_changes(
         self,
@@ -742,16 +856,22 @@ class WizardService:
         guild: discord.Guild,
         actor: discord.Member,
         reason: str = "",
-    ) -> None:
+    ) -> str | None:
         """Admin requests correction (T036).
 
         Transitions driver to AWAITING_CORRECTION_PARAMETER, posts
         CorrectionParameterView, and arms a 5-minute asyncio timeout.
         FR-042, FR-043.
+
+        Acts only while the driver is awaiting review, as `reject_signup` does (#492): where
+        they are not, it changes nothing and returns why. None where it acted.
         """
+        if (refused := await self._not_awaiting_review(discord_user_id)) is not None:
+            return refused
+
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
-            return
+            return None
 
         await self._driver_service.transition(
             discord_user_id, DriverState.AWAITING_CORRECTION_PARAMETER
@@ -790,41 +910,40 @@ class WizardService:
             self._correction_timeout_after_delay(discord_user_id)
         )
 
-        driver_member = guild.get_member(int(discord_user_id))
-        driver_name = driver_member.display_name if driver_member else discord_user_id
-        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Correction requested\n  driver: {driver_name} (<@{discord_user_id}>)"
+        driver_named = self._member_named_in(guild, discord_user_id)
+        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Correction requested\n  driver: {driver_named}"
         if reason:
             msg += f"\n  reason: {reason}"
         await self._output_router.post_log(msg)
+        return None
 
     async def select_correction_parameter(
         self,
         discord_user_id: str,
         parameter: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Admin selects the parameter to re-collect (T037).
 
         Cancels the 5-minute asyncio timeout, transitions driver to
         PENDING_DRIVER_CORRECTION, sets WizardState to the target step,
         and posts the re-collection prompt.
         FR-044.
+
+        Acts only while the driver is awaiting a correction parameter (D2): where the request
+        has ended — its five minutes lapsed, another parameter was chosen, the signup was
+        approved or rejected, or the wizard is gone — it changes nothing and returns why, which
+        the review panel's button turns into a refusal. None where it acted (or where the
+        parameter is not one the wizard knows, which a stale button from an older bot may carry).
         """
-        _PARAM_STATE_MAP: dict[str, WizardState] = {
-            "nationality":          WizardState.COLLECTING_NATIONALITY,
-            "platform":             WizardState.COLLECTING_PLATFORM,
-            "platform_id":          WizardState.COLLECTING_PLATFORM_ID,
-            "availability":         WizardState.COLLECTING_AVAILABILITY,
-            "driver_type":          WizardState.COLLECTING_DRIVER_TYPE,
-            "preferred_teams":      WizardState.COLLECTING_PREFERRED_TEAMS,
-            "preferred_teammate":   WizardState.COLLECTING_PREFERRED_TEAMMATE,
-            "lap_times":            WizardState.COLLECTING_LAP_TIME,
-            "notes":                WizardState.COLLECTING_NOTES,
-        }
-        target_state = _PARAM_STATE_MAP.get(parameter)
+        target_state = _CORRECTION_PARAMETER_STATES.get(parameter)
         if target_state is None:
             log.warning("select_correction_parameter: unknown parameter %r", parameter)
-            return
+            return None
+
+        profile = await self._driver_service.get_profile(discord_user_id)
+        if profile is None or profile.current_state != DriverState.AWAITING_CORRECTION_PARAMETER:
+            return _CORRECTION_ENDED
 
         # Cancel the 5-minute selection timeout
         ckey = discord_user_id
@@ -833,12 +952,17 @@ class WizardService:
 
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None:
-            return
+            return _CORRECTION_ENDED
 
-        # Transition driver to PENDING_DRIVER_CORRECTION
-        await self._driver_service.transition(
-            discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
-        )
+        # Transition driver to PENDING_DRIVER_CORRECTION. The state check above can be raced
+        # (the five minutes lapsing, or a second press, between it and here); the transition
+        # is the check that cannot, and a refused one means the request has ended all the same.
+        try:
+            await self._driver_service.transition(
+                discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
+            )
+        except ValueError:
+            return _CORRECTION_ENDED
 
         # Configure wizard for single-field re-collection
         correction_reason = wizard.draft_answers.pop("_correction_reason", "")
@@ -877,8 +1001,9 @@ class WizardService:
                 + self._prompt_for_state(target_state, wizard.config_snapshot, wizard, track_name_map=track_map),
                 view=self._build_step_view(target_state, discord_user_id, team_names),
             )
+        return None
 
-    async def _trigger_channel_hold(
+    async def trigger_channel_hold(
         self,
         discord_user_id: str,
         guild: discord.Guild,
@@ -906,7 +1031,7 @@ class WizardService:
         try:
             await channel.send(terminal_message)
         except discord.HTTPException:
-            log.warning("_trigger_channel_hold: failed to post terminal message in %s", channel.id)
+            log.warning("trigger_channel_hold: failed to post terminal message in %s", channel.id)
 
         # Schedule channel deletion (+24 h)
         fire_at = datetime.now(timezone.utc) + timedelta(hours=24)
@@ -917,9 +1042,19 @@ class WizardService:
     ) -> None:
         """APScheduler callback: 24-h inactivity deadline reached (T043-T045).
 
-        Cancels pending tasks/jobs, transitions driver to NOT_SIGNED_UP,
-        and holds the channel.
+        Cancels pending tasks/jobs, transitions driver to NOT_SIGNED_UP, records the lapse
+        and holds the channel. The restart's sweep (`recover_wizards`) calls this for a
+        deadline that passed while the bot was down, so one record serves both.
         FR-047, FR-048.
+
+        The lapse is recorded as "the signup wizard lapsed unconfirmed", naming the driver who
+        started it, with what became of it and what they may do next (owner, 2026-09-30). The
+        transition's `ValueError` is a driver who has already moved on: the signup did not
+        lapse, so no lapse is recorded, but the channel is still held, with the expiry notice
+        and its deletion 24 hours on (owner, 2026-10-01). Any other error is not caught (#457):
+        for the scheduled job APScheduler logs it with its traceback, and for the restart's
+        sweep, whose task is dropped, it may never be reported (#439, #453). Either way nothing
+        is recorded or posted.
         """
         # Cancel asyncio correction task if any
         ckey = discord_user_id
@@ -936,14 +1071,25 @@ class WizardService:
             await self._driver_service.transition(
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
-        except Exception:
-            log.warning(
-                "handle_inactivity_timeout: transition failed for %s",
-                discord_user_id, exc_info=True,
+        except ValueError:
+            log.info(
+                "handle_inactivity_timeout: %s has already moved on; no lapse recorded",
+                discord_user_id,
+            )
+        else:
+            await record_abandoned(
+                self._league_bot,
+                int(discord_user_id),
+                what="the signup wizard",
+                lapsed=True,
+                detail=(
+                    "The signup was cancelled after 24 hours without an answer. "
+                    "They may press Sign Up again while signups are open."
+                ),
             )
 
         if guild is not None:
-            await self._trigger_channel_hold(
+            await self.trigger_channel_hold(
                 discord_user_id, guild,
                 "⏰ Your signup session has expired due to inactivity. "
                 "This channel will be automatically deleted in 24 hours.",
@@ -990,10 +1136,12 @@ class WizardService:
             await self._driver_service.transition(
                 discord_user_id, DriverState.NOT_SIGNED_UP
             )
-        except Exception:
-            log.warning(
-                "handle_member_remove: transition failed for %s",
-                discord_user_id, exc_info=True,
+        except ValueError:
+            # A driver who has already moved on: the rest of the cleanup still runs. Any other
+            # error is not swallowed (#457).
+            log.info(
+                "handle_member_remove: %s has already moved on; cleaning up the channel",
+                discord_user_id,
             )
 
         # Delete channel immediately (no hold)
@@ -1276,62 +1424,78 @@ class WizardService:
         discord_user_id: str,
         platform: str,
         guild: discord.Guild,
-    ) -> None:
-        """Handle a platform button press in Step 2."""
+    ) -> str | None:
+        """Handle a platform button press in Step 2.
+
+        **The `handle_*` button handlers share one contract.** Each returns None where it acted,
+        and otherwise why it did nothing, as a sentence: the wizard is gone, the step has
+        already been answered, or its channel is not to be found. It answers nobody itself; the
+        view turns the sentence into the refusal, which answers the driver and is recorded
+        (#482).
+        """
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PLATFORM:
-            return
+            return _wizard_gone_or_answered(wizard)
         wizard.draft_answers["platform"] = platform
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
+        await self._record_button_step(wizard, guild, f"Platform: {platform}")
         await self._advance_wizard_in_channel(wizard, channel, guild)
+        return None
 
     async def handle_driver_type_button(
         self,
         discord_user_id: str,
         driver_type: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle a driver-type button press in Step 5."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_DRIVER_TYPE:
-            return
+            return _wizard_gone_or_answered(wizard)
         wizard.draft_answers["driver_type"] = driver_type
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
+        await self._record_button_step(wizard, guild, f"Driver type: {driver_type}")
         await self._advance_wizard_in_channel(wizard, channel, guild)
+        return None
 
     async def handle_preferred_teams_button(
         self,
         discord_user_id: str,
         team_name: str | None,
         guild: discord.Guild,
-    ) -> None:
-        """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps)."""
+    ) -> str | None:
+        """Handle a team button or No Preference press in Step 6 (up to 3 sub-steps).
+
+        *team_name* is the team the pressed button's own label names (#482, D3), or None for No
+        Preference. A team the driver has already picked is refused, changing nothing: a button
+        on an earlier sub-step's message still offers it.
+        """
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMS:
-            return
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+            return _wizard_gone_or_answered(wizard)
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
 
         current_step: int = wizard.draft_answers.get("_pref_teams_step", 0)
         current_picks: list[str] = list(wizard.draft_answers.get("preferred_teams") or [])
+
+        if team_name is not None and team_name in current_picks:
+            return _TEAM_PICKED
 
         if team_name is None:
             # No Preference — finalise with however many picks accumulated so far
             wizard.draft_answers["preferred_teams"] = current_picks
             wizard.draft_answers.pop("_pref_teams_step", None)
+            await self._record_button_step(
+                wizard, guild, "Preferred team: no preference"
+            )
             await self._advance_wizard_in_channel(wizard, channel, guild)
-            return
+            return None
 
         # Record this pick
         current_picks.append(team_name)
@@ -1342,11 +1506,16 @@ class WizardService:
         team_names: list[str] = snapshot.team_names if snapshot else []
         remaining = [t for t in team_names if t not in current_picks]
 
-        if next_step >= 3 or not remaining:
+        done = next_step >= 3 or not remaining
+        await self._record_button_step(
+            wizard, guild, f"Preferred team: {team_name}", ends_step=done
+        )
+
+        if done:
             # Done — all 3 picks taken or no teams left
             wizard.draft_answers.pop("_pref_teams_step", None)
             await self._advance_wizard_in_channel(wizard, channel, guild)
-            return
+            return None
 
         # More sub-steps to go — save and send next sub-step prompt
         wizard.draft_answers["_pref_teams_step"] = next_step
@@ -1368,33 +1537,84 @@ class WizardService:
                 discord_user_id, self._bot, team_names, excluded=current_picks
             ),
         )
+        return None
 
     async def handle_no_preference_teammate(
         self,
         discord_user_id: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle the No Preference button press in Step 7."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_PREFERRED_TEAMMATE:
-            return
+            return _wizard_gone_or_answered(wizard)
         wizard.draft_answers["preferred_teammate"] = None
-        if wizard.signup_channel_id is None:
-            return
-        channel = guild.get_channel(wizard.signup_channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            return
+        channel = self._wizard_channel(wizard, guild)
+        if channel is None:
+            return _NO_WIZARD_CHANNEL
+        await self._record_button_step(wizard, guild, "Preferred teammate: no preference")
         await self._advance_wizard_in_channel(wizard, channel, guild)
+        return None
+
+    async def _record_button_step(
+        self,
+        wizard: SignupWizardRecord,
+        guild: discord.Guild,
+        answer: str,
+        *,
+        ends_step: bool = True,
+    ) -> None:
+        """Write the one line a wizard button answer leaves in the log channel, carrying the answer.
+
+        **One line per action** (#482): a button answer that ends a correction writes none
+        (*ends_step*: the step is finished), since `_commit_correction` writes "Correction
+        submitted" for it, and the press that submits a first signup is No Notes, which
+        `commit_wizard` records as "Submitted". A correction's Preferred Teams pick that
+        leaves more picks to come is not an end, and is recorded. A typed
+        answer is a message, not a button, and records only its refusal.
+        """
+        if ends_step and wizard.draft_answers.get("_is_correction"):
+            return
+        await self._record_signup_line(wizard.discord_user_id, guild, answer)
+
+    @staticmethod
+    def _member_named_in(guild: discord.Guild, discord_user_id: str) -> str:
+        """The driver as the log channel names a member: "Alex (<@id>)", or the mention alone
+        once they have left the server."""
+        member = guild.get_member(int(discord_user_id))
+        return member_named(getattr(member, "display_name", None), int(discord_user_id))
+
+    async def _record_signup_line(
+        self, discord_user_id: str, guild: discord.Guild, text: str
+    ) -> None:
+        """Write "Name (<@id>) | Signup | <text>", the wizard's line family (S5-A1).
+
+        The driver is named by display name and mention, and by mention alone once they have left.
+        """
+        named = self._member_named_in(guild, discord_user_id)
+        await self._output_router.post_log(f"{named} | Signup | {text}")
+
+    @staticmethod
+    def _wizard_channel(
+        wizard: SignupWizardRecord, guild: discord.Guild
+    ) -> discord.TextChannel | None:
+        """The text channel the wizard runs in, or None where it has none or it is gone."""
+        if wizard.signup_channel_id is None:
+            return None
+        channel = guild.get_channel(wizard.signup_channel_id)
+        return channel if isinstance(channel, discord.TextChannel) else None
 
     async def _handle_nationality(
         self, wizard: SignupWizardRecord, message: discord.Message
     ) -> None:
         val = self._validate_nationality(message.content)
         if val is None:
-            await message.channel.send(
+            reply = (
                 "❌ Invalid nationality. Please enter your full nationality (e.g. `British`) "
                 "or country name (e.g. `United Kingdom`), or type `other`."
             )
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Nationality", reply)
             return
         wizard.draft_answers["nationality"] = val
         await self._advance_wizard(wizard, message)
@@ -1409,9 +1629,9 @@ class WizardService:
         )
         if match is None:
             opts = " / ".join(self._PLATFORMS)
-            await message.channel.send(
-                f"❌ Invalid platform. Please choose one of: {opts}"
-            )
+            reply = f"❌ Invalid platform. Please choose one of: {opts}"
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Platform", reply)
             return
         wizard.draft_answers["platform"] = match
         await self._advance_wizard(wizard, message)
@@ -1421,9 +1641,11 @@ class WizardService:
     ) -> None:
         raw = message.content.strip()
         if not raw:
-            await message.channel.send("❌ Platform ID cannot be empty.")
+            reply = "❌ Platform ID cannot be empty."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Platform ID", reply)
             return
-        if not await self._answer_stands(message, "platform ID", raw):
+        if not await self._answer_stands(message, "Platform ID", "platform ID", raw):
             return
         wizard.draft_answers["platform_id"] = raw
         await self._advance_wizard(wizard, message)
@@ -1445,18 +1667,24 @@ class WizardService:
         try:
             selected_ids = [int(p) for p in parts if p]
         except ValueError:
-            await message.channel.send("❌ Please enter slot IDs as numbers (e.g. `1 3`).")
+            reply = "❌ Please enter slot IDs as numbers (e.g. `1 3`)."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Availability", reply)
             return
         by_display_number = {s.slot_sequence_id: s for s in snapshot.slots}
         bad = [str(i) for i in selected_ids if i not in by_display_number]
         if bad:
-            await message.channel.send(
+            reply = (
                 f"❌ Unknown slot ID(s): {', '.join(bad)}. "
                 f"Valid IDs: {', '.join(str(i) for i in sorted(by_display_number))}"
             )
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Availability", reply)
             return
         if not selected_ids:
-            await message.channel.send("❌ Please select at least one time slot.")
+            reply = "❌ Please select at least one time slot."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Availability", reply)
             return
         wizard.draft_answers["availability_slot_ids"] = [
             by_display_number[i].slot_id for i in selected_ids
@@ -1472,9 +1700,9 @@ class WizardService:
         )
         if match is None:
             opts = " / ".join(self._DRIVER_TYPES)
-            await message.channel.send(
-                f"❌ Please choose one of: {opts}"
-            )
+            reply = f"❌ Please choose one of: {opts}"
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Driver Type", reply)
             return
         wizard.draft_answers["driver_type"] = match
         await self._advance_wizard(wizard, message)
@@ -1500,23 +1728,50 @@ class WizardService:
         # Parse comma/newline-separated list
         parts = [p.strip() for p in re.split(r"[,\n]+", raw) if p.strip()]
         if len(parts) > 3:
-            await message.channel.send(
-                "❌ Please select up to 3 teams."
-            )
+            reply = "❌ Please select up to 3 teams."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Preferred Teams", reply)
             return
         bad = [p for p in parts if p.casefold() not in by_typed]
         if bad:
             bad_list = ", ".join(f"`{b}`" for b in bad)
             valid = ", ".join(f"`{t.full_name}`" for t in non_reserve)
-            await message.channel.send(
-                f"❌ Unknown team(s): {bad_list}.\nValid teams: {valid}"
-            )
+            reply = f"❌ Unknown team(s): {bad_list}.\nValid teams: {valid}"
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Preferred Teams", reply)
             return
         wizard.draft_answers["preferred_teams"] = [by_typed[p.casefold()] for p in parts]
         await self._advance_wizard(wizard, message)
 
-    @staticmethod
-    async def _answer_stands(message: discord.Message, field_label: str, raw: str) -> bool:
+    async def _record_typed_refusal(
+        self, message: discord.Message, step: str, reply: str
+    ) -> None:
+        """Record a typed answer the wizard refused, in the log channel, without answering again.
+
+        A typed answer is a message, not a command, button or form, so an accepted one records
+        nothing and only its refusal does (#482). The reply has already gone to the driver's
+        channel; the line names the driver and the *step* (as the review's correction buttons
+        name it) and gives the reply's first line as the reason. Never raises, as
+        `record_refusal` never does: a message without an author, or a service without a bot,
+        leaves the typed-answer handler unharmed.
+        """
+        try:
+            author = message.author
+            name = getattr(author, "display_name", None)
+            owner = f"{name}'s" if isinstance(name, str) and name else f"<@{author.id}>'s"
+            first = reply.strip().splitlines()[0] if reply.strip() else ""
+            await record_refusal(
+                self._bot,
+                author,
+                what=f"the {step} step of {owner} signup wizard",
+                reason=first.removeprefix("❌").strip(),
+            )
+        except Exception:  # noqa: BLE001 — the driver has been answered; the record never harms the step
+            log.warning("could not record the refusal of the %s step", step, exc_info=True)
+
+    async def _answer_stands(
+        self, message: discord.Message, step: str, field_label: str, raw: str
+    ) -> bool:
         """Whether a driver's free-text answer may be kept, telling them why where not (#362).
 
         The review panel quotes the answer to the channel, and a role mention, ``@everyone`` or
@@ -1527,14 +1782,18 @@ class WizardService:
         refusal = SIGNUP_ANSWER.check(field_label, raw).refusal
         if refusal is None:
             return True
-        await message.channel.send(f"❌ {refusal}")
+        reply = f"❌ {refusal}"
+        await message.channel.send(reply)
+        await self._record_typed_refusal(message, step, reply)
         return False
 
     async def _handle_preferred_teammate(
         self, wizard: SignupWizardRecord, message: discord.Message
     ) -> None:
         raw = message.content.strip()
-        if not await self._answer_stands(message, "preferred teammate", raw):
+        if not await self._answer_stands(
+            message, "Preferred Teammate", "preferred teammate", raw
+        ):
             return
         wizard.draft_answers["preferred_teammate"] = (
             None if raw.lower() == "no preference" else raw
@@ -1554,10 +1813,12 @@ class WizardService:
 
         # Check image requirement
         if snapshot.time_image_required and not message.attachments:
-            await message.channel.send(
+            reply = (
                 "❌ A screenshot of your lap time is required. "
                 "Please attach an image along with your time."
             )
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Lap Times", reply)
             return
 
         normalised = self._normalise_lap_time(message.content)
@@ -1565,9 +1826,9 @@ class WizardService:
             label = (
                 "Time Trial" if snapshot.time_type == "TIME_TRIAL" else "Short Qualification"
             )
-            await message.channel.send(
-                f"❌ Invalid {label} time. Use format `M:ss.mmm` (e.g. `1:23.456`)."
-            )
+            reply = f"❌ Invalid {label} time. Use format `M:ss.mmm` (e.g. `1:23.456`)."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Lap Times", reply)
             return
 
         track_id = snapshot.selected_track_ids[idx]
@@ -1584,11 +1845,11 @@ class WizardService:
         if raw.lower() == "no notes":
             wizard.draft_answers["notes"] = None
         elif len(raw) > 50:
-            await message.channel.send(
-                "❌ Notes must be 50 characters or fewer."
-            )
+            reply = "❌ Notes must be 50 characters or fewer."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Notes", reply)
             return
-        elif not await self._answer_stands(message, "notes", raw):
+        elif not await self._answer_stands(message, "Notes", "notes", raw):
             return
         else:
             wizard.draft_answers["notes"] = raw
@@ -1598,11 +1859,11 @@ class WizardService:
         self,
         discord_user_id: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Handle the 'No Notes' button press in Step 9."""
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         if wizard is None or wizard.wizard_state != WizardState.COLLECTING_NOTES:
-            return
+            return _wizard_gone_or_answered(wizard)
 
         is_correction = wizard.draft_answers.pop("_is_correction", False)
         wizard.draft_answers["notes"] = None
@@ -1612,6 +1873,7 @@ class WizardService:
         else:
             await self._signup_svc.save_wizard(wizard)
             await self.commit_wizard(discord_user_id, guild)
+        return None
 
     # ------------------------------------------------------------------
     # Prompt builder helpers
@@ -1769,14 +2031,16 @@ class WizardService:
             )
             return
 
-        # Transition driver back to PENDING_ADMIN_APPROVAL
+        # Transition driver back to PENDING_ADMIN_APPROVAL. A driver who has moved on in the
+        # meantime (`ValueError`, the transition's refusal) has no window left to lapse: nothing
+        # is posted and no lapse recorded. Any other error is not swallowed (#457).
         try:
             await self._driver_service.transition(
                 discord_user_id, DriverState.PENDING_ADMIN_APPROVAL
             )
-        except Exception:
+        except ValueError:
             log.warning(
-                "_correction_timeout_callback: transition failed for %s",
+                "_correction_timeout_callback: transition refused for %s",
                 discord_user_id, exc_info=True,
             )
             return
@@ -1785,6 +2049,7 @@ class WizardService:
         wizard = await self._signup_svc.get_wizard(discord_user_id)
         guild = await self._get_guild()
         if wizard is None or guild is None:
+            await self._record_correction_lapse(discord_user_id, guild, None, panel=False)
             return
 
         # Read who asked before clearing it — the mention below is the last use.
@@ -1799,6 +2064,7 @@ class WizardService:
         await self._signup_svc.save_wizard(wizard)
 
         # Re-post admin review panel
+        panel_posted = False
         if wizard.signup_channel_id is not None:
             channel = guild.get_channel(wizard.signup_channel_id)
             if isinstance(channel, discord.TextChannel):
@@ -1831,6 +2097,41 @@ class WizardService:
                         view=AdminReviewView(discord_user_id, self._bot),
                         allowed_mentions=_REVIEW_PANEL_MENTIONS,
                     )
+                    panel_posted = True
+        await self._record_correction_lapse(
+            discord_user_id, guild, requested_by, panel=panel_posted
+        )
+
+    async def _record_correction_lapse(
+        self,
+        discord_user_id: str,
+        guild: discord.Guild | None,
+        requested_by: str | None,
+        *,
+        panel: bool,
+    ) -> None:
+        """Record a correction request that lapsed unconfirmed, naming the manager who asked.
+
+        The line is `record_abandoned`'s: "⌛ the correction request for Lewis's signup lapsed
+        unconfirmed (started by Toto (<@id>))", with the driver's return to the approval queue
+        beneath, and a fresh review panel in their channel where one was posted (*panel*). A
+        manager recorded nowhere, for a window opened before the requester was kept, is "a
+        member". The five minutes and the restart sweep both reach it.
+        """
+        member = guild.get_member(int(discord_user_id)) if guild is not None else None
+        driver = getattr(member, "display_name", None)
+        if not isinstance(driver, str):
+            driver = f"<@{discord_user_id}>"
+        await record_abandoned(
+            self._league_bot,
+            int(requested_by) if requested_by else None,
+            what=f"the correction request for {driver}'s signup",
+            lapsed=True,
+            detail=(
+                f"{driver} is back in the approval queue"
+                + ("; a fresh review panel is in their channel." if panel else ".")
+            ),
+        )
 
     async def _commit_correction(
         self,
@@ -1841,7 +2142,8 @@ class WizardService:
 
         Used by _advance_wizard_in_channel when the _is_correction flag is set in
         draft_answers.  Updates the existing SignupRecord with the corrected
-        field(s), transitions driver state, and posts a fresh AdminReviewView.
+        field(s), transitions driver state, writes the "Correction submitted" line naming the
+        parameter re-collected (the wizard step it stands at) by its review button's label, and posts a fresh AdminReviewView.
         """
         discord_user_id = wizard.discord_user_id
 
@@ -1873,9 +2175,22 @@ class WizardService:
         )
 
         # Clear correction state from wizard record
+        corrected = next(
+            (
+                key for key, state in _CORRECTION_PARAMETER_STATES.items()
+                if state == wizard.wizard_state
+            ),
+            None,
+        )
         wizard.wizard_state = WizardState.UNENGAGED
         wizard.draft_answers = {}
         await self._signup_svc.save_wizard(wizard)
+
+        await self._record_signup_line(
+            discord_user_id, guild,
+            "Correction submitted" if corrected is None
+            else f"Correction submitted: {_CORRECTION_LABELS[corrected]}",
+        )
 
         # Post fresh admin review panel
         if wizard.signup_channel_id is not None:

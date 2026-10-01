@@ -47,12 +47,16 @@ class _Channel:
 
 
 class _Message:
-    """A driver's message. *attachments* stands in for a lap-time screenshot."""
+    """A driver's message, sent by Alex (id 7). *attachments* stands in for a lap-time
+    screenshot."""
 
     def __init__(self, content: str, *, attachments: list | None = None) -> None:
+        from types import SimpleNamespace
+
         self.content = content
         self.channel = _Channel()
         self.attachments = attachments or []
+        self.author = SimpleNamespace(id=7, display_name="Alex", mention="<@7>")
 
 
 def _slots():
@@ -81,7 +85,11 @@ def wizard_and_service():
     from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
     from leaguebot.signup.services.wizard_service import WizardService
 
+    from unittest.mock import AsyncMock, MagicMock
+
     svc = WizardService.__new__(WizardService)
+    svc._bot = MagicMock()
+    svc._bot.output_router.post_log = AsyncMock()
     advanced: list[bool] = []
 
     async def _advance(wizard, message):
@@ -116,7 +124,7 @@ def _with_teams(svc, names: list[str]) -> None:
 
     teams = [SimpleNamespace(name=n, full_name=f"{n} Racing", is_reserve=False) for n in names]
     teams.append(SimpleNamespace(name="Reserve", full_name="Reserve", is_reserve=True))
-    bot = MagicMock()
+    bot = getattr(svc, "_bot", None) or MagicMock()
     bot.team_service.get_default_teams = AsyncMock(return_value=teams)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
     svc._bot = bot
@@ -550,3 +558,98 @@ async def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_type
     await svc._handle_preferred_teams(wizard, _Message("alpha racing, BETA"))
 
     assert wizard.draft_answers["preferred_teams"] == ["Alpha Racing", "Beta Racing"]
+
+
+# ---------------------------------------------------------------------------
+# The log channel: a typed answer records only its refusal (#482)
+# ---------------------------------------------------------------------------
+
+# (the step as the wizard's state names it, the step as the line names it, what is typed,
+# whether a screenshot is required, whether the league's teams are offered)
+_REFUSED_ANSWERS = [
+    ("COLLECTING_NATIONALITY", "Nationality", "xyzzy", False, False),
+    ("COLLECTING_PLATFORM", "Platform", "Dreamcast", False, False),
+    ("COLLECTING_PLATFORM_ID", "Platform ID", "   ", False, False),
+    ("COLLECTING_PLATFORM_ID", "Platform ID", "@here", False, False),
+    ("COLLECTING_AVAILABILITY", "Availability", "one", False, False),
+    ("COLLECTING_AVAILABILITY", "Availability", "9", False, False),
+    ("COLLECTING_AVAILABILITY", "Availability", ",", False, False),
+    ("COLLECTING_DRIVER_TYPE", "Driver Type", "Pro", False, False),
+    ("COLLECTING_PREFERRED_TEAMS", "Preferred Teams", "Alpha, Beta, Gamma, Delta", False, True),
+    ("COLLECTING_PREFERRED_TEAMS", "Preferred Teams", "Alpha, Ferrari", False, True),
+    ("COLLECTING_PREFERRED_TEAMMATE", "Preferred Teammate", "<@&987654321098765432>", False, False),
+    ("COLLECTING_LAP_TIME", "Lap Times", "1:23.456", True, False),
+    ("COLLECTING_LAP_TIME", "Lap Times", "fast", False, False),
+    ("COLLECTING_NOTES", "Notes", "x" * 51, False, False),
+    ("COLLECTING_NOTES", "Notes", "@everyone please check", False, False),
+]
+
+
+@pytest.mark.parametrize(
+    "state,step,typed,screenshot_required,teams",
+    _REFUSED_ANSWERS,
+    ids=[f"{row[1]}: {row[2].strip() or 'blank'}"[:40] for row in _REFUSED_ANSWERS],
+)
+async def test_a_typed_answer_refused_keeps_its_reply_and_writes_one_refusal_line(
+    wizard_and_service, state, step, typed, screenshot_required, teams
+):
+    """A typed answer is refused by a public reply in the driver's channel, not an
+    interaction's, so the refusal's line is written without answering again: one line naming
+    the driver and the step, whose reason is the reply's first line."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    svc, wizard, advanced = wizard_and_service
+    wizard.wizard_state = WizardState[state]
+    wizard.config_snapshot.time_image_required = screenshot_required
+    if teams:
+        _with_teams(svc, ["Alpha", "Beta", "Gamma", "Delta"])
+    message = _Message(typed)
+
+    await svc.handle_message(wizard, message)
+
+    assert advanced == []
+    [reply] = message.channel.sent
+    assert reply.startswith("❌")
+    reason = reply.splitlines()[0].removeprefix("❌").strip()
+    [line] = [c.args[0] for c in svc._bot.output_router.post_log.await_args_list]
+    assert line == f"⛔ the {step} step of Alex's signup wizard refused for Alex (<@7>) — {reason}"
+
+
+_ACCEPTED_ANSWERS = [
+    ("COLLECTING_NATIONALITY", "British", False),
+    ("COLLECTING_PLATFORM", "Steam", False),
+    ("COLLECTING_PLATFORM_ID", "lh44", False),
+    ("COLLECTING_AVAILABILITY", "1", False),
+    ("COLLECTING_DRIVER_TYPE", "Full-Time Driver", False),
+    ("COLLECTING_PREFERRED_TEAMS", "Alpha, Beta", True),
+    ("COLLECTING_PREFERRED_TEAMS", "No preference", True),
+    ("COLLECTING_PREFERRED_TEAMMATE", "Max", False),
+    ("COLLECTING_PREFERRED_TEAMMATE", "No preference", False),
+    ("COLLECTING_LAP_TIME", "1:23.456", False),
+    ("COLLECTING_NOTES", "Happy to race", False),
+    ("COLLECTING_NOTES", "No notes", False),
+]
+
+
+@pytest.mark.parametrize(
+    "state,typed,teams",
+    _ACCEPTED_ANSWERS,
+    ids=[f"{row[0].removeprefix('COLLECTING_').lower()}: {row[1]}" for row in _ACCEPTED_ANSWERS],
+)
+async def test_a_typed_answer_accepted_writes_no_line(wizard_and_service, state, typed, teams):
+    """A typed answer is a message, not a command, button or form, so an accepted one writes
+    nothing to the log channel: the "Submitted" line is the record of what was typed (owner,
+    2026-09-30, "Refusals only", kept for typed answers)."""
+    from leaguebot.signup.models.signup_module import WizardState
+
+    svc, wizard, advanced = wizard_and_service
+    wizard.wizard_state = WizardState[state]
+    if teams:
+        _with_teams(svc, ["Alpha", "Beta", "Gamma", "Delta"])
+    message = _Message(typed)
+
+    await svc.handle_message(wizard, message)
+
+    assert advanced == [True]
+    assert message.channel.sent == []
+    svc._bot.output_router.post_log.assert_not_awaited()

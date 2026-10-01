@@ -297,7 +297,8 @@ previews and the hub's About change nothing and record nothing. A refusal to som
 another server, to a command used in a direct message, or made before `/bot init` or after
 `/bot pack` is answered as ever but written to the host's log alone: there is no log channel to
 write it in, or no way to tell whether the person belongs to the league. A results paste into a
-submission channel is a message, not a command, and is not covered. Some commands do not yet record
+submission channel is a message, not a command, and is not covered; so is an answer typed into the
+signup wizard, which records only its refusal. Some commands do not yet record
 every outcome in this form; they are being brought in line.
 
 ### `/bot init` — One-time server setup
@@ -1344,7 +1345,7 @@ All commands below require the signup module to be enabled (`/module enable sign
 
 Applies the channel's permission overwrites: `@everyone` cannot view, the league's base role can view but not send, and the interaction role and the league admin role can view and send. Setting a new signup channel clears **all** overwrites from the previously configured channel. The signup channel may not be the interaction channel.
 
-**The bot needs both Manage Channels and Manage Roles on the channel**, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**. With either missing the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* If Discord refuses the change all the same, you get the same words and nothing is saved; and if you were moving the signup channel, the reply adds that the old channel has already had its permissions cleared, so put it right by hand if you do not retry.
+**The bot needs both Manage Channels and Manage Roles on the channel**, which Discord shows on a channel as **Manage Channel** and **Manage Permissions**. With either missing the command is refused before anything is changed: *"❌ The bot needs **Manage Channel** and **Manage Permissions** on #channel to set who may see it. The signup channel was not changed."* If Discord refuses the change all the same, you get the same words and nothing is saved; and if you were moving the signup channel, the reply adds that the old channel has already had its permissions cleared, so put it right by hand if you do not retry. If the move goes through but the bot cannot clear the old channel's permissions, the new channel stands and the reply and the log line name the old channel, which stays locked until you put it right by hand.
 
 The two roles the module uses are the league's, set by [`/bot base-role` and `/bot driver-role`](#bot-base-role-bot-driver-role--set-the-leagues-two-roles). The channel and both roles must be set before `/signup open` will run, and — while the signup module is enabled — before a season's configuration can be confirmed. Both roles must also still be on the server, and the driver role must be one the bot can grant.
 
@@ -1423,9 +1424,29 @@ Also refused unless the signup channel, the league's base role and its driver ro
 
 No parameters. If anyone is mid-signup you are asked to confirm first, and the confirmation lists every such driver with a link to their signup channel, in two groups. Drivers still filling in the form are returned to Not Signed Up by the close and would have to start again. Drivers awaiting approval, awaiting a correction parameter, or correcting keep their place and may still be approved, rejected or corrected after the window has closed. Where only the second group is waiting, the confirmation says nobody will lose their signup. Once you confirm, the reply says how many drivers were returned to Not Signed Up.
 
+Cancelling the confirmation, or letting its five minutes pass, is recorded in the log channel and leaves signups open. **Confirm checks the window again.** If signups have closed since you asked, if they were reopened (a different window), or if a close time has been armed since, Confirm is refused and nothing is closed; in the last case the refusal names the armed time and `/signup close-time cancel`, as the command does.
+
+**A close that goes wrong in part says which part.** Each step runs whatever the one before did — returning the drivers, telling them, removing the Sign Up button, posting the closed notice, moving the season on — and the reply and the log line list every step that failed, the details being in the host log. A driver the close finds has already moved on is neither counted nor a failure. `/module disable signup` reports the same way, and its line also gives the drivers it returned.
+
+**A close nobody ran is recorded too.** At its close time, at a start-up that finds the time passed, when a season ends and when every division is done, the log channel gets one line saying so, naming no member, with the drivers returned and any failed step beneath. Nothing is written where the window was not open or the module is off.
+
+A Sign Up button the close could not delete starts nothing: pressed after signups close, or with the module off, it is refused (*"⛔ Signups are closed."*).
+
 Refused while an auto-close time is armed. The refusal names the armed time and sends you to `/signup close-time cancel` — clear the timer and the manual close goes through. Closing ahead of the time you set is deliberately two steps.
 
 **Closing moves the season on**, however the window closes — by this command, at its close time, or when the bot catches up on a close time that passed while it was stopped. A season in signups moves to placements. Mid-season, it moves to ongoing with placements to confirm where any signup is still unsettled (a driver Unassigned, awaiting approval or mid-correction), and straight back to ongoing where none is.
+
+#### The signup review buttons — Approve, Request Changes, Reject
+
+*Access: League manager. Refused to the driver whose signup it is.*
+
+**Press Reject or Request Changes and type a reason within five minutes.** The press is recorded, and the next message you type in the channel is taken as the reason. If none comes within five minutes you are told that nothing was rejected, or that no changes were requested; the signup still awaits review, the lapse is recorded, and you press the button again. A restart drops the wait unrecorded. A reason typed after the signup has moved on — approved by someone else, or withdrawn — is refused (*"⛔ This signup has moved on since you pressed Reject. Nothing was rejected."*) and the driver keeps their state.
+
+**A correction choice must come in time.** Pressed after its five minutes, after another choice, or after the signup was approved or rejected, it is refused (*"⛔ This correction request has ended. Nothing was changed."*). A choice made in time is recorded, and so is the window lapsing, naming you and the driver.
+
+**Approve stands even where the driver role cannot be given** — a role missing, the driver gone from the server, Discord refusing. You are told, and the Approved line says so.
+
+Every refusal is recorded. The wizard's own buttons are the driver's: a button answer (platform, driver type, each preferred team, the no-preference shortcuts) is recorded with its answer, a press by anyone else or on a step already answered is refused and recorded, and **Cancel Signup** is recorded as a withdrawal, or refused once the signup has ended. An answer *typed* into the wizard is a message and records only its refusal. A wizard left 24 hours without an answer is cancelled and recorded as such.
 
 #### `/signup close-time add` — Arm an auto-close time for the open signup window
 *Access: League manager*
@@ -1448,7 +1469,7 @@ No parameters. The scheduled closure is cancelled and signups stay open until yo
 |-----------|------|----------|-------------|
 | `close_time` | String | ✅ | The new auto-close instant, on the same terms as `add`. |
 
-Refused when nothing is armed — use `add` — and when signups are not open. A rejected replacement leaves the armed time exactly as it was.
+Refused when nothing is armed — use `add` — and when signups are not open. A rejected replacement leaves the armed time exactly as it was. Giving the instant already armed changes nothing: you are told so, no audit row is written, and the log records that nothing changed.
 
 > **You can set the close time when you open, or after.** `/signup open close_time:` and `/signup close-time add` arm the same value and hold to the same rule, so use whichever suits. Mistyped the day or the year? `/signup close-time modify` puts it right without touching anything else.
 

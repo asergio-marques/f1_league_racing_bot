@@ -103,7 +103,16 @@ def _record():
     )
 
 
-def _service(*, existing=None, signup_cfg=True, snapshot=None, teams=None, record=None):
+def _service(
+    *,
+    existing=None,
+    signup_cfg=True,
+    snapshot=None,
+    teams=None,
+    record=None,
+    module_enabled=True,
+    signups_open=True,
+):
     svc = WizardService.__new__(WizardService)
     svc._correction_tasks = {}
     svc._scheduler = MagicMock()
@@ -114,8 +123,15 @@ def _service(*, existing=None, signup_cfg=True, snapshot=None, teams=None, recor
     signup = MagicMock()
     signup.get_wizard = AsyncMock(return_value=existing)
     signup.get_config = AsyncMock(
-        return_value=SimpleNamespace(signup_channel_id=600) if signup_cfg else None
+        return_value=SimpleNamespace(
+            signup_channel_id=600,
+            signups_open=signups_open,
+            signup_button_message_id=8800 if signups_open else None,
+        )
+        if signup_cfg
+        else None
     )
+    signup.get_window_state = AsyncMock(return_value=signup_cfg and signups_open)
     signup.capture_config_snapshot = AsyncMock(return_value=snapshot or _snapshot())
     signup.save_wizard = AsyncMock()
     signup.delete_wizard = AsyncMock()
@@ -128,8 +144,11 @@ def _service(*, existing=None, signup_cfg=True, snapshot=None, teams=None, recor
     bot = MagicMock()
     bot.signup_module_service = signup
     bot.driver_service = drivers
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=module_enabled)
     bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(interaction_role_id=900, league_admin_role_id=901)
+        return_value=SimpleNamespace(
+            interaction_role_id=900, league_admin_role_id=901, test_mode_active=False
+        )
     )
     bot.team_service.get_default_teams = AsyncMock(
         return_value=teams
@@ -225,6 +244,78 @@ async def test_an_unconfigured_module_starts_nothing(tmp_path):
 
     guild.create_text_channel.assert_not_awaited()
     svc._bot.driver_service.transition.assert_not_awaited()
+
+
+async def _press_sign_up(svc, guild) -> tuple[list[str], list[str]]:
+    """Press the Sign Up button, as a driver with no profile, on a bot whose wizard service is
+    *svc*. Returns what the driver was told and what the log channel was given."""
+    from leaguebot.signup.cogs.signup_cog import SignupButtonView
+
+    bot = svc._bot
+    bot.wizard_service = svc
+    bot.driver_service.current_account = AsyncMock(return_value=DRIVER)
+    bot.driver_service.get_profile = AsyncMock(return_value=None)
+    bot.output_router.post_log = AsyncMock()
+
+    interaction = _interaction(guild)
+    interaction.client = bot
+    state = {"done": False}
+
+    async def _answer(*_args, **_kwargs):
+        state["done"] = True
+
+    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
+    interaction.response.defer = AsyncMock(side_effect=_answer)
+    interaction.response.send_message = AsyncMock(side_effect=_answer)
+    interaction.followup.send = AsyncMock()
+
+    await SignupButtonView().signup_button.callback(interaction)
+
+    replies = [
+        str(call.args[0])
+        for call in interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    ]
+    lines = [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
+    return replies, lines
+
+
+@pytest.mark.parametrize(
+    "module_enabled, signups_open",
+    [
+        pytest.param(True, False, id="signups closed"),
+        pytest.param(False, False, id="module disabled"),
+    ],
+)
+async def test_a_leftover_sign_up_button_starts_nothing_once_signups_are_closed(
+    tmp_path, module_enabled, signups_open
+):
+    """F1: a Sign Up button the close could not delete stays in the channel. Pressed once
+    signups are closed, or once the module is off, it is refused and recorded: no channel is
+    made, no wizard saved, and the driver is not moved to Pending Signup Completion."""
+    svc = _service(module_enabled=module_enabled, signups_open=signups_open)
+    guild = _guild()
+
+    replies, lines = await _press_sign_up(svc, guild)
+
+    assert replies == ["⛔ Signups are closed."]
+    assert len(lines) == 1, lines
+    assert lines[0].startswith(f"⛔ the “Sign Up” button refused for Racer (<@{DRIVER}>)")
+    assert "Signups are closed." in lines[0]
+    guild.create_text_channel.assert_not_awaited()
+    svc._bot.signup_module_service.save_wizard.assert_not_awaited()
+    svc._bot.driver_service.transition.assert_not_awaited()
+
+
+async def test_a_sign_up_press_while_signups_are_open_still_starts_the_wizard(tmp_path):
+    """The check F1 adds does not stop a press while the module is on and signups are open."""
+    svc = _service()
+    guild = _guild()
+
+    replies, _lines = await _press_sign_up(svc, guild)
+
+    guild.create_text_channel.assert_awaited_once()
+    assert replies == [f"✅ Your signup channel has been created: {guild._created.mention}"]
 
 
 async def test_the_driver_becomes_pending_signup_completion(tmp_path):
@@ -563,7 +654,7 @@ async def test_ending_a_signup_holds_the_channel(tmp_path):
     member = MagicMock()
     guild.get_member = MagicMock(return_value=member)
 
-    await svc._trigger_channel_hold(DRIVER, guild, "Signups have closed.")
+    await svc.trigger_channel_hold(DRIVER, guild, "Signups have closed.")
 
     assert channel.set_permissions.await_args.kwargs["send_messages"] is False
     channel.send.assert_awaited_once_with("Signups have closed.")
@@ -577,7 +668,7 @@ async def test_a_held_channel_is_deleted_in_24_hours(tmp_path):
     guild.get_member = MagicMock(return_value=None)
     before = datetime.now(timezone.utc)
 
-    await svc._trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     fire_at = svc._scheduler._scheduler.add_job.call_args.kwargs["trigger"].run_date
     assert timedelta(hours=23, minutes=59) < fire_at - before < timedelta(hours=24, minutes=1)
@@ -590,7 +681,7 @@ async def test_a_notice_that_cannot_be_posted_still_schedules_deletion(tmp_path)
     guild = _guild(old_channel=channel)
     guild.get_member = MagicMock(return_value=None)
 
-    await svc._trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_called_once()
 
@@ -599,7 +690,7 @@ async def test_no_wizard_means_no_hold(tmp_path):
     svc = _service(existing=None)
     guild = _guild()
 
-    await svc._trigger_channel_hold(DRIVER, guild, "ended")
+    await svc.trigger_channel_hold(DRIVER, guild, "ended")
 
     svc._scheduler._scheduler.add_job.assert_not_called()
 

@@ -33,6 +33,7 @@ The recovery tests compute their times from the real clock rather than pinning a
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -82,7 +83,7 @@ def lifecycle():
     svc._cancel_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._cancel_channel_delete_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc._arm_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
-    svc._trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    svc.trigger_channel_hold = AsyncMock(return_value=None)  # type: ignore[method-assign]
     svc.recover_correction_timeouts = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     signup_svc = MagicMock()
@@ -113,6 +114,8 @@ def lifecycle():
 
     svc._output_router = MagicMock()
     svc._output_router.post_log = AsyncMock(return_value=None)
+    # One log channel, reached through the service's router or the bot's alike.
+    bot.output_router = svc._output_router
 
     return SimpleNamespace(
         svc=svc,
@@ -145,8 +148,8 @@ async def test_withdrawing_holds_the_channel_rather_than_deleting_it(lifecycle):
     """The driver is still here and is being told their signup has ended."""
     await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
-    lifecycle.svc._trigger_channel_hold.assert_awaited_once()
-    assert "cancelled" in lifecycle.svc._trigger_channel_hold.await_args.args[2]
+    lifecycle.svc.trigger_channel_hold.assert_awaited_once()
+    assert "cancelled" in lifecycle.svc.trigger_channel_hold.await_args.args[2]
     lifecycle.channel.delete.assert_not_awaited()
 
 
@@ -167,13 +170,53 @@ async def test_withdrawing_cancels_a_pending_correction_window(lifecycle):
     assert DRIVER_ID not in lifecycle.svc._correction_tasks
 
 
-async def test_a_failed_transition_does_not_stop_the_withdrawal(lifecycle):
-    """The driver may already be NOT_SIGNED_UP. They must still be told."""
+#: The reason `withdraw` gives where the signup has already ended (S5-A6).
+_ALREADY_ENDED = "This signup has already ended. Nothing was changed."
+
+
+def _alex_on_the_server(lifecycle) -> None:
+    lifecycle.guild.get_member = MagicMock(
+        return_value=SimpleNamespace(id=int(DRIVER_ID), display_name="Alex", mention="<@7>")
+    )
+
+
+async def test_withdrawing_writes_one_withdrawn_line(lifecycle):
+    """A withdrawal is the driver's own act through the Cancel Signup button, so it writes one
+    line in the wizard's family (S5-A1)."""
+    _alex_on_the_server(lifecycle)
+
+    refused = await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+
+    assert not refused
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [f"Alex (<@{DRIVER_ID}>) | Signup | Withdrawn"]
+
+
+async def test_a_withdrawal_after_the_signup_ended_is_refused_and_changes_nothing(lifecycle):
+    """The driver's transition is refused (`ValueError`) because the signup has already ended:
+    withdrawn, rejected, expired or closed. `withdraw` returns why, for the button to answer and
+    record, and neither posts the notice again nor pushes the channel's deletion back."""
+    _alex_on_the_server(lifecycle)
     lifecycle.driver_service.transition = AsyncMock(side_effect=ValueError("already"))
 
-    await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+    refused = await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
 
-    lifecycle.svc._trigger_channel_hold.assert_awaited_once()
+    assert refused == _ALREADY_ENDED
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
+
+
+async def test_a_withdrawal_whose_transition_fails_otherwise_is_not_swallowed(lifecycle):
+    """Only the expected refusal (`ValueError`) is caught by name; any other error reaches the
+    Cancel Signup button's failure handler, and nothing claims the signup was withdrawn."""
+    _alex_on_the_server(lifecycle)
+    lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    with pytest.raises(RuntimeError):
+        await lifecycle.svc.withdraw(DRIVER_ID, lifecycle.guild)
+
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +233,7 @@ async def test_a_timed_out_driver_returns_to_not_signed_up(lifecycle):
 async def test_a_timed_out_driver_is_told_why_in_their_channel(lifecycle):
     await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
-    assert "expired" in lifecycle.svc._trigger_channel_hold.await_args.args[2]
+    assert "expired" in lifecycle.svc.trigger_channel_hold.await_args.args[2]
 
 
 async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(lifecycle):
@@ -201,7 +244,7 @@ async def test_a_timeout_for_a_guild_the_bot_has_left_still_ends_the_signup(life
     await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
     assert "NOT_SIGNED_UP" in _transitioned_to(lifecycle)
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
 
 
 async def test_a_timeout_cancels_a_pending_correction_window(lifecycle):
@@ -211,6 +254,72 @@ async def test_a_timeout_cancels_a_pending_correction_window(lifecycle):
     await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
 
     task.cancel.assert_called_once()
+
+
+#: The lapse the wizard's expiry records, naming the driver who started it (S5-A4).
+_EXPIRY_LAPSE = (
+    f"⌛ the signup wizard lapsed unconfirmed (started by Alex (<@{DRIVER_ID}>))\n"
+    "  The signup was cancelled after 24 hours without an answer. "
+    "They may press Sign Up again while signups are open."
+)
+
+
+async def test_an_expired_wizard_records_one_lapse_naming_the_driver(lifecycle):
+    """The 24-hour expiry ends a flow the driver started, so it is recorded as a lapse naming
+    them, saying what became of it and what they may do next (owner, 2026-09-30, "Log both as
+    lapses")."""
+    _alex_on_the_server(lifecycle)
+
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [_EXPIRY_LAPSE]
+
+
+async def test_an_expiry_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
+    lifecycle, caplog,
+):
+    """Only the expected refusal (`ValueError`) is caught by name. Any other error goes to the
+    host log with its traceback, whether logged here or raised to the job runner that logs it:
+    the driver is not told their session expired, and no lapse is recorded for a signup that
+    did not end."""
+    _alex_on_the_server(lifecycle)
+    lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    raised = False
+    with caplog.at_level(logging.WARNING):
+        try:
+            await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+        except RuntimeError:
+            raised = True
+
+    logged = any(
+        record.exc_info and isinstance(record.exc_info[1], RuntimeError)
+        for record in caplog.records
+    )
+    assert raised or logged, "the error reached neither the job runner nor the host log"
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
+
+
+async def test_an_expiry_for_a_driver_already_moved_on_still_holds_the_channel(lifecycle):
+    """The 24-hour job can fire for a driver who has already moved on, the transition refusing
+    with `ValueError`. The channel is still held, with the expiry notice and its deletion 24 hours
+    on, but no lapse is recorded: the signup did not lapse (owner, 2026-10-01, Gate 3, "Still hold
+    the channel")."""
+    _alex_on_the_server(lifecycle)
+    lifecycle.driver_service.transition = AsyncMock(
+        side_effect=ValueError("illegal transition")
+    )
+
+    await lifecycle.svc.handle_inactivity_timeout(DRIVER_ID)
+
+    lifecycle.svc.trigger_channel_hold.assert_awaited_once()
+    held = lifecycle.svc.trigger_channel_hold.await_args.args
+    assert held[0] == DRIVER_ID
+    assert held[1] is lifecycle.guild
+    assert "expired" in held[2]
+    lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +410,7 @@ async def test_a_departing_driver_s_channel_is_deleted_rather_than_held(lifecycl
     await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
     lifecycle.channel.delete.assert_awaited_once()
-    lifecycle.svc._trigger_channel_hold.assert_not_awaited()
+    lifecycle.svc.trigger_channel_hold.assert_not_awaited()
 
 
 async def test_a_channel_that_cannot_be_deleted_does_not_stop_the_cleanup(lifecycle):
@@ -347,6 +456,27 @@ async def test_a_failing_record_lookup_does_not_stop_the_log(lifecycle):
 
     await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
 
+    lifecycle.svc._output_router.post_log.assert_awaited_once()
+
+
+async def test_a_departure_whose_transition_fails_otherwise_is_not_swallowed(lifecycle):
+    """Only the expected refusal (`ValueError`, a driver already moved on) is caught by name; any
+    other error reaches the listener rather than being passed over."""
+    lifecycle.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    with pytest.raises(RuntimeError):
+        await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
+
+
+async def test_a_departing_driver_already_moved_on_is_still_cleaned_up(lifecycle):
+    """A driver whose transition is refused (`ValueError`) has already moved on; the rest of the
+    cleanup still runs, as it does today."""
+    lifecycle.driver_service.transition = AsyncMock(side_effect=ValueError("already"))
+
+    await lifecycle.svc.handle_member_remove(DRIVER_ID, lifecycle.guild)
+
+    lifecycle.channel.delete.assert_awaited_once()
+    lifecycle.signup_svc.delete_wizard.assert_awaited_once()
     lifecycle.svc._output_router.post_log.assert_awaited_once()
 
 
@@ -442,3 +572,20 @@ async def test_recovery_releases_pending_correction_windows_first(lifecycle):
     await lifecycle.svc.recover_wizards()
 
     lifecycle.svc.recover_correction_timeouts.assert_awaited_once()
+
+
+async def test_a_wizard_expired_at_restart_records_its_lapse(lifecycle):
+    """A wizard whose deadline went by while the bot was down expires at once on restart, and
+    records the same lapse as the 24-hour job would have."""
+    _alex_on_the_server(lifecycle)
+    last = datetime.now(timezone.utc) - timedelta(hours=30)
+    lifecycle.signup_svc.get_all_active_wizards_all_servers = AsyncMock(
+        return_value=[_wizard(last_activity=last.isoformat())]
+    )
+    before = asyncio.all_tasks()
+
+    await lifecycle.svc.recover_wizards()
+    await asyncio.gather(*(asyncio.all_tasks() - before - {asyncio.current_task()}))
+
+    lines = [c.args[0] for c in lifecycle.svc._output_router.post_log.await_args_list]
+    assert lines == [_EXPIRY_LAPSE]

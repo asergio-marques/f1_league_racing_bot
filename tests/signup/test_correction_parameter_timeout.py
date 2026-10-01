@@ -21,6 +21,7 @@ discord.py 2.5.0 calls ``get_running_loop()`` in ``View.__init__``.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from unittest.mock import AsyncMock, MagicMock
 
@@ -139,6 +140,8 @@ def _build_service(db_path: str, channel, *, signup_enabled: bool = True):
     bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
     bot.get_guild = MagicMock(return_value=guild)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    # The service's lines and a lapse recorded through the bot land in one log (#482).
+    bot.output_router = svc._output_router
     svc._bot = bot
     return svc, guild
 
@@ -162,6 +165,24 @@ async def _draft(db_path: str) -> dict:
         )
         row = await cursor.fetchone()
     return json.loads(row["draft_answers_json"] or "{}")
+
+
+#: The lapse the correction window records, naming the manager who asked (owner, 2026-09-30,
+#: "Log both as lapses").
+_CORRECTION_LAPSE = [
+    "⌛ the correction request for Lewis Hamilton's signup lapsed unconfirmed "
+    f"(started by Toto (<@{ADMIN_ID}>))",
+    "  Lewis Hamilton is back in the approval queue; a fresh review panel is in their channel.",
+]
+
+
+def _lines(svc) -> list[str]:
+    """Every line written to the league's log channel, split on new lines."""
+    return [
+        line
+        for call in svc._output_router.post_log.await_args_list
+        for line in str(call.args[0]).split("\n")
+    ]
 
 
 def _posted(channel) -> str:
@@ -222,6 +243,9 @@ async def test_a_restart_reverts_even_within_the_five_minutes(tmp_path):
 
 
 async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_path):
+    """Toto pressed Request Changes on Lewis Hamilton's signup and the bot restarted before a
+    parameter was chosen. Toto is mentioned in Lewis's channel, and one lapse naming Toto is
+    recorded in the log channel."""
     db_path = await _seed(tmp_path)
     await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
     channel = _channel()
@@ -230,6 +254,7 @@ async def test_a_restart_mentions_the_admin_who_requested_the_correction(tmp_pat
     await svc.recover_correction_timeouts()
 
     assert f"<@{ADMIN_ID}>" in _posted(channel)
+    assert _lines(svc) == _CORRECTION_LAPSE
 
 
 async def test_a_restart_says_that_the_bot_restarted(tmp_path):
@@ -242,6 +267,8 @@ async def test_a_restart_says_that_the_bot_restarted(tmp_path):
     await svc.recover_correction_timeouts()
 
     assert "restart" in _posted(channel).lower()
+    # The log records the restart's lapse as it records the five minutes' (owner, 2026-09-30).
+    assert _lines(svc) == _CORRECTION_LAPSE
 
 
 async def test_a_driver_stranded_before_the_fix_is_released_without_a_mention(tmp_path):
@@ -303,6 +330,9 @@ async def test_the_reposted_review_panel_notifies_no_group(tmp_path):
 
 
 async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
+    """Toto pressed Request Changes on Lewis Hamilton's signup and chose no parameter within
+    five minutes. Lewis is back awaiting review, Toto is mentioned in Lewis's channel, and one
+    lapse naming Toto is recorded in the log channel."""
     db_path = await _seed(tmp_path)
     await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
     channel = _channel()
@@ -312,6 +342,54 @@ async def test_the_five_minute_timeout_mentions_the_admin(tmp_path):
 
     assert f"<@{ADMIN_ID}>" in _posted(channel)
     assert await _state(db_path) == "PENDING_ADMIN_APPROVAL"
+    assert _lines(svc) == _CORRECTION_LAPSE
+
+
+async def test_a_lapse_whose_driver_has_already_moved_on_records_nothing(tmp_path):
+    """The five minutes run out just as Lewis Hamilton's signup moves on, so moving him back
+    to awaiting review is refused (`ValueError`, caught by name). Nothing is posted in his
+    channel and no lapse is recorded."""
+    db_path = await _seed(tmp_path)
+    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
+    channel = _channel()
+    svc, _ = _build_service(db_path, channel)
+    svc._bot.driver_service = MagicMock()
+    svc._bot.driver_service.transition = AsyncMock(side_effect=ValueError("not allowed"))
+
+    await svc._correction_timeout_callback(DRIVER_ID)
+
+    assert channel.send.await_count == 0
+    svc._output_router.post_log.assert_not_awaited()
+
+
+async def test_a_lapse_whose_transition_fails_otherwise_records_no_lapse_and_tells_nobody(
+    tmp_path, caplog,
+):
+    """Moving Lewis Hamilton back to awaiting review fails on something other than the expected
+    refusal (#457). The error goes to the host log with its traceback, whether logged here or
+    raised to whatever ran the lapse; nothing is posted in his channel and no lapse is
+    recorded for a request that did not end."""
+    db_path = await _seed(tmp_path)
+    await _save_wizard(db_path, {"_correction_requested_by": str(ADMIN_ID)})
+    channel = _channel()
+    svc, _ = _build_service(db_path, channel)
+    svc._bot.driver_service = MagicMock()
+    svc._bot.driver_service.transition = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    raised = False
+    with caplog.at_level(logging.WARNING):
+        try:
+            await svc._correction_timeout_callback(DRIVER_ID)
+        except RuntimeError:
+            raised = True
+
+    logged = any(
+        record.exc_info and isinstance(record.exc_info[1], RuntimeError)
+        for record in caplog.records
+    )
+    assert raised or logged, "the error reached neither the caller nor the host log"
+    assert channel.send.await_count == 0
+    svc._output_router.post_log.assert_not_awaited()
 
 
 async def test_a_lapsed_window_clears_the_correction_state(tmp_path):
@@ -350,6 +428,8 @@ async def test_the_timeout_does_nothing_while_the_signup_module_is_disabled(tmp_
 
     assert await _state(db_path) == "AWAITING_CORRECTION_PARAMETER"
     assert channel.send.await_count == 0
+    # A disabled module produces nothing, a lapse line included (core specification, Modules).
+    svc._output_router.post_log.assert_not_awaited()
 
 
 # ── Closing the window ────────────────────────────────────────────────────
@@ -374,6 +454,7 @@ def _close_cog(db_path: str):
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
     bot.driver_service = DriverService(db_path)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.get_guild = MagicMock(return_value=None)
     bot.output_router.post_log = AsyncMock()

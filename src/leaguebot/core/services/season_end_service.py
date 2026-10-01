@@ -150,9 +150,9 @@ async def end_of_season_pass(
     try:
         signup_cfg = await bot.signup_module_service.get_config()
         if signup_cfg is not None and signup_cfg.signups_open:
-            from leaguebot.core.cogs.module_cog import execute_forced_close
+            from leaguebot.core.cogs.module_cog import close_signups_unattended
 
-            await execute_forced_close(bot, audit_action="SIGNUP_SEASON_END_CLOSE")
+            await close_signups_unattended(bot, cause="season end")
     except Exception:  # noqa: BLE001
         log.exception("end_of_season_pass: could not close the signup window")
 
