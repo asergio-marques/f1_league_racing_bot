@@ -379,13 +379,6 @@ async def test_a_clean_sync_with_nothing_owed_says_so(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _refusals(cog) -> list[str]:
-    return [
-        str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list
-        if str(c.args[0]).startswith("\u26d4")
-    ]
-
-
 async def _refused_while_disabled(tmp_path):
     cog = _cog(await _make_db(tmp_path, autosack=20))
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
@@ -454,7 +447,7 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
         + interaction.followup.send.await_args_list
     )
     assert len(replies) == 1
-    lines = _refusals(cog)
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
     assert len(lines) == 1
     assert lines[0].startswith("\u26d4 `/attendance sync` refused for Manager (<@77>) \u2014 ")
     assert reason in lines[0]
