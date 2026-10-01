@@ -21,7 +21,7 @@ Covers:
   1. A folder holding every template, valid, is stored.
   2. A folder missing one is refused, names it, and stores nothing.
   3. An invalid template is refused and named the same way.
-  4. A folder failing wholesale is capped rather than flooding the reply.
+  4. A folder failing wholesale names every template at fault, in parts.
   5. A path escaping the project root is still refused on containment, before any parse.
   6. Refusals reach the calculation log, as accepted changes do.
 """
@@ -46,6 +46,7 @@ from tests.support.image_cog_doubles import (
 COMMAND = "images config template-directory"
 
 _NOT_YET_RECORDED = "#482: a template-directory refusal is not yet recorded as a refusal"
+_SIX_ONLY = "#482: a refused template folder still names only six templates at fault"
 
 
 def _interaction(bot=None):
@@ -219,17 +220,27 @@ async def test_a_refusal_says_the_previous_folder_still_stands():
 
 
 @pytest.mark.asyncio
-async def test_a_wholesale_failure_is_capped_rather_than_flooding_the_reply():
+@pytest.mark.xfail(strict=True, reason=_SIX_ONLY)
+async def test_a_wholesale_failure_names_every_template_at_fault():
+    """Image spec: a refused folder names each template at fault with its own reason. No
+    cut at six and no "…and N more" line: the whole reply goes, in as many parts as it
+    needs."""
     cog = _reject_cog()
     interaction = _interaction(cog.bot)
-    problems = [_problem(f"t{i}_template", f"fault {i}") for i in range(15)]
+    problems = [
+        _problem(f"t{i}_template", f"fault {i}: " + "y" * 200) for i in range(15)
+    ]
 
     await ImageCog._reject_directory(
         cog, interaction, "Template directory", "nothing is there.", problems=problems
     )
 
-    assert "and 9 more" in said(interaction)
-    # Each part fits one Discord message.
+    reply = said(interaction)
+    for i in range(15):
+        assert f"fault {i}: " in reply
+    assert "more." not in reply
+    # Sent in parts, each fitting one Discord message.
+    assert len(interaction.said) > 1
     assert all(len(part) <= 2000 for part in interaction.said)
 
 
