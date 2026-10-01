@@ -341,9 +341,9 @@ class TestTheReply:
 
     @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
     async def test_the_reply_stays_within_discords_message_limit(self, cog):
-        """A division of many drivers must not push a part of the reply past what Discord
-        accepts, nor cost the end of the reply: every fault arrives, in as many parts as it
-        needs."""
+        """Forty asset folders that did not resolve must not push a part of the reply past
+        what Discord accepts, nor cost the end of the reply: every fault arrives, in as many
+        parts as it needs."""
         from leaguebot.image.services.image_preview_service import DirectoryFault
 
         interaction = _Interaction()
