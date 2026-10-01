@@ -2113,6 +2113,8 @@ All commands below require the attendance module to be enabled (`/module enable 
 
 Both are required for every division while the attendance module is enabled: approval is refused until each division has both. Each acts on the season being built or raced, pending completion included, so a channel deleted before the season completes can be repaired. Each is refused while the module is off (`❌ The Attendance module is not enabled.`), for a channel the bot cannot post in, for a channel already doing another job, and for the channel the division already has.
 
+> **Each setting below is recorded with the value it replaced.** A change made with an `/attendance config` command is written to the log channel and to the audit record, each giving the new value and the old. Setting the value a setting already holds changes nothing: the bot says so, writes nothing, and the log channel records that nothing changed.
+
 #### `/attendance config rsvp-notice` — Set the RSVP notice lead time
 *Access: League manager · No active season*
 
@@ -2235,7 +2237,7 @@ Posts the check-in call for the round you name, exactly as the scheduled call wo
 #### `/attendance test rsvp` — Bulk-set RSVP statuses
 *Access: League admin · Requires test mode active · Attendance module*
 
-Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses. It is a tool of [test mode](#test-mode-commands), like the commands there: refused first while test mode is off, then while the attendance module is off.
+Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses. It is a tool of [test mode](#test-mode-commands), like the commands there: refused first while test mode is off, then while the attendance module is off. Both are checked again when the form is submitted, with the check-in call it was opened on: if test mode or the module was switched off while the form was open, or the call was taken down or posted afresh, nothing is set and you are told why.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
