@@ -130,8 +130,6 @@ LABELS = {
     "reject_button": "Reject",
 }
 
-_NOT_RECORDED = "#482: the review panel's refusal is answered but writes no line in the log channel"
-
 
 def _assert_refusal_recorded(interaction, button: str, reason: str) -> None:
     """One line in the log channel, naming the button, the signup review it sits on, the member
@@ -150,7 +148,6 @@ def _assert_refusal_recorded(interaction, button: str, reason: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_driver_cannot_action_their_own_signup(monkeypatch, button):
     """The panel sits in the driver's own channel, which they can read. This check is the
@@ -169,7 +166,6 @@ async def test_a_driver_cannot_action_their_own_signup(monkeypatch, button):
     assert _PENDING_REASONS == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_signup_already_actioned_is_refused(monkeypatch, button):
     """Three managers can be looking at one panel and the buttons never disappear. Without
@@ -187,7 +183,6 @@ async def test_a_signup_already_actioned_is_refused(monkeypatch, button):
     bot.wizard_service.approve_signup.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 @pytest.mark.parametrize("button", BUTTONS, ids=["approve", "request-changes", "reject"])
 async def test_a_driver_whose_profile_has_gone_is_refused(monkeypatch, button):
     """They withdrew, or left the server, between the panel being posted and pressed."""
@@ -202,7 +197,6 @@ async def test_a_driver_whose_profile_has_gone_is_refused(monkeypatch, button):
     _assert_refusal_recorded(interaction, button, "This signup has already been actioned.")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_panel_whose_channel_has_no_wizard_cannot_identify_the_driver(monkeypatch):
     """A panel rebuilt after a restart carries no stored driver and finds one by channel.
     Finding none must refuse rather than act on `None`."""

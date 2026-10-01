@@ -18,12 +18,41 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
 # Maps (channel_id, admin_user_id) → pending action context.
 # Used to capture the admin's reason message before executing the action.
 _PENDING_REASONS: dict[tuple[int, int], dict] = {}
+
+
+def _review_owner(interaction: discord.Interaction, owner_id: str | None) -> str:
+    """Whose signup review a button sits on, as the log channel names it: "Alex's", by the display
+    name the league's server gives them, or their mention where the name is not to be had. Nobody
+    (a panel whose driver cannot be found) is "a"."""
+    if owner_id is None:
+        return "a"
+    guild = interaction.guild
+    member = guild.get_member(int(owner_id)) if guild is not None else None
+    name = getattr(member, "display_name", None)
+    return f"{name if isinstance(name, str) else f'<@{owner_id}>'}'s"
+
+
+async def _refuse_review_button(
+    interaction: discord.Interaction, owner_id: str | None, label: str, reply: str
+) -> None:
+    """Turn a press on a signup review's button away with *reply*, and record it.
+
+    The line names the button and whose review it sits on, "the “Approve” button of Alex's signup
+    review", and the member who pressed it (`refuse`). *owner_id* is the signup's driver, None
+    where it is not known.
+    """
+    await refuse(
+        interaction,
+        reply,
+        what=f"the “{label}” button of {_review_owner(interaction, owner_id)} signup review",
+    )
 
 
 async def _may_review_signup(interaction: discord.Interaction) -> bool:
@@ -78,17 +107,21 @@ class AdminReviewView(LeagueView):
             _user_id = wizard.discord_user_id if wizard else None
         return _bot, _user_id
 
-    async def _guard(self, interaction: discord.Interaction):
-        """Check permissions and race-condition guard.  Returns (True, bot, user_id) to proceed."""
+    async def _guard(self, interaction: discord.Interaction, label: str):
+        """Check permissions and race-condition guard.  Returns (True, bot, user_id) to proceed.
+
+        Each refusal is answered to the presser and recorded in the log channel (`refuse`), as
+        the button *label* of the signup review it sits on.
+        """
         if not await _may_review_signup(interaction):
-            await interaction.response.send_message(
-                "⛔ Insufficient permissions.", ephemeral=True
+            await _refuse_review_button(
+                interaction, self._discord_user_id, label, "⛔ Insufficient permissions."
             )
             return False, None, None
         _bot, _user_id = await self._resolve(interaction)
         if _user_id is None:
-            await interaction.response.send_message(
-                "⛔ Could not identify driver for this signup.", ephemeral=True
+            await _refuse_review_button(
+                interaction, None, label, "⛔ Could not identify driver for this signup."
             )
             return False, None, None
         # Race-condition guard: driver must still be in PENDING_ADMIN_APPROVAL
@@ -96,8 +129,8 @@ class AdminReviewView(LeagueView):
             _user_id
         )
         if profile is None or profile.current_state != DriverState.PENDING_ADMIN_APPROVAL:
-            await interaction.response.send_message(
-                "⛔ This signup has already been actioned.", ephemeral=True
+            await _refuse_review_button(
+                interaction, _user_id, label, "⛔ This signup has already been actioned."
             )
             return False, None, None
         return True, _bot, _user_id
@@ -106,7 +139,7 @@ class AdminReviewView(LeagueView):
     async def approve_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        ok, _bot, _user_id = await self._guard(interaction)
+        ok, _bot, _user_id = await self._guard(interaction, "Approve")
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
@@ -119,7 +152,7 @@ class AdminReviewView(LeagueView):
     async def request_changes_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        ok, _bot, _user_id = await self._guard(interaction)
+        ok, _bot, _user_id = await self._guard(interaction, "Request Changes")
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
@@ -140,7 +173,7 @@ class AdminReviewView(LeagueView):
     async def reject_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        ok, _bot, _user_id = await self._guard(interaction)
+        ok, _bot, _user_id = await self._guard(interaction, "Reject")
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
