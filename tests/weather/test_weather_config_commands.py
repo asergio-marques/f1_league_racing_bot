@@ -62,8 +62,6 @@ COMMANDS = [
 #: The member every interaction here belongs to, as the log channel names them.
 MEMBER = "Race Control (<@4242>)"
 
-_NOT_YET_RECORDED = "#482: a weather refusal is not yet recorded in the log channel"
-
 COMMAND_IDS = ["phase_1", "phase_2", "phase_3"]
 
 #: The three setters, for the tests that must prove *none* of them was reached.
@@ -263,7 +261,6 @@ async def test_command_is_refused_while_a_season_is_active(command, setter, valu
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 @pytest.mark.parametrize("command, setter, _value, _log", COMMANDS, ids=COMMAND_IDS)
 @pytest.mark.parametrize("bad_value", [0, -1, -100], ids=["zero", "negative", "very_negative"])
 async def test_command_rejects_a_value_below_one(command, setter, _value, _log, bad_value):
@@ -300,7 +297,6 @@ async def test_one_is_accepted(command, setter, value, _log):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
 async def test_service_rejection_reaches_the_user_unchanged(command, setter, value, _log):
     """The service returns an error string on a violation; the command must relay it.
@@ -367,9 +363,6 @@ async def test_success_reports_all_three_deadlines(command, setter, value, _log)
         assert token in text, f"{token!r} missing from {text!r}"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#482: a weather success line names a token, not the command"
-)
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
 async def test_success_is_written_to_the_log_channel(command, setter, value, _log):
     """"... and shall be written to the log channel." In the standard form: the member, the

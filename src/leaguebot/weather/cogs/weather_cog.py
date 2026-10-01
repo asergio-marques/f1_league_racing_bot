@@ -20,8 +20,44 @@ from leaguebot.core.utils.channel_guard import league_manager_only, changes_noth
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 
 log = logging.getLogger(__name__)
+
+
+def _command(interaction: discord.Interaction) -> str:
+    """The slash command *interaction* ran, as a success line names it: "/weather config view"."""
+    return describe(interaction).strip("`")
+
+
+def _deadlines(config: WeatherPipelineConfig) -> tuple[str, str, str]:
+    """The three deadlines in force, one detail apiece, as a success line lists them."""
+    return (
+        f"Phase 1: {config.phase_1_days} day(s)",
+        f"Phase 2: {config.phase_2_days} day(s)",
+        f"Phase 3: {config.phase_3_hours} hour(s)",
+    )
+
+
+async def _record(
+    bot: LeagueBot,
+    interaction: discord.Interaction,
+    what: str,
+    outcome: str,
+    *details: str,
+) -> None:
+    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
+
+    For a success and for nothing changed. The post is bare: a line reporting that nothing went
+    wrong is no place for a catch-all, so a post that raises reaches the command's error
+    handling. A refusal, a cancel, a lapse and a fault have lines of their own
+    (`core/utils/log_lines.py`, `report_failure`).
+    """
+    await bot.output_router.post_log(
+        f"{interaction_member(interaction)} | {what} | {outcome}"
+        + "".join(f"\n  {detail}" for detail in details)
+    )
 
 
 class WeatherCog(commands.Cog):
@@ -86,8 +122,8 @@ class WeatherCog(commands.Cog):
         if await self._active_season_gate(interaction):
             return
         if days < 1:
-            await interaction.response.send_message(
-                "❌ Phase 1 deadline must be at least 1 day.", ephemeral=True
+            await refuse(
+                interaction, "❌ Phase 1 deadline must be at least 1 day.", what=describe(interaction)
             )
             return
 
@@ -97,13 +133,10 @@ class WeatherCog(commands.Cog):
         result = await set_phase_1_days(self.bot.db_path, days)
 
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(interaction, f"❌ {result}", what=describe(interaction))
             return
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE1_DEADLINE | Success\n"
-            f"  new_value: {days}d  (Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
-        )
+        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
             f"✅ Phase 1 deadline set to **{days} day(s)** before round. "
             f"(Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
@@ -126,8 +159,8 @@ class WeatherCog(commands.Cog):
         if await self._active_season_gate(interaction):
             return
         if days < 1:
-            await interaction.response.send_message(
-                "❌ Phase 2 deadline must be at least 1 day.", ephemeral=True
+            await refuse(
+                interaction, "❌ Phase 2 deadline must be at least 1 day.", what=describe(interaction)
             )
             return
 
@@ -137,13 +170,10 @@ class WeatherCog(commands.Cog):
         result = await set_phase_2_days(self.bot.db_path, days)
 
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(interaction, f"❌ {result}", what=describe(interaction))
             return
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE2_DEADLINE | Success\n"
-            f"  new_value: {days}d  (Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
-        )
+        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
             f"✅ Phase 2 deadline set to **{days} day(s)** before round. "
             f"(Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
@@ -166,8 +196,8 @@ class WeatherCog(commands.Cog):
         if await self._active_season_gate(interaction):
             return
         if hours < 1:
-            await interaction.response.send_message(
-                "❌ Phase 3 deadline must be at least 1 hour.", ephemeral=True
+            await refuse(
+                interaction, "❌ Phase 3 deadline must be at least 1 hour.", what=describe(interaction)
             )
             return
 
@@ -177,13 +207,10 @@ class WeatherCog(commands.Cog):
         result = await set_phase_3_hours(self.bot.db_path, hours)
 
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(interaction, f"❌ {result}", what=describe(interaction))
             return
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE3_DEADLINE | Success\n"
-            f"  new_value: {hours}h  (Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
-        )
+        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
             f"✅ Phase 3 deadline set to **{hours} hour(s)** before round. "
             f"(Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
