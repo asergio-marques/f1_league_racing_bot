@@ -333,18 +333,20 @@ class PortraitTimeConfirm(LeagueView):
     ) -> None:
         if await self._already_answered(interaction):
             return
-        self.stop()
-        await record_abandoned(
-            self._cog.bot,
-            interaction.user,
-            what=f"`{DAILY_TOGGLE}`",
-            lapsed=False,
-            detail=_UNCHANGED_DETAIL,
-        )
-        await self._take_down(interaction.response.edit_message)
-        await ImageCog._reply(
-            interaction, "❌ Cancelled. Daily driver-portrait updates are unchanged."
-        )
+        try:
+            await record_abandoned(
+                self._cog.bot,
+                interaction.user,
+                what=f"`{DAILY_TOGGLE}`",
+                lapsed=False,
+                detail=_UNCHANGED_DETAIL,
+            )
+            await self._take_down(interaction.response.edit_message)
+            await ImageCog._reply(
+                interaction, "❌ Cancelled. Daily driver-portrait updates are unchanged."
+            )
+        finally:
+            self.stop()
 
     async def on_timeout(self) -> None:
         """Record the lapse, naming who opened the confirmation, and take its buttons down."""
