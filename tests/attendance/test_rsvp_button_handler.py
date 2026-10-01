@@ -253,12 +253,17 @@ def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
     bot.attendance_service = AttendanceService(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.get_channel = MagicMock(return_value=None)
+    bot.output_router.post_log = AsyncMock(return_value=None)
 
     interaction = MagicMock()
     interaction.client = bot
     interaction.guild_id = SERVER_ID
     interaction.user.id = profile_id
+    interaction.user.display_name = "Driver"
     interaction.response.send_message = AsyncMock(return_value=None)
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(interaction.response.send_message.await_count)
+    )
     return interaction
 
 
@@ -679,3 +684,174 @@ async def test_a_press_from_a_drivers_past_account_answers_for_the_driver(tmp_pa
 
     assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
     assert "has been updated" in _reply(interaction)
+
+
+# ---------------------------------------------------------------------------
+# Every press is recorded in the log channel (#482; decided 2026-09-29: every driver press is
+# logged, each check-in answer included)
+# ---------------------------------------------------------------------------
+
+CALL = "of the check-in call for round 1 of Division 1"
+
+
+def _logged(interaction) -> list[str]:
+    return [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
+
+
+async def _module_off(db_path, interaction):
+    interaction.client.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+
+
+async def _cancel_round(db_path, interaction):
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (ROUND_ID,))
+        await db.commit()
+
+
+async def _reserve_accepted(db_path, interaction):
+    await _set_status(db_path, RESERVE_PROFILE, "ACCEPTED")
+
+
+#: Each refusal: its id, when the round starts, who presses, the button's id, what to arrange
+#: first, how the line names the press, and the reason it carries.
+REFUSALS = [
+    ("unparseable", timedelta(days=3), FULL_TIME_PROFILE, "nonsense", None,
+     "a check-in call button", "Internal error: invalid button ID."),
+    ("unknown-action", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_maybe_r{ROUND_ID}", None,
+     "a check-in call button", "Internal error: unknown action."),
+    ("module-off", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_accept_r{ROUND_ID}", _module_off,
+     "the \u201cAccept\u201d button of a check-in call", "switched off for this server"),
+    ("no-profile", timedelta(days=3), 999999, f"rsvp_accept_r{ROUND_ID}", None,
+     "the \u201cAccept\u201d button of a check-in call", "not registered as a driver"),
+    ("round-gone", timedelta(days=3), FULL_TIME_PROFILE, "rsvp_accept_r9999", None,
+     "the \u201cAccept\u201d button of a check-in call", "This round no longer exists."),
+    ("cancelled", timedelta(days=3), FULL_TIME_PROFILE, f"rsvp_accept_r{ROUND_ID}", _cancel_round,
+     f"the \u201cAccept\u201d button {CALL}", "This check-in is no longer open"),
+    ("not-a-member", timedelta(days=3), STRANGER_PROFILE, f"rsvp_accept_r{ROUND_ID}", None,
+     f"the \u201cAccept\u201d button {CALL}", "You are not a member of this division."),
+    ("deadline", timedelta(hours=DEADLINE_HOURS - 1), FULL_TIME_PROFILE,
+     f"rsvp_tentative_r{ROUND_ID}", None,
+     f"the \u201cTentative\u201d button {CALL}", "The RSVP deadline has passed."),
+    ("reserve-accepted", timedelta(hours=DEADLINE_HOURS - 1), RESERVE_PROFILE,
+     f"rsvp_decline_r{ROUND_ID}", _reserve_accepted,
+     f"the \u201cDecline\u201d button {CALL}", "You have already accepted"),
+    ("round-started", timedelta(hours=-1), RESERVE_PROFILE, f"rsvp_accept_r{ROUND_ID}", None,
+     f"the \u201cAccept\u201d button {CALL}", "The round has started."),
+]
+
+
+@pytest.mark.parametrize(
+    "starts_in,profile,custom_id,arrange,what,reason",
+    [case[1:] for case in REFUSALS],
+    ids=[case[0] for case in REFUSALS],
+)
+async def test_every_refused_press_is_recorded(
+    tmp_path, starts_in, profile, custom_id, arrange, what, reason
+):
+    """A14: each refusal keeps its reply and writes one line naming the button and, once the
+    round is read, the call it sits on."""
+    db_path = await _make_db(tmp_path, starts_in=starts_in)
+    interaction = _make_interaction(db_path, profile)
+    if arrange is not None:
+        await arrange(db_path, interaction)
+
+    await handle_rsvp_button(interaction, custom_id)
+
+    interaction.response.send_message.assert_awaited_once()
+    assert reason in _reply(interaction)
+    logged = _logged(interaction)
+    assert len(logged) == 1
+    assert logged[0].startswith(f"\u26d4 {what} refused for Driver (<@{profile}>) \u2014 ")
+    assert reason in logged[0]
+
+
+async def test_an_answer_given_is_recorded_with_the_one_it_replaced(tmp_path):
+    """A15: one success line, giving the answer and the one before it."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    await _set_status(db_path, FULL_TIME_PROFILE, "TENTATIVE")
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction.client.get_channel = MagicMock(return_value=_redrawable_channel())
+
+    with patch(
+        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        new=AsyncMock(return_value=MagicMock()),
+    ):
+        await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert _logged(interaction) == [
+        f"Driver (<@{FULL_TIME_PROFILE}>) | the \u201cAccept\u201d button {CALL} | Success\n"
+        "  answer: accepted (was: tentative)"
+    ]
+
+
+async def test_a_first_answer_was_no_answer(tmp_path):
+    """A15: a driver answering for the first time replaced no answer."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_decline_r{ROUND_ID}")
+
+    logged = _logged(interaction)
+    assert len(logged) == 1
+    assert "| Success\n  answer: declined (was: no answer)" in logged[0]
+
+
+async def test_the_answer_already_held_records_that_nothing_changed(tmp_path):
+    """A16: a press for the answer already held changes nothing, and records so."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert _logged(interaction) == [
+        f"Driver (<@{FULL_TIME_PROFILE}>) | the \u201cAccept\u201d button {CALL} | "
+        "Nothing changed\n  answer: accepted"
+    ]
+
+
+async def test_an_answer_not_recorded_is_recorded_as_failed(tmp_path):
+    """A17: the driver is told it was not recorded, and the log says the same."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction.client.attendance_service.upsert_rsvp_status = AsyncMock(return_value=False)
+
+    await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert _logged(interaction) == [
+        f"Driver (<@{FULL_TIME_PROFILE}>) | the \u201cAccept\u201d button {CALL} | Failed\n"
+        "  answer: accepted\n  not recorded"
+    ]
+
+
+def _redrawable_channel(*, fails: bool = False) -> MagicMock:
+    import discord
+
+    message = MagicMock()
+    message.edit = AsyncMock(
+        side_effect=discord.HTTPException(MagicMock(status=500), "down") if fails else None
+    )
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    return channel
+
+
+@pytest.mark.parametrize(
+    "channel", [None, _redrawable_channel(fails=True)], ids=["no-channel", "edit-fails"]
+)
+async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
+    """A18: the answer stands, and the line says the call still shows the old one."""
+    db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
+    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction.client.get_channel = MagicMock(return_value=channel)
+
+    with patch(
+        "leaguebot.attendance.services.rsvp_service._rebuild_embed_for_round",
+        new=AsyncMock(return_value=MagicMock()),
+    ):
+        await handle_rsvp_button(interaction, f"rsvp_accept_r{ROUND_ID}")
+
+    assert await _status(db_path, FULL_TIME_PROFILE) == "ACCEPTED"
+    logged = _logged(interaction)
+    assert len(logged) == 1
+    assert logged[0].endswith("\n  call not redrawn")

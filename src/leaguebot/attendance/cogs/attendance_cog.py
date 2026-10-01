@@ -1344,6 +1344,21 @@ _ACTION_TO_STATUS = {
     "decline":  "DECLINED",
 }
 
+#: An answer as a log line gives it.
+_STATUS_WORDS = {
+    "ACCEPTED":  "accepted",
+    "TENTATIVE": "tentative",
+    "DECLINED":  "declined",
+    "NO_RSVP":   "no answer",
+}
+
+#: Each button's label as a log line names it, without its emoji.
+_ACTION_LABELS = {
+    "accept":    "Accept",
+    "tentative": "Tentative",
+    "decline":   "Decline",
+}
+
 _STATUS_LABELS = {
     "ACCEPTED":  "✅ Accepted",
     "TENTATIVE": "❓ Tentative",
@@ -1374,9 +1389,17 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     It performs all validation, locking, DB updates, and embed refresh.
 
     It carries its own module gate. The cog's slash commands get theirs from
-    ``_guard_module_enabled``, but this is a module-level handler reached straight from a
+    ``_module_gate``, but this is a module-level handler reached straight from a
     button on a message that outlives the module being switched off — a call posted while
     attendance was on, whose buttons a driver presses after it went off (issue #114).
+
+    **Every press is recorded in the log channel** (#482, decided 2026-09-29: every driver
+    press is logged, each check-in answer included): a refusal as `refuse` writes it, and an
+    answer given, an answer already held and an answer that could not be recorded in the success
+    form. A line names the button and, once the round is read, the call it sits on: "the
+    “Accept” button of the check-in call for round 3 of Division 1". The round's number and its
+    division's name come from the query that reads the round, so naming the press costs no
+    query of its own.
     """
     # Parse action and round_id from custom_id: rsvp_{action}_r{round_id}
     try:
@@ -1387,27 +1410,30 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         action = action_part  # "accept" | "tentative" | "decline"
     except (ValueError, IndexError):
         log.error("handle_rsvp_button: could not parse custom_id=%r", custom_id)
-        await interaction.response.send_message(
-            "❌ Internal error: invalid button ID.", ephemeral=True
+        await refuse(
+            interaction, "❌ Internal error: invalid button ID.", what="a check-in call button"
         )
         return
 
     new_status = _ACTION_TO_STATUS.get(action)
     if new_status is None:
-        await interaction.response.send_message(
-            "❌ Internal error: unknown action.", ephemeral=True
+        await refuse(
+            interaction, "❌ Internal error: unknown action.", what="a check-in call button"
         )
         return
+    button = f"the \u201c{_ACTION_LABELS[action]}\u201d button"
+    what = f"{button} of a check-in call"
 
     bot = bot_of(interaction)
     discord_user_id = interaction.user.id
 
     # The module gate — see the docstring for why it sits here and not on the cog.
     if not await bot.module_service.is_attendance_enabled():
-        await interaction.response.send_message(
+        await refuse(
+            interaction,
             "❌ The Attendance module is switched off for this server, so check-in is "
             "no longer running. Your answer has not been recorded.",
-            ephemeral=True,
+            what=what,
         )
         return
 
@@ -1419,8 +1445,10 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         resolved_profile_id = await resolve_driver_profile_id(discord_user_id, db)
 
         if resolved_profile_id is None:
-            await interaction.response.send_message(
-                "❌ You are not registered as a driver in this server.", ephemeral=True
+            await refuse(
+                interaction,
+                "❌ You are not registered as a driver in this server.",
+                what=what,
             )
             return
         driver_profile_id: int = resolved_profile_id
@@ -1429,6 +1457,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         cur = await db.execute(
             """
             SELECT r.division_id, r.scheduled_at, r.format, r.status,
+                   r.round_number, d.name AS division_name,
                    ac.rsvp_deadline_hours
               FROM rounds r
               JOIN divisions d ON d.id = r.division_id
@@ -1441,10 +1470,12 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         round_row = await cur.fetchone()
 
     if round_row is None:
-        await interaction.response.send_message(
-            "❌ This round no longer exists.", ephemeral=True
-        )
+        await refuse(interaction, "❌ This round no longer exists.", what=what)
         return
+    what = (
+        f"{button} of the check-in call for round {round_row['round_number']} "
+        f"of {round_row['division_name']}"
+    )
 
     # A cancelled round's call is taken down with the cancellation (#175), so a press arriving
     # here is one that raced it, or one on a call the bot was not allowed to delete. Either way
@@ -1458,10 +1489,11 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     if round_row["status"] == RoundStatus.CANCELLED.value or not await _call_stands(
         bot, round_id, round_row["division_id"]
     ):
-        await interaction.response.send_message(
+        await refuse(
+            interaction,
             "❌ This check-in is no longer open — the round has been cancelled, or its call "
             "has been taken down. Your answer has not been recorded.",
-            ephemeral=True,
+            what=what,
         )
         return
 
@@ -1496,9 +1528,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         assignment_row = await cur.fetchone()
 
     if assignment_row is None:
-        await interaction.response.send_message(
-            "❌ You are not a member of this division.", ephemeral=True
-        )
+        await refuse(interaction, "❌ You are not a member of this division.", what=what)
         return
 
     is_reserve: bool = bool(assignment_row["is_reserve"])
@@ -1537,27 +1567,30 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     if not is_reserve:
         # Full-time: locked after deadline (FR-014)
         if now >= lock_deadline_at:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ The RSVP deadline has passed. Your response cannot be changed.",
-                ephemeral=True,
+                what=what,
             )
             return
     else:
         if current_status == "ACCEPTED":
             # Reserve with ACCEPTED: locked after deadline too (FR-015)
             if now >= lock_deadline_at:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     "❌ You have already accepted and the RSVP deadline has passed. "
                     "Your response cannot be changed.",
-                    ephemeral=True,
+                    what=what,
                 )
                 return
         else:
             # Reserve not-ACCEPTED: locked only at round start (FR-016)
             if now >= scheduled_at:
-                await interaction.response.send_message(
+                await refuse(
+                    interaction,
                     "❌ The round has started. Your response cannot be changed.",
-                    ephemeral=True,
+                    what=what,
                 )
                 return
 
@@ -1566,6 +1599,9 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         label = _STATUS_LABELS.get(new_status, new_status)
         await interaction.response.send_message(
             f"ℹ️ You are already marked as **{label}**.", ephemeral=True
+        )
+        await _record(
+            bot, interaction, what, "Nothing changed", f"answer: {_STATUS_WORDS[new_status]}"
         )
         return
 
@@ -1590,10 +1626,15 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
             "not assume you are signed up for this round.",
             ephemeral=True,
         )
+        await _record(
+            bot, interaction, what, "Failed",
+            f"answer: {_STATUS_WORDS[new_status]}", "not recorded",
+        )
         return
 
     # Rebuild and edit embed in-place (FR-010 / FR-012)
     from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
+    redrawn = False
     embed_row = await bot.attendance_service.get_embed_message(round_id, division_id)
     if embed_row is not None:
         channel = as_text_channel(bot.get_channel(int(embed_row.channel_id)))
@@ -1602,6 +1643,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
                 msg = await channel.fetch_message(int(embed_row.message_id))
                 new_embed = await _rebuild_embed_for_round(round_id, division_id, bot)
                 await msg.edit(embed=new_embed, view=RsvpView(round_id=round_id))
+                redrawn = True
             except discord.HTTPException as exc:
                 log.error("handle_rsvp_button: failed to edit embed: %s", exc)
 
@@ -1609,3 +1651,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     await interaction.response.send_message(
         f"✅ Your RSVP has been updated to **{label}**.", ephemeral=True
     )
+    details = [f"answer: {_STATUS_WORDS[new_status]} (was: {_STATUS_WORDS.get(current_status, current_status)})"]
+    if not redrawn:
+        details.append("call not redrawn")
+    await _record(bot, interaction, what, "Success", *details)
