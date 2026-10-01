@@ -1188,8 +1188,9 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         **Test mode, the module and the call are checked again here** (#482, decided
         2026-10-01). `/attendance test rsvp` checked all three when it opened the form, and a
         form stands open for minutes: test mode or the module switched off in that time, or the
-        call taken down or posted afresh, and the answers would land on a state the command
-        would have refused. Each is refused, with nothing set.
+        call taken down, posted afresh, or no longer the division's open one (in a
+        double-header, once its deadline passes the next call is), and the answers would land
+        on a state the command would have refused. Each is refused, with nothing set.
 
         A paste with nothing applied is a refusal, its rejected entries the reason; a paste of
         blank lines asks nothing and records that nothing changed; and a paste with anything
@@ -1222,8 +1223,8 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         if current is None or int(current.message_id) != self._embed_message_id:
             await refuse(
                 interaction,
-                "\u274c The check-in call this form was opened on is no longer standing. "
-                "Nothing was set. Run `/attendance test rsvp` again.",
+                "\u274c The check-in call this form was opened on is no longer the division's "
+                "open call. Nothing was set. Run `/attendance test rsvp` again.",
                 what=form,
             )
             return

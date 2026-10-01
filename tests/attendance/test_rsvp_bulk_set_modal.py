@@ -503,8 +503,8 @@ def _call_replaced(bot):
     [
         (_test_mode_off, "Test mode was switched off while this form was open. Nothing was set."),
         (_module_off, "The Attendance module was switched off while this form was open."),
-        (_call_taken_down, "The check-in call this form was opened on is no longer standing."),
-        (_call_replaced, "The check-in call this form was opened on is no longer standing."),
+        (_call_taken_down, "The check-in call this form was opened on is no longer the division's open call."),
+        (_call_replaced, "The check-in call this form was opened on is no longer the division's open call."),
     ],
     ids=["test-mode-off", "module-off", "call-taken-down", "call-replaced"],
 )

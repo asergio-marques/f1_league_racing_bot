@@ -2237,7 +2237,7 @@ Posts the check-in call for the round you name, exactly as the scheduled call wo
 #### `/attendance test rsvp` — Bulk-set RSVP statuses
 *Access: League admin · Requires test mode active · Attendance module*
 
-Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses. It is a tool of [test mode](#test-mode-commands), like the commands there: refused first while test mode is off, then while the attendance module is off. Both are checked again when the form is submitted, with the check-in call it was opened on: if test mode or the module was switched off while the form was open, or the call was taken down or posted afresh, nothing is set and you are told why.
+Opens a modal for setting the RSVP status of every test driver in the division's currently open check-in, so a check-in can be driven to a known state without waiting on button presses. It is a tool of [test mode](#test-mode-commands), like the commands there: refused first while test mode is off, then while the attendance module is off. Both are checked again when the form is submitted, with the check-in call it was opened on: if test mode or the module was switched off while the form was open, or the call it was opened on is no longer the division's open one (taken down, posted afresh, or past its deadline with the next call open), nothing is set and you are told why.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
