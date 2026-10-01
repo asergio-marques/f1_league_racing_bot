@@ -459,9 +459,6 @@ async def test_another_member_s_message_does_not_answer_the_prompt():
 NEGATIVE = [("request_changes_button", "Request Changes"), ("reject_button", "Reject")]
 NEGATIVE_IDS = ["request-changes", "reject"]
 
-_REASON_FAULT_ESCAPES = (
-    "#482: a fault in the reason step escapes on_message instead of being reported through the press"
-)
 
 #: The manager's reply where no reason arrived after pressing Reject.
 REJECT_LAPSED = (
@@ -591,7 +588,6 @@ async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(monkeypa
     assert not any(text.startswith("⌛") for text in _sent(rejecting) + _sent(requesting))
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_FAULT_ESCAPES)
 @pytest.mark.parametrize(
     "button,label,service",
     [

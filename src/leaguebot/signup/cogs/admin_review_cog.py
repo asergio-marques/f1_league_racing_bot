@@ -19,6 +19,7 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
+from leaguebot.core.utils.interaction_errors import report_failure
 from leaguebot.core.utils.log_lines import interaction_member, record_abandoned, refuse
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,12 @@ def _review_owner(interaction: discord.Interaction, owner_id: str | None) -> str
     return f"{name if isinstance(name, str) else f'<@{owner_id}>'}'s"
 
 
+def _review_button(interaction: discord.Interaction, owner_id: str | None, label: str) -> str:
+    """A button of a signup review, as the log channel names it: "the “Approve” button of Alex's
+    signup review"."""
+    return f"the “{label}” button of {_review_owner(interaction, owner_id)} signup review"
+
+
 async def _refuse_review_button(
     interaction: discord.Interaction, owner_id: str | None, label: str, reply: str
 ) -> None:
@@ -114,7 +121,7 @@ async def _refuse_review_button(
     await refuse(
         interaction,
         reply,
-        what=f"the “{label}” button of {_review_owner(interaction, owner_id)} signup review",
+        what=_review_button(interaction, owner_id, label),
     )
 
 
@@ -348,7 +355,15 @@ class AdminReviewCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        """Capture the admin's reason message for Request Changes / Reject."""
+        """Capture the admin's reason message for Request Changes / Reject.
+
+        The reason completes the change the press asked for, so it counts as the button's own
+        work: a fault in the service is reported through the press's stored interaction
+        (`report_failure`) — the manager is told, one failure line is written — and never
+        escapes to discord.py's event handler, which would tell nobody. The catch wraps only
+        that call, hands the error over and returns (architecture.md, "Errors and failures").
+        A signup that has moved on since the press is a refusal, not a fault.
+        """
         if message.author.bot or not message.guild:
             return
         if await is_foreign_guild(self.bot, message.guild.id):
@@ -371,18 +386,23 @@ class AdminReviewCog(commands.Cog):
         action = pending["action"]
         followup: discord.Webhook = pending["followup"]
         interaction: discord.Interaction = pending["interaction"]
-        if action == "request_changes":
-            refused = await self.bot.wizard_service.request_changes(
+        service = {
+            "request_changes": self.bot.wizard_service.request_changes,
+            "reject": self.bot.wizard_service.reject_signup,
+        }.get(action)
+        if service is None:
+            return
+        done = "✅ Correction requested." if action == "request_changes" else "✅ Signup rejected."
+        try:
+            refused = await service(
                 pending["discord_user_id"], pending["guild"], pending["actor"], reason=reason,
             )
-            done = "✅ Correction requested."
-        elif action == "reject":
-            refused = await self.bot.wizard_service.reject_signup(
-                pending["discord_user_id"],
-                pending["guild"], pending["actor"], reason=reason,
+        except Exception as error:  # noqa: BLE001 — handed to report_failure, which tells the manager
+            await report_failure(
+                interaction,
+                error,
+                what=_review_button(interaction, pending["discord_user_id"], _BUTTON_OF[action]),
             )
-            done = "✅ Signup rejected."
-        else:
             return
         if refused is not None:
             # The signup moved on while the reason was being typed (#492): nothing was done,

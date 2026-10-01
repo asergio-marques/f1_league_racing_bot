@@ -587,10 +587,6 @@ async def test_an_approved_signup_is_marked_as_such(review):
 # The reason typed into the channel, through the panel's listener (#492, #457)
 # ---------------------------------------------------------------------------
 
-_REASON_FAULT_ESCAPES = (
-    "#457: a rejection's failed transition is swallowed, or escapes the listener, instead of "
-    "being reported through the press"
-)
 
 
 @pytest.fixture
@@ -693,7 +689,6 @@ async def test_a_reason_typed_after_the_signup_moved_on_is_refused_and_recorded(
     assert "has moved on" in refusals[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON_FAULT_ESCAPES)
 async def test_a_rejection_whose_transition_fails_is_reported_to_the_manager(review, panel):
     """Manager presses Reject and types the reason; moving Lewis to Not Signed Up fails on
     something other than the expected refusal. The manager is told once that the Reject button
