@@ -207,6 +207,28 @@ async def test_a_request_that_has_ended_is_refused_and_changes_nothing(correctio
     correction.channel.send.assert_not_awaited()
 
 
+async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(correction):
+    """A manager chooses "platform" at the moment the correction request ends: the five minutes
+    lapse, or a second manager's choice lands first, just after the service has read the driver
+    as still awaiting a correction parameter. The state change that follows is refused, so the
+    request has ended all the same: the service returns "This correction request has ended.
+    Nothing was changed." and changes nothing, with no wizard saved, no deadline armed and no
+    prompt posted."""
+    correction.driver_service.transition = AsyncMock(
+        side_effect=ValueError("Illegal transition: PENDING_ADMIN_APPROVAL -> PENDING_DRIVER_CORRECTION")
+    )
+
+    refused = await correction.svc.select_correction_parameter(
+        DRIVER_ID, "platform", correction.guild
+    )
+
+    assert refused == "This correction request has ended. Nothing was changed."
+    correction.driver_service.transition.assert_awaited_once()
+    correction.signup_svc.save_wizard.assert_not_awaited()
+    correction.svc._arm_inactivity_job.assert_not_awaited()
+    correction.channel.send.assert_not_awaited()
+
+
 async def test_a_request_still_awaiting_a_choice_is_acted_on_and_nothing_is_refused(correction):
     """The state check does not stop a choice made while the request is open: the driver is
     sent back to the question and nothing is refused."""

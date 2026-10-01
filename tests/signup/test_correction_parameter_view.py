@@ -241,6 +241,48 @@ async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(
     _assert_refusal_recorded(bot, "Platform", _ENDED)
 
 
+async def test_a_choice_that_loses_the_race_to_the_request_ending_is_refused(monkeypatch):
+    """A manager presses "Platform" on Alex's correction panel at the moment the request ends:
+    the five minutes lapse, or a second manager's choice lands first, just after Alex has been
+    read as still awaiting a correction parameter, so the state change that follows is refused.
+    Through the real service, the button answers "⛔ This correction request has ended. Nothing
+    was changed.", writes one refusal line and no failure line, and Alex's signup is left as it
+    was: no wizard saved, no deadline armed and no prompt posted."""
+    from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    _permitted(monkeypatch, True)
+    bot = _bot()
+    svc = WizardService.__new__(WizardService)
+    svc._correction_tasks = {}
+    svc._bot = bot
+    svc._arm_inactivity_job = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    bot.wizard_service = svc
+    bot.driver_service.get_profile = AsyncMock(
+        return_value=SimpleNamespace(current_state=DriverState.AWAITING_CORRECTION_PARAMETER)
+    )
+    bot.driver_service.transition = AsyncMock(
+        side_effect=ValueError("Illegal transition: PENDING_ADMIN_APPROVAL -> PENDING_DRIVER_CORRECTION")
+    )
+    bot.signup_module_service.get_wizard = AsyncMock(
+        return_value=SimpleNamespace(discord_user_id=DRIVER_ID, signup_channel_id=CHANNEL_ID)
+    )
+    bot.signup_module_service.save_wizard = AsyncMock()
+    view = CorrectionParameterView(DRIVER_ID, bot)
+    interaction = _interaction(bot)
+
+    await _button(view, "Platform").callback(interaction)
+
+    replied = _replied(interaction)
+    assert f"⛔ {_ENDED}" in replied, replied
+    assert "✅" not in replied, replied
+    _assert_refusal_recorded(bot, "Platform", _ENDED)
+    bot.driver_service.transition.assert_awaited_once()
+    bot.signup_module_service.save_wizard.assert_not_awaited()
+    svc._arm_inactivity_job.assert_not_awaited()
+    interaction.guild.get_channel.assert_not_called()
+
+
 async def test_a_choice_writes_one_line_naming_the_parameter(monkeypatch):
     """Manager presses "Platform" on Alex's correction panel while the request is still open.
     Alex is sent back to the platform question, and one line records the choice, naming the
