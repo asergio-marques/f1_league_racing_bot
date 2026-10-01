@@ -39,8 +39,6 @@ DIVISION_ID = 11
 CHANNEL_ID = 770001
 ACTOR_ID = 77
 
-_NOT_YET_RECORDED = "#482: a /weather channel refusal is not yet recorded in the log channel"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -172,7 +170,6 @@ def _in_use(monkeypatch, use: ChannelUse):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_the_weather_channel_is_refused_while_weather_is_off(tmp_path, monkeypatch):
     """Setting a forecast channel for a module that is not running configures something no
     code reads. The words are the command's own, not the weather cog's gate, and nothing is
@@ -221,7 +218,6 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, monkeypatch):
     cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_no_live_season_is_recorded_as_a_refusal(tmp_path, monkeypatch):
     """With no season being built or raced, the refusal is recorded in the log channel."""
     _free(monkeypatch)
@@ -235,7 +231,6 @@ async def test_no_live_season_is_recorded_as_a_refusal(tmp_path, monkeypatch):
     _assert_one_refusal_line(cog, interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_an_unknown_division_is_recorded_as_a_refusal(tmp_path, monkeypatch):
     """A division the live season does not hold is refused, and the refusal recorded."""
     _free(monkeypatch)
@@ -282,7 +277,6 @@ async def test_a_channel_doing_another_job_is_refused_as_a_clash(tmp_path, monke
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_channel_doing_another_job_is_recorded_as_a_refusal(tmp_path, monkeypatch):
     """The clash with another setting is refused and the refusal recorded, with the reply's
     own reason."""
@@ -327,7 +321,6 @@ async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
     assert _replied(same) != _replied(clash)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
     """The check runs before the write. The same-value case used to be written and only
     then reported as unchanged — this holds the order against a later tidy-up. The refusal

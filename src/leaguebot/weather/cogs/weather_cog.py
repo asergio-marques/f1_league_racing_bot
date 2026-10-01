@@ -284,25 +284,29 @@ class WeatherCog(commands.Cog):
         wrote it: `DIVISION_CHANNEL_SET`, with its `channel_type`.
         """
         if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "\u274c The Weather module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Weather module is not enabled.",
+                what=describe(interaction),
             )
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division **{name}** not found in the current season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -310,7 +314,7 @@ class WeatherCog(commands.Cog):
             self.bot.db_path, channel, "weather", division_name=div.name
         )
         if refused is not None:
-            await interaction.response.send_message(refused, ephemeral=True)
+            await refuse(interaction, refused, what=describe(interaction))
             return
 
         old_id = await self.bot.season_service.set_division_forecast_channel(div.id, channel.id)
