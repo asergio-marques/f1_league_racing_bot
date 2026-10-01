@@ -50,9 +50,6 @@ SERVER_ID = 8308
 SEASON_ID = 1
 DIVISION_ID = 1
 
-#: Why a test fails until `AttendanceService.set_setting` exists.
-SET_SETTING = "#482: AttendanceService.set_setting writes a setting and its audit entry (P1)"
-
 #: The moment a change is made, pinned.
 NOW = datetime(2026, 3, 14, 18, 30, tzinfo=timezone.utc)
 
@@ -140,7 +137,6 @@ async def test_get_or_create_writes_the_packaged_defaults(tmp_path):
     assert await service.get_config() is not None
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 async def test_get_or_create_is_idempotent(tmp_path):
     """Called on every config command. A second row for the same server would make which
     settings the league gets depend on row order."""
@@ -165,7 +161,6 @@ async def test_get_or_create_is_idempotent(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize("column,value", SETTERS, ids=[c for c, _v in SETTERS])
 async def test_each_setter_persists_its_value(tmp_path, column, value):
     db_path = await _make_db(tmp_path)
@@ -177,7 +172,6 @@ async def test_each_setter_persists_its_value(tmp_path, column, value):
     assert (await _row(db_path))[column] == value
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize("column,value", SETTERS, ids=[c for c, _v in SETTERS])
 async def test_each_setter_touches_only_its_own_column(tmp_path, column, value):
     """One method writing eight columns by name: a write landing in the wrong column is
@@ -194,7 +188,6 @@ async def test_each_setter_touches_only_its_own_column(tmp_path, column, value):
     assert changed == {column}
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize("column", ["autosack_threshold", "autoreserve_threshold"])
 async def test_a_threshold_can_be_cleared_back_to_null(tmp_path, column):
     """Switching a sanction off again is a real thing a league does, and the two thresholds
@@ -215,7 +208,6 @@ async def test_a_threshold_can_be_cleared_back_to_null(tmp_path, column):
     assert json.loads(entry["new_value"]) == {column: None}
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 async def test_a_change_is_written_with_its_audit_entry(tmp_path):
     """A3 in the service: the value, and one ATTENDANCE_CONFIG_SET entry saying who changed
     which setting from what to what, and when, for the server as a whole."""
@@ -240,7 +232,6 @@ async def test_a_change_is_written_with_its_audit_entry(tmp_path):
     assert entry["timestamp"] == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize(
     "column,start,value",
     [("no_rsvp_penalty", 4, 4), ("autosack_threshold", None, None)],
@@ -267,7 +258,6 @@ async def test_a_value_already_held_writes_nothing_and_no_audit_entry(
     assert await _audit_entries(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize(
     "column", ["module_enabled", "id", "no_show_penalty = 0; --"], ids=["module", "id", "sql"]
 )
@@ -286,7 +276,6 @@ async def test_a_column_that_is_not_a_setting_is_refused(tmp_path, column):
     assert await _audit_entries(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 async def test_a_change_whose_audit_entry_fails_leaves_the_setting_as_it_was(tmp_path):
     """One save: where the audit entry cannot be written, the value is not written either."""
     db_path = await _make_db(tmp_path)

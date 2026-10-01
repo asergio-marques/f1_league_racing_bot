@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 import discord
 from discord import app_commands
@@ -187,26 +186,31 @@ class AttendanceCog(commands.Cog):
     async def _set(
         self,
         interaction: discord.Interaction,
-        cfg: AttendanceConfig,
         *,
         column: str,
         name: str,
         shown: Callable[[int | None], str],
         value: int | None,
-        write: Callable[[Any], Awaitable[None]],
         reply: str,
     ) -> None:
-        """Write one attendance setting, or answer that it already holds *value*; record either.
+        """Set one attendance setting, or answer that it already holds *value*; record either.
 
-        A change is recorded twice, as "The record of what changed" asks of every change to a
-        league's configuration: an audit entry, ``ATTENDANCE_CONFIG_SET``, holding *column* from
-        and to, and a log line with the new value and the one it replaced. A value the setting
-        already holds writes nothing and audits nothing: it is answered and recorded as nothing
-        changed, as the results module's setters are.
+        `AttendanceService.set_setting` holds the rule: a value the setting already holds is
+        written nowhere and audited nowhere, and is answered and recorded here as nothing
+        changed, as the results module's setters are. A change is recorded twice, as "The
+        record of what changed" asks of every change to a league's configuration: the
+        service's audit entry, ``ATTENDANCE_CONFIG_SET``, holding *column* from and to, saved
+        with the value, and a log line with the new value and the one it replaced.
         """
-        old = getattr(cfg, column)
         command = _command(interaction)
-        if old == value:
+        change = await self.bot.attendance_service.set_setting(
+            column,
+            value,
+            actor_id=interaction.user.id,
+            actor_name=str(interaction.user),
+            now=datetime.now(timezone.utc),
+        )
+        if not change.changed:
             await interaction.response.send_message(
                 f"ℹ️ Nothing changed: the {name} is already **{shown(value)}**.",
                 ephemeral=True,
@@ -215,19 +219,9 @@ class AttendanceCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        await write(value)
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="ATTENDANCE_CONFIG_SET",
-            old_value={column: old},
-            new_value={column: value},
-            now=datetime.now(timezone.utc),
-        )
         await interaction.followup.send(reply, ephemeral=True)
         await _record(
-            self.bot, interaction, command, "Success", f"{name}: {shown(value)} (was {shown(old)})"
+            self.bot, interaction, command, "Success", f"{name}: {shown(value)} (was {shown(change.old)})"
         )
 
     # ── /attendance config rsvp-notice ────────────────────────────────────
@@ -263,9 +257,8 @@ class AttendanceCog(commands.Cog):
             return
 
         await self._set(
-            interaction, cfg,
+            interaction,
             column="rsvp_notice_days", name="RSVP notice", shown=_days, value=days,
-            write=self.bot.attendance_service.update_rsvp_notice_days,
             reply=f"✅ RSVP notice set to **{days}** day(s) before the race.",
         )
 
@@ -306,9 +299,9 @@ class AttendanceCog(commands.Cog):
         else:
             msg = f"✅ Last RSVP reminder set to **{hours}** hour(s) before the race."
         await self._set(
-            interaction, cfg,
+            interaction,
             column="rsvp_last_notice_hours", name="last RSVP reminder", shown=_hours_or_disabled,
-            value=hours, write=self.bot.attendance_service.update_rsvp_last_notice_hours,
+            value=hours,
             reply=msg,
         )
 
@@ -345,9 +338,8 @@ class AttendanceCog(commands.Cog):
             return
 
         await self._set(
-            interaction, cfg,
+            interaction,
             column="rsvp_deadline_hours", name="RSVP deadline", shown=_hours, value=hours,
-            write=self.bot.attendance_service.update_rsvp_deadline_hours,
             reply=f"✅ RSVP deadline set to **{hours}** hour(s) before the race.",
         )
 
@@ -360,7 +352,6 @@ class AttendanceCog(commands.Cog):
         *,
         column: str,
         name: str,
-        write: Callable[[Any], Awaitable[None]],
         reply: str,
     ) -> None:
         """The body the three penalty setters share: refuse a negative value or a server with
@@ -378,8 +369,8 @@ class AttendanceCog(commands.Cog):
         if cfg is None:
             return
         await self._set(
-            interaction, cfg,
-            column=column, name=name, shown=_points, value=points, write=write, reply=reply,
+            interaction,
+            column=column, name=name, shown=_points, value=points, reply=reply,
         )
 
     @config.command(
@@ -394,7 +385,6 @@ class AttendanceCog(commands.Cog):
         await self._set_penalty(
             interaction, points,
             column="no_rsvp_penalty", name="no-RSVP penalty",
-            write=self.bot.attendance_service.update_no_rsvp_penalty,
             reply=f"✅ No-RSVP penalty set to **{points}** point(s).",
         )
 
@@ -410,7 +400,6 @@ class AttendanceCog(commands.Cog):
         await self._set_penalty(
             interaction, points,
             column="absent_penalty", name="absent penalty",
-            write=self.bot.attendance_service.update_absent_penalty,
             reply=f"✅ Absent penalty set to **{points}** point(s).",
         )
 
@@ -426,7 +415,6 @@ class AttendanceCog(commands.Cog):
         await self._set_penalty(
             interaction, points,
             column="no_show_penalty", name="no-show penalty",
-            write=self.bot.attendance_service.update_no_show_penalty,
             reply=f"✅ No-show penalty set to **{points}** point(s).",
         )
 
@@ -474,9 +462,9 @@ class AttendanceCog(commands.Cog):
                 "`/attendance config autoreserve` instead."
             )
         await self._set(
-            interaction, cfg,
+            interaction,
             column="autosack_threshold", name="auto-sack threshold", shown=_points_or_disabled,
-            value=value, write=self.bot.attendance_service.update_autosack_threshold, reply=msg,
+            value=value, reply=msg,
         )
 
     # ── /attendance config autoreserve ────────────────────────────────────
@@ -515,10 +503,9 @@ class AttendanceCog(commands.Cog):
         else:
             msg = f"✅ Auto-reserve threshold set to **{value}** point(s)."
         await self._set(
-            interaction, cfg,
+            interaction,
             column="autoreserve_threshold", name="auto-reserve threshold",
-            shown=_points_or_disabled, value=value,
-            write=self.bot.attendance_service.update_autoreserve_threshold, reply=msg,
+            shown=_points_or_disabled, value=value, reply=msg,
         )
 
     # ── /attendance config show ────────────────────────────────────────────

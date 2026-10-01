@@ -41,9 +41,6 @@ from leaguebot.attendance.services.attendance_service import AttendanceService
 
 SERVER_ID = 9119
 
-#: Why a setter test fails until the setters write through the service.
-SET_SETTING = "#482: the setters write through AttendanceService.set_setting (P1)"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -194,7 +191,6 @@ CONFIG_SETTER_IDS = [
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 async def test_the_no_show_penalty_command_writes_the_penalty():
     """Issue #119: the command called a service method that does not exist.
 
@@ -226,7 +222,6 @@ async def test_the_no_show_penalty_command_is_named_for_the_column_it_writes():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize(
     "command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS
 )
@@ -296,7 +291,6 @@ async def test_a_negative_penalty_is_refused_and_nothing_is_written(command):
     assert "negative" in interaction.response.send_message.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 async def test_a_penalty_of_zero_is_written():
     """Zero stops the charge for that case entirely — it is a value, not a disable sentinel."""
     cog = _make_cog()
@@ -341,7 +335,6 @@ async def test_autosack_is_refused_while_autoreserve_is_set():
     assert "auto-reserve" in interaction.response.send_message.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize(
     "command,column",
     [
@@ -652,7 +645,6 @@ SUCCESSES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize(
     "command,name,start,value,column,old,new,detail",
     SUCCESSES,
@@ -697,7 +689,6 @@ UNCHANGED = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=SET_SETTING)
 @pytest.mark.parametrize(
     "command,name,value,column,stored,detail", UNCHANGED, ids=[c[1] for c in UNCHANGED]
 )

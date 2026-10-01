@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import aiosqlite
 import discord
 
+from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.models.attendance import (
@@ -105,6 +106,30 @@ def derive_checkin_deadline(
     return scheduled_at - timedelta(hours=deadline_hours)
 
 
+#: The columns of `attendance_config` a manager sets, the only names `set_setting` writes.
+SETTING_COLUMNS: frozenset[str] = frozenset(
+    {
+        "rsvp_notice_days",
+        "rsvp_last_notice_hours",
+        "rsvp_deadline_hours",
+        "no_rsvp_penalty",
+        "absent_penalty",
+        "no_show_penalty",
+        "autosack_threshold",
+        "autoreserve_threshold",
+    }
+)
+
+
+@dataclass(frozen=True)
+class SettingChange:
+    """What `AttendanceService.set_setting` did: *changed* says whether the value was replaced,
+    and *old* is the value the setting held, ``None`` for a threshold that was disabled."""
+
+    changed: bool
+    old: int | None
+
+
 class AttendanceService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -190,6 +215,54 @@ class AttendanceService:
             await db.commit()
 
     # ── Field updates ──────────────────────────────────────────────────────
+
+    async def set_setting(
+        self,
+        column: str,
+        value: int | None,
+        *,
+        actor_id: int,
+        actor_name: str,
+        now: datetime,
+    ) -> SettingChange:
+        """Set one of the eight settings to *value*, with its audit entry, in one save (#482).
+
+        The value held is read and compared on the connection that writes, so two commands
+        racing for one setting cannot both see the old value. Where it already equals *value*
+        nothing is written and no entry is recorded: the result says ``changed=False``.
+        Otherwise the column and its ``ATTENDANCE_CONFIG_SET`` entry, holding *column* from and
+        to (``None`` for a disabled threshold), are committed together, so a failure between
+        the two leaves neither ("The record of what changed", core specification).
+
+        *column* is checked against `SETTING_COLUMNS` before anything is read, as the name is
+        put into the statement: any other is a `ValueError`. Raises `ValueError` as well for a
+        server holding no attendance configuration, which the commands refuse before they get
+        here.
+        """
+        if column not in SETTING_COLUMNS:
+            raise ValueError(f"{column!r} is not an attendance setting")
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(f"SELECT {column} FROM attendance_config")
+            row = await cursor.fetchone()
+            if row is None:
+                raise ValueError("No attendance configuration found.")
+            old = row[0]
+            if old == value:
+                return SettingChange(changed=False, old=old)
+            await db.execute(f"UPDATE attendance_config SET {column} = ?", (value,))
+            await audit_service.record_change_on(
+                db,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                change_type="ATTENDANCE_CONFIG_SET",
+                old_value={column: old},
+                new_value={column: value},
+                now=now,
+            )
+            await db.commit()
+        return SettingChange(changed=True, old=old)
+
 
     async def update_rsvp_notice_days(self, value: int) -> None:
         async with get_connection(self._db_path) as db:
