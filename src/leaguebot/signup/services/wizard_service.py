@@ -24,6 +24,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.signup.models.signup_module import SignupRecord, SignupWizardRecord, WizardState
 from leaguebot.core.utils.input_validator import SIGNUP_ANSWER, parse_nationality, parse_time
+from leaguebot.core.utils.log_lines import record_refusal
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.utils.results_formatter import render_lap_time
 
@@ -1477,10 +1478,12 @@ class WizardService:
     ) -> None:
         val = self._validate_nationality(message.content)
         if val is None:
-            await message.channel.send(
+            reply = (
                 "❌ Invalid nationality. Please enter your full nationality (e.g. `British`) "
                 "or country name (e.g. `United Kingdom`), or type `other`."
             )
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Nationality", reply)
             return
         wizard.draft_answers["nationality"] = val
         await self._advance_wizard(wizard, message)
@@ -1495,9 +1498,9 @@ class WizardService:
         )
         if match is None:
             opts = " / ".join(self._PLATFORMS)
-            await message.channel.send(
-                f"❌ Invalid platform. Please choose one of: {opts}"
-            )
+            reply = f"❌ Invalid platform. Please choose one of: {opts}"
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Platform", reply)
             return
         wizard.draft_answers["platform"] = match
         await self._advance_wizard(wizard, message)
@@ -1507,9 +1510,11 @@ class WizardService:
     ) -> None:
         raw = message.content.strip()
         if not raw:
-            await message.channel.send("❌ Platform ID cannot be empty.")
+            reply = "❌ Platform ID cannot be empty."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Platform ID", reply)
             return
-        if not await self._answer_stands(message, "platform ID", raw):
+        if not await self._answer_stands(message, "Platform ID", "platform ID", raw):
             return
         wizard.draft_answers["platform_id"] = raw
         await self._advance_wizard(wizard, message)
@@ -1531,18 +1536,24 @@ class WizardService:
         try:
             selected_ids = [int(p) for p in parts if p]
         except ValueError:
-            await message.channel.send("❌ Please enter slot IDs as numbers (e.g. `1 3`).")
+            reply = "❌ Please enter slot IDs as numbers (e.g. `1 3`)."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Availability", reply)
             return
         by_display_number = {s.slot_sequence_id: s for s in snapshot.slots}
         bad = [str(i) for i in selected_ids if i not in by_display_number]
         if bad:
-            await message.channel.send(
+            reply = (
                 f"❌ Unknown slot ID(s): {', '.join(bad)}. "
                 f"Valid IDs: {', '.join(str(i) for i in sorted(by_display_number))}"
             )
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Availability", reply)
             return
         if not selected_ids:
-            await message.channel.send("❌ Please select at least one time slot.")
+            reply = "❌ Please select at least one time slot."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Availability", reply)
             return
         wizard.draft_answers["availability_slot_ids"] = [
             by_display_number[i].slot_id for i in selected_ids
@@ -1558,9 +1569,9 @@ class WizardService:
         )
         if match is None:
             opts = " / ".join(self._DRIVER_TYPES)
-            await message.channel.send(
-                f"❌ Please choose one of: {opts}"
-            )
+            reply = f"❌ Please choose one of: {opts}"
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Driver Type", reply)
             return
         wizard.draft_answers["driver_type"] = match
         await self._advance_wizard(wizard, message)
@@ -1586,23 +1597,45 @@ class WizardService:
         # Parse comma/newline-separated list
         parts = [p.strip() for p in re.split(r"[,\n]+", raw) if p.strip()]
         if len(parts) > 3:
-            await message.channel.send(
-                "❌ Please select up to 3 teams."
-            )
+            reply = "❌ Please select up to 3 teams."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Preferred Teams", reply)
             return
         bad = [p for p in parts if p.casefold() not in by_typed]
         if bad:
             bad_list = ", ".join(f"`{b}`" for b in bad)
             valid = ", ".join(f"`{t.full_name}`" for t in non_reserve)
-            await message.channel.send(
-                f"❌ Unknown team(s): {bad_list}.\nValid teams: {valid}"
-            )
+            reply = f"❌ Unknown team(s): {bad_list}.\nValid teams: {valid}"
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Preferred Teams", reply)
             return
         wizard.draft_answers["preferred_teams"] = [by_typed[p.casefold()] for p in parts]
         await self._advance_wizard(wizard, message)
 
-    @staticmethod
-    async def _answer_stands(message: discord.Message, field_label: str, raw: str) -> bool:
+    async def _record_typed_refusal(
+        self, message: discord.Message, step: str, reply: str
+    ) -> None:
+        """Record a typed answer the wizard refused, in the log channel, without answering again.
+
+        A typed answer is a message, not a command, button or form, so an accepted one records
+        nothing and only its refusal does (#482). The reply has already gone to the driver's
+        channel; the line names the driver and the *step* (as the review's correction buttons
+        name it) and gives the reply's first line as the reason.
+        """
+        author = message.author
+        name = getattr(author, "display_name", None)
+        owner = f"{name}'s" if isinstance(name, str) and name else f"<@{author.id}>'s"
+        first = reply.strip().splitlines()[0] if reply.strip() else ""
+        await record_refusal(
+            self._bot,
+            author,
+            what=f"the {step} step of {owner} signup wizard",
+            reason=first.removeprefix("❌").strip(),
+        )
+
+    async def _answer_stands(
+        self, message: discord.Message, step: str, field_label: str, raw: str
+    ) -> bool:
         """Whether a driver's free-text answer may be kept, telling them why where not (#362).
 
         The review panel quotes the answer to the channel, and a role mention, ``@everyone`` or
@@ -1613,14 +1646,18 @@ class WizardService:
         refusal = SIGNUP_ANSWER.check(field_label, raw).refusal
         if refusal is None:
             return True
-        await message.channel.send(f"❌ {refusal}")
+        reply = f"❌ {refusal}"
+        await message.channel.send(reply)
+        await self._record_typed_refusal(message, step, reply)
         return False
 
     async def _handle_preferred_teammate(
         self, wizard: SignupWizardRecord, message: discord.Message
     ) -> None:
         raw = message.content.strip()
-        if not await self._answer_stands(message, "preferred teammate", raw):
+        if not await self._answer_stands(
+            message, "Preferred Teammate", "preferred teammate", raw
+        ):
             return
         wizard.draft_answers["preferred_teammate"] = (
             None if raw.lower() == "no preference" else raw
@@ -1640,10 +1677,12 @@ class WizardService:
 
         # Check image requirement
         if snapshot.time_image_required and not message.attachments:
-            await message.channel.send(
+            reply = (
                 "❌ A screenshot of your lap time is required. "
                 "Please attach an image along with your time."
             )
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Lap Times", reply)
             return
 
         normalised = self._normalise_lap_time(message.content)
@@ -1651,9 +1690,9 @@ class WizardService:
             label = (
                 "Time Trial" if snapshot.time_type == "TIME_TRIAL" else "Short Qualification"
             )
-            await message.channel.send(
-                f"❌ Invalid {label} time. Use format `M:ss.mmm` (e.g. `1:23.456`)."
-            )
+            reply = f"❌ Invalid {label} time. Use format `M:ss.mmm` (e.g. `1:23.456`)."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Lap Times", reply)
             return
 
         track_id = snapshot.selected_track_ids[idx]
@@ -1670,11 +1709,11 @@ class WizardService:
         if raw.lower() == "no notes":
             wizard.draft_answers["notes"] = None
         elif len(raw) > 50:
-            await message.channel.send(
-                "❌ Notes must be 50 characters or fewer."
-            )
+            reply = "❌ Notes must be 50 characters or fewer."
+            await message.channel.send(reply)
+            await self._record_typed_refusal(message, "Notes", reply)
             return
-        elif not await self._answer_stands(message, "notes", raw):
+        elif not await self._answer_stands(message, "Notes", "notes", raw):
             return
         else:
             wizard.draft_answers["notes"] = raw

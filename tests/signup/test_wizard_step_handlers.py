@@ -564,8 +564,6 @@ async def test_a_preferred_team_is_recorded_by_its_full_name_however_it_was_type
 # The log channel: a typed answer records only its refusal (#482)
 # ---------------------------------------------------------------------------
 
-_TYPED_REFUSAL = "#482: a typed answer the wizard refuses is not recorded yet"
-
 # (the step as the wizard's state names it, the step as the line names it, what is typed,
 # whether a screenshot is required, whether the league's teams are offered)
 _REFUSED_ANSWERS = [
@@ -587,7 +585,6 @@ _REFUSED_ANSWERS = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_TYPED_REFUSAL)
 @pytest.mark.parametrize(
     "state,step,typed,screenshot_required,teams",
     _REFUSED_ANSWERS,
