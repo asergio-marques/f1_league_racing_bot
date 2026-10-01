@@ -29,9 +29,9 @@ first nineteen showing states that were already stale when they were drawn.
 embed is a view of them. Refusing at that point would report an error for work that succeeded
 and send a maintainer looking for it in the database.
 
-**Nothing applied means nothing logged and nothing rebuilt.** A paste that was entirely wrong
-did not change the round, and a log line saying otherwise would be a false record of a
-rehearsal's state.
+**Nothing applied means nothing rebuilt and no success line.** A paste that was entirely wrong
+did not change the round, so a success line would be a false record of a rehearsal's state.
+It is recorded as a refusal instead, naming each entry turned away (#482).
 """
 from __future__ import annotations
 
