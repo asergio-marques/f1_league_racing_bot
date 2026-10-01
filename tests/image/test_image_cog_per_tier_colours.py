@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from leaguebot.core.db.database import run_migrations
 from leaguebot.image.cogs.image_cog import MAX_PALETTE_IMPORT_BYTES, ImageCog
 from leaguebot.image.models.image_module import ValidityReport
 from leaguebot.image.services.image_config_service import ImageConfigService
@@ -445,6 +446,46 @@ async def test_the_import_passes_over_a_division_name_with_no_letter_or_digit():
     assert "not imported" in said_text and UNSTORABLE in said_text
     details = assert_one_line(cog.bot, IMPORT)
     assert any(UNSTORABLE in detail for detail in details), details
+
+
+#: Why the import below fails until the build: it tells a tier's two spellings apart.
+_TWO_SPELLINGS = (
+    "#482: an import naming one tier under two spellings stores both, the second over the first"
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_TWO_SPELLINGS)
+async def test_an_import_naming_one_tier_twice_under_two_spellings_stores_only_the_first(
+    tmp_path,
+):
+    """"Division 1" and "Division-1" are one tier to the store, so the second block is passed
+    over, naming the earlier one it collides with, and only the first block's colours stand."""
+    db_path = str(tmp_path / "colours.db")
+    await run_migrations(db_path)
+    service = ImageConfigService(db_path)
+    cog = _bulk_cog()
+    cog._config_service = service
+
+    await ImageCog.apply_tier_xml(
+        cog, _interaction(cog, IMPORT),
+        '<palettes>'
+        '<division name="Division 1"><colour slot="accent">#3DD6F5</colour></division>'
+        '<division name="Division-1"><colour slot="accent">#A78BFA</colour></division>'
+        '</palettes>',
+    )
+
+    assert await service.get_tier_palette("Division 1") == {"accent": "#3DD6F5"}
+    said_text = _said(cog)
+    assert "not imported" in said_text, said_text
+    assert any(
+        "Division-1" in line and "Division 1" in line
+        for line in said_text.splitlines()
+        if "•" in line
+    ), said_text
+    details = assert_one_line(cog.bot, IMPORT)
+    passed_over = details[details.index("passed over:") + 1:]
+    assert any("Division-1" in d and "Division 1" in d for d in passed_over), details
+    assert not any(d.startswith("Division-1:") for d in details), details
 
 
 # ── A colour form submitted after the module was switched off (F5) ───────
