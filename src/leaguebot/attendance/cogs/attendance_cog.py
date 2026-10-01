@@ -864,7 +864,7 @@ class AttendanceCog(commands.Cog):
     #
     # Attendance's own commands, under attendance's own group: they sat under core's `/division`
     # until #462 moved them, and only their names changed. Each checks the module first in its
-    # own words, not `_guard_module_enabled`'s, as it was worded before it moved; defers; refuses
+    # own words, not `_module_gate`'s, as it was worded before it moved; defers; refuses
     # a channel the bot cannot post in; then takes the live season's division (#220), Pending
     # completion included, so a channel lost may be repaired. A channel does one job
     # (`channel_refusal`), checked before the write, and the change is recorded by core's
