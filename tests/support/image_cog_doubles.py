@@ -29,7 +29,8 @@ def interaction(command: str | None = None, *, bot: MagicMock | None = None) -> 
 
     *command* is the command's full name as a league types it, without the slash ("images
     config time-zone"); ``None`` is an interaction with no command, a form's or a button's.
-    Every reply, by `response.send_message` or `followup.send`, lands in ``.said`` in order.
+    Every reply, by `response.send_message`, `followup.send` or an edit of the message a button
+    sits on that gives it content, lands in ``.said`` in order.
     """
     double = MagicMock()
     double.guild_id = 1
@@ -42,7 +43,12 @@ def interaction(command: str | None = None, *, bot: MagicMock | None = None) -> 
 
     double.response.send_message = AsyncMock(side_effect=_say)
     double.response.defer = AsyncMock()
-    double.response.edit_message = AsyncMock()
+
+    async def _edit(*args, **kwargs):
+        if kwargs.get("content") is not None:
+            double.said.append(kwargs["content"])
+
+    double.response.edit_message = AsyncMock(side_effect=_edit)
     double.response.send_modal = AsyncMock()
     double.response.is_done = MagicMock(
         side_effect=lambda: bool(
