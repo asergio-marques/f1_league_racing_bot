@@ -17,7 +17,9 @@ from discord.ext import commands
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.log_lines import refuse
 
 log = logging.getLogger(__name__)
 
@@ -39,22 +41,31 @@ class WeatherCog(commands.Cog):
     # Shared pre-condition checks
     # ------------------------------------------------------------------
 
-    async def _weather_gate(self, interaction: discord.Interaction) -> bool:
-        """Return True (and respond ephemerally) if weather module is not enabled."""
-        if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "❌ The weather module is not enabled.", ephemeral=True
-            )
-            return False
-        return True
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Return True if the weather module is enabled; otherwise answer and return False.
+
+        The refusal is recorded in the log channel, as every refusal of a command that changes
+        something is. A command that changes nothing (`record=False`) answers and records nothing.
+        """
+        if await self.bot.module_service.is_weather_enabled():
+            return True
+        reply = "❌ The weather module is not enabled."
+        if record:
+            await refuse(interaction, reply, what=describe(interaction))
+        else:
+            await interaction.response.send_message(reply, ephemeral=True)
+        return False
 
     async def _active_season_gate(self, interaction: discord.Interaction) -> bool:
-        """Return True (and respond ephemerally) if a season is currently ACTIVE."""
+        """Return True (and refuse, recording it) if a season's placements are confirmed."""
         season = await self.bot.season_service.get_confirmed_season()
         if season is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return True
         return False
@@ -70,7 +81,7 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(days="Number of days before the round (positive integer)")
     @league_manager_only
     async def phase_1_deadline(self, interaction: discord.Interaction, days: int) -> None:
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction):
             return
         if await self._active_season_gate(interaction):
             return
@@ -110,7 +121,7 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(days="Number of days before the round (positive integer)")
     @league_manager_only
     async def phase_2_deadline(self, interaction: discord.Interaction, days: int) -> None:
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction):
             return
         if await self._active_season_gate(interaction):
             return
@@ -150,7 +161,7 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(hours="Number of hours before the round (positive integer)")
     @league_manager_only
     async def phase_3_deadline(self, interaction: discord.Interaction, hours: int) -> None:
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction):
             return
         if await self._active_season_gate(interaction):
             return
@@ -198,7 +209,7 @@ class WeatherCog(commands.Cog):
         season's placements are confirmed the setters are refused, so the values shown then
         are the ones the season runs on.
         """
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -234,7 +245,7 @@ class WeatherCog(commands.Cog):
 
         Weather's own command, under weather's own group: it sat under core's `/division`
         until #462 moved it, and only its name changed. **Its module-off wording is its own**,
-        not `_weather_gate`'s, as it was worded before it moved.
+        not `_module_gate`'s, as it was worded before it moved.
 
         **The live season's division** (#220): a division's channels belong to the season being
         built or raced, and an archived one's no longer matter. Pending completion is live,

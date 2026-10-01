@@ -236,7 +236,6 @@ async def test_command_is_refused_while_the_weather_module_is_disabled(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
 async def test_command_is_refused_while_a_season_is_active(command, setter, value, _log):
     """"If there is an ongoing season ... all three commands must be rejected."
@@ -442,7 +441,6 @@ async def test_a_held_value_changes_nothing(command, setter, value, deadline):
     assert any(shown in detail for detail in details), logged_text
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_RECORDED)
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
 async def test_a_held_value_is_still_refused_while_a_season_is_active(
     command, setter, value, _log
