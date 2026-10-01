@@ -194,6 +194,17 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path):
     interaction.response.send_modal.assert_awaited_once()
 
 
+async def test_the_form_names_the_division_as_the_league_named_it(tmp_path):
+    """The form's replies and log lines name the division as stored, not as typed (#482)."""
+    db_path = await _make_db(tmp_path, name="rsvp_stored_name")
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _set_status(cog, interaction, division="pRo")
+
+    assert interaction.response.send_modal.await_args.args[0]._division_name == "Pro"
+
+
 async def test_an_unknown_division_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="rsvp_nodiv")
     cog = _make_cog(db_path)

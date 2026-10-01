@@ -1101,7 +1101,7 @@ class AttendanceCog(commands.Cog):
         async with _gc(self.bot.db_path) as db:
             cur = await db.execute(
                 f"""
-                SELECT d.id AS division_id
+                SELECT d.id AS division_id, d.name AS division_name
                   FROM divisions d
                   JOIN seasons s ON s.id = d.season_id
                  WHERE s.stage IN ({",".join("?" for _ in ongoing)})
@@ -1132,7 +1132,7 @@ class AttendanceCog(commands.Cog):
 
         await interaction.response.send_modal(
             _RsvpBulkSetModal(
-                division_name=division,
+                division_name=div_row["division_name"],
                 division_id=division_id,
                 round_id=target_embed.round_id,
                 embed_channel_id=int(target_embed.channel_id),
