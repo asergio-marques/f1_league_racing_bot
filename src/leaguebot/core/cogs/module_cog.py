@@ -80,17 +80,32 @@ class ForcedCloseOutcome:
     refused: str | None = None
 
 
+#: The most a reply lists of the failed steps, in characters, so that it and the sentence it is
+#: appended to stay well inside Discord's 2000 for a message: the log line carries every one.
+_FAILED_STEPS_REPLY_BUDGET = 1400
+
+
 def failed_steps_reply(outcome: ForcedCloseOutcome) -> str:
     """What a reply adds beneath its own text where the close failed a step, or nothing.
 
-    Starts with a line break, so a caller appends it to its sentence unconditionally.
+    Starts with a line break, so a caller appends it to its sentence unconditionally. A close
+    that failed one step per driver (a category the bot can no longer manage, say) can fail
+    hundreds, and a reply over Discord's limit would fail the button after the window had
+    closed: it lists steps up to a budget and counts the rest, which the log line names in full.
     """
     steps = list(outcome.failed)
     if not steps:
         return ""
-    return "\n⚠️ The window is closed, but not every step succeeded:\n" + "\n".join(
-        f"• {step}" for step in steps
-    )
+    shown: list[str] = []
+    used = 0
+    for step in steps:
+        if shown and used + len(step) + 3 > _FAILED_STEPS_REPLY_BUDGET:
+            break
+        shown.append(f"• {step}")
+        used += len(step) + 3
+    if len(shown) < len(steps):
+        shown.append(f"• …and {len(steps) - len(shown)} more, listed in the log channel.")
+    return "\n⚠️ The window is closed, but not every step succeeded:\n" + "\n".join(shown)
 
 
 def failed_steps_lines(outcome: ForcedCloseOutcome) -> str:
