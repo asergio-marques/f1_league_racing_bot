@@ -108,9 +108,6 @@ def _lines(bot) -> list[str]:
     return [str(call.args[0]) for call in bot.output_router.post_log.await_args_list]
 
 
-_NOT_RECORDED = "#482: the correction choice's refusal is answered but writes no line in the log channel"
-
-
 def _assert_refusal_recorded(bot, label: str, reason: str) -> None:
     """One line in the log channel, naming the button, the member who pressed it, and why, and
     no failure line (core specification, "The record of what changed")."""
@@ -205,7 +202,6 @@ async def test_the_driver_is_told_which_answer_to_give_again(monkeypatch, label,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_driver_cannot_choose_which_of_their_own_answers_to_re_open(monkeypatch):
     """The panel lands in the driver's own channel, and re-opening an answer lets them
     change it. The check is easy to assume has already happened — a manager pressed a
@@ -250,10 +246,6 @@ async def test_a_choice_pressed_after_the_request_ended_is_refused_and_recorded(
     _assert_refusal_recorded(bot, "Platform", _ENDED)
 
 
-_CHOICE_NOT_RECORDED = "#482: a manager's choice of what to correct writes no line in the log channel"
-
-
-@pytest.mark.xfail(strict=True, reason=_CHOICE_NOT_RECORDED)
 async def test_a_choice_writes_one_line_naming_the_parameter(monkeypatch):
     """Manager presses "Platform" on Alex's correction panel while the request is still open.
     Alex is sent back to the platform question, and one line records the choice, naming the
@@ -291,7 +283,6 @@ async def test_a_panel_rebuilt_after_a_restart_finds_its_driver(monkeypatch):
     assert bot.wizard_service.select_correction_parameter.await_args.args[0] == DRIVER_ID
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_RECORDED)
 async def test_a_panel_whose_channel_has_no_wizard_refuses(monkeypatch):
     """Acting on `None` would reach the service with no driver and fail somewhere the
     manager could not interpret."""

@@ -310,23 +310,23 @@ class CorrectionParameterView(LeagueView):
         self._bot = bot
 
         for label, param_key in self._PARAMETERS:
-            def make_callback(p: str) -> Handler:
+            def make_callback(p: str, label: str) -> Handler:
                 async def callback(inter: discord.Interaction) -> None:
-                    if not await _may_review_signup(inter):
-                        await inter.response.send_message(
-                            "⛔ Insufficient permissions.", ephemeral=True
-                        )
-                        return
                     _bot = self._bot or bot_of(inter)
                     _user_id = self._discord_user_id
+                    if not await _may_review_signup(inter):
+                        await _refuse_review_button(
+                            inter, _user_id, label, "⛔ Insufficient permissions."
+                        )
+                        return
                     if _user_id is None:
                         wizard = await _bot.wizard_service.get_wizard_by_channel(
                             channel_id_of(inter)
                         )
                         _user_id = wizard.discord_user_id if wizard else None
                     if _user_id is None:
-                        await inter.response.send_message(
-                            "⛔ Could not identify driver for this correction.", ephemeral=True
+                        await _refuse_review_button(
+                            inter, None, label, "⛔ Could not identify driver for this correction."
                         )
                         return
                     await inter.response.defer(ephemeral=True)
@@ -336,13 +336,18 @@ class CorrectionParameterView(LeagueView):
                     await inter.followup.send(
                         f"✅ Re-collecting **{p.replace('_', ' ')}**.", ephemeral=True
                     )
+                    await _bot.output_router.post_log(
+                        f"{interaction_member(inter)} | "
+                        f"{_review_button(inter, _user_id, label)} | "
+                        f"Correction requested: {label.lower()}"
+                    )
                 return callback
 
             btn = CallbackButton(
                 label=label,
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"correct_{param_key}",
-                on_press=make_callback(param_key),
+                on_press=make_callback(param_key, label),
             )
             self.add_item(btn)
 
