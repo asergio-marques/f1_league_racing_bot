@@ -318,7 +318,6 @@ async def test_unreadable_xml_stores_nothing():
     assert "Nothing was stored" in _said(cog)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: an import's success line names no command")
 async def test_an_import_is_always_logged():
     """One success line naming `/images config colour-xml-import`, each tier beneath."""
     cog = _bulk_cog(written=1)
@@ -331,7 +330,6 @@ async def test_an_import_is_always_logged():
     assert any("D" in detail for detail in details), details
 
 
-@pytest.mark.xfail(strict=True, reason="#482: an unreadable import is not yet recorded as refused")
 async def test_a_failed_import_is_logged_too():
     """An audit trail that records only successes hides the interesting half. A document that
     cannot be read stores nothing, so it is recorded as one "⛔" line, not as a failure."""
@@ -342,7 +340,6 @@ async def test_a_failed_import_is_logged_too():
     assert lines[0].startswith("⛔ ") and "refused for Race Control (<@42>)" in lines[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: an unreadable import is not yet recorded as refused")
 async def test_an_unreadable_import_pasted_into_the_form_is_refused_by_the_form():
     """Pasted into the form rather than attached, the refusal names the form, not a command."""
     from leaguebot.image.cogs.image_cog import TierPaletteXmlModal
@@ -500,7 +497,6 @@ async def test_the_import_form_stores_nothing_once_the_module_is_switched_off():
 
 # ── A reply too long for one message (F4) ────────────────────────────────
 
-@pytest.mark.xfail(strict=True, reason="#482: a long bulk reply is sent as one message")
 async def test_a_long_bulk_reply_arrives_in_parts_and_is_recorded():
     """A hundred slots make a reply past Discord's 2,000 characters: it is sent whole, in
     parts each within the limit, and the success line is still recorded."""

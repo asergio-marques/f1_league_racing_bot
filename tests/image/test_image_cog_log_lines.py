@@ -386,7 +386,6 @@ async def test_a_command_s_own_refusal_records_one_line_naming_it(
     assert_one_refusal(cog.bot, f"`/{name}`")
 
 
-@pytest.mark.xfail(strict=True, reason=_REFUSAL_NOT_RECORDED)
 async def test_a_pasted_palette_with_an_unreadable_line_is_refused_by_the_form(
     monkeypatch, tmp_path
 ):
@@ -534,7 +533,6 @@ async def test_confirming_daily_portraits_records_one_line_naming_the_command(
     assert _carries(details, ("19:00",)), details
 
 
-@pytest.mark.xfail(strict=True, reason=_SUCCESS_UNNAMED)
 async def test_a_pasted_palette_records_one_line_naming_the_command_that_opened_its_form(
     monkeypatch, tmp_path
 ):
@@ -550,7 +548,6 @@ async def test_a_pasted_palette_records_one_line_naming_the_command_that_opened_
         assert _carries(details, forms), (forms, details)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: a part-applied import does not yet list what it passed over")
 async def test_a_part_applied_import_lists_the_blocks_it_passed_over(monkeypatch, tmp_path):
     """A7: one Success line, the tier stored beneath and "passed over:" naming the block that
     could not be read."""

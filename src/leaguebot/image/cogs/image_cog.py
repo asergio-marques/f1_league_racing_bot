@@ -34,7 +34,7 @@ from leaguebot.image.models.image_constants import (
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
-from leaguebot.core.utils.interaction_errors import describe as describe_command
+from leaguebot.core.utils.interaction_errors import describe as describe_command, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -311,7 +311,9 @@ class TierPaletteModal(LeagueModal, title="Set one tier's colours"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self._cog.apply_tier_block(interaction, self._division, self.block.value)
+        await self._cog.apply_tier_block(
+            interaction, self._division, self.block.value, form=self
+        )
 
 
 class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
@@ -332,7 +334,7 @@ class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self._cog.apply_tier_xml(interaction, self.payload.value)
+        await self._cog.apply_tier_xml(interaction, self.payload.value, form=self)
 
 
 def _command(interaction: discord.Interaction) -> str:
@@ -1323,12 +1325,16 @@ class ImageCog(commands.Cog):
         try:
             canonical_slot = normalise_slot(slot)
         except InvalidSlot as exc:
-            await self._reply(interaction, f"❌ {exc}\nNothing was stored.")
+            await refuse(
+                interaction, f"❌ {exc}\nNothing was stored.", what=describe_command(interaction)
+            )
             return
         try:
             canonical_colour = normalise_hex(colour)
         except InvalidColour as exc:
-            await self._reply(interaction, f"❌ {exc}\nNothing was stored.")
+            await refuse(
+                interaction, f"❌ {exc}\nNothing was stored.", what=describe_command(interaction)
+            )
             return
 
         await self._config_service.set_tier_colour(
@@ -1354,8 +1360,8 @@ class ImageCog(commands.Cog):
             )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(
-            interaction,
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
             f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
         )
 
@@ -1372,8 +1378,13 @@ class ImageCog(commands.Cog):
             return
         await interaction.response.send_modal(TierPaletteModal(self, division))
 
-    async def apply_tier_block(self, interaction, division: str, text: str) -> None:
+    async def apply_tier_block(
+        self, interaction, division: str, text: str, *, form: discord.ui.Modal | None = None
+    ) -> None:
         """Store a pasted palette for one tier, or refuse the whole of it.
+
+        *form* is the form the palette was pasted into: a refusal is recorded under its name,
+        and the success under the command that opened it.
 
         Nothing is written while any line is faulty. The division is the unit of
         atomicity, and a tier drawn in four of its ten colours looks deliberate — which is
@@ -1384,9 +1395,12 @@ class ImageCog(commands.Cog):
         colours, problems = parse_palette_lines(text)
         if problems:
             listed = "\n".join(f"  • {problem}" for problem in problems)
-            await self._reply(
+            header = f"❌ Nothing was stored — {len(problems)} line(s) could not be read:"
+            await refuse(
                 interaction,
-                f"❌ Nothing was stored — {len(problems)} line(s) could not be read:\n{listed}",
+                f"{header}\n{listed}",
+                what=describe_form(form) if form is not None else describe_command(interaction),
+                reason=f"{len(problems)} line(s) could not be read:\n{listed}",
             )
             return
 
@@ -1404,7 +1418,11 @@ class ImageCog(commands.Cog):
             )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"Tier colours: {division} — {written} set")
+        await _record(
+            self.bot, interaction, "/images config per-tier-bulk-colour", "Success",
+            f"Tier colours: {division}",
+            *(f"{slot} = {colour}" for slot, colour in colours.items()),
+        )
 
     @config.command(
         name="colour-xml-import",
@@ -1425,37 +1443,63 @@ class ImageCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         raw = await file.read()
         if not raw:
-            await self._reply(interaction, "❌ The attached file is empty.")
+            await refuse(
+                interaction, "❌ The attached file is empty.", what=describe_command(interaction)
+            )
             return
         if len(raw) > MAX_PALETTE_IMPORT_BYTES:
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ File is too large (max {MAX_PALETTE_IMPORT_BYTES // 1000} KB).",
+                what=describe_command(interaction),
             )
             return
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
-            await self._reply(interaction, "❌ File could not be decoded as UTF-8.")
+            await refuse(
+                interaction,
+                "❌ File could not be decoded as UTF-8.",
+                what=describe_command(interaction),
+            )
             return
 
         await self.apply_tier_xml(interaction, text)
 
-    async def apply_tier_xml(self, interaction, text: str) -> None:
+    async def apply_tier_xml(
+        self, interaction, text: str, *, form: discord.ui.Modal | None = None
+    ) -> None:
         """Import many tiers, rejecting a block at a time (decided 2026-09-08).
 
-        A document that cannot be parsed fails whole, there being nothing to salvage from
-        it. Past that, each division stands or falls alone, so one mistyped tier does not
-        cost a league the other four.
+        A document that cannot be parsed is refused whole, there being nothing to salvage from
+        it, and so is one in which every block is rejected. Past that, each division stands or
+        falls alone, so one mistyped tier does not cost a league the other four. *form* is the
+        form the document was pasted into: a refusal is recorded under its name, and the
+        success under the command that opened it.
         """
         from leaguebot.image.utils.palette_import import PaletteXmlError, parse_palette_xml
 
+        refused = describe_form(form) if form is not None else describe_command(interaction)
         try:
             blocks, problems = parse_palette_xml(text)
         except PaletteXmlError as exc:
             listed = "\n".join(f"  • {error}" for error in exc.errors)
-            await self._reply(interaction, f"❌ Nothing was stored:\n{listed}")
-            await self._log(interaction, "Tier colour import | FAILED (unreadable)")
+            await refuse(
+                interaction,
+                f"❌ Nothing was stored:\n{listed}",
+                what=refused,
+                reason=f"the document could not be read:\n{listed}",
+            )
+            return
+
+        if problems and not blocks:
+            listed = "\n".join(f"  • {problem}" for problem in problems)
+            await refuse(
+                interaction,
+                f"⚠️ {len(problems)} block(s) were not imported:\n{listed}",
+                what=refused,
+                reason=f"every block was rejected:\n{listed}",
+            )
             return
 
         written = 0
@@ -1477,10 +1521,12 @@ class ImageCog(commands.Cog):
             lines += [f"  • {problem}" for problem in problems]
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(
-            interaction,
-            f"Tier colour import | {len(blocks)} tier(s), {written} colour(s), "
-            f"{len(problems)} rejected",
+        details = [f"{b.division}: {len(b.colours)} colour(s)" for b in blocks]
+        if problems:
+            details.append("passed over:")
+            details += [f"  {problem}" for problem in problems]
+        await _record(
+            self.bot, interaction, "/images config colour-xml-import", "Success", *details
         )
 
     async def _declared_colour_slots(self) -> set[str]:
