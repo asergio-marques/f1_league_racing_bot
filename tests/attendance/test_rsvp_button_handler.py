@@ -1040,7 +1040,6 @@ ANSWER_CASES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 @pytest.mark.parametrize(
     "profile,held,given,starts_in,deadline_hours,outcome",
     [case[1:] for case in ANSWER_CASES],
@@ -1066,7 +1065,6 @@ async def test_answer_rsvp_applies_the_lock_rules(
     assert await _status(db_path, profile) == (given if outcome == "RECORDED" else held)
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
     """An accept is stamped with the `now` it is given, which orders the reserves."""
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
@@ -1080,7 +1078,6 @@ async def test_answer_rsvp_sets_the_accept_time_from_now(tmp_path):
     assert await _accepted_at(db_path, RESERVE_PROFILE) == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_path):
     """Pressing Accept again changes nothing, and leaves a reserve's place in the queue."""
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
@@ -1096,7 +1093,6 @@ async def test_answer_rsvp_keeps_the_accept_time_of_an_answer_already_held(tmp_p
     assert await _accepted_at(db_path, RESERVE_PROFILE) == earlier
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_path):
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
 
@@ -1111,7 +1107,6 @@ async def test_answer_rsvp_clears_the_accept_time_of_an_accept_withdrawn(tmp_pat
     assert await _accepted_at(db_path, RESERVE_PROFILE) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_path):
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
 
@@ -1124,7 +1119,6 @@ async def test_answer_rsvp_opens_a_row_for_a_driver_placed_after_the_call(tmp_pa
     assert await _status(db_path, RESERVE_PROFILE) == "ACCEPTED"
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     """A write that changes no row is reported as not recorded, never as recorded."""
     from leaguebot.attendance.services.attendance_service import RsvpOutcome
@@ -1139,7 +1133,6 @@ async def test_answer_rsvp_reports_an_answer_it_could_not_write(tmp_path):
     assert await _status(db_path, FULL_TIME_PROFILE) == "NO_RSVP"
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_a_reserve_s_accept_then_decline_after_the_deadline_leaves_the_accept(
     tmp_path, monkeypatch
 ):
