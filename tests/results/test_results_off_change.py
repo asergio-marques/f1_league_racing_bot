@@ -289,6 +289,15 @@ async def _announce_verdicts(db_path: str) -> None:
         await db.commit()
 
 
+async def _closing_the_rounds_fails(db_path: str) -> None:
+    """Make the closing of a round fail inside the switch-off's save: a trigger of the test's own."""
+    await _set(
+        db_path,
+        "CREATE TRIGGER test_closing_fails BEFORE UPDATE OF status ON rounds "
+        "WHEN NEW.status = 'FINAL' BEGIN SELECT RAISE(ABORT, 'closing failed'); END",
+    )
+
+
 async def _set(db_path: str, sql: str, params: tuple = ()) -> None:
     async with get_connection(db_path) as db:
         await db.execute(sql, params)
@@ -408,14 +417,10 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     its own, down to the season's move to Pending completion.
     """
     seeded = await _seed(tmp_path / "failing")
+    await _closing_the_rounds_fails(seeded.db_path)
     bot = _league(seeded.db_path)
-    with monkeypatch.context() as patched:
-        patched.setattr(
-            SeasonService, "end_rounds_awaiting_results_on",
-            AsyncMock(side_effect=RuntimeError("closing failed")),
-        )
-        await _confirm(bot)
-        await run_queue(bot)
+    await _confirm(bot)
+    await run_queue(bot)
 
     assert await _flag(seeded.db_path) == 1
     assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "AWAITING_RESULTS"
@@ -455,15 +460,12 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
-async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_path, monkeypatch):
+async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_path):
     from leaguebot.core.utils.interaction_errors import failure_reply
 
     seeded = await _seed(tmp_path)
+    await _closing_the_rounds_fails(seeded.db_path)
     bot = _league(seeded.db_path)
-    monkeypatch.setattr(
-        SeasonService, "end_rounds_awaiting_results_on",
-        AsyncMock(side_effect=RuntimeError("closing failed")),
-    )
     interaction = await _confirm(bot)
     await run_queue(bot)
 
@@ -471,7 +473,7 @@ async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_pat
         WHAT, "Nothing was changed: Results & Standings is still on."
     )
     assert any(
-        line.startswith(f"❌ {WHAT} failed for {NAMED} — RuntimeError. "
+        line.startswith(f"❌ {WHAT} failed for {NAMED} — IntegrityError. "
                         "The details are in the host's log.")
         for line in await _lines(bot)
     )
