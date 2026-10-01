@@ -1098,7 +1098,10 @@ class ImageCog(commands.Cog):
             await self._reply(
                 interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
             )
-            await self._log(interaction, f"{label} image output disabled")
+            await _record(
+                self.bot, interaction, _command(interaction), "Success",
+                f"{label} image output: disabled",
+            )
             return
 
         # Switching *on* is refused while the drawings behind it are unusable, and the
@@ -1109,15 +1112,14 @@ class ImageCog(commands.Cog):
         blocking = await self._aspect_blocking_reasons_if_enabled(aspect.value)
         if blocking:
             body = "\n".join(f"  • {reason}" for reason in blocking)
-            await self._reply(
+            await refuse(
                 interaction,
                 f"⛔ **{label}** image output was **not** switched on — "
                 f"it cannot be drawn as things stand:\n{body}\n"
                 f"Put that right and run this command again. The output is still posted "
                 f"as text in the meantime.",
-            )
-            await self._log(
-                interaction, f"{label} image output refused — {len(blocking)} problem(s)"
+                what=describe_command(interaction),
+                reason="\n".join(blocking),
             )
             return
 
@@ -1125,7 +1127,10 @@ class ImageCog(commands.Cog):
         lines = toggle_enabled_lines(aspect.value, label, [])
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"{label} image output enabled")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"{label} image output: enabled",
+        )
 
     async def _aspect_blocking_reasons(self, aspect: str) -> list[str]:
         statuses = await self._validity_service.aspect_statuses()
@@ -1196,8 +1201,10 @@ class ImageCog(commands.Cog):
         try:
             canonical = normalise_hex(colour)
         except InvalidColour as exc:
-            await self._reply(
-                interaction, f"❌ {exc}\nThe stored colour is unchanged."
+            await refuse(
+                interaction,
+                f"❌ {exc}\nThe stored colour is unchanged.",
+                what=describe_command(interaction),
             )
             return
 
@@ -1214,7 +1221,10 @@ class ImageCog(commands.Cog):
         )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"Fastest-lap colour = {canonical}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Fastest-lap colour: {canonical}",
+        )
 
     # ── Per-tier colours (051) ────────────────────────────────────────────
 
@@ -1273,8 +1283,9 @@ class ImageCog(commands.Cog):
             )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(
-            interaction, f"Per-tier colours = {'on' if enable else 'off'}"
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Per-tier colours: {'on' if enable else 'off'}",
         )
 
     @config.command(
@@ -1595,10 +1606,11 @@ class ImageCog(commands.Cog):
         # whole TZPATH tree on every call — 325 ms cold on the Pi, for one membership test.
         candidate = zone.strip()
         if not is_known_zone(candidate):
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ `{candidate}` is not a recognised time zone. "
                 f"Use an IANA name such as `Europe/Lisbon` or `UTC`.",
+                what=describe_command(interaction),
             )
             return
 
@@ -1609,7 +1621,9 @@ class ImageCog(commands.Cog):
             f"Times are shown in the offset that zone carries **on the date displayed**, "
             f"so a season spanning a daylight-saving change stays correct.",
         )
-        await self._log(interaction, f"Time zone = {candidate}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success", f"Time zone: {candidate}"
+        )
 
     @config_time_zone.autocomplete("zone")
     @bounded_autocomplete()
@@ -1650,7 +1664,10 @@ class ImageCog(commands.Cog):
             "time_format", clock.value
         )
         await self._reply(interaction, f"✅ Clock format set to **{clock.name}**.")
-        await self._log(interaction, f"Clock format = {clock.value}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Clock format: {clock.name} ({clock.value})",
+        )
 
     @config.command(
         name="date-format",
@@ -1694,7 +1711,10 @@ class ImageCog(commands.Cog):
             "date_format", style.value
         )
         await self._reply(interaction, f"✅ Date format set to **{style.name}**.")
-        await self._log(interaction, f"Date format = {style.value}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Date format: {style.name} ({style.value})",
+        )
 
     # ── /images config view ───────────────────────────────────────────────
 

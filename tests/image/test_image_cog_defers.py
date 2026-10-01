@@ -39,10 +39,6 @@ from tests.support.image_cog_doubles import (
 
 TOGGLE = "images config toggle"
 
-_TOGGLE_NOT_YET_RECORDED = (
-    "#482: `/images config toggle` does not yet answer to `_module_gate` or record its own line"
-)
-
 #: The commands that read a template from disk before they can answer.
 READS_TEMPLATES = [
     "config_toggle",
@@ -182,7 +178,6 @@ async def _toggle(cog, aspect="verdicts"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_TOGGLE_NOT_YET_RECORDED)
 async def test_switching_on_is_refused_while_the_drawing_is_broken():
     """The aspect stays off: storing it would arm an output that posts nothing. The refusal
     is recorded as one "⛔" line naming the command, with what blocks it."""
@@ -199,7 +194,6 @@ async def test_switching_on_is_refused_while_the_drawing_is_broken():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_TOGGLE_NOT_YET_RECORDED)
 async def test_switching_on_succeeds_when_the_drawing_is_sound():
     cog = _Toggled(enabled=False, blocking=[])
 
@@ -210,7 +204,6 @@ async def test_switching_on_succeeds_when_the_drawing_is_sound():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_TOGGLE_NOT_YET_RECORDED)
 async def test_switching_off_is_never_refused():
     """Off posts as text and draws nothing, so no drawing can stand in the way.
 
