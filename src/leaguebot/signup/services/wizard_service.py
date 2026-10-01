@@ -114,6 +114,10 @@ class SignupNotOpenError(Exception):
 # ---------------------------------------------------------------------------
 
 
+#: What `WizardService.withdraw` returns where the signup has already ended (S5-A6).
+_SIGNUP_ENDED = "This signup has already ended. Nothing was changed."
+
+
 class WizardService:
     """Manages the full lifecycle of a driver's signup wizard session.
 
@@ -641,13 +645,27 @@ class WizardService:
         self,
         discord_user_id: str,
         guild: discord.Guild,
-    ) -> None:
+    ) -> str | None:
         """Voluntarily withdraw from the signup wizard (T040).
 
-        Cancels pending jobs/tasks, transitions driver to NOT_SIGNED_UP,
-        posts cancellation notice, and schedules channel deletion.
+        Transitions the driver to NOT_SIGNED_UP, cancels pending jobs/tasks, writes the
+        withdrawal's line, posts the cancellation notice and schedules channel deletion.
         FR-033, FR-036.
+
+        Returns None where the signup was withdrawn, and otherwise why nothing was changed, for
+        the Cancel Signup button to answer and record: the transition is refused (`ValueError`)
+        where the signup has already ended, withdrawn, rejected, expired or closed, which a
+        leftover button can still press. Nothing is posted again and the channel's deletion is
+        not pushed back. Only that refusal is caught: any other error from the transition
+        reaches the button's failure handler (#457), and nothing is cancelled or claimed.
         """
+        try:
+            await self._driver_service.transition(
+                discord_user_id, DriverState.NOT_SIGNED_UP
+            )
+        except ValueError:
+            return _SIGNUP_ENDED
+
         # Cancel asyncio correction task if any
         ckey = discord_user_id
         if ckey in self._correction_tasks:
@@ -656,13 +674,7 @@ class WizardService:
         # Cancel inactivity APScheduler job
         await self._cancel_inactivity_job(discord_user_id)
 
-        # Transition driver to NOT_SIGNED_UP
-        try:
-            await self._driver_service.transition(
-                discord_user_id, DriverState.NOT_SIGNED_UP
-            )
-        except Exception:
-            log.warning("withdraw: driver transition failed for %s", discord_user_id, exc_info=True)
+        await self._record_signup_line(discord_user_id, guild, "Withdrawn")
 
         # Post cancellation notice and hold channel
         await self.trigger_channel_hold(
@@ -670,6 +682,7 @@ class WizardService:
             "❌ You have cancelled your signup. "
             "This channel will be automatically deleted in 24 hours.",
         )
+        return None
 
     async def approve_signup(
         self,
@@ -1459,9 +1472,18 @@ class WizardService:
         """
         if ends_step and wizard.draft_answers.get("_is_correction"):
             return
-        member = guild.get_member(int(wizard.discord_user_id))
-        named = member_named(getattr(member, "display_name", None), int(wizard.discord_user_id))
-        await self._output_router.post_log(f"{named} | Signup | {answer}")
+        await self._record_signup_line(wizard.discord_user_id, guild, answer)
+
+    async def _record_signup_line(
+        self, discord_user_id: str, guild: discord.Guild, text: str
+    ) -> None:
+        """Write "Name (<@id>) | Signup | <text>", the wizard's line family (S5-A1).
+
+        The driver is named by display name and mention, and by mention alone once they have left.
+        """
+        member = guild.get_member(int(discord_user_id))
+        named = member_named(getattr(member, "display_name", None), int(discord_user_id))
+        await self._output_router.post_log(f"{named} | Signup | {text}")
 
     @staticmethod
     def _wizard_channel(

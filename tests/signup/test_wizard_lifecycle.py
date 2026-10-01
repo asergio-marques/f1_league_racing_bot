@@ -170,13 +170,6 @@ async def test_withdrawing_cancels_a_pending_correction_window(lifecycle):
     assert DRIVER_ID not in lifecycle.svc._correction_tasks
 
 
-_NO_WITHDRAWN_LINE = "#482: a withdrawal writes no line in the log channel"
-_ENDED_NOT_REFUSED = (
-    "#482: a Cancel Signup press after the signup ended posts the notice again and pushes the "
-    "channel's deletion back, instead of being refused"
-)
-_TRANSITION_SWALLOWED = "#457: withdraw swallows every error from the driver's transition"
-
 #: The reason `withdraw` gives where the signup has already ended (S5-A6).
 _ALREADY_ENDED = "This signup has already ended. Nothing was changed."
 
@@ -187,7 +180,6 @@ def _alex_on_the_server(lifecycle) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_WITHDRAWN_LINE)
 async def test_withdrawing_writes_one_withdrawn_line(lifecycle):
     """A withdrawal is the driver's own act through the Cancel Signup button, so it writes one
     line in the wizard's family (S5-A1)."""
@@ -200,7 +192,6 @@ async def test_withdrawing_writes_one_withdrawn_line(lifecycle):
     assert lines == [f"Alex (<@{DRIVER_ID}>) | Signup | Withdrawn"]
 
 
-@pytest.mark.xfail(strict=True, reason=_ENDED_NOT_REFUSED)
 async def test_a_withdrawal_after_the_signup_ended_is_refused_and_changes_nothing(lifecycle):
     """The driver's transition is refused (`ValueError`) because the signup has already ended:
     withdrawn, rejected, expired or closed. `withdraw` returns why, for the button to answer and
@@ -215,7 +206,6 @@ async def test_a_withdrawal_after_the_signup_ended_is_refused_and_changes_nothin
     lifecycle.svc._output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_TRANSITION_SWALLOWED)
 async def test_a_withdrawal_whose_transition_fails_otherwise_is_not_swallowed(lifecycle):
     """Only the expected refusal (`ValueError`) is caught by name; any other error reaches the
     Cancel Signup button's failure handler, and nothing claims the signup was withdrawn."""

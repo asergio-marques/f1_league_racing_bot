@@ -47,7 +47,7 @@ from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
-from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, is_foreign_guild
+from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, guild_of, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.weather.utils.message_builder import discord_ts
@@ -210,6 +210,23 @@ async def _not_for_you(
 ) -> None:
     """Refuse a press by somebody who does not own the wizard the button is on."""
     await _refuse_wizard_button(interaction, owner_id, label, "⛔ This button is not for you.")
+
+
+async def _withdraw(
+    interaction: discord.Interaction, bot: LeagueBot, owner_id: str
+) -> None:
+    """Withdraw the driver whose Cancel Signup button *interaction* pressed, and answer it.
+
+    `WizardService.withdraw` returns why it did nothing where the signup had already ended, and
+    the press is refused with that and recorded, never answered as a withdrawal. Any other error
+    reaches the view's failure handler.
+    """
+    await interaction.response.defer(ephemeral=True)
+    reason = await bot.wizard_service.withdraw(owner_id, guild_of(interaction))
+    if reason is not None:
+        await _refuse_wizard_button(interaction, owner_id, "Cancel Signup", f"⛔ {reason}")
+        return
+    await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
 
 
 #: The states a driver may stand in when they press Sign Up having already got a profile,
@@ -505,13 +522,7 @@ class WithdrawButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(
-            _user_id, interaction.guild
-        )
-        await interaction.followup.send(
-            "✅ Your signup has been withdrawn.", ephemeral=True
-        )
+        await _withdraw(interaction, _bot, _user_id)
 
 
 class NoNotesButtonView(LeagueView):
@@ -559,13 +570,7 @@ class NoNotesButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(
-            _user_id, interaction.guild
-        )
-        await interaction.followup.send(
-            "✅ Your signup has been withdrawn.", ephemeral=True
-        )
+        await _withdraw(interaction, _bot, _user_id)
 
 
 class PlatformButtonView(LeagueView):
@@ -618,11 +623,7 @@ class PlatformButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(
-            _user_id, interaction.guild
-        )
-        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+        await _withdraw(interaction, _bot, _user_id)
 
 
 class DriverTypeButtonView(LeagueView):
@@ -667,11 +668,7 @@ class DriverTypeButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(
-            _user_id, interaction.guild
-        )
-        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+        await _withdraw(interaction, _bot, _user_id)
 
 
 class PreferredTeamsButtonView(LeagueView):
@@ -786,11 +783,7 @@ class PreferredTeamsButtonView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(
-            _user_id, interaction.guild
-        )
-        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+        await _withdraw(interaction, _bot, _user_id)
 
 
 class NoPreferenceTeammateView(LeagueView):
@@ -828,11 +821,7 @@ class NoPreferenceTeammateView(LeagueView):
         if _user_id is None or str(interaction.user.id) != _user_id:
             await _not_for_you(interaction, _user_id, "Cancel Signup")
             return
-        await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.withdraw(
-            _user_id, interaction.guild
-        )
-        await interaction.followup.send("✅ Your signup has been withdrawn.", ephemeral=True)
+        await _withdraw(interaction, _bot, _user_id)
 
 
 class SignupCog(commands.Cog):

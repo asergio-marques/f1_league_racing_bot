@@ -535,16 +535,10 @@ async def test_a_button_on_a_step_already_answered_is_refused_and_recorded(
 # Cancel Signup after the signup ended
 # ---------------------------------------------------------------------------
 
-_ENDED_NOT_REFUSED = (
-    "#482: a Cancel Signup press after the signup ended is answered as withdrawn, and nothing "
-    "is recorded"
-)
-
 #: The reason `withdraw` gives where the signup has already ended (S5-A6).
 _ALREADY_ENDED = "This signup has already ended. Nothing was changed."
 
 
-@pytest.mark.xfail(strict=True, reason=_ENDED_NOT_REFUSED)
 @pytest.mark.parametrize(
     "view_name, button",
     [
