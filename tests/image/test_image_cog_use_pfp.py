@@ -50,6 +50,7 @@ _REPLIES_FIRST = "#482: /images use-pfp toggle still replies before it schedules
 _PRESSED_TWICE = "#482: a second Confirm press still saves again"
 _NOT_RECHECKED = "#482: the portrait form and its Confirm do not yet check again on submit"
 _FORM_NOT_RECORDED = "#482: the portrait-time form's refusal is not yet recorded"
+_BUTTONS_LEFT_UP = "#482: pressing Confirm does not yet take the buttons down"
 
 
 def _unwrap(command):
@@ -293,7 +294,10 @@ async def test_a_readable_time_asks_for_confirmation_before_committing():
     bot.image_config_service.set_pfp_flag.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTONS_LEFT_UP)
 async def test_confirming_stores_the_time_enables_the_job_and_arms_it():
+    """Confirm stores the time, enables daily updates, arms the job and takes its buttons down,
+    so the same confirmation cannot be pressed again."""
     cog, bot = _cog(use_pfp=True)
     view, _submitted = await _confirmation(cog, bot)
     interaction = _interaction(bot)
@@ -310,6 +314,8 @@ async def test_confirming_stores_the_time_enables_the_job_and_arms_it():
         "19:00"
     )
     assert "19:00 UTC" in _said(interaction)
+    interaction.response.edit_message.assert_awaited()
+    assert interaction.response.edit_message.await_args.kwargs.get("view", "kept") is None
 
 
 async def test_cancelling_the_confirmation_changes_nothing():
