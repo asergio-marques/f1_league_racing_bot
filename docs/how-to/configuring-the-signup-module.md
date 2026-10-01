@@ -78,7 +78,7 @@ The module does nothing at all until it has a channel, and the league's two role
 
 **The channel** is where the Sign Up button gets posted. Setting it rewrites the channel's permissions: everyone loses sight of it, the base role can see it but cannot type in it, and holders of either league role can see and type. That is deliberate — the only thing a driver should be doing in there is pressing the button.
 
-**Give the bot Manage Channels and Manage Roles on it first** — on a channel, Discord calls them **Manage Channel** and **Manage Permissions**. Without both the command is refused before anything changes. Moving the signup channel clears the old channel's permissions before the new one is set, so if Discord then refuses the new one, the reply tells you the old channel needs putting right by hand unless you fix the permission and run it again.
+**Give the bot Manage Channels and Manage Roles on it first** — on a channel, Discord calls them **Manage Channel** and **Manage Permissions**. Without both the command is refused before anything changes. Moving the signup channel clears the old channel's permissions before the new one is set, so if Discord then refuses the new one, the reply tells you the old channel needs putting right by hand unless you fix the permission and run it again. If the move goes through but the bot cannot clear the old channel, the new channel stands and the reply and the log line name the old one: it stays locked until you put its permissions right by hand.
 
 **The two roles are your league's, not this module's**, and are set in the [core guide](configuring-the-core-bot.md#step-1--tell-the-bot-who-is-in-charge). Here is what signups do with them. **The base role** is who the signups are for: it decides who can see the channel, and it is the role that gets pinged when you open the window. Change it and the bot moves the channel's permissions to the new role. **The driver role** is the reward: the bot grants it the moment you approve a driver, so it is the badge that says someone is through the door. That means the bot has to be able to grant it — its own role must sit above the driver role in your server's role list, and it needs **Manage Roles** — and `/bot driver-role` refuses one it cannot. If either role is later deleted from the server, you can replace it even mid-season; the core guide says how.
 
@@ -205,9 +205,11 @@ When a driver finishes, the bot posts a **Signup Review** panel in their channel
 
 **Reject** ends it. They are told, with your reason, and are back to Not Signed Up.
 
-Anyone holding the interaction role or the league admin role can press these. The driver whose signup it is cannot — they can read the channel, so the buttons check who is pressing.
+Anyone holding the interaction role or the league admin role can press these. The driver whose signup it is cannot — they can read the channel, so the buttons check who is pressing. Every refusal of a press, and each press that asks for a reason, is recorded in the log channel.
 
-> **Your next message in that channel becomes the reason.** After pressing Reject or Request Changes, the very next thing you type there is taken as the reason and deleted. Do not press the button and then start chatting to the driver — say your piece first, then press.
+**Approve stands even where the driver role cannot be given** — a role missing, the driver gone from the server, Discord refusing. You are told in the reply, and the Approved line in the log says so; give the role by hand.
+
+> **Your next message in that channel becomes the reason, and it must come within five minutes.** After pressing Reject or Request Changes, the very next thing you type there is taken as the reason and deleted. Do not press the button and then start chatting to the driver — say your piece first, then press. If no reason arrives in five minutes you are told that nothing was rejected (or that no changes were requested); the signup still awaits review, the lapse is recorded in the log channel, and you press the button again. **A restart drops the wait** without a record, so press again after one. A reason that arrives after the signup has moved on — you or another manager approved it, or the driver withdrew — is refused and the driver keeps their state.
 
 > **You have five minutes to choose which field to correct.** Press Request Changes, type the reason, and a row of buttons appears for the nine fields. Leave it too long and the driver goes back to waiting for approval as though nothing happened. Start again.
 >
@@ -215,7 +217,7 @@ Anyone holding the interaction role or the league admin role can press these. Th
 >
 > **A restart sends them back too, whatever time was left.** If the bot restarts while the field buttons are up, the driver returns to waiting for approval immediately and you are pinged the same way, with the message saying the bot restarted. The five minutes cannot run while the bot is down, and you are no longer sat there choosing — so the window is closed rather than left open for a press that would never come. Press Request Changes again when you are ready.
 
-A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, and their channel is tidied away 24 hours after that. Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
+A driver who goes quiet for 24 hours at any question has their signup cancelled automatically, recorded in the log channel (also where a restart finds the time passed), and their channel is tidied away 24 hours after that. Every finished signup channel goes the same way, whether it ended in approval, rejection or a timeout. A driver who leaves the server has their signup cancelled and their channel deleted at once, and the bot notes it in the log channel.
 
 There are no reminders. The bot never chases a driver who has not signed up, and never re-posts the button.
 
@@ -232,7 +234,7 @@ If nobody is mid-signup it closes immediately. Otherwise you get a confirmation 
 - **Drivers still filling in the form** are returned to Not Signed Up by the close, and would have to start again. If you want them in, follow their links and nudge them to finish before you close.
 - **Drivers awaiting your approval or a correction** keep their place. You can still approve, reject or ask them for changes once the window has closed.
 
-If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up.
+If only the second group is waiting, the confirmation says nobody will lose their signup. After you confirm, the reply says how many drivers were returned to Not Signed Up. **Confirm checks the window again**: if signups have since closed, were reopened, or had a close time armed, it is refused and closes nothing — run `/signup close` again. If a step of the close fails (a driver not returned or not told, the Sign Up button not removed, the notice not posted, the season not moved on) the reply and the log line name it, the rest having run; put that part right by hand.
 
 **If you set a close time, clear it first.** `/signup close` refuses while one is armed, names the time it is waiting for, and sends you here:
 
@@ -253,7 +255,11 @@ Closing deletes the Sign Up button, posts a **Signups are now closed** notice in
 >
 > **Closing is not a deadline for your own review.** Request Changes still works after the window has shut, so a driver you send back then behaves exactly as they would have before it — including the five-minute field window and the ping if you leave it.
 
-> **The confirmation expires after five minutes, silently.** Leave the dialog sitting and the buttons simply stop responding, with nothing to tell you why. Run the command again.
+> **The confirmation expires after five minutes.** Leave the dialog sitting and its buttons come down and the lapse is recorded in the log channel, with signups still open. Cancel is recorded the same way. Run the command again.
+
+> **A close nobody runs is recorded too.** At its close time, after a restart that found the time passed, at a season's end and when every division is done, the log channel gets one line naming no member, with the drivers returned and any failed step.
+
+A Sign Up button the close could not delete starts nothing: pressed after the window closed, it is refused as *Signups are closed*.
 
 ---
 
@@ -383,6 +389,7 @@ Worth running through before you confirm the season's configuration, which fixes
 | Drivers you expected to be dropped by a close are still there | Closing only drops drivers still filling the form in, as the confirmation said. Anyone waiting on you keeps their place — approve or reject them |
 | `/signup time-slot add`, `remove` or another signup setting refused, naming a season | That season's configuration is confirmed, so its signup settings are fixed until it ends |
 | Your time slots and settings came back after re-enabling the module | As intended: disabling clears only the signup channel. Set it again with `/signup channel` |
+| Pressing a correction choice says the correction request has ended | The five minutes lapsed, another choice was made, or the signup was approved or rejected meanwhile. Nothing was changed. Check the driver's state: a driver back in approval needs Request Changes pressed again |
 | A driver went back to waiting for approval on their own | The five-minute field window lapsed, or the bot restarted while it was open. The ping in their channel says which. Press **Request Changes** again |
 | Roles not granted after `/driver assign` | Placements are not confirmed yet. They are all granted when you confirm them from `/season placements-review` |
 | A driver cannot sign up, saying they are already approved | They are still Unassigned or placed this season. They sign up again once the season ends |
