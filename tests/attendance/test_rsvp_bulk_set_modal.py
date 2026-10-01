@@ -654,7 +654,6 @@ async def test_a_paste_with_nothing_saved_is_refused(tmp_path):
     assert "900000001" in logged[0] and "900000002" in logged[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the form does not pass upsert_rsvp_status the time")
 async def test_every_answer_of_a_paste_is_saved_at_the_time_the_form_read(tmp_path):
     """The service takes the time rather than reading the clock: the form reads it once and
     hands the same moment to every answer it saves, so an accept's time is the form's."""

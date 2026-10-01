@@ -1239,6 +1239,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
             )
             return
 
+        now = datetime.now(timezone.utc)
         applied: list[str] = []
         errors: list[str] = []
 
@@ -1292,6 +1293,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 division_id=self._division_id,
                 driver_profile_id=driver_profile_id,
                 status=new_status,
+                now=now,
             )
             applied.append(f"`{id_str}` → {new_status.lower()}")
 

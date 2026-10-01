@@ -310,11 +310,13 @@ class AttendanceService:
         division_id: int,
         driver_profile_id: int,
         status: str,
+        *,
+        now: datetime,
     ) -> bool:
         """Record *status* for one driver of one round, and manage accepted_at with it.
 
-        - Transitioning TO 'ACCEPTED': set accepted_at to current UTC time.
-        - Re-accepting after a non-ACCEPTED status: reset accepted_at to current UTC time.
+        - Transitioning TO 'ACCEPTED': set accepted_at to *now*.
+        - Re-accepting after a non-ACCEPTED status: reset accepted_at to *now*.
         - Transitioning AWAY from 'ACCEPTED': set accepted_at to NULL.
 
         Returns whether a row now carries the answer, so a caller can tell a driver the truth
@@ -342,7 +344,7 @@ class AttendanceService:
         ``accepted_at`` follows the ordinary rule above rather than a special case of it.
         Every other column takes the same default ``bulk_insert_attendance_rows`` gives it.
         """
-        accepted_at = datetime.now(timezone.utc).isoformat() if status == "ACCEPTED" else None
+        accepted_at = now.isoformat() if status == "ACCEPTED" else None
         async with get_connection(self._db_path) as db:
             recorded = await self._write_answer(
                 db, round_id, division_id, driver_profile_id, status, accepted_at
