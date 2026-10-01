@@ -37,7 +37,7 @@ This guide covers the weather module only. Setting the bot up, creating a season
 | `/weather channel` | The **interaction role**, and the module already on |
 | Anything under `/images` | See the image guide |
 
-> **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
+> **Every command in this guide is gated on the module being on.** Run one before step 1 and you are told the Weather module is not enabled — not that you lack a permission. Step 1 genuinely has to come first.
 
 > **The timings can only be set before a season's placements are confirmed.** All three `/weather config` commands are refused from that moment until the season ends, and the timings in force are the ones the bot noted when the season was approved. If you are going to change them, change them now — see step 3.
 
@@ -89,7 +89,7 @@ Three settings, and they are the only real dials the weather module has.
 
 Each one must be at least 1, and they have to stay in order — phase 1 earlier than phase 2, phase 2 earlier than phase 3. The bot works that out in hours, so a phase 2 of 2 days and a phase 3 of 48 hours is refused for landing at the same moment. When it refuses, it shows you both values in hours so you can see why.
 
-Every reply also tells you where the other two stand, which saves setting one and forgetting what it now sits next to.
+Every reply also tells you where the other two stand, which saves setting one and forgetting what it now sits next to. Give one the value it already has and the bot says nothing changed, writes nothing, and records that in the log channel.
 
 **Do this before the season is approved.** The bot notes the timings at approval and works to those for the whole season. Afterwards the commands are refused outright, and there is no way to shift a running season's forecasts.
 

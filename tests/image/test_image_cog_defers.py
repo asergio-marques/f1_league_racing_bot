@@ -29,6 +29,15 @@ import pytest
 
 from leaguebot.image.cogs.image_cog import ImageCog
 from tests.support.undecorate import undecorate
+from tests.support.image_cog_doubles import (
+    assert_one_line,
+    assert_one_refusal,
+    interaction as _image_interaction,
+    log_bot,
+    said,
+)
+
+TOGGLE = "images config toggle"
 
 #: The commands that read a template from disk before they can answer.
 READS_TEMPLATES = [
@@ -76,7 +85,7 @@ def test_it_defers_before_reading_anything(name):
     defer_at = body.index("interaction.response.defer")
 
     for earlier in (
-        "await self._guard_module_enabled",
+        "await self._module_gate",
         "await self._config_service",
         "await self._validity_service",
         "evaluate_all_templates",
@@ -99,14 +108,15 @@ def test_it_never_opens_a_second_response(name):
 def test_the_module_guard_replies_safely_after_a_defer():
     """Shared by deferred and undeferred callers alike, so it cannot assume either.
 
-    `_guard_module_enabled` used `response.send_message` directly. Once its callers
-    defer, that raises rather than telling the manager the module is off — the guard
-    would fail exactly when it had something to say.
+    The guard once used `response.send_message` directly. Once its callers defer, that
+    raises rather than telling the manager the module is off — the guard would fail exactly
+    when it had something to say. It refuses through `refuse`, which follows up once the
+    interaction is answered or deferred, and records the refusal.
     """
-    source = inspect.getsource(ImageCog._guard_module_enabled)
+    source = inspect.getsource(ImageCog._module_gate)
 
     assert "interaction.response.send_message" not in source
-    assert "self._reply(" in source
+    assert "refuse(" in source
 
 
 def test_reply_follows_up_when_the_interaction_is_already_deferred():
@@ -137,21 +147,17 @@ class _Toggled:
             self.stored.append((aspect, value))
 
         self._config_service.set_aspect = AsyncMock(side_effect=_set)
-        self._guard_module_enabled = AsyncMock(return_value=True)
-        self._reply = AsyncMock()
-        self._log = AsyncMock()
+        self._module_gate = AsyncMock(return_value=True)
+        # The real `_reply`, so a refusal and a success are read off the interaction alike.
+        self._reply = ImageCog._reply
+        self.bot = log_bot()
 
     async def _aspect_blocking_reasons_if_enabled(self, aspect):
         return self._blocking
 
 
-def _toggle_interaction():
-    from unittest.mock import AsyncMock, MagicMock
-
-    interaction = MagicMock()
-    interaction.guild_id = 1
-    interaction.response.defer = AsyncMock()
-    return interaction
+def _toggle_interaction(cog):
+    return _image_interaction(TOGGLE, bot=cog.bot)
 
 
 async def _toggle(cog, aspect="verdicts"):
@@ -166,20 +172,25 @@ async def _toggle(cog, aspect="verdicts"):
 
     body = undecorate(ImageCog.config_toggle)
     choice = app_commands.Choice(name=aspect, value=aspect)
-    await body(cog, _toggle_interaction(), choice)
+    interaction = _toggle_interaction(cog)
+    await body(cog, interaction, choice)
+    return interaction
 
 
 @pytest.mark.asyncio
 async def test_switching_on_is_refused_while_the_drawing_is_broken():
-    """The aspect stays off: storing it would arm an output that posts nothing."""
+    """The aspect stays off: storing it would arm an output that posts nothing. The refusal
+    is recorded as one "⛔" line naming the command, with what blocks it."""
     cog = _Toggled(enabled=False, blocking=["the verdicts drawing is not there."])
 
-    await _toggle(cog)
+    interaction = await _toggle(cog)
 
     assert cog.stored == [], "the aspect was switched on despite a broken drawing"
-    reply = cog._reply.await_args.args[1]
+    reply = said(interaction)
     assert "not** switched on" in reply
     assert "the verdicts drawing is not there." in reply
+    line = assert_one_refusal(cog.bot, f"`/{TOGGLE}`")
+    assert "the verdicts drawing is not there." in line
 
 
 @pytest.mark.asyncio
@@ -189,6 +200,7 @@ async def test_switching_on_succeeds_when_the_drawing_is_sound():
     await _toggle(cog)
 
     assert cog.stored == [("verdicts", True)]
+    assert_one_line(cog.bot, TOGGLE)
 
 
 @pytest.mark.asyncio
@@ -200,10 +212,11 @@ async def test_switching_off_is_never_refused():
     """
     cog = _Toggled(enabled=True, blocking=["the verdicts drawing is not there."])
 
-    await _toggle(cog)
+    interaction = await _toggle(cog)
 
     assert cog.stored == [("verdicts", False)]
-    assert "disabled" in cog._reply.await_args.args[1]
+    assert "disabled" in said(interaction)
+    assert_one_line(cog.bot, TOGGLE)
 
 
 # ── Every reply after the defer lands on the followup ─────────────────────
@@ -242,9 +255,10 @@ class _Interaction:
 def _stub_cog(*, images_enabled: bool = True):
     """A real `ImageCog`, so its own `_reply` and module guard are the ones exercised."""
     config_service = MagicMock()
-    config_service.set_field = AsyncMock()
-    config_service.set_flag = AsyncMock()
-    config_service.set_tier_colour = AsyncMock()
+    # Each setter reports a change, so the stored paths are the ones taken.
+    config_service.set_field = AsyncMock(return_value=True)
+    config_service.set_flag = AsyncMock(return_value=True)
+    config_service.set_tier_colour = AsyncMock(return_value=True)
     config_service.get_config = AsyncMock(
         return_value=MagicMock(per_tier_colour_enabled=True)
     )

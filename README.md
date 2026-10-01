@@ -298,8 +298,7 @@ another server, to a command used in a direct message, or made before `/bot init
 `/bot pack` is answered as ever but written to the host's log alone: there is no log channel to
 write it in, or no way to tell whether the person belongs to the league. A results paste into a
 submission channel is a message, not a command, and is not covered; so is an answer typed into the
-signup wizard, which records only its refusal. Some commands do not yet record
-every outcome in this form; they are being brought in line.
+signup wizard, which records only its refusal.
 
 ### `/bot init` — One-time server setup
 *Access: League admin · Can be run from any channel, or by a server administrator*
@@ -1048,7 +1047,7 @@ The weather module's own configuration is its three deadline commands, and `/wea
 
 The three deadline commands share the same preconditions, checked in this order:
 
-1. The weather module must be enabled — otherwise `❌ The weather module is not enabled.`
+1. The weather module must be enabled — otherwise `❌ The Weather module is not enabled.`
 2. **No season's placements may be confirmed** — otherwise `❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.` Deadlines are therefore set with no season, or before placements are confirmed.
 3. The value must be at least 1.
 4. The ordering invariant below must hold.
@@ -1080,7 +1079,7 @@ The three deadline commands share the same preconditions, checked in this order:
 |-----------|------|----------|-------------|
 | `hours` | Integer | ✅ | Number of hours before the round. Minimum 1. Default **2** |
 
-Every successful reply echoes the other two deadlines, and the change is written to the log channel.
+Every successful reply echoes the other two deadlines, and the change is written to the log channel under the command's own name, with all three deadlines beneath it. Giving a deadline the value it already holds changes nothing: the reply says so (`ℹ️ Nothing changed: the Phase 1 deadline is already **5 day(s)**.`), nothing is written, and the log channel records that nothing changed. A refusal comes first, so a deadline refused for any other reason is refused whatever it was given.
 
 #### `/weather config view` — Show the three deadlines currently set
 *Access: League manager · Weather module required*
@@ -2396,6 +2395,8 @@ Qualifying and race results are drawn from separate templates, as are the driver
 
 These sit under `/images template` rather than `/images config` because Discord allows at most 25 subcommands per group.
 
+Giving a template the filename it already holds changes nothing: the reply says so, nothing is written, and the log channel records that nothing changed. Every refusal comes first, so a filename that cannot be used is refused whatever it was.
+
 > **The two standings templates and the attendance sheet name an occasion, not a round.** Where
 > those three files used to carry a `round_number` field with the word `ROUND` drawn beside it as
 > artwork, they now carry a single `classification_label` field holding the whole phrase — `After
@@ -2562,7 +2563,7 @@ Every directory is a path relative to the project root, and one that resolves ou
 
 **Everything the bot ships sits under `resources/defaults/`, and you never edit it.** It is replaced wholesale when you update the bot. You do not point anything at it and you do not copy anything out of it: it is the second place the bot looks, automatically, whenever your own folder has nothing for a value.
 
-The subcommands in the table above exist for the league that wants its files somewhere else entirely — any path inside the project root is accepted. Most leagues never need to run one.
+The subcommands in the table above exist for the league that wants its files somewhere else entirely — any path inside the project root is accepted. Most leagues never need to run one. Naming the folder a directory already points at changes nothing: the reply says so and the log channel records that nothing changed. A refused template folder names every template at fault with its reason, in as many messages as the list needs.
 
 **What is already there.** A clone ships the sixteen default templates and a fallback per asset class — two for `markers/`, whose files are not all one shape — so the module draws every graphic from the first render, entirely out of placeholders, before you have made anything. It also ships the five tyre compounds in full, those being the bot's own vocabulary rather than your league's. No circuit, team or driver artwork ships: that is your league's to make, and you replace the placeholders a class at a time, seeing your own files appear as you go. **Driver portraits are the one class you need not draw at all** — the bot can obtain them from your drivers' Discord profile pictures instead. See *Driver portraits from Discord* below.
 
@@ -2637,7 +2638,7 @@ Colours are stored whether or not the feature is on and whether or not a templat
 
 > **A slot you do not mention keeps the colour it had.** Both are merges, not replacements, so a partial paste corrects part of a scheme rather than wiping the rest of it.
 
-> **An import takes each division separately.** A block that cannot be read — an unnamed tier, a bad colour, a tier named twice — is rejected whole and reported, and the other tiers still import. A division is never half-applied. A payload that is not valid XML at all is refused outright, since nothing can be salvaged from it.
+> **An import takes each division separately.** A block that cannot be read — an unnamed tier, a bad colour, a tier named twice, even spelt two ways ("Division 1" and "Division-1" are one tier) — is rejected whole and reported, and the other tiers still import. A division is never half-applied. A payload that is not valid XML at all is refused outright, since nothing can be salvaged from it.
 
 **Choosing a whole palette by hand is the hard part, so there is a tool for it.** `tools/tier_palette.py` takes one accent, reads the rest of the palette out of your own drawing, and prints the `per-tier-set-colour` commands for a division — keeping each colour's lightness, giving it the accent's hue, and cutting its colourfulness to a third so the greys stay grey. It changes nothing; it prints commands. See [the image module guide](docs/how-to/configuring-the-image-module.md) for when to reach for it.
 
@@ -2695,6 +2696,8 @@ confirm. **That time is UTC**, not your local time, and the box says so — the 
 everything in UTC. It defaults to `03:00`. Most spellings work: `3`, `03:00`, `3am`, `1530`.
 Turning the daily updates back off needs no time and asks for nothing.
 
+**The confirmation is recorded whichever way it ends.** Confirming is logged as a success, pressing Cancel as a cancel, and a confirmation left unanswered until it lapses as a lapse, naming the manager who opened it; either says the daily updates are unchanged and to run the command again to enable them. The buttons come down at each ending. Pressing Confirm twice stores and logs once: the second press is told the confirmation has already been answered. If the module is switched off, portraits are switched off, or the daily updates are switched on while the box or the confirmation stood open, nothing is stored and you are told so. If the setting is stored but the daily job cannot be scheduled, you are told the setting is stored and the job will be scheduled when the bot next starts, not that it is running; `/images use-pfp toggle` does the same when it cannot schedule the job.
+
 Both methods can be on at once. Pre-render updates keep a posted lineup current; daily
 updates keep the folder warm so the first lineup of a season is not the one that waits.
 
@@ -2740,9 +2743,15 @@ offer the approve button while the configuration is one that could never fetch a
 | `per-tier-bulk-colour` | `division` | — | Opens a form; paste `slot colour` lines to set several at once |
 | `colour-xml-import` | `file` (optional) | — | Several tiers at once, from an XML attachment or a pasted payload |
 
+**A value the setting already holds changes nothing.** `time-zone`, `time-format`, `date-format`, `fastest-lap-colour`, `per-tier-colour-toggle` and `per-tier-set-colour` given what they already hold reply `ℹ️ Nothing changed: … is already …`, write nothing, and have the log channel record that nothing changed. `per-tier-colour-toggle` says that and nothing more: it does not list the slots still lacking a colour. The two bulk commands do the same when every colour they name is already held, and an import still lists each block it rejected. `toggle` and the three `use-pfp` toggles flip a setting, so they never do. Every refusal comes first.
+
 `fastest-lap-colour` reports the contrast of the chosen colour against the plate the race results template draws behind that field, and warns below 4.5:1 — the threshold at which text of that size stays legible. The colour is stored either way; it is the league's to choose. Where the template is invalid or declares no `fastest_lap_background` element, the bot says the contrast could not be measured rather than guessing.
 
 `per-tier-set-colour` refuses a malformed colour and a slot name outside `a-z`, `0-9`, `-` and `_`, storing nothing in either case. It stores anything else — including a slot no drawing of yours marks, and a colour set while the feature is off — and says so, because a colour may reasonably be set before the drawing that uses it exists. `per-tier-colour-toggle` reports, on being switched on, every slot still lacking a colour and the tier it lacks it for.
+
+**A division name the bot cannot store colours under is refused.** A name with no letter or digit in it (`---`, say) cannot be kept as a tier, so `per-tier-set-colour` and `per-tier-bulk-colour` refuse it before anything is stored, and an import passes the block over with the others it rejects.
+
+**A colour form checks the Image module again when you submit it.** `per-tier-bulk-colour` and the pasted form of `colour-xml-import` open a form; if the Image module is switched off while it is open, the submission stores nothing and says so. The log channel records the command or form for each outcome, with the values set beneath it.
 
 > **With per-tier colours on, every tier is measured and the hardest to read is reported.** If the plate behind the fastest-lap time takes a tier's colour, the bot measures it in the colours of each division of your current season — the one being raced, or else the one being set up — and tells you the lowest figure and the division it belongs to. Where several divisions share that figure it names them all, and where every division does it says so. Divisions whose plate cannot be read are named beneath it, with the reason, and the figure is the lowest of the rest. The warning follows that figure. With per-tier colours off it measures the drawing as authored, and it does the same — saying so — when no season is under way. Changing a tier's colours does not re-measure it: set the fastest-lap colour again to check.
 

@@ -28,6 +28,12 @@ that stops halfway is caught on whichever command it lands on.
 `/weather config view` is covered at the end (issue #118). It shares the setters' module gate
 and must not share their season gate: the deadlines were once readable only in the two season
 reviews, each tied to one stage of one season.
+
+**Every outcome is recorded in the log channel** (#482; the core specification's "The record
+of what changed"): a refusal as one "⛔" line naming the command, a success as one line naming
+the command with the three deadlines beneath, and a value the deadline already holds as one
+"Nothing changed" line, after a reply saying so. Whether a value is already held is the
+service's to say: a setter returns ``None`` for it, having written nothing.
 """
 from __future__ import annotations
 
@@ -45,12 +51,16 @@ SERVER_ID = 7161
 DB_PATH = "/nonexistent/weather.db"  # never opened: every service call is patched
 
 #: Each command under test: its callback, the `weather_config_service` function it must
-#: reach, a legal value to pass, and the token its log line must carry.
+#: reach, a legal value to pass, and the deadline it sets, as its replies name it with that
+#: value in its unit.
 COMMANDS = [
-    (WeatherCog.phase_1_deadline, "set_phase_1_days", 10, "WEATHER_CONFIG_PHASE1_DEADLINE"),
-    (WeatherCog.phase_2_deadline, "set_phase_2_days", 3, "WEATHER_CONFIG_PHASE2_DEADLINE"),
-    (WeatherCog.phase_3_deadline, "set_phase_3_hours", 6, "WEATHER_CONFIG_PHASE3_DEADLINE"),
+    (WeatherCog.phase_1_deadline, "set_phase_1_days", 10, ("Phase 1", "10 day(s)")),
+    (WeatherCog.phase_2_deadline, "set_phase_2_days", 3, ("Phase 2", "3 day(s)")),
+    (WeatherCog.phase_3_deadline, "set_phase_3_hours", 6, ("Phase 3", "6 hour(s)")),
 ]
+
+#: The member every interaction here belongs to, as the log channel names them.
+MEMBER = "Race Control (<@4242>)"
 
 COMMAND_IDS = ["phase_1", "phase_2", "phase_3"]
 
@@ -100,7 +110,11 @@ def _make_cog(*, weather_enabled: bool = True, season: Season | None = None) -> 
 
 
 def _interaction() -> MagicMock:
-    """A Discord interaction stub. `response` is sync-attribute, async-method, as discord.py's is."""
+    """A Discord interaction stub. `response` is sync-attribute, async-method, as discord.py's is.
+
+    `is_done` tracks whether the interaction has been answered or deferred, as discord.py's
+    does, so a refusal is sent by whichever of the two a real interaction would take.
+    """
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
     interaction.user.display_name = "Race Control"
@@ -108,6 +122,12 @@ def _interaction() -> MagicMock:
     interaction.response = MagicMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.defer.await_count
+            or interaction.response.send_message.await_count
+        )
+    )
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -118,13 +138,19 @@ async def _invoke(command, cog: WeatherCog, interaction, value) -> None:
 
     `_tier_guard` wraps with `functools.wraps`, so `__wrapped__` is the undecorated function.
     Permission is covered by the channel-guard tests; these tests are about what the body does.
+    The interaction carries the command and the bot, as a real one does, so a line in the log
+    channel names the command and reaches the bot's router.
     """
+    interaction.command = command
+    interaction.client = cog.bot
     await command.callback.__wrapped__(cog, interaction, value)
 
 
 @contextlib.contextmanager
-def _patched_setters(return_value=None):
+def _patched_setters(return_value=None, *, held: bool = False):
     """Patch all three `weather_config_service` setters, yielding them by name.
+
+    *held* has each return ``None``, the service's answer for a value already held.
 
     The cog imports each setter *inside* the command body, so the patch has to land on the
     service module rather than on a name bound into the cog at import time.
@@ -132,7 +158,7 @@ def _patched_setters(return_value=None):
     `patch.multiple` is deliberately not used: given an explicit `new=`, it does not return
     the replacement in its dictionary, which leaves a test with no handle to assert on.
     """
-    value = _config() if return_value is None else return_value
+    value = None if held else _config() if return_value is None else return_value
     with contextlib.ExitStack() as stack:
         yield {
             name: stack.enter_context(
@@ -155,6 +181,23 @@ def _sent_text(interaction) -> str:
     return "\n".join(parts)
 
 
+def _reason(reply: str) -> str:
+    """A reply's first line without the mark it opens with: the reason a refusal records."""
+    first = reply.strip().splitlines()[0].strip()
+    for mark in ("❌", "ℹ️"):
+        first = first.removeprefix(mark)
+    return first.strip()
+
+
+def _assert_one_refusal_line(cog: WeatherCog, interaction, command) -> None:
+    """One "⛔" line was recorded, naming *command*, the member and the reply's reason."""
+    cog.bot.output_router.post_log.assert_awaited_once()
+    (line,) = cog.bot.output_router.post_log.await_args.args
+    assert line == (
+        f"⛔ `/{command.qualified_name}` refused for {MEMBER} — {_reason(_sent_text(interaction))}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The module gate
 # ---------------------------------------------------------------------------
@@ -164,7 +207,9 @@ def _sent_text(interaction) -> str:
 async def test_command_is_refused_while_the_weather_module_is_disabled(
     command, setter, value, _log
 ):
-    """"All three commands shall be rejected while the weather module is disabled." """
+    """"All three commands shall be rejected while the weather module is disabled." The
+    refusal is recorded in the log channel, as every refusal of a command is, and names the
+    module as `/weather channel` and the other modules do: "The Weather module"."""
     cog = _make_cog(weather_enabled=False)
     interaction = _interaction()
 
@@ -176,8 +221,8 @@ async def test_command_is_refused_while_the_weather_module_is_disabled(
             mocks[name].assert_not_awaited()
 
     interaction.response.send_message.assert_awaited_once()
-    assert "not enabled" in _sent_text(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    assert _sent_text(interaction) == "❌ The Weather module is not enabled."
+    _assert_one_refusal_line(cog, interaction, command)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +249,7 @@ async def test_command_is_refused_while_a_season_is_active(command, setter, valu
 
     interaction.response.send_message.assert_awaited_once()
     assert "placements are confirmed" in _sent_text(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    _assert_one_refusal_line(cog, interaction, command)
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +272,7 @@ async def test_command_rejects_a_value_below_one(command, setter, _value, _log, 
 
     interaction.response.send_message.assert_awaited_once()
     assert "at least 1" in _sent_text(interaction)
-    cog.bot.output_router.post_log.assert_not_awaited()
+    _assert_one_refusal_line(cog, interaction, command)
 
 
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
@@ -263,9 +308,9 @@ async def test_service_rejection_reaches_the_user_unchanged(command, setter, val
     with _patched_setters(refusal):
         await _invoke(command, cog, interaction, value)
 
-    assert refusal in _sent_text(interaction)
-    # A refusal is not a change, so nothing is written to the log channel.
-    cog.bot.output_router.post_log.assert_not_awaited()
+    assert _sent_text(interaction) == f"❌ {refusal}"
+    # A refusal is recorded too, with the service's sentence as its reason.
+    _assert_one_refusal_line(cog, interaction, command)
 
 
 # ---------------------------------------------------------------------------
@@ -314,21 +359,25 @@ async def test_success_reports_all_three_deadlines(command, setter, value, _log)
         assert token in text, f"{token!r} missing from {text!r}"
 
 
-@pytest.mark.parametrize("command, setter, value, log_token", COMMANDS, ids=COMMAND_IDS)
-async def test_success_is_written_to_the_log_channel(command, setter, value, log_token):
-    """"... and shall be written to the log channel." """
+@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
+async def test_success_is_written_to_the_log_channel(command, setter, value, _log):
+    """"... and shall be written to the log channel." In the standard form: the member, the
+    command a league types and the outcome, with the three deadlines now in force beneath."""
+    resulting = _config(phase_1_days=9, phase_2_days=4, phase_3_hours=8)
     cog = _make_cog()
     interaction = _interaction()
 
-    with _patched_setters():
+    with _patched_setters(resulting):
         await _invoke(command, cog, interaction, value)
 
     cog.bot.output_router.post_log.assert_awaited_once()
     (logged_text,) = cog.bot.output_router.post_log.await_args.args
-    assert log_token in logged_text
-    assert str(value) in logged_text
-    # The log names who made the change, not merely that it happened.
-    assert "Race Control" in logged_text
+    assert logged_text.splitlines() == [
+        f"{MEMBER} | /{command.qualified_name} | Success",
+        "  Phase 1: 9 day(s)",
+        "  Phase 2: 4 day(s)",
+        "  Phase 3: 8 hour(s)",
+    ]
 
 
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
@@ -350,12 +399,62 @@ async def test_success_defers_before_touching_the_database(command, setter, valu
 
 
 # ---------------------------------------------------------------------------
+# A value already held
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("command, setter, value, deadline", COMMANDS, ids=COMMAND_IDS)
+async def test_a_held_value_changes_nothing(command, setter, value, deadline):
+    """A deadline given the value it already holds is not a change: the reply says so, and the
+    log channel records one "Nothing changed" line, as the results and attendance setters do.
+    The service decides it is held, and writes nothing (`test_weather_config_service.py`)."""
+    phase, shown = deadline
+    cog = _make_cog()
+    interaction = _interaction()
+
+    with _patched_setters(held=True) as mocks:
+        await _invoke(command, cog, interaction, value)
+
+        mocks[setter].assert_awaited_once_with(DB_PATH, value)
+
+    assert _sent_text(interaction) == (
+        f"ℹ️ Nothing changed: the {phase} deadline is already **{shown}**."
+    )
+    cog.bot.output_router.post_log.assert_awaited_once()
+    (logged_text,) = cog.bot.output_router.post_log.await_args.args
+    first, *details = logged_text.splitlines()
+    assert first == f"{MEMBER} | /{command.qualified_name} | Nothing changed"
+    assert any(shown in detail for detail in details), logged_text
+
+
+@pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
+async def test_a_held_value_is_still_refused_while_a_season_is_active(
+    command, setter, value, _log
+):
+    """Every refusal comes first: a value already held, sent while a season's placements are
+    confirmed, is refused as any other value is, never answered as "Nothing changed"."""
+    cog = _make_cog(season=_season())
+    interaction = _interaction()
+
+    with _patched_setters(held=True) as mocks:
+        await _invoke(command, cog, interaction, value)
+
+        mocks[setter].assert_not_awaited()
+
+    assert "placements are confirmed" in _sent_text(interaction)
+    assert "Nothing changed" not in _sent_text(interaction)
+    _assert_one_refusal_line(cog, interaction, command)
+
+
+# ---------------------------------------------------------------------------
 # /weather config view
 # ---------------------------------------------------------------------------
 
 
 async def _invoke_view(cog: WeatherCog, interaction) -> None:
     """Call `/weather config view`'s body, stepping past `@league_manager_only` as `_invoke` does."""
+    interaction.command = WeatherCog.config_view
+    interaction.client = cog.bot
     await WeatherCog.config_view.callback.__wrapped__(cog, interaction)
 
 
@@ -408,7 +507,8 @@ async def test_view_answers_while_a_season_is_confirmed():
 
 
 async def test_view_is_refused_while_the_weather_module_is_disabled():
-    """The module gate the setters and every other module's view command hold."""
+    """The module gate the setters and every other module's view command hold. A read changes
+    nothing, so its refusal is answered and not recorded in the log channel."""
     cog = _make_cog(weather_enabled=False)
     interaction = _interaction()
 
@@ -419,6 +519,7 @@ async def test_view_is_refused_while_the_weather_module_is_disabled():
     interaction.response.send_message.assert_awaited_once()
     assert "not enabled" in _sent_text(interaction)
     interaction.response.defer.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
 
 
 async def test_view_writes_nothing_to_the_log_channel():

@@ -35,6 +35,7 @@
 - The input from all commands shall be validated against the current settings so that Phase 1 always precedes Phase 2, and Phase 2 always precedes Phase 3. Ergo, the configuration shall follow the rule Phase1\*24 > Phase2\*24 > Phase3. A rejection shall state both offending values converted to hours.
 - If the season's placements have been confirmed, all three commands must be rejected.
 - Each successful command shall report the resulting values of all three deadlines, and shall be written to the log channel.
+- A command given the value its deadline already holds shall change nothing and shall say so, the log channel recording that nothing changed. Every rejection above is made before it. Decided 2026-10-01.
 - The deadlines in force for a season shall be those stored at the moment the season's placements were first confirmed.
 - A season holding a round whose Phase 1, Phase 2 or Phase 3 deadline has already passed shall fail validation. The placements review shall report it and shall withhold the button confirming placements; the confirmation shall refuse it again, with nothing committed.
     - The report shall name the latest offending round of a division and the earliest-due of that round's elapsed deadlines, and shall say when it was due. It shall not name every offending round, nor every deadline of the round it names: the round named bounds the division's calendar, and the deadline named bounds how far that round must move.

@@ -14,6 +14,9 @@ exactly as it stood.
 **Re-running the command with the value it already holds is refused in its own words.** It is
 not a collision with something else, and reporting it as one would send a manager looking for a
 conflict that does not exist. `test_the_two_refusals_do_not_read_alike` holds the difference.
+
+**Every refusal is recorded in the log channel** (#482; the core specification's "The record of
+what changed"), as one "⛔" line naming `/weather channel`, the member and the reply's reason.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.channel_registry_service import ChannelUse
@@ -112,6 +116,10 @@ def _interaction():
 
 
 async def _run(cog, interaction, name: str = "Division 1", channel=None) -> None:
+    """Run the command's body. The interaction carries the command and the bot, as a real one
+    does, so a line in the log channel names the command and reaches the bot's router."""
+    interaction.command = WeatherCog.channel
+    interaction.client = cog.bot
     await undecorate(WeatherCog.channel)(cog, interaction, name, channel or _channel())
 
 
@@ -122,6 +130,17 @@ def _replied(interaction) -> str:
         + interaction.followup.send.await_args_list
         if call.args
     )
+
+
+def _assert_one_refusal_line(cog, interaction) -> None:
+    """One "⛔" line was recorded, naming `/weather channel`, the member and the reply's first
+    line without the mark it opens with."""
+    cog.bot.output_router.post_log.assert_awaited_once()
+    (line,) = cog.bot.output_router.post_log.await_args.args
+    reason = _replied(interaction).splitlines()[0]
+    for mark in ("❌", "ℹ️"):
+        reason = reason.removeprefix(mark)
+    assert line == f"⛔ `/weather channel` refused for Manager (<@{ACTOR_ID}>) — {reason.strip()}"
 
 
 async def _audit(db_path: str) -> list[dict]:
@@ -154,7 +173,7 @@ def _in_use(monkeypatch, use: ChannelUse):
 async def test_the_weather_channel_is_refused_while_weather_is_off(tmp_path, monkeypatch):
     """Setting a forecast channel for a module that is not running configures something no
     code reads. The words are the command's own, not the weather cog's gate, and nothing is
-    read, written or logged."""
+    read or written; the refusal is recorded in the log channel."""
     _free(monkeypatch)
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, weather_enabled=False)
@@ -165,7 +184,7 @@ async def test_the_weather_channel_is_refused_while_weather_is_off(tmp_path, mon
     assert _replied(interaction) == "❌ The Weather module is not enabled."
     cog.bot.season_service.get_setup_or_active_season.assert_not_awaited()
     cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
-    cog.bot.output_router.post_log.assert_not_awaited()
+    _assert_one_refusal_line(cog, interaction)
     assert await _audit(db_path) == []
 
 
@@ -197,6 +216,31 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path, monkeypatch):
 
     assert _replied(interaction) == "❌ Division **Division 9** not found in the current season."
     cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
+
+
+async def test_no_live_season_is_recorded_as_a_refusal(tmp_path, monkeypatch):
+    """With no season being built or raced, the refusal is recorded in the log channel."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path, season=None)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert "No season is live" in _replied(interaction)
+    _assert_one_refusal_line(cog, interaction)
+
+
+async def test_an_unknown_division_is_recorded_as_a_refusal(tmp_path, monkeypatch):
+    """A division the live season does not hold is refused, and the refusal recorded."""
+    _free(monkeypatch)
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction, name="Division 9")
+
+    _assert_one_refusal_line(cog, interaction)
 
 
 async def test_a_division_is_matched_regardless_of_case(tmp_path, monkeypatch):
@@ -233,6 +277,20 @@ async def test_a_channel_doing_another_job_is_refused_as_a_clash(tmp_path, monke
     )
 
 
+async def test_a_channel_doing_another_job_is_recorded_as_a_refusal(tmp_path, monkeypatch):
+    """The clash with another setting is refused and the refusal recorded, with the reply's
+    own reason."""
+    _in_use(monkeypatch, ChannelUse("results", "Division 1"))
+    db_path = await _make_db(tmp_path)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _run(cog, interaction)
+
+    assert await _audit(db_path) == []
+    _assert_one_refusal_line(cog, interaction)
+
+
 async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, monkeypatch):
     """Not a collision with something else. Telling a manager it clashes would send them
     looking for a conflict that does not exist."""
@@ -265,15 +323,18 @@ async def test_the_two_refusals_do_not_read_alike(tmp_path, monkeypatch):
 
 async def test_a_refused_assignment_writes_nothing(tmp_path, monkeypatch):
     """The check runs before the write. The same-value case used to be written and only
-    then reported as unchanged — this holds the order against a later tidy-up."""
+    then reported as unchanged — this holds the order against a later tidy-up. The refusal
+    is recorded in the log channel, with the reply's own reason."""
     _in_use(monkeypatch, ChannelUse("weather", "Division 1"))
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
+    interaction = _interaction()
 
-    await _run(cog, _interaction())
+    await _run(cog, interaction)
 
     assert await _audit(db_path) == []
-    cog.bot.output_router.post_log.assert_not_awaited()
+    cog.bot.season_service.set_division_forecast_channel.assert_not_awaited()
+    _assert_one_refusal_line(cog, interaction)
 
 
 # ---------------------------------------------------------------------------

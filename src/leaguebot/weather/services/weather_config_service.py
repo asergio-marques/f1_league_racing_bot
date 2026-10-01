@@ -71,12 +71,19 @@ def validate_ordering(
 async def set_phase_1_days(
     db_path: str,
     days: int,
-) -> WeatherPipelineConfig | str:
-    """Upsert phase_1_days.  Returns updated config, or an error string on violation."""
+) -> WeatherPipelineConfig | str | None:
+    """Upsert phase_1_days.
+
+    Returns the updated config; an error string on an ordering violation; or ``None`` when
+    the league already holds *days* (the packaged default counts as held), in which case nothing
+    is written, so the cog can say "Nothing changed". The ordering check comes first.
+    """
     current = await get_weather_pipeline_config(db_path)
     err = validate_ordering(days, current.phase_2_days, current.phase_3_hours)
     if err:
         return err
+    if current.phase_1_days == days:
+        return None
     async with get_connection(db_path) as db:
         await db.execute(
             """
@@ -97,12 +104,19 @@ async def set_phase_1_days(
 async def set_phase_2_days(
     db_path: str,
     days: int,
-) -> WeatherPipelineConfig | str:
-    """Upsert phase_2_days.  Returns updated config, or an error string on violation."""
+) -> WeatherPipelineConfig | str | None:
+    """Upsert phase_2_days.
+
+    Returns the updated config; an error string on an ordering violation; or ``None`` when
+    the league already holds *days* (the packaged default counts as held), in which case nothing
+    is written, so the cog can say "Nothing changed". The ordering check comes first.
+    """
     current = await get_weather_pipeline_config(db_path)
     err = validate_ordering(current.phase_1_days, days, current.phase_3_hours)
     if err:
         return err
+    if current.phase_2_days == days:
+        return None
     async with get_connection(db_path) as db:
         await db.execute(
             """
@@ -123,12 +137,19 @@ async def set_phase_2_days(
 async def set_phase_3_hours(
     db_path: str,
     hours: int,
-) -> WeatherPipelineConfig | str:
-    """Upsert phase_3_hours.  Returns updated config, or an error string on violation."""
+) -> WeatherPipelineConfig | str | None:
+    """Upsert phase_3_hours.
+
+    Returns the updated config; an error string on an ordering violation; or ``None`` when
+    the league already holds *hours* (the packaged default counts as held), in which case nothing
+    is written, so the cog can say "Nothing changed". The ordering check comes first.
+    """
     current = await get_weather_pipeline_config(db_path)
     err = validate_ordering(current.phase_1_days, current.phase_2_days, hours)
     if err:
         return err
+    if current.phase_3_hours == hours:
+        return None
     async with get_connection(db_path) as db:
         await db.execute(
             """

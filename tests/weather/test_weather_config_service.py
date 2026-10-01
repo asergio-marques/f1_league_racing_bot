@@ -265,8 +265,11 @@ async def test_violating_value_is_refused_and_writes_nothing(setter, value, tmp_
     anyway would corrupt the very state the next validation reads.
     """
     db_path = await _make_db(tmp_path)
-    await set_phase_1_days(db_path, 5)  # a real row to be left untouched
+    # A real row to be left untouched: Phase 3 at 3 hours, which the packaged defaults do not
+    # hold, so the write is made rather than answered as nothing changed.
+    await set_phase_3_hours(db_path, 3)
     before = await _stored(db_path)
+    assert before == (5, 2, 3)
 
     result = await setter(db_path, value)
 
@@ -291,6 +294,44 @@ async def test_a_violation_is_judged_against_the_stored_values_not_the_defaults(
 
     assert isinstance(result, str)
     assert await _stored(db_path) == (20, 10, 2)
+
+
+# ---------------------------------------------------------------------------
+# A value already held
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "setter, held",
+    [(set_phase_1_days, 5), (set_phase_2_days, 2), (set_phase_3_hours, 2)],
+    ids=["phase_1", "phase_2", "phase_3"],
+)
+async def test_the_packaged_value_given_again_writes_nothing(setter, held, tmp_path):
+    """A deadline given the value it already holds, here the packaged default with no row
+    stored, is no change: the setter returns ``None`` and writes no row (#482, as the results
+    and attendance setters answer "Nothing changed")."""
+    db_path = await _make_db(tmp_path)
+
+    result = await setter(db_path, held)
+
+    assert result is None
+    assert await _stored(db_path) is None
+
+
+@pytest.mark.parametrize(
+    "setter, value, expected", SETTERS, ids=["phase_1", "phase_2", "phase_3"]
+)
+async def test_a_stored_value_given_again_changes_nothing(setter, value, expected, tmp_path):
+    """The held value is judged against what the league stored, not the packaged defaults:
+    a deadline set and then sent again returns ``None`` and leaves the row as it was."""
+    db_path = await _make_db(tmp_path)
+    assert not isinstance(await setter(db_path, value), str)
+
+    result = await setter(db_path, value)
+
+    assert result is None
+    assert await _stored(db_path) == expected
+    assert await _row_count(db_path) == 1
 
 
 async def test_the_league_holds_one_row_at_most(tmp_path):

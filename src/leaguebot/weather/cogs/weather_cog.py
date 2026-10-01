@@ -17,9 +17,60 @@ from discord.ext import commands
 from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import channel_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 
 log = logging.getLogger(__name__)
+
+
+def _command(interaction: discord.Interaction) -> str:
+    """The slash command *interaction* ran, as a success line names it: "/weather config view"."""
+    return describe(interaction).strip("`")
+
+
+def _deadlines(config: WeatherPipelineConfig) -> tuple[str, str, str]:
+    """The three deadlines in force, one detail apiece, as a success line lists them."""
+    return (
+        f"Phase 1: {config.phase_1_days} day(s)",
+        f"Phase 2: {config.phase_2_days} day(s)",
+        f"Phase 3: {config.phase_3_hours} hour(s)",
+    )
+
+
+async def _record(
+    bot: LeagueBot,
+    interaction: discord.Interaction,
+    what: str,
+    outcome: str,
+    *details: str,
+) -> None:
+    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
+
+    For a success and for nothing changed. The post is bare: a line reporting that nothing went
+    wrong is no place for a catch-all, so a post that raises reaches the command's error
+    handling. A refusal, a cancel, a lapse and a fault have lines of their own
+    (`core/utils/log_lines.py`, `report_failure`).
+    """
+    await bot.output_router.post_log(
+        f"{interaction_member(interaction)} | {what} | {outcome}"
+        + "".join(f"\n  {detail}" for detail in details)
+    )
+
+
+async def _nothing_changed(
+    bot: LeagueBot, interaction: discord.Interaction, phase: str, shown: str
+) -> None:
+    """Answer a deadline given the value it already holds, and record that nothing changed.
+
+    *phase* is "Phase 1", and *shown* the value in its unit, "6 day(s)".
+    """
+    await _record(bot, interaction, _command(interaction), "Nothing changed", f"{phase}: {shown}")
+    await interaction.followup.send(
+        f"ℹ️ Nothing changed: the {phase} deadline is already **{shown}**.", ephemeral=True
+    )
 
 
 class WeatherCog(commands.Cog):
@@ -39,22 +90,31 @@ class WeatherCog(commands.Cog):
     # Shared pre-condition checks
     # ------------------------------------------------------------------
 
-    async def _weather_gate(self, interaction: discord.Interaction) -> bool:
-        """Return True (and respond ephemerally) if weather module is not enabled."""
-        if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "❌ The weather module is not enabled.", ephemeral=True
-            )
-            return False
-        return True
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Return True if the weather module is enabled; otherwise answer and return False.
+
+        The refusal is recorded in the log channel, as every refusal of a command that changes
+        something is. A command that changes nothing (`record=False`) answers and records nothing.
+        """
+        if await self.bot.module_service.is_weather_enabled():
+            return True
+        reply = "❌ The Weather module is not enabled."
+        if record:
+            await refuse(interaction, reply, what=describe(interaction))
+        else:
+            await interaction.response.send_message(reply, ephemeral=True)
+        return False
 
     async def _active_season_gate(self, interaction: discord.Interaction) -> bool:
-        """Return True (and respond ephemerally) if a season is currently ACTIVE."""
+        """Return True (and refuse, recording it) if a season's placements are confirmed."""
         season = await self.bot.season_service.get_confirmed_season()
         if season is not None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ Phase deadline configuration cannot be changed once a season's placements are confirmed.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return True
         return False
@@ -70,13 +130,13 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(days="Number of days before the round (positive integer)")
     @league_manager_only
     async def phase_1_deadline(self, interaction: discord.Interaction, days: int) -> None:
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction):
             return
         if await self._active_season_gate(interaction):
             return
         if days < 1:
-            await interaction.response.send_message(
-                "❌ Phase 1 deadline must be at least 1 day.", ephemeral=True
+            await refuse(
+                interaction, "❌ Phase 1 deadline must be at least 1 day.", what=describe(interaction)
             )
             return
 
@@ -86,13 +146,13 @@ class WeatherCog(commands.Cog):
         result = await set_phase_1_days(self.bot.db_path, days)
 
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(interaction, f"❌ {result}", what=describe(interaction))
+            return
+        if result is None:
+            await _nothing_changed(self.bot, interaction, "Phase 1", f"{days} day(s)")
             return
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE1_DEADLINE | Success\n"
-            f"  new_value: {days}d  (Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
-        )
+        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
             f"✅ Phase 1 deadline set to **{days} day(s)** before round. "
             f"(Phase 2: {result.phase_2_days}d, Phase 3: {result.phase_3_hours}h)",
@@ -110,13 +170,13 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(days="Number of days before the round (positive integer)")
     @league_manager_only
     async def phase_2_deadline(self, interaction: discord.Interaction, days: int) -> None:
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction):
             return
         if await self._active_season_gate(interaction):
             return
         if days < 1:
-            await interaction.response.send_message(
-                "❌ Phase 2 deadline must be at least 1 day.", ephemeral=True
+            await refuse(
+                interaction, "❌ Phase 2 deadline must be at least 1 day.", what=describe(interaction)
             )
             return
 
@@ -126,13 +186,13 @@ class WeatherCog(commands.Cog):
         result = await set_phase_2_days(self.bot.db_path, days)
 
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(interaction, f"❌ {result}", what=describe(interaction))
+            return
+        if result is None:
+            await _nothing_changed(self.bot, interaction, "Phase 2", f"{days} day(s)")
             return
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE2_DEADLINE | Success\n"
-            f"  new_value: {days}d  (Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
-        )
+        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
             f"✅ Phase 2 deadline set to **{days} day(s)** before round. "
             f"(Phase 1: {result.phase_1_days}d, Phase 3: {result.phase_3_hours}h)",
@@ -150,13 +210,13 @@ class WeatherCog(commands.Cog):
     @app_commands.describe(hours="Number of hours before the round (positive integer)")
     @league_manager_only
     async def phase_3_deadline(self, interaction: discord.Interaction, hours: int) -> None:
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction):
             return
         if await self._active_season_gate(interaction):
             return
         if hours < 1:
-            await interaction.response.send_message(
-                "❌ Phase 3 deadline must be at least 1 hour.", ephemeral=True
+            await refuse(
+                interaction, "❌ Phase 3 deadline must be at least 1 hour.", what=describe(interaction)
             )
             return
 
@@ -166,13 +226,13 @@ class WeatherCog(commands.Cog):
         result = await set_phase_3_hours(self.bot.db_path, hours)
 
         if isinstance(result, str):
-            await interaction.followup.send(f"❌ {result}", ephemeral=True)
+            await refuse(interaction, f"❌ {result}", what=describe(interaction))
+            return
+        if result is None:
+            await _nothing_changed(self.bot, interaction, "Phase 3", f"{hours} hour(s)")
             return
 
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | WEATHER_CONFIG_PHASE3_DEADLINE | Success\n"
-            f"  new_value: {hours}h  (Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
-        )
+        await _record(self.bot, interaction, _command(interaction), "Success", *_deadlines(result))
         await interaction.followup.send(
             f"✅ Phase 3 deadline set to **{hours} hour(s)** before round. "
             f"(Phase 1: {result.phase_1_days}d, Phase 2: {result.phase_2_days}d)",
@@ -198,7 +258,7 @@ class WeatherCog(commands.Cog):
         season's placements are confirmed the setters are refused, so the values shown then
         are the ones the season runs on.
         """
-        if not await self._weather_gate(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -233,8 +293,8 @@ class WeatherCog(commands.Cog):
         """Set the channel a division's forecasts are posted to (#462).
 
         Weather's own command, under weather's own group: it sat under core's `/division`
-        until #462 moved it, and only its name changed. **Its module-off wording is its own**,
-        not `_weather_gate`'s, as it was worded before it moved.
+        until #462 moved it, and only its name changed. It keeps its own module check, worded as
+        `_module_gate` words it, so the two commands refuse in one voice.
 
         **The live season's division** (#220): a division's channels belong to the season being
         built or raced, and an archived one's no longer matter. Pending completion is live,
@@ -246,25 +306,29 @@ class WeatherCog(commands.Cog):
         wrote it: `DIVISION_CHANNEL_SET`, with its `channel_type`.
         """
         if not await self.bot.module_service.is_weather_enabled():
-            await interaction.response.send_message(
-                "\u274c The Weather module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Weather module is not enabled.",
+                what=describe(interaction),
             )
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"\u274c Division **{name}** not found in the current season.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -272,7 +336,7 @@ class WeatherCog(commands.Cog):
             self.bot.db_path, channel, "weather", division_name=div.name
         )
         if refused is not None:
-            await interaction.response.send_message(refused, ephemeral=True)
+            await refuse(interaction, refused, what=describe(interaction))
             return
 
         old_id = await self.bot.season_service.set_division_forecast_channel(div.id, channel.id)

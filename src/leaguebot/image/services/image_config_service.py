@@ -125,18 +125,27 @@ class ImageConfigService:
         changes: dict[str, Any] = {column: value}
         return dataclasses.replace(current, **changes)
 
-    async def set_field(self, column: str, value: str) -> None:
-        """Write a single configuration column, guarded by the allow-list."""
+    async def set_field(self, column: str, value: str) -> bool:
+        """Write a single configuration column, guarded by the allow-list.
+
+        Returns whether the value changed: False where the column already held *value*, in
+        which case nothing is written, so that the caller can say so rather than report a
+        change that was not made.
+        """
         if column not in SETTABLE_COLUMNS:
             raise UnknownConfigField(f"`{column}` is not a settable image config field.")
 
         # Column name is interpolated because SQLite cannot parameterise identifiers;
         # it is safe only because it was checked against the allow-list above.
         async with get_connection(self._db_path) as db:
+            row = await (await db.execute(f"SELECT {column} FROM image_config")).fetchone()
+            if row is not None and row[0] == value:
+                return False
             await db.execute(
                 f"UPDATE image_config SET {column} = ?", (value,)
             )
             await db.commit()
+        return True
 
     async def set_pfp_flag(self, column: str, enabled: bool) -> None:
         """Write one of the three portrait toggles.
@@ -150,8 +159,11 @@ class ImageConfigService:
             raise UnknownConfigField(column)
         await self.set_flag(column, enabled)
 
-    async def set_flag(self, column: str, enabled: bool) -> None:
+    async def set_flag(self, column: str, enabled: bool) -> bool:
         """Write any boolean configuration column, guarded by its own allow-list.
+
+        Returns whether the flag changed: False where it already stood as *enabled*, in which
+        case nothing is written.
 
         The generalisation of `set_pfp_flag`, which now delegates here: a second boolean
         arrived with the per-tier colours (051) and two identical setters differing only in
@@ -163,10 +175,14 @@ class ImageConfigService:
         # Column name is interpolated because SQLite cannot parameterise identifiers;
         # it is safe only because it was checked against the allow-list above.
         async with get_connection(self._db_path) as db:
+            row = await (await db.execute(f"SELECT {column} FROM image_config")).fetchone()
+            if row is not None and bool(row[0]) == enabled:
+                return False
             await db.execute(
                 f"UPDATE image_config SET {column} = ?", (1 if enabled else 0,)
             )
             await db.commit()
+        return True
 
     async def set_aspect(self, aspect: str, enabled: bool) -> None:
         if aspect not in ASPECTS:
@@ -195,8 +211,11 @@ class ImageConfigService:
 
     async def set_tier_colour(
         self, division_name: str, slot: str, colour: str
-    ) -> None:
+    ) -> bool:
         """Set one slot's colour for one tier, replacing whatever stood there.
+
+        Returns whether the colour changed: False where the slot already held *colour*, in
+        which case nothing is written.
 
         *slot* is normalised and validated here as well as at the command, because this is
         the last point before it reaches a CSS selector and a service is not entitled to
@@ -211,6 +230,14 @@ class ImageConfigService:
             raise UnknownConfigField("a division name is required.")
         canonical = normalise_slot(slot)
         async with get_connection(self._db_path) as db:
+            held = await (
+                await db.execute(
+                    "SELECT colour FROM image_tier_colour WHERE division_slug = ? AND slot = ?",
+                    (key, canonical),
+                )
+            ).fetchone()
+            if held is not None and held["colour"] == colour:
+                return False
             await db.execute(
                 "INSERT INTO image_tier_colour (division_slug, slot, colour) "
                 "VALUES (?, ?, ?) "
@@ -219,11 +246,15 @@ class ImageConfigService:
                 (key, canonical, colour),
             )
             await db.commit()
+        return True
 
     async def set_tier_colours(
         self, division_name: str, colours: dict[str, str]
     ) -> int:
-        """Set several slots for one tier at once, returning how many were written.
+        """Set several slots for one tier at once, returning how many it changed.
+
+        A slot already holding its colour is not one of them and is not written; where every
+        slot named is held, the count is 0 and nothing is written at all.
 
         **Merged, not replaced** (decided 2026-09-08): a slot the caller does not name keeps
         the colour it had. A league pasting a partial palette is correcting part of a scheme,
@@ -242,11 +273,25 @@ class ImageConfigService:
         if not colours:
             return 0
 
-        rows = [
-            (key, normalise_slot(slot), colour)
-            for slot, colour in sorted(colours.items())
-        ]
         async with get_connection(self._db_path) as db:
+            held = {
+                row["slot"]: row["colour"]
+                for row in await (
+                    await db.execute(
+                        "SELECT slot, colour FROM image_tier_colour WHERE division_slug = ?",
+                        (key,),
+                    )
+                ).fetchall()
+            }
+            rows = [
+                (key, canonical, colour)
+                for canonical, colour in sorted(
+                    (normalise_slot(slot), colour) for slot, colour in colours.items()
+                )
+                if held.get(canonical) != colour
+            ]
+            if not rows:
+                return 0
             await db.executemany(
                 "INSERT INTO image_tier_colour (division_slug, slot, colour) "
                 "VALUES (?, ?, ?) "
@@ -392,6 +437,24 @@ def pfp_change_refusal(config: ImageConfig, column: str, enabled: bool) -> str |
         f"profile pictures would ever be fetched. Enable {other_one} first, or turn "
         f"off `/images use-pfp toggle` entirely."
     )
+
+
+def tier_name_refusal(division_name: str) -> str | None:
+    """Why colours cannot be stored under *division_name*, or None where they can.
+
+    A tier's colours are keyed on the division's normalised name, as its logo's file name is,
+    so a name with no letter or digit in it has no key to be stored under. That is the entry of
+    whoever typed it, not a fault in the bot, and is said before anything is written: the setter
+    and the pasted form refuse with it, the import passes the block over with it.
+
+    Pure and total, as `pfp_change_refusal` is, and bare: the reason alone, for each caller to
+    put its own words around.
+    """
+    from leaguebot.image.utils.asset_resolver import normalise
+
+    if normalise(division_name or ""):
+        return None
+    return f"`{division_name}` is not a division name the bot can store colours under."
 
 
 def _row_to_config(row) -> ImageConfig:

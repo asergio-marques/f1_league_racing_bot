@@ -32,9 +32,17 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_LABELS,
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
-from leaguebot.image.services.image_config_service import pfp_change_refusal
+from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
+from leaguebot.core.utils.interaction_errors import (
+    describe as describe_command,
+    describe_form,
+    report_failure,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.timezones import clear_zone_cache, is_known_zone, zone_names
@@ -232,51 +240,134 @@ class PortraitTimeModal(LeagueModal, title="Daily portrait updates"):
         self.time_of_day.default = current
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        what = describe_form(self)
         normalised = parse_time_of_day(str(self.time_of_day.value))
         if normalised is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ Could not read `{self.time_of_day.value}` as a time of day. "
                 f"Try `03:00`, `3am` or `1530`. Nothing was changed.",
-                ephemeral=True,
+                what=what,
             )
+            return
+
+        # The form may have stood open while another manager changed the module or the setting,
+        # and a confirmation offered for a change that can no longer be made would only be
+        # refused at the end of it.
+        stale = await self._cog.daily_portraits_refusal(form=True)
+        if stale is not None:
+            await refuse(interaction, stale, what=what)
             return
 
         await interaction.response.send_message(
             f"Daily driver-portrait updates will run at **{normalised} UTC**.\n"
             f"The bot runs on UTC, so this is not your local time unless you are on it.\n"
             f"Confirm to enable them.",
-            view=PortraitTimeConfirm(self._cog, normalised),
+            view=PortraitTimeConfirm(self._cog, normalised, interaction),
             ephemeral=True,
         )
+
+
+#: The command the portrait confirmation belongs to, as the log channel names it.
+DAILY_TOGGLE = "/images use-pfp daily-toggle"
 
 
 class PortraitTimeConfirm(LeagueView):
     """The confirmation the specification requires after the time-of-day modal.
 
     Not persistent, and deliberately: it is a step within one command rather than a control
-    a league comes back to, and an unanswered one simply expires having changed nothing.
+    a league comes back to. Every ending is recorded in the log channel: a Confirm as the
+    command's success, its refusal or its failure; a Cancel as cancelled; and an unanswered
+    one, which changes nothing, as lapsed, naming the member who opened it. Each takes the
+    buttons down, so that none can be pressed again, through the interaction alone.
+
+    It answers once: a second press, which can arrive before the first has finished, is
+    refused rather than saved again.
     """
 
-    def __init__(self, cog: "ImageCog", normalised: str) -> None:
+    def __init__(
+        self, cog: "ImageCog", normalised: str, opened: discord.Interaction
+    ) -> None:
         super().__init__(timeout=120)
         self._cog = cog
         self._normalised = normalised
+        #: The form's submission, whose reply carries these buttons and whose member opened them.
+        self._opened = opened
+        self._answered = False
+
+    @staticmethod
+    async def _take_down(edit) -> None:
+        """Take the buttons down with *edit*; a message Discord will not edit is left as it is."""
+        try:
+            await edit(view=None)
+        except discord.HTTPException as exc:
+            log.warning("could not take the portrait confirmation's buttons down: %s", exc)
+
+    async def _already_answered(self, interaction: discord.Interaction) -> bool:
+        """Refuse a press once the confirmation has been answered; otherwise mark it answered."""
+        if self._answered:
+            await refuse(
+                interaction,
+                "ℹ️ This confirmation has already been answered.",
+                what=f"`{DAILY_TOGGLE}`",
+            )
+            return True
+        self._answered = True
+        return False
 
     @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
     async def confirm(
         self, interaction: discord.Interaction, _button: discord.ui.Button
     ) -> None:
-        await self._cog.commit_daily_portraits(interaction, self._normalised)
-        self.stop()
+        if await self._already_answered(interaction):
+            return
+        try:
+            await self._take_down(interaction.response.edit_message)
+            await self._cog.commit_daily_portraits(interaction, self._normalised)
+        finally:
+            self.stop()
 
     @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
         self, interaction: discord.Interaction, _button: discord.ui.Button
     ) -> None:
-        await interaction.response.send_message(
-            "❌ Cancelled. Daily driver-portrait updates are unchanged.", ephemeral=True
+        if await self._already_answered(interaction):
+            return
+        try:
+            await record_abandoned(
+                self._cog.bot,
+                interaction.user,
+                what=f"`{DAILY_TOGGLE}`",
+                lapsed=False,
+                detail=_UNCHANGED_DETAIL,
+            )
+            await self._take_down(interaction.response.edit_message)
+            await ImageCog._reply(
+                interaction, "❌ Cancelled. Daily driver-portrait updates are unchanged."
+            )
+        finally:
+            self.stop()
+
+    async def on_timeout(self) -> None:
+        """Record the lapse, naming who opened the confirmation, and take its buttons down."""
+        if self._answered:
+            return
+        self._answered = True
+        await record_abandoned(
+            self._cog.bot,
+            self._opened.user,
+            what=f"`{DAILY_TOGGLE}`",
+            lapsed=True,
+            detail=_UNCHANGED_DETAIL,
         )
-        self.stop()
+        await self._take_down(self._opened.edit_original_response)
+
+
+#: What a cancelled or lapsed confirmation leaves, and what to do next, as the log line says.
+_UNCHANGED_DETAIL = (
+    "Daily driver-portrait updates are unchanged.\n"
+    f"Run `{DAILY_TOGGLE}` again to enable them."
+)
 
 
 #: The largest palette file a league may attach. A palette is a few hundred bytes per
@@ -307,7 +398,11 @@ class TierPaletteModal(LeagueModal, title="Set one tier's colours"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self._cog.apply_tier_block(interaction, self._division, self.block.value)
+        if not await _module_still_on(self._cog, interaction, self):
+            return
+        await self._cog.apply_tier_block(
+            interaction, self._division, self.block.value, form=self
+        )
 
 
 class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
@@ -328,7 +423,59 @@ class TierPaletteXmlModal(LeagueModal, title="Import tier colours"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await self._cog.apply_tier_xml(interaction, self.payload.value)
+        if not await _module_still_on(self._cog, interaction, self):
+            return
+        await self._cog.apply_tier_xml(interaction, self.payload.value, form=self)
+
+
+async def _module_still_on(cog, interaction: discord.Interaction, form: discord.ui.Modal) -> bool:
+    """Whether the Image module is still on as *form* is submitted; where it is not, refuse.
+
+    A form can stay open on a manager's screen while `/module disable images` is run, and what
+    it would store belongs to a module that is off. Nothing is written then: the submit is
+    refused and recorded under the form's name.
+    """
+    if await cog.bot.module_service.is_images_enabled():
+        return True
+    await refuse(
+        interaction,
+        "❌ The Image module was switched off while this form was open. Nothing was stored.",
+        what=describe_form(form),
+    )
+    return False
+
+
+def _command(interaction: discord.Interaction) -> str:
+    """The slash command *interaction* ran, as a success line names it: "/images config view"."""
+    return describe_command(interaction).strip("`")
+
+
+async def _record(
+    bot: LeagueBot,
+    interaction: discord.Interaction,
+    what: str,
+    outcome: str,
+    *details: str,
+) -> None:
+    """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
+
+    For a success and for nothing changed; *what* is the command as the line names it,
+    "/images config time-zone". The post is bare: a line reporting that nothing went wrong
+    is no place for a catch-all, so a post that raises reaches the command's error handling.
+    A refusal, a cancel, a lapse and a fault have lines of their own
+    (`core/utils/log_lines.py`, `report_failure`).
+    """
+    await bot.output_router.post_log(
+        f"{interaction_member(interaction)} | {what} | {outcome}"
+        + "".join(f"\n  {detail}" for detail in details)
+    )
+
+
+#: What a failure to schedule the daily portrait job says became of the change: the setting is
+#: stored before the job is scheduled, and the start-up recovery arms it.
+DAILY_JOB_NOT_SCHEDULED = (
+    "The setting is stored, and the daily job will be scheduled when the bot next starts."
+)
 
 
 class ImageCog(commands.Cog):
@@ -369,21 +516,27 @@ class ImageCog(commands.Cog):
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
-    async def _guard_module_enabled(self, interaction: discord.Interaction) -> bool:
-        """Return True when the module is enabled; otherwise reply and return False.
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Return True when the module is enabled; otherwise answer and return False.
 
-        Replies through :meth:`_reply` rather than ``response.send_message`` because its
-        callers differ: a command that has already deferred must answer on the followup,
-        and sending a fresh response there raises ``404 Unknown interaction``.
+        The refusal is recorded in the log channel, as every refusal of a command that changes
+        something is. A command that changes nothing (`record=False`: the configuration report
+        and the previews) answers and records nothing.
+
+        Answers through `refuse` or :meth:`_reply`, never ``response.send_message`` directly,
+        because its callers differ: a command that has already deferred must answer on the
+        followup, and sending a fresh response there raises ``404 Unknown interaction``.
         """
-        if not await self.bot.module_service.is_images_enabled():
-            await self._reply(
-                interaction,
-                "❌ The Image module is not enabled. "
-                "Use `/module enable images` first.",
-            )
-            return False
-        return True
+        if await self.bot.module_service.is_images_enabled():
+            return True
+        reply = "❌ The Image module is not enabled. Use `/module enable images` first."
+        if record:
+            await refuse(interaction, reply, what=describe_command(interaction))
+        else:
+            await self._reply(interaction, reply)
+        return False
 
     @property
     def _config_service(self):
@@ -399,11 +552,29 @@ class ImageCog(commands.Cog):
 
     @staticmethod
     async def _reply(interaction: discord.Interaction, content: str) -> None:
-        """Send an ephemeral response, following up when already deferred."""
-        if interaction.response.is_done():
-            await interaction.followup.send(content, ephemeral=True)
-        else:
-            await interaction.response.send_message(content, ephemeral=True)
+        """Send an ephemeral response, following up when already deferred.
+
+        A reply past Discord's limit goes in as many parts as it needs (`chunk_message`): sent
+        whole, it raises after the change it reports has been made. The first part answers the
+        interaction if nothing has, and the rest follow up on it.
+        """
+        for part in chunk_message(content):
+            if interaction.response.is_done():
+                await interaction.followup.send(part, ephemeral=True)
+            else:
+                await interaction.response.send_message(part, ephemeral=True)
+
+    async def _already_held(
+        self, interaction: discord.Interaction, setting: str, value: str, detail: str
+    ) -> None:
+        """Answer a setting given the value it already holds: nothing is changed or written.
+
+        The reply says so in the form results and attendance use, and one "Nothing changed"
+        line records it, with *detail* beneath. Only a command that would otherwise have been
+        carried out gets here: every refusal has been made first.
+        """
+        await self._reply(interaction, f"ℹ️ Nothing changed: {setting} is already **{value}**.")
+        await _record(self.bot, interaction, _command(interaction), "Nothing changed", detail)
 
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str, label: str
@@ -414,7 +585,7 @@ class ImageCog(commands.Cog):
         configuration, rather than surfacing as a render failure later (FR-011, FR-016).
         The stored value is left unchanged on rejection.
         """
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         from leaguebot.core.utils.paths import resolve_within_project_root
@@ -422,18 +593,21 @@ class ImageCog(commands.Cog):
         try:
             resolved = resolve_within_project_root(value)
         except PathContainmentError as exc:
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ {exc}\nDirectories must sit inside the project root. "
                 f"The stored value is unchanged.",
+                what=describe_command(interaction),
             )
             return
         except ValueError as exc:
-            await self._reply(interaction, f"❌ {exc}")
+            await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
         stored = relative_to_root(resolved)
-        await self._config_service.set_field(column, stored)
+        if not await self._config_service.set_field(column, stored):
+            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
+            return
 
         # Report the effect immediately, so the administrator does not need a second
         # command to learn whether the new location resolves.
@@ -453,7 +627,7 @@ class ImageCog(commands.Cog):
             interaction,
             f"✅ **{label}** set to `{stored}`.\n{verdict}\nSearched: `{resolved}`",
         )
-        await self._log(interaction, f"{label} = {stored}")
+        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
 
     async def _set_template_filename(
         self, interaction: discord.Interaction, column: str, filename: str
@@ -471,7 +645,7 @@ class ImageCog(commands.Cog):
         # window on a slow host as readily as the sixteen-template sweep does.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         label = TEMPLATE_LABELS[column]
@@ -507,28 +681,34 @@ class ImageCog(commands.Cog):
         # Every field of every template is now verifiable against the file alone, so
         # `check_template` above either passes or refuses and nothing is left to warn
         # about (047 FR-024).
-        await self._config_service.set_field(column, candidate)
+        if not await self._config_service.set_field(column, candidate):
+            await self._already_held(
+                interaction, f"the {label} template", f"`{candidate}`",
+                f"{label} template: {candidate}",
+            )
+            return
 
         lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"{label} template = {candidate}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success", f"{label} template: {candidate}"
+        )
 
     async def _reject(
         self, interaction: discord.Interaction, label: str, reason: str
     ) -> None:
         """Refuse a template command, naming the fault and leaving the config alone.
 
-        Logged like any accepted change: a refused configuration is as much a part of the
-        audit trail as a stored one (Principle V), and a manager who cannot get a template
-        accepted leaves a record of what they tried.
+        Recorded in the log channel as a refusal of the command, so a manager who cannot get a
+        template accepted leaves a record of what they tried.
         """
-        await self._reply(
+        await refuse(
             interaction,
             f"❌ **{label}** template was **not** changed — {reason}\n"
             f"The previously configured filename is still in force.",
+            what=describe_command(interaction),
         )
-        await self._log(interaction, f"{label} template REJECTED — {reason}")
 
     # ── Driver portraits obtained from Discord ────────────────────────────
 
@@ -538,14 +718,15 @@ class ImageCog(commands.Cog):
         The two sub-toggles govern *how* portraits are kept up to date, which is not a
         question while the bot is not obtaining them at all.
         """
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return None
         config = await self._config_service.get_config()
         if config is None or not config.use_pfp:
-            await self._reply(
+            await refuse(
                 interaction,
                 "❌ Driver portraits are not being obtained from Discord. "
                 "Use `/images use-pfp toggle` first.",
+                what=describe_command(interaction),
             )
             return None
         return config
@@ -556,33 +737,78 @@ class ImageCog(commands.Cog):
         """Write one toggle, or refuse and leave the configuration as it stood."""
         refusal = pfp_change_refusal(config, column, enabled)
         if refusal is not None:
-            await self._reply(interaction, f"❌ {refusal}")
+            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
             return False
 
         await self._config_service.set_pfp_flag(column, enabled)
+        await self._pfp_flag_written(interaction, label, enabled)
+        return True
+
+    async def _pfp_flag_written(
+        self, interaction: discord.Interaction, label: str, enabled: bool
+    ) -> None:
+        """Tell the member a toggle is written, and record it under the command that ran."""
         state = "enabled" if enabled else "disabled"
         await self._reply(interaction, f"{'✅' if enabled else '❌'} **{label}** {state}.")
-        await self._log(interaction, f"{label} {state}")
-        return True
+        await _record(
+            self.bot, interaction, _command(interaction), "Success", f"{label}: {state}"
+        )
+
+    async def daily_portraits_refusal(self, *, form: bool) -> str | None:
+        """Why daily portrait updates can no longer be enabled, or None if they still can.
+
+        Asked again when the time-of-day form is submitted and when its confirmation is
+        pressed, since either may have stood open while another manager switched the module
+        or portraits off, or enabled the daily updates. *form* says which is asking, so that
+        a confirmation does not call itself a form.
+        """
+        if not await self.bot.module_service.is_images_enabled():
+            return (
+                f"❌ The Image module was switched off while this {'form ' if form else ''}"
+                f"was open. Nothing was stored."
+            )
+        config = await self._config_service.get_config()
+        if config is None or not config.use_pfp:
+            return (
+                "❌ Driver portraits stopped being obtained from Discord while this was open. "
+                "Nothing was changed."
+            )
+        if config.pfp_daily:
+            return (
+                "ℹ️ Daily driver-portrait updates were already enabled while this was open. "
+                "Nothing was changed."
+            )
+        return None
 
     async def commit_daily_portraits(
         self, interaction: discord.Interaction, normalised: str
     ) -> None:
-        """Enable the daily refresh at *normalised* UTC and arm the scheduled job."""
+        """Enable the daily refresh at *normalised* UTC and arm the scheduled job.
+
+        The job is armed before the member is told anything, so that one that cannot be armed
+        is a failure with the setting stored, which start-up recovery arms on the next restart.
+        """
+        what = f"`{DAILY_TOGGLE}`"
+        stale = await self.daily_portraits_refusal(form=False)
+        if stale is not None:
+            await refuse(interaction, stale, what=what)
+            return
+
         await self._config_service.set_field("pfp_daily_time", normalised)
         await self._config_service.set_pfp_flag("pfp_daily", True)
         try:
-            self.bot.scheduler_service.schedule_portrait_refresh(
-                normalised
-            )
-        except Exception as exc:  # the setting is stored; recovery re-arms it on restart
-            log.error("could not arm the daily portrait refresh: %s", exc, exc_info=True)
+            self.bot.scheduler_service.schedule_portrait_refresh(normalised)
+        except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
+            await report_failure(interaction, exc, what=what, outcome=DAILY_JOB_NOT_SCHEDULED)
+            return
         await self._reply(
             interaction,
             f"✅ **Daily driver-portrait updates** enabled, running at "
             f"**{normalised} UTC** each day.",
         )
-        await self._log(interaction, f"Daily driver-portrait updates enabled at {normalised} UTC")
+        await _record(
+            self.bot, interaction, DAILY_TOGGLE, "Success", f"Time of day: {normalised} UTC"
+        )
 
     @use_pfp.command(
         name="toggle",
@@ -590,29 +816,46 @@ class ImageCog(commands.Cog):
     )
     @league_manager_only
     async def use_pfp_toggle(self, interaction: discord.Interaction) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         config = await self._config_service.get_config()
         if config is None:
-            await self._reply(interaction, "❌ The image module has no configuration yet.")
+            await refuse(
+                interaction,
+                "❌ The image module has no configuration yet.",
+                what=describe_command(interaction),
+            )
             return
 
         enabling = not config.use_pfp
-        if not await self._apply_pfp_flag(
-            interaction, config, "use_pfp", enabling, "Discord profile pictures"
-        ):
+        refusal = pfp_change_refusal(config, "use_pfp", enabling)
+        if refusal is not None:
+            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
             return
+
+        await self._config_service.set_pfp_flag("use_pfp", enabling)
 
         # The daily job is armed by the master toggle as well as by its own, so that turning
         # the feature off stops the fetching rather than leaving a job running against a
-        # setting that says no.
+        # setting that says no. The job is scheduled before the member is told anything: a
+        # job that cannot be scheduled is a failure, with the setting stored, and not a
+        # success followed by an apology.
         if enabling and config.pfp_daily:
-            self.bot.scheduler_service.schedule_portrait_refresh(
-                config.pfp_daily_time
-            )
+            try:
+                self.bot.scheduler_service.schedule_portrait_refresh(config.pfp_daily_time)
+            except Exception as exc:  # noqa: BLE001 — reported, naming what became of it
+                await report_failure(
+                    interaction,
+                    exc,
+                    what=describe_command(interaction),
+                    outcome=DAILY_JOB_NOT_SCHEDULED,
+                )
+                return
         elif not enabling:
             self.bot.scheduler_service.cancel_portrait_refresh()
+
+        await self._pfp_flag_written(interaction, "Discord profile pictures", enabling)
 
     @use_pfp.command(
         name="prerender-toggle",
@@ -656,16 +899,6 @@ class ImageCog(commands.Cog):
             PortraitTimeModal(self, config.pfp_daily_time)
         )
 
-    async def _log(self, interaction: discord.Interaction, detail: str) -> None:
-        """Record a configuration mutation to the calculation log (Principle V)."""
-        try:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /images config | {detail}",
-            )
-        except Exception as exc:  # logging must never break a configuration command
-            log.error("image config log write failed: %s", exc, exc_info=True)
-
     # ── /images config template-directory ─────────────────────────────────
 
     @config.command(
@@ -696,7 +929,7 @@ class ImageCog(commands.Cog):
         from leaguebot.image.services.image_validity_service import blocking_template_problems
         from leaguebot.core.utils.paths import resolve_within_project_root
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         label = "Template directory"
@@ -704,14 +937,15 @@ class ImageCog(commands.Cog):
         try:
             resolved = resolve_within_project_root(directory)
         except PathContainmentError as exc:
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ {exc}\nDirectories must sit inside the project root. "
                 f"The stored value is unchanged.",
+                what=describe_command(interaction),
             )
             return
         except ValueError as exc:
-            await self._reply(interaction, f"❌ {exc}")
+            await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
         stored = relative_to_root(resolved)
@@ -750,16 +984,16 @@ class ImageCog(commands.Cog):
             )
             return
 
-        await self._config_service.set_field(
-            "template_directory", stored
-        )
+        if not await self._config_service.set_field("template_directory", stored):
+            await self._already_held(interaction, label, f"`{stored}`", f"{label}: {stored}")
+            return
         await self._reply(
             interaction,
             f"✅ **{label}** set to `{stored}`.\n"
             f"✅ Every drawing the outputs you have switched on need is present and "
             f"valid.\nSearched: `{resolved}`",
         )
-        await self._log(interaction, f"{label} = {stored}")
+        await _record(self.bot, interaction, _command(interaction), "Success", f"{label}: {stored}")
 
     async def _reject_directory(
         self,
@@ -772,8 +1006,8 @@ class ImageCog(commands.Cog):
     ) -> None:
         """Refuse a directory change, naming every fault and leaving the config alone.
 
-        Logged like an accepted change: a refused configuration is as much a part of the
-        audit trail as a stored one (Principle V).
+        Recorded in the log channel as a refusal of the command, and the whole reply goes, in as
+        many parts as it needs: a manager fixing a folder needs every template at fault.
         """
         from leaguebot.image.services.image_validity_service import describe
 
@@ -784,27 +1018,14 @@ class ImageCog(commands.Cog):
 
         if problems:
             lines.append("")
-            # Capped: a folder holding no templates at all fails sixteen times, and the
-            # first few name the problem as well as all of them would.
-            shown = problems[:6]
-            for problem in shown:
+            for problem in problems:
                 lines.append(f"  ↳ {describe(problem)}")
-            if len(problems) > len(shown):
-                lines.append(
-                    f"  ↳ …and {len(problems) - len(shown)} more. "
-                    f"Use `/images config view` for the full list."
-                )
 
         if searched is not None:
             lines.append("")
             lines.append(f"Searched: `{searched}`")
 
-        await self._reply(interaction, "\n".join(lines)[:1900])
-        await self._log(
-            interaction,
-            f"{label} REJECTED — {reason}"
-            + (f" ({len(problems)} template(s) unusable)" if problems else ""),
-        )
+        await refuse(interaction, "\n".join(lines), what=describe_command(interaction))
 
     # ── The sixteen template filename commands ────────────────────────────
     #
@@ -1046,7 +1267,7 @@ class ImageCog(commands.Cog):
         # already expired the token (404 Unknown interaction) with the toggle written.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         label = ASPECT_LABELS[aspect.value]
@@ -1058,7 +1279,10 @@ class ImageCog(commands.Cog):
             await self._reply(
                 interaction, f"❌ **{label}** image output **disabled**. Posting stays as text."
             )
-            await self._log(interaction, f"{label} image output disabled")
+            await _record(
+                self.bot, interaction, _command(interaction), "Success",
+                f"{label} image output: disabled",
+            )
             return
 
         # Switching *on* is refused while the drawings behind it are unusable, and the
@@ -1069,15 +1293,14 @@ class ImageCog(commands.Cog):
         blocking = await self._aspect_blocking_reasons_if_enabled(aspect.value)
         if blocking:
             body = "\n".join(f"  • {reason}" for reason in blocking)
-            await self._reply(
+            await refuse(
                 interaction,
                 f"⛔ **{label}** image output was **not** switched on — "
                 f"it cannot be drawn as things stand:\n{body}\n"
                 f"Put that right and run this command again. The output is still posted "
                 f"as text in the meantime.",
-            )
-            await self._log(
-                interaction, f"{label} image output refused — {len(blocking)} problem(s)"
+                what=describe_command(interaction),
+                reason="\n".join(blocking),
             )
             return
 
@@ -1085,7 +1308,10 @@ class ImageCog(commands.Cog):
         lines = toggle_enabled_lines(aspect.value, label, [])
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"{label} image output enabled")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"{label} image output: enabled",
+        )
 
     async def _aspect_blocking_reasons(self, aspect: str) -> list[str]:
         statuses = await self._validity_service.aspect_statuses()
@@ -1147,7 +1373,7 @@ class ImageCog(commands.Cog):
         # the colour already stored and the contrast — the point of the reply — lost.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         from leaguebot.image.utils.colour import InvalidColour, normalise_hex
@@ -1156,16 +1382,21 @@ class ImageCog(commands.Cog):
         try:
             canonical = normalise_hex(colour)
         except InvalidColour as exc:
-            await self._reply(
-                interaction, f"❌ {exc}\nThe stored colour is unchanged."
+            await refuse(
+                interaction,
+                f"❌ {exc}\nThe stored colour is unchanged.",
+                what=describe_command(interaction),
             )
             return
 
         # 2. Store it. Storing *before* measuring is deliberate: an unmeasurable
         #    contrast must never cost the manager their input (FR-026, FR-027).
-        await self._config_service.set_field(
-            "fastest_lap_colour", canonical
-        )
+        if not await self._config_service.set_field("fastest_lap_colour", canonical):
+            await self._already_held(
+                interaction, "the fastest-lap colour", f"`{canonical}`",
+                f"Fastest-lap colour: {canonical}",
+            )
+            return
         lines = [f"✅ Fastest-lap colour set to `{canonical}`."]
 
         # 3. Measure and report the contrast against the template's own background.
@@ -1174,7 +1405,10 @@ class ImageCog(commands.Cog):
         )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"Fastest-lap colour = {canonical}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Fastest-lap colour: {canonical}",
+        )
 
     # ── Per-tier colours (051) ────────────────────────────────────────────
 
@@ -1203,12 +1437,18 @@ class ImageCog(commands.Cog):
         # settings rather than the one, so the body has a single way of answering.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
-        await self._config_service.set_flag(
-            "per_tier_colour_enabled", enable
-        )
+        state = "on" if enable else "off"
+        if not await self._config_service.set_flag("per_tier_colour_enabled", enable):
+            await self._already_held(
+                interaction,
+                "the per-tier colours setting",
+                state,
+                f"Per-tier colours: {state}",
+            )
+            return
         lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
 
         if enable:
@@ -1233,8 +1473,9 @@ class ImageCog(commands.Cog):
             )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(
-            interaction, f"Per-tier colours = {'on' if enable else 'off'}"
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Per-tier colours: {'on' if enable else 'off'}",
         )
 
     @config.command(
@@ -1261,28 +1502,47 @@ class ImageCog(commands.Cog):
         # as `config_toggle` is, so the refusals below answer on the followup too.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         from leaguebot.image.utils.colour import InvalidColour, normalise_hex
         from leaguebot.image.utils.svg_palette import InvalidSlot, normalise_slot
 
-        # Both rejections store nothing and name the input that was wrong: a manager who
+        # Each rejection stores nothing and names the input that was wrong: a manager who
         # mistyped a slot and one who mistyped a colour are looking for different things.
+        unstorable = tier_name_refusal(division)
+        if unstorable is not None:
+            await refuse(
+                interaction,
+                f"❌ {unstorable} Nothing was stored.",
+                what=describe_command(interaction),
+            )
+            return
         try:
             canonical_slot = normalise_slot(slot)
         except InvalidSlot as exc:
-            await self._reply(interaction, f"❌ {exc}\nNothing was stored.")
+            await refuse(
+                interaction, f"❌ {exc}\nNothing was stored.", what=describe_command(interaction)
+            )
             return
         try:
             canonical_colour = normalise_hex(colour)
         except InvalidColour as exc:
-            await self._reply(interaction, f"❌ {exc}\nNothing was stored.")
+            await refuse(
+                interaction, f"❌ {exc}\nNothing was stored.", what=describe_command(interaction)
+            )
             return
 
-        await self._config_service.set_tier_colour(
+        if not await self._config_service.set_tier_colour(
             division, canonical_slot, canonical_colour
-        )
+        ):
+            await self._already_held(
+                interaction,
+                f"`{canonical_slot}` for **{division}**",
+                f"`{canonical_colour}`",
+                f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
+            )
+            return
         lines = [f"✅ **{division}** — `{canonical_slot}` set to `{canonical_colour}`."]
 
         # A slot no template marks is stored all the same and merely reported, exactly as
@@ -1303,8 +1563,8 @@ class ImageCog(commands.Cog):
             )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(
-            interaction,
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
             f"Tier colour: {division} / {canonical_slot} = {canonical_colour}",
         )
 
@@ -1317,12 +1577,17 @@ class ImageCog(commands.Cog):
     async def config_per_tier_bulk_colour(
         self, interaction: discord.Interaction, division: str
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
         await interaction.response.send_modal(TierPaletteModal(self, division))
 
-    async def apply_tier_block(self, interaction, division: str, text: str) -> None:
+    async def apply_tier_block(
+        self, interaction, division: str, text: str, *, form: discord.ui.Modal | None = None
+    ) -> None:
         """Store a pasted palette for one tier, or refuse the whole of it.
+
+        *form* is the form the palette was pasted into: a refusal is recorded under its name,
+        and the success under the command that opened it.
 
         Nothing is written while any line is faulty. The division is the unit of
         atomicity, and a tier drawn in four of its ten colours looks deliberate — which is
@@ -1330,19 +1595,45 @@ class ImageCog(commands.Cog):
         """
         from leaguebot.image.utils.palette_import import parse_palette_lines
 
+        unstorable = tier_name_refusal(division)
+        if unstorable is not None:
+            await refuse(
+                interaction,
+                f"❌ {unstorable} Nothing was stored.",
+                what=describe_form(form) if form is not None else describe_command(interaction),
+            )
+            return
+
         colours, problems = parse_palette_lines(text)
         if problems:
             listed = "\n".join(f"  • {problem}" for problem in problems)
-            await self._reply(
+            header = f"❌ Nothing was stored — {len(problems)} line(s) could not be read:"
+            await refuse(
                 interaction,
-                f"❌ Nothing was stored — {len(problems)} line(s) could not be read:\n{listed}",
+                f"{header}\n{listed}",
+                what=describe_form(form) if form is not None else describe_command(interaction),
+                reason=f"{len(problems)} line(s) could not be read:\n{listed}",
             )
             return
 
         written = await self._config_service.set_tier_colours(
             division, colours
         )
-        lines = [f"✅ **{division}** — {written} colour(s) set."]
+        if not written:
+            await self._reply(
+                interaction,
+                f"ℹ️ Nothing changed: every colour named is already held for **{division}**.",
+            )
+            await _record(
+                self.bot, interaction, "/images config per-tier-bulk-colour", "Nothing changed",
+                f"Tier colours: {division}",
+                *(f"{slot} = {colour}" for slot, colour in colours.items()),
+            )
+            return
+        held = ""
+        if written < len(colours):
+            held = f" ({written} changed, {len(colours) - written} already held)"
+        lines = [f"✅ **{division}** — {len(colours)} colour(s) set{held}."]
         lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
 
         declared = await self._declared_colour_slots()
@@ -1353,7 +1644,11 @@ class ImageCog(commands.Cog):
             )
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"Tier colours: {division} — {written} set")
+        await _record(
+            self.bot, interaction, "/images config per-tier-bulk-colour", "Success",
+            f"Tier colours: {division}",
+            *(f"{slot} = {colour}" for slot, colour in colours.items()),
+        )
 
     @config.command(
         name="colour-xml-import",
@@ -1364,7 +1659,7 @@ class ImageCog(commands.Cog):
     async def config_colour_xml_import(
         self, interaction: discord.Interaction, file: discord.Attachment | None = None
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         if file is None:
@@ -1372,39 +1667,77 @@ class ImageCog(commands.Cog):
             return
 
         await interaction.response.defer(ephemeral=True)
-        raw = await file.read()
-        if not raw:
-            await self._reply(interaction, "❌ The attached file is empty.")
-            return
-        if len(raw) > MAX_PALETTE_IMPORT_BYTES:
-            await self._reply(
+        # The size Discord reports is checked before the file is read: an oversized file is
+        # refused without being downloaded whole.
+        if file.size > MAX_PALETTE_IMPORT_BYTES:
+            await refuse(
                 interaction,
                 f"❌ File is too large (max {MAX_PALETTE_IMPORT_BYTES // 1000} KB).",
+                what=describe_command(interaction),
+            )
+            return
+        raw = await file.read()
+        if not raw:
+            await refuse(
+                interaction, "❌ The attached file is empty.", what=describe_command(interaction)
             )
             return
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
-            await self._reply(interaction, "❌ File could not be decoded as UTF-8.")
+            await refuse(
+                interaction,
+                "❌ File could not be decoded as UTF-8.",
+                what=describe_command(interaction),
+            )
             return
 
         await self.apply_tier_xml(interaction, text)
 
-    async def apply_tier_xml(self, interaction, text: str) -> None:
+    async def apply_tier_xml(
+        self, interaction, text: str, *, form: discord.ui.Modal | None = None
+    ) -> None:
         """Import many tiers, rejecting a block at a time (decided 2026-09-08).
 
-        A document that cannot be parsed fails whole, there being nothing to salvage from
-        it. Past that, each division stands or falls alone, so one mistyped tier does not
-        cost a league the other four.
+        A document that cannot be parsed is refused whole, there being nothing to salvage from
+        it, and so is one in which every block is rejected. Past that, each division stands or
+        falls alone, so one mistyped tier does not cost a league the other four. *form* is the
+        form the document was pasted into: a refusal is recorded under its name, and the
+        success under the command that opened it.
         """
         from leaguebot.image.utils.palette_import import PaletteXmlError, parse_palette_xml
 
+        refused = describe_form(form) if form is not None else describe_command(interaction)
         try:
             blocks, problems = parse_palette_xml(text)
         except PaletteXmlError as exc:
             listed = "\n".join(f"  • {error}" for error in exc.errors)
-            await self._reply(interaction, f"❌ Nothing was stored:\n{listed}")
-            await self._log(interaction, "Tier colour import | FAILED (unreadable)")
+            await refuse(
+                interaction,
+                f"❌ Nothing was stored:\n{listed}",
+                what=refused,
+                reason=f"the document could not be read:\n{listed}",
+            )
+            return
+
+        # A name nothing can be stored under is passed over with the rest that were rejected.
+        storable = []
+        for block in blocks:
+            unstorable = tier_name_refusal(block.division)
+            if unstorable is None:
+                storable.append(block)
+            else:
+                problems.append(unstorable)
+        blocks = storable
+
+        if problems and not blocks:
+            listed = "\n".join(f"  • {problem}" for problem in problems)
+            await refuse(
+                interaction,
+                f"⚠️ {len(problems)} block(s) were not imported:\n{listed}",
+                what=refused,
+                reason=f"every block was rejected:\n{listed}",
+            )
             return
 
         written = 0
@@ -1412,11 +1745,17 @@ class ImageCog(commands.Cog):
             written += await self._config_service.set_tier_colours(
                 block.division, block.colours
             )
+        named = sum(len(b.colours) for b in blocks)
 
         lines = []
-        if blocks:
+        if blocks and not written:
+            lines.append("ℹ️ Nothing changed: every colour named is already held.")
+        elif blocks:
+            held = ""
+            if written < named:
+                held = f" ({written} changed, {named - written} already held)"
             lines.append(
-                f"✅ Imported {written} colour(s) across {len(blocks)} tier(s)."
+                f"✅ Imported {named} colour(s) across {len(blocks)} tier(s){held}."
             )
             lines += [
                 f"  • **{b.division}** — {len(b.colours)} colour(s)" for b in blocks
@@ -1426,10 +1765,13 @@ class ImageCog(commands.Cog):
             lines += [f"  • {problem}" for problem in problems]
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(
-            interaction,
-            f"Tier colour import | {len(blocks)} tier(s), {written} colour(s), "
-            f"{len(problems)} rejected",
+        details = [f"{b.division}: {len(b.colours)} colour(s)" for b in blocks]
+        if problems:
+            details.append("passed over:")
+            details += [f"  {problem}" for problem in problems]
+        await _record(
+            self.bot, interaction, "/images config colour-xml-import",
+            "Success" if written else "Nothing changed", *details,
         )
 
     async def _declared_colour_slots(self) -> set[str]:
@@ -1548,28 +1890,35 @@ class ImageCog(commands.Cog):
     @app_commands.describe(zone="An IANA zone name, e.g. Europe/Lisbon.")
     @league_manager_only
     async def config_time_zone(self, interaction: discord.Interaction, zone: str) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         # Through the memoised list rather than `available_timezones()`, which walks the
         # whole TZPATH tree on every call — 325 ms cold on the Pi, for one membership test.
         candidate = zone.strip()
         if not is_known_zone(candidate):
-            await self._reply(
+            await refuse(
                 interaction,
                 f"❌ `{candidate}` is not a recognised time zone. "
                 f"Use an IANA name such as `Europe/Lisbon` or `UTC`.",
+                what=describe_command(interaction),
             )
             return
 
-        await self._config_service.set_field("time_zone", candidate)
+        if not await self._config_service.set_field("time_zone", candidate):
+            await self._already_held(
+                interaction, "the time zone", f"`{candidate}`", f"Time zone: {candidate}"
+            )
+            return
         await self._reply(
             interaction,
             f"✅ Time zone set to `{candidate}`.\n"
             f"Times are shown in the offset that zone carries **on the date displayed**, "
             f"so a season spanning a daylight-saving change stays correct.",
         )
-        await self._log(interaction, f"Time zone = {candidate}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success", f"Time zone: {candidate}"
+        )
 
     @config_time_zone.autocomplete("zone")
     @bounded_autocomplete()
@@ -1604,13 +1953,19 @@ class ImageCog(commands.Cog):
     async def config_time_format(
         self, interaction: discord.Interaction, clock: app_commands.Choice[str]
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
-        await self._config_service.set_field(
-            "time_format", clock.value
-        )
+        if not await self._config_service.set_field("time_format", clock.value):
+            await self._already_held(
+                interaction, "the clock format", clock.name,
+                f"Clock format: {clock.name} ({clock.value})",
+            )
+            return
         await self._reply(interaction, f"✅ Clock format set to **{clock.name}**.")
-        await self._log(interaction, f"Clock format = {clock.value}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Clock format: {clock.name} ({clock.value})",
+        )
 
     @config.command(
         name="date-format",
@@ -1648,13 +2003,19 @@ class ImageCog(commands.Cog):
     async def config_date_format(
         self, interaction: discord.Interaction, style: app_commands.Choice[str]
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
-        await self._config_service.set_field(
-            "date_format", style.value
-        )
+        if not await self._config_service.set_field("date_format", style.value):
+            await self._already_held(
+                interaction, "the date format", style.name,
+                f"Date format: {style.name} ({style.value})",
+            )
+            return
         await self._reply(interaction, f"✅ Date format set to **{style.name}**.")
-        await self._log(interaction, f"Date format = {style.value}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success",
+            f"Date format: {style.name} ({style.value})",
+        )
 
     # ── /images config view ───────────────────────────────────────────────
 
@@ -1665,13 +2026,13 @@ class ImageCog(commands.Cog):
     @league_manager_only
     @changes_nothing
     async def config_view(self, interaction: discord.Interaction) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
 
         await interaction.response.defer(ephemeral=True)
 
         text = await self.build_configuration_report()
-        for chunk in _chunk(text):
+        for chunk in chunk_message(text):
             await interaction.followup.send(chunk, ephemeral=True)
 
     async def build_configuration_report(self) -> str:
@@ -1883,7 +2244,7 @@ class ImageCog(commands.Cog):
             converter_available,
         )
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
 
         # Defer first: several kinds draw more than one picture, and the rasteriser is a
@@ -2415,29 +2776,14 @@ class ImageCog(commands.Cog):
         from leaguebot.image.services.image_render_service import discard_attachment
 
         try:
-            await interaction.followup.send(
-                "\n".join(lines)[:1900], files=files, ephemeral=True
-            )
+            # The whole reply goes, in parts: cut short it would stop partway through a list
+            # with no sign. The picture rides with the first part only, so it arrives once.
+            for number, part in enumerate(chunk_message("\n".join(lines))):
+                await interaction.followup.send(
+                    part, files=files if number == 0 else [], ephemeral=True
+                )
         finally:
             discard_attachment(*files)
-
-
-def _chunk(content: str, limit: int = 1900) -> list[str]:
-    """Split a report across Discord's message limit at line boundaries."""
-    if len(content) <= limit:
-        return [content]
-    chunks: list[str] = []
-    current: list[str] = []
-    size = 0
-    for line in content.split("\n"):
-        if size + len(line) + 1 > limit and current:
-            chunks.append("\n".join(current))
-            current, size = [], 0
-        current.append(line)
-        size += len(line) + 1
-    if current:
-        chunks.append("\n".join(current))
-    return chunks
 
 
 def _verify_template_command_coverage() -> None:
