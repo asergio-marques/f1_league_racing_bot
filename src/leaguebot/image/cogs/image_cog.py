@@ -1011,16 +1011,8 @@ class ImageCog(commands.Cog):
 
         if problems:
             lines.append("")
-            # Capped: a folder holding no templates at all fails sixteen times, and the
-            # first few name the problem as well as all of them would.
-            shown = problems[:6]
-            for problem in shown:
+            for problem in problems:
                 lines.append(f"  ↳ {describe(problem)}")
-            if len(problems) > len(shown):
-                lines.append(
-                    f"  ↳ …and {len(problems) - len(shown)} more. "
-                    f"Use `/images config view` for the full list."
-                )
 
         if searched is not None:
             lines.append("")

@@ -45,8 +45,6 @@ from tests.support.image_cog_doubles import (
 
 COMMAND = "images config template-directory"
 
-_SIX_ONLY = "#482: a refused template folder still names only six templates at fault"
-
 
 def _interaction(bot=None):
     return _image_interaction(COMMAND, bot=bot)
@@ -218,7 +216,6 @@ async def test_a_refusal_says_the_previous_folder_still_stands():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=_SIX_ONLY)
 async def test_a_wholesale_failure_names_every_template_at_fault():
     """Image spec: a refused folder names each template at fault with its own reason. No
     cut at six and no "…and N more" line: the whole reply goes, in as many parts as it
