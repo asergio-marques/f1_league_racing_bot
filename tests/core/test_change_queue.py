@@ -639,6 +639,26 @@ async def test_a_log_line_that_cannot_be_delivered_is_left_for_the_retry_loop(en
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
+    """A record too long for one message is divided across as many as it needs, as
+    `chunk_message` divides it, and nothing is left waiting on a retry."""
+    links = [f"https://discord.com/channels/12408/300/{n:019d}" for n in range(100)]
+    line = "Admin (<@4242>) | /dummy | Messages removed\n" + "\n".join(f"  {link}" for link in links)
+    _queue(env, _type(steps=[_act("a", [], lines=[line])]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    parts = [sent for sent in env.bot.log_channel.sent if "/dummy | Messages removed" in sent
+             or "https://discord.com/channels/12408/300/" in sent]
+    assert len(parts) > 1
+    assert all(len(part) <= 2000 for part in parts)
+    assert parts[0].startswith("Admin (`<@4242>`) | /dummy | Messages removed")
+    assert [word for part in parts for word in part.split() if word.startswith("https://")] == links
+    assert await queued_log_lines(env.db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_queued_line_the_log_channel_refuses_is_told_to_the_member_alone(env):
     """Through the held interaction, seen by the member alone; the interaction channel is sent
     nothing, and the line still waits on the retry queue."""
