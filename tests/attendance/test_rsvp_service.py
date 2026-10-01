@@ -733,9 +733,10 @@ class TestAttendanceServiceCrud:
 
     @pytest.mark.asyncio
     async def test_upsert_reports_whether_it_wrote(self, tmp_path):
-        """Both paths report True. The return value exists so `handle_rsvp_button` can tell a
-        driver the truth instead of assuming, which is the half of issue #209 that let a
-        success message stand over a write that changed nothing."""
+        """Both paths report True. The return value exists so the bulk-set form lists as applied
+        only what was saved, instead of assuming: the half of issue #209 that let a success
+        message stand over a write that changed nothing. A press gets the same from
+        `answer_rsvp`."""
         db_path = await _make_attendance_db(tmp_path)
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
