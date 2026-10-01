@@ -35,6 +35,8 @@ from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
 from leaguebot.core.utils.time_parsing import parse_time_of_day
 from leaguebot.core.utils.timezones import clear_zone_cache, is_known_zone, zone_names
@@ -399,11 +401,37 @@ class ImageCog(commands.Cog):
 
     @staticmethod
     async def _reply(interaction: discord.Interaction, content: str) -> None:
-        """Send an ephemeral response, following up when already deferred."""
-        if interaction.response.is_done():
-            await interaction.followup.send(content, ephemeral=True)
-        else:
-            await interaction.response.send_message(content, ephemeral=True)
+        """Send an ephemeral response, following up when already deferred.
+
+        A reply past Discord's limit goes in as many parts as it needs (`chunk_message`): sent
+        whole, it raises after the change it reports has been made. The first part answers the
+        interaction if nothing has, and the rest follow up on it.
+        """
+        for part in chunk_message(content):
+            if interaction.response.is_done():
+                await interaction.followup.send(part, ephemeral=True)
+            else:
+                await interaction.response.send_message(part, ephemeral=True)
+
+    async def _record(
+        self,
+        interaction: discord.Interaction,
+        what: str,
+        outcome: str,
+        *details: str,
+    ) -> None:
+        """Write one line in the success form, "Name (<@id>) | *what* | *outcome*", *details* beneath.
+
+        For a success and for nothing changed; *what* is the command as the line names it,
+        "/images config time-zone". The post is bare: a line reporting that nothing went wrong
+        is no place for a catch-all, so a post that raises reaches the command's error handling.
+        A refusal, a cancel, a lapse and a fault have lines of their own
+        (`core/utils/log_lines.py`, `report_failure`).
+        """
+        await self.bot.output_router.post_log(
+            f"{interaction_member(interaction)} | {what} | {outcome}"
+            + "".join(f"\n  {detail}" for detail in details)
+        )
 
     async def _set_directory(
         self, interaction: discord.Interaction, column: str, value: str, label: str
