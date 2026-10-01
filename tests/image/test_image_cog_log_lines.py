@@ -36,7 +36,6 @@ from tests.support.image_cog_doubles import (
 from tests.support.undecorate import undecorate
 
 _GATE_NOT_RECORDED = "#482: the image module gate does not yet record a refusal"
-_OWN_SPLITTER = "#482: /images config view still splits its report with the cog's own splitter"
 _REPLY_CUT = "#482: a refused folder's reply is still cut at 1,900 characters"
 
 
@@ -132,7 +131,6 @@ async def test_a_command_that_changes_nothing_records_nothing_when_refused(name)
 # ── A21 (S1): the configuration report arrives in parts ───────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_OWN_SPLITTER)
 async def test_a_long_configuration_report_is_sent_in_the_parts_core_splits_it_into():
     bot = log_bot()
     bot.module_service.is_images_enabled = AsyncMock(return_value=True)

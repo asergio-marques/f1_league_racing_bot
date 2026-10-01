@@ -1699,7 +1699,7 @@ class ImageCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         text = await self.build_configuration_report()
-        for chunk in _chunk(text):
+        for chunk in chunk_message(text):
             await interaction.followup.send(chunk, ephemeral=True)
 
     async def build_configuration_report(self) -> str:
@@ -2448,24 +2448,6 @@ class ImageCog(commands.Cog):
             )
         finally:
             discard_attachment(*files)
-
-
-def _chunk(content: str, limit: int = 1900) -> list[str]:
-    """Split a report across Discord's message limit at line boundaries."""
-    if len(content) <= limit:
-        return [content]
-    chunks: list[str] = []
-    current: list[str] = []
-    size = 0
-    for line in content.split("\n"):
-        if size + len(line) + 1 > limit and current:
-            chunks.append("\n".join(current))
-            current, size = [], 0
-        current.append(line)
-        size += len(line) + 1
-    if current:
-        chunks.append("\n".join(current))
-    return chunks
 
 
 def _verify_template_command_coverage() -> None:
