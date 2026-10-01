@@ -315,13 +315,6 @@ async def test_approval_is_logged_naming_the_manager_and_the_driver(review):
     assert "Manager" in logged
 
 
-_RAW_ID_NAMING = (
-    "#482: a driver who has left is named by their raw id beside the mention, not by mention "
-    "alone"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_RAW_ID_NAMING)
 @pytest.mark.parametrize(
     ("outcome", "action"),
     [

@@ -363,11 +363,6 @@ async def test_the_prior_state_is_read_before_anything_is_written(committer):
     assert committer.saved[0].id == 9
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: a driver who has left is named by their raw id beside the mention, not by "
-    "mention alone",
-)
 async def test_a_driver_who_has_left_is_logged_by_id(committer):
     """`get_member` gives nothing for someone who has left, and the log must still name
     somebody: by mention alone, as every line names a member no longer on the server (core

@@ -650,11 +650,7 @@ class WizardService:
                 )
 
         # A correction is committed by `_commit_correction`, which writes its own line.
-        member = guild.get_member(int(discord_user_id))
-        display_name = member.display_name if member else discord_user_id
-        await self._output_router.post_log(
-            f"{display_name} (<@{discord_user_id}>) | Signup | Submitted",
-        )
+        await self._record_signup_line(discord_user_id, guild, "Submitted")
 
     async def withdraw(
         self,
@@ -749,11 +745,10 @@ class WizardService:
             "This channel will be automatically deleted in 24 hours.",
         )
 
-        driver_member = guild.get_member(int(discord_user_id))
-        driver_name = driver_member.display_name if driver_member else discord_user_id
+        driver_named = self._member_named_in(guild, discord_user_id)
         await self._output_router.post_log(
             f"{actor.display_name} (<@{actor.id}>) | Signup | Approved\n"
-            f"  driver: {driver_name} (<@{discord_user_id}>)",
+            f"  driver: {driver_named}",
         )
 
     async def reject_signup(
@@ -789,9 +784,8 @@ class WizardService:
             + "\nThis channel will be automatically deleted in 24 hours.",
         )
 
-        driver_member = guild.get_member(int(discord_user_id))
-        driver_name = driver_member.display_name if driver_member else discord_user_id
-        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Rejected\n  driver: {driver_name} (<@{discord_user_id}>)"
+        driver_named = self._member_named_in(guild, discord_user_id)
+        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Rejected\n  driver: {driver_named}"
         if reason:
             msg += f"\n  reason: {reason}"
         await self._output_router.post_log(msg)
@@ -850,9 +844,8 @@ class WizardService:
             self._correction_timeout_after_delay(discord_user_id)
         )
 
-        driver_member = guild.get_member(int(discord_user_id))
-        driver_name = driver_member.display_name if driver_member else discord_user_id
-        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Correction requested\n  driver: {driver_name} (<@{discord_user_id}>)"
+        driver_named = self._member_named_in(guild, discord_user_id)
+        msg = f"{actor.display_name} (<@{actor.id}>) | Signup | Correction requested\n  driver: {driver_named}"
         if reason:
             msg += f"\n  reason: {reason}"
         await self._output_router.post_log(msg)
@@ -1500,6 +1493,13 @@ class WizardService:
             return
         await self._record_signup_line(wizard.discord_user_id, guild, answer)
 
+    @staticmethod
+    def _member_named_in(guild: discord.Guild, discord_user_id: str) -> str:
+        """The driver as the log channel names a member: "Alex (<@id>)", or the mention alone
+        once they have left the server."""
+        member = guild.get_member(int(discord_user_id))
+        return member_named(getattr(member, "display_name", None), int(discord_user_id))
+
     async def _record_signup_line(
         self, discord_user_id: str, guild: discord.Guild, text: str
     ) -> None:
@@ -1507,8 +1507,7 @@ class WizardService:
 
         The driver is named by display name and mention, and by mention alone once they have left.
         """
-        member = guild.get_member(int(discord_user_id))
-        named = member_named(getattr(member, "display_name", None), int(discord_user_id))
+        named = self._member_named_in(guild, discord_user_id)
         await self._output_router.post_log(f"{named} | Signup | {text}")
 
     @staticmethod
