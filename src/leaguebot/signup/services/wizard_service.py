@@ -1668,18 +1668,23 @@ class WizardService:
         A typed answer is a message, not a command, button or form, so an accepted one records
         nothing and only its refusal does (#482). The reply has already gone to the driver's
         channel; the line names the driver and the *step* (as the review's correction buttons
-        name it) and gives the reply's first line as the reason.
+        name it) and gives the reply's first line as the reason. Never raises, as
+        `record_refusal` never does: a message without an author, or a service without a bot,
+        leaves the typed-answer handler unharmed.
         """
-        author = message.author
-        name = getattr(author, "display_name", None)
-        owner = f"{name}'s" if isinstance(name, str) and name else f"<@{author.id}>'s"
-        first = reply.strip().splitlines()[0] if reply.strip() else ""
-        await record_refusal(
-            self._bot,
-            author,
-            what=f"the {step} step of {owner} signup wizard",
-            reason=first.removeprefix("❌").strip(),
-        )
+        try:
+            author = message.author
+            name = getattr(author, "display_name", None)
+            owner = f"{name}'s" if isinstance(name, str) and name else f"<@{author.id}>'s"
+            first = reply.strip().splitlines()[0] if reply.strip() else ""
+            await record_refusal(
+                self._bot,
+                author,
+                what=f"the {step} step of {owner} signup wizard",
+                reason=first.removeprefix("❌").strip(),
+            )
+        except Exception:  # noqa: BLE001 — the driver has been answered; the record never harms the step
+            log.warning("could not record the refusal of the %s step", step, exc_info=True)
 
     async def _answer_stands(
         self, message: discord.Message, step: str, field_label: str, raw: str

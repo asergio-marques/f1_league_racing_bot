@@ -26,11 +26,8 @@ class _Channel:
 
 class _Message:
     def __init__(self, content: str) -> None:
-        from types import SimpleNamespace
-
         self.content = content
         self.channel = _Channel()
-        self.author = SimpleNamespace(id=7, display_name="Alex", mention="<@7>")
 
 
 def _slots():
@@ -60,11 +57,7 @@ def wizard_and_service():
     from leaguebot.signup.models.signup_module import ConfigSnapshot, SignupWizardRecord, WizardState
     from leaguebot.signup.services.wizard_service import WizardService
 
-    from unittest.mock import AsyncMock, MagicMock
-
     svc = WizardService.__new__(WizardService)
-    svc._bot = MagicMock()
-    svc._bot.output_router.post_log = AsyncMock()
     advanced: list[bool] = []
 
     async def _advance(wizard, message):
