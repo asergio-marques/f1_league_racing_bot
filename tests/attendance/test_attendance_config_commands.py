@@ -668,3 +668,23 @@ async def test_a_value_already_held_records_that_nothing_changed(
     assert _lines(cog) == [
         f"Manager (<@42>) | /attendance config {name} | Nothing changed\n  {detail}"
     ]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#482: _record swallows a success or nothing-changed line it cannot post"
+)
+@pytest.mark.parametrize(
+    "start,outcome",
+    [({}, "Success"), ({"no_show_penalty": 4}, "Nothing changed")],
+    ids=["success", "nothing-changed"],
+)
+async def test_a_line_that_cannot_be_posted_is_not_swallowed(start, outcome):
+    """P2: a success or nothing-changed line is posted bare, so a post that raises reaches the
+    command's error handling rather than vanishing. Only the four catch-alls the architecture
+    allows may swallow, and a line reporting that nothing went wrong is none of them."""
+    cog = _make_cog(cfg=_config(**start))
+    cog.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("log channel down"))
+    interaction = _interaction()
+
+    with pytest.raises(RuntimeError, match="log channel down"):
+        await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
