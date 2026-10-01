@@ -107,6 +107,7 @@ it only to place it; the rules governing it belong to its own specification.
     - A refusal to someone on another server, to a command used in a direct message, or made before the bot is set up, when there is no log channel, shall be written to the host's log alone, the member being answered as ever. Decided 2026-09-29.
     - A command that changes nothing because nothing was asked of it, such as a form submitted unchanged, shall record that nothing was changed.
     - A results paste into a submission channel is a message, not a command, and this rule does not reach it. Decided 2026-09-29.
+    - An answer typed into the signup wizard is a message, not a command, button or form, and this rule does not reach it beyond a refusal: an accepted typed answer records nothing, and one the wizard turns away records that refusal. An answer given by pressing a wizard button is a button press, and records the answer. Decided 2026-09-30.
 - A mention written into the log channel shall not notify anybody.
 - A record too long for one message shall be divided across as many as it requires.
 - A message the bot fails to post shall be kept and delivered later.
