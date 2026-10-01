@@ -445,7 +445,29 @@ async def test_a_second_press_of_confirm_saves_nothing_and_is_refused():
     assert lines[1].startswith("⛔ ") and f"refused for {MEMBER} — " in lines[1], lines[1]
 
 
-# ── Checked again on submit (F5) ──────────────────────────────────────────
+async def test_the_confirmation_is_not_stopped_until_cancel_and_confirm_have_finished():
+    """A stopped view answers no press at all, so stopping one before its press has finished
+    would leave a second press unanswered and unrecorded rather than refused."""
+    cog, bot = _cog(use_pfp=True)
+    cancelled, _submitted = await _confirmation(cog, bot)
+    confirmed, _submitted = await _confirmation(cog, bot)
+    while_posting, while_committing = [], []
+    bot.output_router.post_log = AsyncMock(
+        side_effect=lambda *_args, **_kwargs: while_posting.append(cancelled.is_finished())
+    )
+    bot.image_config_service.set_pfp_flag = AsyncMock(
+        side_effect=lambda *_args, **_kwargs: while_committing.append(confirmed.is_finished())
+    )
+
+    await cancelled.cancel.callback(_interaction(bot))
+    await confirmed.confirm.callback(_interaction(bot))
+
+    assert while_posting[0] is False
+    assert while_committing == [False]
+    assert cancelled.is_finished() and confirmed.is_finished()
+
+
+# ── Checked again on submit (F5)──────────────────────────────────────────
 
 _CHANGED_SINCE_OPENING = [
     pytest.param(
