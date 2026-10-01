@@ -476,7 +476,7 @@ class WizardService:
 
         discord_user_id = str(member.id)
 
-        if not await self._bot.module_service.is_signup_enabled():
+        if not await self._module_svc.is_signup_enabled():
             raise SignupNotOpenError
         signup_cfg = await self._signup_svc.get_config()
         if signup_cfg is not None and not signup_cfg.signups_open:
