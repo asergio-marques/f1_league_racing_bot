@@ -184,7 +184,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_RsvpBulkSetModal.on_submit"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_call_stands"): (2, PASS["attendance"]),
-    ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (6, PASS["attendance"]),
+    ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (4, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
     ("core/cogs/bot_cog.py", "_audit"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._apply_results_disable"): (5, PASS["core"]),

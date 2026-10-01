@@ -72,12 +72,6 @@ STRANGER_PROFILE = 303
 #: The configured deadline, in hours before the round.
 DEADLINE_HOURS = 6
 
-#: Why a test fails until the answer is decided and written in one transaction.
-ANSWER_RSVP = (
-    "#482: AttendanceService.answer_rsvp applies the lock rules and writes the answer in one "
-    "transaction (F1/F2)"
-)
-
 #: The moment `answer_rsvp` is told it is, in the tests that call it directly.
 NOW = datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -960,7 +954,6 @@ async def test_a_failed_line_that_cannot_be_posted_does_not_raise(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ANSWER_RSVP)
 async def test_two_quick_presses_of_the_same_button_record_one_answer(tmp_path, monkeypatch):
     """F1: the second press sees the first's answer, so it is answered and logged as nothing
     changed, not as a second success."""

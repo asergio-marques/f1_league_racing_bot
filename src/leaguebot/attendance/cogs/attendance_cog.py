@@ -14,6 +14,7 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import ONGOING_STAGES
 from leaguebot.attendance.models.attendance import AttendanceConfig
 from leaguebot.attendance.services.attendance_service import (
+    RsvpOutcome,
     recalculation_faults,
     sync_attendance,
     validate_timing_invariant,
@@ -1553,57 +1554,53 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
     deadline_hours: int = round_row["rsvp_deadline_hours"] or 0
     now = datetime.now(timezone.utc)
 
-    # Get current rsvp_status for locking check
-    async with get_connection(bot.db_path) as db:
-        cur = await db.execute(
-            """
-            SELECT rsvp_status FROM driver_round_attendance
-             WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
-            """,
-            (round_id, division_id, driver_profile_id),
+    # The locks, the answer held and the write are decided in one transaction by the service
+    # (#482), so two quick presses cannot both decide on the answer the first is replacing, and
+    # an accepted reserve stays locked at the deadline whatever presses follow. The write is
+    # reported on rather than assumed: issue #209 was a success message standing over a write
+    # that changed nothing, and a driver told their answer was recorded has no way of
+    # discovering otherwise until the round is scored against them. The embed is not rebuilt
+    # either on a write that failed — it is a view of the answers, and redrawing it here would
+    # show the division a state the database does not hold.
+    answer = await bot.attendance_service.answer_rsvp(
+        round_id,
+        division_id,
+        driver_profile_id,
+        new_status,
+        now=now,
+        scheduled_at=scheduled_at,
+        deadline_hours=deadline_hours,
+        is_reserve=is_reserve,
+    )
+    outcome = answer.outcome
+    current_status = answer.found
+
+    # Locks (FR-014 / FR-015 / FR-016 / FR-017)
+    if outcome is RsvpOutcome.LOCKED_AT_DEADLINE:
+        await refuse(
+            interaction,
+            "❌ The RSVP deadline has passed. Your response cannot be changed.",
+            what=what,
         )
-        dra_row = await cur.fetchone()
-
-    current_status: str = dra_row["rsvp_status"] if dra_row is not None else "NO_RSVP"
-
-    # Compute lock threshold
-    if deadline_hours > 0:
-        lock_deadline_at = scheduled_at - timedelta(hours=deadline_hours)
-    else:
-        lock_deadline_at = scheduled_at  # FR-017: treat as round start
-
-    if not is_reserve:
-        # Full-time: locked after deadline (FR-014)
-        if now >= lock_deadline_at:
-            await refuse(
-                interaction,
-                "❌ The RSVP deadline has passed. Your response cannot be changed.",
-                what=what,
-            )
-            return
-    else:
-        if current_status == "ACCEPTED":
-            # Reserve with ACCEPTED: locked after deadline too (FR-015)
-            if now >= lock_deadline_at:
-                await refuse(
-                    interaction,
-                    "❌ You have already accepted and the RSVP deadline has passed. "
-                    "Your response cannot be changed.",
-                    what=what,
-                )
-                return
-        else:
-            # Reserve not-ACCEPTED: locked only at round start (FR-016)
-            if now >= scheduled_at:
-                await refuse(
-                    interaction,
-                    "❌ The round has started. Your response cannot be changed.",
-                    what=what,
-                )
-                return
+        return
+    if outcome is RsvpOutcome.LOCKED_ACCEPTED:
+        await refuse(
+            interaction,
+            "❌ You have already accepted and the RSVP deadline has passed. "
+            "Your response cannot be changed.",
+            what=what,
+        )
+        return
+    if outcome is RsvpOutcome.LOCKED_AT_START:
+        await refuse(
+            interaction,
+            "❌ The round has started. Your response cannot be changed.",
+            what=what,
+        )
+        return
 
     # No-op check (FR-013)
-    if current_status == new_status:
+    if outcome is RsvpOutcome.UNCHANGED:
         label = _STATUS_LABELS.get(new_status, new_status)
         await interaction.response.send_message(
             f"ℹ️ You are already marked as **{label}**.", ephemeral=True
@@ -1613,18 +1610,7 @@ async def handle_rsvp_button(interaction: discord.Interaction, custom_id: str) -
         )
         return
 
-    # Upsert status. Reported on rather than assumed: issue #209 was a success message
-    # standing over a write that changed nothing, and a driver told their answer was recorded
-    # has no way of discovering otherwise until the round is scored against them. The embed
-    # is not rebuilt either — it is a view of the answers, and redrawing it here would show
-    # the division a state the database does not hold.
-    recorded = await bot.attendance_service.upsert_rsvp_status(
-        round_id=round_id,
-        division_id=division_id,
-        driver_profile_id=driver_profile_id,
-        status=new_status,
-    )
-    if not recorded:
+    if outcome is RsvpOutcome.NOT_RECORDED:
         log.error(
             "handle_rsvp_button: recorded no answer for driver %s on round %s / division %s",
             driver_profile_id, round_id, division_id,
