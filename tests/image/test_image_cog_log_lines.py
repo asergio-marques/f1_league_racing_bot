@@ -35,7 +35,6 @@ from tests.support.image_cog_doubles import (
 )
 from tests.support.undecorate import undecorate
 
-_GATE_NOT_RECORDED = "#482: the image module gate does not yet record a refusal"
 _REPLY_CUT = "#482: a refused folder's reply is still cut at 1,900 characters"
 
 
@@ -107,7 +106,6 @@ def test_both_lists_are_whole():
 # ── A4: the module gate ───────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_NOT_RECORDED)
 @pytest.mark.parametrize("name", ACTING)
 async def test_an_acting_command_refused_by_the_module_gate_records_one_line(name):
     cog = _module_off_cog()

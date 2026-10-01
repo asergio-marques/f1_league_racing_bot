@@ -34,7 +34,9 @@ from leaguebot.image.models.image_constants import (
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
 from leaguebot.image.services.image_config_service import pfp_change_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
+from leaguebot.core.utils.interaction_errors import describe as describe_command
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.paths import PathContainmentError, relative_to_root
@@ -371,21 +373,27 @@ class ImageCog(commands.Cog):
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
-    async def _guard_module_enabled(self, interaction: discord.Interaction) -> bool:
-        """Return True when the module is enabled; otherwise reply and return False.
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Return True when the module is enabled; otherwise answer and return False.
 
-        Replies through :meth:`_reply` rather than ``response.send_message`` because its
-        callers differ: a command that has already deferred must answer on the followup,
-        and sending a fresh response there raises ``404 Unknown interaction``.
+        The refusal is recorded in the log channel, as every refusal of a command that changes
+        something is. A command that changes nothing (`record=False`: the configuration report
+        and the previews) answers and records nothing.
+
+        Answers through `refuse` or :meth:`_reply`, never ``response.send_message`` directly,
+        because its callers differ: a command that has already deferred must answer on the
+        followup, and sending a fresh response there raises ``404 Unknown interaction``.
         """
-        if not await self.bot.module_service.is_images_enabled():
-            await self._reply(
-                interaction,
-                "❌ The Image module is not enabled. "
-                "Use `/module enable images` first.",
-            )
-            return False
-        return True
+        if await self.bot.module_service.is_images_enabled():
+            return True
+        reply = "❌ The Image module is not enabled. Use `/module enable images` first."
+        if record:
+            await refuse(interaction, reply, what=describe_command(interaction))
+        else:
+            await self._reply(interaction, reply)
+        return False
 
     @property
     def _config_service(self):
@@ -442,7 +450,7 @@ class ImageCog(commands.Cog):
         configuration, rather than surfacing as a render failure later (FR-011, FR-016).
         The stored value is left unchanged on rejection.
         """
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         from leaguebot.core.utils.paths import resolve_within_project_root
@@ -499,7 +507,7 @@ class ImageCog(commands.Cog):
         # window on a slow host as readily as the sixteen-template sweep does.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         label = TEMPLATE_LABELS[column]
@@ -566,7 +574,7 @@ class ImageCog(commands.Cog):
         The two sub-toggles govern *how* portraits are kept up to date, which is not a
         question while the bot is not obtaining them at all.
         """
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return None
         config = await self._config_service.get_config()
         if config is None or not config.use_pfp:
@@ -618,7 +626,7 @@ class ImageCog(commands.Cog):
     )
     @league_manager_only
     async def use_pfp_toggle(self, interaction: discord.Interaction) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         config = await self._config_service.get_config()
@@ -724,7 +732,7 @@ class ImageCog(commands.Cog):
         from leaguebot.image.services.image_validity_service import blocking_template_problems
         from leaguebot.core.utils.paths import resolve_within_project_root
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         label = "Template directory"
@@ -1074,7 +1082,7 @@ class ImageCog(commands.Cog):
         # already expired the token (404 Unknown interaction) with the toggle written.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         label = ASPECT_LABELS[aspect.value]
@@ -1175,7 +1183,7 @@ class ImageCog(commands.Cog):
         # the colour already stored and the contrast — the point of the reply — lost.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         from leaguebot.image.utils.colour import InvalidColour, normalise_hex
@@ -1231,7 +1239,7 @@ class ImageCog(commands.Cog):
         # settings rather than the one, so the body has a single way of answering.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         await self._config_service.set_flag(
@@ -1289,7 +1297,7 @@ class ImageCog(commands.Cog):
         # as `config_toggle` is, so the refusals below answer on the followup too.
         await interaction.response.defer(ephemeral=True)
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         from leaguebot.image.utils.colour import InvalidColour, normalise_hex
@@ -1345,7 +1353,7 @@ class ImageCog(commands.Cog):
     async def config_per_tier_bulk_colour(
         self, interaction: discord.Interaction, division: str
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
         await interaction.response.send_modal(TierPaletteModal(self, division))
 
@@ -1392,7 +1400,7 @@ class ImageCog(commands.Cog):
     async def config_colour_xml_import(
         self, interaction: discord.Interaction, file: discord.Attachment | None = None
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         if file is None:
@@ -1576,7 +1584,7 @@ class ImageCog(commands.Cog):
     @app_commands.describe(zone="An IANA zone name, e.g. Europe/Lisbon.")
     @league_manager_only
     async def config_time_zone(self, interaction: discord.Interaction, zone: str) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
 
         # Through the memoised list rather than `available_timezones()`, which walks the
@@ -1632,7 +1640,7 @@ class ImageCog(commands.Cog):
     async def config_time_format(
         self, interaction: discord.Interaction, clock: app_commands.Choice[str]
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
         await self._config_service.set_field(
             "time_format", clock.value
@@ -1676,7 +1684,7 @@ class ImageCog(commands.Cog):
     async def config_date_format(
         self, interaction: discord.Interaction, style: app_commands.Choice[str]
     ) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction):
             return
         await self._config_service.set_field(
             "date_format", style.value
@@ -1693,7 +1701,7 @@ class ImageCog(commands.Cog):
     @league_manager_only
     @changes_nothing
     async def config_view(self, interaction: discord.Interaction) -> None:
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -1911,7 +1919,7 @@ class ImageCog(commands.Cog):
             converter_available,
         )
 
-        if not await self._guard_module_enabled(interaction):
+        if not await self._module_gate(interaction, record=False):
             return
 
         # Defer first: several kinds draw more than one picture, and the rasteriser is a

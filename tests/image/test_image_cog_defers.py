@@ -109,7 +109,6 @@ def test_it_never_opens_a_second_response(name):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the module gate is not yet `_module_gate`")
 def test_the_module_guard_replies_safely_after_a_defer():
     """Shared by deferred and undeferred callers alike, so it cannot assume either.
 

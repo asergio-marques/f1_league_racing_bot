@@ -172,7 +172,6 @@ async def test_a_path_escaping_the_project_root_is_refused_and_stores_nothing(
     assert_one_refusal(cog.bot, "`/images config division-logo-directory`")
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the module gate is not yet `_module_gate`")
 async def test_nothing_is_stored_while_the_module_is_disabled(monkeypatch, tmp_path):
     """The gate answers and records its own refusal; the body adds nothing to either."""
     cog = _cog(monkeypatch, resolved=tmp_path)

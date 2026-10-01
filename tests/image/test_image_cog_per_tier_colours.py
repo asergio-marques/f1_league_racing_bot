@@ -108,7 +108,6 @@ async def test_turning_it_off_demands_nothing():
     assert "accent" not in said
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the module gate is not yet `_module_gate`")
 async def test_nothing_is_stored_while_the_module_is_disabled():
     cog = _cog()
     cog._module_gate = AsyncMock(return_value=False)
@@ -170,7 +169,6 @@ async def test_storing_while_the_feature_is_on_says_nothing_of_the_sort():
     assert "per-tier-colour-toggle" not in _said(cog)
 
 
-@pytest.mark.xfail(strict=True, reason="#482: the module gate is not yet `_module_gate`")
 async def test_nothing_is_stored_for_a_colour_while_the_module_is_disabled():
     cog = _cog()
     cog._module_gate = AsyncMock(return_value=False)
