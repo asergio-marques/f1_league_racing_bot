@@ -710,10 +710,6 @@ async def test_set_tier_colours_counts_only_the_slots_it_changes(service, db_pat
 
 # ── A division name colours can be stored under (#482) ────────────────────
 
-_NO_TIER_NAME_RULE = "#482: there is no rule yet for a division name colours cannot be stored under"
-
-
-@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
 @pytest.mark.parametrize("name", ["Division 1", "Pro", "7", "São Paulo"])
 def test_a_division_name_with_a_letter_or_digit_is_accepted(name):
     from leaguebot.image.services.image_config_service import tier_name_refusal
@@ -721,7 +717,6 @@ def test_a_division_name_with_a_letter_or_digit_is_accepted(name):
     assert tier_name_refusal(name) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
 @pytest.mark.parametrize("name", ["!!!", "—", "   ", ""], ids=["punctuation", "dash", "spaces", "empty"])
 def test_a_division_name_with_no_letter_or_digit_is_refused(name):
     """Such a name has no slug to store colours under. It is the league's entry at fault, not

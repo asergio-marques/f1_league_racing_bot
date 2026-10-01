@@ -394,6 +394,24 @@ def pfp_change_refusal(config: ImageConfig, column: str, enabled: bool) -> str |
     )
 
 
+def tier_name_refusal(division_name: str) -> str | None:
+    """Why colours cannot be stored under *division_name*, or None where they can.
+
+    A tier's colours are keyed on the division's normalised name, as its logo's file name is,
+    so a name with no letter or digit in it has no key to be stored under. That is the entry of
+    whoever typed it, not a fault in the bot, and is said before anything is written: the setter
+    and the pasted form refuse with it, the import passes the block over with it.
+
+    Pure and total, as `pfp_change_refusal` is, and bare: the reason alone, for each caller to
+    put its own words around.
+    """
+    from leaguebot.image.utils.asset_resolver import normalise
+
+    if normalise(division_name or ""):
+        return None
+    return f"`{division_name}` is not a division name the bot can store colours under."
+
+
 def _row_to_config(row) -> ImageConfig:
     values = {name: row[name] for name in _CONFIG_COLUMNS}
     values["module_enabled"] = bool(values["module_enabled"])

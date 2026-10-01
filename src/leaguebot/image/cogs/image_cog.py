@@ -32,7 +32,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_LABELS,
 )
 from leaguebot.image.models.image_module import STATE_DISABLED, STATE_ENABLED
-from leaguebot.image.services.image_config_service import pfp_change_refusal
+from leaguebot.image.services.image_config_service import pfp_change_refusal, tier_name_refusal
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe as describe_command, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -1320,8 +1320,16 @@ class ImageCog(commands.Cog):
         from leaguebot.image.utils.colour import InvalidColour, normalise_hex
         from leaguebot.image.utils.svg_palette import InvalidSlot, normalise_slot
 
-        # Both rejections store nothing and name the input that was wrong: a manager who
+        # Each rejection stores nothing and names the input that was wrong: a manager who
         # mistyped a slot and one who mistyped a colour are looking for different things.
+        unstorable = tier_name_refusal(division)
+        if unstorable is not None:
+            await refuse(
+                interaction,
+                f"❌ {unstorable} Nothing was stored.",
+                what=describe_command(interaction),
+            )
+            return
         try:
             canonical_slot = normalise_slot(slot)
         except InvalidSlot as exc:
@@ -1391,6 +1399,15 @@ class ImageCog(commands.Cog):
         worse than one that is plainly unconfigured.
         """
         from leaguebot.image.utils.palette_import import parse_palette_lines
+
+        unstorable = tier_name_refusal(division)
+        if unstorable is not None:
+            await refuse(
+                interaction,
+                f"❌ {unstorable} Nothing was stored.",
+                what=describe_form(form) if form is not None else describe_command(interaction),
+            )
+            return
 
         colours, problems = parse_palette_lines(text)
         if problems:
@@ -1491,6 +1508,16 @@ class ImageCog(commands.Cog):
                 reason=f"the document could not be read:\n{listed}",
             )
             return
+
+        # A name nothing can be stored under is passed over with the rest that were rejected.
+        storable = []
+        for block in blocks:
+            unstorable = tier_name_refusal(block.division)
+            if unstorable is None:
+                storable.append(block)
+            else:
+                problems.append(unstorable)
+        blocks = storable
 
         if problems and not blocks:
             listed = "\n".join(f"  • {problem}" for problem in problems)

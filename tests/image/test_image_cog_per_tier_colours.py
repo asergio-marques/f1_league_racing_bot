@@ -37,7 +37,6 @@ IMPORT = "images config colour-xml-import"
 #: A division name with no letter or digit in it: nothing an artwork file could be named for.
 UNSTORABLE = "***"
 
-_NO_TIER_NAME_RULE = "#482: a division name with no letter or digit is not yet refused"
 _FORM_NOT_RECHECKED = "#482: a colour form does not yet check the module on submit"
 
 
@@ -392,7 +391,6 @@ UNSTORABLE_REPLY = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
 async def test_the_setter_refuses_a_division_name_with_no_letter_or_digit():
     """Refused before anything is written, as a mistake of the manager's, not a fault."""
     cog = _cog(declared={"accent"})
@@ -420,7 +418,6 @@ def _form_cog(**kwargs):
     return cog
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
 async def test_the_bulk_form_refuses_a_division_name_with_no_letter_or_digit():
     from leaguebot.image.cogs.image_cog import TierPaletteModal
 
@@ -435,7 +432,6 @@ async def test_the_bulk_form_refuses_a_division_name_with_no_letter_or_digit():
     assert_one_refusal(cog.bot, "the “Set one tier's colours” form")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
 async def test_the_import_passes_over_a_division_name_with_no_letter_or_digit():
     """Passed over with the other rejected blocks; the tiers beside it are still stored."""
     cog = _bulk_cog(written=1)
