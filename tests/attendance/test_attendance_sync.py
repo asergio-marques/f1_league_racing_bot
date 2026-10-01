@@ -224,12 +224,20 @@ def _interaction() -> MagicMock:
     interaction.user.display_name = "Manager"
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.defer.await_count
+            or interaction.response.send_message.await_count
+        )
+    )
     interaction.followup.send = AsyncMock()
     return interaction
 
 
 async def _invoke(cog, interaction, *, division="division 1", round=1,
                   faults=(), outcome=None):
+    interaction.command = AttendanceCog.sync
+    interaction.client = cog.bot
     with patch(
         "leaguebot.attendance.cogs.attendance_cog.recalculation_faults", new=AsyncMock(return_value=list(faults))
     ), patch(
@@ -364,3 +372,82 @@ async def test_a_clean_sync_with_nothing_owed_says_so(tmp_path):
 
     assert "No sanction was owed." in _replied(interaction)
     assert "/attendance sync | Success" in cog.bot.output_router.post_log.await_args.args[0]
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded in the log channel (#482)
+# ---------------------------------------------------------------------------
+
+
+async def _refused_while_disabled(tmp_path):
+    cog = _cog(await _make_db(tmp_path, autosack=20))
+    cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    return cog, {}
+
+
+async def _refused_outside_ongoing(tmp_path):
+    return _cog(await _make_db(tmp_path, autosack=20), stage=None), {}
+
+
+async def _refused_unknown_division(tmp_path):
+    return _cog(await _make_db(tmp_path, autosack=20)), {"division": "Nowhere"}
+
+
+async def _refused_while_amended(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _amendment_open(db_path)
+    return _cog(db_path), {}
+
+
+async def _refused_unknown_round(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {})
+    return _cog(db_path), {"round": 9}
+
+
+async def _refused_not_finalised(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {2: "AWAITING_REPORT_VERDICTS"})
+    return _cog(db_path), {"round": 2}
+
+
+async def _refused_for_a_channel_fault(tmp_path):
+    db_path = await _make_db(tmp_path, autosack=20)
+    await _add_rounds(db_path, {})
+    return _cog(db_path), {"faults": ["Division 1: the attendance channel is gone"]}
+
+
+@pytest.mark.parametrize(
+    "arrange,reason",
+    [
+        (_refused_while_disabled, "The Attendance module is not enabled."),
+        (_refused_outside_ongoing, "only while the season is ongoing"),
+        (_refused_unknown_division, "Division 'Nowhere' not found."),
+        (_refused_while_amended, "is being amended"),
+        (_refused_unknown_round, "has no round 9"),
+        (_refused_not_finalised, "has not had its penalties approved"),
+        (_refused_for_a_channel_fault, "the attendance channel is gone"),
+    ],
+    ids=[
+        "module-disabled", "not-ongoing", "unknown-division", "amended", "unknown-round",
+        "not-finalised", "channel-fault",
+    ],
+)
+async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason):
+    """A5: each refusal is answered and writes one "⛔ `/attendance sync` refused" line,
+    giving the reason; a channel fault's line names the channel at fault."""
+    cog, kwargs = await arrange(tmp_path)
+    interaction = _interaction()
+
+    synced = await _invoke(cog, interaction, **kwargs)
+
+    synced.assert_not_awaited()
+    replies = (
+        interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    )
+    assert len(replies) == 1
+    lines = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert len(lines) == 1
+    assert lines[0].startswith("\u26d4 `/attendance sync` refused for Manager (<@77>) \u2014 ")
+    assert reason in lines[0]

@@ -374,6 +374,9 @@ def _make_interaction(bot: MagicMock) -> MagicMock:
     interaction.user.id = 101
     interaction.response.send_message = AsyncMock()
     interaction.response.edit_message = AsyncMock()
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(interaction.response.send_message.await_count)
+    )
     return interaction
 
 

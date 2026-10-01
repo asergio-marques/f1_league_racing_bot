@@ -116,6 +116,12 @@ def _interaction() -> MagicMock:
     interaction.user.display_name = "Manager"
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.defer.await_count
+            or interaction.response.send_message.await_count
+        )
+    )
     interaction.followup.send = AsyncMock()
     return interaction
 
@@ -139,6 +145,8 @@ async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW, 
     between reporting a success and a failure.
     """
     db_path = cog.bot.db_path
+    interaction.command = AttendanceCog.post_check_in
+    interaction.client = cog.bot
 
     async def _fake_notice(round_id, bot):
         if posts:
@@ -452,3 +460,78 @@ async def test_a_disabled_deadline_allows_a_call_right_up_to_the_race(tmp_path):
     notice = await _invoke(cog, interaction, posts=True)
 
     notice.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded in the log channel (#482)
+# ---------------------------------------------------------------------------
+
+
+async def _arrange(tmp_path, case):
+    """The cog and the keyword arguments that bring about refusal *case*."""
+    scheduled_at = {
+        "not-due": NOW + timedelta(days=NOTICE_DAYS + 1),
+        "past-deadline": NOW + timedelta(hours=DEADLINE_HOURS - 1),
+    }.get(case, NOW + timedelta(days=1))
+    status = "CANCELLED" if case == "cancelled" else "NOT_RUN"
+    db_path = await _make_db(tmp_path, scheduled_at=scheduled_at, status=status)
+    cog = _cog(db_path, stage=None if case == "not-ongoing" else SeasonStage.ONGOING)
+    if case == "module-disabled":
+        cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+    if case == "standing":
+        await _record_call(db_path)
+    if case == "no-configuration":
+        cog.bot.attendance_service.get_config = AsyncMock(return_value=None)
+    return cog, {
+        "unknown-division": {"division": "Division 9"},
+        "unknown-round": {"round": 7},
+    }.get(case, {})
+
+
+@pytest.mark.parametrize(
+    "case,reason",
+    [
+        ("module-disabled", "The Attendance module is not enabled."),
+        ("not-ongoing", "only while the season is ongoing"),
+        ("unknown-division", "Division 'Division 9' not found."),
+        ("unknown-round", "has no round 7"),
+        ("cancelled", "is cancelled"),
+        ("standing", "already standing"),
+        ("no-configuration", "No attendance configuration found."),
+        ("not-due", "is not due until"),
+        ("past-deadline", "so a call posted now could not be answered"),
+        ("race-lost", "posted while this ran"),
+    ],
+)
+async def test_every_refusal_of_a_hand_posted_call_is_recorded(tmp_path, case, reason):
+    """A6: each refusal is answered once and writes one "⛔ `/attendance post-check-in`
+    refused" line with its reason, and nothing is posted."""
+    cog, kwargs = await _arrange(tmp_path, case)
+    interaction = _interaction()
+
+    if case == "race-lost":
+        from leaguebot.attendance.cogs import attendance_cog
+
+        calls = {"n": 0}
+
+        async def _stands(bot, round_id, division_id):
+            calls["n"] += 1
+            return calls["n"] > 1
+
+        with patch.object(attendance_cog, "_call_stands", _stands):
+            notice = await _invoke(cog, interaction, **kwargs)
+    else:
+        notice = await _invoke(cog, interaction, **kwargs)
+
+    notice.assert_not_awaited()
+    replies = (
+        interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    )
+    assert len(replies) == 1
+    logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        "\u26d4 `/attendance post-check-in` refused for Manager (<@77>) \u2014 "
+    )
+    assert reason in logged[0]

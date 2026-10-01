@@ -680,11 +680,11 @@ class TestAttendanceServiceCrud:
         svc = AttendanceService(db_path)
 
         await svc.bulk_insert_attendance_rows(1, 10, [100])
-        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED")
+        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "ACCEPTED"
-        assert row.accepted_at is not None
+        assert row.accepted_at == _NOW.isoformat()
 
     @pytest.mark.asyncio
     async def test_upsert_clears_accepted_at_for_declined(self, tmp_path):
@@ -693,8 +693,8 @@ class TestAttendanceServiceCrud:
         svc = AttendanceService(db_path)
 
         await svc.bulk_insert_attendance_rows(1, 10, [100])
-        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED")
-        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED")
+        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW)
+        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "DECLINED"
@@ -710,11 +710,11 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED")
+        await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "ACCEPTED"
-        assert row.accepted_at is not None
+        assert row.accepted_at == _NOW.isoformat()
 
     @pytest.mark.asyncio
     async def test_upsert_creating_a_declined_row_leaves_accepted_at_null(self, tmp_path):
@@ -725,7 +725,7 @@ class TestAttendanceServiceCrud:
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED")
+        await svc.upsert_rsvp_status(1, 10, 100, "DECLINED", now=_NOW)
         row = await svc.get_attendance_row_for_driver(1, 10, 100)
         assert row is not None
         assert row.rsvp_status == "DECLINED"
@@ -733,15 +733,16 @@ class TestAttendanceServiceCrud:
 
     @pytest.mark.asyncio
     async def test_upsert_reports_whether_it_wrote(self, tmp_path):
-        """Both paths report True. The return value exists so `handle_rsvp_button` can tell a
-        driver the truth instead of assuming, which is the half of issue #209 that let a
-        success message stand over a write that changed nothing."""
+        """Both paths report True. The return value exists so the bulk-set form lists as applied
+        only what was saved, instead of assuming: the half of issue #209 that let a success
+        message stand over a write that changed nothing. A press gets the same from
+        `answer_rsvp`."""
         db_path = await _make_attendance_db(tmp_path)
         from leaguebot.attendance.services.attendance_service import AttendanceService
         svc = AttendanceService(db_path)
 
-        assert await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED") is True   # inserted
-        assert await svc.upsert_rsvp_status(1, 10, 100, "DECLINED") is True   # updated
+        assert await svc.upsert_rsvp_status(1, 10, 100, "ACCEPTED", now=_NOW) is True   # inserted
+        assert await svc.upsert_rsvp_status(1, 10, 100, "DECLINED", now=_NOW) is True   # updated
 
     @pytest.mark.asyncio
     async def test_get_attendance_row_for_driver_returns_none_when_missing(self, tmp_path):

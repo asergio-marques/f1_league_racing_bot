@@ -29,13 +29,14 @@ first nineteen showing states that were already stale when they were drawn.
 embed is a view of them. Refusing at that point would report an error for work that succeeded
 and send a maintainer looking for it in the database.
 
-**Nothing applied means nothing logged and nothing rebuilt.** A paste that was entirely wrong
-did not change the round, and a log line saying otherwise would be a false record of a
-rehearsal's state.
+**Nothing applied means nothing rebuilt and no success line.** A paste that was entirely wrong
+did not change the round, so a success line would be a false record of a rehearsal's state.
+It is recorded as a refusal instead, naming each entry turned away (#482).
 """
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -78,9 +79,11 @@ async def _make_db(tmp_path, *, name: str = "rsvp_bulk") -> str:
     return db_path
 
 
-def _bot(db_path: str, *, attendance_rows=None, channel=None):
-    """*attendance_rows* is the set of profile ids that have a row for this round."""
+def _bot(db_path: str, *, attendance_rows=None, channel=None, saved=None):
+    """*attendance_rows* is the set of profile ids that have a row for this round, and *saved*
+    those whose answer `upsert_rsvp_status` reports saved; each is every driver by default."""
     attendance_rows = DRIVERS.values() if attendance_rows is None else attendance_rows
+    saved = DRIVERS.values() if saved is None else saved
 
     bot = MagicMock()
     bot.db_path = db_path
@@ -90,7 +93,18 @@ def _bot(db_path: str, *, attendance_rows=None, channel=None):
             MagicMock() if kw["driver_profile_id"] in attendance_rows else None
         )
     )
-    bot.attendance_service.upsert_rsvp_status = AsyncMock(return_value=None)
+    bot.attendance_service.upsert_rsvp_status = AsyncMock(
+        side_effect=lambda **kw: kw["driver_profile_id"] in saved
+    )
+    bot.attendance_service.get_current_embed_message = AsyncMock(
+        return_value=SimpleNamespace(message_id=str(EMBED_MESSAGE), round_id=ROUND_ID)
+    )
+    bot.config_service = MagicMock()
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(test_mode_active=True)
+    )
+    bot.module_service = MagicMock()
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.get_channel = MagicMock(return_value=channel)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -117,6 +131,9 @@ def _interaction():
     interaction.user.display_name = "Maintainer"
     interaction.response = MagicMock()
     interaction.response.defer = AsyncMock()
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(interaction.response.defer.await_count)
+    )
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -124,6 +141,7 @@ def _interaction():
 
 async def _submit(bot, entries: str, interaction=None):
     interaction = interaction or _interaction()
+    interaction.client = bot
     modal = _RsvpBulkSetModal(
         division_name="Pro",
         division_id=DIVISION_ID,
@@ -438,14 +456,209 @@ async def test_the_changes_are_logged_as_attendance_test_rsvp(tmp_path):
     await _submit(bot, "900000001, accept")
 
     logged = str(bot.output_router.post_log.await_args.args[0])
-    assert logged.splitlines()[0] == "Maintainer (<@77>) | /attendance test rsvp | 1 update(s)"
+    assert logged.splitlines()[0] == "Maintainer (<@77>) | /attendance test rsvp | Success"
+    assert "  updates: 1" in logged.splitlines()
 
 
-async def test_nothing_applied_is_not_logged(tmp_path):
-    """A log line for a paste that changed nothing would be a false record of a rehearsal's
-    state."""
+async def test_a_paste_with_nothing_applied_records_its_refusal(tmp_path):
+    """A paste that changed nothing is a refusal, recorded as one (#482): one ⛔ line naming
+    the form and each entry turned away, and no success line, which would be a false record
+    of a rehearsal's state."""
     bot = _bot(await _make_db(tmp_path, name="bulk_nolog"))
 
     await _submit(bot, "rubbish")
 
-    bot.output_router.post_log.assert_not_awaited()
+    logged = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        "\u26d4 the \u201cBulk Set RSVP Statuses\u201d form for Pro refused for "
+        "Maintainer (<@77>) \u2014 "
+    )
+    assert "Line 1: expected `ID, status`" in logged[0]
+
+
+# ---------------------------------------------------------------------------
+# A form submitted on a state that changed while it stood open (#482, decided 2026-10-01)
+# ---------------------------------------------------------------------------
+
+
+def _test_mode_off(bot):
+    bot.config_service.get_server_config = AsyncMock(
+        return_value=SimpleNamespace(test_mode_active=False)
+    )
+
+
+def _module_off(bot):
+    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
+
+
+def _call_taken_down(bot):
+    bot.attendance_service.get_current_embed_message = AsyncMock(return_value=None)
+
+
+def _call_replaced(bot):
+    bot.attendance_service.get_current_embed_message = AsyncMock(
+        return_value=SimpleNamespace(message_id=str(EMBED_MESSAGE + 1), round_id=ROUND_ID)
+    )
+
+
+@pytest.mark.parametrize(
+    "change,reply",
+    [
+        (_test_mode_off, "Test mode was switched off while this form was open. Nothing was set."),
+        (_module_off, "The Attendance module was switched off while this form was open."),
+        (_call_taken_down, "The check-in call this form was opened on is no longer the division's open call."),
+        (_call_replaced, "The check-in call this form was opened on is no longer the division's open call."),
+    ],
+    ids=["test-mode-off", "module-off", "call-taken-down", "call-replaced"],
+)
+async def test_a_form_whose_state_changed_while_open_is_refused(tmp_path, change, reply):
+    """A9 (D1): test mode, the module and the call are checked again on submit. Each change
+    is refused with nothing written and nothing redrawn, and one refusal line recorded."""
+    channel = _channel()
+    bot = _bot(await _make_db(tmp_path, name="bulk_stale"), channel=channel)
+    change(bot)
+
+    interaction, rebuild = await _submit(bot, "900000001, accept")
+
+    assert reply in _replied(interaction)
+    assert _applied(bot) == []
+    rebuild.assert_not_awaited()
+    channel._message.edit.assert_not_awaited()
+    logged = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        "\u26d4 the \u201cBulk Set RSVP Statuses\u201d form for Pro refused for Maintainer (<@77>)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Every outcome of the form is recorded in the log channel (#482)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_paste_with_every_entry_rejected_records_each_one(tmp_path):
+    """A10: the reply is unchanged, and the one refusal line lists every entry turned away."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_allbad_log"))
+
+    interaction, _ = await _submit(bot, "rubbish\n123, maybe")
+
+    assert "Errors" in _replied(interaction)
+    logged = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert "Line 1:" in logged[0]
+    assert "Line 2:" in logged[0]
+
+
+async def test_an_empty_paste_records_that_nothing_changed(tmp_path):
+    """A11: a paste of blank lines asks nothing, and records that nothing was changed."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_empty_log"))
+
+    interaction, _ = await _submit(bot, "\n  \n")
+
+    assert "No valid entries." in _replied(interaction)
+    logged = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        "Maintainer (<@77>) | /attendance test rsvp | Nothing changed"
+    )
+
+
+async def test_a_part_applied_paste_names_what_it_passed_over(tmp_path):
+    """A12: the success line lists every entry passed over beside those applied."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_part_log"))
+
+    await _submit(bot, "900000001, accept\nrubbish")
+
+    logged = str(bot.output_router.post_log.await_args.args[0])
+    assert logged.splitlines()[0] == "Maintainer (<@77>) | /attendance test rsvp | Success"
+    assert "passed over: Line 2: expected `ID, status`" in logged
+
+
+@pytest.mark.parametrize(
+    "channel", [_channel(fetch_fails=True), None], ids=["edit-fails", "no-channel"]
+)
+async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
+    """A13: the answers stand, and the line says the call still shows the old ones."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_noredraw_log"), channel=channel)
+
+    await _submit(bot, "900000001, accept")
+
+    logged = str(bot.output_router.post_log.await_args.args[0])
+    assert logged.splitlines()[0] == "Maintainer (<@77>) | /attendance test rsvp | Success"
+    assert "  call not redrawn" in logged.splitlines()
+
+
+async def test_a_call_redrawn_is_not_named_as_failed(tmp_path):
+    """A13's counterpart: a call redrawn says nothing of a redraw."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_redraw_log"), channel=_channel())
+
+    await _submit(bot, "900000001, accept")
+
+    assert "call not redrawn" not in str(bot.output_router.post_log.await_args.args[0])
+
+
+# ---------------------------------------------------------------------------
+# An entry the service did not save is passed over, not applied (#482)
+# ---------------------------------------------------------------------------
+
+
+async def test_an_entry_not_saved_is_passed_over(tmp_path):
+    """An answer the bot did not save is reported and passed over like any other entry that
+    cannot be applied: it is neither counted, listed nor logged as applied."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_unsaved"), saved={31})
+
+    interaction, _ = await _submit(bot, "900000001, accept\n900000002, decline")
+
+    replied = _replied(interaction)
+    applied, _, errors = replied.partition("Errors")
+    assert "Applied 1 update(s)" in applied
+    assert "900000001" in applied
+    assert "900000002" not in applied
+    assert "Line 2:" in errors and "900000002" in errors
+    logged = str(bot.output_router.post_log.await_args.args[0])
+    assert logged.splitlines()[0] == "Maintainer (<@77>) | /attendance test rsvp | Success"
+    assert "  updates: 1" in logged.splitlines()
+    changes = next(line for line in logged.splitlines() if line.startswith("  changes: "))
+    assert "900000002" not in changes
+    passed_over = next(line for line in logged.splitlines() if line.startswith("  passed over: "))
+    assert "Line 2:" in passed_over and "900000002" in passed_over
+
+
+async def test_a_paste_with_nothing_saved_is_refused(tmp_path):
+    """A paste none of whose answers was saved changed nothing: it is answered as a paste with
+    nothing applied, the call is not redrawn, and one refusal line lists every entry."""
+    channel = _channel()
+    bot = _bot(
+        await _make_db(tmp_path, name="bulk_none_saved"), channel=channel, saved=set()
+    )
+
+    interaction, rebuild = await _submit(bot, "900000001, accept\n900000002, decline")
+
+    replied = _replied(interaction)
+    assert "Applied" not in replied
+    assert "Errors" in replied
+    rebuild.assert_not_awaited()
+    channel._message.edit.assert_not_awaited()
+    logged = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        "\u26d4 the \u201cBulk Set RSVP Statuses\u201d form for Pro refused for "
+        "Maintainer (<@77>) \u2014 "
+    )
+    assert "900000001" in logged[0] and "900000002" in logged[0]
+
+
+async def test_every_answer_of_a_paste_is_saved_at_the_time_the_form_read(tmp_path):
+    """The service takes the time rather than reading the clock: the form reads it once and
+    hands the same moment to every answer it saves, so an accept's time is the form's."""
+    bot = _bot(await _make_db(tmp_path, name="bulk_now"))
+
+    await _submit(bot, "900000001, accept\n900000002, accept")
+
+    stamps = [
+        call.kwargs["now"] for call in bot.attendance_service.upsert_rsvp_status.await_args_list
+    ]
+    assert len(stamps) == 2
+    assert stamps[0].tzinfo is not None
+    assert stamps[0] == stamps[1]

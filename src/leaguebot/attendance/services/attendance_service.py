@@ -4,13 +4,15 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from enum import Enum
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiosqlite
 import discord
 
+from leaguebot.core.services import audit_service
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.models.attendance import (
@@ -98,11 +100,54 @@ def derive_checkin_deadline(
     This is the deadline held against **full-time** drivers. The later deadline a reserve is
     held to is carried by neither the graphic nor the embed, and is not this function's.
     """
-    from datetime import timedelta
-
     if scheduled_at.tzinfo is None:
         scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
     return scheduled_at - timedelta(hours=deadline_hours)
+
+
+#: The columns of `attendance_config` a manager sets, the only names `set_setting` writes.
+SETTING_COLUMNS: frozenset[str] = frozenset(
+    {
+        "rsvp_notice_days",
+        "rsvp_last_notice_hours",
+        "rsvp_deadline_hours",
+        "no_rsvp_penalty",
+        "absent_penalty",
+        "no_show_penalty",
+        "autosack_threshold",
+        "autoreserve_threshold",
+    }
+)
+
+
+@dataclass(frozen=True)
+class SettingChange:
+    """What `AttendanceService.set_setting` did: *changed* says whether the value was replaced,
+    and *old* is the value the setting held, ``None`` for a threshold that was disabled."""
+
+    changed: bool
+    old: int | None
+
+
+class RsvpOutcome(Enum):
+    """What `AttendanceService.answer_rsvp` did with one press of a check-in button."""
+
+    # a full-time driver, at the deadline (the round's start where it is 0)
+    LOCKED_AT_DEADLINE = "locked at the deadline"
+    LOCKED_ACCEPTED = "locked, accepted"  # a reserve who has accepted, at the deadline
+    LOCKED_AT_START = "locked at the start"  # any other reserve, at the round's start
+    UNCHANGED = "unchanged"  # the answer was already held
+    RECORDED = "recorded"
+    NOT_RECORDED = "not recorded"  # the write changed no row
+
+
+@dataclass(frozen=True)
+class RsvpAnswer:
+    """The result of `AttendanceService.answer_rsvp`: the *outcome*, and *found*, the answer
+    the driver held when it was decided (``NO_RSVP`` for a driver with no row)."""
+
+    outcome: RsvpOutcome
+    found: str
 
 
 class AttendanceService:
@@ -191,61 +236,52 @@ class AttendanceService:
 
     # ── Field updates ──────────────────────────────────────────────────────
 
-    async def update_rsvp_notice_days(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET rsvp_notice_days = ?", (value,)
-            )
-            await db.commit()
+    async def set_setting(
+        self,
+        column: str,
+        value: int | None,
+        *,
+        actor_id: int,
+        actor_name: str,
+        now: datetime,
+    ) -> SettingChange:
+        """Set one of the eight settings to *value*, with its audit entry, in one save (#482).
 
-    async def update_rsvp_last_notice_hours(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET rsvp_last_notice_hours = ?", (value,)
-            )
-            await db.commit()
+        The value held is read and compared on the connection that writes, so two commands
+        racing for one setting cannot both see the old value. Where it already equals *value*
+        nothing is written and no entry is recorded: the result says ``changed=False``.
+        Otherwise the column and its ``ATTENDANCE_CONFIG_SET`` entry, holding *column* from and
+        to (``None`` for a disabled threshold), are committed together, so a failure between
+        the two leaves neither ("The record of what changed", core specification).
 
-    async def update_rsvp_deadline_hours(self, value: int) -> None:
+        *column* is checked against `SETTING_COLUMNS` before anything is read, as the name is
+        put into the statement: any other is a `ValueError`. Raises `ValueError` as well for a
+        server holding no attendance configuration, which the commands refuse before they get
+        here.
+        """
+        if column not in SETTING_COLUMNS:
+            raise ValueError(f"{column!r} is not an attendance setting")
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET rsvp_deadline_hours = ?", (value,)
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(f"SELECT {column} FROM attendance_config")
+            row = await cursor.fetchone()
+            if row is None:
+                raise ValueError("No attendance configuration found.")
+            old = row[0]
+            if old == value:
+                return SettingChange(changed=False, old=old)
+            await db.execute(f"UPDATE attendance_config SET {column} = ?", (value,))
+            await audit_service.record_change_on(
+                db,
+                actor_id=actor_id,
+                actor_name=actor_name,
+                change_type="ATTENDANCE_CONFIG_SET",
+                old_value={column: old},
+                new_value={column: value},
+                now=now,
             )
             await db.commit()
-
-    async def update_no_rsvp_penalty(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET no_rsvp_penalty = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_absent_penalty(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET absent_penalty = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_no_show_penalty(self, value: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET no_show_penalty = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_autosack_threshold(self, value: int | None) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET autosack_threshold = ?", (value,)
-            )
-            await db.commit()
-
-    async def update_autoreserve_threshold(self, value: int | None) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE attendance_config SET autoreserve_threshold = ?", (value,)
-            )
-            await db.commit()
+        return SettingChange(changed=True, old=old)
 
     # ── driver_round_attendance CRUD ───────────────────────────────────────
 
@@ -273,15 +309,17 @@ class AttendanceService:
         division_id: int,
         driver_profile_id: int,
         status: str,
+        *,
+        now: datetime,
     ) -> bool:
         """Record *status* for one driver of one round, and manage accepted_at with it.
 
-        - Transitioning TO 'ACCEPTED': set accepted_at to current UTC time.
-        - Re-accepting after a non-ACCEPTED status: reset accepted_at to current UTC time.
+        - Transitioning TO 'ACCEPTED': set accepted_at to *now*.
+        - Re-accepting after a non-ACCEPTED status: reset accepted_at to *now*.
         - Transitioning AWAY from 'ACCEPTED': set accepted_at to NULL.
 
-        Returns whether a row now carries the answer, so a caller can tell a driver the truth
-        rather than assume the write landed.
+        Returns whether a row now carries the answer, so that the bulk-set form lists as applied
+        only what was saved, rather than assume the write landed.
 
         **It inserts, and that is the point** (issue #209). This was two bare ``UPDATE``
         statements despite its name, so a driver holding no ``driver_round_attendance`` row
@@ -291,35 +329,127 @@ class AttendanceService:
         assigned, moved or confirmed into the division afterwards has none, and pressing a
         button was the one way they could ever get one.
 
-        The insert belongs here rather than on the paths that place a driver. By the time
-        ``handle_rsvp_button`` reaches this method it has established everything the row
-        needs — the driver holds a confirmed placement in this division, the round exists,
-        and the answer is inside the lock — so the fact arrives at the press and nowhere
-        earlier. Seeding rows from ``assign_driver``, ``move_driver`` and
-        ``commit_mid_season_placements`` instead would put the same work in three places,
-        each having to decide for itself which of the division's rounds have a call standing,
-        and any placement route added later would reopen the hole.
+        The insert belongs here rather than on the paths that place a driver. A press reaches the
+        same write through ``answer_rsvp`` (by way of ``_write_answer``), which has established
+        everything the row needs — the driver holds a confirmed placement in this division, the
+        round exists, and the answer is inside the lock — so the fact arrives at the press and
+        nowhere earlier; the test-mode bulk-set form is this method's caller.
+        Seeding rows from ``assign_driver``, ``move_driver`` and ``commit_mid_season_placements``
+        instead would put the same work in three places, each having to decide for itself which
+        of the division's rounds have a call standing, and any placement route added later would
+        reopen the hole.
 
         A row created here is written carrying the answered status in one statement, never
         created as NO_RSVP and then updated: the intermediate state has no reader, and
         ``accepted_at`` follows the ordinary rule above rather than a special case of it.
         Every other column takes the same default ``bulk_insert_attendance_rows`` gives it.
         """
-        accepted_at = datetime.now(timezone.utc).isoformat() if status == "ACCEPTED" else None
+        accepted_at = now.isoformat() if status == "ACCEPTED" else None
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                INSERT INTO driver_round_attendance
-                    (round_id, division_id, driver_profile_id, rsvp_status, accepted_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (round_id, division_id, driver_profile_id) DO UPDATE
-                   SET rsvp_status = excluded.rsvp_status,
-                       accepted_at = excluded.accepted_at
-                """,
-                (round_id, division_id, driver_profile_id, status, accepted_at),
+            recorded = await self._write_answer(
+                db, round_id, division_id, driver_profile_id, status, accepted_at
             )
             await db.commit()
+        return recorded
+
+    @staticmethod
+    async def _write_answer(
+        db: aiosqlite.Connection,
+        round_id: int,
+        division_id: int,
+        driver_profile_id: int,
+        status: str,
+        accepted_at: str | None,
+    ) -> bool:
+        """Write one driver's answer on *db* without committing, and say whether a row holds it.
+
+        The one statement `upsert_rsvp_status` and `answer_rsvp` share, so the row an answer
+        opens and the `accepted_at` it carries are decided in one place. The caller commits.
+        """
+        cursor = await db.execute(
+            """
+            INSERT INTO driver_round_attendance
+                (round_id, division_id, driver_profile_id, rsvp_status, accepted_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (round_id, division_id, driver_profile_id) DO UPDATE
+               SET rsvp_status = excluded.rsvp_status,
+                   accepted_at = excluded.accepted_at
+            """,
+            (round_id, division_id, driver_profile_id, status, accepted_at),
+        )
         return cursor.rowcount > 0
+
+    async def answer_rsvp(
+        self,
+        round_id: int,
+        division_id: int,
+        driver_profile_id: int,
+        status: str,
+        *,
+        now: datetime,
+        scheduled_at: datetime,
+        deadline_hours: int,
+        is_reserve: bool,
+    ) -> RsvpAnswer:
+        """Decide one press of a check-in button and, where it stands, write it (#482).
+
+        The answer the driver holds is read, the lock rules applied and the new answer written
+        in one ``BEGIN IMMEDIATE`` transaction on this method's own connection, so a second
+        press waits for the first and decides on the answer the first left. That is what makes
+        two quick presses of one button one answer and a "nothing changed" (F1), and what keeps
+        an accepted reserve locked at the deadline whatever presses follow (F2).
+
+        The lock rules (attendance specification, RSVPing), in the order they are applied,
+        each before the answer held is compared:
+
+        - a full-time driver is locked at the deadline (``LOCKED_AT_DEADLINE``);
+        - a reserve who has accepted is locked at the deadline (``LOCKED_ACCEPTED``);
+        - any other reserve is locked at the round's start (``LOCKED_AT_START``);
+        - a deadline of 0 puts the deadline at the round's start.
+
+        Past the locks, an answer equal to *status* is ``UNCHANGED`` and nothing is written,
+        so a reserve's ``accepted_at`` stays as it was. Otherwise it is written, with
+        ``accepted_at`` set from *now* by `upsert_rsvp_status`'s rule, and ``RECORDED`` or, where
+        the write changed no row, ``NOT_RECORDED``.
+
+        It never calls `upsert_rsvp_status`: that opens a connection of its own, which would
+        wait on this one's write lock. Both write through `_write_answer`. Every Discord call
+        stays with the caller, after this returns, so the lock is held for the database alone.
+        """
+        deadline_at = derive_checkin_deadline(scheduled_at, deadline_hours)
+        start = deadline_at + timedelta(hours=deadline_hours)
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                """
+                SELECT rsvp_status FROM driver_round_attendance
+                 WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
+                """,
+                (round_id, division_id, driver_profile_id),
+            )
+            row = await cursor.fetchone()
+            found: str = row["rsvp_status"] if row is not None else "NO_RSVP"
+
+            if not is_reserve:
+                if now >= deadline_at:
+                    return RsvpAnswer(RsvpOutcome.LOCKED_AT_DEADLINE, found)
+            elif found == "ACCEPTED":
+                if now >= deadline_at:
+                    return RsvpAnswer(RsvpOutcome.LOCKED_ACCEPTED, found)
+            elif now >= start:
+                return RsvpAnswer(RsvpOutcome.LOCKED_AT_START, found)
+
+            if found == status:
+                return RsvpAnswer(RsvpOutcome.UNCHANGED, found)
+
+            accepted_at = now.isoformat() if status == "ACCEPTED" else None
+            recorded = await self._write_answer(
+                db, round_id, division_id, driver_profile_id, status, accepted_at
+            )
+            await db.commit()
+        return RsvpAnswer(
+            RsvpOutcome.RECORDED if recorded else RsvpOutcome.NOT_RECORDED, found
+        )
 
     async def get_attendance_rows(
         self,

@@ -126,6 +126,14 @@ def _interaction():
     interaction.response = MagicMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.send_modal = AsyncMock()
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.send_message.await_count
+            or interaction.response.send_modal.await_count
+        )
+    )
+    interaction.followup = MagicMock()
+    interaction.followup.send = AsyncMock()
     return interaction
 
 
@@ -138,6 +146,8 @@ def _replied(interaction) -> str:
 
 
 async def _set_status(cog, interaction, *, division="Pro"):
+    interaction.command = AttendanceCog.test_rsvp
+    interaction.client = cog.bot
     await undecorate(AttendanceCog.test_rsvp)(cog, interaction, division)
 
 
@@ -182,6 +192,17 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path):
     await _set_status(cog, interaction, division="pRo")
 
     interaction.response.send_modal.assert_awaited_once()
+
+
+async def test_the_form_names_the_division_as_the_league_named_it(tmp_path):
+    """The form's replies and log lines name the division as stored, not as typed (#482)."""
+    db_path = await _make_db(tmp_path, name="rsvp_stored_name")
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _set_status(cog, interaction, division="pRo")
+
+    assert interaction.response.send_modal.await_args.args[0]._division_name == "Pro"
 
 
 async def test_an_unknown_division_is_refused(tmp_path):
@@ -322,3 +343,47 @@ async def test_the_command_does_not_defer(tmp_path):
     await _set_status(cog, interaction)
 
     interaction.response.defer.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded in the log channel (#482)
+# ---------------------------------------------------------------------------
+
+REFUSAL_CASES = [
+    ("test-mode-off", {"test_mode": False}, "Pro", "Test mode is not active."),
+    ("module-disabled", {"attendance_enabled": False}, "Pro", "The Attendance module is not enabled"),
+    ("unknown-division", {}, "Nowhere", "Division **Nowhere** not found"),
+    ("no-call", {"current_embed": None}, "Pro", "No active RSVP embed found"),
+]
+
+
+@pytest.mark.parametrize(
+    "case,kwargs,division,reason", REFUSAL_CASES, ids=[c[0] for c in REFUSAL_CASES]
+)
+async def test_every_refusal_of_the_command_is_recorded(tmp_path, case, kwargs, division, reason):
+    """A8: each refusal is answered and writes one "⛔ `/attendance test rsvp` refused" line,
+    and no form is opened."""
+    cog = _make_cog(await _make_db(tmp_path), **kwargs)
+    interaction = _interaction()
+
+    await _set_status(cog, interaction, division=division)
+
+    interaction.response.send_modal.assert_not_awaited()
+    interaction.response.send_message.assert_awaited_once()
+    logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        "\u26d4 `/attendance test rsvp` refused for Maintainer (<@77>) \u2014 "
+    )
+    assert reason in logged[0]
+
+
+async def test_opening_the_form_records_nothing(tmp_path):
+    """A8: the form's submission is what acts, and records; opening it does not."""
+    cog = _make_cog(await _make_db(tmp_path))
+    interaction = _interaction()
+
+    await _set_status(cog, interaction)
+
+    interaction.response.send_modal.assert_awaited_once()
+    cog.bot.output_router.post_log.assert_not_awaited()

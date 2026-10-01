@@ -1,17 +1,23 @@
 """`AttendanceService`'s configuration surface, and the amended-round recalculation.
 
 Issue #208. `tests/attendance/test_attendance_config_commands.py` covers the *commands* a league
-types; nothing covered the service beneath them. The eight `update_*` setters, the
+types; nothing covered the service beneath them. The eight settings' writes, the
 `get_or_create_config` default row and the division channel upserts were all unexecuted, so
 the SQL that actually persists a league's settings had no cover at all.
 
 Two things are pinned here that a double would not catch, which is why every test runs
 against a real migrated database:
 
-**Each setter writes its own column and no other.** They are eight near-identical two-line
-methods, which is exactly the shape a copy-paste error survives in — a setter updating the
-neighbouring column would still pass any test that only read back the value it just wrote.
-`test_each_setter_touches_only_its_own_column` reads the whole row back after each write.
+**Each setting writes its own column and no other.** One method, `set_setting`, writes all
+eight by the column it is given (#482), which is exactly the shape a column-name error
+survives in — a write landing in the neighbouring column would still pass any test that only
+read back the value it just wrote. `test_each_setter_touches_only_its_own_column` reads the
+whole row back after each write.
+
+**A change and its audit entry are one save** (#482; core specification, "The record of what
+changed"). `set_setting` reads the value held, writes nothing where it already holds the value
+given, and otherwise writes the column and its `ATTENDANCE_CONFIG_SET` entry together, so a
+failure between them leaves neither.
 
 **The division channel setters are upserts.** `ON CONFLICT DO UPDATE` must update the one
 column named and leave the other as it was, and a second call must not insert a second row
@@ -25,7 +31,9 @@ finalised round rather than stopping at the next one.
 """
 from __future__ import annotations
 
+import json
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,18 +50,35 @@ SERVER_ID = 8308
 SEASON_ID = 1
 DIVISION_ID = 1
 
-#: Every server-scoped setter, with the column it owns and a value to write. Driving the
-#: tests from one table is what makes "and no other column" cheap to assert for all of them.
-SETTERS: list[tuple[str, str, int]] = [
-    ("update_rsvp_notice_days", "rsvp_notice_days", 9),
-    ("update_rsvp_last_notice_hours", "rsvp_last_notice_hours", 7),
-    ("update_rsvp_deadline_hours", "rsvp_deadline_hours", 5),
-    ("update_no_rsvp_penalty", "no_rsvp_penalty", 11),
-    ("update_absent_penalty", "absent_penalty", 13),
-    ("update_no_show_penalty", "no_show_penalty", 17),
-    ("update_autosack_threshold", "autosack_threshold", 19),
-    ("update_autoreserve_threshold", "autoreserve_threshold", 23),
+#: The moment a change is made, pinned.
+NOW = datetime(2026, 3, 14, 18, 30, tzinfo=timezone.utc)
+
+#: Every server-scoped setting, as the column `set_setting` writes, with a value to write.
+#: Driving the tests from one table is what makes "and no other column" cheap to assert for
+#: all of them.
+SETTERS: list[tuple[str, int]] = [
+    ("rsvp_notice_days", 9),
+    ("rsvp_last_notice_hours", 7),
+    ("rsvp_deadline_hours", 5),
+    ("no_rsvp_penalty", 11),
+    ("absent_penalty", 13),
+    ("no_show_penalty", 17),
+    ("autosack_threshold", 19),
+    ("autoreserve_threshold", 23),
 ]
+
+
+async def _set(service: AttendanceService, column: str, value):
+    """`set_setting` as a league manager's command calls it."""
+    return await service.set_setting(
+        column, value, actor_id=42, actor_name="Manager", now=NOW
+    )
+
+
+async def _audit_entries(db_path: str) -> list[dict]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM audit_entries ORDER BY id")
+        return [dict(row) for row in await cursor.fetchall()]
 
 
 async def _make_db(tmp_path) -> str:
@@ -119,7 +144,7 @@ async def test_get_or_create_is_idempotent(tmp_path):
     service = AttendanceService(db_path)
 
     await service.get_or_create_config()
-    await service.update_no_rsvp_penalty(42)
+    await _set(service, "no_rsvp_penalty", 42)
     await service.get_or_create_config()
 
     async with get_connection(db_path) as db:
@@ -136,57 +161,137 @@ async def test_get_or_create_is_idempotent(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("method,column,value", SETTERS)
-async def test_each_setter_persists_its_value(tmp_path, method, column, value):
+@pytest.mark.parametrize("column,value", SETTERS, ids=[c for c, _v in SETTERS])
+async def test_each_setter_persists_its_value(tmp_path, column, value):
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
     await service.get_or_create_config()
 
-    await getattr(service, method)(value)
+    await _set(service, column, value)
 
     assert (await _row(db_path))[column] == value
 
 
-@pytest.mark.parametrize("method,column,value", SETTERS)
-async def test_each_setter_touches_only_its_own_column(tmp_path, method, column, value):
-    """Eight near-identical methods: a mistyped column name in one of them is invisible to a
-    test that reads back only what it wrote."""
+@pytest.mark.parametrize("column,value", SETTERS, ids=[c for c, _v in SETTERS])
+async def test_each_setter_touches_only_its_own_column(tmp_path, column, value):
+    """One method writing eight columns by name: a write landing in the wrong column is
+    invisible to a test that reads back only what it wrote."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
     await service.get_or_create_config()
     before = await _row(db_path)
 
-    await getattr(service, method)(value)
+    await _set(service, column, value)
     after = await _row(db_path)
 
     changed = {k for k in after if before.get(k) != after.get(k)}
     assert changed == {column}
 
 
-@pytest.mark.parametrize("method", ["update_autosack_threshold", "update_autoreserve_threshold"])
-async def test_a_threshold_can_be_cleared_back_to_null(tmp_path, method):
-    """Switching a sanction off again is a real thing a league does, and the two threshold
-    setters are the only ones typed to accept `None`."""
+@pytest.mark.parametrize("column", ["autosack_threshold", "autoreserve_threshold"])
+async def test_a_threshold_can_be_cleared_back_to_null(tmp_path, column):
+    """Switching a sanction off again is a real thing a league does, and the two thresholds
+    are the only settings that can be unset. The audit entry gives the value cleared as
+    null."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
     await service.get_or_create_config()
-    await getattr(service, method)(25)
+    await _set(service, column, 25)
 
-    await getattr(service, method)(None)
+    result = await _set(service, column, None)
 
-    column = method.replace("update_", "")
     assert (await _row(db_path))[column] is None
+    assert result.changed is True
+    assert result.old == 25
+    entry = (await _audit_entries(db_path))[-1]
+    assert json.loads(entry["old_value"]) == {column: 25}
+    assert json.loads(entry["new_value"]) == {column: None}
 
 
-async def test_a_setter_for_an_unconfigured_server_writes_nothing(tmp_path):
-    """The setters are bare UPDATEs, so they are silent no-ops without a row. Pinned so the
-    silence is understood as deliberate — the commands call `get_or_create_config` first."""
+async def test_a_change_is_written_with_its_audit_entry(tmp_path):
+    """A3 in the service: the value, and one ATTENDANCE_CONFIG_SET entry saying who changed
+    which setting from what to what, and when, for the server as a whole."""
     db_path = await _make_db(tmp_path)
     service = AttendanceService(db_path)
+    held = (await service.get_or_create_config()).no_show_penalty
 
-    await service.update_no_rsvp_penalty(5)
+    result = await _set(service, "no_show_penalty", held + 3)
 
-    assert await service.get_config() is None
+    assert result.changed is True
+    assert result.old == held
+    assert (await _row(db_path))["no_show_penalty"] == held + 3
+    entries = await _audit_entries(db_path)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["change_type"] == "ATTENDANCE_CONFIG_SET"
+    assert entry["actor_id"] == 42
+    assert entry["actor_name"] == "Manager"
+    assert entry["division_id"] is None
+    assert json.loads(entry["old_value"]) == {"no_show_penalty": held}
+    assert json.loads(entry["new_value"]) == {"no_show_penalty": held + 3}
+    assert entry["timestamp"] == NOW.isoformat()
+
+
+@pytest.mark.parametrize(
+    "column,start,value",
+    [("no_rsvp_penalty", 4, 4), ("autosack_threshold", None, None)],
+    ids=["a-value", "a-disabled-threshold"],
+)
+async def test_a_value_already_held_writes_nothing_and_no_audit_entry(
+    tmp_path, column, start, value
+):
+    """A4 in the service: the setting already holds the value, so nothing is written, no
+    entry is recorded, and the caller is told the setting was unchanged."""
+    db_path = await _make_db(tmp_path)
+    service = AttendanceService(db_path)
+    await service.get_or_create_config()
+    async with get_connection(db_path) as db:
+        await db.execute(f"UPDATE attendance_config SET {column} = ?", (start,))
+        await db.commit()
+    before = await _row(db_path)
+
+    result = await _set(service, column, value)
+
+    assert result.changed is False
+    assert result.old == start
+    assert await _row(db_path) == before
+    assert await _audit_entries(db_path) == []
+
+
+@pytest.mark.parametrize(
+    "column", ["module_enabled", "id", "no_show_penalty = 0; --"], ids=["module", "id", "sql"]
+)
+async def test_a_column_that_is_not_a_setting_is_refused(tmp_path, column):
+    """Only the eight settings' columns reach the SQL: any other name is refused before
+    anything is read or written."""
+    db_path = await _make_db(tmp_path)
+    service = AttendanceService(db_path)
+    await service.get_or_create_config()
+    before = await _row(db_path)
+
+    with pytest.raises(ValueError):
+        await _set(service, column, 1)
+
+    assert await _row(db_path) == before
+    assert await _audit_entries(db_path) == []
+
+
+async def test_a_change_whose_audit_entry_fails_leaves_the_setting_as_it_was(tmp_path):
+    """One save: where the audit entry cannot be written, the value is not written either."""
+    db_path = await _make_db(tmp_path)
+    service = AttendanceService(db_path)
+    held = (await service.get_or_create_config()).absent_penalty
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'audit refused'); END"
+        )
+        await db.commit()
+
+    with pytest.raises(sqlite3.DatabaseError):
+        await _set(service, "absent_penalty", held + 1)
+
+    assert (await _row(db_path))["absent_penalty"] == held
 
 
 # ---------------------------------------------------------------------------
