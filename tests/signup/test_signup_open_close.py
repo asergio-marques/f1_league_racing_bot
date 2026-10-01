@@ -1189,22 +1189,13 @@ async def test_confirming_a_close_with_failed_steps_names_them_in_the_reply_and_
     assert any(_NOTICE_NOT_POSTED in text for text in beneath)
 
 
-#: Why a close with hundreds of failed steps is not yet replied to in parts.
-_SENT_IN_PARTS = (
-    "#482: a long list of failed steps is cut short with '…and N more' rather than sent in parts"
-)
-
 #: Discord's limit on one message, in characters.
 _DISCORD_LIMIT = 2000
 
 #: How many failed steps each case has: two fit in one message, three hundred cannot.
 _STEP_COUNTS = [
     pytest.param(2, id="two_steps"),
-    pytest.param(
-        300,
-        id="three_hundred_steps",
-        marks=pytest.mark.xfail(strict=True, reason=_SENT_IN_PARTS),
-    ),
+    pytest.param(300, id="three_hundred_steps"),
 ]
 
 

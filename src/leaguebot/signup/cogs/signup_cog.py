@@ -50,6 +50,7 @@ from leaguebot.core.utils.channel_guard import league_manager_only, league_role_
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, channel_id_of, guild_of, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
+from leaguebot.core.utils.messages import chunk_message
 from leaguebot.weather.utils.message_builder import discord_ts
 
 log = logging.getLogger(__name__)
@@ -444,11 +445,11 @@ class ConfirmCloseView(LeagueView):
             )
             return
         returned = outcome.returned
-        await interaction.followup.send(
+        for part in chunk_message(
             f"✅ Signups closed. {returned} driver(s) still signing up were returned to "
-            "Not Signed Up." + failed_steps_reply(outcome),
-            ephemeral=True,
-        )
+            "Not Signed Up." + failed_steps_reply(outcome)
+        ):
+            await interaction.followup.send(part, ephemeral=True)
         await self._bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close (force) | Success\n"
             f"  drivers_returned_to_not_signed_up: {returned}" + failed_steps_lines(outcome),
@@ -1928,9 +1929,8 @@ class SignupCog(commands.Cog):
             # No in-progress drivers — immediate close
             await interaction.response.defer(ephemeral=True)
             outcome = await execute_forced_close(self.bot, audit_action="SIGNUP_CLOSE")
-            await interaction.followup.send(
-                "✅ Signups closed." + failed_steps_reply(outcome), ephemeral=True
-            )
+            for part in chunk_message("✅ Signups closed." + failed_steps_reply(outcome)):
+                await interaction.followup.send(part, ephemeral=True)
             await self.bot.output_router.post_log(
                 f"{interaction.user.display_name} (<@{interaction.user.id}>) | /signup close | Success"
                 + failed_steps_lines(outcome),

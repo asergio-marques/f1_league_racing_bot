@@ -272,21 +272,11 @@ async def test_the_disable_is_logged(tmp_path):
     assert step in _replied(interaction)
 
 
-#: Why a disable whose close failed hundreds of steps is not yet replied to in parts.
-_SENT_IN_PARTS = (
-    "#482: a long list of failed steps is cut short with '…and N more' rather than sent in parts"
-)
-
-
 @pytest.mark.parametrize(
     "count",
     [
         pytest.param(2, id="two_steps"),
-        pytest.param(
-            300,
-            id="three_hundred_steps",
-            marks=pytest.mark.xfail(strict=True, reason=_SENT_IN_PARTS),
-        ),
+        pytest.param(300, id="three_hundred_steps"),
     ],
 )
 async def test_a_disable_with_many_failed_steps_is_replied_in_parts(tmp_path, count):
