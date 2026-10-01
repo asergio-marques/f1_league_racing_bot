@@ -617,6 +617,7 @@ async def test_an_entry_not_saved_is_passed_over(tmp_path):
     replied = _replied(interaction)
     applied, _, errors = replied.partition("Errors")
     assert "Applied 1 update(s)" in applied
+    assert "900000001" in applied
     assert "900000002" not in applied
     assert "Line 2:" in errors and "900000002" in errors
     logged = str(bot.output_router.post_log.await_args.args[0])
