@@ -458,7 +458,9 @@ async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_ans
     first = _interaction(bot)
     second = _interaction(bot)
     second.user = member(5151, "Steward", "Steward#0002")
-    first_admitted, second_done = asyncio.Event(), asyncio.Event()
+    first_admitted, second_admitted = asyncio.Event(), asyncio.Event()
+    job_done, second_done = asyncio.Event(), asyncio.Event()
+    warned_by_the_job: dict[str, int] = {}
 
     async def first_command():
         await _admitted(bot, first)
@@ -471,12 +473,19 @@ async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_ans
         await first_admitted.wait()
         await _admitted(bot, second)
         await second.response.defer(ephemeral=True)
+        second_admitted.set()
+        await job_done.wait()
+        await _settle()
+        # Both commands are under way and neither has written a line: any warning yet is the job's.
+        warned_by_the_job["first"] = len(_warnings(first))
+        warned_by_the_job["second"] = len(_warnings(second))
         await bot.output_router.post_log("Steward (<@5151>) | /second | Success")
         second_done.set()
 
     async def timed_job():
-        await first_admitted.wait()
+        await second_admitted.wait()
         await bot.output_router.post_log("Weather | phase 1 posted")
+        job_done.set()
 
     await asyncio.gather(
         asyncio.create_task(first_command()),
@@ -485,6 +494,7 @@ async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_ans
     )
     await _settle()
 
+    assert warned_by_the_job == {"first": 0, "second": 0}
     assert len(_warnings(first)) == 1
     assert len(_warnings(second)) == 1
     assert bot.interaction_channel.sent == []
