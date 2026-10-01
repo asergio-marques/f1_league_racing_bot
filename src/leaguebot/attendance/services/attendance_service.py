@@ -328,14 +328,15 @@ class AttendanceService:
         assigned, moved or confirmed into the division afterwards has none, and pressing a
         button was the one way they could ever get one.
 
-        The insert belongs here rather than on the paths that place a driver. By the time
-        ``handle_rsvp_button`` reaches this method it has established everything the row
-        needs — the driver holds a confirmed placement in this division, the round exists,
-        and the answer is inside the lock — so the fact arrives at the press and nowhere
-        earlier. Seeding rows from ``assign_driver``, ``move_driver`` and
-        ``commit_mid_season_placements`` instead would put the same work in three places,
-        each having to decide for itself which of the division's rounds have a call standing,
-        and any placement route added later would reopen the hole.
+        The insert belongs here rather than on the paths that place a driver. A press reaches the
+        same write through ``answer_rsvp`` (by way of ``_write_answer``), which has established
+        everything the row needs — the driver holds a confirmed placement in this division, the
+        round exists, and the answer is inside the lock — so the fact arrives at the press and
+        nowhere earlier; the test-mode bulk-set form is this method's caller.
+        Seeding rows from ``assign_driver``, ``move_driver`` and ``commit_mid_season_placements``
+        instead would put the same work in three places, each having to decide for itself which
+        of the division's rounds have a call standing, and any placement route added later would
+        reopen the hole.
 
         A row created here is written carrying the answered status in one statement, never
         created as NO_RSVP and then updated: the intermediate state has no reader, and
