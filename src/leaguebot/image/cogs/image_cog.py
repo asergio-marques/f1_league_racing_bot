@@ -555,23 +555,24 @@ class ImageCog(commands.Cog):
         lines = [f"✅ **{label}** template set to `{candidate}`.", "✅ Valid."]
 
         await self._reply(interaction, "\n".join(lines))
-        await self._log(interaction, f"{label} template = {candidate}")
+        await _record(
+            self.bot, interaction, _command(interaction), "Success", f"{label} template: {candidate}"
+        )
 
     async def _reject(
         self, interaction: discord.Interaction, label: str, reason: str
     ) -> None:
         """Refuse a template command, naming the fault and leaving the config alone.
 
-        Logged like any accepted change: a refused configuration is as much a part of the
-        audit trail as a stored one (Principle V), and a manager who cannot get a template
-        accepted leaves a record of what they tried.
+        Recorded in the log channel as a refusal of the command, so a manager who cannot get a
+        template accepted leaves a record of what they tried.
         """
-        await self._reply(
+        await refuse(
             interaction,
             f"❌ **{label}** template was **not** changed — {reason}\n"
             f"The previously configured filename is still in force.",
+            what=describe_command(interaction),
         )
-        await self._log(interaction, f"{label} template REJECTED — {reason}")
 
     # ── Driver portraits obtained from Discord ────────────────────────────
 
