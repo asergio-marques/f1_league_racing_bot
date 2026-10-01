@@ -790,3 +790,43 @@ def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
     bs.discard(live, jobs)
 
     assert bs.prerestore_path(live).read_bytes() == b"kept"
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a restore still brings back the change queue")
+async def test_a_restored_state_brings_back_no_queue(tmp_path):
+    """A change saved with the state, waiting on a retry, is not carried out again on a server
+    whose messages it no longer knows: the staged file's queue is emptied before the swap."""
+    from leaguebot.core.db.database import run_migrations
+
+    live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
+    await run_migrations(str(live))
+    _database(jobs, wal=False, rows=1)
+    db = sqlite3.connect(str(live))
+    try:
+        for state in ("WAITING", "QUEUED", "DONE"):
+            cursor = db.execute(
+                "INSERT INTO queued_changes (kind, dedup_key, origin, state, what) "
+                "VALUES ('module.off:results', 'k', 'MEMBER', ?, '`/module disable results`')",
+                (state,),
+            )
+            db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name) VALUES (?, 0, 's')",
+                (cursor.lastrowid,),
+            )
+        db.commit()
+    finally:
+        db.close()
+    bs.save(live, jobs)
+    bs.stage_restore(live, jobs)
+
+    assert bs.apply_staged_restore(live, jobs) is True
+
+    db = sqlite3.connect(str(live))
+    try:
+        counts = (
+            db.execute("SELECT COUNT(*) FROM queued_changes").fetchone()[0],
+            db.execute("SELECT COUNT(*) FROM queued_change_steps").fetchone()[0],
+        )
+    finally:
+        db.close()
+    assert counts == (0, 0)

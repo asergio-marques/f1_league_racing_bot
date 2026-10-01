@@ -317,3 +317,100 @@ async def test_each_waiting_state_counts_as_outstanding(tmp_path, status):
     await _add_round(db_path, 11, 1, status)
 
     assert len(await SeasonService(db_path).get_outstanding_rounds()) == 1
+
+
+# ---------------------------------------------------------------------------
+# On a handed connection (#439)
+#
+# Turning Results & Standings off closes the rounds waiting on results in the same save as the
+# switch-off, so the closing and every move it causes are written on the caller's connection and
+# committed by the caller alone.
+# ---------------------------------------------------------------------------
+
+HANDED_NOT_BUILT = "#439: closing rounds on a handed connection is not built yet"
+
+
+async def _season_stage(db_path: str) -> str:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (SEASON_ID,))
+        return (await cursor.fetchone())["stage"]
+
+
+async def _round_statuses(db_path: str) -> list[str]:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT status FROM rounds ORDER BY round_number")
+        return [row["status"] for row in await cursor.fetchall()]
+
+
+async def _audits(db_path: str, change_type: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM audit_entries WHERE change_type = ?", (change_type,)
+        )
+        return (await cursor.fetchone())[0]
+
+
+@pytest.mark.xfail(strict=True, reason=HANDED_NOT_BUILT)
+async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_caller_commits(
+    tmp_path,
+):
+    from datetime import datetime, timezone
+
+    from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
+
+    db_path = await _make_db(tmp_path)
+    await _add_division(db_path, 11, name="Pro")
+    await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
+    await _add_round(db_path, 11, 2, RoundStatus.AWAITING_RESULTS.value, track="Monza")
+    now = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+
+    async with get_connection(db_path) as db:
+        closed = await end_rounds_awaiting_results_on(
+            db, actor_id=4242, actor_name="Admin#0001", now=now
+        )
+        await db.rollback()
+
+    assert [(r["division"], r["round_number"], r["status"]) for r in closed] == [
+        ("Pro", 2, RoundStatus.AWAITING_RESULTS.value)
+    ]
+    assert await _round_statuses(db_path) == ["FINAL", "AWAITING_RESULTS"]
+    assert await _status(db_path, 11) == "ACTIVE"
+    assert await _audits(db_path, "round.status") == 0
+
+    async with get_connection(db_path) as db:
+        await end_rounds_awaiting_results_on(db, actor_id=4242, actor_name="Admin#0001", now=now)
+        await db.commit()
+
+    assert await _round_statuses(db_path) == ["FINAL", "FINAL"]
+    assert await _status(db_path, 11) == "FINISHED"
+    assert await _audits(db_path, "round.status") == 1
+
+
+@pytest.mark.xfail(strict=True, reason=HANDED_NOT_BUILT)
+async def test_a_division_finished_on_a_handed_connection_moves_its_season_on_in_the_same_save(
+    tmp_path,
+):
+    """The last division finishing moves an Ongoing season to Pending completion on the same
+    connection: a rollback takes both back, a commit saves both."""
+    from leaguebot.core.services.season_service import refresh_division_status_on
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET stage = 'ONGOING' WHERE id = ?", (SEASON_ID,))
+        await db.commit()
+    await _add_division(db_path, 11)
+    await _add_round(db_path, 11, 1, RoundStatus.FINAL.value)
+
+    async with get_connection(db_path) as db:
+        assert await refresh_division_status_on(db, 11) is True
+        await db.rollback()
+
+    assert await _status(db_path, 11) == "ACTIVE"
+    assert await _season_stage(db_path) == "ONGOING"
+
+    async with get_connection(db_path) as db:
+        assert await refresh_division_status_on(db, 11) is True
+        await db.commit()
+
+    assert await _status(db_path, 11) == "FINISHED"
+    assert await _season_stage(db_path) == "PENDING_COMPLETION"
