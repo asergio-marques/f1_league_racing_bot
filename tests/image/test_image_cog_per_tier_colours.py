@@ -344,6 +344,21 @@ async def test_a_failed_import_is_logged_too():
     assert lines[0].startswith("⛔ ") and "refused for Race Control (<@42>)" in lines[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#482: an unreadable import is not yet recorded as refused")
+async def test_an_unreadable_import_pasted_into_the_form_is_refused_by_the_form():
+    """Pasted into the form rather than attached, the refusal names the form, not a command."""
+    from leaguebot.image.cogs.image_cog import TierPaletteXmlModal
+
+    cog = _form_cog()
+    modal = _submitted(TierPaletteXmlModal(cog), "payload", "<broken")
+
+    await modal.on_submit(_interaction(cog))
+
+    cog._config_service.set_tier_colours.assert_not_awaited()
+    assert "Nothing was stored" in _said(cog)
+    assert_one_refusal(cog.bot, "the “Import tier colours” form")
+
+
 # ── The commands and their modals ─────────────────────────────────────────
 
 async def test_the_modals_can_be_constructed():
@@ -401,8 +416,10 @@ def _submitted(modal, field: str, text: str):
 
 
 def _form_cog(**kwargs):
-    """A bulk cog whose forms reach its real bodies, as the cog's own would."""
+    """A bulk cog whose forms reach its real bodies, as the cog's own would, with the Image
+    module still on when a form is submitted."""
     cog = _bulk_cog(**kwargs)
+    cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     cog.apply_tier_block = functools.partial(ImageCog.apply_tier_block, cog)
     cog.apply_tier_xml = functools.partial(ImageCog.apply_tier_xml, cog)
     return cog
