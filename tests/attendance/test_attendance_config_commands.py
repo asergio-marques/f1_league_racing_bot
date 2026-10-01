@@ -689,6 +689,10 @@ UNCHANGED = [
 ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#482: the nothing-changed reply is sent as the response, not after a deferral",
+)
 @pytest.mark.parametrize(
     "command,name,value,column,stored,detail", UNCHANGED, ids=[c[1] for c in UNCHANGED]
 )
@@ -696,7 +700,8 @@ async def test_a_value_already_held_records_that_nothing_changed(
     audit, command, name, value, column, stored, detail
 ):
     """A4: the value is handed to `set_setting`, which finds it already held and writes
-    nothing; the cog writes no audit entry and says so."""
+    nothing; the cog writes no audit entry and says so, by follow-up, the interaction having
+    been deferred before the save."""
     cog = _make_cog()
     interaction = _interaction()
 
@@ -705,9 +710,10 @@ async def test_a_value_already_held_records_that_nothing_changed(
     assert _set_setting_call(cog).args == (column, stored)
     assert _written(cog) == ["set_setting"]
     audit.assert_not_awaited()
-    assert interaction.response.send_message.await_args.args[0].startswith(
-        "ℹ️ Nothing changed: "
-    )
+    interaction.response.send_message.assert_not_awaited()
+    interaction.followup.send.assert_awaited_once()
+    assert interaction.followup.send.await_args.args[0].startswith("ℹ️ Nothing changed: ")
+    assert interaction.followup.send.await_args.kwargs["ephemeral"] is True
     assert _lines(cog) == [
         f"Manager (<@42>) | /attendance config {name} | Nothing changed\n  {detail}"
     ]
@@ -728,3 +734,33 @@ async def test_a_line_that_cannot_be_posted_is_not_swallowed(start, outcome):
 
     with pytest.raises(RuntimeError, match="log channel down"):
         await _invoke(AttendanceCog.config_no_show_penalty, cog, interaction, 4)
+
+
+@pytest.mark.xfail(strict=True, reason="#482: a setter saves before it defers the interaction")
+@pytest.mark.parametrize(
+    "command,value,column,stored",
+    CONFIG_SETTERS + [(S.config_no_show_penalty, 1, "no_show_penalty", 1)],
+    ids=CONFIG_SETTER_IDS + ["no-show-penalty-held"],
+)
+async def test_a_setter_defers_before_it_saves(command, value, column, stored):
+    """A save can wait on the database longer than Discord gives an interaction to be
+    answered, so each setter defers first: the change, or the value already held, is then
+    answered by follow-up however long the save takes, and never lost to an expired
+    interaction after it stood."""
+    cog = _make_cog()
+    interaction = _interaction()
+    answer = cog.bot.attendance_service.set_setting.side_effect
+    deferred_at_save: list[bool] = []
+
+    async def set_setting(column, value, **kwargs):
+        deferred_at_save.append(interaction.response.defer.await_count == 1)
+        return await answer(column, value, **kwargs)
+
+    cog.bot.attendance_service.set_setting.side_effect = set_setting
+
+    await _invoke(command, cog, interaction, value)
+
+    assert deferred_at_save == [True]
+    interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+    interaction.response.send_message.assert_not_awaited()
+    interaction.followup.send.assert_awaited_once()
