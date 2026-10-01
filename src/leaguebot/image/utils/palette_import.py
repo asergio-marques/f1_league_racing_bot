@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from lxml import etree
 
+from leaguebot.image.utils.asset_resolver import normalise
 from leaguebot.image.utils.colour import InvalidColour, normalise_hex
 from leaguebot.image.utils.svg_palette import InvalidSlot, normalise_slot
 
@@ -134,7 +135,7 @@ def parse_palette_xml(xml_text: str) -> tuple[list[PaletteBlock], list[str]]:
 
     blocks: list[PaletteBlock] = []
     problems: list[str] = []
-    seen: set[str] = set()
+    seen: dict[str, str] = {}
 
     for index, element in enumerate(divisions, start=1):
         name = (element.get("name") or "").strip()
@@ -143,10 +144,17 @@ def parse_palette_xml(xml_text: str) -> tuple[list[PaletteBlock], list[str]]:
         if not name:
             problems.append(f"{label} has no `name`, so there is no tier to set.")
             continue
-        if name.casefold() in seen:
-            problems.append(f"{label} appears more than once; only the first was read.")
+        key = _tier_key(name)
+        if key in seen:
+            earlier = seen[key]
+            if earlier.casefold() == name.casefold():
+                problems.append(f"{label} appears more than once; only the first was read.")
+            else:
+                problems.append(
+                    f"{label} is the same tier as the earlier `{earlier}`; only the first was read."
+                )
             continue
-        seen.add(name.casefold())
+        seen[key] = name
 
         colours, faults = _colours_of(element)
         if faults:
@@ -159,6 +167,17 @@ def parse_palette_xml(xml_text: str) -> tuple[list[PaletteBlock], list[str]]:
         blocks.append(PaletteBlock(division=name, colours=colours))
 
     return blocks, problems
+
+
+def _tier_key(name: str) -> str:
+    """The key the store files a tier's colours under, so two spellings of one tier meet.
+
+    The store keys a division on its normalised name ("Division 1" and "Division-1" are one
+    tier), so the import must tell a repeat by the same key, or the second block would
+    overwrite the first unseen. A name with no letter or digit has no store key: it falls back
+    to its folded spelling, so such names do not all collide with one another.
+    """
+    return normalise(name) or name.casefold()
 
 
 class PaletteXmlError(Exception):

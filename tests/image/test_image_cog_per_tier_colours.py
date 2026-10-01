@@ -448,13 +448,6 @@ async def test_the_import_passes_over_a_division_name_with_no_letter_or_digit():
     assert any(UNSTORABLE in detail for detail in details), details
 
 
-#: Why the import below fails until the build: it tells a tier's two spellings apart.
-_TWO_SPELLINGS = (
-    "#482: an import naming one tier under two spellings stores both, the second over the first"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_TWO_SPELLINGS)
 async def test_an_import_naming_one_tier_twice_under_two_spellings_stores_only_the_first(
     tmp_path,
 ):
