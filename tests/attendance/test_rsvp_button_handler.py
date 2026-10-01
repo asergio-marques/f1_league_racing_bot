@@ -671,12 +671,10 @@ async def test_an_answer_that_writes_nothing_is_not_reported_as_recorded(tmp_pat
     """The other half of issue #209, and the half no upsert can settle on its own.
 
     A write that changes no rows and a write that succeeded were indistinguishable here: the
-    thanks went out either way. The service is stubbed rather than driven to failure because
-    there is no longer a way to make it fail honestly — which is the point. The branch has to
-    hold for whatever makes the write a no-op next, or the silence comes back.
-
-    The table's triggers make the write a no-op, rather than a stubbed service, so the test
-    holds whichever service method writes the answer (#482)."""
+    thanks went out either way. There is no honest way left to make the write fail, which is
+    the point, so the table's triggers make it a no-op instead: the branch has to hold for
+    whatever makes the write a no-op next, or the silence comes back. Triggers rather than a
+    stubbed service keep the test true whichever service method writes the answer (#482)."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _ignore_answers(db_path)
     interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
