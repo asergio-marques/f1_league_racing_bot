@@ -293,8 +293,8 @@ class WeatherCog(commands.Cog):
         """Set the channel a division's forecasts are posted to (#462).
 
         Weather's own command, under weather's own group: it sat under core's `/division`
-        until #462 moved it, and only its name changed. **Its module-off wording is its own**,
-        not `_module_gate`'s, as it was worded before it moved.
+        until #462 moved it, and only its name changed. It keeps its own module check, worded as
+        `_module_gate` words it, so the two commands refuse in one voice.
 
         **The live season's division** (#220): a division's channels belong to the season being
         built or raced, and an archived one's no longer matter. Pending completion is live,
