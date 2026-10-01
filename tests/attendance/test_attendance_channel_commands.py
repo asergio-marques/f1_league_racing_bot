@@ -136,7 +136,12 @@ def _interaction(*, guild=True):
     interaction.response = MagicMock()
     interaction.response.send_message = AsyncMock()
     interaction.response.defer = AsyncMock()
-    interaction.response.is_done = MagicMock(return_value=False)
+    interaction.response.is_done = MagicMock(
+        side_effect=lambda: bool(
+            interaction.response.defer.await_count
+            or interaction.response.send_message.await_count
+        )
+    )
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -152,6 +157,8 @@ def _replied(interaction) -> str:
 
 
 async def _run(cog, which, interaction, *, name="Division 1", channel=None):
+    interaction.command = getattr(AttendanceCog, COMMANDS[which][0])
+    interaction.client = cog.bot
     body = undecorate(getattr(AttendanceCog, COMMANDS[which][0]))
     return await body(cog, interaction, name, channel or _channel())
 
@@ -318,7 +325,7 @@ REFUSAL_LABELS = {"rsvp": "check-in call", "attendance": "attendance"}
 async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, which, monkeypatch):
     """Each body names its own setting to the check, so the channel the division already has
     for it is refused in its own words, not as a clash a manager would go looking for.
-    Nothing is written or logged."""
+    Nothing is written; the refusal is recorded, as every refusal is (#482)."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
@@ -335,7 +342,9 @@ async def test_re_setting_the_same_channel_is_refused_as_unchanged(tmp_path, whi
         "Nothing was changed."
     )
     getattr(cog.bot.attendance_service, COMMANDS[which][2]).assert_not_awaited()
-    cog.bot.output_router.post_log.assert_not_awaited()
+    logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(f"\u26d4 `{COMMANDS[which][4]}` refused for Manager (<@77>)")
     assert await _audit_rows(db_path) == []
 
 
@@ -431,3 +440,59 @@ async def test_the_log_line_names_the_command_a_league_now_types(tmp_path, which
         "  division: Division 1",
         "  channel: #notices",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Every refusal is recorded in the log channel (#482)
+# ---------------------------------------------------------------------------
+
+REFUSAL_CASES = [
+    ("module-disabled", "The Attendance module is not enabled."),
+    ("cannot-post", "Cannot access that channel."),
+    ("no-guild", "Cannot access that channel."),
+    ("no-season", "No season is live."),
+    ("unknown-division", 'Division "Division 9" not found.'),
+    ("in-use", "is already the results channel for **Division 2**"),
+]
+
+
+@pytest.mark.parametrize("case,reason", REFUSAL_CASES, ids=[c[0] for c in REFUSAL_CASES])
+@pytest.mark.parametrize("which", BOTH)
+async def test_every_refusal_of_a_channel_command_is_recorded(
+    tmp_path, which, case, reason, monkeypatch
+):
+    """A7: each refusal is answered once, writes nothing, and records one "⛔ … refused for
+    Manager (<@77>) — …" line naming the command and the reason."""
+    db_path = await _make_db(tmp_path, name=f"refused_{which}_{case}")
+    cog = _make_cog(
+        db_path,
+        attendance_enabled=case != "module-disabled",
+        season=None if case == "no-season" else SimpleNamespace(id=SEASON_ID),
+    )
+    interaction = _interaction(guild=case != "no-guild")
+    if case == "in-use":
+        async def _in_use(*_args, **_kwargs):
+            return ChannelUse("results", "Division 2")
+
+        monkeypatch.setattr(
+            "leaguebot.core.services.channel_registry_service.find_channel_use", _in_use
+        )
+
+    await _run(
+        cog, which, interaction,
+        name="Division 9" if case == "unknown-division" else "Division 1",
+        channel=_channel(may_post=case != "cannot-post"),
+    )
+
+    replies = (
+        interaction.response.send_message.await_args_list
+        + interaction.followup.send.await_args_list
+    )
+    assert len(replies) == 1
+    getattr(cog.bot.attendance_service, COMMANDS[which][2]).assert_not_awaited()
+    logged = [str(c.args[0]) for c in cog.bot.output_router.post_log.await_args_list]
+    assert len(logged) == 1
+    assert logged[0].startswith(
+        f"\u26d4 `{COMMANDS[which][4]}` refused for Manager (<@77>) \u2014 "
+    )
+    assert reason in logged[0]

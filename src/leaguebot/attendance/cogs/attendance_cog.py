@@ -883,8 +883,10 @@ class AttendanceCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         if not await self.bot.module_service.is_attendance_enabled():
-            await interaction.response.send_message(
-                "\u274c The Attendance module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Attendance module is not enabled.",
+                what=describe(interaction),
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -892,26 +894,29 @@ class AttendanceCog(commands.Cog):
         guild = interaction.guild
 
         if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Division \"{name}\" not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -919,7 +924,11 @@ class AttendanceCog(commands.Cog):
             self.bot.db_path, channel, "rsvp", division_name=div.name
         )
         if refused is not None:
-            await interaction.followup.send(refused, ephemeral=True)
+            await refuse(
+                interaction,
+                refused,
+                what=describe(interaction),
+            )
             return
 
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
@@ -963,8 +972,10 @@ class AttendanceCog(commands.Cog):
         channel: discord.TextChannel,
     ) -> None:
         if not await self.bot.module_service.is_attendance_enabled():
-            await interaction.response.send_message(
-                "\u274c The Attendance module is not enabled.", ephemeral=True
+            await refuse(
+                interaction,
+                "\u274c The Attendance module is not enabled.",
+                what=describe(interaction),
             )
             return
         await interaction.response.defer(ephemeral=True)
@@ -972,26 +983,29 @@ class AttendanceCog(commands.Cog):
         guild = interaction.guild
 
         if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await interaction.followup.send(
+            await refuse(
+                interaction,
                 f"\u274c Division \"{name}\" not found.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -999,7 +1013,11 @@ class AttendanceCog(commands.Cog):
             self.bot.db_path, channel, "attendance", division_name=div.name
         )
         if refused is not None:
-            await interaction.followup.send(refused, ephemeral=True)
+            await refuse(
+                interaction,
+                refused,
+                what=describe(interaction),
+            )
             return
 
         old_cfg = await self.bot.attendance_service.get_division_config(div.id)
@@ -1055,8 +1073,10 @@ class AttendanceCog(commands.Cog):
         """
         config = await self.bot.config_service.get_server_config()
         if config is None or not config.test_mode_active:
-            await interaction.response.send_message(
-                "ℹ️ Test mode is not active.", ephemeral=True
+            await refuse(
+                interaction,
+                "ℹ️ Test mode is not active.",
+                what=describe(interaction),
             )
             return
 
@@ -1064,9 +1084,10 @@ class AttendanceCog(commands.Cog):
         # leaves its `rsvp_embed_messages` row behind, so without this the command finds that
         # embed and writes check-in answers for a module the league has switched off.
         if not await self.bot.module_service.is_attendance_enabled():
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 "❌ The Attendance module is not enabled, so there is no check-in to set.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
@@ -1091,18 +1112,21 @@ class AttendanceCog(commands.Cog):
             div_row = await cur.fetchone()
 
         if div_row is None:
-            await interaction.response.send_message(
-                f"❌ Division **{division}** not found in a season being raced.", ephemeral=True
+            await refuse(
+                interaction,
+                f"❌ Division **{division}** not found in a season being raced.",
+                what=describe(interaction),
             )
             return
         division_id: int = div_row["division_id"]
 
         target_embed = await self.bot.attendance_service.get_current_embed_message(division_id)
         if target_embed is None:
-            await interaction.response.send_message(
+            await refuse(
+                interaction,
                 f"❌ No active RSVP embed found for division **{division}**. "
                 "Run `/test-mode advance` to fire the RSVP notice first.",
-                ephemeral=True,
+                what=describe(interaction),
             )
             return
 
