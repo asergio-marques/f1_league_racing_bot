@@ -591,3 +591,130 @@ async def test_no_line_names_the_config_group_bare(monkeypatch, tmp_path):
 
     assert lines
     assert not [line for line in lines if "| /images config |" in line], lines
+
+
+# ── A20 (N1): a value already held changes nothing ────────────────────────
+
+_HELD_AS_CHANGE = "#482: a value already held is still answered and recorded as a change"
+
+#: Each image setting given the value it holds: the command, what it is given, the setter
+#: that reports the value held, and the value the reply and the line must carry.
+HELD = (
+    [pytest.param(name, (FOLDER,), "set_field", [(FOLDER,)], id=name) for name in _folders()]
+    + [
+        pytest.param(
+            "images config template-directory", (FOLDER,), "set_field", [(FOLDER,)],
+            id="images config template-directory",
+        )
+    ]
+    + [
+        pytest.param(name, ("mine.svg",), "set_field", [("mine.svg",)], id=name)
+        for name in _templates()
+    ]
+    + [
+        pytest.param(
+            "images config fastest-lap-colour", ("#a020f0",), "set_field", [("#A020F0",)],
+            id="images config fastest-lap-colour",
+        ),
+        pytest.param(
+            "images config per-tier-colour-toggle", (True,), "set_flag", [("on",)],
+            id="images config per-tier-colour-toggle",
+        ),
+        pytest.param(
+            "images config per-tier-set-colour", ("Division 1", "accent", "#a78bfa"),
+            "set_tier_colour", [("#A78BFA",)],
+            id="images config per-tier-set-colour",
+        ),
+        pytest.param(
+            "images config time-zone", ("Europe/Lisbon",), "set_field", [("Europe/Lisbon",)],
+            id="images config time-zone",
+        ),
+        pytest.param(
+            "images config time-format",
+            (app_commands.Choice(name="24-hour (14:30)", value="24H"),), "set_field",
+            [("24-hour (14:30)", "24H")],
+            id="images config time-format",
+        ),
+        pytest.param(
+            "images config date-format",
+            (app_commands.Choice(name="14 Jun 2026", value="DD_MON_YYYY"),), "set_field",
+            [("14 Jun 2026", "DD_MON_YYYY")],
+            id="images config date-format",
+        ),
+    ]
+)
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
+@pytest.mark.parametrize("name, arguments, setter, values", HELD)
+async def test_a_value_already_held_changes_nothing(
+    monkeypatch, tmp_path, name, arguments, setter, values
+):
+    """The store reports the value held and writes nothing; the reply says "Nothing changed",
+    naming the value, and one "Nothing changed" line records it."""
+    cog = _working_cog(monkeypatch, tmp_path, changed=False)
+
+    asked = await _run_with(cog, name, *arguments)
+
+    reply = said(asked)
+    assert reply.startswith("ℹ️ Nothing changed: "), reply
+    assert "is already **" in reply and "✅" not in reply, reply
+    getattr(cog.bot.image_config_service, setter).assert_awaited_once()
+    details = assert_one_line(cog.bot, name, "Nothing changed")
+    for forms in values:
+        assert _carries([reply], forms), (forms, reply)
+        assert _carries(details, forms), (forms, details)
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
+async def test_per_tier_colours_already_on_say_nothing_changed_alone(monkeypatch, tmp_path):
+    """Turning per-tier colours on when they are already on lists no missing colour, though
+    some are missing: the owner's decision of 2026-10-01."""
+    cog = _working_cog(monkeypatch, tmp_path, changed=False)
+    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
+        return_value={"calendar_template": ["`accent` is not set for **Division 1**"]}
+    )
+
+    asked = await _run_with(cog, "images config per-tier-colour-toggle", True)
+
+    reply = said(asked)
+    assert reply.startswith("ℹ️ Nothing changed: "), reply
+    assert "calendar_template" not in reply and "⚠️" not in reply, reply
+    assert_one_line(cog.bot, "images config per-tier-colour-toggle", "Nothing changed")
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
+async def test_a_pasted_palette_already_held_changes_nothing(monkeypatch, tmp_path):
+    """Every colour in the pasted palette is already the tier's: the form says so, and the
+    line names the command that opened it."""
+    cog = _working_cog(monkeypatch, tmp_path, changed=False)
+    form = TierPaletteModal(cog, "Division 1")
+    form.block._value = "accent #A78BFA"
+    submitted = interaction(None, bot=cog.bot)
+
+    await form.on_submit(submitted)
+
+    assert said(submitted).startswith("ℹ️ Nothing changed: "), said(submitted)
+    assert_one_line(cog.bot, "images config per-tier-bulk-colour", "Nothing changed")
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_AS_CHANGE)
+@pytest.mark.parametrize(
+    "document, passed_over",
+    [
+        pytest.param(ONE_TIER, None, id="every-block-held"),
+        pytest.param(PART_READABLE, "Bad", id="held-with-a-block-passed-over"),
+    ],
+)
+async def test_an_import_already_held_changes_nothing(monkeypatch, tmp_path, document, passed_over):
+    """Every block the import could read is already held. The reply says "Nothing changed"
+    and still lists each block it passed over, with its reason; one "Nothing changed" line."""
+    cog = _working_cog(monkeypatch, tmp_path, changed=False)
+
+    asked = await _run_with(cog, "images config colour-xml-import", _attached(document))
+
+    reply = said(asked)
+    assert "ℹ️ Nothing changed" in reply and "✅" not in reply, reply
+    if passed_over:
+        assert passed_over in reply, reply
+    assert_one_line(cog.bot, "images config colour-xml-import", "Nothing changed")
