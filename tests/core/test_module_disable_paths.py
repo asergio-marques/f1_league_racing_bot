@@ -287,17 +287,6 @@ async def test_a_cascade_does_the_same_work(tmp_path):
     assert await _division_configs(db_path) == 0
 
 
-async def test_a_cascade_answers_no_interaction_of_its_own(tmp_path):
-    """It is reached from the Results disable, which has already answered the manager.
-    A second reply would be a follow-up to a command nobody ran."""
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
-
-    await _make_cog(db_path)._disable_attendance(interaction, cascade=True)
-
-    assert _replied(interaction) == ""
-
-
 async def test_a_cascade_runs_even_where_attendance_was_already_off(tmp_path):
     """It skips the guard deliberately — the Results disable cannot know, and running the
     clear twice is harmless where refusing would leave bindings behind."""

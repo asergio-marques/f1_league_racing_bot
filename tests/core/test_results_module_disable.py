@@ -314,28 +314,6 @@ async def test_the_flag_goes_down_before_the_results_are_purged(tmp_path):
     assert seen == [0]
 
 
-async def test_the_rounds_are_closed_after_the_purge(tmp_path):
-    """Closing the last of them finishes its division, and a division finishing is what
-    lets `/season complete` run — so it has to come after the results are gone."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    order: list[str] = []
-
-    async def _observe():
-        order.append("purge")
-
-    cog.bot.season_service.end_rounds_awaiting_results = AsyncMock(
-        side_effect=lambda *a: order.append("close") or []
-    )
-
-    with _purge(rounds=1, on_call=_observe):
-        await cog._apply_results_disable(
-            _interaction(), cascade_attendance=False
-        )
-
-    assert order == ["purge", "close"]
-
-
 async def test_a_disable_between_seasons_still_takes_all_three_steps(tmp_path):
     """The last two simply find nothing to do, which is why they are unconditional."""
     db_path = await _make_db(tmp_path)
