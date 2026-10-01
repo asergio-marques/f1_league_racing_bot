@@ -954,10 +954,15 @@ class WizardService:
         if wizard is None:
             return _CORRECTION_ENDED
 
-        # Transition driver to PENDING_DRIVER_CORRECTION
-        await self._driver_service.transition(
-            discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
-        )
+        # Transition driver to PENDING_DRIVER_CORRECTION. The state check above can be raced
+        # (the five minutes lapsing, or a second press, between it and here); the transition
+        # is the check that cannot, and a refused one means the request has ended all the same.
+        try:
+            await self._driver_service.transition(
+                discord_user_id, DriverState.PENDING_DRIVER_CORRECTION
+            )
+        except ValueError:
+            return _CORRECTION_ENDED
 
         # Configure wizard for single-field re-collection
         correction_reason = wizard.draft_answers.pop("_correction_reason", "")
