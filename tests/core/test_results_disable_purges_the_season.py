@@ -18,6 +18,13 @@ of them, and the division channel bindings. The verdicts already announced go wi
 (decided 2026-09-21, issue #189): they were left standing until then only because no message id
 was recorded to find them by.
 
+**The switch-off is carried out on the change queue** (#439, defect 8). Its first step erases the
+rows, drops the flag and closes the rounds in one save, keeping the ids of every message to take
+down; a step for each message or channel then takes it down, tried once, and a closing step counts
+what went. These tests press the confirmation and run the queue to the end, and read the reply as
+the acknowledgement was updated. A message the bot could not remove is read from the links that
+reply carries.
+
 Every test that constructs the confirmation view is `async def`: apt's discord.py 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it.
 """
@@ -25,17 +32,32 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.services.season_service import SeasonService
-from leaguebot.results.services.results_purge_service import purge_season_results
+from tests.support.change_queue import (
+    INTERACTION_CHANNEL_ID,
+    LOG_CHANNEL_ID,
+    SERVER_ID,
+    attach_queue,
+    league_double,
+    member,
+    member_interaction,
+    run_queue,
+    updated_reply,
+)
 from tests.support.teams import seed_team_instances
 
-SERVER_ID = 5150
+NOT_BUILT = "#439: turning results off does not run on the change queue yet"
+
+NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 ACTOR_ID = 4242
 ACTOR_NAME = "Admin"
 BOT_USER_ID = 77
@@ -81,6 +103,16 @@ class _FakeChannel:
         message.delete = _delete
         return message
 
+    def get_partial_message(self, message_id: int):
+        message = MagicMock()
+        message.id = message_id
+
+        async def _delete() -> None:
+            await (await self.fetch_message(message_id)).delete()
+
+        message.delete = _delete
+        return message
+
     def history(self, **kwargs):
         async def _empty():
             return
@@ -93,13 +125,18 @@ class _FakeChannel:
 
 
 def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
-    bot = MagicMock()
+    """The bot as the builder makes it: a real router and services on *db_path*, and a fake
+    server whose channels are in `bot.channels`. Its change queue is attached by `_disable`, or by
+    the test, so a test that never reaches the queue does not need it built."""
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.core.services.module_service import ModuleService
+
+    bot = league_double(db_path)
+    bot.user.id = BOT_USER_ID
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.db_path = db_path
-    bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=False)
-    bot.output_router.post_log = AsyncMock(return_value=None)
+    bot.module_service = ModuleService(db_path)
     bot.season_service = SeasonService(db_path)
+    bot.attendance_service = AttendanceService(db_path)
 
     channels = {
         RESULTS_CHANNEL_ID: _FakeChannel(RESULTS_CHANNEL_ID),
@@ -107,14 +144,21 @@ def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
         VERDICTS_CHANNEL_ID: _FakeChannel(VERDICTS_CHANNEL_ID),
     }
     bot.channels = channels
-    if guild:
-        fake_guild = MagicMock()
-        fake_guild.id = SERVER_ID
-        fake_guild.get_channel = lambda cid: channels.get(cid)
-        bot.get_guild = MagicMock(return_value=fake_guild)
-    else:
-        bot.get_guild = MagicMock(return_value=None)
+    fake_guild = MagicMock()
+    fake_guild.id = SERVER_ID
+    fake_guild.get_channel = lambda cid: channels.get(cid)
+    bot.get_guild = MagicMock(
+        side_effect=lambda sid: fake_guild if guild and sid == SERVER_ID else None
+    )
     return bot
+
+
+@pytest.fixture(autouse=True)
+def _no_panel_to_refresh(monkeypatch):
+    """The hub has no panel here; turning results off refreshes it as a change of its own."""
+    from leaguebot.core.services import hub_service
+
+    monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
 
 
 def _make_cog(db_path: str, *, guild: bool = True) -> ModuleCog:
@@ -156,8 +200,8 @@ async def _seed(
         await db.execute(
             "INSERT OR IGNORE INTO server_configs "
             "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 100, 200, 300)",
-            (server_id,),
+            "VALUES (?, 900, ?, ?)",
+            (server_id, INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID),
         )
         await db.execute(
             "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
@@ -327,10 +371,18 @@ async def _count(db_path: str, table: str) -> int:
 
 
 async def _disable(cog: ModuleCog) -> MagicMock:
-    """Run the disable through the confirmation, as a league manager would."""
-    interaction = _make_interaction()
-    await cog._apply_results_disable(interaction, cascade_attendance=False)
+    """Press the confirmation, as the admin who asked, and run the change queue to the end."""
+    attach_queue(cog.bot, cog.bot.db_path, now=NOW)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
+    interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
+    await type(view).confirm(view, interaction, view.confirm)
+    await run_queue(cog.bot)
     return interaction
+
+
+def _left_standing(reply: str) -> list[str]:
+    """The link of every message the reply names as left standing, in the order named."""
+    return re.findall(r"https://discord\.com/channels/\S+", reply)
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +390,7 @@ async def _disable(cog: ModuleCog) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
     """The three awaiting states, the whole of the dead end."""
     for status in (
@@ -357,6 +410,7 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
         assert await SeasonService(db_path).all_divisions_finished() is True, status
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> None:
     """NOT_RUN waits on its own moment, not on results.
 
@@ -375,6 +429,7 @@ async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> Non
     assert await _division_status(db_path, division_id) == "ACTIVE"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_cancelled_round_is_left_alone(tmp_path) -> None:
     db_path, _, (cancelled,) = await _seed(tmp_path, round_statuses=("CANCELLED",))
     await _disable(_make_cog(db_path))
@@ -382,6 +437,7 @@ async def test_a_cancelled_round_is_left_alone(tmp_path) -> None:
     assert await _round_status(db_path, cancelled) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_cancelled_division_s_rounds_are_left_alone(tmp_path) -> None:
     """A cancelled division was called off; the disable has no business reopening its books."""
     db_path, _, (round_id,) = await _seed(
@@ -392,6 +448,7 @@ async def test_a_cancelled_division_s_rounds_are_left_alone(tmp_path) -> None:
     assert await _round_status(db_path, round_id) == "AWAITING_RESULTS"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_season_not_yet_running_has_nothing_closed_or_deleted(tmp_path) -> None:
     """Between seasons the disable is the cheap thing it always was."""
     db_path, _, (round_id,) = await _seed(
@@ -403,6 +460,7 @@ async def test_a_season_not_yet_running_has_nothing_closed_or_deleted(tmp_path) 
     assert await _count(db_path, "session_results") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_every_closed_round_is_audited(tmp_path) -> None:
     db_path, _, _ = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS")
@@ -423,6 +481,7 @@ async def test_every_closed_round_is_audited(tmp_path) -> None:
     assert {r["new_value"] for r in rows} == {"FINAL"}
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_purge_is_audited_with_what_it_took(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     await _disable(_make_cog(db_path))
@@ -437,6 +496,9 @@ async def test_the_purge_is_audited_with_what_it_took(tmp_path) -> None:
     recorded = json.loads(row["new_value"])
     assert recorded["sessions"] == 1
     assert recorded["rounds_closed"] == 1
+    # Saved with the switch-off, before any is tried: the messages to remove, not those removed.
+    assert recorded["messages"] == 3
+    assert "left_standing" not in recorded
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +506,7 @@ async def test_the_purge_is_audited_with_what_it_took(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_every_result_of_the_season_is_deleted(tmp_path) -> None:
     db_path, _, _ = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS")
@@ -462,6 +525,7 @@ async def test_every_result_of_the_season_is_deleted(tmp_path) -> None:
         assert await _count(db_path, table) == 0, table
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_verdict_does_not_block_the_delete(tmp_path) -> None:
     """penalty_records points into race_session_results with no ON DELETE CASCADE.
 
@@ -472,13 +536,14 @@ async def test_a_verdict_does_not_block_the_delete(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_APPEAL_VERDICTS",))
     assert await _count(db_path, "penalty_records") == 1
 
-    report = await purge_season_results(db_path, _make_bot(db_path))
+    interaction = await _disable(_make_cog(db_path))
 
-    assert report["sessions"] == 1
+    assert "1 session result(s)" in updated_reply(interaction)
     assert await _count(db_path, "penalty_records") == 0
     assert await _count(db_path, "appeal_records") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_posted_results_and_standings_are_unposted(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
@@ -490,6 +555,7 @@ async def test_the_posted_results_and_standings_are_unposted(tmp_path) -> None:
     assert sorted(standings_channel.deleted_messages) == [2000, 3000]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_announced_verdicts_are_taken_down(tmp_path) -> None:
     """**The verdicts go with the results** (decided 2026-09-21, issue #189).
 
@@ -502,26 +568,28 @@ async def test_announced_verdicts_are_taken_down(tmp_path) -> None:
     await _announce(db_path, "appeal_records", 6001)
     cog = _make_cog(db_path)
 
-    report = await purge_season_results(db_path, cog.bot)
+    interaction = await _disable(cog)
 
     assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 6001]
-    assert report["verdicts"] == 2
+    assert "2 verdict(s) removed" in updated_reply(interaction)
     assert await _count(db_path, "penalty_records") == 0
     assert await _count(db_path, "appeal_records") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_verdict_goes_by_every_chunk_it_recorded(tmp_path) -> None:
     """By the list written when it was posted, as every other posting is (#345)."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001, chunks=[5001, 5002])
     cog = _make_cog(db_path)
 
-    report = await purge_season_results(db_path, cog.bot)
+    interaction = await _disable(cog)
 
     assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 5002]
-    assert report["verdicts"] == 1
+    assert "1 verdict(s) removed" in updated_reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -> None:
     """A channel deleted since a verdict went out holds nothing the bot could remove. That one
     is passed over and not counted, the next verdict is still taken down, and every record goes
@@ -531,9 +599,9 @@ async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -
     await _announce(db_path, "appeal_records", 6001)
     cog = _make_cog(db_path)
 
-    report = await purge_season_results(db_path, cog.bot)
+    interaction = await _disable(cog)
 
-    assert report["verdicts"] == 1
+    assert "1 verdict(s) removed" in updated_reply(interaction)
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
     assert await _count(db_path, "penalty_records") == 0
     assert await _count(db_path, "appeal_records") == 0
@@ -543,6 +611,7 @@ def _link(channel_id: int, message_id: int) -> str:
     return f"https://discord.com/channels/{SERVER_ID}/{channel_id}/{message_id}"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
 
@@ -555,13 +624,14 @@ async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
 
-    report = await purge_season_results(db_path, cog.bot)
+    reply = updated_reply(await _disable(cog))
 
-    assert report["verdicts"] == 1
-    assert report["left_standing"] == [_link(VERDICTS_CHANNEL_ID, 5001)]
+    assert "1 verdict(s) removed" in reply
+    assert _left_standing(reply) == [_link(VERDICTS_CHANNEL_ID, 5001)]
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
     """The results and standings messages go by the same rule as the verdicts: counted only
     where they went, and linked where they did not."""
@@ -569,12 +639,14 @@ async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
 
-    report = await purge_season_results(db_path, cog.bot)
+    reply = updated_reply(await _disable(cog))
 
-    assert report["left_standing"] == [_link(RESULTS_CHANNEL_ID, 1000)]
-    assert report["messages"] == 2  # the two standings messages, and not the results one
+    assert _left_standing(reply) == [_link(RESULTS_CHANNEL_ID, 1000)]
+    # the two standings messages, and not the results one
+    assert "2 results and standings message(s)" in reply
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     """The image flow posts the constructors' table as a message of its own, and it is named
     on its own where it stays."""
@@ -582,13 +654,14 @@ async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[STANDINGS_CHANNEL_ID].refuse = {3000}
 
-    report = await purge_season_results(db_path, cog.bot)
+    reply = updated_reply(await _disable(cog))
 
-    assert report["left_standing"] == [_link(STANDINGS_CHANNEL_ID, 3000)]
-    assert report["messages"] == 2
+    assert _left_standing(reply) == [_link(STANDINGS_CHANNEL_ID, 3000)]
+    assert "2 results and standings message(s)" in reply
     assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages == [2000]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
     """End to end: the verdict the bot could not remove is the one the reply links."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
@@ -598,11 +671,12 @@ async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
 
     interaction = await _disable(cog)
 
-    reply = interaction.followup.send.await_args.args[0]
+    reply = updated_reply(interaction)
     assert "1 message(s) could not be removed" in reply
     assert _link(VERDICTS_CHANNEL_ID, 5001) in reply
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
     """A manager got there first. Nothing is left to remove, so nothing is named."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
@@ -610,12 +684,14 @@ async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].gone = {5001}
 
-    report = await purge_season_results(db_path, cog.bot)
+    reply = updated_reply(await _disable(cog))
 
-    assert report["verdicts"] == 1
-    assert report["left_standing"] == []
+    assert "1 verdict(s) removed" in reply
+    assert "could not be removed" not in reply
+    assert _left_standing(reply) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
     """Linked like any other message, and not forgotten: forgetting a banner still standing
     would leave nothing to say it was ever there."""
@@ -624,12 +700,13 @@ async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {7001}
 
-    report = await purge_season_results(db_path, cog.bot)
+    reply = updated_reply(await _disable(cog))
 
-    assert report["left_standing"] == [_link(VERDICTS_CHANNEL_ID, 7001)]
+    assert _left_standing(reply) == [_link(VERDICTS_CHANNEL_ID, 7001)]
     assert await _count(db_path, "verdict_banner_messages") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_verdict_banner_is_taken_down_and_forgotten(tmp_path) -> None:
     """A banner is a message of its own above the cards, and left behind it would head an empty
     run. Its record goes with it, or it would name a message that no longer exists."""
@@ -638,12 +715,13 @@ async def test_the_verdict_banner_is_taken_down_and_forgotten(tmp_path) -> None:
     await _banner(db_path, round_id, 7001)
     cog = _make_cog(db_path)
 
-    await purge_season_results(db_path, cog.bot)
+    await _disable(cog)
 
     assert sorted(cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages) == [5001, 7001]
     assert await _count(db_path, "verdict_banner_messages") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_banner_over_a_sanction_card_stays(tmp_path) -> None:
     """An auto-sack or auto-reserve card is the attendance module's, recorded nowhere, and stays
     where it is — so the banner over it stays too, as an amendment keeps it (2026-09-21)."""
@@ -651,12 +729,13 @@ async def test_a_banner_over_a_sanction_card_stays(tmp_path) -> None:
     await _banner(db_path, round_id, 7001, heads_sanctions=True)
     cog = _make_cog(db_path)
 
-    await purge_season_results(db_path, cog.bot)
+    await _disable(cog)
 
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == []
     assert await _count(db_path, "verdict_banner_messages") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     """A wizard left running would go on collecting results into a module that is off."""
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
@@ -664,21 +743,35 @@ async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     submission_channel = _FakeChannel(8000)
     cog.bot.channels[8000] = submission_channel
 
-    report = await purge_season_results(db_path, cog.bot)
+    await _disable(cog)
 
-    assert report["submission_channels"] == 1
     assert submission_channel.deleted is True
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_guild_out_of_cache_still_erases_the_rows(tmp_path) -> None:
-    """A bot that cannot reach the messages is not a reason to half-erase the season."""
+    """A bot that cannot reach the messages is not a reason to half-erase the season.
+
+    Nor to leave the league guessing what is still posted: every message is named with its link,
+    built from the ids saved with the switch-off and the league's server as the bot records it,
+    for removal by hand, and none is counted as removed (#439).
+    """
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    await _disable(_make_cog(db_path, guild=False))
+    interaction = await _disable(_make_cog(db_path, guild=False))
 
     assert await _count(db_path, "session_results") == 0
     assert await _count(db_path, "driver_standings_snapshots") == 0
+    reply = updated_reply(interaction)
+    assert "3 message(s) could not be removed" in reply
+    assert sorted(_left_standing(reply)) == sorted([
+        _link(RESULTS_CHANNEL_ID, 1000),
+        _link(STANDINGS_CHANNEL_ID, 2000),
+        _link(STANDINGS_CHANNEL_ID, 3000),
+    ])
+    assert "0 results and standings message(s)" in reply
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_missing_channel_does_not_abort_the_purge(tmp_path) -> None:
     """A results channel deleted by hand must not leave the standings behind."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
@@ -691,6 +784,7 @@ async def test_a_missing_channel_does_not_abort_the_purge(tmp_path) -> None:
     assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages != []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_configuration_survives(tmp_path) -> None:
     """Settings are not output. The bot has always promised these come back untouched."""
     db_path, division_id, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
@@ -748,14 +842,17 @@ async def test_the_warning_says_verdicts_are_taken_down(tmp_path) -> None:
     assert "cannot take those back" not in warning
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_confirming_erases_the_season(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     cog = _make_cog(db_path)
+    attach_queue(cog.bot, db_path, now=NOW)
     view = _ConfirmDisableResultsView(
         cog, ACTOR_ID, cascade_attendance=False
     )
 
-    await view.confirm.callback(_make_interaction())
+    await view.confirm.callback(member_interaction(cog.bot, user=member(ACTOR_ID)))
+    await run_queue(cog.bot)
 
     assert await _round_status(db_path, round_id) == "FINAL"
     assert await _count(db_path, "session_results") == 0
@@ -776,25 +873,28 @@ async def test_cancelling_erases_nothing(tmp_path) -> None:
     assert "nothing was deleted" in interaction.response.send_message.await_args.args[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_names_what_was_destroyed(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     interaction = await _disable(_make_cog(db_path))
 
-    reply = interaction.followup.send.await_args.args[0]
+    reply = updated_reply(interaction)
     assert "This season's results are gone" in reply
     assert "1 round(s) closed with no results" in reply
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_names_the_verdicts_removed(tmp_path) -> None:
     """End to end: the verdict the purge takes down is the one the reply counts."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001)
     interaction = await _disable(_make_cog(db_path))
 
-    reply = interaction.followup.send.await_args.args[0]
+    reply = updated_reply(interaction)
     assert "1 verdict(s) removed" in reply
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:
     """**An amendment outlives the purge otherwise, and cannot be undone** (#345).
 
@@ -816,13 +916,13 @@ async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:
     amend_channel = _FakeChannel(9100)
     cog.bot.channels[9100] = amend_channel
 
-    report = await purge_season_results(db_path, cog.bot)
+    await _disable(cog)
 
-    assert report["amend_channels"] == 1
     assert amend_channel.deleted is True
     assert await _count(db_path, "round_amend_channels") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_open_amendment_is_forgotten_even_with_no_guild(tmp_path) -> None:
     """Deleting the channel needs a guild; forgetting the amendment does not — and a row that
     survived would name a session the purge went on to delete, which the sweep then fails to
@@ -837,6 +937,6 @@ async def test_an_open_amendment_is_forgotten_even_with_no_guild(tmp_path) -> No
         )
         await db.commit()
 
-    await purge_season_results(db_path, _make_cog(db_path, guild=False).bot)
+    await _disable(_make_cog(db_path, guild=False))
 
     assert await _count(db_path, "round_amend_channels") == 0
