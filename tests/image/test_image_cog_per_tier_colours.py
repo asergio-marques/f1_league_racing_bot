@@ -308,7 +308,7 @@ async def test_a_rejected_block_does_not_stop_the_others():
         '<division name="Bad"><colour slot="accent">purple</colour></division>'
         '</palettes>',
     )
-    cog._config_service.set_tier_colours.assert_awaited_once()
+    cog._config_service.set_tier_colours.assert_awaited_once_with("Good", {"accent": "#A78BFA"})
     said = _said(cog)
     assert "Good" in said and "Bad" in said and "not imported" in said
 
