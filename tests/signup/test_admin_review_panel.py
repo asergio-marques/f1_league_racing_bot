@@ -244,10 +244,6 @@ async def test_approving_approves_the_signup(monkeypatch):
     assert "approved" in _replied(interaction)
 
 
-_ROLE_NOT_TOLD = "#482: Approve replies only that the signup was approved, not that the role was not granted"
-
-
-@pytest.mark.xfail(strict=True, reason=_ROLE_NOT_TOLD)
 async def test_approve_tells_the_manager_of_a_driver_role_not_granted(monkeypatch):
     """`approve_signup` returns a sentence where the driver role could not be granted; the
     manager who pressed Approve reads it in the reply, beside the approval, which stands."""

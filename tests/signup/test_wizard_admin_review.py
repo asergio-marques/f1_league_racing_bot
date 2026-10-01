@@ -225,13 +225,6 @@ async def test_a_role_the_bot_cannot_grant_does_not_stop_the_approval(review):
     assert "transition:UNASSIGNED" in review.order
 
 
-_ROLE_NOT_REPORTED = (
-    "#482: a driver role Approve could not grant is left to the host log, and neither the "
-    "manager nor the Approved line is told"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_ROLE_NOT_REPORTED)
 @pytest.mark.parametrize("why", ["role missing", "member left", "Discord refuses"])
 async def test_a_driver_role_not_granted_is_reported_and_the_approval_stands(review, why):
     """The driver role cannot be given: the role has been deleted, the driver has left the

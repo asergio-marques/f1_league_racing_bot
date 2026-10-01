@@ -143,10 +143,13 @@ class AdminReviewView(LeagueView):
         if not ok:
             return
         await interaction.response.defer(ephemeral=True)
-        await _bot.wizard_service.approve_signup(
+        role_note = await _bot.wizard_service.approve_signup(
             _user_id, interaction.guild, interaction.user
         )
-        await interaction.followup.send("✅ Signup approved.", ephemeral=True)
+        reply = "✅ Signup approved."
+        if role_note:
+            reply += f"\n⚠️ {role_note}"
+        await interaction.followup.send(reply, ephemeral=True)
 
     @discord.ui.button(label="Request Changes", style=discord.ButtonStyle.secondary, custom_id="admin_request_changes")
     async def request_changes_button(

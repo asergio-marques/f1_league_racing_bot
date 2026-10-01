@@ -700,28 +700,44 @@ class WizardService:
         discord_user_id: str,
         guild: discord.Guild,
         actor: discord.Member,
-    ) -> None:
+    ) -> str | None:
         """Admin approves the signup (T032).
 
         Grants the driver role, transitions driver to UNASSIGNED,
         and holds the channel for 24 hours before deletion.
         FR-040. The driver role is the league's, read from core (issue #276).
+
+        Returns None where the driver role was given, or none is configured, and otherwise one
+        sentence saying it could not be: the role is gone, the driver has left the server, or
+        Discord refused it. The approval stands, as the core specification's role rules have it.
+        The Approve button tells the manager the sentence, and it is written beneath the
+        Approved line, where it is not left to the host log (#482).
         """
         signup_cfg = await self._signup_svc.get_config()
         if signup_cfg is None:
-            return
+            return None
 
         # Grant the driver role
         server_cfg = await self._league_bot.config_service.get_server_config()
         driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
         member = guild.get_member(int(discord_user_id))
-        if member is not None and driver_role_id:
+        role_note: str | None = None
+        if driver_role_id:
             role = guild.get_role(driver_role_id)
-            if role is not None:
+            if member is None:
+                role_note = "The driver role could not be granted: the driver is no longer on the server."
+            elif role is None:
+                role_note = "The driver role could not be granted: the role no longer exists on the server."
+            else:
                 try:
                     await member.add_roles(role, reason="Signup approved")
                 except discord.HTTPException:
-                    log.warning("approve_signup: could not add the driver role for %s", discord_user_id)
+                    log.warning(
+                        "approve_signup: could not add the driver role for %s",
+                        discord_user_id,
+                        exc_info=True,
+                    )
+                    role_note = "The driver role could not be granted: Discord refused it."
 
         # Compute and persist total_lap_ms before transitioning state
         signup_record = await self._signup_svc.get_record(discord_user_id)
@@ -746,10 +762,14 @@ class WizardService:
         )
 
         driver_named = self._member_named_in(guild, discord_user_id)
-        await self._output_router.post_log(
+        line = (
             f"{actor.display_name} (<@{actor.id}>) | Signup | Approved\n"
-            f"  driver: {driver_named}",
+            f"  driver: {driver_named}"
         )
+        if role_note is not None:
+            line += f"\n  {role_note}"
+        await self._output_router.post_log(line)
+        return role_note
 
     async def reject_signup(
         self,
