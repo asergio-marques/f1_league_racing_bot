@@ -129,6 +129,21 @@ _CORRECTION_PARAMETER_STATES: dict[str, WizardState] = {
     "notes":                WizardState.COLLECTING_NOTES,
 }
 
+#: Each correctable answer by the label its review button shows, which the log names it by:
+#: "Correction submitted: Lap Times". The cog's `CorrectionParameterView._PARAMETERS` carries the
+#: same labels, and its choice line writes them in lower case.
+_CORRECTION_LABELS: dict[str, str] = {
+    "nationality":          "Nationality",
+    "platform":             "Platform",
+    "platform_id":          "Platform ID",
+    "availability":         "Availability",
+    "driver_type":          "Driver Type",
+    "preferred_teams":      "Preferred Teams",
+    "preferred_teammate":   "Preferred Teammate",
+    "lap_times":            "Lap Times",
+    "notes":                "Notes",
+}
+
 #: What `WizardService.select_correction_parameter` returns where the request has ended (D2).
 _CORRECTION_ENDED = "This correction request has ended. Nothing was changed."
 
@@ -2122,7 +2137,7 @@ class WizardService:
         Used by _advance_wizard_in_channel when the _is_correction flag is set in
         draft_answers.  Updates the existing SignupRecord with the corrected
         field(s), transitions driver state, writes the "Correction submitted" line naming the
-        parameter re-collected (the wizard step it stands at), and posts a fresh AdminReviewView.
+        parameter re-collected (the wizard step it stands at) by its review button's label, and posts a fresh AdminReviewView.
         """
         discord_user_id = wizard.discord_user_id
 
@@ -2167,7 +2182,8 @@ class WizardService:
 
         await self._record_signup_line(
             discord_user_id, guild,
-            "Correction submitted" if corrected is None else f"Correction submitted: {corrected}",
+            "Correction submitted" if corrected is None
+            else f"Correction submitted: {_CORRECTION_LABELS[corrected]}",
         )
 
         # Post fresh admin review panel
