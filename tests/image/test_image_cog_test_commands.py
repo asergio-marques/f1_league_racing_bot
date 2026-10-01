@@ -44,10 +44,13 @@ class _Followup:
     def __init__(self) -> None:
         self.messages: list[str] = []
         self.files: list = []
+        #: Every other argument of each send, in order, so a test can see how a part went.
+        self.kwargs: list[dict] = []
 
     async def send(self, content=None, *, files=None, **kwargs):
         self.messages.append(content or "")
         self.files.extend(files or [])
+        self.kwargs.append(kwargs)
 
 
 class _Interaction:
@@ -340,12 +343,14 @@ class TestTheReply:
         assert "Asset directories" not in interaction.followup.messages[0]
 
     @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
-    async def test_the_reply_stays_within_discords_message_limit(self, cog):
+    async def test_the_reply_stays_within_discords_message_limit(self, cog, tmp_path):
         """Forty asset folders that did not resolve must not push a part of the reply past
         what Discord accepts, nor cost the end of the reply: every fault arrives, in as many
-        parts as it needs."""
+        parts as it needs, each seen by the manager alone, with the picture attached once."""
         from leaguebot.image.services.image_preview_service import DirectoryFault
 
+        png = tmp_path / "standings_drivers_template.png"
+        png.write_bytes(b"\x89PNG")
         interaction = _Interaction()
 
         await cog._send_preview(
@@ -361,12 +366,16 @@ class TestTheReply:
                     for n in range(40)
                 ]
             ),
-            outcomes=[("Standings", "standings_drivers_template", _outcome())],
+            outcomes=[
+                ("Standings", "standings_drivers_template", _outcome(png_paths=[png]))
+            ],
         )
 
         parts = interaction.followup.messages
         assert all(len(part) <= 2000 for part in parts)
         assert all(f"`class_{n}`" in "\n".join(parts) for n in range(40))
+        assert all(sent.get("ephemeral") is True for sent in interaction.followup.kwargs)
+        assert len(interaction.followup.files) == 1
 
 
 # ── The twelve, and their parameters (T016, T026, T031) ───────────────────
@@ -721,15 +730,17 @@ class TestTheNoticeBlock:
         assert reply.count("no `marker` image") == 1
 
     @pytest.mark.xfail(strict=True, reason=_CUT_AT_1900)
-    async def test_the_reply_survives_a_render_that_degraded_heavily(self, cog):
+    async def test_the_reply_survives_a_render_that_degraded_heavily(self, cog, tmp_path):
         """Forty notices that do not group make a reply past Discord's limit. It arrives
-        whole, in as many parts as it needs, each within the limit, rather than cut off
-        mid-list."""
+        whole, in as many parts as it needs, each within the limit and seen by the manager
+        alone, rather than cut off mid-list, and the picture is attached once."""
         cog.bot = self._bot()
         notices = [
             self._notice(f"no `team` image for “Team {i}”", f"row_{i}_team")
             for i in range(40)
         ]
+        png = tmp_path / "standings_drivers_template.png"
+        png.write_bytes(b"\x89PNG")
         interaction = _Interaction()
 
         await cog._send_preview(
@@ -737,13 +748,19 @@ class TestTheNoticeBlock:
             title="Standings",
             context=_context(),
             outcomes=[
-                ("Standings", "standings_drivers_template", _outcome(notices=notices))
+                (
+                    "Standings",
+                    "standings_drivers_template",
+                    _outcome(notices=notices, png_paths=[png]),
+                )
             ],
         )
 
         parts = interaction.followup.messages
         assert all(len(part) <= 2000 for part in parts)
         assert all(f"“Team {i}”" in "\n".join(parts) for i in range(40))
+        assert all(sent.get("ephemeral") is True for sent in interaction.followup.kwargs)
+        assert len(interaction.followup.files) == 1
 
     async def test_a_clean_render_says_nothing_about_notices(self, cog):
         cog.bot = self._bot()
