@@ -1183,10 +1183,50 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
         self._bot = bot
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Apply the pasted answers, and record the outcome in the log channel.
+
+        **Test mode, the module and the call are checked again here** (#482, decided
+        2026-10-01). `/attendance test rsvp` checked all three when it opened the form, and a
+        form stands open for minutes: test mode or the module switched off in that time, or the
+        call taken down or posted afresh, and the answers would land on a state the command
+        would have refused. Each is refused, with nothing set.
+
+        A paste with nothing applied is a refusal, its rejected entries the reason; a paste of
+        blank lines asks nothing and records that nothing changed; and a paste with anything
+        applied is a success, naming every entry passed over and a call that could not be
+        redrawn.
+        """
         await interaction.response.defer(ephemeral=True)
 
         from leaguebot.core.db.database import get_connection as _gc
         from leaguebot.attendance.services.rsvp_service import _rebuild_embed_for_round, RsvpView
+
+        form = f"{describe_form(self)} for {self._division_name}"
+        config = await self._bot.config_service.get_server_config()
+        if config is None or not config.test_mode_active:
+            await refuse(
+                interaction,
+                "\u2139\ufe0f Test mode was switched off while this form was open. Nothing was set.",
+                what=form,
+            )
+            return
+        if not await self._bot.module_service.is_attendance_enabled():
+            await refuse(
+                interaction,
+                "\u274c The Attendance module was switched off while this form was open. "
+                "Nothing was set.",
+                what=form,
+            )
+            return
+        current = await self._bot.attendance_service.get_current_embed_message(self._division_id)
+        if current is None or int(current.message_id) != self._embed_message_id:
+            await refuse(
+                interaction,
+                "\u274c The check-in call this form was opened on is no longer standing. "
+                "Nothing was set. Run `/attendance test rsvp` again.",
+                what=form,
+            )
+            return
 
         applied: list[str] = []
         errors: list[str] = []
@@ -1245,9 +1285,12 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
             applied.append(f"`{id_str}` → {new_status.lower()}")
 
         # Rebuild embed once after all updates
+        redrawn = True
         if applied:
             channel = as_text_channel(self._bot.get_channel(self._embed_channel_id))
-            if channel is not None:
+            if channel is None:
+                redrawn = False
+            else:
                 try:
                     msg = await channel.fetch_message(self._embed_message_id)
                     new_embed = await _rebuild_embed_for_round(
@@ -1255,6 +1298,7 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                     )
                     await msg.edit(embed=new_embed, view=RsvpView(round_id=self._round_id))
                 except Exception as exc:
+                    redrawn = False
                     log.warning("_RsvpBulkSetModal: failed to edit embed: %s", exc, exc_info=True)
 
         lines: list[str] = []
@@ -1265,16 +1309,30 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
             )
         if errors:
             lines.append("⚠️ Errors:\n" + "\n".join(f"  • {e}" for e in errors))
+
+        if not applied and errors:
+            await refuse(interaction, "\n".join(lines), what=form, reason="\n".join(errors))
+            return
         await interaction.followup.send("\n".join(lines) or "No valid entries.", ephemeral=True)
 
-        if applied:
-            await self._bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /attendance test rsvp | {len(applied)} update(s)\n"
-                f"  division: {self._division_name}\n"
-                f"  round_id: {self._round_id}\n"
-                f"  changes: {', '.join(applied)}",
+        command = "/attendance test rsvp"
+        if not applied:
+            await _record(
+                self._bot, interaction, command, "Nothing changed",
+                f"division: {self._division_name}", "no entries given",
             )
+            return
+        details = [
+            f"division: {self._division_name}",
+            f"round_id: {self._round_id}",
+            f"updates: {len(applied)}",
+            f"changes: {', '.join(applied)}",
+        ]
+        if errors:
+            details.append("passed over: " + "; ".join(errors))
+        if not redrawn:
+            details.append("call not redrawn")
+        await _record(self._bot, interaction, command, "Success", *details)
 
 
 # ── RSVP button interaction handler (T011 / T012 / T014) ─────────────────────
