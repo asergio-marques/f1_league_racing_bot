@@ -807,7 +807,7 @@ class ImageCog(commands.Cog):
             f"**{normalised} UTC** each day.",
         )
         await _record(
-            self.bot, interaction, DAILY_TOGGLE, "Success", f"time of day: {normalised} UTC"
+            self.bot, interaction, DAILY_TOGGLE, "Success", f"Time of day: {normalised} UTC"
         )
 
     @use_pfp.command(
@@ -829,6 +829,11 @@ class ImageCog(commands.Cog):
             return
 
         enabling = not config.use_pfp
+        refusal = pfp_change_refusal(config, "use_pfp", enabling)
+        if refusal is not None:
+            await refuse(interaction, f"❌ {refusal}", what=describe_command(interaction))
+            return
+
         await self._config_service.set_pfp_flag("use_pfp", enabling)
 
         # The daily job is armed by the master toggle as well as by its own, so that turning
@@ -1438,7 +1443,10 @@ class ImageCog(commands.Cog):
         state = "on" if enable else "off"
         if not await self._config_service.set_flag("per_tier_colour_enabled", enable):
             await self._already_held(
-                interaction, "per-tier colours", state, f"Per-tier colours: {state}"
+                interaction,
+                "the per-tier colours setting",
+                state,
+                f"Per-tier colours: {state}",
             )
             return
         lines = [f"✅ Per-tier colours are now **{'on' if enable else 'off'}**."]
@@ -1614,7 +1622,7 @@ class ImageCog(commands.Cog):
         if not written:
             await self._reply(
                 interaction,
-                f"ℹ️ Nothing changed: every colour named is already **{division}**'s.",
+                f"ℹ️ Nothing changed: every colour named is already held for **{division}**.",
             )
             await _record(
                 self.bot, interaction, "/images config per-tier-bulk-colour", "Nothing changed",
@@ -1622,7 +1630,10 @@ class ImageCog(commands.Cog):
                 *(f"{slot} = {colour}" for slot, colour in colours.items()),
             )
             return
-        lines = [f"✅ **{division}** — {written} colour(s) set."]
+        held = ""
+        if written < len(colours):
+            held = f" ({written} changed, {len(colours) - written} already held)"
+        lines = [f"✅ **{division}** — {len(colours)} colour(s) set{held}."]
         lines += [f"  • `{slot}` = `{colour}`" for slot, colour in colours.items()]
 
         declared = await self._declared_colour_slots()
@@ -1734,13 +1745,17 @@ class ImageCog(commands.Cog):
             written += await self._config_service.set_tier_colours(
                 block.division, block.colours
             )
+        named = sum(len(b.colours) for b in blocks)
 
         lines = []
         if blocks and not written:
             lines.append("ℹ️ Nothing changed: every colour named is already held.")
         elif blocks:
+            held = ""
+            if written < named:
+                held = f" ({written} changed, {named - written} already held)"
             lines.append(
-                f"✅ Imported {written} colour(s) across {len(blocks)} tier(s)."
+                f"✅ Imported {named} colour(s) across {len(blocks)} tier(s){held}."
             )
             lines += [
                 f"  • **{b.division}** — {len(b.colours)} colour(s)" for b in blocks
