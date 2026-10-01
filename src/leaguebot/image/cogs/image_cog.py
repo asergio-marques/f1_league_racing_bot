@@ -892,16 +892,6 @@ class ImageCog(commands.Cog):
             PortraitTimeModal(self, config.pfp_daily_time)
         )
 
-    async def _log(self, interaction: discord.Interaction, detail: str) -> None:
-        """Record a configuration mutation to the calculation log (Principle V)."""
-        try:
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) "
-                f"| /images config | {detail}",
-            )
-        except Exception as exc:  # logging must never break a configuration command
-            log.error("image config log write failed: %s", exc, exc_info=True)
-
     # ── /images config template-directory ─────────────────────────────────
 
     @config.command(
