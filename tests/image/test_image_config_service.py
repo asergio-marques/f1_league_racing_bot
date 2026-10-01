@@ -618,3 +618,118 @@ def test_the_rule_does_not_bind_while_portraits_are_disabled():
     # reachable by command; the rule still declines to invent a refusal for it.
     off = _pfp_config(use_pfp=False, pfp_prerender=True, pfp_daily=False)
     assert pfp_change_refusal(off, "pfp_prerender", False) is None
+
+
+# ── A value already held (#482) ───────────────────────────────────────────
+#
+# A setting given the value it already holds is no change: the setter says so and writes
+# nothing, so the command answers "Nothing changed", as the results and attendance setters do.
+# "Writes nothing" is observed through triggers on a table of the test's own, which count every
+# statement that inserts or updates a row, an update to the same value included.
+
+_HELD_NOT_YET_REPORTED = "#482: an image setter given the value it holds writes it again"
+
+
+async def _count_writes(db_path: str) -> None:
+    """Install the counting triggers on `image_config` and `image_tier_colour`."""
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        await db.execute("CREATE TABLE test_writes (tbl TEXT NOT NULL)")
+        for table, event in (
+            ("image_config", "UPDATE"),
+            ("image_tier_colour", "UPDATE"),
+            ("image_tier_colour", "INSERT"),
+        ):
+            await db.execute(
+                f"CREATE TRIGGER test_{table}_{event.lower()} AFTER {event} ON {table} "
+                f"BEGIN INSERT INTO test_writes (tbl) VALUES ('{table}'); END"
+            )
+        await db.commit()
+
+
+async def _writes(db_path: str) -> int:
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM test_writes")
+        row = await cursor.fetchone()
+    return row["n"]
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
+async def test_set_field_reports_a_held_value_and_writes_nothing(service, db_path):
+    await service.create_with_defaults()
+    assert await service.set_field("template_directory", "resources/custom") is True
+    await _count_writes(db_path)
+
+    assert await service.set_field("template_directory", "resources/custom") is False
+
+    assert await _writes(db_path) == 0
+    assert (await service.get_config()).template_directory == "resources/custom"
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
+async def test_set_flag_reports_a_held_value_and_writes_nothing(service, db_path):
+    await service.create_with_defaults()
+    assert await service.set_flag("per_tier_colour_enabled", True) is True
+    await _count_writes(db_path)
+
+    assert await service.set_flag("per_tier_colour_enabled", True) is False
+
+    assert await _writes(db_path) == 0
+    assert (await service.get_config()).per_tier_colour_enabled is True
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
+async def test_set_tier_colour_reports_a_held_colour_and_writes_nothing(service, db_path):
+    """Held as the league would type it again: the division and slot in another case name the
+    same stored colour."""
+    assert await service.set_tier_colour("Division 1", "accent", "#A78BFA") is True
+    await _count_writes(db_path)
+
+    assert await service.set_tier_colour("division 1", "Accent", "#A78BFA") is False
+
+    assert await _writes(db_path) == 0
+    assert await service.get_tier_palette("Division 1") == {"accent": "#A78BFA"}
+
+
+@pytest.mark.xfail(strict=True, reason=_HELD_NOT_YET_REPORTED)
+async def test_set_tier_colours_counts_only_the_slots_it_changes(service, db_path):
+    """A bulk set returns how many slots it changed: a slot already holding its colour is not
+    one of them, and where every slot named is held, nothing is written at all."""
+    assert await service.set_tier_colours("Division 1", {"accent": "#A78BFA", "wash": "#101418"}) == 2
+    assert await service.set_tier_colours("Division 1", {"accent": "#A78BFA", "wash": "#202428"}) == 1
+    await _count_writes(db_path)
+
+    assert await service.set_tier_colours("Division 1", {"accent": "#A78BFA", "wash": "#202428"}) == 0
+
+    assert await _writes(db_path) == 0
+    assert await service.get_tier_palette("Division 1") == {"accent": "#A78BFA", "wash": "#202428"}
+
+
+# ── A division name colours can be stored under (#482) ────────────────────
+
+_NO_TIER_NAME_RULE = "#482: there is no rule yet for a division name colours cannot be stored under"
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
+@pytest.mark.parametrize("name", ["Division 1", "Pro", "7", "São Paulo"])
+def test_a_division_name_with_a_letter_or_digit_is_accepted(name):
+    from leaguebot.image.services.image_config_service import tier_name_refusal
+
+    assert tier_name_refusal(name) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_TIER_NAME_RULE)
+@pytest.mark.parametrize("name", ["!!!", "—", "   ", ""], ids=["punctuation", "dash", "spaces", "empty"])
+def test_a_division_name_with_no_letter_or_digit_is_refused(name):
+    """Such a name has no slug to store colours under. It is the league's entry at fault, not
+    the bot, and the refusal says so before anything is written."""
+    from leaguebot.image.services.image_config_service import tier_name_refusal
+
+    refusal = tier_name_refusal(name)
+
+    assert refusal is not None
+    assert "is not a division name the bot can store colours under" in refusal
+    assert "fault in the bot" not in refusal
