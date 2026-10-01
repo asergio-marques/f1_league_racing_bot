@@ -1288,13 +1288,16 @@ class _RsvpBulkSetModal(LeagueModal, title="Bulk Set RSVP Statuses"):
                 )
                 continue
 
-            await self._bot.attendance_service.upsert_rsvp_status(
+            saved = await self._bot.attendance_service.upsert_rsvp_status(
                 round_id=self._round_id,
                 division_id=self._division_id,
                 driver_profile_id=driver_profile_id,
                 status=new_status,
                 now=now,
             )
+            if not saved:
+                errors.append(f"Line {line_no}: the answer for `{id_str}` could not be saved")
+                continue
             applied.append(f"`{id_str}` → {new_status.lower()}")
 
         # Rebuild embed once after all updates

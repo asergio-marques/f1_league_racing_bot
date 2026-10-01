@@ -602,11 +602,7 @@ async def test_a_call_redrawn_is_not_named_as_failed(tmp_path):
 # An entry the service did not save is passed over, not applied (#482)
 # ---------------------------------------------------------------------------
 
-#: Why the tests below fail until the form reads what `upsert_rsvp_status` reports.
-_UNSAVED_COUNTED = "#482: the form counts an entry as applied whether or not it was saved"
 
-
-@pytest.mark.xfail(strict=True, reason=_UNSAVED_COUNTED)
 async def test_an_entry_not_saved_is_passed_over(tmp_path):
     """An answer the bot did not save is reported and passed over like any other entry that
     cannot be applied: it is neither counted, listed nor logged as applied."""
@@ -629,7 +625,6 @@ async def test_an_entry_not_saved_is_passed_over(tmp_path):
     assert "Line 2:" in passed_over and "900000002" in passed_over
 
 
-@pytest.mark.xfail(strict=True, reason=_UNSAVED_COUNTED)
 async def test_a_paste_with_nothing_saved_is_refused(tmp_path):
     """A paste none of whose answers was saved changed nothing: it is answered as a paste with
     nothing applied, the call is not redrawn, and one refusal line lists every entry."""
