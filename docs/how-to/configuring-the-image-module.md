@@ -536,7 +536,7 @@ does several tiers at once. Attach an XML file, or leave `file` off and paste th
 
 > **A slot you leave out keeps the colour it had.** Both are merges. Pasting three colours corrects those three; it does not wipe the other seven.
 
-> **One bad tier does not spoil the rest.** Each `<division>` is taken on its own: a block with a colour it cannot read, no name, or the same name twice is skipped and reported, and the others still import. A tier is never left half-set. A file that is not valid XML at all is refused outright.
+> **One bad tier does not spoil the rest.** Each `<division>` is taken on its own: a block with a colour it cannot read, no name, or the same name twice (spelt differently if you like: "Division 1" and "Division-1" are one tier) is skipped and reported, and the others still import. A tier is never left half-set. A file that is not valid XML at all is refused outright.
 
 Both tell you exactly what went in and what did not. A division name with no letter or digit in it cannot be stored under, so it is refused (a block in an import is passed over like any other bad block). Colours that are all held already change nothing, and the bot says so.
 

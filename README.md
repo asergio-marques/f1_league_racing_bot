@@ -2638,7 +2638,7 @@ Colours are stored whether or not the feature is on and whether or not a templat
 
 > **A slot you do not mention keeps the colour it had.** Both are merges, not replacements, so a partial paste corrects part of a scheme rather than wiping the rest of it.
 
-> **An import takes each division separately.** A block that cannot be read — an unnamed tier, a bad colour, a tier named twice — is rejected whole and reported, and the other tiers still import. A division is never half-applied. A payload that is not valid XML at all is refused outright, since nothing can be salvaged from it.
+> **An import takes each division separately.** A block that cannot be read — an unnamed tier, a bad colour, a tier named twice, even spelt two ways ("Division 1" and "Division-1" are one tier) — is rejected whole and reported, and the other tiers still import. A division is never half-applied. A payload that is not valid XML at all is refused outright, since nothing can be salvaged from it.
 
 **Choosing a whole palette by hand is the hard part, so there is a tool for it.** `tools/tier_palette.py` takes one accent, reads the rest of the palette out of your own drawing, and prints the `per-tier-set-colour` commands for a division — keeping each colour's lightness, giving it the accent's hue, and cutting its colourfulness to a third so the greys stay grey. It changes nothing; it prints commands. See [the image module guide](docs/how-to/configuring-the-image-module.md) for when to reach for it.
 

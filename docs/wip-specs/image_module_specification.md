@@ -172,6 +172,7 @@ For this purpose, the Discord bot shall require three new dependencies: one with
     - The payload shall carry a "division" block per tier, named by an attribute, holding a "colour" element per slot named by a "slot" attribute.
     - A payload that cannot be parsed shall be refused whole and nothing shall be stored, there being nothing to salvage from it.
     - Otherwise **the division shall be the unit of atomicity**: a block naming no division, naming one twice, carrying a slot or colour that cannot be read, or carrying no colours at all, shall be rejected in its entirety while every other block is imported. A division shall never be half-applied.
+    - A tier is told by the name it is stored under, not by its spelling (2026-10-01): a block naming a tier already named earlier in the payload under another spelling ("Division 1" and "Division-1") shall be passed over like one naming it twice, the reason naming the earlier block, and only the first shall be stored.
     - The reply shall name every tier imported and every block rejected, with the reason for each.
     - Both the success and the failure of an import shall be recorded in the log channel.
     - An attached file shall be refused where it is empty, where it is not UTF-8, or where it exceeds the size the module sets for it, the size being checked before the file is read.
