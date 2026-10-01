@@ -31,10 +31,11 @@ def clear_in_memory_state(bot: LeagueBot) -> None:
     if season_cog is not None:
         season_cog.clear_pending()
 
-    # A reason being awaited from an admin, keyed by the channel it is awaited in.
-    from leaguebot.signup.cogs import admin_review_cog
+    # A reason being awaited from an admin, keyed by the channel it is awaited in, and the
+    # five-minute lapse that would otherwise fire into a league that has changed.
+    from leaguebot.signup.cogs.admin_review_cog import clear_pending_reasons
 
-    admin_review_cog._PENDING_REASONS.clear()
+    clear_pending_reasons()
 
     # A correction-parameter timeout, which would otherwise fire into a wizard that has gone.
     wizard_service = getattr(bot, "wizard_service", None)

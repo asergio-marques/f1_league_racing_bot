@@ -9,6 +9,7 @@ T035: CorrectionParameterView (one button per collectable parameter)
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -18,13 +19,69 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, Handler, LeagueView, channel_id_of, guild_of, is_foreign_guild
-from leaguebot.core.utils.log_lines import interaction_member, refuse
+from leaguebot.core.utils.log_lines import interaction_member, record_abandoned, refuse
 
 log = logging.getLogger(__name__)
 
 # Maps (channel_id, admin_user_id) → pending action context.
 # Used to capture the admin's reason message before executing the action.
+#
+# **A pending reason lapses after five minutes** (`_REASON_LAPSE_SECONDS`), and nothing is done:
+# the manager is told, one lapse line is written, and the signup still awaits review. The
+# lapse is an asyncio task kept in the entry under "lapse" — never a bare `create_task`, whose
+# reference the loop does not hold, and never an APScheduler job, which would outlive a restart
+# that drops the entry. It acts only while its own entry is the one pending, so a later press
+# that has put another in its place is left to its own five minutes; a reason that arrives takes
+# the entry and cancels the task. A restart drops a pending reason unrecorded: the store is in
+# memory, and the press that began it has been logged. `clear_pending_reasons` drops every entry
+# and cancels every lapse, so a pack or a factory reset leaves none to fire into a changed league.
 _PENDING_REASONS: dict[tuple[int, int], dict] = {}
+
+#: How long a manager has to type the reason after pressing Reject or Request Changes.
+_REASON_LAPSE_SECONDS = 5 * 60
+
+
+def clear_pending_reasons() -> None:
+    """Drop every pending reason and cancel its five-minute lapse, so none fires after.
+
+    Called by `clear_in_memory_state`, for `/bot pack` and `/bot factory-reset`.
+    """
+    for entry in _PENDING_REASONS.values():
+        lapse = entry.get("lapse")
+        if lapse is not None:
+            lapse.cancel()
+    _PENDING_REASONS.clear()
+
+
+async def _lapse_pending_reason(key: tuple[int, int], entry: dict) -> None:
+    """After `_REASON_LAPSE_SECONDS`, end the pending *entry* unanswered: tell the manager, record
+    the lapse naming them, and leave the signup awaiting review.
+
+    Acts only while *entry* is still the one pending under *key*: a reason that arrived has
+    taken it, and a later press has replaced it.
+    """
+    await asyncio.sleep(_REASON_LAPSE_SECONDS)
+    if _PENDING_REASONS.get(key) is not entry:
+        return
+    del _PENDING_REASONS[key]
+    interaction: discord.Interaction = entry["interaction"]
+    followup: discord.Webhook = entry["followup"]
+    label: str = entry["label"]
+    nothing_done = "Nothing was rejected" if entry["action"] == "reject" else "No changes were requested"
+    try:
+        await followup.send(
+            f"⌛ No reason arrived within five minutes. {nothing_done}; the signup still awaits review.",
+            ephemeral=True,
+        )
+    except Exception:  # noqa: BLE001 — the lapse is still recorded
+        log.warning("could not tell the manager that their %s reason lapsed", label, exc_info=True)
+    await record_abandoned(
+        bot_of(interaction),
+        entry["actor"],
+        what=f"the “{label}” button of {_review_owner(interaction, entry['discord_user_id'])} signup review",
+        lapsed=True,
+        detail=f"{nothing_done}; the signup still awaits review. Press {label} again to give a reason.",
+    )
 
 
 def _review_owner(interaction: discord.Interaction, owner_id: str | None) -> str:
@@ -164,22 +221,29 @@ class AdminReviewView(LeagueView):
         The entry keeps the press's own interaction, through which the reason step answers the
         manager and records what became of it, and the press is written to the log channel
         ("Manager (<@id>) | the “Reject” button of Alex's signup review | Asked for a reason").
+        The reason lapses after five minutes (`_PENDING_REASONS`).
         """
         await interaction.response.defer(ephemeral=True)
-        _PENDING_REASONS[(channel_id_of(interaction), interaction.user.id)] = {
+        key = (channel_id_of(interaction), interaction.user.id)
+        entry: dict = {
             "action": action,
+            "label": label,
             "discord_user_id": user_id,
             "actor": interaction.user,
             "guild": interaction.guild,
             "interaction": interaction,
             "followup": interaction.followup,
         }
+        _PENDING_REASONS[key] = entry
         await interaction.followup.send(prompt, ephemeral=True)
         await bot_of(interaction).output_router.post_log(
             f"{interaction_member(interaction)} | "
             f"the “{label}” button of {_review_owner(interaction, user_id)} signup review | "
             "Asked for a reason"
         )
+        # Started last, so the lapse's line can never come before the press's own.
+        if _PENDING_REASONS.get(key) is entry:
+            entry["lapse"] = asyncio.create_task(_lapse_pending_reason(key, entry))
 
     @discord.ui.button(label="Request Changes", style=discord.ButtonStyle.secondary, custom_id="admin_request_changes")
     async def request_changes_button(
@@ -288,6 +352,9 @@ class AdminReviewCog(commands.Cog):
         pending = _PENDING_REASONS.pop(key, None)
         if pending is None:
             return
+        lapse = pending.get("lapse")
+        if lapse is not None:
+            lapse.cancel()
 
         reason = message.content.strip() or "No specific reason given."
 

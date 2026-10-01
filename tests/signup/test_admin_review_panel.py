@@ -459,9 +459,6 @@ async def test_another_member_s_message_does_not_answer_the_prompt():
 NEGATIVE = [("request_changes_button", "Request Changes"), ("reject_button", "Reject")]
 NEGATIVE_IDS = ["request-changes", "reject"]
 
-_PRESS_NOT_RECORDED = (
-    "#482: Reject and Request Changes park only the followup, write no line, and never lapse"
-)
 _REASON_FAULT_ESCAPES = (
     "#482: a fault in the reason step escapes on_message instead of being reported through the press"
 )
@@ -506,7 +503,6 @@ async def test_the_negative_buttons_write_their_press_line_and_park_the_press(
     assert _PENDING_REASONS[(CHANNEL_ID, MANAGER_ID)]["interaction"] is interaction
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
 @pytest.mark.parametrize("button,label", NEGATIVE, ids=NEGATIVE_IDS)
 async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untouched(
     monkeypatch, button, label
@@ -540,7 +536,6 @@ async def test_a_reason_not_given_in_five_minutes_lapses_and_the_driver_is_untou
     bot.wizard_service.request_changes.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
 async def test_a_reason_given_in_time_cancels_the_lapse(monkeypatch):
     """The reason takes the entry and cancels its lapse, so no lapse follows the rejection."""
     _permitted(monkeypatch, True)
@@ -557,7 +552,6 @@ async def test_a_reason_given_in_time_cancels_the_lapse(monkeypatch):
     assert not any(text.startswith("⌛") for text in _sent(interaction))
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
 async def test_a_lapse_whose_entry_was_replaced_does_nothing(monkeypatch):
     """A lapse acts only while its own entry is the one pending: a later press has put
     another in its place, and that one is left for its own five minutes."""
@@ -576,7 +570,6 @@ async def test_a_lapse_whose_entry_was_replaced_does_nothing(monkeypatch):
     assert not any(text.startswith("⌛") for text in _sent(interaction))
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_NOT_RECORDED)
 async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(monkeypatch):
     """`/bot pack` and `/bot factory-reset` clear the league's state in memory: every pending
     reason goes, and its lapse with it, so no lapse fires into a league that has changed."""

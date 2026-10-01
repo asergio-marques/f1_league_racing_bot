@@ -82,12 +82,6 @@ def test_the_register_names_no_store_that_does_not_exist():
     assert sorted((CLEARED | EXEMPT) - _stores()) == []
 
 
-_LAPSE_LEFT_RUNNING = (
-    "#482: the clear drops each pending reason without cancelling its five-minute lapse"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_LAPSE_LEFT_RUNNING)
 async def test_the_clear_empties_every_store():
     """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
     so none fires after a pack or a factory reset (#482)."""
