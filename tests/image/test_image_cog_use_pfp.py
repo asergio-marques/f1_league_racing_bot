@@ -480,6 +480,18 @@ _CHANGED_SINCE_OPENING = [
     ),
 ]
 
+#: The same, as the Confirm button answers them: a confirmation is not a form, so its
+#: module refusal says "while this was open", as the other two do.
+_CONFIRM_CHANGED_SINCE_OPENING = [
+    pytest.param(
+        "module_enabled",
+        False,
+        "❌ The Image module was switched off while this was open. Nothing was stored.",
+        id="module-switched-off",
+    ),
+    *_CHANGED_SINCE_OPENING[1:],
+]
+
 
 def _change_since_opening(bot, setting, value) -> None:
     """Another manager changed *setting* to *value* while the form or confirmation was open."""
@@ -490,7 +502,7 @@ def _change_since_opening(bot, setting, value) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_RECHECKED)
-@pytest.mark.parametrize(("setting", "value", "reply"), _CHANGED_SINCE_OPENING)
+@pytest.mark.parametrize(("setting", "value", "reply"), _CONFIRM_CHANGED_SINCE_OPENING)
 async def test_confirm_writes_nothing_once_things_changed_since_opening(setting, value, reply):
     cog, bot = _cog(use_pfp=True)
     view, _submitted = await _confirmation(cog, bot)
