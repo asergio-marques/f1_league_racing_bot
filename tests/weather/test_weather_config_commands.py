@@ -203,10 +203,6 @@ def _assert_one_refusal_line(cog: WeatherCog, interaction, command) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#482: the module refusal spells the Weather module in lower case and is not recorded",
-)
 @pytest.mark.parametrize("command, setter, value, _log", COMMANDS, ids=COMMAND_IDS)
 async def test_command_is_refused_while_the_weather_module_is_disabled(
     command, setter, value, _log

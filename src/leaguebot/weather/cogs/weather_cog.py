@@ -100,7 +100,7 @@ class WeatherCog(commands.Cog):
         """
         if await self.bot.module_service.is_weather_enabled():
             return True
-        reply = "❌ The weather module is not enabled."
+        reply = "❌ The Weather module is not enabled."
         if record:
             await refuse(interaction, reply, what=describe(interaction))
         else:
