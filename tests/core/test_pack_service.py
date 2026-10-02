@@ -345,3 +345,31 @@ async def test_a_refused_pack_records_nothing(db_path):
 
     rows = await _all(db_path, "SELECT change_type FROM audit_entries")
     assert [r["change_type"] for r in rows] == ["X"]
+
+
+# ── The change queue (#439) ────────────────────────────────────────────────
+
+
+async def test_pack_drops_every_unfinished_change(db_path):
+    """A change left waiting would go on changing Discord on a server the bot no longer serves;
+    the finished ones are history and stay."""
+    await _seed(db_path)
+    async with get_connection(db_path) as db:
+        for state in ("QUEUED", "RUNNING", "WAITING", "DONE", "REFUSED", "DROPPED", "FAULTED"):
+            cursor = await db.execute(
+                "INSERT INTO queued_changes (kind, dedup_key, origin, state, what) "
+                "VALUES ('dummy', ?, 'MEMBER', ?, '`/dummy`')",
+                (state, state),
+            )
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name) VALUES (?, 0, ?)",
+                (cursor.lastrowid, state),
+            )
+        await db.commit()
+
+    await pack(db_path, _scheduler(), **ACTOR)
+
+    kept = [r[0] for r in await _all(db_path, "SELECT state FROM queued_changes ORDER BY id")]
+    assert kept == ["DONE", "REFUSED", "DROPPED", "FAULTED"]
+    steps = [r[0] for r in await _all(db_path, "SELECT name FROM queued_change_steps ORDER BY name")]
+    assert steps == ["DONE", "DROPPED", "FAULTED", "REFUSED"]

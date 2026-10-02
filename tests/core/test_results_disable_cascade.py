@@ -7,7 +7,9 @@ switch it back on until the season ended — without ever being told it had happ
 
 The command now warns first wherever attendance is enabled, writes nothing until the league
 confirms, and names both modules in the reply that follows. Where attendance is already off
-there is nothing to warn about and the command behaves exactly as it always did.
+there is nothing to warn about and the command behaves exactly as it always did. Either way the
+disable is carried out on the change queue (#439): the manager is told at once that it is under
+way, and that reply is updated with what went once it is done.
 
 `core_specification.md` — "Where a module's specification states that another module depends
 upon it, disabling it shall disable the dependent module too, and that cascade shall be
@@ -19,6 +21,7 @@ calls `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 def
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,9 +29,26 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.services.season_service import SeasonService
+from tests.support.change_queue import (
+    INTERACTION_CHANNEL_ID,
+    LOG_CHANNEL_ID,
+    acknowledgement,
+    attach_queue,
+    league_double,
+    member,
+    member_interaction,
+    queued_log_lines,
+    run_queue,
+    updated_reply,
+)
 
 SERVER_ID = 6611
 ACTOR_ID = 4242
+NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+ACKNOWLEDGEMENT = (
+    "⏳ Turning Results & Standings off. This message will be updated when it is done; "
+    "if it takes longer, the log channel will say so."
+)
 
 
 # ---------------------------------------------------------------------------
@@ -45,8 +65,8 @@ async def _make_db(
         await db.execute(
             "INSERT INTO server_configs "
             "(server_id, interaction_role_id, interaction_channel_id, log_channel_id) "
-            "VALUES (?, 100, 200, 300)",
-            (SERVER_ID,),
+            "VALUES (?, 900, ?, ?)",
+            (SERVER_ID, INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID),
         )
         await db.execute(
             "INSERT INTO results_module_config (id, module_enabled) VALUES (?, 1)",
@@ -76,8 +96,22 @@ async def _make_db(
     return db_path
 
 
-def _make_cog(db_path: str, *, attendance_enabled: bool) -> ModuleCog:
+def _make_cog(db_path: str, *, attendance_enabled: bool, queued: bool = False) -> ModuleCog:
+    """A cog whose router and module flags are doubles; with *queued*, the bot as the builder
+    makes it instead: real services, router and change queue on *db_path*, "now" pinned."""
     cog = ModuleCog.__new__(ModuleCog)
+    if queued:
+        from leaguebot.attendance.services.attendance_service import AttendanceService
+        from leaguebot.core.services.module_service import ModuleService
+
+        bot = league_double(db_path)
+        bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+        bot.module_service = ModuleService(db_path)
+        bot.season_service = SeasonService(db_path)
+        bot.attendance_service = AttendanceService(db_path)
+        attach_queue(bot, db_path, now=NOW)
+        cog.bot = bot
+        return cog
     bot = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.db_path = db_path
@@ -115,6 +149,11 @@ def _make_interaction() -> MagicMock:
 def _log_lines(cog: ModuleCog) -> list[str]:
     """Every line written to the log channel."""
     return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+
+
+async def _queued_lines(cog: ModuleCog) -> list[str]:
+    """Every line a queued cog wrote: those the log channel took, then those waiting on a retry."""
+    return list(cog.bot.log_channel.sent) + await queued_log_lines(cog.bot.db_path)
 
 
 async def _module_flags(db_path: str) -> tuple[int, int, int]:
@@ -246,18 +285,19 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
 
 async def test_confirming_disables_both_and_names_both(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = _make_cog(db_path, attendance_enabled=True, queued=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
-    interaction = _make_interaction()
+    interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
     await view.confirm.callback(interaction)
+    await run_queue(cog.bot)
 
     results, attendance, div_rows = await _module_flags(db_path)
     assert results == 0
     assert attendance == 0
     assert div_rows == 0, "the cascade left the per-division channels behind"
 
-    reply = interaction.followup.send.await_args.args[0]
+    reply = updated_reply(interaction)
     assert "Results & Standings module disabled" in reply
     assert "Attendance module disabled" in reply
 
@@ -284,28 +324,51 @@ async def test_only_the_actor_may_confirm(tmp_path):
     ]
 
 
-async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(tmp_path):
-    """The disable goes through, but a season that could not be wound down afterwards is
-    named in its log line as not done, as an unfinished erase already reads "Incomplete"
-    (#482)."""
-    db_path = await _make_db(tmp_path, attendance_enabled=False)
-    cog = _make_cog(db_path, attendance_enabled=False)
-    cog.bot.season_service.wind_down_ongoing = AsyncMock(
-        side_effect=RuntimeError("the scheduler is down")
-    )
-    interaction = _make_interaction()
-    interaction.client = cog.bot
+async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
+    tmp_path, monkeypatch,
+):
+    """The disable goes through, and a season that could not be wound down afterwards is
+    reported in a line of its own: the wind-down is a change of its own, asked for in the
+    switch-off's save, so its fault names it and the switch-off's line carries no "not done"
+    (#439)."""
+    from leaguebot.core.services import hub_service, season_lifecycle_service
 
-    await cog._disable_results(interaction)
+    monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        season_lifecycle_service, "wind_down_ongoing",
+        AsyncMock(side_effect=RuntimeError("the scheduler is down")),
+    )
+    db_path = await _make_db(tmp_path, attendance_enabled=False, season_status="ACTIVE")
+    async with get_connection(db_path) as db:
+        # Placements still open, so the season has the wind-down's work left to do.
+        await db.execute("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = 1")
+        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = 1")
+        await db.execute(
+            "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, format, "
+            "status) VALUES (1, 1, 'Bahrain', '2026-01-01T12:00:00', 'NORMAL', "
+            "'AWAITING_RESULTS')"
+        )
+        await db.commit()
+    cog = _make_cog(db_path, attendance_enabled=False, queued=True)
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
+    interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
+
+    await view.confirm.callback(interaction)
+    await run_queue(cog.bot)
 
     assert (await _module_flags(db_path))[0] == 0
-    lines = [line for line in _log_lines(cog) if "/module disable results" in line]
-    assert len(lines) == 1
-    first, *beneath = lines[0].splitlines()
-    assert first.startswith(f"Admin (<@{ACTOR_ID}>) | /module disable results")
+    lines = await _queued_lines(cog)
+    switch_off = [line for line in lines if "| /module disable results |" in line]
+    assert len(switch_off) == 1
+    first, *beneath = switch_off[0].splitlines()
+    assert first.startswith(f"Admin (`<@{ACTOR_ID}>`) | /module disable results")
+    assert not any(text.startswith("  not done:") for text in beneath)
     assert any(
-        text.startswith("  not done:") and ("wind" in text or "wound" in text)
-        for text in beneath
+        line.startswith(
+            "❌ Winding the season down after `/module disable results` failed for "
+            f"Admin (`<@{ACTOR_ID}>`) — RuntimeError. The details are in the host's log."
+        )
+        for line in lines
     )
 
 
@@ -318,20 +381,22 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     """With attendance off and no season running, the disable costs the league nothing.
 
     It is then the cheap command it always was: no confirmation, nothing deleted, and the
-    module comes straight back when the league next wants it.
+    module comes straight back when the league next wants it. The manager is told at once that
+    it is under way, and that reply is updated once it is done.
     """
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    cog = _make_cog(db_path, attendance_enabled=False)
-    interaction = _make_interaction()
+    cog = _make_cog(db_path, attendance_enabled=False, queued=True)
+    interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
     await cog._disable_results(interaction)
 
-    interaction.response.send_message.assert_not_awaited()
-    interaction.response.defer.assert_awaited()
+    interaction.response.defer.assert_not_awaited()
+    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert "view" not in interaction.response.send_message.await_args.kwargs
+
+    await run_queue(cog.bot)
 
     results, attendance, _ = await _module_flags(db_path)
     assert results == 0
     assert attendance == 0
-
-    reply = interaction.followup.send.await_args.args[0]
-    assert reply == "✅ Results & Standings module disabled."
+    assert updated_reply(interaction) == "✅ Results & Standings module disabled."

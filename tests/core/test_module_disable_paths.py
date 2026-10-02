@@ -20,8 +20,10 @@ moment somebody turned the module back on, against a season that had moved on.
 **Attendance can be disabled two ways, and the audit tells them apart.** A manager switching it
 off is `ATTENDANCE_MODULE_DISABLED`; attendance going off because Results & Standings did is
 `ATTENDANCE_MODULE_CASCADE_DISABLED`. The distinction matters because the second was nobody's
-decision, and a league reading its log needs to see that. The cascade also skips the guard and
-the reply — it has no interaction of its own to answer.
+decision, and a league reading its log needs to see that. Both go through
+`AttendanceService.switch_off_on`, on a connection the caller hands it: the plain disable commits
+it with its own audit, and the cascade is a part of turning Results & Standings off, saved with the
+switch-off on the change queue (#439), where it has no interaction of its own to answer.
 
 **Enabling signup writes a bare configuration row and then names the three commands that fill
 it in.** A module enabled with nothing configured does nothing at all, and the next steps are
@@ -30,16 +32,27 @@ the difference between a league proceeding and a league wondering what happened.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.module_cog import ModuleCog
+from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
+from tests.support.change_queue import (
+    attach_queue,
+    league_double,
+    member,
+    member_interaction,
+    queued_log_lines,
+    run_queue,
+)
 
 SERVER_ID = 11408
 ACTOR_ID = 77
+NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +111,7 @@ def _make_cog(
     bot.module_service.set_signup_enabled = AsyncMock(return_value=None)
     bot.signup_module_service = MagicMock()
     bot.signup_module_service.save_config = AsyncMock(return_value=None)
+    bot.attendance_service = AttendanceService(db_path)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
@@ -144,6 +158,39 @@ async def _division_configs(db_path: str) -> int:
             "SELECT COUNT(*) AS n FROM attendance_division_config",
         )
         return (await cursor.fetchone())["n"]
+
+
+async def _turn_results_off_with_the_cascade(db_path: str):
+    """Results & Standings on, attendance on: the admin confirms turning results off with the
+    cascade, on the bot as the builder makes it, and the change queue runs to the end."""
+    from leaguebot.core.services import hub_service
+    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.season_service import SeasonService
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
+        )
+        await db.commit()
+    bot = league_double(db_path)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
+    bot.module_service = ModuleService(db_path)
+    bot.season_service = SeasonService(db_path)
+    bot.attendance_service = AttendanceService(db_path)
+    attach_queue(bot, db_path, now=NOW)
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = bot
+    view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=True)
+    refresh = hub_service.refresh_panel
+    hub_service.refresh_panel = AsyncMock(return_value=None)
+    try:
+        await type(view).confirm(
+            view, member_interaction(bot, user=member(ACTOR_ID)), view.confirm
+        )
+        await run_queue(bot)
+    finally:
+        hub_service.refresh_panel = refresh
+    return bot
 
 
 async def _attendance_flag(db_path: str) -> int:
@@ -271,53 +318,52 @@ async def test_a_cascade_is_audited_as_a_cascade(tmp_path):
     reading its log needs to see that rather than a disable they cannot account for."""
     db_path = await _make_db(tmp_path)
 
-    await _make_cog(db_path)._disable_attendance(_interaction(), cascade=True)
+    await _turn_results_off_with_the_cascade(db_path)
 
-    assert await _audit_types(db_path) == ["ATTENDANCE_MODULE_CASCADE_DISABLED"]
+    types = await _audit_types(db_path)
+    assert types.count("ATTENDANCE_MODULE_CASCADE_DISABLED") == 1
+    assert "ATTENDANCE_MODULE_DISABLED" not in types
 
 
 async def test_a_cascade_does_the_same_work(tmp_path):
-    """Only the audit type and the reply differ — the module has to end up in the same
-    state either way, or a cascade would leave stale bindings a manual disable clears."""
+    """The cascade and the manual disable switch attendance off through the one call, so the
+    module ends up in the same state either way, or a cascade would leave stale bindings a
+    manual disable clears."""
     db_path = await _make_db(tmp_path, attendance_divisions=2)
 
-    await _make_cog(db_path)._disable_attendance(_interaction(), cascade=True)
+    async with get_connection(db_path) as db:
+        assert await AttendanceService(db_path).switch_off_on(db) is True
+        await db.commit()
 
     assert await _attendance_flag(db_path) == 0
     assert await _division_configs(db_path) == 0
 
 
-async def test_a_cascade_answers_no_interaction_of_its_own(tmp_path):
-    """It is reached from the Results disable, which has already answered the manager.
-    A second reply would be a follow-up to a command nobody ran."""
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
-
-    await _make_cog(db_path)._disable_attendance(interaction, cascade=True)
-
-    assert _replied(interaction) == ""
-
-
 async def test_a_cascade_runs_even_where_attendance_was_already_off(tmp_path):
-    """It skips the guard deliberately — the Results disable cannot know, and running the
-    clear twice is harmless where refusing would leave bindings behind."""
+    """It skips the guard deliberately — clearing twice is harmless where refusing would leave
+    bindings behind — and says attendance was already off."""
     db_path = await _make_db(tmp_path, attendance_divisions=1)
-    cog = _make_cog(db_path, attendance_enabled=False)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE attendance_config SET module_enabled = 0")
+        await db.commit()
 
-    await cog._disable_attendance(_interaction(), cascade=True)
+    async with get_connection(db_path) as db:
+        assert await AttendanceService(db_path).switch_off_on(db) is False
+        await db.commit()
 
     assert await _division_configs(db_path) == 0
 
 
 async def test_a_cascade_is_still_logged_to_the_league(tmp_path):
     """The league must be able to see that attendance went off, even though nobody asked
-    for it."""
+    for it: the cascade's own line, beside the switch-off's."""
     db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
 
-    await cog._disable_attendance(_interaction(), cascade=True)
+    bot = await _turn_results_off_with_the_cascade(db_path)
 
-    cog.bot.output_router.post_log.assert_awaited_once()
+    lines = list(bot.log_channel.sent) + await queued_log_lines(db_path)
+    cascade = [line for line in lines if "| /module disable attendance | Success" in line]
+    assert len(cascade) == 1, lines
 
 
 # ---------------------------------------------------------------------------

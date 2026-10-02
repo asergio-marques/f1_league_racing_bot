@@ -27,6 +27,8 @@ from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 #: The bot, as the one package it is installed as (architecture.md, "How the code is laid out").
 PACKAGE = ROOT / "src" / "leaguebot"
@@ -53,6 +55,8 @@ HANDLERS = "#441"
 #: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
 #: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
 CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
+#: The slices of #439, each moving a set of flows onto the change queue.
+SLICE = {n: f"#439 slice {n}" for n in range(2, 8)}
 
 
 # ── Reading the source ──────────────────────────────────────────────────────────────────────
@@ -187,8 +191,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/cogs/attendance_cog.py", "handle_rsvp_button"): (4, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
     ("core/cogs/bot_cog.py", "_audit"): (2, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._apply_results_disable"): (5, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (4, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_images"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._disable_weather"): (2, PASS["core"]),
@@ -658,6 +661,10 @@ POSTING_ALLOWED = frozenset({"core/services/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
     ("__main__.py", "main.guild_sync"): "the reply to the owner's own `!sync` command",
+    ("core/services/change_queue.py", "ChangeQueue._update_reply"): (
+        "edits the member's own ephemeral acknowledgement, a WebhookMessage the follow-up "
+        "returned, which answers a member and posts in no channel"
+    ),
 }
 
 
@@ -782,7 +789,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "_take_down_cancel_button"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "post_standings"): (1, PASS["results"]),
-    ("results/services/results_purge_service.py", "_close_open_amendments"): (1, PASS["results"]),
     ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._execute_channel_delete"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, PASS["signup"]),
@@ -836,6 +842,7 @@ TABLE_OWNER: dict[str, str] = {
     "driver_accounts": "core", "driver_history_entries": "core",
     "driver_season_assignments": "core", "driver_division_memberships": "core",
     "audit_entries": "core", "pending_messages": "core", "season_review_prompts": "core",
+    "queued_changes": "core", "queued_change_steps": "core",
     # results
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",
@@ -1072,8 +1079,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
     ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_orphaned_submission_channels"): (2, PASS["results"]),
-    ("core/cogs/module_cog.py", "ModuleCog._apply_results_disable"): (1, PASS["core"]),
-    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (2, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
@@ -1243,3 +1248,315 @@ def test_each_table_is_written_by_the_module_that_owns_it():
         _tables_written_by_another_module(),
         KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE,
     )
+
+
+# ── 12. Nothing writes to the database outside a queued change ──────────────────────────────
+
+#: The calls that save: a commit, and a script, which commits as it runs.
+_SAVING_CALLS = frozenset({"commit", "executescript"})
+
+#: Where a save outside a queued change is allowed for good, and why. A function of ``"*"``
+#: allows the whole file.
+SAVES_ALLOWED = {
+    ("core/db/database.py", "run_migrations"): "the migrations, which build the schema",
+    ("core/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
+    ("core/services/change_queue.py", "*"): "the queue's own records of the changes it carries out",
+    ("core/services/retry_service.py", "enqueue"): "the retry queue for log lines",
+    ("core/services/retry_service.py", "mark_delivered"): "the retry queue for log lines",
+    ("core/services/retry_service.py", "mark_failed"): "the retry queue for log lines",
+    ("core/services/backup_service.py", "_write_empty_database"):
+        "writes the scheduler's empty file, not the league's",
+}
+
+
+def _saves_among(nodes) -> Counter[tuple[str, str]]:
+    """The saves among *nodes*, each ``(file, function, node)``, counted by file and function:
+    every `.commit()` and `.executescript()` call. A function writing on a connection handed to
+    it commits nothing and is not counted; the caller that commits is."""
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if (path, function) in SAVES_ALLOWED or (path, "*") in SAVES_ALLOWED:
+            continue
+        if isinstance(node, ast.Call) and _call_name(node) in _SAVING_CALLS:
+            found[(path, function)] += 1
+    return found
+
+
+def _saves_outside_a_change() -> Counter[tuple[str, str]]:
+    return _saves_among(_nodes())
+
+
+KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
+    # The penalty and appeals approvals
+    ("__main__.py", "_recover_orphaned_submission_channels"): (1, SLICE[2]),
+    ("results/services/result_submission_service.py", "finalize_appeals_review"): (1, SLICE[2]),
+    ("results/services/result_submission_service.py", "_apply_staged_appeals"): (1, SLICE[2]),
+    ("results/services/result_submission_service.py", "_apply_approved_reports"): (3, SLICE[2]),
+    ("results/services/result_submission_service.py", "_return_to_review"): (1, SLICE[2]),
+    ("results/services/result_submission_service.py", "_clear_round_verdict_records"): (1, SLICE[2]),
+    ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (1, SLICE[2]),
+    ("results/services/penalty_service.py", "apply_penalties"): (1, SLICE[2]),
+    ("results/services/standings_service.py", "persist_snapshots"): (1, SLICE[2]),
+    ("results/services/results_post_service.py", "delete_and_repost_final_results"): (1, SLICE[2]),
+    ("results/services/results_post_service.py", "_set_standings_message_id"): (1, SLICE[2]),
+    ("results/services/verdict_announcement_service.py", "_record_announcement"): (1, SLICE[2]),
+    ("results/services/verdict_announcement_service.py", "_record_banner"): (1, SLICE[2]),
+    ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, SLICE[2]),
+    ("results/services/verdict_announcement_service.py", "_forget_banners"): (1, SLICE[2]),
+    ("attendance/services/attendance_service.py", "record_attendance_from_results"): (1, SLICE[2]),
+    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, SLICE[2]),
+    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, SLICE[2]),
+    # The amendment approval
+    ("core/services/amendment_service.py", "approve_amendment"): (1, SLICE[3]),
+    ("results/services/results_post_service.py", "_repost_results_rounds"): (1, SLICE[3]),
+    ("results/services/results_post_service.py", "_undo_results_repost"): (1, SLICE[3]),
+    ("attendance/services/attendance_service.py", "record_attendance_from_results_full_recompute"): (1, SLICE[3]),
+    # The season approval, and the round and division cancels
+    ("core/services/season_service.py", "SeasonService.transition_to_active"): (1, SLICE[4]),
+    ("core/services/season_service.py", "SeasonService.commit_placements"): (1, SLICE[4]),
+    ("core/services/season_service.py", "SeasonService.cancel_division"): (1, SLICE[4]),
+    ("core/services/season_service.py", "SeasonService.cancel_round"): (1, SLICE[4]),
+    ("core/services/season_service.py", "SeasonService.close_raced_rounds_for_cancellation"): (1, SLICE[4]),
+    ("core/cogs/season_cog.py", "_ApproveView.bind"): (1, SLICE[4]),
+    ("core/cogs/season_cog.py", "_ApproveView._forget"): (1, SLICE[4]),
+    ("results/services/season_points_service.py", "snapshot_configs_to_season"): (1, SLICE[4]),
+    # The season end
+    ("core/services/season_service.py", "SeasonService.complete_season"): (1, SLICE[5]),
+    ("core/services/season_service.py", "SeasonService.refresh_division_status"): (1, SLICE[5]),
+    ("core/services/season_end_service.py", "_write_driver_history_entries"): (1, SLICE[5]),
+    ("core/services/season_lifecycle_service.py", "run_driver_pass"): (1, SLICE[5]),
+    ("core/services/season_lifecycle_service.py", "turn_down_pending_placements"): (1, SLICE[5]),
+    # The standing posts
+    ("core/services/calendar_post_service.py", "replace_calendar_message"): (1, SLICE[6]),
+    ("core/services/placement_service.py", "PlacementService._refresh_lineup_post"): (1, SLICE[6]),
+    ("attendance/services/attendance_service.py", "post_attendance_sheet"): (1, SLICE[6]),
+    ("weather/services/forecast_cleanup_service.py", "store_forecast_message"): (1, SLICE[6]),
+    ("weather/services/forecast_cleanup_service.py", "delete_forecast_message"): (1, SLICE[6]),
+    ("image/services/image_lineup_post.py", "try_post"): (1, SLICE[6]),
+    ("image/services/image_results_post.py", "try_post"): (1, SLICE[6]),
+    # The results, weather and image settings commands
+    ("results/services/points_config_service.py", "create_config"): (1, SLICE[7]),
+    ("results/services/points_config_service.py", "remove_config"): (1, SLICE[7]),
+    ("results/services/points_config_service.py", "set_fl_bonus"): (1, SLICE[7]),
+    ("results/services/points_config_service.py", "set_fl_position_limit"): (1, SLICE[7]),
+    ("results/services/points_config_service.py", "set_session_points"): (1, SLICE[7]),
+    ("results/services/points_config_service.py", "set_session_points_many"): (1, SLICE[7]),
+    ("results/services/points_config_service.py", "xml_import_config"): (1, SLICE[7]),
+    ("results/services/season_points_service.py", "attach_config"): (1, SLICE[7]),
+    ("results/services/season_points_service.py", "detach_config"): (1, SLICE[7]),
+    ("core/services/amendment_service.py", "enable_amendment_mode"): (1, SLICE[7]),
+    ("core/services/amendment_service.py", "disable_amendment_mode"): (1, SLICE[7]),
+    ("core/services/amendment_service.py", "modify_fl_bonus"): (1, SLICE[7]),
+    ("core/services/amendment_service.py", "modify_fl_position_limit"): (1, SLICE[7]),
+    ("core/services/amendment_service.py", "modify_session_points"): (1, SLICE[7]),
+    ("core/services/amendment_service.py", "revert_modification_store"): (1, SLICE[7]),
+    ("results/cogs/results_cog.py", "ResultsCog.reserves_toggle"): (1, SLICE[7]),
+    ("weather/services/weather_config_service.py", "set_phase_1_days"): (1, SLICE[7]),
+    ("weather/services/weather_config_service.py", "set_phase_2_days"): (1, SLICE[7]),
+    ("weather/services/weather_config_service.py", "set_phase_3_hours"): (1, SLICE[7]),
+    ("image/services/image_config_service.py", "ImageConfigService.set_aspect"): (1, SLICE[7]),
+    ("image/services/image_config_service.py", "ImageConfigService.set_field"): (1, SLICE[7]),
+    ("image/services/image_config_service.py", "ImageConfigService.set_flag"): (1, SLICE[7]),
+    ("image/services/image_config_service.py", "ImageConfigService.set_tier_colour"): (1, SLICE[7]),
+    ("image/services/image_config_service.py", "ImageConfigService.set_tier_colours"): (1, SLICE[7]),
+    # Core's pass
+    ("__main__.py", "_recover_expired_review_prompts"): (1, PASS["core"]),
+    ("core/cogs/bot_cog.py", "_audit"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_attendance"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_images"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_signup"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._disable_weather"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_attendance"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_images"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_results"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_signup"): (1, PASS["core"]),
+    ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog.division_calendar_channel"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog.division_lineup_channel"): (1, PASS["core"]),
+    ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
+    ("core/services/amendment_service.py", "AmendmentService.amend_round"): (2, PASS["core"]),
+    ("core/services/audit_service.py", "record_change"): (1, PASS["core"]),
+    ("core/services/config_service.py", "ConfigService.release_claim"): (1, PASS["core"]),
+    ("core/services/config_service.py", "ConfigService.save_server_config"): (2, PASS["core"]),
+    ("core/services/config_service.py", "ConfigService.set_core_setting"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "DriverService._create_profile"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
+    ("core/services/driver_service.py", "DriverService.transition"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_attendance_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_images_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_results_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_signup_enabled"): (1, PASS["core"]),
+    ("core/services/module_service.py", "ModuleService.set_weather_enabled"): (1, PASS["core"]),
+    ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.commit_mid_season_placements"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.sack_driver"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.store_total_lap_ms"): (1, PASS["core"]),
+    ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
+    ("core/services/season_lifecycle_service.py", "_move"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.add_division"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.add_round"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.cancel_season"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.cancel_season_cascade"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.clear_session_phase_data"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.create_season"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.create_sessions_for_round"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.delete_division"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.delete_round"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.delete_season"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.discard_uncommitted_placements"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.duplicate_division"): (2, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.rename_division"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.renumber_rounds"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_forecast_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_penalty_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_results_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_division_standings_channel"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.set_stage"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.update_round_field"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.update_session_phase2"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.update_session_phase3"): (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.get_default_teams"): (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.remove_default_team"): (1, PASS["core"]),
+    ("core/services/team_service.py", "TeamService.seed_division_teams"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "switch_test_mode_off"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "toggle_test_mode"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "toggle_test_mode_nationality"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "_ensure_single_config"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "clear_all_test_drivers"): (1, PASS["core"]),
+    ("core/services/test_roster_service.py", "remove_test_driver"): (1, PASS["core"]),
+    # Results' pass
+    ("__main__.py", "_abandon_interrupted_resubmission"): (1, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_amend_channels"): (2, PASS["results"]),
+    ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (3, PASS["results"]),
+    ("results/services/results_post_service.py", "post_session_results"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_apply_points_from_config"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_claim_amendment"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_close_amend_channel_record"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "_rearm_amendment"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_recompute_former_drivers_after_amendment"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_release_amendment"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "_remember_superseded_announcements"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "amend_round_results"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "close_submission_channel"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "create_submission_channel"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "enter_penalty_state"): (3, PASS["results"]),
+    ("results/services/result_submission_service.py", "enter_resubmit_flow"): (2, PASS["results"]),
+    ("results/services/result_submission_service.py", "replace_round_results"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "save_session_result"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "snapshot_before_amendment"): (1, PASS["results"]),
+    ("results/services/result_submission_service.py", "take_down_superseded_announcements"): (1, PASS["results"]),
+    # Attendance's pass
+    ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.answer_rsvp"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.bulk_insert_attendance_rows"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.delete_division_configs"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.get_or_create_config"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.insert_embed_message"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.set_attendance_channel"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.set_rsvp_channel"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.update_embed_distribution_msg"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.update_embed_last_notice_msg"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "AttendanceService.upsert_rsvp_status"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "_write_distribution"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "repost_rsvp_call"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "run_rsvp_cleanup"): (1, PASS["attendance"]),
+    ("attendance/services/rsvp_service.py", "withdraw_rsvp_call"): (1, PASS["attendance"]),
+    # Signup's pass
+    ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.signup_open"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_image"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_add"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_slot_remove"): (1, PASS["signup"]),
+    ("signup/cogs/signup_cog.py", "SignupCog.time_type"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.add_slot"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.delete_config"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.delete_wizard"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.mark_approved"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.rekey_wizard"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.remove_slot_by_rank"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_closed_message_id"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_record"): (2, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_selected_tracks"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.save_wizard"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.set_window_open"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"): (1, PASS["signup"]),
+    ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
+    ("core/cogs/module_cog.py", "execute_forced_close"): (1, PASS["signup"]),
+    # Weather's pass
+    ("weather/services/phase1_service.py", "run_phase1"): (1, PASS["weather"]),
+    ("weather/services/phase2_service.py", "run_phase2"): (1, PASS["weather"]),
+    ("weather/services/phase3_service.py", "run_phase3"): (1, PASS["weather"]),
+    ("weather/services/mystery_notice_service.py", "run_mystery_notice"): (1, PASS["weather"]),
+    # Image's pass
+    ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
+    ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
+    ("image/services/image_config_service.py", "ImageConfigService.create_with_defaults"): (1, PASS["image"]),
+}
+
+
+
+def test_nothing_writes_to_the_database_outside_a_queued_change():
+    """A change is carried out on the change queue, which saves each step with its mark, so a
+    stop leaves nothing half-done that a restart cannot finish (architecture.md, "How a change is
+    carried out"). Every commit and script outside it is counted per function, the saves allowed
+    for good excepted (`SAVES_ALLOWED`), and today's listed with the slice of #439 or the design
+    pass that moves its flow onto the queue."""
+    _check(
+        "nothing writes to the database outside a queued change",
+        _saves_outside_a_change(),
+        KNOWN_SAVES_OUTSIDE_A_CHANGE,
+    )
+
+
+def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection():
+    """The check reads where a save is made: a commit and a script each count, in the function
+    that makes them, while a function writing on a connection it was handed saves nothing of its
+    own, and a save allowed for good is not counted."""
+    sample = ast.parse(
+        "async def save(db):\n"
+        "    await db.execute('UPDATE seasons SET status = 1')\n"
+        "    await db.commit()\n"
+        "async def build(db):\n"
+        "    await db.executescript('CREATE TABLE t (x)')\n"
+        "async def write_on(db):\n"
+        "    await db.execute('UPDATE seasons SET status = 1')\n"
+        "async def enqueue(db):\n"
+        "    await db.commit()\n"
+    )
+    owners = _owners(sample)
+
+    def nodes(path):
+        return [(path, owners.get(node, "<module>"), node) for node in ast.walk(sample)]
+
+    assert _saves_among(nodes("core/services/sample_service.py")) == Counter({
+        ("core/services/sample_service.py", "save"): 1,
+        ("core/services/sample_service.py", "build"): 1,
+        ("core/services/sample_service.py", "enqueue"): 1,
+    })
+    assert _saves_among(nodes("core/services/retry_service.py")) == Counter({
+        ("core/services/retry_service.py", "save"): 1,
+        ("core/services/retry_service.py", "build"): 1,
+    })

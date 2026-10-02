@@ -190,6 +190,22 @@ class AttendanceService:
             await db.execute("DELETE FROM attendance_division_config")
             await db.commit()
 
+    async def switch_off_on(self, db: aiosqlite.Connection) -> bool:
+        """Turn the module off on *db* without committing, and say whether it was on.
+
+        The flag goes down and every division's check-in and attendance channels are cleared;
+        the settings row, with its timings, penalties and thresholds, is kept. It writes on the
+        caller's connection so that a change which turns attendance off along with something
+        else saves both in one go: the plain `/module disable attendance` and the cascade from
+        turning Results & Standings off both use it.
+        """
+        cursor = await db.execute("SELECT module_enabled FROM attendance_config")
+        row = await cursor.fetchone()
+        was_on = row is not None and bool(row["module_enabled"])
+        await db.execute("UPDATE attendance_config SET module_enabled = 0")
+        await db.execute("DELETE FROM attendance_division_config")
+        return was_on
+
     # ── Division-level config ──────────────────────────────────────────────
 
     async def get_division_config(self, division_id: int) -> AttendanceDivisionConfig | None:

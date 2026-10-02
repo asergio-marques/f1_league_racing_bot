@@ -1,6 +1,50 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+[2026-10-02 — v14.9.0 → v14.10.0: MINOR — the change queue's two windows, and a failing log channel told to the member alone (issue #439)]
+  Version change    : 14.9.0 → 14.10.0
+  Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.8.0: guidance is added inside
+                      existing sections and nothing is removed or redefined. Principle XIV's "at
+                      most one such message" gains two bounded exceptions, and Data & State's
+                      report of a log channel that cannot be written to changes where it goes.
+
+  Modified sections :
+    - Principle XIV, Image Generation Discipline — "An attachment cannot be introduced into a
+      message already posted": at most one such message stands, save in two windows the change
+      queue accepts. A stop after a post is sent but before its id is saved posts it again and
+      leaves the first copy; and the old and new messages stand together between the post and the
+      deletion after it, until the change is finished at start-up or while that deletion waits on
+      a retry. "The replacement is produced before the original is destroyed" is unchanged.
+    - Data & State Management, render notices — a log channel that cannot be written to is
+      reported to the member whose command, button or form the line records, seen by them alone,
+      as the last resort, and to the host's log where there is no such member or their interaction
+      can no longer be answered; no longer in the interaction channel.
+
+  Why the constitution is the document that moved:
+    - The owner decided on 2026-09-25 (#439) that the change queue accepts the two windows, and on
+      2026-10-01 that the warning is written "as an ephemeral instead as the ultimate fallback",
+      for every command.
+    - Data & State's old wording contradicted Principle VII ("The bot MUST NOT post to any other
+      channel, including the interaction channel"). Principle VII needs no change: a reply seen by
+      the member alone answers a member and posts in no channel.
+    - `docs/wip-specs/core_specification.md`, "How a change is carried out" and "The record of
+      what changed", carries the same rules on the same branch and remains their governing
+      statement; `docs/design/architecture.md`, "How a change is carried out", holds the design.
+
+  Added sections    : none.
+  Removed sections  : none.
+  Deferred / TODO   : none.
+
+  Rationale trail   : Branch feature/439-change-queue-results-off.
+
+  Templates / docs  : none. No template in .specify/templates names either rule; the core
+                      specification, the README and the guides are corrected on the same branch.
+-->
+
+
+<!--
+SYNC IMPACT REPORT
+==================
 [2026-10-01 — v14.8.0 → v14.9.0: MINOR — a typed signup wizard answer records only its refusal (issue #482)]
   Version change    : 14.8.0 → 14.9.0
   Bump rationale    : MINOR, on the precedent of v14.1.0 and v14.8.0: guidance is added inside an
@@ -7034,8 +7078,11 @@ service, and the lifecycle every image type inherits follows from it. Where the 
 its message in place and the graphic must change with it, the image flow MUST instead delete that
 message and post a new one, persisting the id of the new message in the place of the old, so that at
 most one such message stands at any moment — a property of the text flow the image flow inherits and
-MUST NOT relax. Where the graphic need not change, Rule 17 governs and the message is edited in place
-beneath it.
+MUST NOT relax, save in two windows the change queue accepts. Where the bot stops after the new
+message is sent but before its id is recorded, the post is made again when it starts and the first
+copy is left standing; and the old and new messages stand together between the post and the deletion
+after it, until the change is finished at start-up or for as long as that deletion waits on a retry.
+Where the graphic need not change, Rule 17 governs and the message is edited in place beneath it.
 
 **The replacement is produced before the original is destroyed.** The previous message MUST NOT be
 deleted until the message replacing it has been produced successfully — the graphic, or the text a
@@ -8530,7 +8577,9 @@ Render *notices* (Principle XIV.4) are not persisted as their own entity. A noti
 on the outcome of the render that raised it and reported where XIV.4 requires — the calculation
 log channel always, and the output of a commanding command additionally. Those destinations are
 the whole of the obligation; the log channel is the durable record, and a log channel that cannot
-be written to is itself reported in the interaction channel rather than passing silently.
+be written to is itself reported rather than passing silently: to the member whose command, button
+or form the line records, seen by them alone, as the last resort, and to the host's log where there
+is no such member or their interaction can no longer be answered.
 
 Render *problems* (Principle XIV.4) are not persisted as their own entity either: a problem aborts
 the render, falls back to text output, and is recorded in the existing audit log
@@ -8687,4 +8736,4 @@ before merge. Any deliberate violation of a principle MUST be documented in the 
 Complexity Tracking table with a justification for why the simpler compliant path is
 insufficient.
 
-**Version**: 14.9.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-01
+**Version**: 14.10.0 | **Ratified**: 2026-03-03 | **Last Amended**: 2026-10-02

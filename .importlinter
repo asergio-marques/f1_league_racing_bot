@@ -140,7 +140,6 @@ ignore_imports =
     leaguebot.core.utils.date_formatting -> leaguebot.image.models.image_constants
     leaguebot.core.utils.input_validator -> leaguebot.image.utils.nationality_data
     # #283: results:
-    leaguebot.core.cogs.module_cog -> leaguebot.results.services.results_purge_service
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.result_submission_service
     leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
     leaguebot.core.cogs.test_mode_cog -> leaguebot.results.services.result_submission_service

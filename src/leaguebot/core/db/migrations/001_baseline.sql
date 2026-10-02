@@ -835,6 +835,52 @@ CREATE TABLE "pending_messages" (
     last_attempted_at TEXT
 );
 
+-- queued_changes
+-- One row per change asked for, `id` being the order asked. `state` runs QUEUED -> RUNNING -> DONE,
+-- or ends REFUSED, DROPPED or FAULTED; it is WAITING while one of its steps waits on a retry.
+-- `actor_name` is str(member), as the audit records it; `actor_display` the display name, as the
+-- log channel names a member. `what` is how the change's lines name it. `places` lists where the
+-- change posts, as "channel:<id>". `acknowledged_at` bounds the update of the member's reply.
+CREATE TABLE "queued_changes" (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind            TEXT    NOT NULL,
+    dedup_key       TEXT    NOT NULL,
+    payload         TEXT    NOT NULL DEFAULT '{}',
+    origin          TEXT    NOT NULL CHECK (origin IN ('MEMBER', 'BOT')),
+    state           TEXT    NOT NULL DEFAULT 'QUEUED' CHECK (state IN
+                    ('QUEUED', 'RUNNING', 'WAITING', 'DONE', 'REFUSED', 'DROPPED', 'FAULTED')),
+    actor_id        INTEGER,
+    actor_name      TEXT,
+    actor_display   TEXT,
+    what            TEXT    NOT NULL,
+    places          TEXT    NOT NULL DEFAULT '[]',
+    acknowledged_at TEXT
+);
+CREATE INDEX "queued_changes_open" ON "queued_changes" (id)
+    WHERE state IN ('QUEUED', 'RUNNING', 'WAITING');
+CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (state)
+    WHERE state = 'RUNNING';
+
+-- queued_change_steps
+-- A change's steps in order. `done_at` is the mark, saved with the step's own changes.
+CREATE TABLE "queued_change_steps" (
+    change_id     INTEGER NOT NULL REFERENCES "queued_changes"(id) ON DELETE CASCADE,
+    position      INTEGER NOT NULL,
+    name          TEXT    NOT NULL,
+    payload       TEXT    NOT NULL DEFAULT '{}',
+    places        TEXT    NOT NULL DEFAULT '[]',
+    done_at       TEXT,
+    result        TEXT,
+    tries         INTEGER NOT NULL DEFAULT 0,
+    next_try_at   TEXT,
+    failing_since TEXT,
+    reported_at   TEXT,
+    last_failure  TEXT,
+    PRIMARY KEY (change_id, position)
+);
+CREATE INDEX "queued_change_steps_waiting" ON "queued_change_steps" (next_try_at)
+    WHERE done_at IS NULL AND next_try_at IS NOT NULL;
+
 -- season_review_prompts
 -- One row per standing review prompt, keyed by the prompt message: two reviews may stand at
 -- once, and one ending must not clear the other's record. `review` is the command whose question

@@ -44,4 +44,10 @@ def clear_in_memory_state(bot: LeagueBot) -> None:
             task.cancel()
         wizard_service._correction_tasks.clear()
 
+    # The interactions held to update a change's reply: the changes they belong to are deleted
+    # with the pack or reset, so nothing is left to update.
+    change_queue = getattr(bot, "change_queue", None)
+    if change_queue is not None:
+        change_queue.forget_held()
+
     log.info("Cleared the league state held in memory")

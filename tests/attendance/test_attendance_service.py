@@ -75,6 +75,41 @@ class TestDisableDeletesDivisionConfigs:
         assert div_cfg is None
 
 
+async def test_attendance_switches_off_on_a_handed_connection(db_path):
+    """Its flag down and its per-division channels cleared, its settings row kept, all on the
+    caller's connection and saved only when the caller commits; it says whether attendance was
+    on."""
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
+        await db.executemany(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            [(10, "610"), (11, "611")],
+        )
+        await db.commit()
+    svc = AttendanceService(db_path)
+
+    async with get_connection(db_path) as db:
+        assert await svc.switch_off_on(db) is True
+        await db.rollback()
+    assert (await svc.get_config()).module_enabled is True
+    assert await svc.get_division_config(10) is not None
+
+    async with get_connection(db_path) as db:
+        assert await svc.switch_off_on(db) is True
+        await db.commit()
+    assert (await svc.get_config()).module_enabled is False
+    assert await svc.get_division_config(10) is None
+    assert await svc.get_division_config(11) is None
+
+    async with get_connection(db_path) as db:
+        assert await svc.switch_off_on(db) is False
+        await db.commit()
+
+
 # ---------------------------------------------------------------------------
 # T012 — Division config tests
 # ---------------------------------------------------------------------------

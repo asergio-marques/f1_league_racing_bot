@@ -35,6 +35,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from leaguebot.core.services.change_queue import empty_queue_in
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -405,6 +406,11 @@ def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool
     The WAL and shared-memory files of the database being replaced are removed with it. A
     stale `-wal` beside a different database is not merely useless — SQLite would try to
     recover it into the file it now sits beside.
+
+    **A restored state brings back no change waiting.** The league database's change queue is
+    emptied in the staged file before it is swapped in: a change saved with the state would be
+    carried out again against a server whose messages it no longer knows. A stop before the swap
+    leaves the staged file, still to be emptied at the next start.
     """
     swapped = False
     for live in (Path(db_path), Path(jobstore_path)):
@@ -419,6 +425,8 @@ def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool
             )
             staged.unlink(missing_ok=True)
             continue
+        if live == Path(db_path):
+            empty_queue_in(staged)
         for residue in (f"{live}-wal", f"{live}-shm"):
             Path(residue).unlink(missing_ok=True)
         os.replace(staged, live)

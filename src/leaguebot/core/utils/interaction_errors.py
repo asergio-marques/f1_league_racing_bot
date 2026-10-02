@@ -75,6 +75,18 @@ def failure_reply(what: str, outcome: str | None = None) -> str:
     return FAILURE_REPLY.format(what=what[:1].upper() + what[1:], outcome=outcome or PARTLY_DONE)
 
 
+def failure_line(what: str, named: str, error: BaseException) -> str:
+    """The log channel's line for *what* failing for *named* with *error*; *what* is used as given.
+
+    The one place a failure's line is formed: `report_failure` writes it, and so does the change
+    queue for a change that faults.
+    """
+    return (
+        f"❌ {what} failed for {named} — {type(error).__name__}. "
+        f"The details are in the host's log."
+    )
+
+
 def describe_fault(error: BaseException) -> str:
     """The kind of fault *error* is, in plain words, never the exception itself."""
     if isinstance(error, app_commands.CommandInvokeError):
@@ -142,9 +154,6 @@ async def report_failure(
     if router is None:
         return
     try:
-        await router.post_log(
-            f"❌ {what} failed for {interaction_member(interaction)} — {type(error).__name__}. "
-            f"The details are in the host's log."
-        )
+        await router.post_log(failure_line(what, interaction_member(interaction), error))
     except Exception as exc:  # noqa: BLE001 — the handler must never raise
         log.error("could not record in the log channel that %s failed: %s", what, exc, exc_info=True)

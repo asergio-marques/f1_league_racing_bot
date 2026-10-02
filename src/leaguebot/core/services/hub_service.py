@@ -42,6 +42,14 @@ from typing import Any, Awaitable, Callable
 
 import discord
 
+from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.services.change_queue import (
+    ChangeType,
+    CheckContext,
+    OutcomeContext,
+    Step,
+    StepContext,
+)
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, league_guild
 from leaguebot.core.utils.log_lines import refuse
@@ -57,6 +65,7 @@ __all__ = [
     "offered_options",
     "render_panel",
     "refresh_panel",
+    "hub_refresh_change",
     "apply_hub_permissions",
     "reapply_hub_permissions",
     "recover_hub",
@@ -223,6 +232,49 @@ async def refresh_panel(bot: LeagueBot) -> str | None:
             return f"The hub panel could not be posted in <#{channel.id}>: {exc}"
         await bot.config_service.set_core_setting("hub_message_id", message.id)
         return None
+
+
+#: The kind of the change that refreshes the panel.
+HUB_REFRESH = "hub.refresh"
+_REFRESH_STEP = "refresh"
+
+
+def hub_refresh_change() -> ChangeType:
+    """The change that brings the hub's panel up to date, asked for by the bot.
+
+    Asked in the save of whatever may have changed what the panel offers, so that the panel is
+    refreshed once the change is saved, whatever befalls the steps after it. The payload's
+    ``command`` names what caused it, for the line of a panel that could not be refreshed.
+    A fault string `refresh_panel` returns is today's "Hub panel not refreshed" line; an
+    exception is a fault, and its line names the refresh. Repeatable: two refreshes are harmless.
+    """
+
+    async def check(_ctx: CheckContext) -> Verdict:
+        return Verdict.go()
+
+    async def refresh(ctx: StepContext) -> StepResult:
+        fault = await refresh_panel(ctx.bot)
+        if fault is None:
+            return StepResult()
+        command = ctx.payload.get("command", "a module toggle")
+        return StepResult(
+            lines=(f"{ctx.named} | {command} | Hub panel not refreshed: {fault}",)
+        )
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=HUB_REFRESH,
+        opening=(PlannedStep(_REFRESH_STEP),),
+        steps={_REFRESH_STEP: Step(_REFRESH_STEP, StepKind.ACT, refresh)},
+        check=check,
+        key=lambda payload: f"{HUB_REFRESH}|{payload.get('command', '')}",
+        doing=lambda _payload: "Refreshing the hub panel",
+        outcome=outcome,
+        fault_outcome=outcome,
+        repeatable=True,
+    )
 
 
 # ── Who may see the hub ───────────────────────────────────────────────────

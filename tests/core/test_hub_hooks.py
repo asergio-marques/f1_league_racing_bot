@@ -1,9 +1,10 @@
 """What keeps the hub's panel and its permissions current (issue #279).
 
 **The panel follows the modules.** A module's options are offered while it is enabled, so every
-enable and disable refreshes the panel — the confirmed results disable included, since it
-finishes after the command has returned. A refresh that fails is logged, and never fails the
-toggle behind it.
+enable and disable refreshes the panel. Turning results off is the exception in form, not in
+effect: it is carried out on the change queue, which refreshes the panel as a change of its own
+once the flag is down, so the command leaves it alone (#439). A refresh that fails is logged, and
+never fails the toggle behind it.
 
 **The permissions follow the roles.** The hub is seen by the base role (or everyone, where none
 is set) and by both tier roles, so changing any of the three sets them again. The driver role
@@ -62,9 +63,16 @@ def _module_cog(*, refused: bool = False) -> ModuleCog:
 # ── The panel follows the modules ─────────────────────────────────────────
 
 
-@pytest.mark.parametrize("command", ["enable", "disable"])
-@pytest.mark.parametrize("module", ["weather", "results", "attendance", "images", "signup"])
+@pytest.mark.parametrize(
+    ("module", "command"),
+    [
+        pytest.param(module, command, id=f"{module}-{command}")
+        for module in ("weather", "results", "attendance", "images", "signup")
+        for command in ("enable", "disable")
+    ],
+)
 async def test_every_toggle_refreshes_the_panel(monkeypatch, command, module):
+    """Every toggle but turning results off, whose change refreshes the panel once it is done."""
     refresh = AsyncMock(return_value=None)
     monkeypatch.setattr(hub_service, "refresh_panel", refresh)
     cog = _module_cog()
@@ -72,7 +80,10 @@ async def test_every_toggle_refreshes_the_panel(monkeypatch, command, module):
     await undecorate(getattr(ModuleCog, command))(cog, _interaction(), _choice(module))
 
     getattr(cog, f"_{command}_{module}").assert_awaited_once()
-    refresh.assert_awaited_once_with(cog.bot)
+    if (module, command) == ("results", "disable"):
+        refresh.assert_not_awaited()
+    else:
+        refresh.assert_awaited_once_with(cog.bot)
 
 
 async def test_a_refused_toggle_leaves_the_panel_alone(monkeypatch):
@@ -85,18 +96,51 @@ async def test_a_refused_toggle_leaves_the_panel_alone(monkeypatch):
     refresh.assert_not_awaited()
 
 
-async def test_the_confirmed_results_disable_refreshes_the_panel():
-    """It finishes on a button, after `/module disable` has already returned."""
-    cog = MagicMock()
-    cog._apply_results_disable = AsyncMock()
-    cog._refresh_hub = AsyncMock()
+async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
+    """A module cog whose bot carries a real change queue, with results on and no season."""
+    from datetime import datetime, timezone
+
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from tests.support.change_queue import (
+        attach_queue,
+        league_double,
+        member,
+        member_interaction,
+        seed_server,
+    )
+
+    db_path = str(tmp_path / "hub_results_off.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
+        )
+        await db.commit()
+    bot = league_double(db_path)
+    bot.attendance_service = AttendanceService(db_path)
+    attach_queue(bot, db_path, now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc))
+    cog = ModuleCog.__new__(ModuleCog)
+    cog.bot = bot
+    interaction = member_interaction(bot, user=member(77))
+    interaction.command = None
+    return cog, interaction
+
+
+async def test_the_confirmed_results_disable_refreshes_the_panel(monkeypatch, tmp_path):
+    """The confirmation asks the queue; the panel is refreshed when the queue runs the change."""
+    from tests.support.change_queue import run_queue
+
+    refresh = AsyncMock(return_value=None)
+    monkeypatch.setattr(hub_service, "refresh_panel", refresh)
+    cog, interaction = await _queued_results_off(tmp_path)
     view = _ConfirmDisableResultsView(cog, actor_id=77)
-    interaction = _interaction()
 
     await view.confirm.callback(interaction)
+    refresh.assert_not_awaited()
+    await run_queue(cog.bot)
 
-    cog._apply_results_disable.assert_awaited_once()
-    cog._refresh_hub.assert_awaited_once()
+    refresh.assert_awaited_once_with(cog.bot)
 
 
 async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
@@ -119,24 +163,26 @@ async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
 
 
 async def test_a_panel_not_refreshed_after_the_confirmed_results_disable_names_the_command(
-    monkeypatch,
+    monkeypatch, tmp_path,
 ):
     """The confirmation's button carries no command, so the line names `/module disable` itself,
-    never "an interaction" (#482)."""
+    never "an interaction" (#482). The queue's refresh writes it, mention wrapped as every log
+    line's is."""
+    from tests.support.change_queue import queued_log_lines, run_queue
+
     monkeypatch.setattr(
         hub_service, "refresh_panel", AsyncMock(return_value="The hub channel is gone.")
     )
-    cog = _module_cog()
-    cog._apply_results_disable = AsyncMock()
+    cog, interaction = await _queued_results_off(tmp_path)
     view = _ConfirmDisableResultsView(cog, actor_id=77)
-    interaction = _interaction()
-    interaction.command = None
 
     await view.confirm.callback(interaction)
+    await run_queue(cog.bot)
 
-    cog._apply_results_disable.assert_awaited_once()
-    assert [call.args[0] for call in cog.bot.output_router.post_log.await_args_list] == [
-        "Admin (<@77>) | `/module disable` | Hub panel not refreshed: The hub channel is gone."
+    lines = list(cog.bot.log_channel.sent) + await queued_log_lines(cog.bot.db_path)
+    assert [line for line in lines if "Hub panel not refreshed" in line] == [
+        "Admin (`<@77>`) | `/module disable` | Hub panel not refreshed: The hub channel is gone."
+        + "\n" + "\u2015" * 36
     ]
 
 

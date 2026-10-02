@@ -330,3 +330,60 @@ async def test_a_tier_holds_one_colour_per_slot(db_path):
     db.close()
 
     assert rows == [("division_1", "accent", "#222222"), ("division_2", "accent", "#A78BFA")]
+
+
+# ── The change queue (#439) ───────────────────────────────────────────────────
+
+def _check_list(db_path: str, table: str, column: str) -> set[str]:
+    """The values a closed `CHECK (<column> IN (...))` on *table* allows, read from the schema."""
+    rows = _query(db_path, f"SELECT sql FROM sqlite_master WHERE type = 'table' AND name = '{table}'")
+    assert rows, f"no table {table}"
+    found = re.search(rf"CHECK\s*\(\s*{column}\s+IN\s*\(([^)]*)\)", rows[0][0])
+    assert found, f"no closed CHECK list on {table}.{column}"
+    return set(re.findall(r"'([^']*)'", found.group(1)))
+
+
+def _queue_change(db: sqlite3.Connection, state: str = "QUEUED", kind: str = "dummy") -> int:
+    cursor = db.execute(
+        "INSERT INTO queued_changes (kind, dedup_key, origin, state, what) "
+        "VALUES (?, ?, 'MEMBER', ?, '`/dummy`')",
+        (kind, kind, state),
+    )
+    return int(cursor.lastrowid or 0)
+
+
+async def test_a_change_s_states_match_the_enum(db_path):
+    """Written twice, in the CHECK list and in `ChangeState`, and must not drift."""
+    from leaguebot.core.models.change import ChangeState
+
+    assert _check_list(db_path, "queued_changes", "state") == {s.value for s in ChangeState}
+
+
+async def test_a_change_s_origins_match_the_enum(db_path):
+    from leaguebot.core.models.change import ChangeOrigin
+
+    assert _check_list(db_path, "queued_changes", "origin") == {o.value for o in ChangeOrigin}
+
+
+async def test_the_queue_holds_one_running_change(db_path):
+    """One change runs at a time: an identity rule, so the schema holds it, not the worker."""
+    db = _connect(db_path)
+    _queue_change(db, "RUNNING")
+    _queue_change(db, "WAITING")
+    _queue_change(db, "QUEUED")
+    with pytest.raises(sqlite3.IntegrityError):
+        _queue_change(db, "RUNNING")
+    db.close()
+
+
+async def test_a_change_s_steps_go_with_it(db_path):
+    db = _connect(db_path)
+    change_id = _queue_change(db)
+    db.executemany(
+        "INSERT INTO queued_change_steps (change_id, position, name) VALUES (?, ?, ?)",
+        [(change_id, 0, "first"), (change_id, 1, "second")],
+    )
+    db.execute("DELETE FROM queued_changes WHERE id = ?", (change_id,))
+    db.commit()
+    assert db.execute("SELECT COUNT(*) FROM queued_change_steps").fetchone() == (0,)
+    db.close()

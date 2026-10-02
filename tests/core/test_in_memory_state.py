@@ -9,13 +9,25 @@ from __future__ import annotations
 
 import pathlib
 import re
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from leaguebot.core.db.database import run_migrations
 from leaguebot.signup.cogs import admin_review_cog
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    change_rows,
+    league_double,
+    member_interaction,
+    run_queue,
+    seed_server,
+    updated_reply,
+)
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
@@ -32,6 +44,9 @@ CLEARED = {
     ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"),
     ("core/cogs/season_cog.py", "_pending"),
     ("signup/services/wizard_service.py", "_correction_tasks"),
+    # The interactions the change queue holds to update each change's reply: a pack or a
+    # factory reset deletes the changes they belong to (#439).
+    ("core/services/change_queue.py", "_held"),
 }
 
 #: Stores that hold no league state, and why.
@@ -58,6 +73,15 @@ EXEMPT = {
     # The hub's options, registered by modules at import (#279): the bot's code, not the
     # league's data. A pack keeps the modules, so it keeps what they offer.
     ("core/services/hub_service.py", "_OPTIONS"),
+    # The change types the builder registers at start-up: the bot's wiring, not the league's
+    # data (#439).
+    ("core/services/change_queue.py", "_types"),
+    # The log-channel warnings being sent to members, each task dropping itself when done
+    # (#439).
+    ("core/services/output_router.py", "_tasks"),
+    # The interactions whose member has been warned that the log channel failed, by id; each
+    # lapses with its interaction's 14 minutes (#439).
+    ("core/services/output_router.py", "_warned"),
 }
 
 
@@ -103,3 +127,58 @@ async def test_the_clear_empties_every_store():
     assert bot.wizard_service._correction_tasks == {}
     assert task.cancelled()
     assert lapse.cancelled()
+
+
+async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
+    """A pack or a factory reset deletes the changes the queue holds replies for (#439), so the
+    clear makes the queue forget them: a change finishing afterwards updates no member's reply.
+
+    Without `forget_held` in the clear the reply would still be updated, as
+    `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
+    """
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    bot = league_double(db_path)
+    bot.get_cog = lambda name: None
+    bot.wizard_service = None
+    ran: list[str] = []
+
+    async def _go(_ctx):
+        return Verdict.go()
+
+    async def _act(_ctx):
+        ran.append("a")
+        return StepResult()
+
+    attach_queue(
+        bot,
+        db_path,
+        now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc),
+        types=[
+            ChangeType(
+                kind="dummy",
+                opening=(PlannedStep("a", {}),),
+                steps={"a": Step("a", StepKind.ACT, _act)},
+                check=_go,
+                key=lambda payload: "dummy",
+                doing=lambda _payload: "Doing the dummy thing",
+                outcome=lambda _ctx: "✅ Done.",
+                fault_outcome=lambda _ctx: "Nothing was changed.",
+            )
+        ],
+    )
+    interaction = member_interaction(bot)
+    await bot.change_queue.ask("dummy", {}, interaction=interaction, what="`/dummy`",
+                               refusal_what="`/dummy`")
+    assert acknowledgement(interaction).startswith("⏳ Doing the dummy thing.")
+
+    clear_in_memory_state(bot)
+    await run_queue(bot)
+
+    assert ran == ["a"]
+    assert [row["state"] for row in await change_rows(db_path)] == ["DONE"]
+    assert updated_reply(interaction) == ""

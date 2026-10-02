@@ -381,6 +381,7 @@ async def test_re_enabling_attendance_starts_from_the_packaged_defaults(tmp_path
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, results_enabled=True)
     cog.bot.module_service.is_attendance_enabled = ModuleService(db_path).is_attendance_enabled
+    cog.bot.attendance_service = AttendanceService(db_path)
 
     await cog._enable_attendance(_interaction())
     async with get_connection(db_path) as db:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import aiosqlite
 
@@ -626,134 +626,9 @@ class SeasonService:
         Returns True if this call is what moved it.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"""
-                SELECT COUNT(*) FROM rounds
-                WHERE division_id = ?
-                  AND status NOT IN ({_TERMINAL_SQL})
-                """,
-                (division_id,),
-            )
-            row = await cursor.fetchone()
-            if row is None or row[0] != 0:
-                return False
-
-            cursor = await db.execute(
-                "UPDATE divisions SET status = 'FINISHED' WHERE id = ? AND status = 'ACTIVE'",
-                (division_id,),
-            )
+            moved = await refresh_division_status_on(db, division_id)
             await db.commit()
-            moved = cursor.rowcount > 0
-            cursor = await db.execute(
-                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
-            )
-            season_row = await cursor.fetchone()
-
-        # A division finishing may be the last one its season waited on (issue #220).
-        if moved and season_row is not None:
-            from leaguebot.core.services.season_lifecycle_service import advance_to_pending_completion
-
-            await advance_to_pending_completion(self._db_path, season_row["season_id"])
         return moved
-
-    async def end_rounds_awaiting_results(
-        self,
-        actor_id: int,
-        actor_name: str,
-    ) -> list[dict]:
-        """Close every round of the active season that only the results module could move.
-
-        Called when the results module is switched off part-way through a season. The three
-        states in ``ROUND_AWAITING_RESULTS_MODULE`` each wait on a results command, so with the
-        module gone nothing will ever move them: the division never finishes, `/season complete`
-        refuses for the rest of the season, and — because enabling is refused while a season is
-        active — the league cannot undo it either. That was issue #167, and it left `/season
-        cancel` as the only way out.
-
-        The rounds are closed as FINAL rather than CANCELLED. They were raced; it is their
-        scoring that has been abandoned, and a cancelled round would tell the attendance module
-        that nobody was expected to turn up.
-
-        A NOT_RUN round is left where it is. It waits on the clock rather than on results, and
-        ``run_result_submission_job`` closes it as FINAL at its own moment with the module off.
-
-        Returns one dict per round closed — ``division``, ``round_number``, ``track_name`` and
-        the ``status`` it was taken from — so the caller can report what it did.
-        """
-        from datetime import timezone
-
-        now = datetime.now(timezone.utc).isoformat()
-
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                f"""
-                SELECT r.id, r.round_number, r.track_name, r.status,
-                       d.id AS division_id, d.name AS division
-                FROM rounds r
-                JOIN divisions d ON d.id = r.division_id
-                JOIN seasons   s ON s.id = d.season_id
-                WHERE s.status    = 'ACTIVE'
-                  AND d.status   != 'CANCELLED'
-                  AND r.status IN ({_AWAITING_RESULTS_MODULE_SQL})
-                ORDER BY d.name, r.round_number
-                """,
-            )
-            rows = [dict(r) for r in await cursor.fetchall()]
-
-            from leaguebot.results.services.result_submission_service import (
-                recompute_former_drivers_for_round,
-            )
-
-            for row in rows:
-                await db.execute(
-                    "UPDATE rounds SET status = ? WHERE id = ?",
-                    (RoundStatus.FINAL.value, row["id"]),
-                )
-                # These rounds were raced and their results submitted; it is only the scoring
-                # that has been abandoned. Closing them as FINAL is what makes those results
-                # final, so it is here that their drivers become former drivers (#216) — the
-                # first pass's own finaliser is a results command and will never run for them.
-                #
-                # **Usually this finds nothing**, and that is correct rather than wasteful:
-                # disabling the module purges the season's results before reaching here, and a
-                # driver whose results have been erased has raced nothing the bot still knows
-                # of. It marks where the purge failed — `_apply_results_disable` catches that
-                # and closes the rounds regardless, leaving the results standing — and where a
-                # league disables between seasons with an older season's results intact.
-                await recompute_former_drivers_for_round(db, row["id"])
-                await db.execute(
-                    """
-                    INSERT INTO audit_entries
-                        (actor_id, actor_name, division_id, change_type,
-                         old_value, new_value, timestamp)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        actor_id,
-                        actor_name,
-                        row["division_id"],
-                        "round.status",
-                        row["status"],
-                        RoundStatus.FINAL.value,
-                        now,
-                    ),
-                )
-            await db.commit()
-
-        # Each of those rounds may have been the last thing its division was waiting on, and a
-        # division finishing is what lets `/season complete` run at all (issue #154).
-        for division_id in sorted({row["division_id"] for row in rows}):
-            await self.refresh_division_status(division_id)
-
-        return [
-            {
-                "division": row["division"],
-                "round_number": row["round_number"],
-                "track_name": row["track_name"],
-                "status": row["status"],
-            }
-            for row in rows
-        ]
 
     async def close_raced_rounds_for_cancellation(
         self, season_id: int, actor_id: int, actor_name: str
@@ -1718,6 +1593,143 @@ class SeasonService:
                 (round_id,),
             )
             await db.commit()
+
+
+async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int) -> bool:
+    """:meth:`SeasonService.refresh_division_status` on *db*, committing nothing.
+
+    A division finishing may be the last one its season waited on (issue #220), so where it
+    moves the season is moved on in the same save, on the same connection (issue #439).
+    """
+    cursor = await db.execute(
+        f"""
+        SELECT COUNT(*) FROM rounds
+        WHERE division_id = ?
+          AND status NOT IN ({_TERMINAL_SQL})
+        """,
+        (division_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or row[0] != 0:
+        return False
+
+    cursor = await db.execute(
+        "UPDATE divisions SET status = 'FINISHED' WHERE id = ? AND status = 'ACTIVE'",
+        (division_id,),
+    )
+    moved = cursor.rowcount > 0
+    if not moved:
+        return False
+    cursor = await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
+    season_row = await cursor.fetchone()
+    if season_row is not None:
+        from leaguebot.core.services.season_lifecycle_service import (
+            advance_to_pending_completion_on,
+        )
+
+        await advance_to_pending_completion_on(db, season_row["season_id"])
+    return True
+
+
+async def end_rounds_awaiting_results_on(
+    db: aiosqlite.Connection,
+    *,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> list[dict]:
+    """Close every round of the active season that only the results module could move.
+
+    Called when the results module is switched off part-way through a season. The three
+    states in ``ROUND_AWAITING_RESULTS_MODULE`` each wait on a results command, so with the
+    module gone nothing will ever move them: the division never finishes, `/season complete`
+    refuses for the rest of the season, and — because enabling is refused while a season is
+    active — the league cannot undo it either. That was issue #167, and it left `/season
+    cancel` as the only way out.
+
+    The rounds are closed as FINAL rather than CANCELLED. They were raced; it is their
+    scoring that has been abandoned, and a cancelled round would tell the attendance module
+    that nobody was expected to turn up.
+
+    A NOT_RUN round is left where it is. It waits on the clock rather than on results, and
+    ``run_result_submission_job`` closes it as FINAL at its own moment with the module off.
+
+    Everything is written on *db*, the rounds, their former drivers, the ``round.status``
+    audit and each division the closing finishes, with the season it was the last of; nothing
+    is committed, so that the caller saves it with the switch-off (issue #439). Nothing here
+    opens a connection of its own or awaits Discord.
+
+    Returns one dict per round closed — ``division``, ``round_number``, ``track_name`` and
+    the ``status`` it was taken from — so the caller can report what it did.
+    """
+    stamp = now.isoformat()
+    cursor = await db.execute(
+        f"""
+        SELECT r.id, r.round_number, r.track_name, r.status,
+               d.id AS division_id, d.name AS division
+        FROM rounds r
+        JOIN divisions d ON d.id = r.division_id
+        JOIN seasons   s ON s.id = d.season_id
+        WHERE s.status    = 'ACTIVE'
+          AND d.status   != 'CANCELLED'
+          AND r.status IN ({_AWAITING_RESULTS_MODULE_SQL})
+        ORDER BY d.name, r.round_number
+        """,
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+
+    from leaguebot.results.services.result_submission_service import (
+        recompute_former_drivers_for_round,
+    )
+
+    for row in rows:
+        await db.execute(
+            "UPDATE rounds SET status = ? WHERE id = ?",
+            (RoundStatus.FINAL.value, row["id"]),
+        )
+        # These rounds were raced and their results submitted; it is only the scoring
+        # that has been abandoned. Closing them as FINAL is what makes those results
+        # final, so it is here that their drivers become former drivers (#216) — the
+        # first pass's own finaliser is a results command and will never run for them.
+        #
+        # **Usually this finds nothing**, and that is correct rather than wasteful:
+        # turning the module off erases the season's results in the same save, before
+        # reaching here, and a driver whose results have been erased has raced nothing
+        # the bot still knows of. It marks where a league disables between seasons with
+        # an older season's results intact, and where the rounds are closed on their own.
+        await recompute_former_drivers_for_round(db, row["id"])
+        await db.execute(
+            """
+            INSERT INTO audit_entries
+                (actor_id, actor_name, division_id, change_type,
+                 old_value, new_value, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                actor_id,
+                actor_name,
+                row["division_id"],
+                "round.status",
+                row["status"],
+                RoundStatus.FINAL.value,
+                stamp,
+            ),
+        )
+
+    # Each of those rounds may have been the last thing its division was waiting on, and a
+    # division finishing is what lets `/season complete` run at all (issue #154).
+    for division_id in sorted({row["division_id"] for row in rows}):
+        await refresh_division_status_on(db, division_id)
+
+    return [
+        {
+            "division": row["division"],
+            "round_number": row["round_number"],
+            "track_name": row["track_name"],
+            "status": row["status"],
+        }
+        for row in rows
+    ]
 
 
 async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> None:

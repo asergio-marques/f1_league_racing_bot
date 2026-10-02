@@ -221,11 +221,14 @@ audit record, which is how some settings came to have none.
   posts delays the changes behind it; that is the price of one change at a time.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
-  division's channel to a given one). A request for the same change as the last one waiting is not
-  queued again, so a second press does nothing. A change that can only be done once, such as
-  approving a round's appeals, is refused by the checks once it has been done, since the round has
-  moved on. One that may be repeated, such as a repost, is queued again once it is running or once
-  anything else waits behind it, since a repost reads what it posts when it runs.
+  division's channel to a given one), and that name is its key. A request's key is compared with the
+  last change saved, whatever became of it, and the request is turned away as a repeat where they
+  match and that change is still waiting to be taken up: a member's request is refused, a bot's
+  dropped (the core specification's "How a change is carried out" holds what a member is told, and
+  when a request is queued again). A change of a kind that may be repeated, such as a repost, is
+  never turned away as a repeat, since it reads what it posts when it runs. A change that can only
+  be done once, such as approving a round's appeals, is refused by the checks once it has been done,
+  since the round has moved on.
 - **Steps, each saved with its mark.** A change is made of steps. The worker opens each saving
   step's connection and hands it down, so the step's changes, the change's audit record where it
   has one, and the mark saying the step is done all commit together or not at all. After a
@@ -266,6 +269,18 @@ audit record, which is how some settings came to have none.
   channel saying the message was gone.
 
   *Rejected:* stopping a change at its first failed step.
+
+  **The exception is a step tried once.** Where a step's owning specification asks that a failure be
+  handed to the league instead of retried, the step is registered as tried once: turning Results &
+  Standings off does so for each message it removes (the results specification's "Assigning channels
+  to divisions"). Its failure completes the step and is kept in the step's result, for the change's
+  outcome to report; it neither waits nor holds a place, and it does not stop its change, so the
+  rejection above stands. The reason is that the specification asks for such a message to be named
+  to the league with a link, for removal by hand, and not counted as removed, which a retry for an
+  hour would delay. A step that deletes still counts a message already gone as done.
+
+  *Rejected:* retrying such a step like any other, which delays naming the message by an hour or
+  more.
 - **A step that fails for any other reason is a fault.** The change stops there and goes to the
   failure path (see "Errors and failures"), and holds nothing up. What its earlier steps saved
   stays saved, which is why anything that must be all or nothing is saved in one step.
@@ -273,7 +288,11 @@ audit record, which is how some settings came to have none.
   for every change to the league's configuration, an audit record and a log-channel line (the core
   specification's "The record of what changed"), and for any other change, whatever log line its own
   specification asks for. No command writes them itself. A log line is put on the log line's own
-  retry queue in the same save as the step it records, so a stop cannot lose it.
+  retry queue in the same save as the step it records (`OutputRouter.queue_log_on`), so a stop
+  cannot lose it, and is delivered once the save has committed (`OutputRouter.deliver_queued`),
+  under the lock the retry loop shares, so the queue and the retry loop never both send it. The
+  queue is handed the router and writes through it, not through the bot, since a service does not
+  use the bot to look up other services (above).
 
 ---
 
@@ -482,14 +501,20 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
   can never be found again, to be edited or deleted.
 - **Who it may mention,** stated where it is sent.
 - **What happens if it fails:** it is retried, and named in the log channel if it keeps failing (a
-  log line that keeps failing, in the host's log).
+  log line that keeps failing, in the host's log). A log line the log channel cannot take is also
+  told to the member it records (the core specification's "The record of what changed" holds who
+  is told and when): the router finds the interaction through `core/utils/answering.py`, which
+  records the one a task is answering, or takes the one the change queue holds, and the host's log
+  alone records the failure where none can still be answered.
 
   One log line is not queued: the factory reset's closing line (the core specification's "Factory
   reset" section holds the rule for what it says and when). It is posted after the reset has wiped
-  the database, so it is neither queued nor answered by a notice in the interaction channel, for two
-  reasons that `OutputRouter.post_log`'s docstring gives: a queued row would sit in the fresh
-  database of a bot serving no server, and no configuration is left to find an interaction channel
-  in. The cog learns the log channel from the router before the wipe and posts to it directly.
+  the database, so it is neither queued nor told to anyone, for two reasons. A queued row would sit
+  in the fresh database of a bot serving no server (`OutputRouter.post_log`'s docstring). And the
+  member's notice says the line is kept and delivered later (the core specification's "The record
+  of what changed"), which this one never is, so the core specification's "Factory reset" has a line
+  that cannot be posted written to the host's log. The cog learns the log channel from the router
+  before the wipe and posts to it directly.
 
 **A failed post is sent again by its owning module, on the queue's retry.** A post that fails inside
 a change is retried by the change queue, which runs the owning module's post again, as text. The
@@ -540,10 +565,11 @@ to name its member from, reaches the league's server through `league_guild`, and
 beside it so that each standard line is formed in one place. Like
 `report_failure`, neither raises, and `refuse` attempts its reply and its line each on its own.
 
-**Every line for the log channel goes through `OutputRouter.post_log`**, which divides a record
-too long for one message on its line breaks where it can, and at the limit where one line alone
-is too long; a reply too long for one message is sent in parts through `chunk_message`
-(`core/utils/messages.py`), which does the dividing for both. That is how a record meets the core
+**Every line for the log channel goes through `OutputRouter`** (`post_log`, or `queue_log_on` and
+`deliver_queued` for a line a change's step saves), which divides a record too long for one
+message on its line breaks where it can, and at the limit where one line alone is too long; a reply
+too long for one message is sent in parts through `chunk_message` (`core/utils/messages.py`), which
+does the dividing for all three. That is how a record meets the core
 specification's "The record of what changed" on length.
 
 **No cog handles its own errors, and there is no shared base class for cogs.** Every failure a
@@ -635,7 +661,13 @@ later on its own.
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
   service, jobs armed with a lateness limit, private names used across modules, a new place naming
   the log channel (the check lists the six allowed, with their reasons), posting outside the
-  handlers, and a table written by a module that does not own it.
+  handlers, a table written by a module that does not own it, and a save outside a queued change.
+  That last check counts each function's `.commit()` and `.executescript()` calls, and a function
+  writing on a handed connection commits nothing and is not counted. It allows for good the
+  migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on the
+  database file itself), the queue's own records, the retry queue for log lines, and
+  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
+  league's.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules,
   and that the bot is imported from one place: the installed package, never through `src`.
@@ -643,8 +675,5 @@ later on its own.
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".
 
-Not every rule has its check yet. Once the queue exists, a further check holds that nothing writes
-to the database outside a queued change, apart from the queue's own records (a change put on it,
-dropped, or waiting on a retry), the migrations run at start-up and the retry queue for log lines.
-The rules about how things are built (the hooks, the one builder, start-up, the sweep) cannot be
-checked by reading the code until they exist.
+Not every rule has its check yet. The rules about how things are built (the hooks, the one
+builder, start-up, the sweep) cannot be checked by reading the code until they exist.

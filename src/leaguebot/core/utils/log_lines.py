@@ -66,8 +66,12 @@ async def name_of_member(bot: Any, member_id: int | None) -> str:
     return member_named(getattr(member, "display_name", None), int(member_id))
 
 
-def _first_line(reply: str) -> str:
-    """The reply's first line, without the mark it opens with."""
+def reply_reason(reply: str) -> str:
+    """The reply's first line, without the mark it opens with: a refusal's line gives it as its reason.
+
+    `refuse` takes it by default, and so does the change queue where it refuses a change when it
+    runs.
+    """
     lines = reply.strip().splitlines()
     first = lines[0].strip() if lines else ""
     for mark in _REPLY_MARKS:
@@ -86,22 +90,37 @@ async def _named(bot: Any, member: int | discord.abc.User | None) -> str:
     return await name_of_member(bot, member.id)
 
 
+def refusal_line(named: str, what: str, reason: str, *, detail: str | None = None) -> str:
+    """The log channel's line for *what* refused for *named*, because of *reason*.
+
+    *detail*, where given, is written beneath the line on a line of its own: what the reason
+    leaves out, for the log channel and not the member's reply.
+
+    The one place a refusal's line is formed: `record_refusal` writes it, and so does the change
+    queue where it refuses a change when it runs.
+    """
+    line = f"⛔ {what} refused for {named} — {reason}"
+    return f"{line}\n{detail}" if detail else line
+
+
 async def record_refusal(
     bot: Any,
     member: int | discord.abc.User | None,
     *,
     what: str,
     reason: str,
+    detail: str | None = None,
 ) -> None:
     """Record that *what* was refused for *member*, because of *reason*, without answering anyone.
+    *detail*, where given, goes beneath the line (`refusal_line`).
 
-    The one place a refusal's line is formed: `refuse` writes its own through here. For a
+    `refuse` writes its own through here, the line being formed by `refusal_line`. For a
     refusal whose reply is not an interaction's, and so has no `refuse`; *member* is named as
     `record_abandoned` names its own. Never raises.
     """
     try:
         named = await _named(bot, member)
-        await bot.output_router.post_log(f"⛔ {what} refused for {named} — {reason}")
+        await bot.output_router.post_log(refusal_line(named, what, reason, detail=detail))
     except Exception:  # noqa: BLE001 — the refusal has already been answered
         log.warning("could not record in the log channel that %s was refused", what, exc_info=True)
 
@@ -112,13 +131,15 @@ async def refuse(
     *,
     what: str,
     reason: str | None = None,
+    detail: str | None = None,
 ) -> None:
     """Answer the member with *reply*, seen by them alone, and record the refusal of *what*.
 
     *what* names what was refused as the log channel should read it — `describe`'s name of the
     command, or that name with its context ("`/round amend` of round 3"). *reason* is the line's
     detail; it defaults to the reply's first line, and a refusal whose reply is a list (the bad
-    lines of a paste) passes the list, joined on new lines.
+    lines of a paste) passes the list, joined on new lines. *detail* is written beneath the line,
+    apart from the reply.
 
     The reply goes by `followup.send` once the interaction is answered or deferred, and by
     `response.send_message` otherwise, in as many parts as it needs. Never raises.
@@ -136,11 +157,13 @@ async def refuse(
     bot = getattr(interaction, "client", None)
     if getattr(bot, "output_router", None) is None:
         return
+    beneath = {"detail": detail} if detail else {}
     await record_refusal(
         bot,
         interaction.user,
         what=what,
-        reason=reason if reason is not None else _first_line(reply),
+        reason=reason if reason is not None else reply_reason(reply),
+        **beneath,
     )
 
 

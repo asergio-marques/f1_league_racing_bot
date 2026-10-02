@@ -238,3 +238,65 @@ class TestMarkFailed:
 
         rows2 = await _fetch_all_rows(db_path)
         assert rows2[0]["retry_count"] == 5
+
+
+# ---------------------------------------------------------------------------
+# A log line the change queue wrote and never tried (#439)
+# ---------------------------------------------------------------------------
+
+
+def _delivering_bot(db_path: str):
+    """A bot whose channel 555 takes every message, recording how each was sent."""
+    import discord
+    from unittest.mock import AsyncMock, MagicMock
+
+    channel = MagicMock(spec=discord.TextChannel)
+    channel.send = AsyncMock()
+    bot = MagicMock()
+    bot.db_path = db_path
+    bot.get_channel = MagicMock(return_value=channel)
+    bot.output_router.post_log = AsyncMock()
+    return bot, channel
+
+
+async def _settle() -> None:
+    import asyncio
+
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+
+async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry_notice(tmp_path):
+    """The bot stopped between saving a line and delivering it: nothing failed, so there is no
+    retry to announce."""
+    from leaguebot.core.services.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "")
+    [entry] = await get_all_pending(db_path)
+    bot, channel = _delivering_bot(db_path)
+
+    assert await attempt_delivery(entry, bot) is True
+    await _settle()
+
+    assert channel.send.await_count == 1
+    assert await _row_count(db_path) == 0
+    bot.output_router.post_log.assert_not_awaited()
+
+
+async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
+    import discord
+
+    from leaguebot.core.services.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "<@4242> did something", "503")
+    [entry] = await get_all_pending(db_path)
+    bot, channel = _delivering_bot(db_path)
+
+    await attempt_delivery(entry, bot)
+    await _settle()
+
+    sent = channel.send.await_args.kwargs.get("allowed_mentions")
+    assert sent is not None
+    assert sent.to_dict() == discord.AllowedMentions.none().to_dict()

@@ -159,8 +159,10 @@ async def close_submission_channel(
     round_id: int,
     guild: discord.Guild,
     db_path: str,
-) -> None:
+) -> bool:
     """Mark the submission channel closed in the DB then delete it from Discord.
+
+    Returns whether the channel is gone, as `_close_amend_channel_record` does.
 
     **Both channel tables are cleared** (#345). A first pass through review runs in a
     submission channel, recorded in ``round_submission_channels``; an amendment replays the
@@ -180,14 +182,14 @@ async def close_submission_channel(
     # `_close_amend_channel_record`. A first pass has no such record, and its channel is simply
     # deleted.
     channel = guild.get_channel(channel_id) if guild is not None else None
-    await _close_amend_channel_record(
+    return await _close_amend_channel_record(
         db_path, round_id, channel_id, channel, reason="Results submission complete"
     )
 
 
 async def _close_amend_channel_record(
     db_path: str, round_id: int, channel_id: int, channel, *, reason: str
-) -> None:
+) -> bool:
     """Close an amendment's record, delete its channel, and forget the record once it is gone.
 
     **Marked closed first, forgotten only once the channel is gone** (#345). Closed, the record
@@ -202,6 +204,10 @@ async def _close_amend_channel_record(
 
     *channel* is None where it could not be reached; the record is then kept, closed. A channel
     with no amendment record — a first pass's — is deleted just the same.
+
+    Returns whether the channel is gone: True where it was deleted or was already gone
+    (`NotFound`), False where it could not be reached or could not be deleted, so a caller can
+    tell a failure from a success.
     """
     async with get_connection(db_path) as db:
         await db.execute(
@@ -214,20 +220,21 @@ async def _close_amend_channel_record(
             "channel %s of round %s is unreachable; any amendment record naming it is kept, "
             "closed, for restart recovery", channel_id, round_id,
         )
-        return
+        return False
     try:
         await channel.delete(reason=reason)
     except discord.NotFound:
         pass
     except discord.HTTPException:
         log.exception("could not delete channel %s of round %s", channel_id, round_id)
-        return
+        return False
     async with get_connection(db_path) as db:
         await db.execute(
             "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
             (round_id, channel_id),
         )
         await db.commit()
+    return True
 
 
 async def is_submission_open(db_path: str, round_id: int) -> bool:

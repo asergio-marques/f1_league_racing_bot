@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import module_off
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -54,6 +55,8 @@ RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNU
 
 
 #: The forced close's failed steps that do not name a driver, worded once for every caller.
+#: How the change that turns results off names itself in its lines.
+_RESULTS_OFF = "`/module disable results`"
 _BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup channel."
 _NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
 
@@ -436,11 +439,13 @@ class _ConfirmDisableResultsView(LeagueView):
             await refuse(interaction, "⛔ Not your action.", what=describe(interaction, button))
             return
         self.stop()
-        await interaction.response.defer(ephemeral=True)
-        await self._cog._apply_results_disable(
-            interaction, cascade_attendance=self._cascade_attendance
+        await self._cog.bot.change_queue.ask(
+            module_off("results"),
+            {"cascade_attendance": self._cascade_attendance},
+            interaction=interaction,
+            what=_RESULTS_OFF,
+            refusal_what=describe(interaction, button),
         )
-        await self._cog._refresh_hub(interaction, "`/module disable`")
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -559,7 +564,10 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
-        await self._refresh_hub(interaction, describe(interaction))
+        if module_name.value != "results":
+            # Turning results off asks the change queue, which refreshes the panel itself
+            # once the flag is down.
+            await self._refresh_hub(interaction, describe(interaction))
 
     async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
         """Bring the hub's panel up to date: a module's options are offered while it is on.
@@ -605,6 +613,7 @@ class ModuleCog(commands.Cog):
         *record* is False, recorded the refusal in the log channel.
         """
         from leaguebot.core.services.season_lifecycle_service import (
+            FROZEN_FOR_COMPLETION_REFUSAL,
             modules_frozen_for_completion,
             configuration_fixed,
         )
@@ -634,10 +643,7 @@ class ModuleCog(commands.Cog):
         if action == "disable" and await modules_frozen_for_completion(
             self.bot.db_path
         ):
-            return await _refused(
-                "❌ No module can be disabled while the season is pending completion. "
-                "Complete it with `/season complete` first."
-            )
+            return await _refused(FROZEN_FOR_COMPLETION_REFUSAL)
         return False
 
     # ── Weather enable (T011) ──────────────────────────────────────────
@@ -807,168 +813,13 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-        await self._apply_results_disable(interaction, cascade_attendance=False)
-
-    async def _apply_results_disable(
-        self,
-        interaction: discord.Interaction,
-        *,
-        cascade_attendance: bool,
-    ) -> None:
-        """Write the results disable, erase the season's results, and report what went.
-
-        *interaction* must already be deferred — this only ever sends a followup, so it
-        serves both the plain command path and the confirmation button's.
-
-        The order matters. The flag goes down first, so that nothing the erasure disturbs can
-        post again on its way out; the season's results are then deleted; and only then are the
-        rounds still awaiting results closed, because closing the last of them finishes its
-        division and a division finishing is what lets `/season complete` run. Between seasons
-        all three steps are still taken and the last two simply find nothing to do.
-
-        **The flag stays first even though the erasure can fail** (decided 2026-09-21). Written
-        last, it would read "on" for as long as the erasure runs — minutes, on a large season,
-        every message being a call to Discord — and a round reaching its start in that time
-        would open a submission channel nothing then closes, or, starting after the rounds were
-        closed, wait on results for ever. Instead the rounds are closed **whether or not the
-        erasure finished**: a failure part-way leaves some of the season's messages posted,
-        which the league is told to delete by hand, but never a season that cannot complete —
-        issue #167 over again.
-        """
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 0)"
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "results"}), now),
-            )
-            await db.commit()
-
-        from leaguebot.results.services.results_purge_service import purge_season_results
-
-        try:
-            purged = await purge_season_results(self.bot.db_path, self.bot)
-        except Exception:  # noqa: BLE001 — the rounds below must be closed whatever happened
-            log.exception("could not erase this season's results")
-            purged = None
-        closed = await self.bot.season_service.end_rounds_awaiting_results(
-            interaction.user.id, str(interaction.user)
+        await self.bot.change_queue.ask(
+            module_off("results"),
+            {"cascade_attendance": False},
+            interaction=interaction,
+            what=_RESULTS_OFF,
+            refusal_what=describe(interaction),
         )
-
-        # The division finishing may have been the season's last: a season with a window open or
-        # placements to confirm is wound down and moves to Pending completion at once (#220).
-        wound_down = True
-        try:
-            await self.bot.season_service.wind_down_ongoing(self.bot)
-        except Exception:  # noqa: BLE001 — never fail the disabling on the season's next stage
-            log.exception("could not wind the season down")
-            wound_down = False
-
-        if purged is None or purged["rounds"]:
-            outcome = (
-                {"incomplete": True, "rounds_closed": len(closed)}
-                if purged is None
-                else {**purged, "rounds_closed": len(closed)}
-            )
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, "
-                    "new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'RESULTS_SEASON_PURGED', '', ?, ?)",
-                    (
-                        interaction.user.id,
-                        str(interaction.user),
-                        json.dumps(outcome),
-                        now,
-                    ),
-                )
-                await db.commit()
-
-        # **Every message the bot could not remove is named, with a link** (decided 2026-09-21,
-        # #189). Its record went with the season, so this reply and the log are the only places
-        # left that can say where it is.
-        left_standing = purged["left_standing"] if purged is not None else []
-        if purged is None:
-            summary = (
-                " | Incomplete\n  the erase of this season's results stopped part-way: some "
-                "results, standings and verdicts may still be posted\n"
-                f"  rounds closed with no results: {len(closed)}"
-            )
-        elif purged["rounds"]:
-            summary = (
-                " | Success"
-                f"\n  season results deleted: {purged['sessions']} session results, "
-                f"{purged['standings']} standings rows, {purged['messages']} messages, "
-                f"{purged['verdicts']} verdicts\n"
-                f"  rounds closed with no results: {len(closed)}"
-            )
-        else:
-            summary = " | Success"
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable results"
-            + summary
-            + (
-                ""
-                if wound_down
-                else "\n  not done: the season could not be wound down afterwards, so it may "
-                "still be waiting on a stage it should have moved past"
-            )
-            + (
-                f"\n  left standing, to delete by hand: {len(left_standing)}\n"
-                + "\n".join(f"  {link}" for link in left_standing)
-                if left_standing
-                else ""
-            ),
-        )
-
-        season_note = ""
-        if purged is None:
-            season_note = (
-                "\n⚠️ The erase of this season's results stopped part-way, so some of its "
-                "results, standings and verdicts may still be posted — delete them by hand. "
-                "Every round still waiting on results was closed all the same "
-                f"({len(closed)} round(s)), so the season can still be completed."
-            )
-        elif purged["rounds"]:
-            tail = f", {len(closed)} round(s) closed with no results." if closed else "."
-            season_note = (
-                f"\n🗑️ This season's results are gone: {purged['sessions']} session "
-                f"result(s) and {purged['standings']} standings row(s) deleted, "
-                f"{purged['messages']} results and standings message(s) and "
-                f"{purged['verdicts']} verdict(s) removed" + tail
-                + "\nPoints configurations and division channels are kept."
-            )
-        if left_standing:
-            season_note += (
-                f"\n⚠️ {len(left_standing)} message(s) could not be removed — delete them "
-                "by hand:\n" + "\n".join(left_standing)
-            )
-
-        # Cascade: disable attendance if it is currently enabled
-        cascaded = (
-            cascade_attendance
-            and await self.bot.module_service.is_attendance_enabled()
-        )
-        if cascaded:
-            await self._disable_attendance(interaction, cascade=True)
-            reply = (
-                "✅ Results & Standings module disabled.\n"
-                "✅ Attendance module disabled with it. Its per-division check-in and "
-                "attendance channels have been cleared; its timings, penalties and "
-                "thresholds are kept." + season_note
-            )
-        else:
-            reply = "✅ Results & Standings module disabled." + season_note
-        # Split, because a season's worth of links can outrun Discord's limit on one message.
-        for chunk in chunk_message(reply):
-            await interaction.followup.send(chunk, ephemeral=True)
 
     # ── Attendance enable ──────────────────────────────────────────────
 
@@ -1129,40 +980,29 @@ class ModuleCog(commands.Cog):
 
     # ── Attendance disable ─────────────────────────────────────────────
 
-    async def _disable_attendance(
-        self, interaction: discord.Interaction, *, cascade: bool = False
-    ) -> None:
+    async def _disable_attendance(self, interaction: discord.Interaction) -> None:
+        if not await self.bot.module_service.is_attendance_enabled():
+            await refuse(
+                interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
 
-        if not cascade:
-            if not await self.bot.module_service.is_attendance_enabled():
-                await refuse(
-                    interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
-                )
-                return
-            await interaction.response.defer(ephemeral=True)
-
-        change_type = (
-            "ATTENDANCE_MODULE_CASCADE_DISABLED" if cascade else "ATTENDANCE_MODULE_DISABLED"
-        )
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
-            await db.execute("UPDATE attendance_config SET module_enabled = 0")
-            await db.execute("DELETE FROM attendance_division_config")
+            await self.bot.attendance_service.switch_off_on(db)
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, ?, '', '', ?)",
-                (interaction.user.id, str(interaction.user), change_type, now),
+                "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_DISABLED', '', '', ?)",
+                (interaction.user.id, str(interaction.user), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable attendance | Success",
         )
-        if not cascade:
-            await interaction.followup.send(
-                "✅ Attendance module disabled.", ephemeral=True
-            )
+        await interaction.followup.send("✅ Attendance module disabled.", ephemeral=True)
 
     # ── Signup enable (T010) ───────────────────────────────────────────
 

@@ -12,6 +12,12 @@ short of completed or cancelled, which is read off the lifecycle `stage` rather 
 coarser `status`. A current season's divisions are built on this server's roles and channels,
 and a league does not pack up and leave with one under way.
 
+**Changes still waiting are dropped.** A change in the queue (`change_queue`) that has not
+finished, queued, running or waiting on a retry, is deleted with its steps: left alone it would
+go on changing Discord on a server the bot no longer serves, which a pack must not do. A change
+the worker is running as the pack lands saves nothing, since its mark finds no row (see
+`ChangeQueue`). The reply does not name them.
+
 **One transaction.** The check and every write share one `BEGIN IMMEDIATE`, so a season set
 up between the check and the release cannot be stranded on a server the bot has left. The
 audit entry shares it too (issue #383): every pack that takes effect is recorded, and a
@@ -145,6 +151,12 @@ async def pack(
             wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
             queued = (await db.execute("DELETE FROM pending_messages")).rowcount
             await db.execute("DELETE FROM season_review_prompts")
+            # A change still waiting would go on changing Discord on a server the bot no
+            # longer serves. The finished ones are history and stay; the steps go with their
+            # change.
+            await db.execute(
+                "DELETE FROM queued_changes WHERE state IN ('QUEUED', 'RUNNING', 'WAITING')"
+            )
 
             # The signup module stays enabled with nothing configured, which is the state
             # `/module enable signup` itself leaves it in.
