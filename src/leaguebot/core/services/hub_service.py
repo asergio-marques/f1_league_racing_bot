@@ -246,7 +246,7 @@ def hub_refresh_change() -> ChangeType:
     refreshed once the change is saved, whatever befalls the steps after it. The payload's
     ``command`` names what caused it, for the line of a panel that could not be refreshed.
     A fault string `refresh_panel` returns is today's "Hub panel not refreshed" line; an
-    exception is a fault, and its line names the refresh. Repeatable: two refreshes are harmless.
+    exception stops the queue at the job, which `describe` names as the refresh. Repeatable: two refreshes are harmless.
     """
 
     async def check(_ctx: CheckContext) -> Verdict:
@@ -261,18 +261,20 @@ def hub_refresh_change() -> ChangeType:
             lines=(f"{ctx.named} | {command} | Hub panel not refreshed: {fault}",)
         )
 
+    async def describe(_ctx: StepContext) -> str:
+        return "refreshing the hub panel"
+
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
     return ChangeType(
         kind=HUB_REFRESH,
         opening=(PlannedStep(_REFRESH_STEP),),
-        steps={_REFRESH_STEP: Step(_REFRESH_STEP, StepKind.ACT, refresh)},
+        steps={_REFRESH_STEP: Step(_REFRESH_STEP, StepKind.ACT, refresh, describe=describe)},
         check=check,
         key=lambda payload: f"{HUB_REFRESH}|{payload.get('command', '')}",
         doing=lambda _payload: "Refreshing the hub panel",
         outcome=outcome,
-        fault_outcome=outcome,
         repeatable=True,
     )
 

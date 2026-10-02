@@ -205,16 +205,12 @@ def results_off_change(
             )
         return reply
 
-    def fault_outcome(ctx: OutcomeContext) -> str:
-        switched = any(view.name == _SWITCH_OFF and view.done for view in ctx.steps)
-        return SWITCHED_OFF_THEN_FAULTED if switched else NOTHING_CHANGED
-
     return ChangeType(
         kind=module_off("results"),
         opening=(PlannedStep(_SWITCH_OFF),),
         steps={
             _SWITCH_OFF: Step(_SWITCH_OFF, StepKind.SAVE, switch_off),
-            _TAKE_DOWN: Step(_TAKE_DOWN, StepKind.DELETE, take_down_step, tried_once=True),
+            _TAKE_DOWN: Step(_TAKE_DOWN, StepKind.DELETE, take_down_step),
             _CLOSE: Step(_CLOSE, StepKind.SAVE, close),
         },
         check=check,
@@ -223,7 +219,6 @@ def results_off_change(
         ),
         doing=lambda _payload: "Turning Results & Standings off",
         outcome=outcome,
-        fault_outcome=fault_outcome,
     )
 
 

@@ -779,7 +779,6 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path, monkeyp
     wind_down.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off_stands(
     tmp_path, monkeypatch,
 ):
@@ -808,7 +807,6 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_wind_down_discord_keeps_failing_says_only_retry_continues_after_the_hour(
     tmp_path, monkeypatch,
 ):
@@ -867,7 +865,6 @@ async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path, monkeypatch)
     assert (await _change(seeded.db_path, "hub.refresh"))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     tmp_path, monkeypatch,
 ):

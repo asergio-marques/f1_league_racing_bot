@@ -138,7 +138,7 @@ class StepView:
 
 @dataclass(frozen=True)
 class OutcomeContext:
-    """What a change type's `outcome` and `fault_outcome` read: the change and every step of it.
+    """What a change type's `outcome` reads: the change and every step of it.
 
     *named* is the member as the log channel names them ("Name (<@id>)"); *actor_id* and
     *actor_name* are what the audit records.
@@ -175,10 +175,10 @@ class Step:
 
     A `SAVE` step's `run(db, ctx)` writes only on *db* and never commits; any other step's
     `run(ctx)` does its work with no connection open. `still_due(ctx)` is asked before the step
-    runs, and a step no longer due is marked done as dropped. `describe(ctx)` names what the step
-    is doing, for the report of one that keeps failing. `gone_line`, a line or what forms one, is
-    what an `EDIT` step writes where its message is gone. `tried_once` marks a `DELETE` or `ACT` step whose failure on
-    Discord is kept in its result for the outcome, rather than retried.
+    runs, and a step no longer due is marked done as dropped. `describe(ctx)` names the job in the
+    lines that say it stopped the queue, was retried or discarded ("refreshing the hub panel"); by
+    default the job is named by the change's own `what`. `gone_line`, a line or what forms one, is
+    what an `EDIT` step writes where its message is gone.
     """
 
     name: str
@@ -187,7 +187,6 @@ class Step:
     still_due: Callable[[StepContext], Awaitable[bool]] | None = None
     describe: Callable[[StepContext], Awaitable[str]] | None = None
     gone_line: Callable[[StepContext], str] | str | None = None
-    tried_once: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,7 +206,6 @@ class ChangeType:
     key: Callable[[dict[str, Any]], str]
     doing: Callable[[dict[str, Any]], str]
     outcome: Callable[[OutcomeContext], str]
-    fault_outcome: Callable[[OutcomeContext], str]
     repeatable: bool = False
 
 
@@ -249,13 +247,7 @@ class ChangeQueue:
     # ------------------------------------------------------------------
 
     def register(self, change_type: ChangeType) -> None:
-        """Make *change_type* known. Refuses a step tried once of a kind that cannot be."""
-        for step in change_type.steps.values():
-            if step.tried_once and step.kind not in (StepKind.DELETE, StepKind.ACT):
-                raise ValueError(
-                    f"step {step.name!r} of {change_type.kind!r} is tried once, which only a "
-                    f"DELETE or ACT step may be"
-                )
+        """Make *change_type* known."""
         self._types[change_type.kind] = change_type
 
     def _type(self, kind: str) -> ChangeType:

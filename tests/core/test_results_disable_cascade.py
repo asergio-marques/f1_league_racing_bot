@@ -24,7 +24,6 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
@@ -45,7 +44,6 @@ from tests.support.change_queue import (
 SERVER_ID = 6611
 ACTOR_ID = 4242
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-STOPS = "#439: a wind-down that fails does not yet stop the queue at its job"
 #: The opening of the line the queue writes when a job stops it.
 STOPPED_AT = "❌ The queue is stopped at job #"
 
@@ -333,7 +331,6 @@ async def test_only_the_actor_may_confirm(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     tmp_path, monkeypatch,
 ):
