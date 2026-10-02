@@ -19,16 +19,41 @@ tests. A lock holds the task and a test's call to one step at a time.
 on it, never committing. The other kinds do Discord or legacy work with no connection open and are
 marked in a save after it. Nothing is awaited inside a save but the connection.
 
-**A job that fails stops the queue.** Whatever the failure, from Discord or from the bot, and
-whether in a job or in a bot change's check as it starts, nothing behind the job runs until it is
-cleared: `_choose` takes the lowest change in order and runs nothing while its next job is stopped
-and not yet due. A job's number is its `id`, never renumbered, and a stop is the job's own record
-(`failing_since`, `tries`, `next_try_at`), the change's state staying as it was. The bot tries a
-stopped job again on `RETRY_AFTER`, counted from the first failure, and says nothing of a try that
-fails but the last.
+**Jobs are carried out strictly in order.** Each step of a change is a job with a number of its own,
+its `id` in `queued_change_steps`, never renumbered and shown wherever the job is named. A member's
+request is acknowledged once and is made of jobs that run one after another: `_choose` takes the
+RUNNING change, or else the QUEUED change with the lowest id, and nothing overtakes it.
 
-**The queue forms no standard line of its own.** A refusal is `log_lines.refusal_line` and a stop
-`log_lines.stop_line`: each standard line is formed in one place. Every line the queue
+**A job that fails stops the queue.** Whatever the failure, from Discord or from the bot, and
+whether in a job or in a bot change's check as it starts (`_stop`), nothing behind the job runs
+until it is cleared: `_choose` runs nothing while its next job is stopped and not yet due. A stop
+is the job's own record (`failing_since`, `tries`, `last_failure`, `next_try_at`), the change's
+state staying as it was. The bot tries a stopped job again on `RETRY_AFTER`, counted from the first
+failure, and says nothing of a try that fails but the last, which says the bot has stopped trying
+on its own. A request made while the queue is stopped is queued at the back and says where the
+queue is stopped.
+
+**A stop is cleared in three ways:** a try that goes through (the bot's own, or Retry), which
+writes one line saying so; a league manager's or admin's Retry, at any time; and a league admin's
+Discard, which drops that one job, the request's later jobs running on and each checking whether
+it is still due, or the whole change where it had not started. Retry and Discard work directly on
+the queue's own records, never as changes of their own: the queue is stopped, so a change queued
+behind it could not run. Each is a press on the stop notice (`QueueStopView`) and is refused, with
+a line, where the presser may not use it or the notice's job no longer stops the queue.
+
+**The stop notice is one log-channel message** carrying the stop line and the buttons. It is
+posted by the router's `post_notice`, after the stop's save and never on the log-line retry queue
+(that would send it again without its buttons), and posted again by the queue, at start-up and on
+each pass of the worker, while `notice_message_id` is empty. `strip_view` takes the buttons off
+once the job clears.
+
+**A restart leaves a stopped job stopped.** `start()` clears its `next_try_at`, so that only Retry
+or Discard moves the queue, and writes one line saying so. A change cut off by the stop, with no job
+failed, carries on from its first job not done. Where recording a stop itself fails, nothing is
+marked: the worker's catch-all logs it and the job runs again, its failure recorded then.
+
+**The queue forms no standard line of its own.** A refusal is `log_lines.refusal_line`, a stop
+`log_lines.stop_line` and so on for each of its lines: each standard line is formed in one place. Every line the queue
 writes goes through the `OutputRouter` it was handed, never one looked up on the bot (a service does
 not use the bot to look up other services).
 
