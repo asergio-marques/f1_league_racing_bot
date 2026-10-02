@@ -13,7 +13,7 @@ coarser `status`. A current season's divisions are built on this server's roles 
 and a league does not pack up and leave with one under way.
 
 **Changes still waiting are dropped.** A change in the queue (`change_queue`) that has not
-finished, queued, running or waiting on a retry, is deleted with its steps: left alone it would
+finished, queued, running or stopped on a failed job, is deleted with its steps: left alone it would
 go on changing Discord on a server the bot no longer serves, which a pack must not do. A change
 the worker is running as the pack lands saves nothing, since its mark finds no row (see
 `ChangeQueue`). The reply does not name them.
