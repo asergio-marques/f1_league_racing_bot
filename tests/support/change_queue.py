@@ -12,6 +12,10 @@ change where it stood for `restart_queue` to carry on.
 `league_double` and `member_interaction` are the Discord side the queue's own tests need: a bot whose
 log channel records what it is sent, and a member's interaction recording its reply and the updates
 to it.
+
+A job that fails stops the queue until it is cleared (owner, 2026-10-02): `stopped_job` reads the
+job the queue is stopped at, and `retry_job` and `discard_job` press Retry and Discard on its stop
+notice, as a member holding the tier `tier_member` gives them.
 """
 from __future__ import annotations
 
@@ -29,6 +33,9 @@ SERVER_ID = 12408
 INTERACTION_CHANNEL_ID = 100
 LOG_CHANNEL_ID = 101
 MEMBER_ID = 4242
+#: The league's two tier roles: the interaction role is the league manager's.
+MANAGER_ROLE_ID = 900
+ADMIN_ROLE_ID = 901
 
 #: The warning a member is given, seen by them alone, when the log channel cannot take a line.
 LOG_CHANNEL_WARNING = (
@@ -163,19 +170,61 @@ def updated_reply(interaction: Any) -> str:
 
 
 def text_channel(channel_id: int) -> Any:
-    """A text channel recording what it is sent in `sent`; set `fails` to an exception to refuse."""
+    """A text channel recording what it is sent; set `fails` to an exception to refuse.
+
+    `sent` holds the content of each message, and `posted` each message as Discord returned it:
+    its `id`, `content` and `view`, which an `edit` with `view=` replaces. `fetch_message` and
+    `get_partial_message` find a posted message by id; one removed from `posted` is gone, and
+    `NotFound` is raised for it.
+    """
     channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
     channel.sent = []
+    channel.posted = []
     channel.fails = None
 
-    async def _send(content: str = "", **_kwargs: Any) -> Any:
+    async def _send(content: str = "", **kwargs: Any) -> Any:
         if channel.fails is not None:
             raise channel.fails
         channel.sent.append(content)
-        return MagicMock(id=len(channel.sent), jump_url=f"https://discord.test/{len(channel.sent)}")
+        message = MagicMock(
+            id=len(channel.sent), jump_url=f"https://discord.test/{len(channel.sent)}",
+            content=content, view=kwargs.get("view"),
+        )
+        message.channel = channel
+
+        async def _edit(**changes: Any) -> Any:
+            if message not in channel.posted:
+                raise http_error(discord.NotFound, status=404, text="Unknown Message")
+            for name in ("content", "view"):
+                if name in changes:
+                    setattr(message, name, changes[name])
+            return message
+
+        message.edit = AsyncMock(side_effect=_edit)
+        channel.posted.append(message)
+        return message
+
+    def _gone(message_id: int) -> Any:
+        gone = MagicMock(id=message_id)
+        gone.edit = AsyncMock(
+            side_effect=http_error(discord.NotFound, status=404, text="Unknown Message")
+        )
+        return gone
+
+    def _partial(message_id: int) -> Any:
+        found = [m for m in channel.posted if m.id == message_id]
+        return found[0] if found else _gone(message_id)
+
+    async def _fetch(message_id: int) -> Any:
+        found = [m for m in channel.posted if m.id == message_id]
+        if not found:
+            raise http_error(discord.NotFound, status=404, text="Unknown Message")
+        return found[0]
 
     channel.send = AsyncMock(side_effect=_send)
+    channel.fetch_message = AsyncMock(side_effect=_fetch)
+    channel.get_partial_message = MagicMock(side_effect=_partial)
     return channel
 
 
@@ -190,9 +239,9 @@ async def seed_server(db_path: str) -> None:
     """The league's server, set up with its interaction and log channels."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, ?, ?)",
-            (SERVER_ID, INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID),
+            "INSERT INTO server_configs (server_id, interaction_role_id, league_admin_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, ?, ?, ?, ?)",
+            (SERVER_ID, MANAGER_ROLE_ID, ADMIN_ROLE_ID, INTERACTION_CHANNEL_ID, LOG_CHANNEL_ID),
         )
         await db.commit()
 
@@ -217,6 +266,8 @@ def league_double(db_path: str) -> Any:
             server_id=SERVER_ID,
             log_channel_id=LOG_CHANNEL_ID,
             interaction_channel_id=INTERACTION_CHANNEL_ID,
+            interaction_role_id=MANAGER_ROLE_ID,
+            league_admin_role_id=ADMIN_ROLE_ID,
         )
     )
     bot.output_router = OutputRouter(bot, retry_db_path=db_path)
@@ -238,6 +289,22 @@ def member(member_id: int = MEMBER_ID, display_name: str = "Admin",
            name: str = "Admin#0001") -> Any:
     """A member as Discord gives one: an id, a display name, and `str()` as the audit records it."""
     return _Member(member_id, display_name, name)
+
+
+def tier_member(tier: str | None, *, member_id: int = MEMBER_ID, display_name: str = "Admin",
+                name: str = "Admin#0001") -> Any:
+    """A member of the league's server holding the league admin role (*tier* "admin"), the league
+    manager's interaction role ("manager"), or neither (None)."""
+    held = {"admin": [ADMIN_ROLE_ID], "manager": [MANAGER_ROLE_ID], None: []}[tier]
+    person = MagicMock(spec=discord.Member)
+    person.id = member_id
+    person.display_name = display_name
+    person.name = name
+    person.mention = f"<@{member_id}>"
+    person.bot = False
+    person.roles = [MagicMock(id=role_id) for role_id in held]
+    person.__str__.return_value = name
+    return person
 
 
 def member_interaction(bot: Any, *, user: Any = None, created_at: datetime | None = None) -> Any:
@@ -286,3 +353,44 @@ async def step_rows(db_path: str, change_id: int | None = None) -> list[dict[str
     for row in rows:
         row["result"] = json.loads(row["result"]) if row["result"] else None
     return rows
+
+
+# ---------------------------------------------------------------------------
+# A stopped queue
+# ---------------------------------------------------------------------------
+
+
+async def stopped_job(db_path: str) -> dict[str, Any] | None:
+    """The job the queue is stopped at: not done, and failed since `failing_since`; or None."""
+    stopped = [
+        row for row in await step_rows(db_path)
+        if row["done_at"] is None and row["failing_since"] is not None
+    ]
+    return stopped[0] if stopped else None
+
+
+async def _press(bot: Any, action: str, user: Any, run: bool) -> Any:
+    job = await stopped_job(bot.db_path)
+    assert job is not None, f"no job stops the queue for {action} to act on"
+    interaction = member_interaction(bot, user=user)
+    interaction.message.id = job["notice_message_id"]
+    await maybe_await(getattr(bot.change_queue, action)(job["notice_message_id"], interaction))
+    if run:
+        await run_queue(bot)
+    return interaction
+
+
+async def retry_job(bot: Any, *, user: Any = None, run: bool = True) -> Any:
+    """Press Retry on the stop notice of the job the queue is stopped at, then run the queue.
+
+    The presser is *user*, or a league manager. Gives the presser's interaction.
+    """
+    return await _press(bot, "retry", user or tier_member("manager"), run)
+
+
+async def discard_job(bot: Any, *, user: Any = None, run: bool = True) -> Any:
+    """Press Discard on the stop notice of the job the queue is stopped at, then run the queue.
+
+    The presser is *user*, or a league admin. Gives the presser's interaction.
+    """
+    return await _press(bot, "discard", user or tier_member("admin"), run)
