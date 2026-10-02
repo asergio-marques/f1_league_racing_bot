@@ -1250,10 +1250,7 @@ class ChangeQueue:
                 what=what,
             )
             return
-        change, steps, job = found
-        name = await self._name_job(change, job, self._step_context(change, steps, job))
-        now = self._clock()
-        started = change["state"] == ChangeState.RUNNING.value
+        change = found[0]
         ids: list[int] = []
         # Under `_asking`, which the worker holds as it chooses a change: a Discard is saved
         # before the worker chooses, or finds the change in hand and waits for the try to end.
@@ -1261,11 +1258,25 @@ class ChangeQueue:
             if self._trying == change["id"]:
                 await refuse(
                     interaction,
-                    f"⛔ Job #{job['id']} is being tried now. Press Discard again once the try "
-                    f"has ended, if it still stops the queue.",
+                    f"⛔ Job #{found[2]['id']} is being tried now. Press Discard again once the "
+                    f"try has ended, if it still stops the queue.",
                     what=what,
                 )
                 return
+            # Read again under the lock: a try that ended while this press waited for it may have
+            # kept more of its partial result, and the discard is saved from what stands now.
+            found = await self._stopped_at(notice_message_id)
+            if found is None:
+                await refuse(
+                    interaction,
+                    "⛔ That job no longer stops the queue, so there is nothing to discard.",
+                    what=what,
+                )
+                return
+            change, steps, job = found
+            name = await self._name_job(change, job, self._step_context(change, steps, job))
+            started = change["state"] == ChangeState.RUNNING.value
+            now = self._clock()
             saved = await self._save_discard(
                 interaction, change, job, name, started=started, now=now, ids=ids
             )
