@@ -203,7 +203,6 @@ async def test_a_change_runs_its_steps_in_order_and_marks_each_done(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_s_writes_and_its_mark_commit_together(env):
     """A step that raises after writing leaves neither its write nor its mark."""
     _queue(env, _type(steps=[_save("a", "written", fails=RuntimeError("boom"))]))
@@ -215,7 +214,6 @@ async def test_a_step_s_writes_and_its_mark_commit_together(env):
     assert [s["done_at"] for s in await step_rows(env.db_path)] == [None]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_fault_stops_the_change_and_keeps_what_earlier_steps_saved(env):
     ran: list[str] = []
     _queue(env, _type(steps=[
@@ -231,7 +229,6 @@ async def test_a_fault_stops_the_change_and_keeps_what_earlier_steps_saved(env):
     assert await _states(env) == ["FAULTED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_fault_is_reported_to_the_member_the_log_channel_and_the_host(env, caplog):
     from leaguebot.core.utils.interaction_errors import failure_reply
 
@@ -303,7 +300,6 @@ async def test_a_member_s_request_failing_its_check_is_refused_at_once_and_nothi
     assert ran == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_whose_check_fails_when_it_runs_is_refused_and_says_why(env):
     """The acknowledgement is updated with the refusal, and the line is `refusal_line`'s."""
     holder = {"refuse": False}
@@ -322,7 +318,6 @@ async def test_a_change_whose_check_fails_when_it_runs_is_refused_and_says_why(e
     assert ran == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
     """A bot change found no longer due when it runs is dropped, with a line in the host's log only."""
     caplog.set_level(logging.INFO)
@@ -346,7 +341,6 @@ async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
     assert any("the season has ended" in r.getMessage() for r in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_bot_change_lacking_what_the_league_can_repair_waits_and_says_so(env):
     """It waits on the retries, and one line, not one per try, says what is missing."""
     holder = {"repairable": False}
@@ -853,7 +847,6 @@ async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplo
                if r.name.endswith("change_queue"))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_of_a_kind_the_bot_no_longer_knows_is_faulted_not_lost(env):
     _queue(env)
     async with get_connection(env.db_path) as db:
@@ -875,7 +868,6 @@ async def test_a_change_of_a_kind_the_bot_no_longer_knows_is_faulted_not_lost(en
     assert f"❌ `/gone` failed for {NAMED}" in "\n".join(await _lines(env))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
     """The bot carries no `output_router`: the queue never looks one up on it."""
     router = env.bot.output_router

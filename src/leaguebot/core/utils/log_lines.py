@@ -66,8 +66,12 @@ async def name_of_member(bot: Any, member_id: int | None) -> str:
     return member_named(getattr(member, "display_name", None), int(member_id))
 
 
-def _first_line(reply: str) -> str:
-    """The reply's first line, without the mark it opens with."""
+def reply_reason(reply: str) -> str:
+    """The reply's first line, without the mark it opens with: a refusal's line gives it as its reason.
+
+    `refuse` takes it by default, and so does the change queue where it refuses a change when it
+    runs.
+    """
     lines = reply.strip().splitlines()
     first = lines[0].strip() if lines else ""
     for mark in _REPLY_MARKS:
@@ -149,7 +153,7 @@ async def refuse(
         bot,
         interaction.user,
         what=what,
-        reason=reason if reason is not None else _first_line(reply),
+        reason=reason if reason is not None else reply_reason(reply),
     )
 
 

@@ -63,7 +63,8 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.services.audit_service import record_change_on
-from leaguebot.core.utils.log_lines import refuse
+from leaguebot.core.utils.interaction_errors import failure_line, failure_reply
+from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.core.utils.messages import chunk_message
 
@@ -76,6 +77,10 @@ log = logging.getLogger(__name__)
 #: How long after the acknowledgement it may still be updated: a minute short of the fifteen
 #: Discord's token lasts.
 UPDATABLE_FOR = timedelta(minutes=14)
+
+#: How long a step waits after its first failure, doubling at each try after, up to the ceiling.
+RETRY_FIRST_WAIT = timedelta(seconds=30)
+RETRY_CEILING = timedelta(minutes=15)
 
 
 @dataclass(frozen=True)
@@ -181,6 +186,17 @@ class ChangeType:
     overrides_waiting: bool = False
 
 
+class ChangeRefused(Exception):
+    """A bot change's check refused when the change started: the bot asked for what it may not
+    do, which is a fault in the bot and is handled as one."""
+
+
+def _refusal_text(verdict: Verdict) -> str:
+    """What a member is told of a request whose check is not GO: the verdict's reply, or where
+    it gives none (a check of the bot's kind), its reason."""
+    return verdict.reply or f"⚠️ {verdict.reason}"
+
+
 class ChangeQueue:
     """Acknowledges the changes asked for and carries them out one at a time; see the module."""
 
@@ -255,7 +271,12 @@ class ChangeQueue:
         verdict = await self.check(kind, payload, origin=origin)
         if verdict.kind is not VerdictKind.GO:
             if origin is ChangeOrigin.MEMBER and interaction is not None:
-                await refuse(interaction, verdict.reply, what=refusal_what or what)
+                await refuse(
+                    interaction,
+                    _refusal_text(verdict),
+                    what=refusal_what or what,
+                    reason=verdict.reason or None,
+                )
                 return None
             if verdict.kind is VerdictKind.NOT_DUE:
                 log.info("%s is no longer due, so it was not asked for: %s", what, verdict.reason)
@@ -388,43 +409,218 @@ class ChangeQueue:
         can run now.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT * FROM queued_changes WHERE state IN ('RUNNING', 'QUEUED') "
-                "ORDER BY state = 'RUNNING' DESC, id LIMIT 1"
-            )
-            change = await cursor.fetchone()
+            change = await self._choose(db)
             if change is None:
                 return None
-            cursor = await db.execute(
-                "SELECT * FROM queued_change_steps WHERE change_id = ? ORDER BY position",
-                (change["id"],),
-            )
-            step_rows = list(await cursor.fetchall())
+            step_rows = await self._read_steps(db, change["id"])
 
-        change_type = self._types[change["kind"]]
-        if change["state"] == ChangeState.QUEUED.value:
-            verdict = await change_type.check(
-                CheckContext(
-                    json.loads(change["payload"]),
-                    self._bot,
-                    self._db_path,
-                    ChangeOrigin(change["origin"]),
-                )
+        change_type = self._types.get(change["kind"])
+        if change_type is None:
+            await self._fault(
+                change, None,
+                KeyError(f"no change type {change['kind']!r} is registered"),
             )
-            if verdict.kind is not VerdictKind.GO:
-                return None
-            async with get_connection(self._db_path) as db:
-                await db.execute(
-                    "UPDATE queued_changes SET state = 'RUNNING' WHERE id = ?", (change["id"],)
-                )
-                await db.commit()
             return False
+        if change["state"] == ChangeState.QUEUED.value or self._awaiting_repair(change, step_rows):
+            return await self._start(change, change_type, step_rows)
 
         pending = next((row for row in step_rows if row["done_at"] is None), None)
         if pending is None:
             await self._finish(change, step_rows)
             return False
         return await self._run_step(change, change_type, step_rows, pending)
+
+    async def _choose(self, db: aiosqlite.Connection) -> aiosqlite.Row | None:
+        """The change to work on next: the RUNNING one, resumed after a stop; otherwise the
+        lowest id among the QUEUED changes and the WAITING ones whose step is due."""
+        cursor = await db.execute("SELECT * FROM queued_changes WHERE state = 'RUNNING' LIMIT 1")
+        running = await cursor.fetchone()
+        if running is not None:
+            return running
+        cursor = await db.execute(
+            "SELECT c.*, (SELECT MIN(s.next_try_at) FROM queued_change_steps s "
+            "WHERE s.change_id = c.id AND s.done_at IS NULL AND s.next_try_at IS NOT NULL) "
+            "AS due_at FROM queued_changes c WHERE c.state IN ('QUEUED', 'WAITING') ORDER BY c.id"
+        )
+        now = self._clock()
+        for row in await cursor.fetchall():
+            if row["state"] == ChangeState.QUEUED.value:
+                return row
+            if row["due_at"] is not None and datetime.fromisoformat(row["due_at"]) <= now:
+                return row
+        return None
+
+    @staticmethod
+    async def _read_steps(db: aiosqlite.Connection, change_id: int) -> list[aiosqlite.Row]:
+        cursor = await db.execute(
+            "SELECT * FROM queued_change_steps WHERE change_id = ? ORDER BY position",
+            (change_id,),
+        )
+        return list(await cursor.fetchall())
+
+    @staticmethod
+    def _awaiting_repair(change: aiosqlite.Row, step_rows: list[aiosqlite.Row]) -> bool:
+        """Whether the bot's change, WAITING with no step done, is to have its check run again:
+        it was found lacking something a league can repair before it started."""
+        return (
+            change["state"] == ChangeState.WAITING.value
+            and change["origin"] == ChangeOrigin.BOT.value
+            and all(row["done_at"] is None for row in step_rows)
+        )
+
+    # ------------------------------------------------------------------
+    # Starting a change: the second check
+    # ------------------------------------------------------------------
+
+    async def _start(
+        self, change: aiosqlite.Row, change_type: ChangeType, step_rows: list[aiosqlite.Row]
+    ) -> bool:
+        """Run the second check of a change not yet started, and act on what it finds."""
+        verdict = await change_type.check(
+            CheckContext(
+                json.loads(change["payload"]),
+                self._bot,
+                self._db_path,
+                ChangeOrigin(change["origin"]),
+            )
+        )
+        if verdict.kind is VerdictKind.GO:
+            async with get_connection(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                await db.execute(
+                    "UPDATE queued_change_steps SET tries = 0, next_try_at = NULL, "
+                    "failing_since = NULL, reported_at = NULL, last_failure = NULL "
+                    "WHERE change_id = ? AND done_at IS NULL",
+                    (change["id"],),
+                )
+                await db.execute(
+                    "UPDATE queued_changes SET state = 'RUNNING' WHERE id = ?", (change["id"],)
+                )
+                await db.commit()
+            return False
+
+        if change["origin"] == ChangeOrigin.MEMBER.value:
+            await self._refuse(change, verdict)
+        elif verdict.kind is VerdictKind.NOT_DUE:
+            await self._drop(change, verdict.reason)
+        elif verdict.kind is VerdictKind.REPAIRABLE:
+            await self._wait_on_repair(change, step_rows, verdict.reason)
+        else:
+            await self._fault(
+                change, change_type, ChangeRefused(verdict.reason or verdict.reply)
+            )
+        return False
+
+    async def _refuse(self, change: aiosqlite.Row, verdict: Verdict) -> None:
+        """Refuse a member's change that fails its check as it starts: the acknowledgement is
+        updated with the refusal's reply, and the line is saved with the mark."""
+        reply = _refusal_text(verdict)
+        named = self._named(change)
+        ids = await self._end(
+            change,
+            ChangeState.REFUSED,
+            refusal_line(named, change["what"], verdict.reason or reply_reason(reply)),
+        )
+        await self._router.deliver_queued(ids, interaction=self._answerable(change))
+        await self._update_reply(change, reply)
+        self._release(change)
+
+    async def _drop(self, change: aiosqlite.Row, reason: str) -> None:
+        """Drop a bot change that is no longer due: the host's log alone says so."""
+        await self._end(change, ChangeState.DROPPED)
+        log.info("%s is no longer due, so it was dropped: %s", change["what"], reason)
+        self._release(change)
+
+    async def _wait_on_repair(
+        self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row], reason: str
+    ) -> None:
+        """Make the bot's change wait on the retry waits for a league to repair what it lacks.
+
+        One line says what is missing, when it first waits; a later check finding it still
+        missing makes it wait longer and says nothing more.
+        """
+        pending = next((row for row in step_rows if row["done_at"] is None), None)
+        first = change["state"] == ChangeState.QUEUED.value
+        ids: list[int] = []
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                await db.execute(
+                    "UPDATE queued_changes SET state = 'WAITING' WHERE id = ?", (change["id"],)
+                )
+                if pending is not None:
+                    await self._wait_step(db, pending, reason)
+                if first:
+                    what = change["what"]
+                    line_id = await self._router.queue_log_on(
+                        db,
+                        f"⚠️ {what[:1].upper() + what[1:]} for {self._named(change)} is "
+                        f"waiting: {reason}. It goes ahead once that is repaired.",
+                    )
+                    if line_id is not None:
+                        ids.append(line_id)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        await self._router.deliver_queued(ids)
+
+    async def _wait_step(
+        self, db: aiosqlite.Connection, row: aiosqlite.Row, reason: str
+    ) -> None:
+        """Make the step *row* wait for its next try, on the retry waits: 30 seconds, doubling,
+        to a ceiling of 15 minutes. Writes on *db*, committing nothing."""
+        tries = row["tries"] + 1
+        now = self._clock()
+        wait = min(RETRY_FIRST_WAIT * 2 ** min(tries - 1, 16), RETRY_CEILING)
+        await db.execute(
+            "UPDATE queued_change_steps SET tries = ?, next_try_at = ?, "
+            "failing_since = COALESCE(failing_since, ?), last_failure = ? "
+            "WHERE change_id = ? AND position = ?",
+            (
+                tries,
+                (now + wait).isoformat(),
+                now.isoformat(),
+                reason,
+                row["change_id"],
+                row["position"],
+            ),
+        )
+
+    async def _end(
+        self, change: aiosqlite.Row, state: ChangeState, line: str | None = None
+    ) -> list[int]:
+        """Mark the change *state*, with *line*, where given, saved on the retry queue in the
+        same save. Returns the line's id, for delivery once saved. A change removed under the
+        worker is left, and its line unwritten."""
+        ids: list[int] = []
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await db.execute(
+                    "UPDATE queued_changes SET state = ? WHERE id = ?", (state.value, change["id"])
+                )
+                if cursor.rowcount == 1 and line is not None:
+                    line_id = await self._router.queue_log_on(db, line)
+                    if line_id is not None:
+                        ids.append(line_id)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        return ids
+
+    def _release(self, change: aiosqlite.Row) -> None:
+        """Let go of the change's interaction, and wake the worker for what comes next."""
+        self._held.pop(change["id"], None)
+        self._wake.set()
+
+    @staticmethod
+    def _named(change: aiosqlite.Row) -> str:
+        """The member who asked as the log channel names them, or "the bot" where nobody did."""
+        if change["actor_id"] is None:
+            return "the bot"
+        return member_named(change["actor_display"], change["actor_id"])
 
     # ------------------------------------------------------------------
     # A step
@@ -447,10 +643,7 @@ class ChangeQueue:
             "what": change["what"],
             "actor_id": change["actor_id"],
             "actor_name": change["actor_name"],
-            "named": (
-                "the bot" if change["actor_id"] is None
-                else member_named(change["actor_display"], change["actor_id"])
-            ),
+            "named": self._named(change),
             "steps": tuple(
                 StepView(
                     row["name"],
@@ -469,45 +662,81 @@ class ChangeQueue:
         step_rows: list[aiosqlite.Row],
         row: aiosqlite.Row,
     ) -> bool:
-        """Run the step *row*, saving its mark with its writes, audits and lines."""
-        step = change_type.steps[row["name"]]
-        ctx = StepContext(
-            **self._context_fields(change, step_rows),
-            step_name=row["name"],
-            step_payload=json.loads(row["payload"]),
-            tries=row["tries"],
-        )
-        saved: list[int] | None
-        if step.kind is StepKind.SAVE:
-            async with get_connection(self._db_path) as db:
-                await db.execute("BEGIN IMMEDIATE")
-                try:
-                    result = await step.run(db, ctx)
-                    saved = await self._save_result(db, change, row, result)
-                    if saved is None:
+        """Run the step *row*, saving its mark with its writes, audits and lines.
+
+        A step that raises has its save rolled back whole, and the change is faulted.
+        """
+        try:
+            step = change_type.steps[row["name"]]
+            ctx = StepContext(
+                **self._context_fields(change, step_rows),
+                step_name=row["name"],
+                step_payload=json.loads(row["payload"]),
+                tries=row["tries"],
+            )
+            saved: list[int] | None
+            if step.kind is StepKind.SAVE:
+                async with get_connection(self._db_path) as db:
+                    await db.execute("BEGIN IMMEDIATE")
+                    try:
+                        result = await step.run(db, ctx)
+                        saved = await self._save_result(db, change, row, result)
+                        if saved is None:
+                            await db.rollback()
+                        else:
+                            await db.commit()
+                    except BaseException:
                         await db.rollback()
-                    else:
-                        await db.commit()
-                except BaseException:
-                    await db.rollback()
-                    raise
-        else:
-            result = await step.run(ctx)
-            async with get_connection(self._db_path) as db:
-                await db.execute("BEGIN IMMEDIATE")
-                try:
-                    saved = await self._save_result(db, change, row, result)
-                    if saved is None:
+                        raise
+            else:
+                result = await step.run(ctx)
+                async with get_connection(self._db_path) as db:
+                    await db.execute("BEGIN IMMEDIATE")
+                    try:
+                        saved = await self._save_result(db, change, row, result)
+                        if saved is None:
+                            await db.rollback()
+                        else:
+                            await db.commit()
+                    except BaseException:
                         await db.rollback()
-                    else:
-                        await db.commit()
-                except BaseException:
-                    await db.rollback()
-                    raise
+                        raise
+        except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_fault`
+            await self._fault(change, change_type, error)
+            return False
         if saved is None:
             return False
         await self._router.deliver_queued(saved, interaction=self._answerable(change))
         return True
+
+    async def _fault(
+        self, change: aiosqlite.Row, change_type: ChangeType | None, error: BaseException
+    ) -> None:
+        """End the change FAULTED on *error*, telling the host, the log channel and the member.
+
+        This is the failure path for changes, the first place "Errors and failures" allows a
+        catch-all, and it keeps the details: the traceback goes to the host's log, the line
+        in the log channel names the fault's type, and the acknowledgement is updated with the
+        change type's account of what became of the change. What earlier steps saved stays saved.
+        """
+        what = change["what"]
+        log.error("%s failed for %s (change %s)", what, self._named(change), change["id"],
+                  exc_info=error)
+        async with get_connection(self._db_path) as db:
+            step_rows = await self._read_steps(db, change["id"])
+        outcome: str | None = None
+        if change_type is not None:
+            try:
+                outcome = change_type.fault_outcome(self._outcome_context(change, step_rows))
+            except Exception:  # noqa: BLE001 — the reply falls back to the general outcome
+                log.error("could not word what became of %s (change %s)", what, change["id"],
+                          exc_info=True)
+        ids = await self._end(
+            change, ChangeState.FAULTED, failure_line(what, self._named(change), error)
+        )
+        await self._router.deliver_queued(ids, interaction=self._answerable(change))
+        await self._update_reply(change, failure_reply(what, outcome))
+        self._release(change)
 
     async def _save_result(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, row: aiosqlite.Row,
@@ -579,8 +808,7 @@ class ChangeQueue:
         change_type = self._types[change["kind"]]
         text = change_type.outcome(self._outcome_context(change, step_rows))
         await self._update_reply(change, text)
-        self._held.pop(change["id"], None)
-        self._wake.set()
+        self._release(change)
 
     async def _update_reply(self, change: aiosqlite.Row, text: str) -> None:
         """Update the acknowledgement with *text*, in as many parts as it needs.
