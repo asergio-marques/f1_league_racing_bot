@@ -130,6 +130,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
     from tests.support.change_queue import (
+        acknowledgement,
         attach_queue,
         change_rows,
         league_double,
@@ -174,6 +175,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     interaction = member_interaction(bot)
     await bot.change_queue.ask("dummy", {}, interaction=interaction, what="`/dummy`",
                                refusal_what="`/dummy`")
+    assert acknowledgement(interaction).startswith("⏳ Doing the dummy thing.")
 
     clear_in_memory_state(bot)
     await run_queue(bot)
