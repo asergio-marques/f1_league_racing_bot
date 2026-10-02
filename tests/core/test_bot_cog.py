@@ -1011,6 +1011,45 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
+@pytest.mark.xfail(strict=True, reason=PACK_WAITS_ON_THE_QUEUE)
+async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season(
+    tmp_path, monkeypatch
+):
+    """A change asked for after the command's own check has passed is caught by the pack's
+    refusal inside its transaction (#439), and the admin is told of the job it would wait on,
+    not of a season the league does not have: the reply names the job and says to let it finish,
+    and the log channel records the refusal after the line the pack wrote as it began."""
+    from leaguebot.core.services import pack_service
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    packed = pack_service.pack
+    jobs = []
+
+    async def racing(*args, **kwargs):
+        jobs.append(await _seed_pending_job(db_path, stopped=False))
+        return await packed(*args, **kwargs)
+
+    monkeypatch.setattr(pack_service, "pack", racing)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    [job] = jobs
+    reply = interaction.followup.send.call_args.args[0]
+    assert f"job #{job}" in reply
+    assert "finish" in reply
+    assert "Season" not in reply and "season" not in reply
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert [state for _, state in (await _queue_rows(db_path))[:1]] == ["QUEUED"]
+    bot.scheduler_service.cancel_all.assert_not_called()
+    lines = _log_lines(bot)
+    assert len(lines) == 2
+    assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
+
+
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
     """Issue #383. What the entry holds is the service's to pin; who it names is the cog's."""
     db_path = await _make_db(tmp_path)
