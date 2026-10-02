@@ -28,17 +28,15 @@ import discord
 
 @dataclass
 class Answering:
-    """The interaction a task is answering, and whether its member has been warned already.
+    """The interaction a task is answering.
 
     *task* is the task that runs the command, which is what ends when the command is over: a
     warning for an interaction not yet answered waits for it, since sending first would take
-    the command's one response. *warned* is set once the member has been told, so that
-    however many of their lines fail they are told once.
+    the command's one response.
     """
 
     interaction: discord.Interaction
     task: asyncio.Task[object] | None
-    warned: bool = False
 
 
 _answering: ContextVar[Answering | None] = ContextVar("answering", default=None)

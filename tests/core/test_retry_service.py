@@ -266,10 +266,6 @@ async def _settle() -> None:
         await asyncio.sleep(0)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: a line never tried is still delivered with a retry notice",
-)
 async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry_notice(tmp_path):
     """The bot stopped between saving a line and delivering it: nothing failed, so there is no
     retry to announce."""
@@ -288,7 +284,6 @@ async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a retried line is sent with mentions switched on")
 async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     import discord
 

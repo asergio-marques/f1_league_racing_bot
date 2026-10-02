@@ -22,9 +22,6 @@ import pytest
 
 from leaguebot.core.services.output_router import OutputRouter
 
-#: What the queue and its log lines need of the router, not built yet (#439).
-QUEUE_LINES_NOT_BUILT = "#439: the router cannot write a log line in a caller's save yet"
-
 
 def _channel(sent):
     channel = MagicMock(spec=discord.TextChannel)
@@ -261,7 +258,6 @@ async def _pending(db_path: str) -> list[dict]:
         return [dict(row) for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_LINES_NOT_BUILT)
 async def test_a_line_queued_in_a_save_is_written_for_the_log_channel_and_not_committed(tmp_path):
     from leaguebot.core.db.database import get_connection
     from tests.support.change_queue import LOG_CHANNEL_ID
@@ -283,7 +279,6 @@ async def test_a_line_queued_in_a_save_is_written_for_the_log_channel_and_not_co
     assert bot.log_channel.sent == [], "the line is delivered after the save, not in it"
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_LINES_NOT_BUILT)
 async def test_a_line_queued_before_the_bot_is_set_up_is_not_written(tmp_path):
     from leaguebot.core.db.database import get_connection
 
