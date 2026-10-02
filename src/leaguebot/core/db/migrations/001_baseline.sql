@@ -837,7 +837,8 @@ CREATE TABLE "pending_messages" (
 
 -- queued_changes
 -- One row per change asked for, `id` being the order asked. `state` runs QUEUED -> RUNNING -> DONE,
--- or ends REFUSED, DROPPED or FAULTED; it is WAITING while one of its steps waits on a retry.
+-- or ends REFUSED, DROPPED, DISCARDED or FAULTED; it is WAITING while one of its steps waits on a
+-- retry.
 -- `actor_name` is str(member), as the audit records it; `actor_display` the display name, as the
 -- log channel names a member. `what` is how the change's lines name it. `places` lists where the
 -- change posts, as "channel:<id>". `acknowledged_at` bounds the update of the member's reply.
@@ -848,7 +849,8 @@ CREATE TABLE "queued_changes" (
     payload         TEXT    NOT NULL DEFAULT '{}',
     origin          TEXT    NOT NULL CHECK (origin IN ('MEMBER', 'BOT')),
     state           TEXT    NOT NULL DEFAULT 'QUEUED' CHECK (state IN
-                    ('QUEUED', 'RUNNING', 'WAITING', 'DONE', 'REFUSED', 'DROPPED', 'FAULTED')),
+                    ('QUEUED', 'RUNNING', 'WAITING', 'DONE', 'REFUSED', 'DROPPED', 'DISCARDED',
+                     'FAULTED')),
     actor_id        INTEGER,
     actor_name      TEXT,
     actor_display   TEXT,
@@ -862,8 +864,12 @@ CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (state)
     WHERE state = 'RUNNING';
 
 -- queued_change_steps
--- A change's steps in order. `done_at` is the mark, saved with the step's own changes.
+-- A change's steps in order, each a job of its own. `id` is the job's number, never renumbered:
+-- `position` moves as later jobs are planned before it. `done_at` is the mark, saved with the
+-- step's own changes. `notice_message_id` and `notice_channel_id` locate the notice of a stop in
+-- the log channel, kept until the job clears.
 CREATE TABLE "queued_change_steps" (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     change_id     INTEGER NOT NULL REFERENCES "queued_changes"(id) ON DELETE CASCADE,
     position      INTEGER NOT NULL,
     name          TEXT    NOT NULL,
@@ -876,7 +882,9 @@ CREATE TABLE "queued_change_steps" (
     failing_since TEXT,
     reported_at   TEXT,
     last_failure  TEXT,
-    PRIMARY KEY (change_id, position)
+    notice_message_id INTEGER,
+    notice_channel_id INTEGER,
+    UNIQUE (change_id, position)
 );
 CREATE INDEX "queued_change_steps_waiting" ON "queued_change_steps" (next_try_at)
     WHERE done_at IS NULL AND next_try_at IS NOT NULL;

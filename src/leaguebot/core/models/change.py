@@ -18,7 +18,7 @@ from typing import Any
 
 class ChangeState(str, Enum):
     """Where a change stands. It runs QUEUED, RUNNING, DONE; WAITING while one of its steps waits
-    on a retry; and ends REFUSED, DROPPED or FAULTED."""
+    on a retry; and ends REFUSED, DROPPED, DISCARDED or FAULTED."""
 
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
@@ -26,6 +26,7 @@ class ChangeState(str, Enum):
     DONE = "DONE"
     REFUSED = "REFUSED"
     DROPPED = "DROPPED"
+    DISCARDED = "DISCARDED"
     FAULTED = "FAULTED"
 
 

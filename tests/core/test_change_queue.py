@@ -1277,7 +1277,6 @@ async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
 
 
 #: What is not yet true of each test marked with it.
-JOB_IDS = "#439: a job has no number of its own yet"
 ACK_JOB = "#439: the acknowledgement does not yet name the request's first job"
 SCHEDULE = "#439: a stopped job is not yet tried on the 1-60 minute schedule"
 
@@ -1309,7 +1308,6 @@ async def _try_at(env, minutes: float) -> None:
     await run_queue(env.bot)
 
 
-@pytest.mark.xfail(strict=True, reason=JOB_IDS)
 async def test_every_job_has_its_own_id_that_planning_later_jobs_leaves_alone(env):
     """Each job saved gets a number of its own, never shared with another job of any request, and
     a job planning more jobs before the last one renumbers neither itself nor the last."""
