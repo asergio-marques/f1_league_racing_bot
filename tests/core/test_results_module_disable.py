@@ -58,8 +58,6 @@ from tests.support.change_queue import (
 )
 from tests.support.teams import seed_team_instances
 
-NOT_BUILT = "#439: turning results off does not run on the change queue yet"
-
 SERVER_ID = 12408
 ACTOR_ID = 77
 OTHER_ADMIN = 88
@@ -537,7 +535,6 @@ async def test_the_flag_goes_down_in_the_save_that_erases_the_results(tmp_path):
     assert seen == [(0, 0, "FINAL")]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_disable_between_seasons_still_takes_all_three_steps(tmp_path):
     """The erase and the closing of the rounds simply find nothing to do, which is why they
     are unconditional: the switch-off still lands, and the change finishes."""
@@ -550,7 +547,8 @@ async def test_a_disable_between_seasons_still_takes_all_three_steps(tmp_path):
     assert [row["state"] for row in await change_rows(db_path)
             if row["kind"] == "module.off:results"] == ["DONE"]
     line = await _line_with(cog.bot, "/module disable results")
-    assert line.endswith("| /module disable results | Success")
+    divider = "\n" + "\u2015" * 36
+    assert line.removesuffix(divider).endswith("| /module disable results | Success")
 
 
 async def test_a_purged_season_is_audited_separately(tmp_path):

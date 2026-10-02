@@ -48,8 +48,6 @@ from tests.support.change_queue import (
 )
 from tests.support.teams import seed_team_instances
 
-NOT_BUILT = "#439: turning results off does not run on the change queue yet"
-
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 WHAT = "`/module disable results`"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
@@ -670,7 +668,6 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_wind_down_discord_keeps_failing_is_reported_as_still_at_work_after_an_hour(
     tmp_path, monkeypatch,
 ):
@@ -702,7 +699,8 @@ async def test_a_wind_down_discord_keeps_failing_is_reported_as_still_at_work_af
         "for over an hour ("
     )
     assert "Missing Access" in line
-    assert line.endswith("). The bot keeps trying.")
+    divider = "\n" + "\u2015" * 36
+    assert line.removesuffix(divider).endswith("). The bot keeps trying.")
     assert (await _change(seeded.db_path, "season.wind_down"))["state"] == "WAITING"
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
