@@ -350,7 +350,6 @@ async def test_a_refused_pack_records_nothing(db_path):
 # ── The change queue (#439) ────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a pack leaves unfinished changes in the queue")
 async def test_pack_drops_every_unfinished_change(db_path):
     """A change left waiting would go on changing Discord on a server the bot no longer serves;
     the finished ones are history and stay."""
