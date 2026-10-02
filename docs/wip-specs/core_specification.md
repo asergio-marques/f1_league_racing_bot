@@ -111,6 +111,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A mention written into the log channel shall not notify anybody.
 - A record too long for one message shall be divided across as many as it requires.
 - A message the bot fails to post shall be kept and delivered later.
+- A line the log channel cannot take shall still be kept and delivered later, and the member whose command, button or form the line records shall be told so, seen by them alone, once however many of their lines fail, and after their reply where they have not yet been answered. Where no member's interaction can still be answered, the host's log alone shall record it, and the bot shall post nothing in the interaction channel. Decided 2026-10-01.
 
 ### When a command fails
 - A command, button or form that fails before it finishes shall tell the member who used it, seen by them alone, naming what failed, that the fault lies in the bot and not in anything the member entered, that it did not finish, and that it may have been partly done. The reply shall not name the exception.
@@ -118,6 +119,12 @@ it only to place it; the rules governing it belong to its own specification.
     - A results amendment's failure reply may also name the kind of fault in plain words — that the bot could not read or write its database, that Discord refused or failed a request, that the bot hit an internal fault — but never the exception, and shall end with what to do next. Decided 2026-09-28.
 - The failure shall be recorded in the log channel, naming the member, the command, button or form, and the kind of fault. The full detail shall go to the host's log alone.
 - Either shall be made though the other cannot be.
+
+### How a change is carried out
+- A change a member asks for shall be acknowledged at once as under way, and the acknowledgement updated with its outcome once the change is done; an outcome that arrives after the acknowledgement can no longer be updated shall be recorded in the log channel alone. Changes shall be carried out one at a time, and a change cut off by a stop shall be finished when the bot starts again. A request the bot cannot carry out shall be refused at once, saying why. A request repeating a change that has not started, with nothing else asked for since, shall be refused, saying so, as shall a change that can only be done once and already has been. A change meant to be repeated, such as reposting a calendar after a round is amended, shall not be refused. A message the bot would edit or delete that was already deleted by hand shall be left gone, and an edit that finds it gone shall be recorded in the log channel. Decided 2026-09-25.
+- A change the bot cannot finish only because Discord failed shall wait and be tried again, and a later change for the same place shall wait behind it. Where a module's specification asks that a failure be handed to the league instead, as turning Results & Standings off does for a message it cannot remove, that step shall be tried once and its failure named in the change's outcome. A change that fails for any other reason shall stop, and be reported as a command's failure is, saying what became of it.
+- A step still failing after about an hour shall be reported in the log channel, and again once a day, and still be tried.
+- Only `/module disable results` works this way so far. Each change that moves onto it widens this list, until the list is dropped.
 
 ### Modules
 - Five modules shall be available, each specified in its own document: signup, results and standings, attendance, weather, and image generation.
@@ -141,7 +148,7 @@ it only to place it; the rules governing it belong to its own specification.
 - A pack shall clear everything tied to the server:
     - the four settings, which frees the bot's claim on the server;
     - the league's base role and driver role, the role of every team, the hub channel, and the signup channel;
-    - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
+    - every signup wizard, every undelivered message awaiting a retry, every change still waiting, and the season review prompt;
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.
 - A pack shall change nothing in Discord. The bot's messages shall stay on the server it leaves, and their buttons shall be refused from then on; the pack's reply shall say so.
@@ -615,6 +622,7 @@ Decided 2026-09-22 (#381). Each name has one job, and no name does another's.
 - The end of a season shall not be recovered. A league admin shall complete it.
 - Anything else that came due while the bot was stopped is missed.
 - A message the bot failed to post shall be retried until it is delivered, shall survive a restart, and its eventual delivery shall be recorded in the log channel. A message still undelivered after about an hour shall be reported there.
+- A change cut off by a stop shall be finished when the bot starts again, from the first step it had not done; no step done is done twice. A change waiting for Discord to take a step again shall be tried at once.
 
 ## Test mode
 Test mode exists because the bot is almost entirely time-driven, and a season's behaviour
@@ -674,6 +682,7 @@ section states the rules it holds to.
 - Restoring shall keep a copy of the state it replaces, so that a restore nobody wanted may be walked back.
 - Restoring shall not replace the databases while the bot runs. It shall prepare the replacement, and the replacement shall be made when the bot next starts, before any part of the bot has opened either database. The manager shall be told that a restart is required.
 - A state restored shall carry the test mode flag it was saved with.
+- A state restored shall bring back no change waiting: whatever the saved state held of changes asked for and not finished is dropped as it is restored.
 
 ### Saving a season before its placements are confirmed
 - Where the server is in test mode, the first confirmation of a season's placements shall ask whether the databases are to be saved before it commits anything. The question shall be put after every validation of the season has passed and before the first thing is written.
