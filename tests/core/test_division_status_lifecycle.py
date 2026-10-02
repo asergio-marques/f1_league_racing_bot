@@ -327,8 +327,6 @@ async def test_each_waiting_state_counts_as_outstanding(tmp_path, status):
 # committed by the caller alone.
 # ---------------------------------------------------------------------------
 
-HANDED_NOT_BUILT = "#439: closing rounds on a handed connection is not built yet"
-
 
 async def _season_stage(db_path: str) -> str:
     async with get_connection(db_path) as db:
@@ -350,7 +348,6 @@ async def _audits(db_path: str, change_type: str) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NOT_BUILT)
 async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_caller_commits(
     tmp_path,
 ):
@@ -386,7 +383,6 @@ async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_call
     assert await _audits(db_path, "round.status") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_NOT_BUILT)
 async def test_a_division_finished_on_a_handed_connection_moves_its_season_on_in_the_same_save(
     tmp_path,
 ):

@@ -14,6 +14,8 @@ from __future__ import annotations
 import json
 import logging
 
+import aiosqlite
+
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -86,18 +88,25 @@ async def count_unsettled_signups(db_path: str) -> int:
     return int(row["n"]) if row is not None else 0
 
 
-async def _move(db_path: str, season_id: int, current: SeasonStage, target: SeasonStage) -> None:
-    """Write the transition, conditioned on the stage that was read."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "UPDATE seasons SET status = ?, stage = ? WHERE id = ? AND stage = ?",
-            (status_of_stage(target).value, target.value, season_id, current.value),
-        )
-        await db.commit()
+async def _move_on(
+    db: aiosqlite.Connection, season_id: int, current: SeasonStage, target: SeasonStage
+) -> None:
+    """Write the transition on *db*, conditioned on the stage that was read; commits nothing."""
+    cursor = await db.execute(
+        "UPDATE seasons SET status = ?, stage = ? WHERE id = ? AND stage = ?",
+        (status_of_stage(target).value, target.value, season_id, current.value),
+    )
     if cursor.rowcount == 0:
         raise InvalidStageTransition(
             f"season {season_id} left {current.value} before it could move to {target.value}"
         )
+
+
+async def _move(db_path: str, season_id: int, current: SeasonStage, target: SeasonStage) -> None:
+    """Write the transition, conditioned on the stage that was read."""
+    async with get_connection(db_path) as db:
+        await _move_on(db, season_id, current, target)
+        await db.commit()
 
 
 async def advance_on_window_open(db_path: str) -> SeasonStage | None:
@@ -295,24 +304,48 @@ async def modules_frozen_for_completion(db_path: str) -> bool:
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
 
 
-async def _stage_and_whether_done(db_path: str, season_id: int) -> tuple[str | None, bool]:
+async def _stage_and_whether_done_on(
+    db: aiosqlite.Connection, season_id: int
+) -> tuple[str | None, bool]:
     """The season's stage, and whether every one of its divisions is finished or cancelled.
 
-    A season with no division is not done: it has had nothing to race.
+    A season with no division is not done: it has had nothing to race. Read on *db*.
     """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT stage, "
-            "  (SELECT COUNT(*) FROM divisions d WHERE d.season_id = s.id) AS divisions, "
-            "  (SELECT COUNT(*) FROM divisions d WHERE d.season_id = s.id "
-            "     AND d.status NOT IN ('FINISHED', 'CANCELLED')) AS outstanding "
-            "FROM seasons s WHERE s.id = ?",
-            (season_id,),
-        )
-        row = await cursor.fetchone()
+    cursor = await db.execute(
+        "SELECT stage, "
+        "  (SELECT COUNT(*) FROM divisions d WHERE d.season_id = s.id) AS divisions, "
+        "  (SELECT COUNT(*) FROM divisions d WHERE d.season_id = s.id "
+        "     AND d.status NOT IN ('FINISHED', 'CANCELLED')) AS outstanding "
+        "FROM seasons s WHERE s.id = ?",
+        (season_id,),
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None, False
     return row["stage"], row["divisions"] > 0 and row["outstanding"] == 0
+
+
+async def _stage_and_whether_done(db_path: str, season_id: int) -> tuple[str | None, bool]:
+    """The season's stage, and whether every one of its divisions is finished or cancelled."""
+    async with get_connection(db_path) as db:
+        return await _stage_and_whether_done_on(db, season_id)
+
+
+async def advance_to_pending_completion_on(db: aiosqlite.Connection, season_id: int) -> bool:
+    """:func:`advance_to_pending_completion` on *db*, committing nothing.
+
+    The move is part of whatever save the caller makes, so that a division finishing and the
+    season it was the last of moving on are saved together or not at all (issue #439).
+    """
+    stage, done = await _stage_and_whether_done_on(db, season_id)
+    if stage != SeasonStage.ONGOING.value or not done:
+        return False
+    try:
+        await _move_on(db, season_id, SeasonStage.ONGOING, SeasonStage.PENDING_COMPLETION)
+    except InvalidStageTransition:
+        return False
+    log.info("season %s is pending completion", season_id)
+    return True
 
 
 async def advance_to_pending_completion(db_path: str, season_id: int) -> bool:

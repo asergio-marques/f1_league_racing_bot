@@ -455,7 +455,6 @@ async def test_a_round_with_no_results_changes_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: closing rounds on a handed connection is not built yet")
 async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path):
     """`end_rounds_awaiting_results_on` is the other way a round becomes final (#167, #216).
 
