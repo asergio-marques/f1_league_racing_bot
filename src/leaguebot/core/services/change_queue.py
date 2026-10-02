@@ -610,8 +610,10 @@ class ChangeQueue:
         that has not landed is due to be posted again; None where nothing waits."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT MIN(next_try_at) AS due FROM queued_change_steps "
-                "WHERE done_at IS NULL AND next_try_at IS NOT NULL"
+                "SELECT MIN(s.next_try_at) AS due FROM queued_change_steps s "
+                "JOIN queued_changes c ON c.id = s.change_id "
+                "WHERE s.done_at IS NULL AND s.next_try_at IS NOT NULL "
+                "AND c.state IN ('QUEUED', 'RUNNING')"
             )
             row = await cursor.fetchone()
         times = [] if row is None or row["due"] is None else [datetime.fromisoformat(row["due"])]
