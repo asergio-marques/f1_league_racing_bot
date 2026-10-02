@@ -76,7 +76,14 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.services.audit_service import record_change_on
-from leaguebot.core.utils.log_lines import hour_line, refusal_line, refuse, reply_reason, stop_line
+from leaguebot.core.utils.log_lines import (
+    hour_line,
+    refusal_line,
+    refuse,
+    reply_reason,
+    restart_line,
+    stop_line,
+)
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.core.utils.messages import chunk_message
 
@@ -406,19 +413,16 @@ class ChangeQueue:
     async def start(self) -> None:
         """Start the worker, once: a second call does nothing.
 
-        Every step waiting on a retry is made due now, so that what the bot's stop interrupted is
-        tried again at once. Every log line saved and never tried, which the stop came between
-        the save and the delivery of, is delivered, with no interaction to tell if it fails.
+        A change a stop cut off, with no job failed, carries on as it was. A job that was stopped
+        on a failure stays stopped: its `next_try_at` is cleared, so that after a restart only
+        Retry or Discard moves the queue, and one line says so. Every log line saved and never
+        tried, which the stop came between the save and the delivery of, is delivered, with no
+        interaction to tell if it fails.
         """
         if self._task is not None and not self._task.done():
             return
+        await self._leave_stopped_jobs_stopped()
         async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE queued_change_steps SET next_try_at = ? "
-                "WHERE done_at IS NULL AND next_try_at IS NOT NULL",
-                (self._clock().isoformat(),),
-            )
-            await db.commit()
             cursor = await db.execute(
                 "SELECT id FROM pending_messages WHERE failure_reason = '' ORDER BY id"
             )
@@ -426,6 +430,69 @@ class ChangeQueue:
         await self._router.deliver_queued(never_tried)
         self._task = asyncio.create_task(self._work(), name="change-queue")
         self._task.add_done_callback(self._worker_ended)
+
+    async def _leave_stopped_jobs_stopped(self) -> None:
+        """Clear the `next_try_at` of every stopped job, and queue the line saying the queue is
+        still stopped, in one save; the line is delivered with the rest at start-up."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT c.*, s.id AS job_id FROM queued_change_steps s "
+                "JOIN queued_changes c ON c.id = s.change_id "
+                "WHERE s.done_at IS NULL AND s.failing_since IS NOT NULL "
+                "AND c.state IN ('QUEUED', 'RUNNING') ORDER BY s.id"
+            )
+            stopped = list(await cursor.fetchall())
+            jobs = {
+                change["job_id"]: await self._read_steps(db, change["id"]) for change in stopped
+            }
+        lines: list[tuple[int, str]] = []
+        for change in stopped:
+            row = next(row for row in jobs[change["job_id"]] if row["id"] == change["job_id"])
+            name = await self._name_job(
+                change, row, self._step_context(change, jobs[change["job_id"]], row)
+            )
+            lines.append((change["job_id"], restart_line(change["job_id"], name)))
+        if not lines:
+            return
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                for job_id, line in lines:
+                    await db.execute(
+                        "UPDATE queued_change_steps SET next_try_at = NULL WHERE id = ?",
+                        (job_id,),
+                    )
+                    await self._router.queue_log_on(db, line)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+
+    async def _name_job(
+        self, change: aiosqlite.Row, row: aiosqlite.Row, ctx: StepContext
+    ) -> str:
+        """What the job *row* is doing, as a line names it: its step's `describe`, or the
+        change's own words where there is none, or it cannot be had."""
+        change_type = self._types.get(change["kind"])
+        step = None if change_type is None else change_type.steps.get(row["name"])
+        if step is None or step.describe is None:
+            return str(change["what"])
+        try:
+            return await step.describe(ctx)
+        except Exception:  # noqa: BLE001 — the line goes ahead naming the change
+            log.error("could not describe job %r of %s", row["name"], change["what"],
+                      exc_info=True)
+            return str(change["what"])
+
+    def _step_context(
+        self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row], row: aiosqlite.Row
+    ) -> StepContext:
+        return StepContext(
+            **self._context_fields(change, step_rows),
+            step_name=row["name"],
+            step_payload=json.loads(row["payload"]),
+            tries=row["tries"],
+        )
 
     def forget_held(self) -> None:
         """Drop every interaction held to update, for a pack or a factory reset, which delete the
@@ -707,12 +774,7 @@ class ChangeQueue:
                       exc_info=unknown)
             await self._stop(change, row, unknown)
             return False
-        ctx = StepContext(
-            **self._context_fields(change, step_rows),
-            step_name=row["name"],
-            step_payload=json.loads(row["payload"]),
-            tries=row["tries"],
-        )
+        ctx = self._step_context(change, step_rows, row)
         try:
             if step.still_due is not None and not await step.still_due(ctx):
                 return await self._complete(change, row, StepResult(result={"dropped": True}))
@@ -783,13 +845,7 @@ class ChangeQueue:
             return await self._complete(
                 change, row, StepResult(result={"gone": True}, lines=lines)
             )
-        job = change["what"]
-        if step.describe is not None:
-            try:
-                job = await step.describe(ctx)
-            except Exception:  # noqa: BLE001 — the stop goes ahead naming the change
-                log.error("could not describe job %r of %s", step.name, change["what"],
-                          exc_info=True)
+        job = await self._name_job(change, row, ctx)
         await self._stop(change, row, error, job=job)
         return False
 

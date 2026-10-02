@@ -126,6 +126,15 @@ def hour_line(job_id: int, job: str) -> str:
     )
 
 
+def restart_line(job_id: int, job: str) -> str:
+    """The log channel's line for the queue still stopped at job *job_id* after a restart: the bot
+    no longer tries it on its own."""
+    return (
+        f"❌ The queue is still stopped at job #{job_id} ({job}). After the restart the bot no "
+        f"longer tries it on its own: press Retry or Discard on its notice."
+    )
+
+
 async def record_refusal(
     bot: Any,
     member: int | discord.abc.User | None,
