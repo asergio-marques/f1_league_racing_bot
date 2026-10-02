@@ -115,3 +115,70 @@ async def test_the_clear_empties_every_store():
     assert bot.wizard_service._correction_tasks == {}
     assert task.cancelled()
     assert lapse.cancelled()
+
+
+async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
+    """A pack or a factory reset deletes the changes the queue holds replies for (#439), so the
+    clear makes the queue forget them: a change finishing afterwards updates no member's reply.
+
+    Without `forget_held` in the clear the reply would still be updated, as
+    `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
+    """
+    from datetime import datetime, timezone
+
+    from leaguebot.core.db.database import run_migrations
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+    from tests.support.change_queue import (
+        attach_queue,
+        change_rows,
+        league_double,
+        member_interaction,
+        run_queue,
+        seed_server,
+        updated_reply,
+    )
+
+    db_path = str(tmp_path / "queue.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    bot = league_double(db_path)
+    bot.get_cog = lambda name: None
+    bot.wizard_service = None
+    ran: list[str] = []
+
+    async def _go(_ctx):
+        return Verdict.go()
+
+    async def _act(_ctx):
+        ran.append("a")
+        return StepResult()
+
+    attach_queue(
+        bot,
+        db_path,
+        now=datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc),
+        types=[
+            ChangeType(
+                kind="dummy",
+                opening=(PlannedStep("a", {}),),
+                steps={"a": Step("a", StepKind.ACT, _act)},
+                check=_go,
+                key=lambda payload: "dummy",
+                doing=lambda _payload: "Doing the dummy thing",
+                outcome=lambda _ctx: "✅ Done.",
+                fault_outcome=lambda _ctx: "Nothing was changed.",
+            )
+        ],
+    )
+    interaction = member_interaction(bot)
+    await bot.change_queue.ask("dummy", {}, interaction=interaction, what="`/dummy`",
+                               refusal_what="`/dummy`")
+
+    clear_in_memory_state(bot)
+    await run_queue(bot)
+
+    assert ran == ["a"]
+    assert [row["state"] for row in await change_rows(db_path)] == ["DONE"]
+    assert updated_reply(interaction) == ""
+    interaction.edit_original_response.assert_not_awaited()
