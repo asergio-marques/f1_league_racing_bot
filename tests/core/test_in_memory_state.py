@@ -49,6 +49,10 @@ CLEARED = {
     # The interactions the change queue holds to update each change's reply: a pack or a
     # factory reset deletes the changes they belong to (#439).
     ("core/services/change_queue.py", "_held"),
+    # What the queue remembers of its stopped jobs: when each stop notice was last tried, and
+    # each Retry under way. `forget_held` clears them with the interactions above (#439).
+    ("core/services/change_queue.py", "_notice_tried"),
+    ("core/services/change_queue.py", "_retrying"),
 }
 
 #: Stores that hold no league state, and why.
