@@ -85,7 +85,11 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
-    # The change types are registered here as each is built.
+    from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.season_lifecycle_service import wind_down_change
+
+    bot.change_queue.register(hub_refresh_change())
+    bot.change_queue.register(wind_down_change())
 
 
 async def main() -> None:

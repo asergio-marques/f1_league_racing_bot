@@ -17,7 +17,15 @@ import logging
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
+from leaguebot.core.services.change_queue import (
+    ChangeType,
+    CheckContext,
+    OutcomeContext,
+    Step,
+    StepContext,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -266,6 +274,49 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
     await advance_to_pending_completion(db_path, season_id)
     final_stage, _ = await _stage_and_whether_done(db_path, season_id)
     return final_stage == SeasonStage.PENDING_COMPLETION.value
+
+
+#: The kind of the change that winds a season down.
+WIND_DOWN = "season.wind_down"
+_WIND_DOWN_STEP = "wind_down"
+
+
+def wind_down_change() -> ChangeType:
+    """The change that takes a season whose every division is done to Pending completion.
+
+    Asked by the bot in the save of whatever finished the last division, so that the wind-down,
+    which needs Discord, goes ahead whatever befalls the steps beside it. It is due only while
+    the live season is in an ongoing stage with every division finished or cancelled; where it is
+    not, the change is dropped. Its one step is `wind_down_ongoing`, retried in the generic way
+    where Discord fails it.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        found = await live_season_stage(ctx.db_path)
+        if found is None or found[1] not in ONGOING_STAGES:
+            return Verdict.not_due("the season is not in an ongoing stage")
+        _, done = await _stage_and_whether_done(ctx.db_path, found[0])
+        if not done:
+            return Verdict.not_due("a division of the season is not done")
+        return Verdict.go()
+
+    async def wind_down(ctx: StepContext) -> StepResult:
+        moved = await wind_down_ongoing(ctx.bot)
+        return StepResult(result={"moved": moved})
+
+    def outcome(_ctx: OutcomeContext) -> str:
+        return ""
+
+    return ChangeType(
+        kind=WIND_DOWN,
+        opening=(PlannedStep(_WIND_DOWN_STEP),),
+        steps={_WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down)},
+        check=check,
+        key=lambda _payload: WIND_DOWN,
+        doing=lambda _payload: "Winding the season down",
+        outcome=outcome,
+        fault_outcome=outcome,
+    )
 
 
 async def configuration_fixed(db_path: str) -> int | None:
