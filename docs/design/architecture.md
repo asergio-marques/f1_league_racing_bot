@@ -296,10 +296,11 @@ audit record, which is how some settings came to have none.
   Discard moves the queue. A change a
   stop cut off with no job failed carries on from its first step not done.
 
-  *Rejected:* a failed job stepping aside while later changes go ahead; a job tried once and
-  handed to the league, as turning results off once did for a message it removes; and an automatic
-  try after a restart. Each is a second rule beside "every failure stops the queue", which is the
-  rule the core specification's "How a change is carried out" records.
+  *Rejected:* a failed job stepping aside while later changes go ahead, and a job tried once and
+  handed to the league, as turning results off once did for a message it removes. Each is a
+  second rule beside "every failure stops the queue", which is the rule the core specification's
+  "How a change is carried out" records. Also rejected: an automatic try after a restart, which
+  "When the bot stops" in the core specification rules out.
 - **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
   save raises, nothing is marked stopped: the worker's catch-all (`ChangeQueue._work`) puts the
   error in the host's log, the worker pauses and looks again, and the job runs again, so that its
