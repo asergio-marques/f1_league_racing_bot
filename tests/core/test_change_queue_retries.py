@@ -77,7 +77,7 @@ async def _try_when_due(env) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS)
-async def test_a_discord_failure_is_retried_with_growing_waits_up_to_the_ceiling(env):
+async def test_a_discord_failure_stops_the_queue_and_holds_a_later_change_through_every_try(env):
     """A job Discord fails stops the queue: it is tried again 1, 5, 10, 15, 30 and 60 minutes
     after its first failure, and a change asked after it waits the whole time."""
     holder = {"fail": _missing_access()}
@@ -106,7 +106,7 @@ async def test_a_discord_failure_is_retried_with_growing_waits_up_to_the_ceiling
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS)
-async def test_a_step_still_failing_after_about_an_hour_is_reported_and_still_retried(env):
+async def test_a_job_still_failing_at_the_sixty_minute_try_is_reported_once_and_tried_no_more(env):
     """The 60-minute try that fails writes one ❌ line naming the job, and the bot tries it no
     more on its own: from then on only Retry, or Discard, moves the queue."""
     holder = {"fail": _missing_access()}
@@ -142,7 +142,7 @@ async def test_a_step_still_failing_after_about_an_hour_is_reported_and_still_re
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS)
-async def test_a_waiting_change_s_steps_no_longer_due_are_dropped_and_the_rest_go_ahead(env):
+async def test_a_stopped_job_no_longer_due_at_its_next_try_is_dropped_and_the_rest_go_ahead(env):
     """A stopped job found no longer due at its next try is dropped, and the queue runs on: the
     change's later jobs, then the change asked after it."""
     holder = {"fail": _missing_access()}

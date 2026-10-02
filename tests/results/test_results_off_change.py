@@ -598,7 +598,9 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS)
-async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_counted(tmp_path):
+async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_linked_not_counted(
+    tmp_path,
+):
     """A removal Discord refuses stops the queue and is tried again a minute on, like any job (owner,
     2026-10-02, withdrawing "Try once"); once a league admin discards it, its message is linked for
     removal by hand and not counted. The stop notice and the Discard line name the job by what it
@@ -808,7 +810,7 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS)
-async def test_a_wind_down_discord_keeps_failing_is_reported_as_still_at_work_after_an_hour(
+async def test_a_wind_down_discord_keeps_failing_says_only_retry_continues_after_the_hour(
     tmp_path, monkeypatch,
 ):
     """Discord failing the wind-down stops the queue: the bot tries it again 1, 5, 10, 15, 30 and

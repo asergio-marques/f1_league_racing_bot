@@ -404,7 +404,7 @@ async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
-async def test_a_bot_change_lacking_what_the_league_can_repair_waits_and_says_so(env):
+async def test_a_bot_change_its_check_refuses_stops_the_queue_and_is_checked_at_each_try(env):
     """A bot change its check refuses stops the queue before it starts, the stop line giving the
     check's reason once, not once per try; the check runs again at each try, and once it lets the
     change go, the change and those behind it run."""
@@ -930,7 +930,7 @@ async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplo
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
-async def test_a_change_of_a_kind_the_bot_no_longer_knows_is_faulted_not_lost(env):
+async def test_a_change_of_a_kind_the_bot_no_longer_knows_stops_the_queue_until_discarded(env):
     """A change of a kind no longer registered stops the queue, named with its asker, and is
     kept until a league admin discards it."""
     _queue(env)
@@ -1077,7 +1077,7 @@ async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_r
 
 
 @pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
-async def test_a_check_that_raises_faults_its_change_and_a_later_change_still_runs(env):
+async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it_is_discarded(env):
     """A check raising as its change starts stops the queue on that change, and the changes
     behind it wait; once a league admin discards it they run. An outcome that cannot be worded
     still leaves its change done."""
