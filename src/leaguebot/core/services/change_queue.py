@@ -229,6 +229,7 @@ class ChangeQueue:
         self._held: dict[int, discord.Interaction] = {}
         self._signal = asyncio.Event()
         self._working = asyncio.Lock()
+        self._asking = asyncio.Lock()
         self._task: Optional["asyncio.Task[None]"] = None
 
     # ------------------------------------------------------------------
@@ -295,65 +296,86 @@ class ChangeQueue:
                 log.info("%s is no longer due, so it was not asked for: %s", what, verdict.reason)
                 return None
 
-        key = change_type.key(payload)
-        change_id: int | None = None
-        async with get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            cursor = await db.execute(
-                "SELECT dedup_key, state FROM queued_changes ORDER BY id DESC LIMIT 1"
-            )
-            last = await cursor.fetchone()
-            repeat = (
-                not change_type.repeatable
-                and last is not None
-                and last["dedup_key"] == key
-                and last["state"] == ChangeState.QUEUED.value
-            )
-            if not repeat:
+        # The worker passes over this lock to choose its next change, so it cannot pick the
+        # change up before its acknowledgement is recorded and the interaction is held.
+        async with self._asking:
+            key = change_type.key(payload)
+            change_id: int | None = None
+            async with get_connection(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
                 cursor = await db.execute(
-                    "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, "
-                    "actor_name, actor_display, what, places) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        kind,
-                        key,
-                        json.dumps(payload),
-                        origin.value,
-                        getattr(member, "id", None),
-                        None if member is None else str(member),
-                        getattr(member, "display_name", None),
-                        what,
-                        json.dumps(list(change_type.places(payload))),
-                    ),
+                    "SELECT dedup_key, state FROM queued_changes ORDER BY id DESC LIMIT 1"
                 )
-                change_id = inserted_id(cursor)
-                for position, planned in enumerate(change_type.opening):
-                    await db.execute(
-                        "INSERT INTO queued_change_steps (change_id, position, name, payload, "
-                        "places) VALUES (?, ?, ?, ?, ?)",
+                last = await cursor.fetchone()
+                repeat = (
+                    not change_type.repeatable
+                    and last is not None
+                    and last["dedup_key"] == key
+                    and last["state"] == ChangeState.QUEUED.value
+                )
+                if not repeat:
+                    cursor = await db.execute(
+                        "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, "
+                        "actor_name, actor_display, what, places) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
-                            change_id,
-                            position,
-                            planned.name,
-                            json.dumps(planned.payload),
-                            json.dumps(list(planned.places)),
+                            kind,
+                            key,
+                            json.dumps(payload),
+                            origin.value,
+                            getattr(member, "id", None),
+                            None if member is None else str(member),
+                            getattr(member, "display_name", None),
+                            what,
+                            json.dumps(list(change_type.places(payload))),
                         ),
                     )
-                await db.commit()
-            else:
-                await db.rollback()
+                    change_id = inserted_id(cursor)
+                    for position, planned in enumerate(change_type.opening):
+                        await db.execute(
+                            "INSERT INTO queued_change_steps (change_id, position, name, payload, "
+                            "places) VALUES (?, ?, ?, ?, ?)",
+                            (
+                                change_id,
+                                position,
+                                planned.name,
+                                json.dumps(planned.payload),
+                                json.dumps(list(planned.places)),
+                            ),
+                        )
+                    await db.commit()
+                else:
+                    await db.rollback()
 
-        if change_id is None:
-            reason = (
-                f"{change_type.doing(payload)} has already been asked for and has not started "
-                f"yet, so it was not asked for again."
-            )
-            if interaction is not None and origin is ChangeOrigin.MEMBER:
-                await refuse(interaction, f"⚠️ {reason}", what=refusal_what or what)
-            else:
-                log.info("%s was not asked for again: %s", what, reason)
-            return None
+            if change_id is None:
+                reason = (
+                    f"{change_type.doing(payload)} has already been asked for and has not started "
+                    f"yet, so it was not asked for again."
+                )
+                if interaction is not None and origin is ChangeOrigin.MEMBER:
+                    await refuse(interaction, f"⚠️ {reason}", what=refusal_what or what)
+                else:
+                    log.info("%s was not asked for again: %s", what, reason)
+                return None
 
-        if interaction is not None:
+            if interaction is not None:
+                await self._acknowledge(change_id, change_type, payload, interaction)
+            self._signal.set()
+            return change_id
+
+    async def _acknowledge(
+        self,
+        change_id: int,
+        change_type: ChangeType,
+        payload: dict[str, Any],
+        interaction: discord.Interaction,
+    ) -> None:
+        """Tell the member their saved change is under way, and hold the interaction to update.
+
+        The change is already saved, so a failed acknowledgement is not the request's failure:
+        it is logged with its details, nothing is held and `acknowledged_at` stays unset, and the
+        change runs all the same, its outcome standing in the log channel alone.
+        """
+        try:
             await interaction.response.send_message(
                 f"⏳ {change_type.doing(payload)}. This message will be updated when it is "
                 f"done; if it takes longer, the log channel will say so.",
@@ -365,9 +387,13 @@ class ChangeQueue:
                     (self._clock().isoformat(), change_id),
                 )
                 await db.commit()
-            self._held[change_id] = interaction
-        self._signal.set()
-        return change_id
+        except Exception:  # noqa: BLE001 — the change is saved and goes ahead whatever this does
+            log.error(
+                "could not acknowledge change %s to the member; its outcome stands in the log "
+                "channel alone", change_id, exc_info=True,
+            )
+            return
+        self._held[change_id] = interaction
 
     # ------------------------------------------------------------------
     # The worker
@@ -483,7 +509,7 @@ class ChangeQueue:
         Returns True where a step was done, False for other progress, and None where nothing
         can run now.
         """
-        async with get_connection(self._db_path) as db:
+        async with self._asking, get_connection(self._db_path) as db:
             change = await self._choose(db)
             if change is None:
                 return None
