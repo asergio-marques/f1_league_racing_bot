@@ -17,6 +17,7 @@ import pytest
 from leaguebot.core.db.database import get_connection
 from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
     STOPPED_AT,
+    WENT_THROUGH,
     WHAT,
     _act,
     _api,
@@ -118,11 +119,12 @@ def _buttons(message: Any) -> set[str]:
 @pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_retry_by_a_league_manager_tries_the_job_at_once(env):
     """Before the job's next try is due, a league manager's Retry tries it at once: it goes
-    through, the request and the change behind it run, the manager is told privately and the
-    log channel names them."""
+    through, the request and the change behind it run, the manager is told privately, the log
+    channel names them and says the job went through, and the notice loses its buttons."""
     holder = {"fail": RuntimeError("boom")}
     ran: list[str] = []
     job = await _stop(env, holder, ran)
+    notice = _notice(env, job)
     holder["fail"] = None
 
     interaction = await retry_job(env.bot, user=_manager())
@@ -130,8 +132,12 @@ async def test_retry_by_a_league_manager_tries_the_job_at_once(env):
     assert ran == ["post", "post", "after", "later"]
     assert await _states(env) == ["DONE", "DONE"]
     assert _private(interaction)
+    lines = await _lines(env)
     assert any(MANAGER_NAMED in line and f"job #{job['id']}" in line and "Retr" in line
-               for line in await _lines(env))
+               for line in lines)
+    went = WENT_THROUGH.format(id=job["id"], job="posting the dummy")
+    assert [line.split("\n")[0] for line in lines if "went through" in line] == [went]
+    assert _buttons(notice) == set()
 
 
 @pytest.mark.xfail(strict=True, reason=CONTROLS)
@@ -203,14 +209,16 @@ async def test_a_retry_whose_try_fails_is_recorded_naming_the_presser(env):
 @pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_discard_by_a_league_admin_drops_the_job_and_the_queue_runs_on(env):
     """A league admin's Discard drops the stopped job alone: one line names the admin, job #N and
-    what was not done for which request, an audit record keeps it, and the request's later job and
-    the change behind it run."""
+    what was not done for which request, an audit record keeps it, the notice loses its buttons,
+    and the request's later job and the change behind it run."""
     holder = {"fail": RuntimeError("boom")}
     ran: list[str] = []
     job = await _stop(env, holder, ran)
+    notice = _notice(env, job)
 
     interaction = await discard_job(env.bot, user=_admin())
 
+    assert _buttons(notice) == set()
     assert ran == ["post", "after", "later"]
     assert await stopped_job(env.db_path) is None
     assert await _states(env) == ["DONE", "DONE"]
