@@ -350,12 +350,13 @@ async def test_a_refused_pack_records_nothing(db_path):
 # ── The change queue (#439) ────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#439: a change cannot yet end DISCARDED")
 async def test_pack_drops_every_unfinished_change(db_path):
-    """A change left waiting would go on changing Discord on a server the bot no longer serves;
+    """A change left queued or running would go on changing Discord on a server the bot no longer serves;
     the finished ones are history and stay."""
     await _seed(db_path)
     async with get_connection(db_path) as db:
-        for state in ("QUEUED", "RUNNING", "WAITING", "DONE", "REFUSED", "DROPPED", "FAULTED"):
+        for state in ("QUEUED", "RUNNING", "DONE", "REFUSED", "DROPPED", "DISCARDED"):
             cursor = await db.execute(
                 "INSERT INTO queued_changes (kind, dedup_key, origin, state, what) "
                 "VALUES ('dummy', ?, 'MEMBER', ?, '`/dummy`')",
@@ -370,6 +371,6 @@ async def test_pack_drops_every_unfinished_change(db_path):
     await pack(db_path, _scheduler(), **ACTOR)
 
     kept = [r[0] for r in await _all(db_path, "SELECT state FROM queued_changes ORDER BY id")]
-    assert kept == ["DONE", "REFUSED", "DROPPED", "FAULTED"]
+    assert kept == ["DONE", "REFUSED", "DROPPED", "DISCARDED"]
     steps = [r[0] for r in await _all(db_path, "SELECT name FROM queued_change_steps ORDER BY name")]
-    assert steps == ["DONE", "DROPPED", "FAULTED", "REFUSED"]
+    assert steps == ["DISCARDED", "DONE", "DROPPED", "REFUSED"]

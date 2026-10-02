@@ -369,7 +369,7 @@ async def test_the_queue_holds_one_running_change(db_path):
     """One change runs at a time: an identity rule, so the schema holds it, not the worker."""
     db = _connect(db_path)
     _queue_change(db, "RUNNING")
-    _queue_change(db, "WAITING")
+    _queue_change(db, "DONE")
     _queue_change(db, "QUEUED")
     with pytest.raises(sqlite3.IntegrityError):
         _queue_change(db, "RUNNING")

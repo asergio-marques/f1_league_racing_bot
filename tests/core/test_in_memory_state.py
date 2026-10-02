@@ -7,10 +7,12 @@ are added.
 """
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -154,6 +156,12 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
         ran.append("a")
         return StepResult()
 
+    # A failure stops the queue rather than ending the change, so a change type has no outcome
+    # for a fault; the queue built before that rule still demands one where it declares it.
+    withdrawn: dict[str, Any] = (
+        {"fault_outcome": lambda _ctx: "Nothing was changed."}
+        if "fault_outcome" in {f.name for f in dataclasses.fields(ChangeType)} else {}
+    )
     attach_queue(
         bot,
         db_path,
@@ -167,7 +175,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
                 key=lambda payload: "dummy",
                 doing=lambda _payload: "Doing the dummy thing",
                 outcome=lambda _ctx: "✅ Done.",
-                fault_outcome=lambda _ctx: "Nothing was changed.",
+                **withdrawn,
             )
         ],
     )
