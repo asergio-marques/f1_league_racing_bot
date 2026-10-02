@@ -276,6 +276,12 @@ async def wind_down_ongoing(bot: LeagueBot) -> bool:
     return final_stage == SeasonStage.PENDING_COMPLETION.value
 
 
+#: Why no module may be disabled in Pending completion: the reply of every disable refused for it.
+FROZEN_FOR_COMPLETION_REFUSAL = (
+    "❌ No module can be disabled while the season is pending completion. "
+    "Complete it with `/season complete` first."
+)
+
 #: The kind of the change that winds a season down.
 WIND_DOWN = "season.wind_down"
 _WIND_DOWN_STEP = "wind_down"

@@ -87,7 +87,11 @@ def register_change_types(bot: LeagueBot) -> None:
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.results.services.results_off_change import results_off_change
 
+    bot.change_queue.register(
+        results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
+    )
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
 

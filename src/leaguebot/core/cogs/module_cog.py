@@ -605,6 +605,7 @@ class ModuleCog(commands.Cog):
         *record* is False, recorded the refusal in the log channel.
         """
         from leaguebot.core.services.season_lifecycle_service import (
+            FROZEN_FOR_COMPLETION_REFUSAL,
             modules_frozen_for_completion,
             configuration_fixed,
         )
@@ -634,10 +635,7 @@ class ModuleCog(commands.Cog):
         if action == "disable" and await modules_frozen_for_completion(
             self.bot.db_path
         ):
-            return await _refused(
-                "❌ No module can be disabled while the season is pending completion. "
-                "Complete it with `/season complete` first."
-            )
+            return await _refused(FROZEN_FOR_COMPLETION_REFUSAL)
         return False
 
     # ── Weather enable (T011) ──────────────────────────────────────────
