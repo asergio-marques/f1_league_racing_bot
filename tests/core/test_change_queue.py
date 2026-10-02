@@ -1093,7 +1093,6 @@ async def test_an_interaction_already_answered_is_acknowledged_through_a_followu
     assert late.edit_original_response.await_count == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a check's reason replaces the reply's first line in the refusal line instead of going beneath it")
 async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
     """A check may give the log channel a reason beside the member's reply: the line keeps the
     reply's first line as its reason, with the check's beneath it, and the member is told the

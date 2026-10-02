@@ -300,7 +300,7 @@ class ChangeQueue:
                     interaction,
                     _refusal_text(verdict),
                     what=refusal_what or what,
-                    reason=verdict.reason or None,
+                    detail=verdict.reason or None,
                 )
                 return None
             if verdict.kind is VerdictKind.NOT_DUE:
@@ -657,7 +657,9 @@ class ChangeQueue:
         ids = await self._end(
             change,
             ChangeState.REFUSED,
-            refusal_line(named, change["what"], verdict.reason or reply_reason(reply)),
+            refusal_line(
+                named, change["what"], reply_reason(reply), detail=verdict.reason or None
+            ),
         )
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
         await self._update_reply(change, reply)
