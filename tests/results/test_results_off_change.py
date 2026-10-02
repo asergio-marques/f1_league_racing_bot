@@ -60,6 +60,8 @@ NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 SUCCESS = "✅ Results & Standings module disabled."
 NOTHING_CHANGED = "Nothing was changed: Results & Standings is still on."
 COMPLETABLE = "the season can still be completed"
+#: The rest of that sentence: some of the season's messages may remain, for removal by hand.
+MAY_REMAIN = "may still be posted — delete them by hand"
 #: What is not yet true of each test marked with it.
 STOPS = "#439: a job of turning results off that fails does not yet stop the queue until it is cleared"
 #: The stop line's opening and the line after the hour, as the queue writes them.
@@ -692,13 +694,15 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
     tmp_path, monkeypatch,
 ):
     """The closing job failing after every message is down stops the queue; once a league admin
-    discards it, the admin's reply still says the season can still be completed."""
+    discards it, the admin's reply still says the season can still be completed and that some of
+    its messages may remain for removal by hand, and counts what the removals did take down."""
     from leaguebot.results.services import results_off_change
 
     monkeypatch.setattr(
         results_off_change, "_forget_banners_on", AsyncMock(side_effect=RuntimeError("stuck"))
     )
     seeded = await _seed(tmp_path)
+    await _announce_verdicts(seeded.db_path)
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
     await run_queue(bot)
@@ -706,8 +710,11 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
 
     await discard_job(bot)
 
-    assert COMPLETABLE in updated_reply(interaction)
-    assert NOTHING_CHANGED not in updated_reply(interaction)
+    reply = updated_reply(interaction)
+    assert COMPLETABLE in reply
+    assert MAY_REMAIN in reply
+    assert NOTHING_CHANGED not in reply
+    assert "3 results and standings message(s) and 2 verdict(s) removed" in reply
     assert await stopped_job(seeded.db_path) is None
     assert await _flag(seeded.db_path) == 0
     assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "FINAL"
