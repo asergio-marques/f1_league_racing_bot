@@ -300,6 +300,22 @@ write it in, or no way to tell whether the person belongs to the league. A resul
 submission channel is a message, not a command, and is not covered; so is an answer typed into the
 signup wizard, which records only its refusal.
 
+**When the log channel cannot take a line,** the line is kept and delivered later, and you are
+told, by a reply only you can see, *"⚠️ Failed to write to log channel … Please check bot
+permissions."* It is not posted in the channel where you gave the command. You are told once,
+however many of your lines fail, and after the reply to your command where it has not been
+answered yet. Where nobody's command can still be answered, such as a timed job, only the host's
+log records it.
+
+**Some changes are acknowledged at once and carried out one at a time.** You are told the change
+is under way, that message is updated with what became of it, and a longer outcome is sent in
+parts. Asking again for a change that has not started, with nothing else asked for since, is
+refused, saying so. A change the bot was part-way through when it stopped is finished when it
+starts again, but its message is not updated then: the log channel records the outcome, as it does
+for any outcome that arrives after 14 minutes. A step Discord keeps failing is tried again, and
+reported in the log channel after about an hour and then once a day. **So far only
+`/module disable results` works this way.**
+
 ### `/bot init` — One-time server setup
 *Access: League admin · Can be run from any channel, or by a server administrator*
 
@@ -413,7 +429,7 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 |---|---|
 | Every driver profile, with its accounts, history and portrait — test drivers too | The four bot settings, which frees the claim |
 | Every completed and cancelled season | The base role and the driver role, every team's role, the hub channel, and the signup channel |
-| The team list and the points configurations | Open signup wizards, undelivered messages waiting to be retried, and the season review prompt |
+| The team list and the points configurations | Open signup wizards, undelivered messages waiting to be retried, changes still waiting, and the season review prompt |
 | Test mode, and every module setting that is not a channel or a role | The bot's record of which messages it posted, and all scheduled work (the daily portrait refresh aside) |
 
 **Refused while there is a current season** — one at any stage short of completed or cancelled. Complete it, or cancel or abort it, first. It is allowed in test mode.
@@ -981,7 +997,7 @@ Save the whole database and return to it later, so a state reached once while te
 
 > **Test mode is required, not just recommended.** These copy and replace the whole database file — which holds the whole league — so they are refused outright unless the server is in test mode. Test mode itself will not switch on while a real driver sits in a live season, so a server that can run these has no real league to lose.
 
-> **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again.
+> **A restore needs a restart.** The bot holds both databases open while it runs, so nothing can be swapped underneath it. `/test-mode backup restore` checks the backup, keeps a copy of what is live as `bot.prerestore.db`, and stages the swap — which happens the next time the bot starts. Under a service that is automatic; from a terminal, stop it and run it again. A restored state brings back no change that was waiting.
 
 > **The saved backup does not outlive its test season.** It is deleted when you toggle test mode off, and when the season it was taken for is **completed** — a lock does not protect it, the lock being there to refuse a save rather than to keep a state past the run it belongs to. A season **cancelled or aborted** leaves the saved state alone, so that is the one to go back to. Restore before completing, or you will be starting again.
 
@@ -1033,7 +1049,7 @@ Historical data is always retained. How much configuration a disable actually cl
 
 > **Disabling `results` disables `attendance` with it**, where attendance is on. Because that costs you every division's check-in and attendance channels and cannot be undone until the season ends, the bot warns you first and writes nothing until you confirm: you are told what the cascade will take, and the reply that follows names both modules. The cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
 
-> **Disabling `results` while a season is ACTIVE destroys that season's championship.** You are warned and must confirm before anything is written — whether or not attendance is on — and the warning names what goes. Afterwards the season can be completed normally: the rounds that were waiting on results are closed, so their divisions finish. The purge is recorded in the log channel and audited as `RESULTS_SEASON_PURGED`, and each round closed is audited as a `round.status` change of its own. A message the bot cannot remove — most often because it has lost a permission in that channel — is not counted as removed: the reply and the log channel list each one with a link, for you to delete by hand. And if the erase stops part-way, the waiting rounds are closed all the same, so the season can still be completed; the reply says the erase did not finish, and the log entry reads `Incomplete`. With no season running, disabling clears nothing and asks nothing — it is the cheap command it looks like.
+> **Disabling `results` while a season is ACTIVE destroys that season's championship.** You are warned and must confirm before anything is written — whether or not attendance is on — and the warning names what goes. You are then told at once that the change is under way ("⏳ Turning Results & Standings off. This message will be updated when it is done; if it takes longer, the log channel will say so."), and that message is updated with what went. The flag, the season's rows and the closing of its waiting rounds are saved together, so a stop at any moment leaves the season completable: the rounds that were waiting on results are closed, so their divisions finish. The messages come down after, and a stop in the middle of that is finished when the bot starts again. The purge is recorded in the log channel and audited as `RESULTS_SEASON_PURGED`, and each round closed is audited as a `round.status` change of its own. A message the bot cannot remove — most often because it has lost a permission in that channel — is not counted as removed: the reply and the log channel list each one with a link, for you to delete by hand; each message is tried once. And if something fails after the switch-off, the reply says the season can still be completed and that some of its results, standings and verdicts may still be posted, for you to delete by hand. The log channel carries a line when the switch-off is saved and a closing line, *Messages removed*, once the take-downs are done. Asking twice before the first has started is refused. With no season running, disabling clears nothing and asks nothing — it is the cheap command it looks like.
 
 Enabling is guarded where disabling mostly is not: no module but signup can be enabled once a season's placements are confirmed, while every module but signup can still be disabled until the season is pending completion. Disabling mid-season is **not** safe, whichever you turn off, and it is one-way until the season ends. `attendance` stops every check-in still to come; `results` additionally deletes the season's results outright, as described above. Both ask you to confirm first.
 
