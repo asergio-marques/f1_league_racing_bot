@@ -490,6 +490,9 @@ class ChangeQueue:
             except Exception:  # noqa: BLE001 — a fault outside any change must not end the queue
                 log.error("the change queue's worker met a fault and carries on", exc_info=True)
                 await asyncio.sleep(WORKER_PAUSE_AFTER_FAULT)
+                # Look again: nothing may be left to set the signal, and a change the fault
+                # left QUEUED would otherwise wait for the next ask or a restart.
+                continue
             try:
                 await asyncio.wait_for(self._signal.wait(), await self._seconds_to_next_try())
             except asyncio.TimeoutError:
