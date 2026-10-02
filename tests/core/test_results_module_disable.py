@@ -23,8 +23,10 @@ reads.
 **The switch-off is one save** (#439, defect 8). It is carried out on the change queue: the flag
 goes down, the season's results are deleted and the rounds still awaiting results are closed in
 the one save, so nothing the erasure disturbs can post again on its way out, and a stop can never
-leave the flag down with rounds nothing can close. The messages are taken down after it, each
-tried once, and the reply that acknowledged the confirmation is updated with what went.
+leave the flag down with rounds nothing can close. The messages are taken down after it, one job
+each, and the reply that acknowledged the confirmation is updated with what went. A removal that
+fails stops the queue until it is cleared (owner, 2026-10-02): the tests of a message left standing
+discard it as a league admin would.
 `test_the_flag_goes_down_in_the_save_that_erases_the_results` holds it. The paths that decide
 whether to warn run on doubles and must never reach the queue.
 """
@@ -49,11 +51,13 @@ from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
     change_rows,
+    discard_job,
     league_double,
     member,
     member_interaction,
     queued_log_lines,
     run_queue,
+    stopped_job,
     updated_reply,
 )
 from tests.support.teams import seed_team_instances
@@ -66,10 +70,18 @@ RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
 VERDICTS_CHANNEL_ID = 9003
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-ACKNOWLEDGEMENT = (
-    "⏳ Turning Results & Standings off. This message will be updated when it is done; "
-    "if it takes longer, the log channel will say so."
-)
+#: What is not yet true of each test marked with it.
+STOPS = "#439: a removal that fails does not yet stop the queue until it is discarded"
+
+
+def _acknowledges(text: str) -> bool:
+    """Whether *text* is the admin's acknowledgement: the switch-off under way, to be updated when
+    it is done. The job number it also names is pinned in `test_change_queue.py`."""
+    return (
+        text.startswith("⏳ Turning Results & Standings off")
+        and "This message will be updated when it is done" in text
+        and "the log channel will say so." in text
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +382,16 @@ async def _turn_off(cog: ModuleCog, *, cascade: bool = False):
     return interaction
 
 
+async def _discard_every_stop(cog: ModuleCog) -> int:
+    """Discard, as a league admin, every job that stops the queue, running the queue on after
+    each; gives how many were discarded."""
+    discarded = 0
+    while await stopped_job(cog.bot.db_path) is not None and discarded < 200:
+        await discard_job(cog.bot)
+        discarded += 1
+    return discarded
+
+
 def _interaction(user_id: int = ACTOR_ID):
     interaction = MagicMock()
     interaction.guild_id = SERVER_ID
@@ -457,7 +479,7 @@ async def test_a_league_with_nothing_at_stake_is_not_asked(tmp_path):
     await cog._disable_results(interaction)
 
     assert _view_of(interaction) is None
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     await run_queue(cog.bot)
     assert await _flag(db_path) == 0
 
@@ -621,11 +643,13 @@ async def test_the_reply_counts_the_verdicts_removed(tmp_path):
     assert "verdicts removed: 20" in closing
 
 
+@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_the_reply_links_every_message_left_standing(tmp_path):
     """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
 
     Its record went with the season, so the reply and the log channel's closing line are the
-    only places left that can tell a manager where it is.
+    only places left that can tell a manager where it is. Each of the two refused removals stops
+    the queue until a league admin discards it.
     """
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4)
@@ -634,6 +658,7 @@ async def test_the_reply_links_every_message_left_standing(tmp_path):
     links = [_link(RESULTS_CHANNEL_ID, 1000), _link(RESULTS_CHANNEL_ID, 1001)]
 
     interaction = await _turn_off(cog)
+    assert await _discard_every_stop(cog) == 2
 
     replied = updated_reply(interaction)
     assert "2 message(s) could not be removed" in replied
@@ -655,10 +680,12 @@ async def test_nothing_left_standing_says_nothing_of_it(tmp_path):
     assert "left standing" not in await _line_with(cog.bot, "| Messages removed")
 
 
+@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_long_list_is_split_across_replies(tmp_path):
     """A season's worth of links outruns Discord's 2,000 characters, and one reply that long
     would be refused outright — the manager would learn nothing at all. The update of the
-    acknowledgement carries the first part, and follow-ups the rest."""
+    acknowledgement carries the first part, and follow-ups the rest. Every removal is refused,
+    and each stops the queue until a league admin discards it."""
     db_path = await _make_db(tmp_path)
     await _season(db_path, rounds=4, verdicts=12)
     cog = _queued_cog(db_path)
@@ -667,6 +694,8 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
     links = _every_link(4, 12)
 
     interaction = await _turn_off(cog)
+    assert await _discard_every_stop(cog) > 1
+    assert await stopped_job(db_path) is None
 
     sent = [
         str(call.args[0] if call.args else call.kwargs.get("content", ""))
@@ -674,7 +703,7 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
         + interaction.followup.send.await_args_list
     ]
     assert len(links) == 60
-    assert len(sent) > 1
+    assert interaction.followup.send.await_count >= 1
     assert all(len(chunk) <= 2000 for chunk in sent)
     assert all(link in "\n".join(sent) for link in links)
 
