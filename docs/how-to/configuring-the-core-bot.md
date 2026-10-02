@@ -797,7 +797,7 @@ Clear it in this order.
 2. **Wait, or press Retry.** The bot tries the job again by itself 1, 5, 10, 15, 30 and 60 minutes after it first failed, and says nothing about a try that fails until the last. Then it writes one line saying it has stopped trying on its own, and **only Retry** continues. A league manager or a league admin can press **Retry** on the notice at any time to try the job at once. A Retry that fails is recorded, naming who pressed it, and leaves the queue stopped.
 3. **Or press Discard, as a league admin.** It drops that one job and the queue runs on. The log channel records who discarded it and what was not done, and the change's later jobs still run, each checking it is still due. A league manager's press is refused. When the job was a removal in turning `results` off, the message it could not remove is listed with a link, for you to delete by hand.
 
-A job that goes through says so, and its notice loses its buttons.
+A job that goes through says so, and its notice loses its buttons. So does a stop that clears because the job is found no longer due, or because the request it belonged to is refused at its check.
 
 **After a restart a stopped queue stays stopped.** The bot makes no try of its own, one line in the log channel says so, and only Retry or Discard moves it. A change the bot was part-way through, with no job failed, is finished as the bot starts.
 
