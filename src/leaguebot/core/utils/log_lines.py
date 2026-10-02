@@ -86,6 +86,15 @@ async def _named(bot: Any, member: int | discord.abc.User | None) -> str:
     return await name_of_member(bot, member.id)
 
 
+def refusal_line(named: str, what: str, reason: str) -> str:
+    """The log channel's line for *what* refused for *named*, because of *reason*.
+
+    The one place a refusal's line is formed: `record_refusal` writes it, and so does the change
+    queue where it refuses a change when it runs.
+    """
+    return f"⛔ {what} refused for {named} — {reason}"
+
+
 async def record_refusal(
     bot: Any,
     member: int | discord.abc.User | None,
@@ -95,13 +104,13 @@ async def record_refusal(
 ) -> None:
     """Record that *what* was refused for *member*, because of *reason*, without answering anyone.
 
-    The one place a refusal's line is formed: `refuse` writes its own through here. For a
+    `refuse` writes its own through here, the line being formed by `refusal_line`. For a
     refusal whose reply is not an interaction's, and so has no `refuse`; *member* is named as
     `record_abandoned` names its own. Never raises.
     """
     try:
         named = await _named(bot, member)
-        await bot.output_router.post_log(f"⛔ {what} refused for {named} — {reason}")
+        await bot.output_router.post_log(refusal_line(named, what, reason))
     except Exception:  # noqa: BLE001 — the refusal has already been answered
         log.warning("could not record in the log channel that %s was refused", what, exc_info=True)
 
