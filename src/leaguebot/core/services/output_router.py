@@ -72,9 +72,9 @@ class OutputRouter:
         self._bot = bot
         self._retry_db_path: Optional[str] = retry_db_path
         # The warnings still to be sent, kept so that no task is dropped.
-        self._tasks = set[asyncio.Task[None]]()
+        self._tasks: set[asyncio.Task[None]] = set()
         # The interactions whose member has been warned, by id, with when each was made.
-        self._warned = dict[object, datetime]()
+        self._warned: dict[object, datetime] = {}
 
     # ------------------------------------------------------------------
     # Public API

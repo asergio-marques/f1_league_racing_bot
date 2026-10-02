@@ -90,7 +90,6 @@ def test_every_store_is_cleared_or_exempt():
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the change queue's and the router's stores are spelt so that the check does not find them")
 def test_the_register_names_no_store_that_does_not_exist():
     assert sorted((CLEARED | EXEMPT) - _stores()) == []
 
