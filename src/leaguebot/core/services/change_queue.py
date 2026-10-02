@@ -774,9 +774,13 @@ class ChangeQueue:
                 return await self._delivered(change, saved)
             return await self._complete(change, row, await step.run(ctx))
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_fault`
+            log.warning("step %r of %s (change %s) raised", row["name"], change["what"],
+                        change["id"], exc_info=error)
             try:
                 return await self._step_failed(change, change_type, step, ctx, row, error)
             except Exception as again:  # noqa: BLE001
+                log.warning("could not deal with the failure of step %r of %s (change %s)",
+                            row["name"], change["what"], change["id"], exc_info=again)
                 await self._fault(change, change_type, again)
                 return False
 
