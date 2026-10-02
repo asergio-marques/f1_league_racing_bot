@@ -232,8 +232,9 @@ audit record, which is how some settings came to have none.
   since the round has moved on.
 - **Steps, each saved with its mark.** A change is made of steps, and each step is a job with a
   number of its own, which every line about the job carries (the core specification's "How a
-  change is carried out" says it is never reused while the state stands; the database issues the
-  numbers, so a restored state or a factory reset begins the numbering again). A member's request is
+  change is carried out" says it is never reused; the database issues the numbers, and a
+  restore and a factory reset, which put another database in place of the live one, write the
+  live one's highest number into it first). A member's request is
   acknowledged once, though it is made of jobs that run one after another. The worker opens each saving
   step's connection and hands it down, so the step's changes, the change's audit record where it
   has one, and the mark saying the step is done all commit together or not at all. After a
