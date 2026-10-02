@@ -445,10 +445,10 @@ Frees the bot from this server so that `/bot init` on another can claim it. What
 |---|---|
 | Every driver profile, with its accounts, history and portrait — test drivers too | The four bot settings, which frees the claim |
 | Every completed and cancelled season | The base role and the driver role, every team's role, the hub channel, and the signup channel |
-| The team list and the points configurations | Open signup wizards, undelivered messages waiting to be retried, changes still waiting, and the season review prompt |
+| The team list and the points configurations | Open signup wizards, undelivered messages waiting to be retried, and the season review prompt |
 | Test mode, and every module setting that is not a channel or a role | The bot's record of which messages it posted, and all scheduled work (the daily portrait refresh aside) |
 
-**Refused while there is a current season** — one at any stage short of completed or cancelled. Complete it, or cancel or abort it, first. It is allowed in test mode.
+**Refused while there is a current season** — one at any stage short of completed or cancelled. Complete it, or cancel or abort it, first. **Refused while the change queue holds a job**, one waiting, running or stopped on a failure. The refusal names the job it would wait on: let the queue finish, or press Retry (a league manager or admin) or Discard (a league admin) on a stopped job's notice in the log channel, then pack again. It is allowed in test mode.
 
 **Nothing in Discord changes.** The bot's messages stay on this server, and their buttons are refused from then on. The bot stays in the server too, refusing every command there once another server has claimed it; remove it when you are ready. The pack is written to the log channel as it begins, saying it is under way, before the log channel is cleared, and audited with every setting and role it cleared. Once it is done no log channel remains, so a fault after that point goes to the host's log alone.
 

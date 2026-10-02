@@ -721,6 +721,9 @@ you. The old server's channels and roles do not, so you set those again on the n
 
 1. **Finish the season you are running.** `/bot pack` is refused while a season is current — at
    any stage short of completed or cancelled. Complete it, or cancel or abort it.
+   `/bot pack` is refused too while the change queue holds a job, naming it. Let the queue
+   finish; if it is stopped at a job, press Retry on that job's notice in the log channel, or
+   Discard if you are a league admin, as in [When a job stops the queue](#when-a-job-stops-the-queue).
 2. **Pack, in the command channel:**
 
    ```

@@ -147,12 +147,13 @@ it only to place it; the rules governing it belong to its own specification.
 #### Packing the bot for another server
 - A pack shall be a league admin's command, given in the interaction channel.
 - A pack shall be refused while the league has a current season: one in any stage but completed or cancelled. The refusal shall name the season and its stage.
+- A pack shall be refused while the change queue holds any job: queued, running, or stopped on a failure. The refusal shall name the job the pack would wait on, and shall say to let the queue finish, or, for a stopped job, to press Retry or Discard on its notice, and pack again. It shall be recorded in the log channel as a refusal. Decided 2026-10-02.
 - A pack shall be allowed while test mode is on.
 - A pack shall keep what belongs to the league rather than the server: every driver profile with its accounts, history and portrait, test drivers among them; every completed and cancelled season; the team list; the points configurations; test mode; and every module setting that is not a channel or a role.
 - A pack shall clear everything tied to the server:
     - the four settings, which frees the bot's claim on the server;
     - the league's base role and driver role, the role of every team, the hub channel, and the signup channel;
-    - every signup wizard, every undelivered message awaiting a retry, every change still waiting, and the season review prompt;
+    - every signup wizard, every undelivered message awaiting a retry, and the season review prompt;
     - the record of which messages the bot posted, by which it edits them;
     - every piece of scheduled work, but the daily refresh of driver portraits.
 - A pack shall change nothing in Discord. The bot's messages shall stay on the server it leaves, and their buttons shall be refused from then on; the pack's reply shall say so.
