@@ -1053,6 +1053,41 @@ async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monke
     assert ran == ["a"]
 
 
+async def test_the_worker_looks_again_after_a_fault_with_no_signal_to_wake_it(env, monkeypatch):
+    """A change saved before a fault outside any change is not left QUEUED until the next ask, wake
+    or restart: once it has paused, the worker looks at the queue again of its own accord."""
+    from leaguebot.core.services import change_queue
+
+    monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
+    ran: list[str] = []
+    queue = _queue(env, _type(steps=[_act("a", ran)]))
+    rounds = {"n": 0}
+    run_until_idle = queue.run_until_idle
+
+    async def _locked_before_it_starts(**kwargs):
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return await run_until_idle(**kwargs)
+
+    monkeypatch.setattr(queue, "run_until_idle", _locked_before_it_starts)
+
+    await _ask(env)
+    assert await _states(env) == ["QUEUED"]
+
+    await maybe_await(queue.start())
+    try:
+        async def _done() -> bool:
+            return await _states(env) == ["DONE"]
+
+        await _eventually(_done)
+    finally:
+        await maybe_await(queue.stop())
+
+    assert rounds["n"] >= 2
+    assert ran == ["a"]
+
+
 async def test_an_interaction_already_answered_is_acknowledged_through_a_followup_and_that_message_is_updated(env):
     """A command that deferred, or a form already answered, has no response left to take: the
     acknowledgement is a follow-up, and it is that message the outcome updates, within the same
