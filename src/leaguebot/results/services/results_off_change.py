@@ -224,7 +224,6 @@ def results_off_change(
         doing=lambda _payload: "Turning Results & Standings off",
         outcome=outcome,
         fault_outcome=fault_outcome,
-        overrides_waiting=True,
     )
 
 

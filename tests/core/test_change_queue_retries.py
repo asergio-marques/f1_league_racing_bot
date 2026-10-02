@@ -141,7 +141,6 @@ async def test_a_job_still_failing_at_the_sixty_minute_try_is_reported_once_and_
     assert await _states(env) == ["RUNNING"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_stopped_job_no_longer_due_at_its_next_try_is_dropped_and_the_rest_go_ahead(env):
     """A stopped job found no longer due at its next try is dropped, and the queue runs on: the
     change's later jobs, then the change asked after it."""

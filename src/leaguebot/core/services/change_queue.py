@@ -181,20 +181,14 @@ class Step:
     tried_once: bool = False
 
 
-def _no_places(_payload: dict[str, Any]) -> tuple[str, ...]:
-    return ()
-
-
 @dataclass(frozen=True)
 class ChangeType:
     """A kind of change: what it does, how it is checked and keyed, and what it tells the member.
 
     *opening* are the steps saved when the change is asked for; a step may plan more. *key* is what
     makes two requests the same. *doing* says what the change does ("Turning Results & Standings
-    off"), from which the acknowledgement and the refusal of a repeat are formed. *places* are
-    where the change posts, as "channel:<id>". A *repeatable* change is never refused as a repeat,
-    and one that *overrides_waiting* (a switch-off, a cancel) is never held behind a change
-    waiting on a retry.
+    off"), from which the acknowledgement and the refusal of a repeat are formed. A *repeatable*
+    change is never refused as a repeat.
     """
 
     kind: str
@@ -205,9 +199,7 @@ class ChangeType:
     doing: Callable[[dict[str, Any]], str]
     outcome: Callable[[OutcomeContext], str]
     fault_outcome: Callable[[OutcomeContext], str]
-    places: Callable[[dict[str, Any]], tuple[str, ...]] = _no_places
     repeatable: bool = False
-    overrides_waiting: bool = False
 
 
 class ChangeRefused(Exception):
@@ -327,7 +319,7 @@ class ChangeQueue:
                 if not repeat:
                     cursor = await db.execute(
                         "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, "
-                        "actor_name, actor_display, what, places) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "actor_name, actor_display, what) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             kind,
                             key,
@@ -337,21 +329,14 @@ class ChangeQueue:
                             None if member is None else str(member),
                             getattr(member, "display_name", None),
                             what,
-                            json.dumps(list(change_type.places(payload))),
                         ),
                     )
                     change_id = inserted_id(cursor)
                     for position, planned in enumerate(change_type.opening):
                         await db.execute(
-                            "INSERT INTO queued_change_steps (change_id, position, name, payload, "
-                            "places) VALUES (?, ?, ?, ?, ?)",
-                            (
-                                change_id,
-                                position,
-                                planned.name,
-                                json.dumps(planned.payload),
-                                json.dumps(list(planned.places)),
-                            ),
+                            "INSERT INTO queued_change_steps (change_id, position, name, payload) "
+                            "VALUES (?, ?, ?, ?)",
+                            (change_id, position, planned.name, json.dumps(planned.payload)),
                         )
                     await db.commit()
                 else:
@@ -439,26 +424,6 @@ class ChangeQueue:
         await self._router.deliver_queued(never_tried)
         self._task = asyncio.create_task(self._work(), name="change-queue")
         self._task.add_done_callback(self._worker_ended)
-
-    async def wake(self, place: str | None = None) -> None:
-        """Try a waiting step at once: those holding *place*, or every waiting step where none
-        is given. Called by a command that repairs what a waiting step lacks."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT s.change_id, s.position, s.places, c.places AS change_places "
-                "FROM queued_change_steps s JOIN queued_changes c ON c.id = s.change_id "
-                "WHERE s.done_at IS NULL AND s.next_try_at IS NOT NULL"
-            )
-            for step in await cursor.fetchall():
-                held = set(json.loads(step["places"])) | set(json.loads(step["change_places"]))
-                if place is None or place in held:
-                    await db.execute(
-                        "UPDATE queued_change_steps SET next_try_at = ? "
-                        "WHERE change_id = ? AND position = ?",
-                        (self._clock().isoformat(), step["change_id"], step["position"]),
-                    )
-            await db.commit()
-        self._signal.set()
 
     def forget_held(self) -> None:
         """Drop every interaction held to update, for a pack or a factory reset, which delete the
@@ -552,13 +517,11 @@ class ChangeQueue:
         return await self._run_step(change, change_type, step_rows, pending)
 
     async def _choose(self, db: aiosqlite.Connection) -> aiosqlite.Row | None:
-        """The change to work on next.
+        """The change to work on next, in strict order.
 
-        A RUNNING change comes first, as one resumed after a stop. Next comes the lowest id among
-        the WAITING changes whose step is due and the QUEUED changes not blocked. A QUEUED change
-        is blocked while its places meet those of a not-done step of a WAITING change with a lower
-        id, so that a post to the same place never overtakes one waiting on a retry; a change
-        whose type `overrides_waiting` (a switch-off, a cancel) is never blocked.
+        A RUNNING change comes first, as one resumed after a stop. Otherwise the change with the
+        lowest id, QUEUED or WAITING: nothing overtakes it. A WAITING change whose step is not yet
+        due holds the queue, and nothing runs.
         """
         cursor = await db.execute("SELECT * FROM queued_changes WHERE state = 'RUNNING' LIMIT 1")
         running = await cursor.fetchone()
@@ -567,29 +530,17 @@ class ChangeQueue:
         cursor = await db.execute(
             "SELECT c.*, (SELECT MIN(s.next_try_at) FROM queued_change_steps s "
             "WHERE s.change_id = c.id AND s.done_at IS NULL AND s.next_try_at IS NOT NULL) "
-            "AS due_at FROM queued_changes c WHERE c.state IN ('QUEUED', 'WAITING') ORDER BY c.id"
+            "AS due_at FROM queued_changes c WHERE c.state IN ('QUEUED', 'WAITING') "
+            "ORDER BY c.id LIMIT 1"
         )
-        candidates = list(await cursor.fetchall())
-        cursor = await db.execute(
-            "SELECT s.change_id, s.places FROM queued_change_steps s JOIN queued_changes c "
-            "ON c.id = s.change_id WHERE c.state = 'WAITING' AND s.done_at IS NULL"
-        )
-        held: dict[int, set[str]] = {}
-        for step in await cursor.fetchall():
-            held.setdefault(step["change_id"], set()).update(json.loads(step["places"]))
-        now = self._clock()
-        for row in candidates:
-            if row["state"] == ChangeState.WAITING.value:
-                if row["due_at"] is not None and datetime.fromisoformat(row["due_at"]) <= now:
-                    return row
-                continue
-            change_type = self._types.get(row["kind"])
-            if change_type is not None and change_type.overrides_waiting:
-                return row
-            behind = set().union(*(places for waiting, places in held.items() if waiting < row["id"]))
-            if not behind.intersection(json.loads(row["places"])):
-                return row
-        return None
+        first = await cursor.fetchone()
+        if first is None:
+            return None
+        if first["state"] == ChangeState.WAITING.value and (
+            first["due_at"] is None or datetime.fromisoformat(first["due_at"]) > self._clock()
+        ):
+            return None
+        return first
 
     @staticmethod
     async def _read_steps(db: aiosqlite.Connection, change_id: int) -> list[aiosqlite.Row]:
@@ -1046,7 +997,6 @@ class ChangeQueue:
             if line_id is not None:
                 ids.append(line_id)
         await self._plan_steps(db, change, row, result.then)
-        await self._add_places(db, change, result.places)
         for follow_on in result.follow_ons:
             await self._ask_on(db, change, follow_on)
         return ids
@@ -1076,31 +1026,10 @@ class ChangeQueue:
             )
         for offset, step in enumerate(planned, start=1):
             await db.execute(
-                "INSERT INTO queued_change_steps (change_id, position, name, payload, places) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    change["id"],
-                    row["position"] + offset,
-                    step.name,
-                    json.dumps(step.payload),
-                    json.dumps(list(step.places)),
-                ),
+                "INSERT INTO queued_change_steps (change_id, position, name, payload) "
+                "VALUES (?, ?, ?, ?)",
+                (change["id"], row["position"] + offset, step.name, json.dumps(step.payload)),
             )
-
-    @staticmethod
-    async def _add_places(
-        db: aiosqlite.Connection, change: aiosqlite.Row, places: tuple[str, ...]
-    ) -> None:
-        """Merge *places* into the places the change holds."""
-        if not places:
-            return
-        cursor = await db.execute("SELECT places FROM queued_changes WHERE id = ?", (change["id"],))
-        current = await cursor.fetchone()
-        held = json.loads(current["places"]) if current is not None else []
-        merged = held + [place for place in places if place not in held]
-        await db.execute(
-            "UPDATE queued_changes SET places = ? WHERE id = ?", (json.dumps(merged), change["id"])
-        )
 
     async def _ask_on(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, follow_on: FollowOn
@@ -1113,7 +1042,7 @@ class ChangeQueue:
         change_type = self._type(follow_on.kind)
         cursor = await db.execute(
             "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, actor_name, "
-            "actor_display, what, places) VALUES (?, ?, ?, 'BOT', ?, ?, ?, ?, ?)",
+            "actor_display, what) VALUES (?, ?, ?, 'BOT', ?, ?, ?, ?)",
             (
                 follow_on.kind,
                 change_type.key(follow_on.payload),
@@ -1122,21 +1051,14 @@ class ChangeQueue:
                 change["actor_name"],
                 change["actor_display"],
                 follow_on.what,
-                json.dumps(list(change_type.places(follow_on.payload))),
             ),
         )
         change_id = inserted_id(cursor)
         for position, planned in enumerate(change_type.opening):
             await db.execute(
-                "INSERT INTO queued_change_steps (change_id, position, name, payload, places) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (
-                    change_id,
-                    position,
-                    planned.name,
-                    json.dumps(planned.payload),
-                    json.dumps(list(planned.places)),
-                ),
+                "INSERT INTO queued_change_steps (change_id, position, name, payload) "
+                "VALUES (?, ?, ?, ?)",
+                (change_id, position, planned.name, json.dumps(planned.payload)),
             )
 
     async def _audit(

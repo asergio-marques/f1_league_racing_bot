@@ -106,7 +106,6 @@ class PlannedStep:
 
     name: str
     payload: dict[str, Any] = field(default_factory=dict)
-    places: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -124,8 +123,7 @@ class StepResult:
     """What a step returns for the worker to save with the step's mark.
 
     `result` is kept with the step; `audits` and `lines` are written in the same save; `then` are
-    steps inserted after this one; `follow_ons` are changes asked for; `places` are added to the
-    places the change holds.
+    steps inserted after this one; `follow_ons` are changes asked for.
     """
 
     result: dict[str, Any] = field(default_factory=dict)
@@ -133,7 +131,6 @@ class StepResult:
     lines: tuple[str, ...] = ()
     then: tuple[PlannedStep, ...] = ()
     follow_ons: tuple[FollowOn, ...] = ()
-    places: tuple[str, ...] = ()
 
 
 class StepFailedOnDiscord(Exception):

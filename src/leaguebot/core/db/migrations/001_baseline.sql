@@ -840,8 +840,8 @@ CREATE TABLE "pending_messages" (
 -- or ends REFUSED, DROPPED, DISCARDED or FAULTED; it is WAITING while one of its steps waits on a
 -- retry.
 -- `actor_name` is str(member), as the audit records it; `actor_display` the display name, as the
--- log channel names a member. `what` is how the change's lines name it. `places` lists where the
--- change posts, as "channel:<id>". `acknowledged_at` bounds the update of the member's reply.
+-- log channel names a member. `what` is how the change's lines name it. `acknowledged_at` bounds
+-- the update of the member's reply.
 CREATE TABLE "queued_changes" (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     kind            TEXT    NOT NULL,
@@ -855,7 +855,6 @@ CREATE TABLE "queued_changes" (
     actor_name      TEXT,
     actor_display   TEXT,
     what            TEXT    NOT NULL,
-    places          TEXT    NOT NULL DEFAULT '[]',
     acknowledged_at TEXT
 );
 CREATE INDEX "queued_changes_open" ON "queued_changes" (id)
@@ -874,7 +873,6 @@ CREATE TABLE "queued_change_steps" (
     position      INTEGER NOT NULL,
     name          TEXT    NOT NULL,
     payload       TEXT    NOT NULL DEFAULT '{}',
-    places        TEXT    NOT NULL DEFAULT '[]',
     done_at       TEXT,
     result        TEXT,
     tries         INTEGER NOT NULL DEFAULT 0,
