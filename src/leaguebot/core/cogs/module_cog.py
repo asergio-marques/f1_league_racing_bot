@@ -980,40 +980,29 @@ class ModuleCog(commands.Cog):
 
     # ── Attendance disable ─────────────────────────────────────────────
 
-    async def _disable_attendance(
-        self, interaction: discord.Interaction, *, cascade: bool = False
-    ) -> None:
+    async def _disable_attendance(self, interaction: discord.Interaction) -> None:
+        if not await self.bot.module_service.is_attendance_enabled():
+            await refuse(
+                interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
 
-        if not cascade:
-            if not await self.bot.module_service.is_attendance_enabled():
-                await refuse(
-                    interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
-                )
-                return
-            await interaction.response.defer(ephemeral=True)
-
-        change_type = (
-            "ATTENDANCE_MODULE_CASCADE_DISABLED" if cascade else "ATTENDANCE_MODULE_DISABLED"
-        )
         now = datetime.now(timezone.utc).isoformat()
         async with get_connection(self.bot.db_path) as db:
-            await db.execute("UPDATE attendance_config SET module_enabled = 0")
-            await db.execute("DELETE FROM attendance_division_config")
+            await self.bot.attendance_service.switch_off_on(db)
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, ?, '', '', ?)",
-                (interaction.user.id, str(interaction.user), change_type, now),
+                "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_DISABLED', '', '', ?)",
+                (interaction.user.id, str(interaction.user), now),
             )
             await db.commit()
 
         await self.bot.output_router.post_log(
             f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable attendance | Success",
         )
-        if not cascade:
-            await interaction.followup.send(
-                "✅ Attendance module disabled.", ephemeral=True
-            )
+        await interaction.followup.send("✅ Attendance module disabled.", ephemeral=True)
 
     # ── Signup enable (T010) ───────────────────────────────────────────
 
