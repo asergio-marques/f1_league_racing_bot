@@ -84,6 +84,10 @@ log = logging.getLogger(__name__)
 #: Discord's token lasts.
 UPDATABLE_FOR = timedelta(minutes=14)
 
+#: How long the worker pauses after a fault outside any change (a locked database, say) before it
+#: looks again, so that it neither ends nor spins.
+WORKER_PAUSE_AFTER_FAULT = 5.0
+
 #: How long a step waits after its first failure, doubling at each try after, up to the ceiling.
 RETRY_FIRST_WAIT = timedelta(seconds=30)
 RETRY_CEILING = timedelta(minutes=15)
@@ -438,7 +442,11 @@ class ChangeQueue:
         """Carry out what can run, then sleep until woken or until the earliest retry is due."""
         while True:
             self._signal.clear()
-            await self.run_until_idle()
+            try:
+                await self.run_until_idle()
+            except Exception:  # noqa: BLE001 — a fault outside any change must not end the queue
+                log.error("the change queue's worker met a fault and carries on", exc_info=True)
+                await asyncio.sleep(WORKER_PAUSE_AFTER_FAULT)
             try:
                 await asyncio.wait_for(self._signal.wait(), await self._seconds_to_next_try())
             except asyncio.TimeoutError:
@@ -563,14 +571,20 @@ class ChangeQueue:
         self, change: aiosqlite.Row, change_type: ChangeType, step_rows: list[aiosqlite.Row]
     ) -> bool:
         """Run the second check of a change not yet started, and act on what it finds."""
-        verdict = await change_type.check(
-            CheckContext(
-                json.loads(change["payload"]),
-                self._bot,
-                self._db_path,
-                ChangeOrigin(change["origin"]),
+        try:
+            verdict = await change_type.check(
+                CheckContext(
+                    json.loads(change["payload"]),
+                    self._bot,
+                    self._db_path,
+                    ChangeOrigin(change["origin"]),
+                )
             )
-        )
+        except Exception as error:  # noqa: BLE001 — a check that raises is a fault of the change
+            log.error("the check of %s raised (change %s)", change["what"], change["id"],
+                      exc_info=True)
+            await self._fault(change, change_type, error)
+            return False
         if verdict.kind is VerdictKind.GO:
             async with get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
@@ -1114,7 +1128,13 @@ class ChangeQueue:
             )
             await db.commit()
         change_type = self._types[change["kind"]]
-        text = change_type.outcome(self._outcome_context(change, step_rows))
+        try:
+            text = change_type.outcome(self._outcome_context(change, step_rows))
+        except Exception:  # noqa: BLE001 — the change is done whatever its outcome's wording does
+            log.error("could not word what became of %s (change %s)", change["what"],
+                      change["id"], exc_info=True)
+            self._release(change)
+            return
         await self._update_reply(change, text)
         self._release(change)
 
