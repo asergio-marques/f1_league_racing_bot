@@ -840,6 +840,7 @@ TABLE_OWNER: dict[str, str] = {
     "driver_accounts": "core", "driver_history_entries": "core",
     "driver_season_assignments": "core", "driver_division_memberships": "core",
     "audit_entries": "core", "pending_messages": "core", "season_review_prompts": "core",
+    "queued_changes": "core", "queued_change_steps": "core",
     # results
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",

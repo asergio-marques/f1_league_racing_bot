@@ -334,9 +334,6 @@ async def test_a_tier_holds_one_colour_per_slot(db_path):
 
 # ── The change queue (#439) ───────────────────────────────────────────────────
 
-QUEUE_NOT_BUILT = "#439: the change queue's tables are not in the baseline yet"
-
-
 def _check_list(db_path: str, table: str, column: str) -> set[str]:
     """The values a closed `CHECK (<column> IN (...))` on *table* allows, read from the schema."""
     rows = _query(db_path, f"SELECT sql FROM sqlite_master WHERE type = 'table' AND name = '{table}'")
@@ -355,7 +352,6 @@ def _queue_change(db: sqlite3.Connection, state: str = "QUEUED", kind: str = "du
     return int(cursor.lastrowid or 0)
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_NOT_BUILT)
 async def test_a_change_s_states_match_the_enum(db_path):
     """Written twice, in the CHECK list and in `ChangeState`, and must not drift."""
     from leaguebot.core.models.change import ChangeState
@@ -363,14 +359,12 @@ async def test_a_change_s_states_match_the_enum(db_path):
     assert _check_list(db_path, "queued_changes", "state") == {s.value for s in ChangeState}
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_NOT_BUILT)
 async def test_a_change_s_origins_match_the_enum(db_path):
     from leaguebot.core.models.change import ChangeOrigin
 
     assert _check_list(db_path, "queued_changes", "origin") == {o.value for o in ChangeOrigin}
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_NOT_BUILT)
 async def test_the_queue_holds_one_running_change(db_path):
     """One change runs at a time: an identity rule, so the schema holds it, not the worker."""
     db = _connect(db_path)
@@ -382,7 +376,6 @@ async def test_the_queue_holds_one_running_change(db_path):
     db.close()
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_NOT_BUILT)
 async def test_a_change_s_steps_go_with_it(db_path):
     db = _connect(db_path)
     change_id = _queue_change(db)
