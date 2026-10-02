@@ -321,6 +321,7 @@ class ChangeQueue:
         async with self._asking:
             key = change_type.key(payload)
             change_id: int | None = None
+            first_job: int | None = None
             async with get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 cursor = await db.execute(
@@ -350,11 +351,13 @@ class ChangeQueue:
                     )
                     change_id = inserted_id(cursor)
                     for position, planned in enumerate(change_type.opening):
-                        await db.execute(
+                        cursor = await db.execute(
                             "INSERT INTO queued_change_steps (change_id, position, name, payload) "
                             "VALUES (?, ?, ?, ?)",
                             (change_id, position, planned.name, json.dumps(planned.payload)),
                         )
+                        if first_job is None:
+                            first_job = inserted_id(cursor)
                     await db.commit()
                 else:
                     await db.rollback()
@@ -371,7 +374,11 @@ class ChangeQueue:
                 return None
 
             if interaction is not None:
-                await self._acknowledge(change_id, change_type, payload, interaction)
+                stopped = await self._stopped_jobs()
+                await self._acknowledge(
+                    change_id, change_type, payload, interaction,
+                    first_job=first_job, stopped_at=stopped[0][2]["id"] if stopped else None,
+                )
             self._signal.set()
             return change_id
 
@@ -381,8 +388,15 @@ class ChangeQueue:
         change_type: ChangeType,
         payload: dict[str, Any],
         interaction: discord.Interaction,
+        *,
+        first_job: int | None,
+        stopped_at: int | None,
     ) -> None:
         """Tell the member their saved change is under way, and hold the interaction to update.
+
+        The acknowledgement names the request's first job, *first_job*, and where the queue is
+        stopped, at the job *stopped_at*, says so and that the request runs once that job is
+        cleared.
 
         The change is already saved, so a failed acknowledgement is not the request's failure:
         it is logged with its details, nothing is held and `acknowledged_at` stays unset, and the
@@ -392,6 +406,13 @@ class ChangeQueue:
             f"⏳ {change_type.doing(payload)}. This message will be updated when it is "
             f"done; if it takes longer, the log channel will say so."
         )
+        if first_job is not None:
+            text += f" It begins with job #{first_job}."
+        if stopped_at is not None:
+            text += (
+                f" The queue is stopped at job #{stopped_at}, so this request runs once that "
+                f"job is cleared."
+            )
         message: discord.WebhookMessage | None = None
         try:
             if interaction.response.is_done():

@@ -52,8 +52,6 @@ WHAT = "`/dummy`"
 DOING = "Doing the dummy thing"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-#: What is not yet true of each test marked with it.
-STOPS = "#439: a job that fails does not yet stop the queue until it is cleared"
 #: The stop line's opening, the job and the request it names filled in.
 STOPPED_AT = "❌ The queue is stopped at job #{id}: {job} for {request} ({asker}) failed ({fault})."
 #: The lines of a stopped job, its number and what it was filled in.
@@ -1267,8 +1265,6 @@ async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
 # ---------------------------------------------------------------------------
 
 
-#: What is not yet true of each test marked with it.
-ACK_JOB = "#439: the acknowledgement does not yet name the request's first job"
 
 
 def _fails_while(holder: dict, name: str = "post", *, ran: list | None = None, **step) -> Any:
@@ -1330,7 +1326,6 @@ async def test_every_job_has_its_own_id_that_planning_later_jobs_leaves_alone(en
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=ACK_JOB)
 async def test_the_acknowledgement_names_the_request_s_first_job(env):
     """The member's acknowledgement names the job number of the request's first job."""
     _queue(env, _type(steps=[_act("a", []), _act("b", [])]))
@@ -1344,7 +1339,6 @@ async def test_the_acknowledgement_names_the_request_s_first_job(env):
     assert f"job #{first['id']}" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_change_asked_while_the_queue_is_stopped_joins_the_back_and_says_so(env):
     """A request made while the queue is stopped is saved and acknowledged as under way, the
     acknowledgement adding that the queue is stopped at job #N; it runs only once that job is
