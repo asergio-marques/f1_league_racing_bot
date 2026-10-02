@@ -497,7 +497,6 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     assert open_now["most"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_path):
     """The switch-off's save failing stops the queue at it, with nothing saved: the stop names the
     fault, the admin's reply says the request is stopped at that job, and results is still on."""

@@ -155,7 +155,7 @@ async def pack(
             # longer serves. The finished ones are history and stay; the steps go with their
             # change.
             await db.execute(
-                "DELETE FROM queued_changes WHERE state IN ('QUEUED', 'RUNNING', 'WAITING')"
+                "DELETE FROM queued_changes WHERE state IN ('QUEUED', 'RUNNING')"
             )
 
             # The signup module stays enabled with nothing configured, which is the state

@@ -17,17 +17,15 @@ from typing import Any
 
 
 class ChangeState(str, Enum):
-    """Where a change stands. It runs QUEUED, RUNNING, DONE; WAITING while one of its steps waits
-    on a retry; and ends REFUSED, DROPPED, DISCARDED or FAULTED."""
+    """Where a change stands. It runs QUEUED, RUNNING, DONE, or ends REFUSED, DROPPED or
+    DISCARDED. A job that fails stops the queue without changing its change's state."""
 
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
-    WAITING = "WAITING"
     DONE = "DONE"
     REFUSED = "REFUSED"
     DROPPED = "DROPPED"
     DISCARDED = "DISCARDED"
-    FAULTED = "FAULTED"
 
 
 class ChangeOrigin(str, Enum):
@@ -56,7 +54,6 @@ class VerdictKind(str, Enum):
     GO = "GO"
     REFUSE = "REFUSE"
     NOT_DUE = "NOT_DUE"
-    REPAIRABLE = "REPAIRABLE"
 
 
 @dataclass(frozen=True)
@@ -65,8 +62,7 @@ class Verdict:
 
     `go()`: carry on. `refuse(reply)`: a member's change is not allowed, `reply` being what the
     member is told and `reason` an optional line written beneath the refusal's line in the log
-    channel. `not_due(reason)`: the bot's change no longer has anything to do. `repairable(reason)`:
-    the bot's change lacks something a league can repair, so it waits and says what.
+    channel. `not_due(reason)`: the bot's change no longer has anything to do.
     """
 
     kind: VerdictKind
@@ -84,10 +80,6 @@ class Verdict:
     @classmethod
     def not_due(cls, reason: str) -> Verdict:
         return cls(VerdictKind.NOT_DUE, reason=reason)
-
-    @classmethod
-    def repairable(cls, reason: str) -> Verdict:
-        return cls(VerdictKind.REPAIRABLE, reason=reason)
 
 
 @dataclass(frozen=True)

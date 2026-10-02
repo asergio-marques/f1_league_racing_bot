@@ -247,7 +247,6 @@ async def test_a_step_s_writes_and_its_mark_commit_together(env):
 
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_fault_stops_the_change_and_keeps_what_earlier_steps_saved(env):
     """A job the bot faults on stops the queue there: the jobs before it keep what they saved,
     and neither the change's later jobs nor a change asked after it run."""
@@ -403,7 +402,6 @@ async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
 
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
 async def test_a_bot_change_its_check_refuses_stops_the_queue_and_is_checked_at_each_try(env):
     """A bot change its check refuses stops the queue before it starts, the stop line giving the
     check's reason once, not once per try; the check runs again at each try, and once it lets the
@@ -473,7 +471,6 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
 
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it(env):
     """Whatever became of the change asked for in between: here it has already finished, ahead of
     changes held behind a stopped job, and the held one may still be asked for again."""
@@ -959,7 +956,6 @@ async def test_a_change_of_a_kind_the_bot_no_longer_knows_stops_the_queue_until_
     assert await _states(env) == ["DISCARDED"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
     """The bot carries no `output_router`: the queue never looks one up on it. Its success line
     and the stop notice of the job that faults both reach the log channel through the router."""
@@ -1278,7 +1274,6 @@ async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
 
 #: What is not yet true of each test marked with it.
 ACK_JOB = "#439: the acknowledgement does not yet name the request's first job"
-SCHEDULE = "#439: a stopped job is not yet tried on the 1-60 minute schedule"
 
 
 def _fails_while(holder: dict, name: str = "post", *, ran: list | None = None, **step) -> Any:
@@ -1413,7 +1408,6 @@ async def test_a_switch_off_asked_while_the_queue_is_stopped_waits_behind_it(env
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=SCHEDULE)
 async def test_a_stop_is_retried_after_1_5_10_15_30_and_60_minutes_counted_from_the_first_failure(env):
     """The bot's own tries fall 1, 5, 10, 15, 30 and 60 minutes after the job first failed, however
     late a try before them ran: a try made at 3 minutes leaves the next at 5."""
@@ -1443,7 +1437,6 @@ async def test_a_stop_is_retried_after_1_5_10_15_30_and_60_minutes_counted_from_
     assert job["failing_since"] == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=SCHEDULE)
 async def test_after_the_sixty_minute_try_fails_the_log_says_only_retry_continues_and_no_try_is_made(env):
     """The 60-minute try that fails writes one ❌ line naming the job, by the change's own words
     where the job has none; no try follows, and the worker is set to wake for none."""
@@ -1468,7 +1461,6 @@ async def test_after_the_sixty_minute_try_fails_the_log_says_only_retry_continue
     assert await env.bot.change_queue._seconds_to_next_try() is None
 
 
-@pytest.mark.xfail(strict=True, reason=SCHEDULE)
 async def test_a_failed_automatic_try_writes_no_line_of_its_own(env):
     """Only the stop is told: the tries at 1, 5, 10, 15 and 30 minutes that fail add nothing to the
     log channel and leave the member's reply as the stop left it."""
@@ -1554,7 +1546,6 @@ async def test_a_queue_stopped_at_a_restart_stays_stopped_until_retry_or_discard
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_fault_while_recording_a_stop_is_logged_and_the_job_is_tried_again(env, caplog,
                                                                                    monkeypatch):
     """Where the stop's own save raises, the worker's catch-all logs it to the host and looks again

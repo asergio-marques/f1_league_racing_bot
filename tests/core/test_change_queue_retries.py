@@ -105,7 +105,6 @@ async def test_a_discord_failure_stops_the_queue_and_holds_a_later_change_throug
     assert await _states(env) == ["RUNNING", "QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_job_still_failing_at_the_sixty_minute_try_is_reported_once_and_tried_no_more(env):
     """The 60-minute try that fails writes one ❌ line naming the job, and the bot tries it no
     more on its own: from then on only Retry, or Discard, moves the queue."""

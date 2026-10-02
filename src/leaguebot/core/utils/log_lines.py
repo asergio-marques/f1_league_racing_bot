@@ -103,6 +103,29 @@ def refusal_line(named: str, what: str, reason: str, *, detail: str | None = Non
     return f"{line}\n{detail}" if detail else line
 
 
+def stop_line(job_id: int, job: str, request: str, asker: str, fault: str) -> str:
+    """The log channel's line for the queue stopping at job *job_id*, *job* being what it does,
+    *request* the change it belongs to, *asker* who asked and *fault* the kind of fault.
+
+    The change queue's line, formed here with the others.
+    """
+    return (
+        f"❌ The queue is stopped at job #{job_id}: {job} for {request} ({asker}) failed "
+        f"({fault}). The bot tries again 1, 5, 10, 15, 30 and 60 minutes after this; a league "
+        f"manager or admin may press Retry at any time, and a league admin may press Discard "
+        f"to drop it."
+    )
+
+
+def hour_line(job_id: int, job: str) -> str:
+    """The log channel's line for job *job_id* still failing after an hour: the bot tries no more
+    on its own."""
+    return (
+        f"❌ Job #{job_id} ({job}) still fails after an hour. The bot has stopped trying on its "
+        f"own: press Retry on its notice, or Discard."
+    )
+
+
 async def record_refusal(
     bot: Any,
     member: int | discord.abc.User | None,
