@@ -89,7 +89,7 @@ def attach_queue(bot: Any, db_path: str, *, now: datetime | Clock, router: Any =
 
     clock = now if isinstance(now, Clock) else Clock(now)
     chosen = router if router is not None else bot.output_router
-    queue = ChangeQueue(db_path, bot, chosen, clock=clock)
+    queue = ChangeQueue(db_path, bot, chosen, bot.config_service, clock=clock)
     bot.change_queue = queue
     setup = _Setup(db_path, clock, chosen, real_types=types is None, types=list(types or ()))
     setattr(bot, _SETUP, setup)
@@ -124,7 +124,7 @@ async def restart_queue(bot: Any) -> Any:
     old = bot.change_queue
     if getattr(old, "_task", None) is not None:
         await old.stop()
-    queue = ChangeQueue(setup.db_path, bot, setup.router, clock=setup.clock)
+    queue = ChangeQueue(setup.db_path, bot, setup.router, bot.config_service, clock=setup.clock)
     bot.change_queue = queue
     _register(bot, queue, setup)
     await maybe_await(queue.start())
@@ -270,7 +270,7 @@ def league_double(db_path: str) -> Any:
             league_admin_role_id=ADMIN_ROLE_ID,
         )
     )
-    bot.output_router = OutputRouter(bot, retry_db_path=db_path)
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
     return bot
 
 

@@ -119,6 +119,7 @@ from leaguebot.core.utils.member_names import interaction_member, member_named
 from leaguebot.core.utils.messages import chunk_message
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.output_router import OutputRouter
     from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -263,12 +264,16 @@ class ChangeQueue:
         db_path: str,
         bot: "LeagueBot",
         output_router: "OutputRouter",
+        config_service: "ConfigService",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._db_path = db_path
         self._bot = bot
         self._router = output_router
+        # Handed in by the builder: Retry and Discard read the presser's tier from it, and the
+        # queue looks no service up on the bot.
+        self._config = config_service
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._types: dict[str, ChangeType] = {}
         self._held: dict[int, _Held] = {}
@@ -1118,7 +1123,7 @@ class ChangeQueue:
         """
         found = await self._stopped_at(notice_message_id)
         what = "Retry of a stopped job" if found is None else f"Retry of job #{found[2]['id']}"
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         member = interaction.user
         if not isinstance(member, discord.Member) or not is_league_manager(config, member):
             await refuse(
@@ -1201,7 +1206,7 @@ class ChangeQueue:
         """
         found = await self._stopped_at(notice_message_id)
         what = "Discard of a stopped job" if found is None else f"Discard of job #{found[2]['id']}"
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         member = interaction.user
         if not isinstance(member, discord.Member) or not is_league_admin(config, member):
             await refuse(

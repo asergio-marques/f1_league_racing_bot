@@ -37,6 +37,7 @@ from leaguebot.core.utils.messages import chunk_message
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -68,8 +69,17 @@ class ForecastChannel:
 class OutputRouter:
     """Writes the log channel and a forecast's text, each failure contained; see above."""
 
-    def __init__(self, bot: "LeagueBot", retry_db_path: "Optional[str]" = None) -> None:
+    def __init__(
+        self,
+        bot: "LeagueBot",
+        config_service: "ConfigService",
+        retry_db_path: "Optional[str]" = None,
+    ) -> None:
         self._bot = bot
+        # Handed in by the builder, which is the one place services are wired (architecture.md,
+        # "Services stay attached to the bot, and are built in one place"): the router reads the
+        # log channel from it and looks no service up on the bot.
+        self._config = config_service
         self._retry_db_path: Optional[str] = retry_db_path
         # The warnings still to be sent, kept so that no task is dropped.
         self._tasks: set[asyncio.Task[None]] = set()
@@ -107,7 +117,7 @@ class OutputRouter:
         erase the configuration (the factory reset) asks here first and hands the answer back to
         :meth:`post_log` as *channel*, once the configuration that would have named it is gone.
         """
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         return None if config is None else config.log_channel_id
 
     async def post_log(
@@ -147,7 +157,7 @@ class OutputRouter:
                 channel, content, enqueue_on_failure=False, fallback_label="log",
                 return_first=True,
             )
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         if config is None:
             log.error("post_log: the bot is not set up, so there is no log channel")
             return None
@@ -181,7 +191,7 @@ class OutputRouter:
         Returns the message, which carries the view, or ``None`` where it could not be posted or
         the bot is not set up.
         """
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         if config is None:
             log.error("post_notice: the bot is not set up, so there is no log channel")
             return None
