@@ -832,8 +832,10 @@ class ChangeQueue:
         """Deal with the step *row* raising *error*, its save already rolled back.
 
         `NotFound` completes a `DELETE` step (the message is already gone, and no line says so)
-        and an `EDIT` step (with its `gone_line`). Any other failure Discord caused makes the step
-        wait on a retry. Anything else is a fault in the bot.
+        and an `EDIT` step (with its `gone_line`). Any other failure Discord caused completes a
+        step tried once, with the failure kept in its result (merged with what the step raised it
+        with) for the change's outcome to read: it is not retried, never waits, and so holds no
+        place. A step not tried once waits on a retry. Anything else is a fault in the bot.
         """
         if isinstance(error, discord.NotFound) and step.kind in (StepKind.DELETE, StepKind.EDIT):
             lines: tuple[str, ...] = ()
@@ -847,6 +849,11 @@ class ChangeQueue:
         if reason is None:
             await self._fault(change, change_type, error)
             return False
+        if step.tried_once:
+            kept = error.result if isinstance(error, StepFailedOnDiscord) and error.result else {}
+            return await self._complete(
+                change, row, StepResult(result={"failed": reason, **kept})
+            )
         await self._wait(change, step, ctx, row, reason)
         return False
 

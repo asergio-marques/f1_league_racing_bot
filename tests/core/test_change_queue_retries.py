@@ -15,7 +15,6 @@ import pytest
 
 from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
     NAMED,
-    NOT_BUILT,
     NOW,
     WHAT,
     _act,
@@ -336,7 +335,6 @@ def _tried_once(name: str = "remove", *, ran: list | None = None, left=(5, 6)) -
     return api.Step(name, api.StepKind.DELETE, _run, tried_once=True)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_tried_once_that_fails_on_discord_is_done_with_its_failure_recorded(env):
     ran: list[str] = []
     _queue(env, _type(steps=[_tried_once(ran=ran)]))
@@ -356,7 +354,6 @@ async def test_a_step_tried_once_that_fails_on_discord_is_done_with_its_failure_
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_tried_once_and_failed_holds_up_no_later_change(env):
     ran: list[str] = []
     _queue(
@@ -373,7 +370,6 @@ async def test_a_step_tried_once_and_failed_holds_up_no_later_change(env):
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_outcome_reads_what_a_step_tried_once_left_undone(env):
     def _outcome(ctx):
         left = [m for s in ctx.steps if s.result and "failed" in s.result for m in s.result["left"]]
