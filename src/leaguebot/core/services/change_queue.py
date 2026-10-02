@@ -34,7 +34,8 @@ queued again; a once-only change is refused by its own check once done.
 
 **The acknowledgement is updated, never stored.** The member's interaction is held in memory against
 the change id, and only while fewer than 14 minutes (a minute short of Discord's token) have passed
-since the acknowledgement. After a restart, or later, nothing is updated and the log channel alone
+since the acknowledgement. An interaction already answered is acknowledged through a follow-up,
+and that message is what the outcome updates. After a restart, or later, nothing is updated and the log channel alone
 records the outcome: every change type writes its outcome line as a step.
 """
 
@@ -94,6 +95,16 @@ RETRY_CEILING = timedelta(minutes=15)
 #: How long a step fails before one line says so, and how long before it says so again.
 REPORT_AFTER = timedelta(hours=1)
 REPORT_AGAIN_AFTER = timedelta(hours=24)
+
+
+@dataclass(frozen=True)
+class _Held:
+    """A member's interaction held to update, with the follow-up message that acknowledged it
+    where the interaction was already answered (a deferred command, a form), None where the
+    acknowledgement was its response."""
+
+    interaction: discord.Interaction
+    message: discord.WebhookMessage | None
 
 
 @dataclass(frozen=True)
@@ -226,7 +237,7 @@ class ChangeQueue:
         self._router = output_router
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._types: dict[str, ChangeType] = {}
-        self._held: dict[int, discord.Interaction] = {}
+        self._held: dict[int, _Held] = {}
         self._signal = asyncio.Event()
         self._working = asyncio.Lock()
         self._asking = asyncio.Lock()
@@ -375,12 +386,18 @@ class ChangeQueue:
         it is logged with its details, nothing is held and `acknowledged_at` stays unset, and the
         change runs all the same, its outcome standing in the log channel alone.
         """
+        text = (
+            f"⏳ {change_type.doing(payload)}. This message will be updated when it is "
+            f"done; if it takes longer, the log channel will say so."
+        )
+        message: discord.WebhookMessage | None = None
         try:
-            await interaction.response.send_message(
-                f"⏳ {change_type.doing(payload)}. This message will be updated when it is "
-                f"done; if it takes longer, the log channel will say so.",
-                ephemeral=True,
-            )
+            if interaction.response.is_done():
+                # A command that deferred, a form already answered: no response is left to take,
+                # so the acknowledgement is a follow-up, and that message is what is updated.
+                message = await interaction.followup.send(text, ephemeral=True, wait=True)
+            else:
+                await interaction.response.send_message(text, ephemeral=True)
             async with get_connection(self._db_path) as db:
                 await db.execute(
                     "UPDATE queued_changes SET acknowledged_at = ? WHERE id = ?",
@@ -393,7 +410,7 @@ class ChangeQueue:
                 "channel alone", change_id, exc_info=True,
             )
             return
-        self._held[change_id] = interaction
+        self._held[change_id] = _Held(interaction, message)
 
     # ------------------------------------------------------------------
     # The worker
@@ -1138,13 +1155,17 @@ class ChangeQueue:
     def _answerable(self, change: aiosqlite.Row) -> discord.Interaction | None:
         """The change's interaction where it is held and under 14 minutes since it was
         acknowledged, otherwise None."""
-        interaction = self._held.get(change["id"])
+        held = self._held_and_updatable(change)
+        return None if held is None else held.interaction
+
+    def _held_and_updatable(self, change: aiosqlite.Row) -> "_Held | None":
+        held = self._held.get(change["id"])
         acknowledged = change["acknowledged_at"]
-        if interaction is None or acknowledged is None:
+        if held is None or acknowledged is None:
             return None
         if self._clock() - datetime.fromisoformat(acknowledged) >= UPDATABLE_FOR:
             return None
-        return interaction
+        return held
 
     async def _finish(self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row]) -> None:
         """Mark the change DONE and update its acknowledgement with the outcome."""
@@ -1170,12 +1191,15 @@ class ChangeQueue:
         Only while the interaction is held and under 14 minutes old. A failed update is logged
         and never fails the change.
         """
-        interaction = self._answerable(change)
-        if interaction is None:
+        held = self._held_and_updatable(change)
+        if held is None:
             return
+        interaction = held.interaction
         try:
             for number, part in enumerate(chunk_message(text)):
-                if number == 0:
+                if number == 0 and held.message is not None:
+                    await held.message.edit(content=part)
+                elif number == 0:
                     await interaction.edit_original_response(content=part)
                 else:
                     await interaction.followup.send(part, ephemeral=True)

@@ -1053,7 +1053,6 @@ async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monke
     assert ran == ["a"]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: an interaction already answered is still acknowledged through its response, not a follow-up whose message is updated")
 async def test_an_interaction_already_answered_is_acknowledged_through_a_followup_and_that_message_is_updated(env):
     """A command that deferred, or a form already answered, has no response left to take: the
     acknowledgement is a follow-up, and it is that message the outcome updates, within the same
