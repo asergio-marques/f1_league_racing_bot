@@ -46,10 +46,6 @@ from tests.support.change_queue import (
     tier_member,
 )
 
-#: What is not yet true of each test marked with it.
-CONTROLS = "#439: the stop notice carries no Retry or Discard yet"
-NOTICE = "#439: a stop notice is not yet posted with its buttons, nor again until it lands"
-
 MANAGER = {"member_id": 5151, "display_name": "Manager", "name": "Manager#0001"}
 ADMIN = {"member_id": 6161, "display_name": "Boss", "name": "Boss#0001"}
 #: The two pressers as a log line names them, the mention wrapped so it notifies nobody.
@@ -202,7 +198,6 @@ async def test_a_retry_whose_try_fails_is_recorded_naming_the_presser(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_discard_by_a_league_admin_drops_the_job_and_the_queue_runs_on(env):
     """A league admin's Discard drops the stopped job alone: one line names the admin, job #N and
     what was not done for which request, an audit record keeps it, the notice loses its buttons,
@@ -231,7 +226,6 @@ async def test_discard_by_a_league_admin_drops_the_job_and_the_queue_runs_on(env
     assert audits == [{"actor_id": ADMIN["member_id"], "change_type": "CHANGE_JOB_DISCARDED"}]
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_discard_by_a_league_manager_is_refused(env):
     """Only a league admin may discard: a league manager is told so privately, the refusal is a
     ⛔ line naming them, and the job still stops the queue."""
@@ -247,7 +241,6 @@ async def test_discard_by_a_league_manager_is_refused(env):
     assert ran == ["post"]
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_a_press_by_a_member_without_a_tier_is_refused_and_logged(env):
     """A member holding neither tier is refused Retry and Discard alike, privately, each refusal a
     ⛔ line; the job is not tried and still stops the queue."""
@@ -267,7 +260,6 @@ async def test_a_press_by_a_member_without_a_tier_is_refused_and_logged(env):
     assert ran == ["post"]
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
     """A notice whose job no longer stops the queue (it went through, a league admin discarded
     it, or its job and change were deleted from the database, as a pack deletes an unfinished
@@ -354,7 +346,6 @@ async def test_the_stop_notice_s_buttons_work_after_a_restart(env):
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_the_stop_notice_loses_its_buttons_once_the_job_clears(env):
     """A job that goes through takes the buttons off its notice; a notice already deleted by the
     time its job is discarded is no failure, and the queue runs on."""
@@ -381,7 +372,6 @@ async def test_the_stop_notice_loses_its_buttons_once_the_job_clears(env):
     assert await _states(env) == ["DONE", "DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICE)
 async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_buttons(env):
     """A notice the log channel refuses is kept, never put on the log lines' retry queue, and the
     member is warned; it is posted again, with its buttons, at a later try. So also after the hour,

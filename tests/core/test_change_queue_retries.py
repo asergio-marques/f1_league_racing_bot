@@ -33,9 +33,6 @@ from tests.support.change_queue import (
     stopped_job,
 )
 
-#: What is not yet true of each test marked with it.
-STOPS = "#439: a job Discord fails does not yet stop the queue on the 1-60 minute schedule"
-
 HOUR_LINE = "still fails after an hour. The bot has stopped trying on its own"
 
 

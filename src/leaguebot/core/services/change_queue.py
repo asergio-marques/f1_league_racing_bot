@@ -77,8 +77,9 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.queue_stop_view import QueueStopView
-from leaguebot.core.utils.channel_guard import is_league_manager
+from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.log_lines import (
+    discarded_line,
     hour_line,
     refusal_line,
     refuse,
@@ -1140,8 +1141,91 @@ class ChangeQueue:
     async def discard(
         self, notice_message_id: int | None, interaction: discord.Interaction
     ) -> None:
-        """Discard on the stop notice *notice_message_id*, pressed through *interaction*."""
-        raise NotImplementedError("Discard is built in a later commit")
+        """Discard on the stop notice *notice_message_id*, pressed through *interaction*.
+
+        Like Retry it works directly on the queue's own records, and it is refused in the same
+        two cases, and also to anyone who is not a league admin. Otherwise one save drops the
+        job alone: it is marked done with the result `{"discarded": {"by", "at"}}` and what a
+        failure had kept of its partial result, so that the change's outcome tells what was not
+        done and the request's later jobs run on; a change that had not started, which stopped
+        at its check, ends DISCARDED whole. The same save writes the log line naming the admin,
+        job #N and what was not done, and the `CHANGE_JOB_DISCARDED` audit record. Then the
+        worker is woken and the notice loses its buttons.
+        """
+        found = await self._stopped_at(notice_message_id)
+        what = "Discard of a stopped job" if found is None else f"Discard of job #{found[2]['id']}"
+        config = await self._bot.config_service.get_server_config()
+        member = interaction.user
+        if not isinstance(member, discord.Member) or not is_league_admin(config, member):
+            await refuse(
+                interaction, "⛔ Only a league admin may discard a stopped job.", what=what
+            )
+            return
+        if found is None:
+            await refuse(
+                interaction,
+                "⛔ That job no longer stops the queue, so there is nothing to discard.",
+                what=what,
+            )
+            return
+        change, steps, job = found
+        presser = interaction_member(interaction)
+        name = await self._name_job(change, job, self._step_context(change, steps, job))
+        now = self._clock()
+        started = change["state"] == ChangeState.RUNNING.value
+        ids: list[int] = []
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                if started:
+                    kept = json.loads(job["result"]) if job["result"] else {}
+                    discarded = {**kept, "discarded": {"by": presser, "at": now.isoformat()}}
+                    cursor = await db.execute(
+                        "UPDATE queued_change_steps SET done_at = ?, result = ? "
+                        "WHERE id = ? AND done_at IS NULL",
+                        (now.isoformat(), json.dumps(discarded), job["id"]),
+                    )
+                else:
+                    cursor = await db.execute(
+                        "UPDATE queued_changes SET state = ? WHERE id = ? AND state = 'QUEUED'",
+                        (ChangeState.DISCARDED.value, change["id"]),
+                    )
+                if cursor.rowcount == 1:
+                    line_id = await self._router.queue_log_on(
+                        db, discarded_line(presser, job["id"], name, change["what"])
+                    )
+                    if line_id is not None:
+                        ids.append(line_id)
+                    await record_change_on(
+                        db,
+                        actor_id=member.id,
+                        actor_name=str(member),
+                        change_type="CHANGE_JOB_DISCARDED",
+                        old_value={"job": job["id"], "step": job["name"],
+                                   "change": change["id"], "request": change["what"],
+                                   "failing_since": job["failing_since"],
+                                   "last_failure": job["last_failure"]},
+                        new_value={"discarded": True, "change_ended": not started},
+                        now=now,
+                    )
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        self._retrying.pop(job["id"], None)
+        await self._tell(interaction, f"🗑️ Job #{job['id']} ({name}) is discarded.")
+        await self._router.deliver_queued(ids, interaction=interaction)
+        if job["notice_message_id"] is not None:
+            await self._router.strip_view(job["notice_channel_id"], job["notice_message_id"])
+        if not started:
+            await self._update_reply(
+                change,
+                f"⛔ {change['what'][:1].upper() + change['what'][1:]} was discarded by a league "
+                f"admin: nothing of it was done.",
+            )
+            self._release(change)
+        else:
+            self._signal.set()
 
     async def _save_result(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, row: aiosqlite.Row,

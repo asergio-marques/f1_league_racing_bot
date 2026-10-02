@@ -3,8 +3,8 @@
 Every command, button and form that changes something, or tries to, records every outcome in
 the log channel — a success, a refusal or a failure, whoever used it (the core specification's
 "The record of what changed"). A failure is `report_failure`'s, in
-`core/utils/interaction_errors.py`. This module holds the other two, so that each standard line
-is formed in one place:
+`core/utils/interaction_errors.py`. This module holds the other two, and the change queue's
+lines, so that each standard line is formed in one place:
 
 - **`refuse`** answers the member, seen by them alone, and writes one line:
   "⛔ {what} refused for {member} — {reason}". The line itself is **`record_refusal`**'s, which
@@ -154,6 +154,12 @@ def retry_failed_line(named: str, job_id: int, job: str, fault: str) -> str:
         f"❌ Retry of job #{job_id} ({job}) by {named} failed ({fault}). The queue stays "
         f"stopped."
     )
+
+
+def discarded_line(named: str, job_id: int, job: str, request: str) -> str:
+    """The log channel's line for *named*, a league admin, discarding job *job_id*, *job* being
+    what it does and *request* the change it belongs to: what was not done is beneath it."""
+    return f"{named} | Discard job #{job_id} | Discarded\n  not done: {job} for {request}"
 
 
 async def record_refusal(

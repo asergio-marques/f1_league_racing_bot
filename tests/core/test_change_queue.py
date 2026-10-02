@@ -54,7 +54,6 @@ DOING = "Doing the dummy thing"
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
 #: What is not yet true of each test marked with it.
 STOPS = "#439: a job that fails does not yet stop the queue until it is cleared"
-STOPS_ON_CHECK = "#439: a bot change whose check fails or raises does not yet stop the queue"
 #: The stop line's opening, the job and the request it names filled in.
 STOPPED_AT = "❌ The queue is stopped at job #{id}: {job} for {request} ({asker}) failed ({fault})."
 #: The lines of a stopped job, its number and what it was filled in.
@@ -924,7 +923,6 @@ async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplo
 
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
 async def test_a_change_of_a_kind_the_bot_no_longer_knows_stops_the_queue_until_discarded(env):
     """A change of a kind no longer registered stops the queue, named with its asker, and is
     kept until a league admin discards it."""
@@ -1070,7 +1068,6 @@ async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_r
 
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
 async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it_is_discarded(env):
     """A check raising as its change starts stops the queue on that change, and the changes
     behind it wait; once a league admin discards it they run. An outcome that cannot be worded
@@ -1379,7 +1376,6 @@ async def test_a_change_asked_while_the_queue_is_stopped_joins_the_back_and_says
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_switch_off_asked_while_the_queue_is_stopped_waits_behind_it(env):
     """A switch-off is no exception: asked while the queue is stopped, it waits behind the stopped
     job like any change, and runs once that job is cleared."""
@@ -1578,7 +1574,6 @@ async def test_a_fault_while_recording_a_stop_is_logged_and_the_job_is_tried_aga
     assert any("database is locked" in str(r.exc_info[1]) for r in _host_errors(caplog))
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_the_member_s_reply_says_what_a_discard_left_undone(env):
     """Discarding a request's stopped job drops that job alone: it is kept done, with who
     discarded it and when, the request's later jobs run, and its outcome, reading the discard,
@@ -1606,7 +1601,6 @@ async def test_the_member_s_reply_says_what_a_discard_left_undone(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
 async def test_discarding_a_change_whose_check_failed_drops_the_whole_change(env):
     """A bot change stopped at its check before it started is dropped whole by Discard: none of
     its jobs runs, it ends DISCARDED, and the change behind it runs."""
