@@ -761,19 +761,7 @@ class ChangeQueue:
             await self._stop(change, pending, error)
             return False
         if verdict.kind is VerdictKind.GO:
-            async with get_connection(self._db_path) as db:
-                await db.execute("BEGIN IMMEDIATE")
-                cursor = await db.execute(
-                    "UPDATE queued_changes SET state = 'RUNNING' "
-                    "WHERE id = ? AND state = 'QUEUED'",
-                    (change["id"],),
-                )
-                await db.commit()
-            if cursor.rowcount != 1:
-                log.warning(
-                    "change %s was ended or removed while its check ran, so it did not start",
-                    change["id"],
-                )
+            await self._go(change, pending)
             return False
 
         if change["origin"] == ChangeOrigin.MEMBER.value:
@@ -783,6 +771,55 @@ class ChangeQueue:
         else:
             await self._stop(change, pending, ChangeRefused(verdict.reason or verdict.reply))
         return False
+
+    async def _go(self, change: aiosqlite.Row, pending: aiosqlite.Row | None) -> None:
+        """Start the change whose check has passed.
+
+        Where the check had stopped the queue (the change's first job carries a stop), passing
+        clears that stop, in the same save as the start: the job's tries, failing_since,
+        last_failure and next_try_at are reset, so that a failure of the job itself is a first
+        failure with a notice of its own and the whole schedule, and the line saying job #N went
+        through is written. The notice's buttons come off once the save is made.
+        """
+        stopped = pending is not None and pending["failing_since"] is not None
+        ids: list[int] = []
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await db.execute(
+                    "UPDATE queued_changes SET state = 'RUNNING' "
+                    "WHERE id = ? AND state = 'QUEUED'",
+                    (change["id"],),
+                )
+                if cursor.rowcount == 1 and stopped and pending is not None:
+                    await db.execute(
+                        "UPDATE queued_change_steps SET tries = 0, failing_since = NULL, "
+                        "last_failure = NULL, next_try_at = NULL "
+                        "WHERE id = ? AND done_at IS NULL",
+                        (pending["id"],),
+                    )
+                    line_id = await self._router.queue_log_on(
+                        db, went_through_line(pending["id"], change["what"])
+                    )
+                    if line_id is not None:
+                        ids.append(line_id)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        if cursor.rowcount != 1:
+            log.warning(
+                "change %s was ended or removed while its check ran, so it did not start",
+                change["id"],
+            )
+            return
+        if stopped and pending is not None:
+            self._retrying.pop(pending["id"], None)
+            await self._router.deliver_queued(ids, interaction=self._answerable(change))
+            if pending["notice_message_id"] is not None:
+                await self._router.strip_view(
+                    pending["notice_channel_id"], pending["notice_message_id"]
+                )
 
     async def _refuse(self, change: aiosqlite.Row, verdict: Verdict) -> None:
         """Refuse a member's change that fails its check as it starts: the acknowledgement is
