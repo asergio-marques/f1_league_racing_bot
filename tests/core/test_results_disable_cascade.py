@@ -42,8 +42,6 @@ from tests.support.change_queue import (
     updated_reply,
 )
 
-NOT_BUILT = "#439: turning results off does not run on the change queue yet"
-
 SERVER_ID = 6611
 ACTOR_ID = 4242
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -285,7 +283,6 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
     assert any("/module disable" in text for text in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_confirming_disables_both_and_names_both(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     cog = _make_cog(db_path, attendance_enabled=True, queued=True)
@@ -327,7 +324,6 @@ async def test_only_the_actor_may_confirm(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     tmp_path, monkeypatch,
 ):
@@ -381,7 +377,6 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_path):
     """With attendance off and no season running, the disable costs the league nothing.
 

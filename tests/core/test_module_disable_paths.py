@@ -50,9 +50,6 @@ from tests.support.change_queue import (
     run_queue,
 )
 
-SWITCH_OFF_ON_NOT_BUILT = "#439: attendance cannot yet be switched off on a handed connection"
-CASCADE_NOT_QUEUED = "#439: the cascade is not yet a part of turning results off on the queue"
-
 SERVER_ID = 11408
 ACTOR_ID = 77
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -316,7 +313,6 @@ async def test_a_manager_s_disable_is_audited_as_their_decision(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CASCADE_NOT_QUEUED)
 async def test_a_cascade_is_audited_as_a_cascade(tmp_path):
     """Attendance going off because Results did was nobody's decision, and a league
     reading its log needs to see that rather than a disable they cannot account for."""
@@ -329,7 +325,6 @@ async def test_a_cascade_is_audited_as_a_cascade(tmp_path):
     assert "ATTENDANCE_MODULE_DISABLED" not in types
 
 
-@pytest.mark.xfail(strict=True, reason=SWITCH_OFF_ON_NOT_BUILT)
 async def test_a_cascade_does_the_same_work(tmp_path):
     """The cascade and the manual disable switch attendance off through the one call, so the
     module ends up in the same state either way, or a cascade would leave stale bindings a
@@ -344,7 +339,6 @@ async def test_a_cascade_does_the_same_work(tmp_path):
     assert await _division_configs(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=SWITCH_OFF_ON_NOT_BUILT)
 async def test_a_cascade_runs_even_where_attendance_was_already_off(tmp_path):
     """It skips the guard deliberately — clearing twice is harmless where refusing would leave
     bindings behind — and says attendance was already off."""
@@ -360,7 +354,6 @@ async def test_a_cascade_runs_even_where_attendance_was_already_off(tmp_path):
     assert await _division_configs(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=CASCADE_NOT_QUEUED)
 async def test_a_cascade_is_still_logged_to_the_league(tmp_path):
     """The league must be able to see that attendance went off, even though nobody asked
     for it: the cascade's own line, beside the switch-off's."""

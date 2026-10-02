@@ -448,7 +448,6 @@ async def test_disabling_twice_does_no_work(tmp_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_league_with_nothing_at_stake_is_not_asked(tmp_path):
     """Between seasons with attendance off, there is nothing to warn about — and asking
     anyway is how a confirmation stops being read. The change is asked for at once, and the
@@ -510,7 +509,6 @@ async def test_nothing_is_written_until_the_league_confirms(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_flag_goes_down_in_the_save_that_erases_the_results(tmp_path):
     """So nothing the erasure disturbs can post again on its way out — the module-output
     rule, applied to the act of switching the module off. By the time the first message is
@@ -555,7 +553,6 @@ async def test_a_disable_between_seasons_still_takes_all_three_steps(tmp_path):
     assert line.endswith("| /module disable results | Success")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_purged_season_is_audited_separately(tmp_path):
     """The disable and the destruction are two different facts, and a league reading its
     log needs to see what was deleted as well as that the module went."""
@@ -570,7 +567,6 @@ async def test_a_purged_season_is_audited_separately(tmp_path):
     assert "RESULTS_SEASON_PURGED" in types
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_disable_that_destroyed_nothing_writes_no_purge_entry(tmp_path):
     """Nothing was destroyed, so an entry saying so would be a record of an event that did
     not happen."""
@@ -584,7 +580,6 @@ async def test_a_disable_that_destroyed_nothing_writes_no_purge_entry(tmp_path):
     assert "RESULTS_SEASON_PURGED" not in types
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_counts_what_was_destroyed(tmp_path):
     """A manager who has just confirmed needs to see the scale of what happened."""
     db_path = await _make_db(tmp_path)
@@ -598,7 +593,6 @@ async def test_the_reply_counts_what_was_destroyed(tmp_path):
     assert "8 session result(s)" in replied
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_says_what_survived_the_purge(tmp_path):
     """The points configurations are kept, which a manager would otherwise go looking for. The
     verdicts are not: they go with the results (decided 2026-09-21, #189), and a reply still
@@ -614,7 +608,6 @@ async def test_the_reply_says_what_survived_the_purge(tmp_path):
     assert "Points configurations and division channels are kept" in replied
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_counts_the_verdicts_removed(tmp_path):
     """Beside the results and standings messages, so the manager sees the decisions went too;
     and the closing line, written once the removals were tried, counts them as well."""
@@ -630,7 +623,6 @@ async def test_the_reply_counts_the_verdicts_removed(tmp_path):
     assert "verdicts removed: 20" in closing
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reply_links_every_message_left_standing(tmp_path):
     """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
 
@@ -653,7 +645,6 @@ async def test_the_reply_links_every_message_left_standing(tmp_path):
         assert link in closing
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_nothing_left_standing_says_nothing_of_it(tmp_path):
     """A warning over nothing would send a manager looking for messages that are gone."""
     db_path = await _make_db(tmp_path)
@@ -666,7 +657,6 @@ async def test_nothing_left_standing_says_nothing_of_it(tmp_path):
     assert "left standing" not in await _line_with(cog.bot, "| Messages removed")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_long_list_is_split_across_replies(tmp_path):
     """A season's worth of links outruns Discord's 2,000 characters, and one reply that long
     would be refused outright — the manager would learn nothing at all. The update of the
@@ -691,7 +681,6 @@ async def test_a_long_list_is_split_across_replies(tmp_path):
     assert all(link in "\n".join(sent) for link in links)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
     """There was none, and a count of zeroes would read as something having gone wrong."""
     db_path = await _make_db(tmp_path)
@@ -709,7 +698,6 @@ async def test_a_disable_between_seasons_reports_no_destruction(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_cascade_disables_attendance_and_says_so(tmp_path):
     db_path = await _make_db(tmp_path, attendance=True)
     cog = _queued_cog(db_path)
@@ -721,7 +709,6 @@ async def test_the_cascade_disables_attendance_and_says_so(tmp_path):
     assert "check-in and attendance channels have been cleared" in replied
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_cascade_says_what_attendance_keeps(tmp_path):
     """Its timings, penalties and thresholds survive — so a league re-enabling it later
     does not have to configure it again."""
@@ -733,7 +720,6 @@ async def test_the_cascade_says_what_attendance_keeps(tmp_path):
     assert "timings, penalties and thresholds are kept" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_no_cascade_where_attendance_is_already_off(tmp_path):
     """Asked for, but there is nothing to cascade to — and claiming otherwise would tell a
     league a module went off that was never on."""

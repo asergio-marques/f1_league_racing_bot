@@ -32,6 +32,7 @@ from typing import Any, Awaitable, Callable
 
 import aiosqlite
 
+from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     AuditRecord,
     FollowOn,
@@ -92,7 +93,10 @@ def results_off_change(
     """
 
     async def check(ctx: CheckContext) -> Verdict:
-        if not await ctx.bot.module_service.is_results_enabled():
+        async with get_connection(ctx.db_path) as db:
+            cursor = await db.execute("SELECT module_enabled FROM results_module_config")
+            row = await cursor.fetchone()
+        if row is None or not row["module_enabled"]:
             return Verdict.refuse(ALREADY_DISABLED)
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)

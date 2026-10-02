@@ -16,6 +16,7 @@ from discord.ext import commands
 
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import module_off
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -54,6 +55,8 @@ RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNU
 
 
 #: The forced close's failed steps that do not name a driver, worded once for every caller.
+#: How the change that turns results off names itself in its lines.
+_RESULTS_OFF = "`/module disable results`"
 _BUTTON_NOT_REMOVED = "The Sign Up button could not be removed from the signup channel."
 _NOTICE_NOT_POSTED = "The closed notice could not be posted in the signup channel."
 
@@ -436,11 +439,13 @@ class _ConfirmDisableResultsView(LeagueView):
             await refuse(interaction, "⛔ Not your action.", what=describe(interaction, button))
             return
         self.stop()
-        await interaction.response.defer(ephemeral=True)
-        await self._cog._apply_results_disable(
-            interaction, cascade_attendance=self._cascade_attendance
+        await self._cog.bot.change_queue.ask(
+            module_off("results"),
+            {"cascade_attendance": self._cascade_attendance},
+            interaction=interaction,
+            what=_RESULTS_OFF,
+            refusal_what=describe(interaction, button),
         )
-        await self._cog._refresh_hub(interaction, "`/module disable`")
 
     @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
     async def cancel(
@@ -559,7 +564,10 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
-        await self._refresh_hub(interaction, describe(interaction))
+        if module_name.value != "results":
+            # Turning results off asks the change queue, which refreshes the panel itself
+            # once the flag is down.
+            await self._refresh_hub(interaction, describe(interaction))
 
     async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
         """Bring the hub's panel up to date: a module's options are offered while it is on.
@@ -805,8 +813,13 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-        await self._apply_results_disable(interaction, cascade_attendance=False)
+        await self.bot.change_queue.ask(
+            module_off("results"),
+            {"cascade_attendance": False},
+            interaction=interaction,
+            what=_RESULTS_OFF,
+            refusal_what=describe(interaction),
+        )
 
     async def _apply_results_disable(
         self,

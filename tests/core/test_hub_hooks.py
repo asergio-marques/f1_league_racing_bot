@@ -33,9 +33,6 @@ from tests.support.undecorate import undecorate
 
 SERVER_ID = 27903
 
-#: Turning results off, carried out on the change queue, which refreshes the panel itself.
-QUEUED_NOT_BUILT = "#439: turning results off does not run on the change queue yet"
-
 
 def _choice(name: str) -> app_commands.Choice:
     return app_commands.Choice(name=name, value=name)
@@ -69,13 +66,7 @@ def _module_cog(*, refused: bool = False) -> ModuleCog:
 @pytest.mark.parametrize(
     ("module", "command"),
     [
-        pytest.param(
-            module, command, id=f"{module}-{command}",
-            marks=(
-                pytest.mark.xfail(strict=True, reason=QUEUED_NOT_BUILT)
-                if (module, command) == ("results", "disable") else ()
-            ),
-        )
+        pytest.param(module, command, id=f"{module}-{command}")
         for module in ("weather", "results", "attendance", "images", "signup")
         for command in ("enable", "disable")
     ],
@@ -136,7 +127,6 @@ async def _queued_results_off(tmp_path) -> tuple[ModuleCog, MagicMock]:
     return cog, interaction
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED_NOT_BUILT)
 async def test_the_confirmed_results_disable_refreshes_the_panel(monkeypatch, tmp_path):
     """The confirmation asks the queue; the panel is refreshed when the queue runs the change."""
     from tests.support.change_queue import run_queue
@@ -172,7 +162,6 @@ async def test_a_panel_that_cannot_be_refreshed_is_logged(monkeypatch):
     assert "Admin (<@77>)" in line and "/module disable" in line
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED_NOT_BUILT)
 async def test_a_panel_not_refreshed_after_the_confirmed_results_disable_names_the_command(
     monkeypatch, tmp_path,
 ):
