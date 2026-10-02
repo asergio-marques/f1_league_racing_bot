@@ -853,10 +853,6 @@ async def test_bot_pack_is_refused_while_a_season_is_current_and_is_recorded(tmp
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
-#: Why the two pack refusals below fail until the build adds them.
-PACK_WAITS_ON_THE_QUEUE = "#439: a pack is not yet refused while the queue holds a job"
-
-
 async def _seed_pending_job(db_path: str, *, stopped: bool) -> int:
     """One member's `/dummy` in the change queue, and the number of the job a pack would wait on.
 
@@ -903,7 +899,6 @@ async def _queue_rows(db_path: str) -> list[tuple]:
     return [tuple(r) for r in changes] + [tuple(r) for r in jobs]
 
 
-@pytest.mark.xfail(strict=True, reason=PACK_WAITS_ON_THE_QUEUE)
 async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(tmp_path):
     """A job still to run would go on changing Discord on a server the bot no longer serves, so
     a pack waits for the queue to empty (#439): refused before anything is cleared, naming the
@@ -928,7 +923,6 @@ async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(t
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
-@pytest.mark.xfail(strict=True, reason=PACK_WAITS_ON_THE_QUEUE)
 async def test_bot_pack_is_refused_while_the_queue_is_stopped_and_names_the_stopped_job(tmp_path):
     """A stopped job holds the queue until a league manager or admin presses Retry, or a league
     admin Discard, on its notice (#439): the pack is refused naming the stopped job and those two
@@ -1011,7 +1005,6 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
-@pytest.mark.xfail(strict=True, reason=PACK_WAITS_ON_THE_QUEUE)
 async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season(
     tmp_path, monkeypatch
 ):

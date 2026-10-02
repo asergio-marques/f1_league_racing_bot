@@ -366,7 +366,6 @@ async def _queue_change(db_path: str, state: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a pack is not yet refused while the queue holds a job")
 @pytest.mark.parametrize("state", ["QUEUED", "RUNNING"])
 async def test_pack_is_refused_while_the_queue_holds_a_job(db_path, state):
     """A job still to run, queued or in a change under way (a stopped job's change among them),
