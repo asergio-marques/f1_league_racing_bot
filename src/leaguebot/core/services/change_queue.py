@@ -48,6 +48,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
+import aiohttp
 import aiosqlite
 import discord
 
@@ -56,7 +57,9 @@ from leaguebot.core.models.change import (
     AuditRecord,
     ChangeOrigin,
     ChangeState,
+    GuildUnavailable,
     PlannedStep,
+    StepFailedOnDiscord,
     StepKind,
     StepResult,
     Verdict,
@@ -81,6 +84,9 @@ UPDATABLE_FOR = timedelta(minutes=14)
 #: How long a step waits after its first failure, doubling at each try after, up to the ceiling.
 RETRY_FIRST_WAIT = timedelta(seconds=30)
 RETRY_CEILING = timedelta(minutes=15)
+#: How long a step fails before one line says so, and how long before it says so again.
+REPORT_AFTER = timedelta(hours=1)
+REPORT_AGAIN_AFTER = timedelta(hours=24)
 
 
 @dataclass(frozen=True)
@@ -143,8 +149,8 @@ class Step:
     A `SAVE` step's `run(db, ctx)` writes only on *db* and never commits; any other step's
     `run(ctx)` does its work with no connection open. `still_due(ctx)` is asked before the step
     runs, and a step no longer due is marked done as dropped. `describe(ctx)` names what the step
-    is doing, for the report of one that keeps failing. `gone_line` is what an `EDIT` step writes
-    where its message is gone. `tried_once` marks a `DELETE` or `ACT` step whose failure on
+    is doing, for the report of one that keeps failing. `gone_line`, a line or what forms one, is
+    what an `EDIT` step writes where its message is gone. `tried_once` marks a `DELETE` or `ACT` step whose failure on
     Discord is kept in its result for the outcome, rather than retried.
     """
 
@@ -153,7 +159,7 @@ class Step:
     run: Callable[..., Awaitable[StepResult]]
     still_due: Callable[[StepContext], Awaitable[bool]] | None = None
     describe: Callable[[StepContext], Awaitable[str]] | None = None
-    gone_line: Callable[[StepContext], str] | None = None
+    gone_line: Callable[[StepContext], str] | str | None = None
     tried_once: bool = False
 
 
@@ -214,7 +220,7 @@ class ChangeQueue:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._types: dict[str, ChangeType] = {}
         self._held: dict[int, discord.Interaction] = {}
-        self._wake = asyncio.Event()
+        self._signal = asyncio.Event()
         self._working = asyncio.Lock()
         self._task: Optional["asyncio.Task[None]"] = None
 
@@ -353,19 +359,50 @@ class ChangeQueue:
                 )
                 await db.commit()
             self._held[change_id] = interaction
-        self._wake.set()
+        self._signal.set()
         return change_id
 
     # ------------------------------------------------------------------
     # The worker
     # ------------------------------------------------------------------
 
-    def start(self) -> None:
-        """Start the worker, once: a second call does nothing."""
+    async def start(self) -> None:
+        """Start the worker, once: a second call does nothing.
+
+        Every step waiting on a retry is made due now, so that what the bot's stop interrupted is
+        tried again at once.
+        """
         if self._task is not None and not self._task.done():
             return
+        async with get_connection(self._db_path) as db:
+            await db.execute(
+                "UPDATE queued_change_steps SET next_try_at = ? "
+                "WHERE done_at IS NULL AND next_try_at IS NOT NULL",
+                (self._clock().isoformat(),),
+            )
+            await db.commit()
         self._task = asyncio.create_task(self._work(), name="change-queue")
         self._task.add_done_callback(self._worker_ended)
+
+    async def wake(self, place: str | None = None) -> None:
+        """Try a waiting step at once: those holding *place*, or every waiting step where none
+        is given. Called by a command that repairs what a waiting step lacks."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT s.change_id, s.position, s.places, c.places AS change_places "
+                "FROM queued_change_steps s JOIN queued_changes c ON c.id = s.change_id "
+                "WHERE s.done_at IS NULL AND s.next_try_at IS NOT NULL"
+            )
+            for step in await cursor.fetchall():
+                held = set(json.loads(step["places"])) | set(json.loads(step["change_places"]))
+                if place is None or place in held:
+                    await db.execute(
+                        "UPDATE queued_change_steps SET next_try_at = ? "
+                        "WHERE change_id = ? AND position = ?",
+                        (self._clock().isoformat(), step["change_id"], step["position"]),
+                    )
+            await db.commit()
+        self._signal.set()
 
     async def stop(self) -> None:
         """Stop the worker, leaving any change where it stood for the next start."""
@@ -384,10 +421,26 @@ class ChangeQueue:
             log.error("the change queue's worker stopped on a fault", exc_info=error)
 
     async def _work(self) -> None:
+        """Carry out what can run, then sleep until woken or until the earliest retry is due."""
         while True:
-            self._wake.clear()
+            self._signal.clear()
             await self.run_until_idle()
-            await self._wake.wait()
+            try:
+                await asyncio.wait_for(self._signal.wait(), await self._seconds_to_next_try())
+            except asyncio.TimeoutError:
+                pass
+
+    async def _seconds_to_next_try(self) -> float | None:
+        """How long until the earliest waiting step is due, or None where none waits."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT MIN(next_try_at) AS due FROM queued_change_steps "
+                "WHERE done_at IS NULL AND next_try_at IS NOT NULL"
+            )
+            row = await cursor.fetchone()
+        if row is None or row["due"] is None:
+            return None
+        return max((datetime.fromisoformat(row["due"]) - self._clock()).total_seconds(), 0.05)
 
     async def run_until_idle(self, *, steps: int | None = None) -> None:
         """Carry out what can run now, in order: until nothing can, or *steps* steps are done."""
@@ -431,8 +484,14 @@ class ChangeQueue:
         return await self._run_step(change, change_type, step_rows, pending)
 
     async def _choose(self, db: aiosqlite.Connection) -> aiosqlite.Row | None:
-        """The change to work on next: the RUNNING one, resumed after a stop; otherwise the
-        lowest id among the QUEUED changes and the WAITING ones whose step is due."""
+        """The change to work on next.
+
+        A RUNNING change comes first, as one resumed after a stop. Next comes the lowest id among
+        the WAITING changes whose step is due and the QUEUED changes not blocked. A QUEUED change
+        is blocked while its places meet those of a not-done step of a WAITING change with a lower
+        id, so that a post to the same place never overtakes one waiting on a retry; a change
+        whose type `overrides_waiting` (a switch-off, a cancel) is never blocked.
+        """
         cursor = await db.execute("SELECT * FROM queued_changes WHERE state = 'RUNNING' LIMIT 1")
         running = await cursor.fetchone()
         if running is not None:
@@ -442,11 +501,25 @@ class ChangeQueue:
             "WHERE s.change_id = c.id AND s.done_at IS NULL AND s.next_try_at IS NOT NULL) "
             "AS due_at FROM queued_changes c WHERE c.state IN ('QUEUED', 'WAITING') ORDER BY c.id"
         )
+        candidates = list(await cursor.fetchall())
+        cursor = await db.execute(
+            "SELECT s.change_id, s.places FROM queued_change_steps s JOIN queued_changes c "
+            "ON c.id = s.change_id WHERE c.state = 'WAITING' AND s.done_at IS NULL"
+        )
+        held: dict[int, set[str]] = {}
+        for step in await cursor.fetchall():
+            held.setdefault(step["change_id"], set()).update(json.loads(step["places"]))
         now = self._clock()
-        for row in await cursor.fetchall():
-            if row["state"] == ChangeState.QUEUED.value:
+        for row in candidates:
+            if row["state"] == ChangeState.WAITING.value:
+                if row["due_at"] is not None and datetime.fromisoformat(row["due_at"]) <= now:
+                    return row
+                continue
+            change_type = self._types.get(row["kind"])
+            if change_type is not None and change_type.overrides_waiting:
                 return row
-            if row["due_at"] is not None and datetime.fromisoformat(row["due_at"]) <= now:
+            behind = set().union(*(places for waiting, places in held.items() if waiting < row["id"]))
+            if not behind.intersection(json.loads(row["places"])):
                 return row
         return None
 
@@ -487,12 +560,6 @@ class ChangeQueue:
         if verdict.kind is VerdictKind.GO:
             async with get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
-                await db.execute(
-                    "UPDATE queued_change_steps SET tries = 0, next_try_at = NULL, "
-                    "failing_since = NULL, reported_at = NULL, last_failure = NULL "
-                    "WHERE change_id = ? AND done_at IS NULL",
-                    (change["id"],),
-                )
                 await db.execute(
                     "UPDATE queued_changes SET state = 'RUNNING' WHERE id = ?", (change["id"],)
                 )
@@ -566,26 +633,32 @@ class ChangeQueue:
         await self._router.deliver_queued(ids)
 
     async def _wait_step(
-        self, db: aiosqlite.Connection, row: aiosqlite.Row, reason: str
-    ) -> None:
+        self, db: aiosqlite.Connection, row: aiosqlite.Row, reason: str, *, reported: bool = False
+    ) -> bool:
         """Make the step *row* wait for its next try, on the retry waits: 30 seconds, doubling,
-        to a ceiling of 15 minutes. Writes on *db*, committing nothing."""
+        to a ceiling of 15 minutes, noting that its failure is *reported* where it has been.
+
+        Writes on *db*, committing nothing. Returns False where the step is gone: its change
+        was removed under the worker.
+        """
         tries = row["tries"] + 1
         now = self._clock()
         wait = min(RETRY_FIRST_WAIT * 2 ** min(tries - 1, 16), RETRY_CEILING)
-        await db.execute(
+        cursor = await db.execute(
             "UPDATE queued_change_steps SET tries = ?, next_try_at = ?, "
-            "failing_since = COALESCE(failing_since, ?), last_failure = ? "
+            "failing_since = COALESCE(failing_since, ?), last_failure = ?, reported_at = ? "
             "WHERE change_id = ? AND position = ?",
             (
                 tries,
                 (now + wait).isoformat(),
                 now.isoformat(),
                 reason,
+                now.isoformat() if reported else row["reported_at"],
                 row["change_id"],
                 row["position"],
             ),
         )
+        return cursor.rowcount == 1
 
     async def _end(
         self, change: aiosqlite.Row, state: ChangeState, line: str | None = None
@@ -613,7 +686,7 @@ class ChangeQueue:
     def _release(self, change: aiosqlite.Row) -> None:
         """Let go of the change's interaction, and wake the worker for what comes next."""
         self._held.pop(change["id"], None)
-        self._wake.set()
+        self._signal.set()
 
     @staticmethod
     def _named(change: aiosqlite.Row) -> str:
@@ -664,17 +737,26 @@ class ChangeQueue:
     ) -> bool:
         """Run the step *row*, saving its mark with its writes, audits and lines.
 
-        A step that raises has its save rolled back whole, and the change is faulted.
+        A step no longer due is marked done as dropped. One that raises has its save rolled back
+        whole: a failure Discord caused is retried, or kept where the step is tried once, and any
+        other makes the change fault.
         """
-        try:
-            step = change_type.steps[row["name"]]
-            ctx = StepContext(
-                **self._context_fields(change, step_rows),
-                step_name=row["name"],
-                step_payload=json.loads(row["payload"]),
-                tries=row["tries"],
+        step = change_type.steps.get(row["name"])
+        if step is None:
+            await self._fault(
+                change, change_type,
+                KeyError(f"change type {change['kind']!r} has no step {row['name']!r}"),
             )
-            saved: list[int] | None
+            return False
+        ctx = StepContext(
+            **self._context_fields(change, step_rows),
+            step_name=row["name"],
+            step_payload=json.loads(row["payload"]),
+            tries=row["tries"],
+        )
+        try:
+            if step.still_due is not None and not await step.still_due(ctx):
+                return await self._complete(change, row, StepResult(result={"dropped": True}))
             if step.kind is StepKind.SAVE:
                 async with get_connection(self._db_path) as db:
                     await db.execute("BEGIN IMMEDIATE")
@@ -688,26 +770,131 @@ class ChangeQueue:
                     except BaseException:
                         await db.rollback()
                         raise
-            else:
-                result = await step.run(ctx)
-                async with get_connection(self._db_path) as db:
-                    await db.execute("BEGIN IMMEDIATE")
-                    try:
-                        saved = await self._save_result(db, change, row, result)
-                        if saved is None:
-                            await db.rollback()
-                        else:
-                            await db.commit()
-                    except BaseException:
-                        await db.rollback()
-                        raise
+                return await self._delivered(change, saved)
+            return await self._complete(change, row, await step.run(ctx))
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_fault`
-            await self._fault(change, change_type, error)
-            return False
+            try:
+                return await self._step_failed(change, change_type, step, ctx, row, error)
+            except Exception as again:  # noqa: BLE001
+                await self._fault(change, change_type, again)
+                return False
+
+    async def _complete(
+        self, change: aiosqlite.Row, row: aiosqlite.Row, result: StepResult
+    ) -> bool:
+        """Save the mark of a step whose work needed no connection, with *result*'s audits and
+        lines, then deliver the lines."""
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                saved = await self._save_result(db, change, row, result)
+                if saved is None:
+                    await db.rollback()
+                else:
+                    await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        return await self._delivered(change, saved)
+
+    async def _delivered(self, change: aiosqlite.Row, saved: list[int] | None) -> bool:
+        """Deliver the lines a step's save wrote; False where the save was not made."""
         if saved is None:
             return False
         await self._router.deliver_queued(saved, interaction=self._answerable(change))
         return True
+
+    @staticmethod
+    def _failed_on_discord(error: BaseException) -> str | None:
+        """Why *error* failed the step, where Discord caused it, else None."""
+        if isinstance(
+            error,
+            (
+                StepFailedOnDiscord,
+                GuildUnavailable,
+                discord.HTTPException,
+                aiohttp.ClientError,
+                asyncio.TimeoutError,
+            ),
+        ):
+            return str(error) or type(error).__name__
+        return None
+
+    async def _step_failed(
+        self,
+        change: aiosqlite.Row,
+        change_type: ChangeType,
+        step: Step,
+        ctx: StepContext,
+        row: aiosqlite.Row,
+        error: Exception,
+    ) -> bool:
+        """Deal with the step *row* raising *error*, its save already rolled back.
+
+        `NotFound` completes a `DELETE` step (the message is already gone, and no line says so)
+        and an `EDIT` step (with its `gone_line`). Any other failure Discord caused makes the step
+        wait on a retry. Anything else is a fault in the bot.
+        """
+        if isinstance(error, discord.NotFound) and step.kind in (StepKind.DELETE, StepKind.EDIT):
+            lines: tuple[str, ...] = ()
+            if step.kind is StepKind.EDIT and step.gone_line is not None:
+                gone = step.gone_line if isinstance(step.gone_line, str) else step.gone_line(ctx)
+                lines = (gone,)
+            return await self._complete(
+                change, row, StepResult(result={"gone": True}, lines=lines)
+            )
+        reason = self._failed_on_discord(error)
+        if reason is None:
+            await self._fault(change, change_type, error)
+            return False
+        await self._wait(change, step, ctx, row, reason)
+        return False
+
+    async def _wait(
+        self, change: aiosqlite.Row, step: Step, ctx: StepContext, row: aiosqlite.Row, reason: str
+    ) -> None:
+        """Make the step *row* wait on a retry, and the change with it.
+
+        A step failing for about an hour is reported by one line, in the same save, and again
+        after a further day; it is still retried.
+        """
+        now = self._clock()
+        since = datetime.fromisoformat(row["failing_since"]) if row["failing_since"] else now
+        reported = datetime.fromisoformat(row["reported_at"]) if row["reported_at"] else None
+        report = now - since >= REPORT_AFTER and (
+            reported is None or now - reported >= REPORT_AGAIN_AFTER
+        )
+        line: str | None = None
+        if report:
+            doing = "it"
+            if step.describe is not None:
+                try:
+                    doing = await step.describe(ctx)
+                except Exception:  # noqa: BLE001 — the report goes ahead without the name
+                    log.error("could not describe step %r of %s", step.name, change["what"],
+                              exc_info=True)
+            what = change["what"]
+            line = (
+                f"⚠️ {what[:1].upper() + what[1:]} for {self._named(change)} is still at work: "
+                f"{doing} has failed for over an hour ({reason}). The bot keeps trying."
+            )
+        ids: list[int] = []
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                if await self._wait_step(db, row, reason, reported=report):
+                    await db.execute(
+                        "UPDATE queued_changes SET state = 'WAITING' WHERE id = ?", (change["id"],)
+                    )
+                    if line is not None:
+                        line_id = await self._router.queue_log_on(db, line)
+                        if line_id is not None:
+                            ids.append(line_id)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        await self._router.deliver_queued(ids, interaction=self._answerable(change))
 
     async def _fault(
         self, change: aiosqlite.Row, change_type: ChangeType | None, error: BaseException
@@ -760,6 +947,10 @@ class ChangeQueue:
                 change["id"], row["name"],
             )
             return None
+        await db.execute(
+            "UPDATE queued_changes SET state = 'RUNNING' WHERE id = ? AND state = 'WAITING'",
+            (change["id"],),
+        )
         for audit in result.audits:
             await self._audit(db, change, audit)
         ids: list[int] = []

@@ -78,7 +78,6 @@ async def _retry_when_due(env) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discord_failure_is_retried_with_growing_waits_up_to_the_ceiling(env):
     holder = {"fail": _missing_access()}
     _queue(env, _type(steps=[_flaky("post", holder)]))
@@ -102,7 +101,6 @@ async def test_a_discord_failure_is_retried_with_growing_waits_up_to_the_ceiling
     assert step["failing_since"] == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_waiting_on_a_retry_steps_aside_for_changes_elsewhere(env):
     holder = {"fail": _missing_access()}
     ran: list[str] = []
@@ -120,7 +118,6 @@ async def test_a_change_waiting_on_a_retry_steps_aside_for_changes_elsewhere(env
     assert await _states(env) == ["WAITING", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_for_the_same_place_waits_behind_one_waiting_on_a_retry(env):
     holder = {"fail": _missing_access()}
     ran: list[str] = []
@@ -150,7 +147,6 @@ async def _retry_when_due_or_done(env) -> None:
     await run_queue(env.bot)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_switch_off_is_not_held_behind_a_waiting_change(env):
     holder = {"fail": _missing_access()}
     ran: list[str] = []
@@ -169,7 +165,6 @@ async def test_a_switch_off_is_not_held_behind_a_waiting_change(env):
     assert await _states(env) == ["WAITING", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_waiting_change_s_steps_no_longer_due_are_dropped_and_the_rest_go_ahead(env):
     holder = {"fail": _missing_access()}
     due = {"post": True}
@@ -201,7 +196,6 @@ def _still_at_work(lines: list[str]) -> list[str]:
     return [line for line in lines if STILL_AT_WORK in line]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_still_failing_after_about_an_hour_is_reported_and_still_retried(env):
     holder = {"fail": _missing_access()}
 
@@ -228,7 +222,6 @@ async def test_a_step_still_failing_after_about_an_hour_is_reported_and_still_re
     assert await _states(env) == ["WAITING"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_still_failing_is_reported_again_after_a_day_and_not_at_every_try(env):
     holder = {"fail": _missing_access()}
     _queue(env, _type(steps=[_flaky("post", holder)]))
@@ -253,7 +246,6 @@ async def test_a_step_still_failing_is_reported_again_after_a_day_and_not_at_eve
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_message_already_gone_completes_a_delete_without_a_line(env):
     api = _api()
     holder = {"fail": http_error(discord.NotFound, status=404, text="Unknown Message")}
@@ -269,7 +261,6 @@ async def test_a_message_already_gone_completes_a_delete_without_a_line(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_message_already_gone_completes_an_edit_with_a_line(env):
     api = _api()
     gone = "ℹ️ The dummy message was gone, so it was not edited."
@@ -291,7 +282,6 @@ async def test_a_message_already_gone_completes_an_edit_with_a_line(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_waiting_on_a_retry_is_tried_at_once_when_the_bot_starts(env):
     holder = {"fail": _missing_access()}
     ran: list[str] = []
@@ -312,7 +302,6 @@ async def test_a_change_waiting_on_a_retry_is_tried_at_once_when_the_bot_starts(
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_wake_tries_a_waiting_step_at_once(env):
     """A command repairing what a waiting step lacks wakes the queue for that place."""
     holder = {"fail": _missing_access()}

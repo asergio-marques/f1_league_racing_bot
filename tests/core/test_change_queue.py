@@ -390,7 +390,6 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
     assert f"⛔ {WHAT} refused for {NAMED} — {reason}" in "\n".join(await _lines(env))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it(env):
     """Whatever became of the change asked for in between: here it has already finished, ahead of
     a change held behind one waiting on a retry, and the held one may still be asked for again."""
