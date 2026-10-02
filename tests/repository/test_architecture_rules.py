@@ -785,7 +785,6 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "_take_down_cancel_button"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "post_standings"): (1, PASS["results"]),
-    ("results/services/results_purge_service.py", "_close_open_amendments"): (1, PASS["results"]),
     ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._execute_channel_delete"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.handle_member_remove"): (1, PASS["signup"]),
