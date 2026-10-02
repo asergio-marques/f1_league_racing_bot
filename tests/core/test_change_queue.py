@@ -42,7 +42,6 @@ from tests.support.change_queue import (
     updated_reply,
 )
 
-NOT_BUILT = "#439: the change queue is not built yet"
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 WHAT = "`/dummy`"
@@ -709,7 +708,6 @@ async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_th
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_may_plan_the_steps_after_it_in_its_own_save(env):
     api = _api()
     ran: list[str] = []
@@ -737,7 +735,6 @@ async def test_a_step_may_plan_the_steps_after_it_in_its_own_save(env):
     assert [json.loads(s["payload"]) for s in steps][1:3] == [{"n": 1}, {"n": 2}]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_may_ask_for_a_change_of_its_own_in_its_own_save(env):
     api = _api()
     ran: list[str] = []

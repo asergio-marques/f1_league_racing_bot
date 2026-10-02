@@ -57,6 +57,7 @@ from leaguebot.core.models.change import (
     AuditRecord,
     ChangeOrigin,
     ChangeState,
+    FollowOn,
     GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
@@ -965,7 +966,99 @@ class ChangeQueue:
             line_id = await self._router.queue_log_on(db, line)
             if line_id is not None:
                 ids.append(line_id)
+        await self._plan_steps(db, change, row, result.then)
+        await self._add_places(db, change, result.places)
+        for follow_on in result.follow_ons:
+            await self._ask_on(db, change, follow_on)
         return ids
+
+    @staticmethod
+    async def _plan_steps(
+        db: aiosqlite.Connection, change: aiosqlite.Row, row: aiosqlite.Row,
+        planned: tuple[PlannedStep, ...],
+    ) -> None:
+        """Insert *planned* steps after the step *row*, renumbering the later ones to make room.
+
+        The later steps move one at a time from the last, since a primary key is checked as each
+        row is updated and not once all are.
+        """
+        if not planned:
+            return
+        cursor = await db.execute(
+            "SELECT position FROM queued_change_steps WHERE change_id = ? AND position > ? "
+            "ORDER BY position DESC",
+            (change["id"], row["position"]),
+        )
+        for later in await cursor.fetchall():
+            await db.execute(
+                "UPDATE queued_change_steps SET position = position + ? "
+                "WHERE change_id = ? AND position = ?",
+                (len(planned), change["id"], later["position"]),
+            )
+        for offset, step in enumerate(planned, start=1):
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, payload, places) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    change["id"],
+                    row["position"] + offset,
+                    step.name,
+                    json.dumps(step.payload),
+                    json.dumps(list(step.places)),
+                ),
+            )
+
+    @staticmethod
+    async def _add_places(
+        db: aiosqlite.Connection, change: aiosqlite.Row, places: tuple[str, ...]
+    ) -> None:
+        """Merge *places* into the places the change holds."""
+        if not places:
+            return
+        cursor = await db.execute("SELECT places FROM queued_changes WHERE id = ?", (change["id"],))
+        current = await cursor.fetchone()
+        held = json.loads(current["places"]) if current is not None else []
+        merged = held + [place for place in places if place not in held]
+        await db.execute(
+            "UPDATE queued_changes SET places = ? WHERE id = ?", (json.dumps(merged), change["id"])
+        )
+
+    async def _ask_on(
+        self, db: aiosqlite.Connection, change: aiosqlite.Row, follow_on: FollowOn
+    ) -> None:
+        """Queue *follow_on* as a change of the bot's for the same actor, in the step's save.
+
+        It is never refused as a repeat: the step that asks for it has just run, so what it asks
+        for is wanted whatever was asked for before.
+        """
+        change_type = self._type(follow_on.kind)
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, actor_id, actor_name, "
+            "actor_display, what, places) VALUES (?, ?, ?, 'BOT', ?, ?, ?, ?, ?)",
+            (
+                follow_on.kind,
+                change_type.key(follow_on.payload),
+                json.dumps(follow_on.payload),
+                change["actor_id"],
+                change["actor_name"],
+                change["actor_display"],
+                follow_on.what,
+                json.dumps(list(change_type.places(follow_on.payload))),
+            ),
+        )
+        change_id = inserted_id(cursor)
+        for position, planned in enumerate(change_type.opening):
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, payload, places) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    change_id,
+                    position,
+                    planned.name,
+                    json.dumps(planned.payload),
+                    json.dumps(list(planned.places)),
+                ),
+            )
 
     async def _audit(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, audit: AuditRecord
