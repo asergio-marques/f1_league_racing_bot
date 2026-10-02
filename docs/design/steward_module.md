@@ -208,10 +208,12 @@ any missed event is handed out, records the gap, `now - last_seen_at`, in the mo
 record, also through the queue; the steps of a handler's change read that record, never
 `last_seen_at`, and apply what has not yet been applied. Through the queue, a heartbeat waits behind
 a change's posts, so a crash during a long run of posts counts that wait as downtime and lengthens
-windows by a little more than the outage. It also waits behind a whole stop: a queue stopped on a
-failed job holds the heartbeat, and the record of the gap at start, until the job is retried or
-discarded, and the stop then counts as downtime, lengthening every open window by it. That is
-accepted, since the queue holds every change to the bot's data.
+windows by a little more than the outage. That is accepted, since the queue holds every change to
+the bot's data. The heartbeat and the record of the gap at start also wait behind a stop: a queue
+stopped on a failed job holds them until the job is retried or discarded, and a stop that spans a
+restart is then counted as downtime. A stop is not downtime under [STW-RST-002], so this is a gap
+in the design, not a decision; how the heartbeat is to get round a stopped queue is not settled
+here.
 
 *Rejected:* deriving the gap from the jobs that missed their fire time. It only sees boundaries
 that fell inside the gap, and the case the rule is mostly about is a window that merely *contained*
