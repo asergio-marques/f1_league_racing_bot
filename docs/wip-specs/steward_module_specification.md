@@ -670,8 +670,8 @@
 
 ### Cycle close
 - [STW-CYC-108] The close of a cycle shall be applied entire or not at all. Before anything is written to any driver licence, the bot shall establish that every channel the close will post to exists and can be posted to: the division's verdicts, results, standings and licence channels, and the licence channel of every other division whose sheet the close will post anew.
-  - [STW-CYC-109] Where any of them cannot be posted to, nothing shall be written, and the cycle shall wait at its close. The steward log channel and the log channel shall name the division and the channel at fault, and the command that repairs it.
-  - [STW-CYC-110] Once the channel is repaired, the close shall go ahead.
+  - [STW-CYC-109] Where any of them cannot be posted to, nothing shall be written, and the cycle shall wait at its close, the close being a job that stops the change queue as the core specification sets out. The steward log channel and the log channel shall name the division and the channel at fault, and the command that repairs it.
+  - [STW-CYC-110] Once the channel is repaired, the close shall go ahead when a league manager or admin presses Retry on the stopped job's notice, or when the bot's own tries over the first hour reach it; setting the channel shall not of itself try the close again.
   - [STW-CYC-111] The close shall not be recorded as done before the postings it claims have been made.
 - [STW-CYC-112] Once all tickets for a given round of a given division reach this stage, or at once where the round has none, warning points, penalty points, qualifying bans, race bans, season bans and league bans are made effective and added to a driver licence. After this is done, it will be checked whether the driver licences infringe upon any of the auto-rules configured. The cycle pertaining to a round of a given division, the licences checked are those of the drivers seated in that division and of any other involved driver of that round's tickets.
   - [STW-CYC-113] Auto-rule handling is set out under Auto-rule triggering.
@@ -1006,7 +1006,7 @@
 - [STW-RST-001] All of this module's scheduled work shall survive the bot stopping and starting again. What came due while the bot was stopped shall be carried out when it starts, in the order it would have happened. A ticket's buttons, ballots and pending requests shall keep working.
 - [STW-RST-002] The time the bot was stopped, or cut off from Discord, shall not count against any window in which a user or a steward acts: report submission, defence submission, the deliberations, appeal submission, the conduct cycle's stages, and the hour given the effective head steward to break a tie or to confirm a justification. Each such window open during the gap shall be lengthened by the gap, and every later stage of the same cycle moved on by it alike. A gap of no more than five minutes may be disregarded, five minutes being the interval the bot holds to elsewhere.
   - [STW-RST-003] Clocks in which no one acts run on regardless: the expiry of a timed season ban, and the countdown to the deletion of a closed ticket's channel.
-- [STW-RST-004] A cycle close waiting for a channel to be repaired shall be tried again whenever the bot starts, and whenever the command that sets that channel is run.
+- [STW-RST-004] A cycle close waiting for a channel to be repaired shall stay stopped across a restart: the bot shall not try it again as it starts, and only Retry or Discard on its notice shall move the queue, as the core specification sets out. The league sets the channel, then presses Retry.
 
 ## Test mode
 - [STW-TST-001] The stages of a stewarding cycle are stepped through with the core specification's test mode commands, firing the next scheduled event at once and reporting what has run and what remains.
