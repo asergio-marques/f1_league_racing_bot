@@ -413,6 +413,11 @@ class ChangeQueue:
             await db.commit()
         self._signal.set()
 
+    def forget_held(self) -> None:
+        """Drop every interaction held to update, for a pack or a factory reset, which delete the
+        changes they were held for."""
+        self._held.clear()
+
     async def stop(self) -> None:
         """Stop the worker, leaving any change where it stood for the next start."""
         task, self._task = self._task, None
