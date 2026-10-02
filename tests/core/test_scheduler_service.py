@@ -37,10 +37,6 @@ def _dispose(service) -> None:
         pass
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: a job scheduled from an admitted interaction runs in that interaction's context, so its failed line warns the admin",
-)
 async def test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn(
     tmp_path, monkeypatch, caplog
 ):

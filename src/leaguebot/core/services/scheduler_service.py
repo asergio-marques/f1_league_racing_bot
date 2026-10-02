@@ -19,6 +19,7 @@ stall is one small write to an uncontended database.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import os
 import re
@@ -47,6 +48,23 @@ _GRACE_SECONDS = 300  # 5-minute misfire grace period
 #: Phase 3 forecast, and the attendance module's check-in call with its last notice and its
 #: distribution message (#425). One figure for both, so a round's channels clear together.
 POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
+
+
+class _JobScheduler(AsyncIOScheduler):
+    """An `AsyncIOScheduler` whose jobs run in a context of their own.
+
+    APScheduler arms its timer, and starts each job's task, through calls that copy the context
+    of whoever last woke it. A job added from inside a member's command would therefore run
+    with that command's `core.utils.answering` record, and a line it writes that the log channel
+    refuses would warn that member, long after, about a line that is not theirs. Waking the
+    scheduler in an empty context cuts that: a job answers no interaction, and the host's log
+    alone records its failure (`docs/wip-specs/core_specification.md`, "The record of what
+    changed"). Pinned by
+    `test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn`.
+    """
+
+    def wakeup(self) -> None:
+        contextvars.Context().run(super().wakeup)
 
 
 # Regex that matches the ``_s{S}_d{D}_r{R}_id{round_id}`` suffix appended to every
@@ -386,7 +404,7 @@ class SchedulerService:
         prepare_jobstore(self._jobstore_path)
         jobstore_url = f"sqlite:///{self._jobstore_path}"
         jobstore = SQLAlchemyJobStore(url=jobstore_url)
-        self._scheduler = AsyncIOScheduler(
+        self._scheduler = _JobScheduler(
             jobstores={"default": jobstore},
             job_defaults={"misfire_grace_time": _GRACE_SECONDS},
             timezone="UTC",
