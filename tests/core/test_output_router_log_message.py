@@ -24,10 +24,6 @@ from leaguebot.core.services.output_router import OutputRouter
 
 #: What the queue and its log lines need of the router, not built yet (#439).
 QUEUE_LINES_NOT_BUILT = "#439: the router cannot write a log line in a caller's save yet"
-LAST_RESORT_NOT_BUILT = (
-    "#439: a line the log channel refuses is still reported in the interaction channel, "
-    "not to the member alone"
-)
 
 
 def _channel(sent):
@@ -99,7 +95,6 @@ async def test_post_log_returns_none_when_the_server_has_no_config():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_post_log_returns_none_when_the_channel_cannot_be_reached():
     """Only the log channel is asked for: nothing is posted in the interaction channel (#439)."""
     bot = MagicMock()
@@ -343,7 +338,6 @@ def _interaction(bot, *, age: timedelta = timedelta(seconds=5)):
     return member_interaction(bot, created_at=datetime.now(timezone.utc) - age)
 
 
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_a_line_the_log_channel_refuses_is_told_to_the_member_alone(tmp_path):
     db_path, bot = await _league(tmp_path)
     _refusing_log(bot)
@@ -363,7 +357,6 @@ async def test_a_line_the_log_channel_refuses_is_told_to_the_member_alone(tmp_pa
     assert len(await _pending(db_path)) == 1, "the line still waits on the retry queue"
 
 
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_a_warning_for_an_interaction_not_yet_answered_follows_its_reply(tmp_path):
     """Sending the warning first would take the command's one response."""
     _db_path, bot = await _league(tmp_path)
@@ -388,7 +381,6 @@ async def test_a_warning_for_an_interaction_not_yet_answered_follows_its_reply(t
     assert bot.interaction_channel.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_a_member_is_warned_once_however_many_of_their_lines_fail(tmp_path):
     db_path, bot = await _league(tmp_path)
     _refusing_log(bot)
@@ -408,7 +400,6 @@ async def test_a_member_is_warned_once_however_many_of_their_lines_fail(tmp_path
     assert len(await _pending(db_path)) == 3
 
 
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_a_line_with_no_interaction_to_answer_goes_to_the_host_log_alone(tmp_path, caplog):
     """A timed job: no member asked, so the failure is the host's log's alone."""
     db_path, bot = await _league(tmp_path)
@@ -427,7 +418,6 @@ async def test_a_line_with_no_interaction_to_answer_goes_to_the_host_log_alone(t
     assert any(record.levelno >= logging.ERROR for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_an_interaction_over_fourteen_minutes_old_is_not_answered(tmp_path):
     """Discord's token lasts fifteen minutes; the router leaves itself one to spare."""
     db_path, bot = await _league(tmp_path)
@@ -447,7 +437,6 @@ async def test_an_interaction_over_fourteen_minutes_old_is_not_answered(tmp_path
     assert len(await _pending(db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=LAST_RESORT_NOT_BUILT)
 async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_answer(tmp_path):
     """Two commands at once, and a timed job beside them: each command's lines answer that
     command's member alone, and the job's answer nobody."""

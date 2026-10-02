@@ -16,13 +16,16 @@ target is one handler for each kind of post, of which this is the log writer
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Optional, Protocol
 
 import discord
 
+from leaguebot.core.utils.answering import answering_now
 from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 from leaguebot.core.utils.messages import chunk_message
 
@@ -34,6 +37,10 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
+
+#: How old an interaction may be and still be answered: a minute short of the fifteen its
+#: token lasts.
+ANSWERABLE_FOR = timedelta(minutes=14)
 
 
 class ForecastTarget(Protocol):
@@ -61,6 +68,8 @@ class OutputRouter:
     def __init__(self, bot: "LeagueBot", retry_db_path: "Optional[str]" = None) -> None:
         self._bot = bot
         self._retry_db_path: Optional[str] = retry_db_path
+        # The warnings still to be sent, kept so that no task is dropped.
+        self._warnings: set[asyncio.Task[None]] = set()
 
     # ------------------------------------------------------------------
     # Public API
@@ -105,7 +114,9 @@ class OutputRouter:
         renders them as plain text rather than interactive mentions.
         Channel links (<#id>) are left as-is so they remain clickable.
         A separator line is appended for readability.
-        On failure, attempts to surface an alert to the interaction channel.
+        On failure the line waits on the retry queue, and the member whose command, button or
+        form it records is warned, seen by them alone, while their interaction can still be
+        answered (:meth:`_warn_member`).
 
         Returns the ``discord.Message`` on success, or ``None`` on failure — as
         :meth:`post_forecast` already does. A caller that wants to point a reader at what
@@ -118,12 +129,12 @@ class OutputRouter:
         edit the message later.
 
         *channel* sends to that channel id instead, wrapped, separated and split exactly as
-        any other line, but **neither queued for retry nor answered by a notice in the
-        interaction channel** when it cannot be posted: it returns ``None`` and the caller puts
-        the line in the host's log. It exists for the factory reset's closing line, written
-        after the wipe, when no configuration is left to find an interaction channel in and a
-        queued row would sit in the fresh database of a bot serving no server. Get the id from
-        :meth:`log_destination` before the wipe.
+        any other line, but **neither queued for retry nor told to any member** when it cannot
+        be posted: it returns ``None`` and the caller puts the line in the host's log. It
+        exists for the factory reset's closing line, written after the wipe, when a queued row
+        would sit in the fresh database of a bot serving no server. A line that cannot be
+        posted is written to the host's log (core specification, "Factory reset"). Get the id
+        from :meth:`log_destination` before the wipe.
         """
         content = self._as_log_line(content)
         if channel is not None:
@@ -143,20 +154,71 @@ class OutputRouter:
         )
 
         if msg is None:
-            # Last resort: try interaction channel (no retry enqueue to avoid loops)
-            await self._send(
-                config.interaction_channel_id,
-                f"⚠️ Failed to write to log channel (id={channel_id}). "
-                f"Please check bot permissions.",
-                enqueue_on_failure=False,
-                fallback_label="interaction (last resort)",
-            )
+            await self._warn_member(channel_id)
 
         return msg
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _warn_member(self, log_channel_id: int) -> None:
+        """Tell the member whose interaction this task answers that the log channel failed.
+
+        The last resort for a log line, in place of a post in the interaction channel, which
+        the constitution forbids. The warning goes through the member's own interaction,
+        seen by them alone, and **once** however many of their lines fail. Where the
+        interaction has not been answered yet, sending now would take the command's one
+        response, so the warning follows when the command's task ends. Where no interaction
+        is being answered (a scheduled job, the retry loop, a recovery at start-up, a Discord
+        event), or it is over :data:`ANSWERABLE_FOR` old, the failure is the host's log's
+        alone, which `_send` has written already; the line itself is still retried.
+        """
+        answering = answering_now()
+        if answering is None:
+            log.warning(
+                "the log channel (id=%s) failed and no member's interaction can be told",
+                log_channel_id,
+            )
+            return
+        if answering.warned:
+            return
+        interaction = answering.interaction
+        if datetime.now(timezone.utc) - interaction.created_at >= ANSWERABLE_FOR:
+            log.warning(
+                "the log channel (id=%s) failed and the interaction is too old to be told",
+                log_channel_id,
+            )
+            return
+        answering.warned = True
+        warning = (
+            f"⚠️ Failed to write to log channel (id={log_channel_id}). "
+            f"Please check bot permissions."
+        )
+        if interaction.response.is_done():
+            self._keep(asyncio.create_task(self._tell(interaction, warning)))
+        elif answering.task is not None:
+            answering.task.add_done_callback(
+                lambda _task: self._keep(asyncio.create_task(self._tell(interaction, warning)))
+            )
+
+    def _keep(self, task: "asyncio.Task[None]") -> None:
+        """Hold *task* until it ends, logging a failure it did not catch."""
+        self._warnings.add(task)
+        task.add_done_callback(self._warning_done)
+
+    def _warning_done(self, task: "asyncio.Task[None]") -> None:
+        self._warnings.discard(task)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            log.error("a warning to a member failed", exc_info=error)
+
+    @staticmethod
+    async def _tell(interaction: discord.Interaction, warning: str) -> None:
+        """Send *warning* to the interaction's member alone, logging a warning that cannot go."""
+        try:
+            await interaction.followup.send(warning, ephemeral=True)
+        except Exception:
+            log.error("could not tell the member the log channel failed", exc_info=True)
 
     @staticmethod
     def _as_log_line(content: str) -> str:
@@ -234,8 +296,8 @@ class OutputRouter:
     ) -> None:
         """Persist a failed message for retry, where *wanted* and retry_db_path is set.
 
-        *wanted* is False for the interaction-channel last resort, which would otherwise
-        queue a retry of the notice that its own failure had already failed to deliver.
+        *wanted* is False for a line sent to a given channel, the factory reset's, which would
+        otherwise leave a row in the fresh database of a bot serving no server.
         """
         if self._retry_db_path and wanted:
             try:
