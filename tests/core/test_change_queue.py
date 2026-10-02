@@ -1459,7 +1459,8 @@ async def test_after_the_sixty_minute_try_fails_the_log_says_only_retry_continue
 
     job = await stopped_job(env.db_path)
     hour = HOUR_LINE.format(id=job["id"], job=WHAT)
-    assert [line for line in await _lines(env) if "still fails after an hour" in line] == [hour]
+    assert [line.split("\n")[0] for line in await _lines(env)
+            if "still fails after an hour" in line] == [hour]
     assert job["next_try_at"] is None
     assert len(ran) == 7
 
@@ -1511,7 +1512,7 @@ async def test_a_stopped_job_that_goes_through_says_so_and_the_queue_runs_on(env
     await _try_at(env, 1)
 
     went = WENT_THROUGH.format(id=job["id"], job="posting the dummy")
-    assert [line for line in await _lines(env) if "went through" in line] == [went]
+    assert [line.split("\n")[0] for line in await _lines(env) if "went through" in line] == [went]
     assert ran == ["after", "later"]
     assert await stopped_job(env.db_path) is None
     assert await _states(env) == ["DONE", "DONE"]
@@ -1543,7 +1544,8 @@ async def test_a_queue_stopped_at_a_restart_stays_stopped_until_retry_or_discard
 
         assert ran == ["post"]
         restart = RESTART_LINE.format(id=job["id"], job=WHAT)
-        assert [line for line in await _lines(env) if "After the restart" in line] == [restart]
+        assert [line.split("\n")[0] for line in await _lines(env)
+                if "After the restart" in line] == [restart]
 
         holder["fail"] = None
         await retry_job(env.bot)
