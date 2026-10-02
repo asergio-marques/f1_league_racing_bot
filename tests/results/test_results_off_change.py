@@ -404,6 +404,11 @@ async def _stop_lines(bot: Any) -> list[str]:
     return [line for line in await _lines(bot) if line.startswith(STOPPED_AT)]
 
 
+async def _discard_line(bot: Any, job_id: int) -> str:
+    """The log line recording the admin's Discard of job #*job_id*, with what was not done."""
+    return await _line_starting(bot, f"{NAMED} | Discard job #{job_id} | Discarded")
+
+
 async def _stopped_change(db_path: str) -> dict[str, Any]:
     """The change whose job the queue is stopped at."""
     job = await stopped_job(db_path)
@@ -516,15 +521,25 @@ async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_pat
 @pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_discarded_switch_off_says_nothing_was_changed(tmp_path):
     """A league admin discarding the switch-off whose save failed leaves results on and the season
-    untouched, and the admin's reply says nothing was changed."""
+    untouched, and the admin's reply says nothing was changed. The stop notice and the Discard line
+    name the job as turning Results & Standings off."""
     seeded = await _seed(tmp_path)
     await _closing_the_rounds_fails(seeded.db_path)
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
     await run_queue(bot)
+    job = await stopped_job(seeded.db_path)
+    [stop] = await _stop_lines(bot)
+    assert stop.startswith(
+        f"{STOPPED_AT}{job['id']}: turning Results & Standings off for {WHAT} ({NAMED}) failed"
+    )
 
     await discard_job(bot)
 
+    assert (
+        f"not done: turning Results & Standings off for {WHAT}"
+        in await _discard_line(bot, job["id"])
+    )
     assert NOTHING_CHANGED in updated_reply(interaction)
     assert COMPLETABLE not in updated_reply(interaction)
     assert await stopped_job(seeded.db_path) is None
@@ -586,7 +601,8 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
 async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_counted(tmp_path):
     """A removal Discord refuses stops the queue and is tried again a minute on, like any job (owner,
     2026-10-02, withdrawing "Try once"); once a league admin discards it, its message is linked for
-    removal by hand and not counted."""
+    removal by hand and not counted. The stop notice and the Discard line name the job by what it
+    removes and that message's link, so a manager knows what to fix before pressing Retry."""
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
     bot = _league(seeded.db_path)
@@ -594,7 +610,13 @@ async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_coun
     interaction = await _confirm(bot)
 
     await run_queue(bot)
-    assert (await stopped_job(seeded.db_path))["name"] == "take_down"
+    job = await stopped_job(seeded.db_path)
+    assert job["name"] == "take_down"
+    removal = f"removing the verdict ({_link(VERDICTS_CHANNEL_ID, 5001)})"
+    [stop] = await _stop_lines(bot)
+    assert stop.startswith(
+        f"{STOPPED_AT}{job['id']}: {removal} for {WHAT} ({NAMED}) failed (Forbidden)."
+    )
     bot.clock.advance(minutes=1)
     await run_queue(bot)
     assert bot.channels[VERDICTS_CHANNEL_ID].attempts.count(5001) == 2
@@ -603,6 +625,7 @@ async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_coun
     await discard_job(bot)
 
     assert bot.channels[VERDICTS_CHANNEL_ID].attempts.count(5001) == 2
+    assert f"not done: {removal} for {WHAT}" in await _discard_line(bot, job["id"])
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     reply = updated_reply(interaction)
     assert "1 verdict(s) removed" in reply
@@ -695,7 +718,8 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
 ):
     """The closing job failing after every message is down stops the queue; once a league admin
     discards it, the admin's reply still says the season can still be completed and that some of
-    its messages may remain for removal by hand, and counts what the removals did take down."""
+    its messages may remain for removal by hand, and counts what the removals did take down. The
+    stop notice and the Discard line name the job as counting what was removed."""
     from leaguebot.results.services import results_off_change
 
     monkeypatch.setattr(
@@ -706,9 +730,19 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
     await run_queue(bot)
-    assert (await stopped_job(seeded.db_path))["name"] == "close"
+    job = await stopped_job(seeded.db_path)
+    assert job["name"] == "close"
+    [stop] = await _stop_lines(bot)
+    assert stop.startswith(
+        f"{STOPPED_AT}{job['id']}: counting what was removed for {WHAT} ({NAMED}) failed "
+        "(RuntimeError)."
+    )
 
     await discard_job(bot)
+
+    assert (
+        f"not done: counting what was removed for {WHAT}" in await _discard_line(bot, job["id"])
+    )
 
     reply = updated_reply(interaction)
     assert COMPLETABLE in reply
