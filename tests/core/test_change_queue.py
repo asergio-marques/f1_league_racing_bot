@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import discord
 import pytest
@@ -880,3 +881,252 @@ async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
     sent = "\n".join(env.bot.log_channel.sent)
     assert "Admin (`<@4242>`) | /dummy | Success" in sent
     assert f"❌ {WHAT} failed for {NAMED} — RuntimeError." in sent
+
+
+# ---------------------------------------------------------------------------
+# What goes wrong around a change: its acknowledgement, its check, its outcome, the worker
+# ---------------------------------------------------------------------------
+
+
+async def _eventually(predicate, *, within: float = 5.0) -> None:
+    """Wait, on the event loop, until *predicate()* (awaited) is true, failing after *within* s."""
+    async def _poll() -> None:
+        while not await predicate():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_poll(), within)
+
+
+async def test_a_change_whose_acknowledgement_fails_still_runs_and_holds_nothing(env):
+    """The change is saved before the member is answered, so an answer Discord refuses does not
+    undo it: it runs, and with no acknowledgement to update its outcome stands in the log channel."""
+    line = "Admin (<@4242>) | /dummy | Success"
+    queue = _queue(env, _type(steps=[_act("a", [], lines=[line])]))
+    interaction = member_interaction(env.bot)
+    interaction.response.send_message.side_effect = http_error(
+        discord.NotFound, status=404, text="Unknown interaction"
+    )
+
+    await maybe_await(queue.start())
+    try:
+        await _ask(env, interaction=interaction)
+
+        async def _done() -> bool:
+            return await _states(env) == ["DONE"]
+
+        await _eventually(_done)
+    finally:
+        await maybe_await(queue.stop())
+
+    [row] = await change_rows(env.db_path)
+    assert row["acknowledged_at"] is None
+    assert interaction.edit_original_response.await_count == 0
+    assert interaction.followup.send.await_count == 0
+    assert "Admin (`<@4242>`) | /dummy | Success" in "\n".join(await _lines(env))
+
+
+async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_recorded(env):
+    """The worker, busy with another change, finishes it while the member's answer is still being
+    sent: it takes the new change only once that answer is done, and then updates it."""
+    api = _api()
+    ran: list[str] = []
+    first_running, first_may_end = asyncio.Event(), asyncio.Event()
+
+    async def _first(_ctx):
+        first_running.set()
+        await first_may_end.wait()
+        return api.StepResult()
+
+    _queue(
+        env,
+        _type("first", steps=[api.Step("f", api.StepKind.ACT, _first)]),
+        _type("dummy", steps=[_act("a", ran)], outcome="✅ The dummy thing is done."),
+    )
+    await _ask(env, "first")
+    worker = asyncio.create_task(run_queue(env.bot))
+    await asyncio.wait_for(first_running.wait(), 5)
+
+    interaction = member_interaction(env.bot)
+    answering, may_answer = asyncio.Event(), asyncio.Event()
+    answer = interaction.response.send_message.side_effect
+
+    async def _slow_answer(*args, **kwargs):
+        answering.set()
+        await may_answer.wait()
+        return await answer(*args, **kwargs)
+
+    interaction.response.send_message.side_effect = _slow_answer
+    asking = asyncio.create_task(_ask(env, "dummy", interaction=interaction))
+    try:
+        await asyncio.wait_for(answering.wait(), 5)
+        first_may_end.set()
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+
+        assert ran == []
+        assert [r["state"] for r in await change_rows(env.db_path)][1] == "QUEUED"
+    finally:
+        first_may_end.set()
+        may_answer.set()
+        await asyncio.wait_for(asking, 5)
+        await asyncio.wait_for(worker, 5)
+
+    await run_queue(env.bot)
+    assert ran == ["a"]
+    assert updated_reply(interaction) == "✅ The dummy thing is done."
+
+
+async def test_a_check_that_raises_faults_its_change_and_a_later_change_still_runs(env):
+    """A check raising as its change starts faults that change alone; so does an outcome that
+    cannot be worded, which leaves its change done. The changes behind each still run."""
+    holder = {"raise": False}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if holder["raise"]:
+            raise RuntimeError("the check broke")
+        return _api().Verdict.go()
+
+    def _unwordable(_ctx):
+        raise RuntimeError("the outcome broke")
+
+    _queue(
+        env,
+        _type("checked", steps=[_act("c", ran)], check=_check),
+        _type("worded", steps=[_act("w", ran)], outcome=_unwordable),
+        _type("dummy", steps=[_act("a", ran)]),
+    )
+
+    await _ask(env, "checked", what="`/checked`")
+    await _ask(env, "worded", what="`/worded`")
+    await _ask(env, "dummy")
+    holder["raise"] = True
+    await run_queue(env.bot)
+
+    assert await _states(env) == ["FAULTED", "DONE", "DONE"]
+    assert ran == ["w", "a"]
+    assert (
+        f"❌ `/checked` failed for {NAMED} — RuntimeError. The details are in the host's log."
+        in "\n".join(await _lines(env))
+    )
+
+
+async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monkeypatch):
+    """A fault outside any change, such as the database locked while the worker chooses, ends
+    neither the worker nor the queue: a change asked for afterwards is carried out."""
+    from leaguebot.core.services import change_queue
+
+    monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
+    ran: list[str] = []
+    queue = _queue(env, _type(steps=[_act("a", ran)]))
+    rounds = {"n": 0}
+    run_until_idle = queue.run_until_idle
+
+    async def _locked_once(**kwargs):
+        rounds["n"] += 1
+        if rounds["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return await run_until_idle(**kwargs)
+
+    monkeypatch.setattr(queue, "run_until_idle", _locked_once)
+
+    await maybe_await(queue.start())
+    try:
+        async def _faulted_once() -> bool:
+            return rounds["n"] >= 1
+
+        await _eventually(_faulted_once)
+        for _ in range(5):
+            await asyncio.sleep(0.01)
+        assert not queue._task.done()
+
+        await _ask(env)
+
+        async def _done() -> bool:
+            return await _states(env) == ["DONE"]
+
+        await _eventually(_done)
+        assert not queue._task.done()
+    finally:
+        await maybe_await(queue.stop())
+
+    assert ran == ["a"]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: an interaction already answered is still acknowledged through its response, not a follow-up whose message is updated")
+async def test_an_interaction_already_answered_is_acknowledged_through_a_followup_and_that_message_is_updated(env):
+    """A command that deferred, or a form already answered, has no response left to take: the
+    acknowledgement is a follow-up, and it is that message the outcome updates, within the same
+    14 minutes."""
+    _queue(env, _type(steps=[_act("a", [])], outcome="✅ The dummy thing is done."))
+
+    def _deferred() -> tuple[Any, Any]:
+        interaction = member_interaction(env.bot)
+        message = SimpleNamespace(edit=AsyncMock())
+        interaction.followup.send = AsyncMock(return_value=message)
+        return interaction, message
+
+    interaction, message = _deferred()
+    await interaction.response.defer()
+    interaction.response.defer.reset_mock()
+
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+
+    assert interaction.response.send_message.await_count == 0
+    [sent] = interaction.followup.send.await_args_list
+    assert (sent.args[0] if sent.args else sent.kwargs.get("content")) == ACKNOWLEDGEMENT
+    assert sent.kwargs.get("ephemeral") is True and sent.kwargs.get("wait") is True
+    assert interaction.edit_original_response.await_count == 0
+    [edit] = message.edit.await_args_list
+    assert (edit.args[0] if edit.args else edit.kwargs.get("content")) == (
+        "✅ The dummy thing is done."
+    )
+
+    late, late_message = _deferred()
+    await late.response.defer()
+    await _ask(env, interaction=late)
+    env.clock.advance(minutes=15)
+    await run_queue(env.bot)
+
+    assert late.followup.send.await_count == 1
+    assert late_message.edit.await_count == 0
+    assert late.edit_original_response.await_count == 0
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a check's reason replaces the reply's first line in the refusal line instead of going beneath it")
+async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
+    """A check may give the log channel a reason beside the member's reply: the line keeps the
+    reply's first line as its reason, with the check's beneath it, and the member is told the
+    reply alone. So at the first check and at the second alike."""
+    detail = "The season ended on 3 October."
+    holder = {"refuse": False}
+
+    async def _check(_ctx):
+        api = _api()
+        return api.Verdict.refuse("⚠️ Not now.", reason=detail)
+
+    async def _later(_ctx):
+        api = _api()
+        if holder["refuse"]:
+            return api.Verdict.refuse("⚠️ Not now.", reason=detail)
+        return api.Verdict.go()
+
+    _queue(
+        env,
+        _type("at_once", steps=[_act("a", [])], check=_check),
+        _type("later", steps=[_act("b", [])], check=_later),
+    )
+    refused_at_once = member_interaction(env.bot)
+    refused_later = member_interaction(env.bot)
+
+    await _ask(env, "at_once", interaction=refused_at_once, what="`/at-once`")
+    await _ask(env, "later", interaction=refused_later, what="`/later`")
+    holder["refuse"] = True
+    await run_queue(env.bot)
+
+    assert acknowledgement(refused_at_once) == "⚠️ Not now."
+    assert updated_reply(refused_later) == "⚠️ Not now."
+    lines = "\n".join(await _lines(env))
+    assert f"⛔ `/at-once` refused for {NAMED} — Not now.\n{detail}" in lines
+    assert f"⛔ `/later` refused for {NAMED} — Not now.\n{detail}" in lines
