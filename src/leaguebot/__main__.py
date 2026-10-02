@@ -78,6 +78,16 @@ def create_bot() -> LeagueBot:
     return bot
 
 
+def register_change_types(bot: LeagueBot) -> None:
+    """Make the queue known every kind of change the bot carries out.
+
+    The builder is where modules meet: it hands each change type what it needs of another module,
+    so that core's queue and cogs import none of them. The tests' support module calls this to get
+    the real set.
+    """
+    # The change types are registered here as each is built.
+
+
 async def main() -> None:
     from leaguebot.core.db.database import run_migrations
     from leaguebot.core.services.config_service import ConfigService
@@ -130,6 +140,10 @@ async def main() -> None:
         DB_PATH, SCHEDULER_DB_PATH or None
     )
     bot.output_router = OutputRouter(bot, retry_db_path=DB_PATH)
+    # The queue is handed the router, and is started by `on_ready`, after the recoveries.
+    from leaguebot.core.services.change_queue import ChangeQueue
+
+    bot.change_queue = ChangeQueue(DB_PATH, bot, bot.output_router)
     bot.driver_service = DriverService(DB_PATH)
     bot.team_service = TeamService(DB_PATH)
 
@@ -172,6 +186,8 @@ async def main() -> None:
         bot.image_config_service,
         bot.image_validity_service,
     )
+
+    register_change_types(bot)
 
     @bot.event
     async def on_ready() -> None:
@@ -367,6 +383,10 @@ async def main() -> None:
 
         # Restore in-memory pending setups from DB SETUP seasons
         await _recover_pending_setups(bot)
+
+        # Carry on the changes a stop cut off. A change asked for while the recoveries ran has
+        # waited, queued, until here. A second `on_ready` finds the worker running and does nothing.
+        await bot.change_queue.start()
 
         # Sync slash commands globally (may take up to 1 hour to propagate)
         try:

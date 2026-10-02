@@ -371,7 +371,8 @@ class ChangeQueue:
         """Start the worker, once: a second call does nothing.
 
         Every step waiting on a retry is made due now, so that what the bot's stop interrupted is
-        tried again at once.
+        tried again at once. Every log line saved and never tried, which the stop came between
+        the save and the delivery of, is delivered, with no interaction to tell if it fails.
         """
         if self._task is not None and not self._task.done():
             return
@@ -382,6 +383,11 @@ class ChangeQueue:
                 (self._clock().isoformat(),),
             )
             await db.commit()
+            cursor = await db.execute(
+                "SELECT id FROM pending_messages WHERE failure_reason = '' ORDER BY id"
+            )
+            never_tried = [row["id"] for row in await cursor.fetchall()]
+        await self._router.deliver_queued(never_tried)
         self._task = asyncio.create_task(self._work(), name="change-queue")
         self._task.add_done_callback(self._worker_ended)
 

@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
+    from leaguebot.core.services.change_queue import ChangeQueue
     from leaguebot.core.services.output_router import OutputRouter
 
 
@@ -63,6 +64,7 @@ class LeagueBot(commands.Bot):
     amendment_service: AmendmentService
     scheduler_service: SchedulerService
     output_router: OutputRouter
+    change_queue: ChangeQueue
     driver_service: DriverService
     team_service: TeamService
     placement_service: PlacementService
