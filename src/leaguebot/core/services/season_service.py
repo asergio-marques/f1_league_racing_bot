@@ -630,40 +630,6 @@ class SeasonService:
             await db.commit()
         return moved
 
-    async def end_rounds_awaiting_results(
-        self,
-        actor_id: int,
-        actor_name: str,
-    ) -> list[dict]:
-        """Close every round of the active season that only the results module could move.
-
-        Called when the results module is switched off part-way through a season. The three
-        states in ``ROUND_AWAITING_RESULTS_MODULE`` each wait on a results command, so with the
-        module gone nothing will ever move them: the division never finishes, `/season complete`
-        refuses for the rest of the season, and — because enabling is refused while a season is
-        active — the league cannot undo it either. That was issue #167, and it left `/season
-        cancel` as the only way out.
-
-        The rounds are closed as FINAL rather than CANCELLED. They were raced; it is their
-        scoring that has been abandoned, and a cancelled round would tell the attendance module
-        that nobody was expected to turn up.
-
-        A NOT_RUN round is left where it is. It waits on the clock rather than on results, and
-        ``run_result_submission_job`` closes it as FINAL at its own moment with the module off.
-
-        Returns one dict per round closed — ``division``, ``round_number``, ``track_name`` and
-        the ``status`` it was taken from — so the caller can report what it did.
-        """
-        async with get_connection(self._db_path) as db:
-            closed = await end_rounds_awaiting_results_on(
-                db,
-                actor_id=actor_id,
-                actor_name=actor_name,
-                now=datetime.now(timezone.utc),
-            )
-            await db.commit()
-        return closed
-
     async def close_raced_rounds_for_cancellation(
         self, season_id: int, actor_id: int, actor_name: str
     ) -> list[int]:

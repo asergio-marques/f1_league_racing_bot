@@ -1515,12 +1515,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
 
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: turning results off still saves outside a queued change "
-    "(ModuleCog._apply_results_disable, results_purge_service._close_open_amendments and "
-    "_delete_rows, SeasonService.end_rounds_awaiting_results)",
-)
 def test_nothing_writes_to_the_database_outside_a_queued_change():
     """A change is carried out on the change queue, which saves each step with its mark, so a
     stop leaves nothing half-done that a restart cannot finish (architecture.md, "How a change is
