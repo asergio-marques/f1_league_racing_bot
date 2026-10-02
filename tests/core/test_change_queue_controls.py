@@ -273,8 +273,10 @@ async def test_a_press_by_a_member_without_a_tier_is_refused_and_logged(env):
 
 @pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
-    """A notice whose job no longer stops the queue (it went through, or went with a pack) is
-    refused, privately and with a ⛔ line, and nothing is tried."""
+    """A notice whose job no longer stops the queue (it went through, or its job and change were
+    deleted from the database, as a pack deletes an unfinished change) is refused, privately and
+    with a ⛔ line, and nothing is tried. The rows are deleted by hand rather than by a pack, which
+    would also free the server's claim; `test_pack_service.py` pins what a pack deletes."""
     holder = {"fail": RuntimeError("boom")}
     ran: list[str] = []
     job = await _stop(env, holder, ran)
@@ -295,6 +297,7 @@ async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
     await _ask(env)
     await run_queue(env.bot)
     packed = await stopped_job(env.db_path)
+    # Every change and job is deleted, finished ones too: a pack would delete the stopped one.
     async with get_connection(env.db_path) as db:
         await db.execute("DELETE FROM queued_change_steps")
         await db.execute("DELETE FROM queued_changes")
