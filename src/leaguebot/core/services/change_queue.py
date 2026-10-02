@@ -76,6 +76,7 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.services.audit_service import record_change_on
+from leaguebot.core.services.queue_stop_view import QueueStopView
 from leaguebot.core.utils.log_lines import (
     hour_line,
     refusal_line,
@@ -83,6 +84,7 @@ from leaguebot.core.utils.log_lines import (
     reply_reason,
     restart_line,
     stop_line,
+    went_through_line,
 )
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.core.utils.messages import chunk_message
@@ -104,6 +106,10 @@ WORKER_PAUSE_AFTER_FAULT = 5.0
 #: When the bot tries a stopped job again, in minutes after its first failure. After the last the
 #: bot no longer tries on its own, and only Retry or Discard moves the queue.
 RETRY_AFTER = (1, 5, 10, 15, 30, 60)
+
+#: How often the stop notice is posted again, once the marks of `RETRY_AFTER` are spent and it has
+#: still not landed.
+NOTICE_REPOST_EVERY = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -241,6 +247,9 @@ class ChangeQueue:
         self._working = asyncio.Lock()
         self._asking = asyncio.Lock()
         self._task: Optional["asyncio.Task[None]"] = None
+        # When each stopped job's notice was last attempted, for the job whose notice has not
+        # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
+        self._notice_tried: dict[int, datetime] = {}
 
     # ------------------------------------------------------------------
     # Registering and asking
@@ -409,10 +418,13 @@ class ChangeQueue:
         on a failure stays stopped: its `next_try_at` is cleared, so that after a restart only
         Retry or Discard moves the queue, and one line says so. Every log line saved and never
         tried, which the stop came between the save and the delivery of, is delivered, with no
-        interaction to tell if it fails.
+        interaction to tell if it fails. The stop notice of a job that never landed is posted
+        again, and the view of its buttons is registered, so that a notice posted before the
+        restart still works.
         """
         if self._task is not None and not self._task.done():
             return
+        self._bot.add_view(QueueStopView(self))
         await self._leave_stopped_jobs_stopped()
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -420,30 +432,38 @@ class ChangeQueue:
             )
             never_tried = [row["id"] for row in await cursor.fetchall()]
         await self._router.deliver_queued(never_tried)
+        await self._post_missing_notices()
         self._task = asyncio.create_task(self._work(), name="change-queue")
         self._task.add_done_callback(self._worker_ended)
 
-    async def _leave_stopped_jobs_stopped(self) -> None:
-        """Clear the `next_try_at` of every stopped job, and queue the line saying the queue is
-        still stopped, in one save; the line is delivered with the rest at start-up."""
+    async def _stopped_jobs(
+        self, *, without_notice: bool = False
+    ) -> list[tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row]]:
+        """Every job the queue is stopped at, in job order, each with its change and the change's
+        steps; with *without_notice*, only those whose stop notice has not landed."""
+        missing = " AND s.notice_message_id IS NULL" if without_notice else ""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT c.*, s.id AS job_id FROM queued_change_steps s "
                 "JOIN queued_changes c ON c.id = s.change_id "
                 "WHERE s.done_at IS NULL AND s.failing_since IS NOT NULL "
-                "AND c.state IN ('QUEUED', 'RUNNING') ORDER BY s.id"
+                f"AND c.state IN ('QUEUED', 'RUNNING'){missing} ORDER BY s.id"
             )
-            stopped = list(await cursor.fetchall())
-            jobs = {
-                change["job_id"]: await self._read_steps(db, change["id"]) for change in stopped
-            }
+            changes = list(await cursor.fetchall())
+            found = []
+            for change in changes:
+                steps = await self._read_steps(db, change["id"])
+                job = next(row for row in steps if row["id"] == change["job_id"])
+                found.append((change, steps, job))
+        return found
+
+    async def _leave_stopped_jobs_stopped(self) -> None:
+        """Clear the `next_try_at` of every stopped job, and queue the line saying the queue is
+        still stopped, in one save; the line is delivered with the rest at start-up."""
         lines: list[tuple[int, str]] = []
-        for change in stopped:
-            row = next(row for row in jobs[change["job_id"]] if row["id"] == change["job_id"])
-            name = await self._name_job(
-                change, row, self._step_context(change, jobs[change["job_id"]], row)
-            )
-            lines.append((change["job_id"], restart_line(change["job_id"], name)))
+        for change, steps, job in await self._stopped_jobs():
+            name = await self._name_job(change, job, self._step_context(change, steps, job))
+            lines.append((job["id"], restart_line(job["id"], name)))
         if not lines:
             return
         async with get_connection(self._db_path) as db:
@@ -525,16 +545,33 @@ class ChangeQueue:
                 pass
 
     async def _seconds_to_next_try(self) -> float | None:
-        """How long until the earliest waiting step is due, or None where none waits."""
+        """How long until the earliest stopped job is due for a try, or the earliest stop notice
+        that has not landed is due to be posted again; None where nothing waits."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT MIN(next_try_at) AS due FROM queued_change_steps "
                 "WHERE done_at IS NULL AND next_try_at IS NOT NULL"
             )
             row = await cursor.fetchone()
-        if row is None or row["due"] is None:
+        times = [] if row is None or row["due"] is None else [datetime.fromisoformat(row["due"])]
+        times += [
+            self._notice_due(job) for _change, _steps, job in
+            await self._stopped_jobs(without_notice=True)
+        ]
+        if not times:
             return None
-        return max((datetime.fromisoformat(row["due"]) - self._clock()).total_seconds(), 0.05)
+        return max((min(times) - self._clock()).total_seconds(), 0.05)
+
+    def _notice_due(self, job: aiosqlite.Row) -> datetime:
+        """When the stop notice of *job*, which has not landed, is next to be posted: at once where
+        it has not been tried since the bot started, then at the first retry mark after the last
+        attempt, and hourly once the marks are spent."""
+        tried = self._notice_tried.get(job["id"])
+        if tried is None:
+            return self._clock()
+        since = datetime.fromisoformat(job["failing_since"])
+        marks = (since + timedelta(minutes=minutes) for minutes in RETRY_AFTER)
+        return next((mark for mark in marks if mark > tried), tried + NOTICE_REPOST_EVERY)
 
     async def run_until_idle(self, *, steps: int | None = None) -> None:
         """Carry out what can run now, in order: until nothing can, or *steps* steps are done."""
@@ -543,11 +580,12 @@ class ChangeQueue:
             while True:
                 progress = await self._advance()
                 if progress is None:
-                    return
+                    break
                 if progress:
                     done += 1
                     if steps is not None and done >= steps:
                         return
+            await self._post_missing_notices()
 
     async def _advance(self) -> bool | None:
         """Do the next unit of work: start a change, run a job, or finish a change.
@@ -767,15 +805,18 @@ class ChangeQueue:
             await self._stop(change, row, unknown)
             return False
         ctx = self._step_context(change, step_rows, row)
+        stopped_as = await self._stopped_as(change, row, ctx)
         try:
             if step.still_due is not None and not await step.still_due(ctx):
-                return await self._complete(change, row, StepResult(result={"dropped": True}))
+                return await self._complete(
+                    change, row, StepResult(result={"dropped": True}), stopped_as
+                )
             if step.kind is StepKind.SAVE:
                 async with get_connection(self._db_path) as db:
                     await db.execute("BEGIN IMMEDIATE")
                     try:
                         result = await step.run(db, ctx)
-                        saved = await self._save_result(db, change, row, result)
+                        saved = await self._save_result(db, change, row, result, stopped_as)
                         if saved is None:
                             await db.rollback()
                         else:
@@ -783,22 +824,32 @@ class ChangeQueue:
                     except BaseException:
                         await db.rollback()
                         raise
-                return await self._delivered(change, saved)
-            return await self._complete(change, row, await step.run(ctx))
+                return await self._delivered(change, saved, row)
+            return await self._complete(change, row, await step.run(ctx), stopped_as)
         except Exception as error:  # noqa: BLE001 — the failure path for changes; see `_stop`
             log.log(self._failure_level(row), "job %s (%r) of %s raised (change %s)", row["id"],
                     row["name"], change["what"], change["id"], exc_info=error)
             return await self._step_failed(change, step, ctx, row, error)
 
+    async def _stopped_as(
+        self, change: aiosqlite.Row, row: aiosqlite.Row, ctx: StepContext
+    ) -> str | None:
+        """What the job *row* is called in the line saying it went through, where it had been
+        stopped; None where it had not."""
+        if row["failing_since"] is None:
+            return None
+        return await self._name_job(change, row, ctx)
+
     async def _complete(
-        self, change: aiosqlite.Row, row: aiosqlite.Row, result: StepResult
+        self, change: aiosqlite.Row, row: aiosqlite.Row, result: StepResult,
+        stopped_as: str | None,
     ) -> bool:
         """Save the mark of a step whose work needed no connection, with *result*'s audits and
         lines, then deliver the lines."""
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
-                saved = await self._save_result(db, change, row, result)
+                saved = await self._save_result(db, change, row, result, stopped_as)
                 if saved is None:
                     await db.rollback()
                 else:
@@ -806,13 +857,18 @@ class ChangeQueue:
             except BaseException:
                 await db.rollback()
                 raise
-        return await self._delivered(change, saved)
+        return await self._delivered(change, saved, row)
 
-    async def _delivered(self, change: aiosqlite.Row, saved: list[int] | None) -> bool:
-        """Deliver the lines a step's save wrote; False where the save was not made."""
+    async def _delivered(
+        self, change: aiosqlite.Row, saved: list[int] | None, row: aiosqlite.Row
+    ) -> bool:
+        """Deliver the lines the save of the job *row* wrote, and take the buttons off its stop
+        notice where it had one; False where the save was not made."""
         if saved is None:
             return False
         await self._router.deliver_queued(saved, interaction=self._answerable(change))
+        if row["notice_message_id"] is not None:
+            await self._router.strip_view(row["notice_channel_id"], row["notice_message_id"])
         return True
 
     async def _step_failed(
@@ -835,7 +891,8 @@ class ChangeQueue:
                 gone = step.gone_line if isinstance(step.gone_line, str) else step.gone_line(ctx)
                 lines = (gone,)
             return await self._complete(
-                change, row, StepResult(result={"gone": True}, lines=lines)
+                change, row, StepResult(result={"gone": True}, lines=lines),
+                await self._stopped_as(change, row, ctx),
             )
         job = await self._name_job(change, row, ctx)
         await self._stop(change, row, error, job=job)
@@ -849,9 +906,14 @@ class ChangeQueue:
 
     @staticmethod
     def _fault_kind(error: BaseException) -> str:
-        """The kind of fault *error* is, as a stop line names it: the exception's type, or for a
-        bot change its check refused, the check's reason."""
-        return str(error) if isinstance(error, ChangeRefused) else type(error).__name__
+        """The kind of fault *error* is, as a stop line names it: the exception's type, or the
+        reason for a bot change its check refused and for a failure a job gave Discord as its
+        cause."""
+        if isinstance(error, ChangeRefused):
+            return str(error)
+        if isinstance(error, StepFailedOnDiscord):
+            return error.reason
+        return type(error).__name__
 
     async def _stop(
         self,
@@ -864,11 +926,13 @@ class ChangeQueue:
         """Stop the queue at the job *row* of *change*, which failed with *error*.
 
         A job that fails stops the queue until it is cleared, and every kind of failure does.
-        The first failure is saved with its line (`log_lines.stop_line`) in one save, and the
+        The first failure is saved in one save, then posted to the log channel as the stop notice
+        (`log_lines.stop_line`, with the Retry and Discard buttons: `_post_notice`), and the
         member's acknowledgement is told, where it can still be updated. The caller has put the
-        traceback in the host's log, as the catch-all it is. The job is tried again on the schedule, `RETRY_AFTER`, counted from that first
-        failure; a try that fails moves it to the next mark and writes no line, but for the
-        last, which writes one saying the bot has stopped trying on its own, and leaves no try.
+        traceback in the host's log, as the catch-all it is. The job is tried again on the
+        schedule, `RETRY_AFTER`, counted from that first failure; a try that fails moves it to
+        the next mark and writes no line, but for the last, which writes one saying the bot has
+        stopped trying on its own, and leaves no try.
         A partial result a failure carries is kept on the job. *row* is the job, or for a check
         that fails before the change starts, the change's first job not done; *job* names it,
         the change's own words where none is given.
@@ -891,11 +955,7 @@ class ChangeQueue:
         kind = self._fault_kind(error)
         partial = error.result if isinstance(error, StepFailedOnDiscord) else None
         named = job if job is not None else what
-        line = None
-        if first:
-            line = stop_line(row["id"], named, what, self._named(change), kind)
-        elif next_try is None:
-            line = hour_line(row["id"], named)
+        line = hour_line(row["id"], named) if not first and next_try is None else None
         ids: list[int] = []
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -923,17 +983,83 @@ class ChangeQueue:
                 raise
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
         if first:
+            await self._post_notice(change, row["id"], named, kind)
             await self._update_reply(
                 change,
                 f"❌ {what[:1].upper() + what[1:]} is stopped at job #{row['id']} and will be "
                 f"tried again.",
             )
 
+    # ------------------------------------------------------------------
+    # The stop notice
+    # ------------------------------------------------------------------
+
+    async def _post_notice(
+        self, change: aiosqlite.Row, job_id: int, job: str, fault: str
+    ) -> None:
+        """Post the stop notice of the job *job_id*, named *job* and failing with *fault*, to the
+        log channel with its Retry and Discard buttons, and keep where it landed on the job.
+
+        Never raises: where the post fails the stop stands (the router has told the member), the
+        attempt is noted and `_post_missing_notices` tries again on its schedule. The notice goes
+        through the router's `post_notice`, which never puts it on the log lines' retry queue, as
+        that would send it again without its buttons.
+        """
+        self._notice_tried[job_id] = self._clock()
+        try:
+            message = await self._router.post_notice(
+                stop_line(job_id, job, change["what"], self._named(change), fault),
+                QueueStopView(self),
+                interaction=self._answerable(change),
+            )
+            if message is None:
+                return
+            async with get_connection(self._db_path) as db:
+                await db.execute(
+                    "UPDATE queued_change_steps SET notice_message_id = ?, notice_channel_id = ? "
+                    "WHERE id = ? AND done_at IS NULL",
+                    (message.id, message.channel.id, job_id),
+                )
+                await db.commit()
+        except Exception:  # noqa: BLE001 — the stop stands; the notice is posted again
+            log.error("could not post the stop notice of job %s (change %s)", job_id,
+                      change["id"], exc_info=True)
+
+    async def _post_missing_notices(self) -> None:
+        """Post again the stop notice of every stopped job whose notice has not landed, where it
+        is due: at start-up and on each pass of the worker, no more often than the retry marks
+        (`_notice_due`) and hourly once they are spent."""
+        for change, steps, job in await self._stopped_jobs(without_notice=True):
+            if self._notice_due(job) > self._clock():
+                continue
+            name = await self._name_job(change, job, self._step_context(change, steps, job))
+            await self._post_notice(change, job["id"], name, job["last_failure"] or "a fault")
+
+    # ------------------------------------------------------------------
+    # Retry and Discard
+    # ------------------------------------------------------------------
+
+    async def retry(
+        self, notice_message_id: int | None, interaction: discord.Interaction
+    ) -> None:
+        """Retry on the stop notice *notice_message_id*, pressed through *interaction*."""
+        raise NotImplementedError("Retry is built in the next commit")
+
+    async def discard(
+        self, notice_message_id: int | None, interaction: discord.Interaction
+    ) -> None:
+        """Discard on the stop notice *notice_message_id*, pressed through *interaction*."""
+        raise NotImplementedError("Discard is built in a later commit")
+
     async def _save_result(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, row: aiosqlite.Row,
-        result: StepResult,
+        result: StepResult, stopped_as: str | None,
     ) -> list[int] | None:
         """Write the step's mark, audits and lines on *db*, without committing.
+
+        *stopped_as* names the job where it had been stopped and so goes through at last, which
+        adds the line saying so, saved with the mark; it is formed beforehand, since nothing
+        but the connection is awaited in a save.
 
         Returns the ids of the lines queued, or None where the mark updated no row: the change
         was removed under the worker (by a pack, or a factory reset), so nothing of the step is
@@ -954,7 +1080,10 @@ class ChangeQueue:
         for audit in result.audits:
             await self._audit(db, change, audit)
         ids: list[int] = []
-        for line in result.lines:
+        lines = list(result.lines)
+        if stopped_as is not None and not (result.result or {}).get("dropped"):
+            lines.append(went_through_line(row["id"], stopped_as))
+        for line in lines:
             line_id = await self._router.queue_log_on(db, line)
             if line_id is not None:
                 ids.append(line_id)

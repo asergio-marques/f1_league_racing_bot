@@ -135,6 +135,12 @@ def restart_line(job_id: int, job: str) -> str:
     )
 
 
+def went_through_line(job_id: int, job: str) -> str:
+    """The log channel's line for a stopped job *job_id* going through, on a try or a Retry: the
+    queue runs on."""
+    return f"✅ Job #{job_id} ({job}) went through. The queue runs on."
+
+
 async def record_refusal(
     bot: Any,
     member: int | discord.abc.User | None,

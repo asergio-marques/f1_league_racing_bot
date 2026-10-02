@@ -76,7 +76,6 @@ async def _try_when_due(env) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_discord_failure_stops_the_queue_and_holds_a_later_change_through_every_try(env):
     """A job Discord fails stops the queue: it is tried again 1, 5, 10, 15, 30 and 60 minutes
     after its first failure, and a change asked after it waits the whole time."""

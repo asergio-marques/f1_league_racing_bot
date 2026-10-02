@@ -272,8 +272,6 @@ async def test_a_fault_stops_the_change_and_keeps_what_earlier_steps_saved(env):
     assert (await stopped_job(env.db_path))["name"] == "b"
 
 
-
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_fault_is_reported_to_the_member_the_log_channel_and_the_host(env, caplog):
     """The stop notice is one ❌ message in the log channel naming job #N, what it was, the
     request, who asked and the kind of fault, carrying the Retry and Discard buttons; the member's
@@ -1481,7 +1479,6 @@ async def test_a_failed_automatic_try_writes_no_line_of_its_own(env):
     assert interaction.edit_original_response.await_count == edits
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_stopped_job_that_goes_through_says_so_and_the_queue_runs_on(env):
     """A stopped job going through at a try writes one ✅ line naming it, and the jobs and
     changes behind it run."""
