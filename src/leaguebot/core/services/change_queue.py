@@ -43,6 +43,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -1131,3 +1133,28 @@ class ChangeQueue:
                 "could not update the reply to %s (change %s)",
                 change["what"], change["id"], exc_info=True,
             )
+
+
+def empty_queue_in(path: str | os.PathLike[str]) -> None:
+    """Delete every change, and its steps, from the league database at *path*.
+
+    Synchronous, for the restore: it runs at start-up before the swap, on the staged file, when no
+    event loop is running and nothing holds a connection. Where the tables are not there (a file
+    from before the queue) it does nothing.
+    """
+    db = sqlite3.connect(str(path))
+    try:
+        tables = {
+            row[0]
+            for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name IN ('queued_changes', 'queued_change_steps')"
+            )
+        }
+        if "queued_change_steps" in tables:
+            db.execute("DELETE FROM queued_change_steps")
+        if "queued_changes" in tables:
+            db.execute("DELETE FROM queued_changes")
+        db.commit()
+    finally:
+        db.close()

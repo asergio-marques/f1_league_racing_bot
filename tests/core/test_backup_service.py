@@ -792,7 +792,6 @@ def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
     assert bs.prerestore_path(live).read_bytes() == b"kept"
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a restore still brings back the change queue")
 async def test_a_restored_state_brings_back_no_queue(tmp_path):
     """A change saved with the state, waiting on a retry, is not carried out again on a server
     whose messages it no longer knows: the staged file's queue is emptied before the swap."""
