@@ -174,7 +174,9 @@ class OutputRouter:
 
         The last resort for a log line, in place of a post in the interaction channel, which
         the constitution forbids. The member is the one whose interaction the line records:
-        *interaction* where the caller holds it (the change queue), otherwise the one the
+        *interaction* where the caller holds it (the change queue, which has judged it still
+        answerable, and which is not the interaction's own task, so the warning is sent at
+        once), otherwise the one the
         current task answers (`leaguebot.core.utils.answering`). They are told **once**
         however many of their lines fail. Where the interaction has not been answered yet,
         sending now would take the command's one response, so the warning follows when the
@@ -183,6 +185,7 @@ class OutputRouter:
         failure is the host's log's alone; the line itself is still retried.
         """
         task: "Optional[asyncio.Task[object]]" = None
+        held = interaction is not None
         if interaction is None:
             answering = answering_now()
             if answering is None:
@@ -198,7 +201,7 @@ class OutputRouter:
                 del self._warned[key]
         if interaction.id in self._warned:
             return
-        if now - interaction.created_at >= ANSWERABLE_FOR:
+        if not held and now - interaction.created_at >= ANSWERABLE_FOR:
             log.warning(
                 "the log channel (id=%s) failed and the interaction is too old to be told",
                 log_channel_id,
@@ -209,10 +212,13 @@ class OutputRouter:
             f"Please check bot permissions."
         )
         if interaction.response.is_done():
-            self._warned[interaction.id] = interaction.created_at
-            self._keep(asyncio.create_task(self._tell(interaction, warning)))
+            self._warned[interaction.id] = now
+            if held:
+                await self._tell(interaction, warning)
+            else:
+                self._keep(asyncio.create_task(self._tell(interaction, warning)))
         elif task is not None:
-            self._warned[interaction.id] = interaction.created_at
+            self._warned[interaction.id] = now
             task.add_done_callback(
                 lambda _task: self._keep(asyncio.create_task(self._tell(interaction, warning)))
             )

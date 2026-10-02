@@ -190,7 +190,6 @@ def _host_errors(caplog) -> list[logging.LogRecord]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_runs_its_steps_in_order_and_marks_each_done(env):
     ran: list[str] = []
     _queue(env, _type(steps=[_act("a", ran), _act("b", ran), _act("c", ran)]))
@@ -252,7 +251,6 @@ async def test_a_fault_is_reported_to_the_member_the_log_channel_and_the_host(en
     assert any("boom" in str(r.exc_info[1]) for r in _host_errors(caplog))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_changes_run_one_at_a_time_in_the_order_asked(env):
     ran: list[str] = []
 
@@ -291,7 +289,6 @@ def _check_refusing_when(holder: dict, reply: str = "⚠️ Not now.") -> Any:
     return _check
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_member_s_request_failing_its_check_is_refused_at_once_and_nothing_is_queued(env):
     ran: list[str] = []
     _queue(env, _type(steps=[_act("a", ran)], check=_check_refusing_when({"refuse": True})))
@@ -381,7 +378,6 @@ async def test_a_bot_change_lacking_what_the_league_can_repair_waits_and_says_so
     assert ran == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is_refused_saying_so(env):
     _queue(env, _type(steps=[_act("a", [])]))
     first, second = member_interaction(env.bot), member_interaction(env.bot)
@@ -444,7 +440,6 @@ async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_repeatable_change_is_queued_again_once_it_is_running(env):
     _queue(env, _type(steps=[_act("a", []), _act("b", [])], repeatable=True))
 
@@ -457,7 +452,6 @@ async def test_a_repeatable_change_is_queued_again_once_it_is_running(env):
     assert await _states(env) == ["RUNNING", "QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_once_only_change_already_done_is_refused_by_its_check(env):
     done = {"refuse": False}
     api = _api()
@@ -483,7 +477,6 @@ async def test_a_once_only_change_already_done_is_refused_by_its_check(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_member_is_told_at_once_that_the_change_is_under_way(env):
     _queue(env, _type(steps=[_act("a", [])]))
     interaction = member_interaction(env.bot)
@@ -498,7 +491,6 @@ async def test_the_member_is_told_at_once_that_the_change_is_under_way(env):
     assert row["acknowledged_at"] == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_acknowledgement_is_updated_with_the_outcome(env):
     _queue(env, _type(steps=[_act("a", [])], outcome="✅ The dummy thing is done."))
     interaction = member_interaction(env.bot)
@@ -509,7 +501,6 @@ async def test_the_acknowledgement_is_updated_with_the_outcome(env):
     assert updated_reply(interaction) == "✅ The dummy thing is done."
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_outcome_after_fourteen_minutes_is_left_to_the_log_channel(env):
     """No update is attempted: the outcome stands in the log channel alone."""
     line = "Admin (<@4242>) | /dummy | Success"
@@ -526,7 +517,6 @@ async def test_an_outcome_after_fourteen_minutes_is_left_to_the_log_channel(env)
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_acknowledgement_that_cannot_be_updated_does_not_fail_the_change(env, caplog):
     caplog.set_level(logging.INFO)
     _queue(env, _type(steps=[_act("a", [])]))
@@ -541,7 +531,6 @@ async def test_an_acknowledgement_that_cannot_be_updated_does_not_fail_the_chang
     assert any(r.exc_info for r in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_long_outcome_is_sent_in_parts(env):
     links = [f"https://discord.com/channels/12408/300/{n:019d}" for n in range(150)]
     _queue(env, _type(steps=[_act("a", [])], outcome="\n".join(links)))
@@ -565,7 +554,6 @@ async def test_a_long_outcome_is_sent_in_parts(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_audit_record_and_the_log_line_are_saved_with_the_step(env):
     api = _api()
     _queue(env, _type(steps=[
@@ -597,7 +585,6 @@ async def test_the_audit_record_and_the_log_line_are_saved_with_the_step(env):
     assert "Admin (`<@4242>`) | /dummy | Success" in "\n".join(await _lines(env))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_log_line_is_delivered_after_its_save_and_leaves_the_retry_queue(env):
     seen_done: list[bool] = []
     channel = env.bot.log_channel
@@ -621,7 +608,6 @@ async def test_a_log_line_is_delivered_after_its_save_and_leaves_the_retry_queue
     assert all(call.kwargs.get("allowed_mentions") is not None for call in channel.send.await_args_list)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_log_line_that_cannot_be_delivered_is_left_for_the_retry_loop(env):
     env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
     _queue(env, _type(steps=[_act("a", [], lines=["Admin (<@4242>) | /dummy | Success"])]))
@@ -638,7 +624,6 @@ async def test_a_log_line_that_cannot_be_delivered_is_left_for_the_retry_loop(en
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
     """A record too long for one message is divided across as many as it needs, as
     `chunk_message` divides it, and nothing is left waiting on a retry."""
@@ -658,7 +643,6 @@ async def test_a_log_line_too_long_for_one_message_is_delivered_in_parts(env):
     assert await queued_log_lines(env.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_queued_line_the_log_channel_refuses_is_told_to_the_member_alone(env):
     """Through the held interaction, seen by the member alone; the interaction channel is sent
     nothing, and the line still waits on the retry queue."""
@@ -679,7 +663,6 @@ async def test_a_queued_line_the_log_channel_refuses_is_told_to_the_member_alone
     assert any("/dummy | Success" in line for line in await queued_log_lines(env.db_path))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_queued_line_refused_once_the_reply_has_lapsed_goes_to_the_host_log_alone(env, caplog):
     caplog.set_level(logging.INFO)
     env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
@@ -697,7 +680,6 @@ async def test_a_queued_line_refused_once_the_reply_has_lapsed_goes_to_the_host_
     assert any("/dummy | Success" in line for line in await queued_log_lines(env.db_path))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_the_worker(env):
     """The retry loop finds the line while the worker is delivering it, and leaves it."""
     from leaguebot.core.services.retry_service import attempt_delivery, get_all_pending
@@ -792,7 +774,6 @@ async def test_a_step_may_ask_for_a_change_of_its_own_in_its_own_save(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_change_cut_off_by_a_stop_carries_on_from_the_first_step_not_done(env):
     ran: list[str] = []
     _queue(env, _type(steps=[_act("a", ran), _act("b", ran), _act("c", ran)]))
@@ -811,7 +792,6 @@ async def test_a_change_cut_off_by_a_stop_carries_on_from_the_first_step_not_don
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_marked_done_is_not_run_again_after_a_restart(env):
     _queue(env, _type(steps=[_save("a", "once"), _save("b", "after")]))
 
@@ -826,7 +806,6 @@ async def test_a_step_marked_done_is_not_run_again_after_a_restart(env):
     assert await _scratch(env) == ["once", "after"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_worker_starts_once_though_the_bot_is_ready_twice(env):
     ran: list[str] = []
     queue = _queue(env, _type(steps=[_act("a", ran)]))
@@ -844,7 +823,6 @@ async def test_the_worker_starts_once_though_the_bot_is_ready_twice(env):
     assert ran == ["a"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplog):
     """As a pack or a factory reset would remove it while the step runs: the mark updates no
     row, so the step's audits and lines are rolled back with it, and the host's log says so."""
