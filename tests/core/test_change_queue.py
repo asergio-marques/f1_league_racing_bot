@@ -14,7 +14,7 @@ import dataclasses
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -57,10 +57,27 @@ STOPS = "#439: a job that fails does not yet stop the queue until it is cleared"
 STOPS_ON_CHECK = "#439: a bot change whose check fails or raises does not yet stop the queue"
 #: The stop line's opening, the job and the request it names filled in.
 STOPPED_AT = "❌ The queue is stopped at job #{id}: {job} for {request} ({asker}) failed ({fault})."
-ACKNOWLEDGEMENT = (
-    f"⏳ {DOING}. This message will be updated when it is done; if it takes longer, "
-    "the log channel will say so."
+#: The lines of a stopped job, its number and what it was filled in.
+WENT_THROUGH = "✅ Job #{id} ({job}) went through. The queue runs on."
+RESTART_LINE = (
+    "❌ The queue is still stopped at job #{id} ({job}). After the restart the bot no longer "
+    "tries it on its own: press Retry or Discard on its notice."
 )
+HOUR_LINE = (
+    "❌ Job #{id} ({job}) still fails after an hour. The bot has stopped trying on its own: "
+    "press Retry on its notice, or Discard."
+)
+
+
+def _acknowledges(text: str) -> bool:
+    """Whether *text* is the member's acknowledgement: the change under way, to be updated when it
+    is done. The job number it also names is pinned by its own test."""
+    return (
+        text.startswith("⏳")
+        and DOING in text
+        and "This message will be updated when it is done" in text
+        and "the log channel will say so." in text
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +372,7 @@ async def test_a_change_whose_check_fails_when_it_runs_is_refused_and_says_why(e
     holder["refuse"] = True
     await run_queue(env.bot)
 
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     assert updated_reply(interaction) == "⚠️ Not now."
     assert f"⛔ {WHAT} refused for {NAMED} — Not now." in "\n".join(await _lines(env))
     assert await _states(env) == ["REFUSED"]
@@ -448,7 +465,7 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
         f"{DOING} has already been asked for and has not started yet, "
         "so it was not asked for again."
     )
-    assert acknowledgement(first) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(first))
     assert acknowledgement(second) == f"⚠️ {reason}"
     assert len(await change_rows(env.db_path)) == 1
     # The line drops the reply's opening mark, which its own mark replaces.
@@ -543,7 +560,7 @@ async def test_the_member_is_told_at_once_that_the_change_is_under_way(env):
 
     await _ask(env, interaction=interaction)
 
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
     assert interaction.edit_original_response.await_count == 0
     [row] = await change_rows(env.db_path)
@@ -942,8 +959,10 @@ async def test_a_change_of_a_kind_the_bot_no_longer_knows_is_faulted_not_lost(en
     assert await _states(env) == ["DISCARDED"]
 
 
+@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
-    """The bot carries no `output_router`: the queue never looks one up on it."""
+    """The bot carries no `output_router`: the queue never looks one up on it. Its success line
+    and the stop notice of the job that faults both reach the log channel through the router."""
     router = env.bot.output_router
     del env.bot.output_router
     attach_queue(env.bot, env.db_path, now=env.clock, router=router, types=())
@@ -957,7 +976,10 @@ async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
 
     sent = "\n".join(env.bot.log_channel.sent)
     assert "Admin (`<@4242>`) | /dummy | Success" in sent
-    assert f"❌ {WHAT} failed for {NAMED} — RuntimeError." in sent
+    job = await stopped_job(env.db_path)
+    assert STOPPED_AT.format(
+        id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault="RuntimeError",
+    ) in sent
 
 
 # ---------------------------------------------------------------------------
@@ -1193,7 +1215,7 @@ async def test_an_interaction_already_answered_is_acknowledged_through_a_followu
 
     assert interaction.response.send_message.await_count == 0
     [sent] = interaction.followup.send.await_args_list
-    assert (sent.args[0] if sent.args else sent.kwargs.get("content")) == ACKNOWLEDGEMENT
+    assert _acknowledges(sent.args[0] if sent.args else sent.kwargs.get("content"))
     assert sent.kwargs.get("ephemeral") is True and sent.kwargs.get("wait") is True
     assert interaction.edit_original_response.await_count == 0
     [edit] = message.edit.await_args_list
@@ -1247,3 +1269,374 @@ async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
     lines = "\n".join(await _lines(env))
     assert f"⛔ `/at-once` refused for {NAMED} — Not now.\n{detail}" in lines
     assert f"⛔ `/later` refused for {NAMED} — Not now.\n{detail}" in lines
+
+
+# ---------------------------------------------------------------------------
+# Jobs, and a queue stopped at one
+# ---------------------------------------------------------------------------
+
+
+#: What is not yet true of each test marked with it.
+JOB_IDS = "#439: a job has no number of its own yet"
+ACK_JOB = "#439: the acknowledgement does not yet name the request's first job"
+SCHEDULE = "#439: a stopped job is not yet tried on the 1-60 minute schedule"
+
+
+def _fails_while(holder: dict, name: str = "post", *, ran: list | None = None, **step) -> Any:
+    """An `ACT` job failing with `holder["fail"]` while it is set, and going through once cleared."""
+    api = _api()
+
+    async def _run(_ctx):
+        if ran is not None:
+            ran.append(name)
+        if holder.get("fail") is not None:
+            raise holder["fail"]
+        return api.StepResult()
+
+    return api.Step(name, api.StepKind.ACT, _run, **step)
+
+
+def _described(text: str) -> Any:
+    async def _describe(_ctx):
+        return text
+
+    return _describe
+
+
+async def _try_at(env, minutes: float) -> None:
+    """Set the clock to *minutes* after NOW, and run the queue."""
+    env.clock.now = NOW + timedelta(minutes=minutes)
+    await run_queue(env.bot)
+
+
+@pytest.mark.xfail(strict=True, reason=JOB_IDS)
+async def test_every_job_has_its_own_id_that_planning_later_jobs_leaves_alone(env):
+    """Each job saved gets a number of its own, never shared with another job of any request, and
+    a job planning more jobs before the last one renumbers neither itself nor the last."""
+    api = _api()
+
+    async def _plan(db, _ctx):
+        return api.StepResult(then=(api.PlannedStep("each", {"n": 1}),
+                                    api.PlannedStep("each", {"n": 2})))
+
+    async def _each(_ctx):
+        return api.StepResult()
+
+    _queue(
+        env,
+        _type(steps=[api.Step("plan", api.StepKind.SAVE, _plan),
+                     api.Step("each", api.StepKind.ACT, _each), _act("last", [])],
+              opening=[api.PlannedStep("plan", {}), api.PlannedStep("last", {})]),
+        _type("other", steps=[_act("o", [])]),
+    )
+
+    await _ask(env)
+    await _ask(env, "other")
+    before = {s["name"]: s["id"] for s in await step_rows(env.db_path) if s["change_id"] == 1}
+    await run_queue(env.bot)
+
+    steps = await step_rows(env.db_path)
+    ids = [s["id"] for s in steps]
+    assert len(set(ids)) == len(ids) == 5
+    assert {s["name"]: s["id"] for s in steps if s["name"] in ("plan", "last")} == before
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=ACK_JOB)
+async def test_the_acknowledgement_names_the_request_s_first_job(env):
+    """The member's acknowledgement names the job number of the request's first job."""
+    _queue(env, _type(steps=[_act("a", []), _act("b", [])]))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+
+    first, _second = await step_rows(env.db_path)
+    reply = acknowledgement(interaction)
+    assert _acknowledges(reply)
+    assert f"job #{first['id']}" in reply
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS)
+async def test_a_change_asked_while_the_queue_is_stopped_joins_the_back_and_says_so(env):
+    """A request made while the queue is stopped is saved and acknowledged as under way, the
+    acknowledgement adding that the queue is stopped at job #N; it runs only once that job is
+    cleared."""
+    api = _api()
+    holder = {"fail": api.StepFailedOnDiscord("Missing Access")}
+    ran: list[str] = []
+    _queue(env, _type("stopping", steps=[_fails_while(holder)]),
+           _type("dummy", steps=[_act("a", ran)]))
+
+    await _ask(env, "stopping")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    interaction = member_interaction(env.bot)
+    await _ask(env, "dummy", interaction=interaction)
+    await run_queue(env.bot)
+
+    reply = acknowledgement(interaction)
+    assert _acknowledges(reply)
+    assert f"stopped at job #{job['id']}" in reply
+    assert [(r["kind"], r["state"]) for r in await change_rows(env.db_path)] == [
+        ("stopping", "RUNNING"), ("dummy", "QUEUED"),
+    ]
+    assert ran == []
+
+    await discard_job(env.bot)
+
+    assert ran == ["a"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS)
+async def test_a_switch_off_asked_while_the_queue_is_stopped_waits_behind_it(env):
+    """A switch-off is no exception: asked while the queue is stopped, it waits behind the stopped
+    job like any change, and runs once that job is cleared."""
+    api = _api()
+    holder = {"fail": api.StepFailedOnDiscord("Missing Access")}
+    ran: list[str] = []
+    switch_off = _type("switch_off", steps=[_act("off", ran)])
+    if "overrides_waiting" in {f.name for f in dataclasses.fields(api.ChangeType)}:
+        # The queue built before the rule let a switch-off overtake a waiting change.
+        switch_off = dataclasses.replace(switch_off, overrides_waiting=True)
+    _queue(env, _type("stopping", steps=[_fails_while(holder)]), switch_off)
+
+    await _ask(env, "stopping")
+    await run_queue(env.bot)
+    await _ask(env, "switch_off")
+    await run_queue(env.bot)
+
+    assert ran == []
+    assert await _states(env) == ["RUNNING", "QUEUED"]
+
+    await discard_job(env.bot)
+
+    assert ran == ["off"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=SCHEDULE)
+async def test_a_stop_is_retried_after_1_5_10_15_30_and_60_minutes_counted_from_the_first_failure(env):
+    """The bot's own tries fall 1, 5, 10, 15, 30 and 60 minutes after the job first failed, however
+    late a try before them ran: a try made at 3 minutes leaves the next at 5."""
+    ran: list[str] = []
+    holder = {"fail": RuntimeError("boom")}
+    _queue(env, _type(steps=[_fails_while(holder, ran=ran)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job["failing_since"] == NOW.isoformat()
+    marks = [datetime.fromisoformat(job["next_try_at"]) - NOW]
+
+    await _try_at(env, 3)
+    for at in (5, 10, 15, 30):
+        job = await stopped_job(env.db_path)
+        marks.append(datetime.fromisoformat(job["next_try_at"]) - NOW)
+        await _try_at(env, at - 0.5)
+        assert (await stopped_job(env.db_path))["tries"] == job["tries"]
+        await _try_at(env, at)
+    job = await stopped_job(env.db_path)
+    marks.append(datetime.fromisoformat(job["next_try_at"]) - NOW)
+
+    assert [mark.total_seconds() / 60 for mark in marks] == [1, 5, 10, 15, 30, 60]
+    assert len(ran) == 6
+    assert job["tries"] == 6
+    assert job["failing_since"] == NOW.isoformat()
+
+
+@pytest.mark.xfail(strict=True, reason=SCHEDULE)
+async def test_after_the_sixty_minute_try_fails_the_log_says_only_retry_continues_and_no_try_is_made(env):
+    """The 60-minute try that fails writes one ❌ line naming the job, by the change's own words
+    where the job has none; no try follows, and the worker is set to wake for none."""
+    ran: list[str] = []
+    _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")}, ran=ran)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    for at in (1, 5, 10, 15, 30, 60):
+        await _try_at(env, at)
+
+    job = await stopped_job(env.db_path)
+    hour = HOUR_LINE.format(id=job["id"], job=WHAT)
+    assert [line for line in await _lines(env) if "still fails after an hour" in line] == [hour]
+    assert job["next_try_at"] is None
+    assert len(ran) == 7
+
+    await _try_at(env, 60 * 24)
+
+    assert len(ran) == 7
+    assert await env.bot.change_queue._seconds_to_next_try() is None
+
+
+@pytest.mark.xfail(strict=True, reason=SCHEDULE)
+async def test_a_failed_automatic_try_writes_no_line_of_its_own(env):
+    """Only the stop is told: the tries at 1, 5, 10, 15 and 30 minutes that fail add nothing to the
+    log channel and leave the member's reply as the stop left it."""
+    _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")})]))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+    lines = await _lines(env)
+    edits = interaction.edit_original_response.await_count
+    assert any("The queue is stopped at job #" in line for line in lines)
+
+    for at in (1, 5, 10, 15, 30):
+        await _try_at(env, at)
+
+    assert (await stopped_job(env.db_path))["tries"] == 6
+    assert await _lines(env) == lines
+    assert interaction.edit_original_response.await_count == edits
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS)
+async def test_a_stopped_job_that_goes_through_says_so_and_the_queue_runs_on(env):
+    """A stopped job going through at a try writes one ✅ line naming it, and the jobs and
+    changes behind it run."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    _queue(
+        env,
+        _type(steps=[_fails_while(holder, describe=_described("posting the dummy")),
+                     _act("after", ran)]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    holder["fail"] = None
+    await _try_at(env, 1)
+
+    went = WENT_THROUGH.format(id=job["id"], job="posting the dummy")
+    assert [line for line in await _lines(env) if "went through" in line] == [went]
+    assert ran == ["after", "later"]
+    assert await stopped_job(env.db_path) is None
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS)
+async def test_a_queue_stopped_at_a_restart_stays_stopped_until_retry_or_discard(env):
+    """A restart within the hour makes no try of the stopped job, even when its try falls due: one
+    ❌ line says the bot no longer tries it on its own, and a Retry sets the queue going."""
+    from tests.support.change_queue import retry_job
+
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    _queue(env, _type(steps=[_fails_while(holder, ran=ran)]),
+           _type("later", steps=[_act("later", ran)]))
+
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    env.clock.advance(minutes=2)
+
+    await restart_queue(env.bot)
+    try:
+        await run_queue(env.bot)
+        assert (await stopped_job(env.db_path))["next_try_at"] is None
+        env.clock.advance(hours=2)
+        await run_queue(env.bot)
+
+        assert ran == ["post"]
+        restart = RESTART_LINE.format(id=job["id"], job=WHAT)
+        assert [line for line in await _lines(env) if "After the restart" in line] == [restart]
+
+        holder["fail"] = None
+        await retry_job(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert ran == ["post", "post", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS)
+async def test_a_fault_while_recording_a_stop_is_logged_and_the_job_is_tried_again(env, caplog,
+                                                                                   monkeypatch):
+    """Where the stop's own save raises, the worker's catch-all logs it to the host and looks again
+    after its pause: the job, not marked stopped, runs again, and its failure is recorded then."""
+    from leaguebot.core.services import change_queue
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
+    ran: list[str] = []
+    queue = _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")}, ran=ran)]))
+    record_stop = queue._stop
+    calls = {"n": 0}
+
+    async def _locked_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return await record_stop(*args, **kwargs)
+
+    monkeypatch.setattr(queue, "_stop", _locked_once)
+
+    await _ask(env)
+    await maybe_await(queue.start())
+    try:
+        async def _stopped() -> bool:
+            return await stopped_job(env.db_path) is not None
+
+        await _eventually(_stopped)
+    finally:
+        await maybe_await(queue.stop())
+
+    assert ran == ["post", "post"]
+    assert (await stopped_job(env.db_path))["tries"] == 1
+    assert any("database is locked" in str(r.exc_info[1]) for r in _host_errors(caplog))
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS)
+async def test_the_member_s_reply_says_what_a_discard_left_undone(env):
+    """Discarding a request's stopped job drops that job alone: it is kept done, with who
+    discarded it and when, the request's later jobs run, and its outcome, reading the discard,
+    tells the member what was not done."""
+    ran: list[str] = []
+
+    def _outcome(ctx):
+        undone = [s.name for s in ctx.steps if (s.result or {}).get("discarded")]
+        return f"⚠️ Done, but not: {', '.join(undone)}." if undone else "✅ Done."
+
+    _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")}, ran=ran),
+                             _act("after", ran)], outcome=_outcome))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+    await discard_job(env.bot)
+
+    assert ran == ["post", "after"]
+    post, after = await step_rows(env.db_path)
+    assert post["done_at"] is not None and after["done_at"] is not None
+    assert post["result"]["discarded"]["at"] == NOW.isoformat()
+    assert "by" in post["result"]["discarded"]
+    assert "⚠️ Done, but not: post." in updated_reply(interaction)
+    assert await _states(env) == ["DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=STOPS_ON_CHECK)
+async def test_discarding_a_change_whose_check_failed_drops_the_whole_change(env):
+    """A bot change stopped at its check before it started is dropped whole by Discard: none of
+    its jobs runs, it ends DISCARDED, and the change behind it runs."""
+    ran: list[str] = []
+
+    async def _refused(_ctx):
+        return _api().Verdict.refuse("The forecast channel is missing.", "it is missing")
+
+    _queue(env, _type(steps=[_act("a", ran), _act("b", ran)], check=_refused),
+           _type("later", steps=[_act("later", ran)]))
+
+    await _ask(env, origin=_api().ChangeOrigin.BOT)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "a"
+
+    await discard_job(env.bot)
+
+    assert ran == ["later"]
+    assert await _states(env) == ["DISCARDED", "DONE"]
