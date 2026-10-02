@@ -141,6 +141,13 @@ def went_through_line(job_id: int, job: str) -> str:
     return f"✅ Job #{job_id} ({job}) went through. The queue runs on."
 
 
+def cleared_line(job_id: int, job: str, why: str) -> str:
+    """The log channel's line for a stopped job *job_id* clearing without going through, *why*
+    saying how: it was no longer due and was dropped, or its request was refused at its check.
+    The queue runs on."""
+    return f"ℹ️ Job #{job_id} ({job}) no longer stops the queue: {why}. The queue runs on."
+
+
 def retried_line(named: str, job_id: int, job: str, request: str) -> str:
     """The log channel's line for *named* pressing Retry on job *job_id*, *job* being what it
     does and *request* the change it belongs to."""

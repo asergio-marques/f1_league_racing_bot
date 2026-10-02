@@ -36,7 +36,8 @@ on its own. A request made while the queue is stopped is queued at the back and 
 queue is stopped.
 
 **A stop is cleared in three ways:** a try that goes through (the bot's own, or Retry), which
-writes one line saying so; a league manager's or admin's Retry, at any time; and a league admin's
+writes one line saying so, or finds the job no longer due, or the change's request refused at its
+check, which write a line saying that instead; a league manager's or admin's Retry, at any time; and a league admin's
 Discard, which drops that one job, the request's later jobs running on and each checking whether
 it is still due, or the whole change where it had not started. Retry and Discard work directly on
 the queue's own records, never as changes of their own: the queue is stopped, so a change queued
@@ -106,6 +107,7 @@ from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.queue_stop_view import QueueStopView
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.log_lines import (
+    cleared_line,
     discarded_line,
     hour_line,
     refusal_line,
@@ -765,9 +767,9 @@ class ChangeQueue:
             return False
 
         if change["origin"] == ChangeOrigin.MEMBER.value:
-            await self._refuse(change, verdict)
+            await self._refuse(change, verdict, pending)
         elif verdict.kind is VerdictKind.NOT_DUE:
-            await self._drop(change, verdict.reason)
+            await self._drop(change, verdict.reason, pending)
         else:
             await self._stop(change, pending, ChangeRefused(verdict.reason or verdict.reply))
         return False
@@ -821,34 +823,77 @@ class ChangeQueue:
                     pending["notice_channel_id"], pending["notice_message_id"]
                 )
 
-    async def _refuse(self, change: aiosqlite.Row, verdict: Verdict) -> None:
+    async def _refuse(
+        self, change: aiosqlite.Row, verdict: Verdict, pending: aiosqlite.Row | None = None
+    ) -> None:
         """Refuse a member's change that fails its check as it starts: the acknowledgement is
-        updated with the refusal's reply, and the line is saved with the mark."""
+        updated with the refusal's reply, and the line is saved with the mark.
+
+        Where the check had stopped the queue on the change, the refusal clears the stop: a line
+        says so, saved with the refusal, and the stop notice loses its buttons.
+        """
         reply = _refusal_text(verdict)
         named = self._named(change)
-        ids = await self._end(
-            change,
-            ChangeState.REFUSED,
+        lines = [
             refusal_line(
                 named, change["what"], reply_reason(reply), detail=verdict.reason or None
-            ),
+            )
+        ]
+        cleared = self._cleared(
+            change, pending, "its request was refused at its check"
         )
+        if cleared is not None:
+            lines.append(cleared)
+        ids = await self._end(change, ChangeState.REFUSED, *lines)
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
+        await self._strip_stop(pending)
         await self._update_reply(change, reply)
         self._release(change)
 
-    async def _drop(self, change: aiosqlite.Row, reason: str) -> None:
-        """Drop a bot change that is no longer due: the host's log alone says so."""
-        await self._end(change, ChangeState.DROPPED)
+    async def _drop(
+        self, change: aiosqlite.Row, reason: str, pending: aiosqlite.Row | None = None
+    ) -> None:
+        """Drop a bot change that is no longer due: the host's log says so.
+
+        Where the check had stopped the queue on the change, the drop clears the stop: a line
+        in the log channel says so, and the stop notice loses its buttons.
+        """
+        cleared = self._cleared(change, pending, "it is no longer due, so it was dropped")
+        ids = await self._end(
+            change, ChangeState.DROPPED, *([cleared] if cleared is not None else [])
+        )
         log.info("%s is no longer due, so it was dropped: %s", change["what"], reason)
+        await self._router.deliver_queued(ids, interaction=self._answerable(change))
+        await self._strip_stop(pending)
         self._release(change)
 
+    @staticmethod
+    def _cleared(
+        change: aiosqlite.Row, pending: aiosqlite.Row | None, why: str
+    ) -> str | None:
+        """The line saying the stop at the change's first job clears, *why*; None where that job
+        was not stopped."""
+        if pending is None or pending["failing_since"] is None:
+            return None
+        return cleared_line(pending["id"], change["what"], why)
+
+    async def _strip_stop(self, pending: aiosqlite.Row | None) -> None:
+        """Take the buttons off the stop notice of the job *pending*, once its stop has cleared
+        without the job going through, and forget a Retry under way on it."""
+        if pending is None or pending["failing_since"] is None:
+            return
+        self._retrying.pop(pending["id"], None)
+        if pending["notice_message_id"] is not None:
+            await self._router.strip_view(
+                pending["notice_channel_id"], pending["notice_message_id"]
+            )
+
     async def _end(
-        self, change: aiosqlite.Row, state: ChangeState, line: str | None = None
+        self, change: aiosqlite.Row, state: ChangeState, *lines: str
     ) -> list[int]:
-        """Mark the change *state*, with *line*, where given, saved on the retry queue in the
-        same save. Returns the line's id, for delivery once saved. A change removed under the
-        worker is left, and its line unwritten."""
+        """Mark the change *state*, with each of *lines* saved on the retry queue in the same
+        save. Returns the lines' ids, for delivery once saved. A change removed under the
+        worker is left, and its lines unwritten."""
         ids: list[int] = []
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -856,10 +901,11 @@ class ChangeQueue:
                 cursor = await db.execute(
                     "UPDATE queued_changes SET state = ? WHERE id = ?", (state.value, change["id"])
                 )
-                if cursor.rowcount == 1 and line is not None:
-                    line_id = await self._router.queue_log_on(db, line)
-                    if line_id is not None:
-                        ids.append(line_id)
+                if cursor.rowcount == 1:
+                    for line in lines:
+                        line_id = await self._router.queue_log_on(db, line)
+                        if line_id is not None:
+                            ids.append(line_id)
                 await db.commit()
             except BaseException:
                 await db.rollback()
@@ -1402,8 +1448,8 @@ class ChangeQueue:
     ) -> list[int] | None:
         """Write the step's mark, audits and lines on *db*, without committing.
 
-        *stopped_as* names the job where it had been stopped and so goes through at last, which
-        adds the line saying so, saved with the mark; it is formed beforehand, since nothing
+        *stopped_as* names the job where it had been stopped and so goes through at last (or is
+        found no longer due and dropped), which adds the line saying so, saved with the mark; it is formed beforehand, since nothing
         but the connection is awaited in a save.
 
         Returns the ids of the lines queued, or None where the mark updated no row: the change
@@ -1427,8 +1473,12 @@ class ChangeQueue:
             await self._audit(db, change, audit)
         ids: list[int] = []
         lines = list(result.lines)
-        if stopped_as is not None and not (result.result or {}).get("dropped"):
-            lines.append(went_through_line(row["id"], stopped_as))
+        if stopped_as is not None:
+            lines.append(
+                cleared_line(row["id"], stopped_as, "it is no longer due, so it was dropped")
+                if (result.result or {}).get("dropped")
+                else went_through_line(row["id"], stopped_as)
+            )
         for line in lines:
             line_id = await self._router.queue_log_on(db, line)
             if line_id is not None:
