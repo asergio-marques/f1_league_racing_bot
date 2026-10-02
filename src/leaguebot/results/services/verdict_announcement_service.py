@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
@@ -383,15 +384,14 @@ async def _record_banner(db_path: str, round_id: int, channel_id, message) -> No
         log.exception("could not record the banner of round %s", round_id)
 
 
-async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
-    """Every banner recorded for *round_id*, as (channel id, message id), oldest first."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT channel_id, message_id FROM verdict_banner_messages "
-            "WHERE round_id = ? ORDER BY id",
-            (round_id,),
-        )
-        rows = await cursor.fetchall()
+async def _banners_of_on(db: aiosqlite.Connection, round_id: int) -> list[tuple[str, int]]:
+    """Every banner recorded for *round_id*, as (channel id, message id), oldest first; on *db*."""
+    cursor = await db.execute(
+        "SELECT channel_id, message_id FROM verdict_banner_messages "
+        "WHERE round_id = ? ORDER BY id",
+        (round_id,),
+    )
+    rows = await cursor.fetchall()
     found: list[tuple[str, int]] = []
     for row in rows:
         try:
@@ -399,6 +399,12 @@ async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
         except (TypeError, ValueError):
             continue
     return found
+
+
+async def _banners_of(db_path: str, round_id: int) -> list[tuple[str, int]]:
+    """Every banner recorded for *round_id*, as (channel id, message id), oldest first."""
+    async with get_connection(db_path) as db:
+        return await _banners_of_on(db, round_id)
 
 
 async def _mark_banner_over_sanction(db_path: str, banner) -> None:
@@ -428,30 +434,44 @@ async def _mark_banner_over_sanction(db_path: str, banner) -> None:
         log.exception("could not note banner %s as heading a sanction card", banner_id)
 
 
-async def _banners_heading_sanctions(db_path: str, message_ids: list[int]) -> set[int]:
-    """Which of *message_ids* are banners with an attendance sanction card beneath them."""
+async def _banners_heading_sanctions_on(
+    db: aiosqlite.Connection, message_ids: list[int]
+) -> set[int]:
+    """Which of *message_ids* are banners with an attendance sanction card beneath them; on *db*."""
     if not message_ids:
         return set()
     placeholders = ", ".join("?" for _ in message_ids)
+    cursor = await db.execute(
+        f"SELECT message_id FROM verdict_banner_messages "  # noqa: S608
+        f"WHERE heads_sanctions = 1 AND message_id IN ({placeholders})",
+        [str(message_id) for message_id in message_ids],
+    )
+    return {int(row["message_id"]) for row in await cursor.fetchall()}
+
+
+async def _banners_heading_sanctions(db_path: str, message_ids: list[int]) -> set[int]:
+    """Which of *message_ids* are banners with an attendance sanction card beneath them."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT message_id FROM verdict_banner_messages "  # noqa: S608
-            f"WHERE heads_sanctions = 1 AND message_id IN ({placeholders})",
-            [str(message_id) for message_id in message_ids],
-        )
-        return {int(row["message_id"]) for row in await cursor.fetchall()}
+        return await _banners_heading_sanctions_on(db, message_ids)
+
+
+async def _forget_banners_on(db: aiosqlite.Connection, message_ids: list[int]) -> None:
+    """Drop the records of banners that have been taken down, on *db*; commits nothing."""
+    if not message_ids:
+        return
+    placeholders = ", ".join("?" for _ in message_ids)
+    await db.execute(
+        f"DELETE FROM verdict_banner_messages WHERE message_id IN ({placeholders})",  # noqa: S608
+        [str(message_id) for message_id in message_ids],
+    )
 
 
 async def _forget_banners(db_path: str, message_ids: list[int]) -> None:
     """Drop the records of banners that have been taken down."""
     if not message_ids:
         return
-    placeholders = ", ".join("?" for _ in message_ids)
     async with get_connection(db_path) as db:
-        await db.execute(
-            f"DELETE FROM verdict_banner_messages WHERE message_id IN ({placeholders})",  # noqa: S608
-            [str(message_id) for message_id in message_ids],
-        )
+        await _forget_banners_on(db, message_ids)
         await db.commit()
 
 
