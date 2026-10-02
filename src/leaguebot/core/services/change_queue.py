@@ -280,6 +280,10 @@ class ChangeQueue:
         self._signal = asyncio.Event()
         self._working = asyncio.Lock()
         self._asking = asyncio.Lock()
+        # The change the worker is carrying out a unit of, which a Discard must not drop under
+        # it. Set and read only under `_asking`, so a Discard and the worker's choice of a change
+        # are in one order: either the Discard is saved before the choice, or it is refused.
+        self._trying: int | None = None
         self._task: Optional["asyncio.Task[None]"] = None
         # When each stopped job's notice was last attempted, for the job whose notice has not
         # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
@@ -660,8 +664,21 @@ class ChangeQueue:
             change = await self._choose(db)
             if change is None:
                 return None
-            step_rows = await self._read_steps(db, change["id"])
+            self._trying = change["id"]
+            try:
+                step_rows = await self._read_steps(db, change["id"])
+            except BaseException:
+                self._trying = None
+                raise
+        try:
+            return await self._carry_out(change, step_rows)
+        finally:
+            self._trying = None
 
+    async def _carry_out(
+        self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row]
+    ) -> bool:
+        """Carry out the unit of work on *change*, which `_advance` has chosen."""
         pending = next((row for row in step_rows if row["done_at"] is None), None)
         change_type = self._types.get(change["kind"])
         if change_type is None:
@@ -744,10 +761,17 @@ class ChangeQueue:
         if verdict.kind is VerdictKind.GO:
             async with get_connection(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
-                await db.execute(
-                    "UPDATE queued_changes SET state = 'RUNNING' WHERE id = ?", (change["id"],)
+                cursor = await db.execute(
+                    "UPDATE queued_changes SET state = 'RUNNING' "
+                    "WHERE id = ? AND state = 'QUEUED'",
+                    (change["id"],),
                 )
                 await db.commit()
+            if cursor.rowcount != 1:
+                log.warning(
+                    "change %s was ended or removed while its check ran, so it did not start",
+                    change["id"],
+                )
             return False
 
         if change["origin"] == ChangeOrigin.MEMBER.value:
@@ -1198,7 +1222,9 @@ class ChangeQueue:
         """Discard on the stop notice *notice_message_id*, pressed through *interaction*.
 
         Like Retry it works directly on the queue's own records, and it is refused in the same
-        two cases, and also to anyone who is not a league admin. Otherwise one save drops the
+        two cases, and also to anyone who is not a league admin, and where the worker is trying
+        the job's change at that moment (the press is then to be made again once the try has
+        ended: a job being tried is not dropped under the worker). Otherwise one save drops the
         job alone: it is marked done with the result `{"discarded": {"by", "at"}}` and what a
         failure had kept of its partial result, so that the change's outcome tells what was not
         done and the request's later jobs run on; a change that had not started, which stopped
@@ -1223,11 +1249,63 @@ class ChangeQueue:
             )
             return
         change, steps, job = found
-        presser = interaction_member(interaction)
         name = await self._name_job(change, job, self._step_context(change, steps, job))
         now = self._clock()
         started = change["state"] == ChangeState.RUNNING.value
         ids: list[int] = []
+        # Under `_asking`, which the worker holds as it chooses a change: a Discard is saved
+        # before the worker chooses, or finds the change in hand and waits for the try to end.
+        async with self._asking:
+            if self._trying == change["id"]:
+                await refuse(
+                    interaction,
+                    f"⛔ Job #{job['id']} is being tried now. Press Discard again once the try "
+                    f"has ended, if it still stops the queue.",
+                    what=what,
+                )
+                return
+            saved = await self._save_discard(
+                interaction, change, job, name, started=started, now=now, ids=ids
+            )
+        if not saved:
+            await refuse(
+                interaction,
+                "⛔ That job no longer stops the queue, so there is nothing to discard.",
+                what=what,
+            )
+            return
+        self._retrying.pop(job["id"], None)
+        await self._tell(interaction, f"🗑️ Job #{job['id']} ({name}) is discarded.")
+        await self._router.deliver_queued(ids, interaction=interaction)
+        if job["notice_message_id"] is not None:
+            await self._router.strip_view(job["notice_channel_id"], job["notice_message_id"])
+        if not started:
+            await self._update_reply(
+                change,
+                f"⛔ {change['what'][:1].upper() + change['what'][1:]} was discarded by a league "
+                f"admin: nothing of it was done.",
+            )
+            self._release(change)
+        else:
+            self._signal.set()
+
+    async def _save_discard(
+        self,
+        interaction: discord.Interaction,
+        change: aiosqlite.Row,
+        job: aiosqlite.Row,
+        name: str,
+        *,
+        started: bool,
+        now: datetime,
+        ids: list[int],
+    ) -> bool:
+        """Save a Discard in one save, with its line (its id added to *ids*) and audit record.
+
+        Returns False where the save matched no row: the job had cleared since it was found.
+        """
+        member = interaction.user
+        presser = interaction_member(interaction)
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
             try:
@@ -1266,20 +1344,7 @@ class ChangeQueue:
             except BaseException:
                 await db.rollback()
                 raise
-        self._retrying.pop(job["id"], None)
-        await self._tell(interaction, f"🗑️ Job #{job['id']} ({name}) is discarded.")
-        await self._router.deliver_queued(ids, interaction=interaction)
-        if job["notice_message_id"] is not None:
-            await self._router.strip_view(job["notice_channel_id"], job["notice_message_id"])
-        if not started:
-            await self._update_reply(
-                change,
-                f"⛔ {change['what'][:1].upper() + change['what'][1:]} was discarded by a league "
-                f"admin: nothing of it was done.",
-            )
-            self._release(change)
-        else:
-            self._signal.set()
+        return cursor.rowcount == 1
 
     async def _save_result(
         self, db: aiosqlite.Connection, change: aiosqlite.Row, row: aiosqlite.Row,
