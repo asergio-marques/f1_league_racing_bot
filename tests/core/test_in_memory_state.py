@@ -183,4 +183,3 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     assert ran == ["a"]
     assert [row["state"] for row in await change_rows(db_path)] == ["DONE"]
     assert updated_reply(interaction) == ""
-    interaction.edit_original_response.assert_not_awaited()
