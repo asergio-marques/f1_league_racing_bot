@@ -1326,6 +1326,60 @@ async def test_every_job_has_its_own_id_that_planning_later_jobs_leaves_alone(en
     assert await _states(env) == ["DONE", "DONE"]
 
 
+#: The owner's rule (2026-10-02, b2-1): a job's number is never reused, a restored state or a
+#: factory reset included.
+NUMBERING_CARRIED_ON = "#439: a job's number is reused after a restore or a factory reset"
+
+
+async def _numbered(env, *payloads: int) -> int:
+    """Ask for one change per payload and run them; give the highest job number saved."""
+    for n in payloads:
+        await _ask(env, payload={"n": n})
+    await run_queue(env.bot)
+    return max(s["id"] for s in await step_rows(env.db_path))
+
+
+@pytest.mark.xfail(strict=True, reason=NUMBERING_CARRIED_ON)
+async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_it(env, tmp_path):
+    """A state saved after job #1, then jobs #2 and #3 done, then the state restored: the next job
+    asked for is numbered above #3, so no number in the log channel names two jobs."""
+    from leaguebot.core.services import backup_service
+
+    _queue(env, _type(steps=[_act("a", [])]))
+    jobstore = str(tmp_path / "scheduler.db")
+    await _numbered(env, 1)
+    backup_service.save(env.db_path, jobstore)
+    highest = await _numbered(env, 2, 3)
+
+    backup_service.stage_restore(env.db_path, jobstore)
+    assert backup_service.apply_staged_restore(env.db_path, jobstore) is True
+    _queue(env, _type(steps=[_act("a", [])]))
+    await _ask(env, payload={"n": 4})
+
+    [job] = await step_rows(env.db_path)
+    assert job["id"] > highest
+
+
+@pytest.mark.xfail(strict=True, reason=NUMBERING_CARRIED_ON)
+async def test_a_job_after_a_factory_reset_is_numbered_above_every_job_before_it(env):
+    """Jobs #1 and #2 done, then a factory reset and the server set up again: the next job asked
+    for is numbered above #2, so no number in the log channel names two jobs."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.services import factory_reset_service
+
+    _queue(env, _type(steps=[_act("a", [])]))
+    highest = await _numbered(env, 1, 2)
+
+    await factory_reset_service.wipe(env.db_path, MagicMock())
+    await seed_server(env.db_path)
+    _queue(env, _type(steps=[_act("a", [])]))
+    await _ask(env, payload={"n": 3})
+
+    [job] = await step_rows(env.db_path)
+    assert job["id"] > highest
+
+
 async def test_the_acknowledgement_names_the_request_s_first_job(env):
     """The member's acknowledgement names the job number of the request's first job."""
     _queue(env, _type(steps=[_act("a", []), _act("b", [])]))
