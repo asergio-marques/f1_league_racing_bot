@@ -221,13 +221,13 @@ audit record, which is how some settings came to have none.
   posts delays the changes behind it; that is the price of one change at a time.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
   on and the values it sets (approving a round's appeals, reposting a division's calendar, setting a
-  division's channel to a given one). A request is compared with the last change asked for, whatever
-  became of it, and is refused, saying so, where it repeats that change and that change has not
-  started, so a second press does nothing. A change is queued again once anything else has been
-  asked for after it, and once it has started. A change that can only be done once, such as
-  approving a round's appeals, is refused by the checks once it has been done, since the round has
-  moved on. One that may be repeated, such as a repost, is queued again once it is running or once
-  anything else has been asked for after it, since a repost reads what it posts when it runs.
+  division's channel to a given one), and that name is its key. A request's key is compared with the
+  last change saved, whatever became of it, and the request is refused as a repeat where they match
+  and that change has not started (the core specification's "How a change is carried out" holds what
+  a member is told, and when a request is queued again). A change of a kind that may be repeated,
+  such as a repost, is never refused as a repeat, since it reads what it posts when it runs. A change
+  that can only be done once is refused by the checks once it has been done, since the round has
+  moved on.
 - **Steps, each saved with its mark.** A change is made of steps. The worker opens each saving
   step's connection and hands it down, so the step's changes, the change's audit record where it
   has one, and the mark saying the step is done all commit together or not at all. After a
@@ -498,10 +498,10 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
 - **Who it may mention,** stated where it is sent.
 - **What happens if it fails:** it is retried, and named in the log channel if it keeps failing (a
   log line that keeps failing, in the host's log). A log line the log channel cannot take is also
-  told to the member whose command, button or form it records, seen by them alone, once however
-  many of their lines fail (`core/utils/answering.py` finds the interaction a task is answering),
-  and where none can still be answered, to the host's log alone. Nothing is posted in the
-  interaction channel.
+  told to the member it records (the core specification's "The record of what changed" holds who
+  is told and when): `_warn_member` finds the interaction through `core/utils/answering.py`, which
+  records the one a task is answering, or takes the one the change queue holds, and the host's log
+  alone records the failure where none is found.
 
   One log line is not queued: the factory reset's closing line (the core specification's "Factory
   reset" section holds the rule for what it says and when). It is posted after the reset has wiped
@@ -658,7 +658,8 @@ later on its own.
   handlers, a table written by a module that does not own it, and a save outside a queued change.
   That last check counts each function's `.commit()` and `.executescript()` calls, and a function
   writing on a handed connection commits nothing and is not counted. It allows for good the
-  migrations run at start-up, the queue's own records, the retry queue for log lines, and
+  migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on the
+  database file itself), the queue's own records, the retry queue for log lines, and
   `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
   league's.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
