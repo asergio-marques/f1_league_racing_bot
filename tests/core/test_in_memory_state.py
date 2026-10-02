@@ -9,13 +9,25 @@ from __future__ import annotations
 
 import pathlib
 import re
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
+from leaguebot.core.db.database import run_migrations
 from leaguebot.signup.cogs import admin_review_cog
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from tests.support.change_queue import (
+    acknowledgement,
+    attach_queue,
+    change_rows,
+    league_double,
+    member_interaction,
+    run_queue,
+    seed_server,
+    updated_reply,
+)
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
@@ -124,21 +136,8 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     Without `forget_held` in the clear the reply would still be updated, as
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
     """
-    from datetime import datetime, timezone
-
-    from leaguebot.core.db.database import run_migrations
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.change_queue import ChangeType, Step
-    from tests.support.change_queue import (
-        acknowledgement,
-        attach_queue,
-        change_rows,
-        league_double,
-        member_interaction,
-        run_queue,
-        seed_server,
-        updated_reply,
-    )
 
     db_path = str(tmp_path / "queue.db")
     await run_migrations(db_path)
