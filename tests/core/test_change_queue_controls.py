@@ -273,10 +273,11 @@ async def test_a_press_by_a_member_without_a_tier_is_refused_and_logged(env):
 
 @pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
-    """A notice whose job no longer stops the queue (it went through, or its job and change were
-    deleted from the database, as a pack deletes an unfinished change) is refused, privately and
-    with a ⛔ line, and nothing is tried. The rows are deleted by hand rather than by a pack, which
-    would also free the server's claim; `test_pack_service.py` pins what a pack deletes."""
+    """A notice whose job no longer stops the queue (it went through, a league admin discarded
+    it, or its job and change were deleted from the database, as a pack deletes an unfinished
+    change) is refused, privately and with a ⛔ line, and nothing is tried. The rows are deleted by
+    hand rather than by a pack, which would also free the server's claim; `test_pack_service.py`
+    pins what a pack deletes."""
     holder = {"fail": RuntimeError("boom")}
     ran: list[str] = []
     job = await _stop(env, holder, ran)
@@ -296,6 +297,22 @@ async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
     holder["fail"] = RuntimeError("boom")
     await _ask(env)
     await run_queue(env.bot)
+    dropped = await stopped_job(env.db_path)
+    await discard_job(env.bot, user=_admin())
+    assert await stopped_job(env.db_path) is None
+    tried = list(ran)
+
+    retried = await _press_on(env, "retry", dropped["notice_message_id"], _manager())
+    discarded = await _press_on(env, "discard", dropped["notice_message_id"], _admin())
+
+    assert _private(retried) and _private(discarded)
+    lines = await _lines(env)
+    assert len([line for line in lines if line.startswith("⛔") and MANAGER_NAMED in line]) == 2
+    assert len([line for line in lines if line.startswith("⛔") and ADMIN_NAMED in line]) == 2
+    assert ran == tried
+
+    await _ask(env)
+    await run_queue(env.bot)
     packed = await stopped_job(env.db_path)
     # Every change and job is deleted, finished ones too: a pack would delete the stopped one.
     async with get_connection(env.db_path) as db:
@@ -307,7 +324,7 @@ async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
 
     assert _private(after_pack)
     assert len([line for line in await _lines(env)
-                if line.startswith("⛔") and MANAGER_NAMED in line]) == 2
+                if line.startswith("⛔") and MANAGER_NAMED in line]) == 3
 
 
 # ---------------------------------------------------------------------------
