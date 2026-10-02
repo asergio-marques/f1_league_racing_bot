@@ -446,3 +446,116 @@ async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_bu
     assert _buttons(_notice(env, job)) == {"queue:retry", "queue:discard"}
     assert [row["notice_message_id"] is not None for row in await step_rows(env.db_path)
             if row["name"] == "post"] == [True, True, True]
+
+
+# ---------------------------------------------------------------------------
+# A press while the worker is at the job
+# ---------------------------------------------------------------------------
+
+
+async def test_discard_of_a_job_the_worker_is_trying_is_refused(env):
+    """A Discard pressed while the worker is trying the stopped job is refused, privately and with
+    a ⛔ line naming the admin: nothing is recorded as discarded, and the try, once it ends, saves
+    its own result, so the request's outcome does not tell the job as left undone."""
+    import asyncio
+
+    from leaguebot.core.services.change_queue import Step
+    from tests.support.change_queue import updated_reply
+
+    api = _api()
+    hold = {"fail": RuntimeError("boom"), "held": False}
+    entered, release = asyncio.Event(), asyncio.Event()
+    ran: list[str] = []
+
+    async def _post(_ctx):
+        ran.append("post")
+        if hold["held"]:
+            entered.set()
+            await release.wait()
+        if hold["fail"] is not None:
+            raise hold["fail"]
+        return api.StepResult()
+
+    def _outcome(ctx):
+        undone = [s.name for s in ctx.steps if (s.result or {}).get("discarded")]
+        return f"⚠️ Done, but not: {', '.join(undone)}." if undone else "✅ Done."
+
+    _queue(env, _type(steps=[Step("post", api.StepKind.ACT, _post), _act("after", ran)],
+                      outcome=_outcome))
+    asked = member_interaction(env.bot)
+    await _ask(env, interaction=asked)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the queue did not stop"
+
+    hold.update(fail=None, held=True)
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        pressed = await discard_job(env.bot, user=_admin(), run=False)
+    finally:
+        release.set()
+        await trying
+
+    assert any("being tried" in text for text in _private(pressed))
+    assert any(line.startswith("⛔") and ADMIN_NAMED in line for line in await _lines(env))
+    async with get_connection(env.db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM audit_entries WHERE change_type = 'CHANGE_JOB_DISCARDED'"
+        )
+        assert (await cursor.fetchone())["n"] == 0
+    post, after = await step_rows(env.db_path)
+    assert post["done_at"] is not None and after["done_at"] is not None
+    assert "discarded" not in (post["result"] or {})
+    assert ran == ["post", "post", "after"]
+    assert await _states(env) == ["DONE"]
+    assert "✅ Done." in updated_reply(asked)
+    assert "Done, but not" not in updated_reply(asked)
+
+
+async def test_a_change_discarded_while_its_check_runs_does_not_start(env, caplog):
+    """A bot change stopped at its check is ended while the check runs again at its try, as a
+    Discard saved just before the worker chose it would end it: the check then lets it go, but the
+    change stays DISCARDED, none of its jobs runs, and the host's log says it did not start."""
+    import asyncio
+    import logging
+
+    api = _api()
+    mode = {"refuse": True, "held": False}
+    entered, release = asyncio.Event(), asyncio.Event()
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["held"]:
+            mode["held"] = False
+            entered.set()
+            await release.wait()
+            return api.Verdict.go()
+        if mode["refuse"]:
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    caplog.set_level(logging.WARNING)
+    _queue(env, _type(steps=[_act("a", ran), _act("b", ran)], check=_check))
+    mode["refuse"] = False
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "a"
+
+    mode.update(refuse=False, held=True)
+    env.clock.advance(minutes=1)
+    trying = asyncio.create_task(run_queue(env.bot))
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        async with get_connection(env.db_path) as db:
+            await db.execute("UPDATE queued_changes SET state = 'DISCARDED'")
+            await db.commit()
+    finally:
+        release.set()
+        await trying
+
+    assert await _states(env) == ["DISCARDED"]
+    assert ran == []
+    assert any("while its check ran" in record.getMessage() for record in caplog.records)

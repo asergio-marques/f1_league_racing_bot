@@ -1615,3 +1615,54 @@ async def test_discarding_a_change_whose_check_failed_drops_the_whole_change(env
 
     assert ran == ["later"]
     assert await _states(env) == ["DISCARDED", "DONE"]
+
+
+async def test_a_change_ended_at_its_check_leaves_no_timer_behind(env):
+    """A change stopped at its check that then ends without any of its jobs running leaves the
+    worker no try to wake for, once the time its next try was set for has passed: whether a league
+    admin discards it, a try finds the bot's change no longer due, or a try refuses a member's."""
+    api = _api()
+    mode = {"verdict": "go"}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        if mode["verdict"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    queue = _queue(env, _type(steps=[_act("a", ran)], check=_check))
+
+    async def _stopped_at_check(verdict: str, **ask) -> None:
+        mode["verdict"] = "go"
+        await _ask(env, **ask)
+        mode["verdict"] = verdict
+        await run_queue(env.bot)
+        assert await stopped_job(env.db_path) is not None, "the change did not stop"
+
+    await _stopped_at_check("refuse", origin=api.ChangeOrigin.BOT)
+    await discard_job(env.bot)
+    env.clock.advance(minutes=2)
+
+    assert await queue._seconds_to_next_try() is None
+
+    await _stopped_at_check("raise", payload={"n": 2}, origin=api.ChangeOrigin.BOT)
+    mode["verdict"] = "not_due"
+    env.clock.advance(minutes=1)
+    await run_queue(env.bot)
+    env.clock.advance(minutes=2)
+
+    assert await queue._seconds_to_next_try() is None
+
+    await _stopped_at_check("raise", payload={"n": 3})
+    mode["verdict"] = "refuse"
+    env.clock.advance(minutes=1)
+    await run_queue(env.bot)
+    env.clock.advance(minutes=2)
+
+    assert await queue._seconds_to_next_try() is None
+    assert await _states(env) == ["DISCARDED", "DROPPED", "REFUSED"]
+    assert ran == []
