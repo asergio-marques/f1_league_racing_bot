@@ -65,8 +65,6 @@ BOT_USER_ID = 77
 RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
 VERDICTS_CHANNEL_ID = 9003
-#: What is not yet true of each test marked with it.
-STOPS = "#439: a removal that fails does not yet stop the queue until it is discarded"
 
 
 # ---------------------------------------------------------------------------
@@ -613,7 +611,6 @@ def _link(channel_id: int, message_id: int) -> str:
     return f"https://discord.com/channels/{SERVER_ID}/{channel_id}/{message_id}"
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
 
@@ -635,7 +632,6 @@ async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
     """The results and standings messages go by the same rule as the verdicts: counted only
     where they went, and linked where they did not."""
@@ -653,7 +649,6 @@ async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
     assert "2 results and standings message(s)" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     """The image flow posts the constructors' table as a message of its own, and it is named
     on its own where it stays."""
@@ -671,7 +666,6 @@ async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     assert cog.bot.channels[STANDINGS_CHANNEL_ID].deleted_messages == [2000]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
     """End to end: the verdict the bot could not remove is the one the reply links."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
@@ -701,7 +695,6 @@ async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
     assert _left_standing(reply) == []
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
     """Linked like any other message, and not forgotten: forgetting a banner still standing
     would leave nothing to say it was ever there."""
@@ -758,7 +751,6 @@ async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     assert submission_channel.deleted is True
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_guild_out_of_cache_still_erases_the_rows(tmp_path) -> None:
     """A bot that cannot reach the messages is not a reason to half-erase the season.
 

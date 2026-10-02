@@ -70,8 +70,6 @@ RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
 VERDICTS_CHANNEL_ID = 9003
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-#: What is not yet true of each test marked with it.
-STOPS = "#439: a removal that fails does not yet stop the queue until it is discarded"
 
 
 def _acknowledges(text: str) -> bool:
@@ -643,7 +641,6 @@ async def test_the_reply_counts_the_verdicts_removed(tmp_path):
     assert "verdicts removed: 20" in closing
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_the_reply_links_every_message_left_standing(tmp_path):
     """**What the bot could not remove is named, with a link** (decided 2026-09-21, #189).
 
@@ -680,7 +677,6 @@ async def test_nothing_left_standing_says_nothing_of_it(tmp_path):
     assert "left standing" not in await _line_with(cog.bot, "| Messages removed")
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_long_list_is_split_across_replies(tmp_path):
     """A season's worth of links outruns Discord's 2,000 characters, and one reply that long
     would be refused outright — the manager would learn nothing at all. The update of the

@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import aiosqlite
+import discord
 
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
@@ -295,13 +296,15 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
         return {"removed": True, "gone": True}
     kind = item["kind"]
     if kind in MESSAGE_KINDS:
+        failures: list[discord.HTTPException] = []
         left = await _delete_posting(
-            channel, item["anchor"], item["message_ids"], label=item["label"]
+            channel, item["anchor"], item["message_ids"], label=item["label"],
+            failures=failures,
         )
         if left:
             raise StepFailedOnDiscord(
                 f"{len(left)} message(s) could not be removed", result={"left": left}
-            )
+            ) from (failures[0] if failures else None)
         return {"removed": True}
     if kind == "submission":
         gone = await close_submission_channel(channel_id, item["round_id"], guild, bot.db_path)

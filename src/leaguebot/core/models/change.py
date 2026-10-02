@@ -128,8 +128,9 @@ class StepResult:
 class StepFailedOnDiscord(Exception):
     """Raised by step code for a failure Discord caused.
 
-    `result` is plain data the step wants kept where the step is tried once, such as the ids of
-    what it could not remove.
+    `result` is plain data the step wants kept on the job that stops the queue, such as the ids of
+    what it could not remove, which a Discard then reads. Raised `from` the Discord failure that
+    caused it, the stop notice names that failure's type as the kind of fault.
     """
 
     def __init__(self, reason: str, *, result: dict[str, Any] | None = None) -> None:

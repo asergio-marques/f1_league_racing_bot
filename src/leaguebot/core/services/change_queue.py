@@ -938,12 +938,13 @@ class ChangeQueue:
     @staticmethod
     def _fault_kind(error: BaseException) -> str:
         """The kind of fault *error* is, as a stop line names it: the exception's type, or the
-        reason for a bot change its check refused and for a failure a job gave Discord as its
-        cause."""
+        reason for a bot change its check refused; for a failure a job gave Discord, the type of
+        the failure that caused it where it names one, else its reason."""
         if isinstance(error, ChangeRefused):
             return str(error)
         if isinstance(error, StepFailedOnDiscord):
-            return error.reason
+            cause = error.__cause__
+            return error.reason if cause is None else type(cause).__name__
         return type(error).__name__
 
     async def _stop(

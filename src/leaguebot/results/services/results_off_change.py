@@ -11,16 +11,24 @@ and resumes after a stop:
    and travel in the steps that follow, since nothing could find them once the rows are gone.
    The order is today's: the results go before the rounds close, so the closing finds no results
    to mark former drivers by. It also asks, as changes of the bot's, for the hub's panel to be
-   refreshed and for the season to be wound down, so that both go ahead whatever befalls the
-   take-downs (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
+   refreshed and for the season to be wound down, which go ahead whatever befalls the
+   take-downs, as changes of their own (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
 2. **`take_down`**, one for each message or channel: `results_purge_service.take_down`. **Each is
-   tried once** (decided with the owner, 2026-10-01): the results specification asks that a message
-   the bot cannot remove be named to the league with a link, for removal by hand, and not counted
-   as removed, which a retry for an hour would delay. A failure is kept in the step's result.
+   a job like any other**, so a removal that fails stops the queue until it is cleared (decided with
+   the owner, 2026-10-02, withdrawing the earlier "tried once"): the bot tries it again on the
+   queue's schedule, and a league manager may Retry it. A league admin may Discard it, and the
+   change's outcome then names the message with a link, for removal by hand, and does not count it
+   as removed (the results specification). A failure's ``left`` is kept on the job, so a discard
+   names only the messages still standing.
 3. **`close`**, one save: it counts what went, forgets the banners taken down so that one left
    standing keeps its record, and writes the closing line. A message left standing is one in a
-   failed step's ``left``, or every message of an item whose step failed with none (the server out
-   of the cache), linked from the ids the item carries.
+   discarded job's ``left``, or every message of an item whose job was discarded with none (the
+   server out of the cache), linked from the ids the item carries.
+
+**The outcome reads the jobs, not the closing job's result**, since that job may itself be
+discarded. A discarded switch-off changed nothing, so the reply says only that. Any discard after
+it also tells the league that the season can still be completed and that some of its messages may
+remain (`SWITCHED_OFF_THEN_FAULTED`), whatever job was discarded.
 
 The module is registered by the builder with the cascade it is handed: `attendance_off_on` is how
 attendance switches itself off on a connection, so that this module imports none of attendance's.
@@ -158,6 +166,21 @@ def results_off_change(
     async def take_down_step(ctx: StepContext) -> StepResult:
         return StepResult(result=await take_down(ctx.bot, ctx.step_payload["item"]))
 
+    async def describe_switch_off(_ctx: StepContext) -> str:
+        return "turning Results & Standings off"
+
+    async def describe_take_down(ctx: StepContext) -> str:
+        """The removal as a stop names it: what it removes, with the link of each message, so that
+        a manager sees what to put right before pressing Retry."""
+        item = ctx.step_payload["item"]
+        links = ", ".join(
+            message_link(item["server_id"], item["channel_id"], m) for m in item["message_ids"]
+        )
+        return f"removing the {item['label']}" + (f" ({links})" if links else "")
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "counting what was removed"
+
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         tally = _tally(ctx)
         await _forget_banners_on(db, tally["banners_down"])
@@ -183,7 +206,9 @@ def results_off_change(
     def outcome(ctx: OutcomeContext) -> str:
         done = {view.name: view for view in ctx.steps if view.name != _TAKE_DOWN}
         counts = (done[_SWITCH_OFF].result if _SWITCH_OFF in done else None) or {}
-        taken = (done[_CLOSE].result if _CLOSE in done else None) or {}
+        if "discarded" in counts:
+            return NOTHING_CHANGED
+        taken = _tally(ctx)
         reply = "✅ Results & Standings module disabled."
         if counts.get("cascaded"):
             reply += "\n" + _CASCADE_REPLY
@@ -193,11 +218,13 @@ def results_off_change(
             reply += (
                 f"\n🗑️ This season's results are gone: {counts['sessions']} session "
                 f"result(s) and {counts['standings']} standings row(s) deleted, "
-                f"{taken.get('messages', 0)} results and standings message(s) and "
-                f"{taken.get('verdicts', 0)} verdict(s) removed" + tail
+                f"{taken['messages']} results and standings message(s) and "
+                f"{taken['verdicts']} verdict(s) removed" + tail
                 + "\nPoints configurations and division channels are kept."
             )
-        left = taken.get("left", [])
+        if any((view.result or {}).get("discarded") for view in ctx.steps):
+            reply += "\n⚠️ " + SWITCHED_OFF_THEN_FAULTED
+        left = taken["left"]
         if left:
             reply += (
                 f"\n⚠️ {len(left)} message(s) could not be removed — delete them by hand:\n"
@@ -209,9 +236,11 @@ def results_off_change(
         kind=module_off("results"),
         opening=(PlannedStep(_SWITCH_OFF),),
         steps={
-            _SWITCH_OFF: Step(_SWITCH_OFF, StepKind.SAVE, switch_off),
-            _TAKE_DOWN: Step(_TAKE_DOWN, StepKind.DELETE, take_down_step),
-            _CLOSE: Step(_CLOSE, StepKind.SAVE, close),
+            _SWITCH_OFF: Step(_SWITCH_OFF, StepKind.SAVE, switch_off, describe=describe_switch_off),
+            _TAKE_DOWN: Step(
+                _TAKE_DOWN, StepKind.DELETE, take_down_step, describe=describe_take_down
+            ),
+            _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
         },
         check=check,
         key=lambda payload: (
@@ -235,11 +264,12 @@ def _erased_summary(counts: dict[str, Any]) -> str:
     )
 
 
-def _tally(ctx: StepContext) -> dict[str, Any]:
+def _tally(ctx: OutcomeContext) -> dict[str, Any]:
     """What the take-downs did: what was removed, what is left standing, and which banners went.
 
-    A message is left standing where its step failed: those in the failure's ``left``, or, where
-    it names none (the server was out of the cache), every message the item carries.
+    A message is left standing where its job was discarded: those in the failure's ``left`` that
+    the job kept, or, where it kept none (the server was out of the cache), every message the item
+    carries. A message never counts as removed unless its job went through.
     """
     messages = verdicts = 0
     banners_down: list[int] = []
@@ -252,7 +282,7 @@ def _tally(ctx: StepContext) -> dict[str, Any]:
         kind = item["kind"]
         had_messages = had_messages or kind in MESSAGE_KINDS
         result = view.result or {}
-        if result.get("failed") is not None:
+        if result.get("discarded") is not None:
             ids = result.get("left")
             if ids is None:
                 ids = item["message_ids"]

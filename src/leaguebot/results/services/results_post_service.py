@@ -143,6 +143,8 @@ async def _delete_posting(
     anchor_msg_id: int,
     message_ids: list[int] | None,
     label: str = "message",
+    *,
+    failures: list[discord.HTTPException] | None = None,
 ) -> list[int]:
     """Delete a posting: exactly the messages it recorded, and nothing else.
 
@@ -161,6 +163,8 @@ async def _delete_posting(
     standing can (decided 2026-09-21, #189). A message already gone — ``NotFound`` on either
     call, most often one a manager deleted by hand — is not returned: nothing of it is left to
     remove. Any other failure is logged and the id returned, and the rest are still attempted.
+    *failures*, where given, is appended with each such failure, for a caller that must say what
+    kind of fault left the messages standing (the change queue's stop notice does).
     """
     ids = list(message_ids or [anchor_msg_id])
     # The anchor is included whether or not the stored list names it. Every list this module
@@ -177,6 +181,8 @@ async def _delete_posting(
             log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
             if not isinstance(exc, discord.NotFound):
                 left_standing.append(message_id)
+                if failures is not None:
+                    failures.append(exc)
             continue
         try:
             await message.delete()
@@ -184,6 +190,8 @@ async def _delete_posting(
             log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
             if not isinstance(exc, discord.NotFound):
                 left_standing.append(message_id)
+                if failures is not None:
+                    failures.append(exc)
     return left_standing
 
 

@@ -62,8 +62,6 @@ NOTHING_CHANGED = "Nothing was changed: Results & Standings is still on."
 COMPLETABLE = "the season can still be completed"
 #: The rest of that sentence: some of the season's messages may remain, for removal by hand.
 MAY_REMAIN = "may still be posted — delete them by hand"
-#: What is not yet true of each test marked with it.
-STOPS = "#439: a job of turning results off that fails does not yet stop the queue until it is cleared"
 #: The stop line's opening and the line after the hour, as the queue writes them.
 STOPPED_AT = "❌ The queue is stopped at job #"
 HOUR_LINE = (
@@ -517,7 +515,6 @@ async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_pat
     assert await _count(seeded.db_path, "session_results") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_discarded_switch_off_says_nothing_was_changed(tmp_path):
     """A league admin discarding the switch-off whose save failed leaves results on and the season
     untouched, and the admin's reply says nothing was changed. The stop notice and the Discard line
@@ -596,7 +593,6 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_linked_not_counted(
     tmp_path,
 ):
@@ -636,7 +632,6 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
     ) in reply
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_line_with_their_links(  # noqa: E501
     tmp_path,
 ):
@@ -688,7 +683,6 @@ async def test_the_closing_line_counts_what_was_removed(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(tmp_path):
     """A removal failing on the bot's own fault stops the queue after the switch-off; once a league
     admin discards it, the reply says the season can still be completed and links its message."""
@@ -713,7 +707,6 @@ async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(t
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_completed(
     tmp_path, monkeypatch,
 ):
@@ -1057,7 +1050,6 @@ async def test_an_outcome_after_a_restart_is_left_to_the_log_channel(tmp_path):
     await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_left_standing(
     tmp_path,
 ):
