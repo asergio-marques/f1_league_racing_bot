@@ -189,7 +189,7 @@ Five modules, **all off to begin with**. The bot works without any of them, but 
 
 > **Turning `results` off takes `attendance` with it.** If attendance is on, the bot warns you what the cascade will take and disables nothing until you confirm; you are told at once that the change is under way, that message is then updated to name both modules, and the log channel records it as well.
 
-> **And if a season is running, turning `results` off destroys that season's championship.** Every classification recorded, every standing computed from them, and every results and standings message already posted are deleted; every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results, which is what lets you complete the season afterwards. Every penalty and appeal verdict already announced is removed from the verdicts channel with them; auto-sack and auto-reserve announcements stay. Your points configurations and your division channels are kept. You are warned and must confirm, and none of it can be undone. Once you have, the bot tells you at once that it is turning `results` off and updates that message with what went; if it takes longer, the log channel says so. See [Configuring the results module](configuring-the-results-module.md).
+> **And if a season is running, turning `results` off destroys that season's championship.** Every classification recorded, every standing computed from them, and every results and standings message already posted are deleted; every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results, which is what lets you complete the season afterwards. Every penalty and appeal verdict already announced is removed from the verdicts channel with them; auto-sack and auto-reserve announcements stay. Your points configurations and your division channels are kept. You are warned and must confirm, and none of it can be undone. Once you have, the bot tells you at once that it is turning `results` off and updates that message with what went; if it takes longer, the log channel says so. If a removal fails, the queue stops there: see [When a job stops the queue](#when-a-job-stops-the-queue). See [Configuring the results module](configuring-the-results-module.md).
 
 **Turning a module off clears less than you would expect.** The signup module forgets its channel, and keeps its time slots and its question settings; the base role and the driver role are the league's, and no module's switch touches them. Of the rest, `attendance` forgets only which channels each division posts to, and `weather`, `results` and `images` forget no *configuration* at all — every channel, deadline, penalty value and points configuration survives, and the module comes back as it was. What `results` does destroy, where a season is running, is that season's results themselves, which are not configuration; see the call-out above. What weather does do is cancel its own scheduled jobs — the forecasts for every remaining round. Turning a module off stops that module's work and nobody else's: the jobs belonging to the modules you left on go on running.
 
@@ -779,6 +779,27 @@ command.
 
 ---
 
+## When a job stops the queue
+
+Some changes are carried out as a list of jobs, one after another, each with a number of its own ("job #12"). **Any job that fails stops the queue**, and nothing behind it runs until that job is cleared. Today only turning `results` off is carried out this way, but the rules below hold for every change that joins it.
+
+You will see:
+
+- **One ❌ message in the log channel**, with **Retry** and **Discard** buttons. It names the job's number, what the job was, the request it belongs to, who asked and the kind of fault. The reply to the request says it is stopped and will be tried again. Managers and admins have to be able to read the log channel to use the buttons.
+- **A request asked meanwhile is acknowledged as usual**, joins the back of the queue, and says which job the queue is stopped at. It runs once that job is cleared.
+
+Clear it in this order.
+
+1. **Put right what failed.** Where the fault was a missing channel or a lost permission, set the channel or restore the permission first. Retrying before then only fails again.
+2. **Wait, or press Retry.** The bot tries the job again by itself 1, 5, 10, 15, 30 and 60 minutes after it first failed, and says nothing about a try that fails until the last. Then it writes one line saying it has stopped trying on its own, and **only Retry** continues. A league manager or a league admin can press **Retry** on the notice at any time to try the job at once. A Retry that fails is recorded, naming who pressed it, and leaves the queue stopped.
+3. **Or press Discard, as a league admin.** It drops that one job and the queue runs on. The log channel records who discarded it and what was not done, and the change's later jobs still run, each checking it is still due. A league manager's press is refused. When the job was a removal in turning `results` off, the message it could not remove is listed with a link, for you to delete by hand.
+
+A job that goes through says so, and its notice loses its buttons.
+
+**After a restart a stopped queue stays stopped.** The bot makes no try of its own, one line in the log channel says so, and only Retry or Discard moves it. A change the bot was part-way through, with no job failed, is finished as the bot starts.
+
+A button pressed by someone who may not use it, or on a notice whose job no longer stops the queue, is refused, and the log channel records the refusal.
+
 ## If something looks wrong
 
 | What you see | Usually means |
@@ -799,6 +820,7 @@ command.
 | The season will not complete | Some round has not had its appeals review approved. The refusal names them — approve the appeals in each round's submission channel, or cancel a round that will never be raced |
 | Drivers placed mid-season were turned down on their own | Every division finished while their placements were still unconfirmed. There was no round left for them, so their placements were discarded and they returned to Not Signed Up |
 | "❌ … stopped on a fault in the bot, not on anything you entered" | The bot ran into a fault of its own, not a mistake in what you typed. Where the reply says it may have been partly done, check what the command was meant to change before you run it again. Some commands undo themselves and say so instead — the module is still off, nothing from the paste was saved — with what to do next. The log channel has a line naming the command and the kind of fault: if it happens again, give that line to whoever hosts the bot |
+| A ❌ message in the log channel says the queue is stopped at a job, with Retry and Discard buttons | A job failed and nothing behind it runs until it is cleared. Put right what it names, then press Retry; a league admin can press Discard instead. See [When a job stops the queue](#when-a-job-stops-the-queue) |
 | Nothing at all is happening on schedule | The bot is not running. Starting it again picks up missed weather phases, missed check-in calls whose deadline has not yet passed, missed check-in deadlines, the tidying away of forecasts and check-in messages a day after a round, and a signup auto-close timer; anything else that came due while it was down is missed |
 
 Anything the bot works out, fails to find, falls back on or fails at is written to the log channel. So is every outcome of a command, button or form that changes something, whoever used it: what it set, what it refused and why (a line starting ⛔), and a confirmation cancelled (↩️) or left to lapse (⌛), each naming the member. A refusal made before `/bot init` or after `/bot pack`, in a direct message, or by someone on another server is answered as ever but goes to the host's log alone, not to this channel. When something is behaving oddly and this table has not explained it, read that channel — the answer is nearly always sitting in it.
