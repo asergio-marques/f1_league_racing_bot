@@ -308,13 +308,29 @@ answered yet. Where nobody's command can still be answered, such as a timed job,
 log records it.
 
 **Some changes are acknowledged at once and carried out one at a time.** You are told the change
-is under way, that message is updated with what became of it, and a longer outcome is sent in
-parts. Asking again for a change that has not started, with nothing else asked for since, is
-refused, saying so. A change the bot was part-way through when it stopped is finished when it
-starts again, but its message is not updated then: the log channel records the outcome, as it does
-for any outcome that arrives after 14 minutes. A step Discord keeps failing is tried again, and
-reported in the log channel after about an hour and then once a day. **So far only
+is under way, naming the number of its first job ("job #12"), that message is updated with what
+became of it, and a longer outcome is sent in parts. Each step of a change is a job with a number of
+its own, and the jobs run in order. Asking again for a change that has not started, with nothing
+else asked for since, is refused, saying so. A change the bot was part-way through when it stopped
+is finished when it starts again, but its message is not updated then: the log channel records the
+outcome, as it does for any outcome that arrives after 14 minutes. **So far only
 `/module disable results` works this way.**
+
+**A job that fails stops the queue.** Nothing behind it runs until it is cleared. The log channel
+gets one ❌ message, with **Retry** and **Discard** buttons, naming the job's number, what it was,
+the request, who asked and the kind of fault, and the acknowledgement says the request is stopped
+and will be tried again. A change asked for meanwhile is acknowledged, joins the back, and says
+which job the queue is stopped at. The bot tries the job again 1, 5, 10, 15, 30 and 60 minutes
+after it first failed, writing no line for a try that fails until the last, which says the bot has
+stopped trying on its own. **Retry**, for a league manager or a league admin, tries the job at once
+and works at any time; after the hour it is the only way on, and a Retry that fails is recorded,
+naming who pressed it. **Discard**, for a league admin alone, drops that one job and the queue runs
+on, the log channel recording who discarded it and what was not done; the request's later jobs run,
+each checking it is still due. A job that goes through says so, and its buttons come off. If a
+channel or permission was the fault, put it right first, then press Retry. After a restart a
+stopped queue stays stopped: the bot makes no try of its own, a line in the log channel says so,
+and only Retry or Discard moves it. A button pressed by someone who may not use it, or on a notice
+whose job no longer stops the queue, is refused and recorded.
 
 ### `/bot init` — One-time server setup
 *Access: League admin · Can be run from any channel, or by a server administrator*
@@ -1049,7 +1065,7 @@ Historical data is always retained. How much configuration a disable actually cl
 
 > **Disabling `results` disables `attendance` with it**, where attendance is on. Because that costs you every division's check-in and attendance channels and cannot be undone until the season ends, the bot warns you first and writes nothing until you confirm: you are told what the cascade will take, and the reply that follows names both modules. The cascade is recorded in the log channel and audited as `ATTENDANCE_MODULE_CASCADE_DISABLED`.
 
-> **Disabling `results` while a season is ACTIVE destroys that season's championship.** You are warned and must confirm before anything is written — whether or not attendance is on — and the warning names what goes. You are then told at once that the change is under way ("⏳ Turning Results & Standings off. This message will be updated when it is done; if it takes longer, the log channel will say so."), and that message is updated with what went. The flag, the season's rows and the closing of its waiting rounds are saved together, so a stop at any moment leaves the season completable: the rounds that were waiting on results are closed, so their divisions finish. The messages come down after, and a stop in the middle of that is finished when the bot starts again. The purge is recorded in the log channel and audited as `RESULTS_SEASON_PURGED`, and each round closed is audited as a `round.status` change of its own. A message the bot cannot remove — most often because it has lost a permission in that channel — is not counted as removed: the reply and the log channel list each one with a link, for you to delete by hand; each message is tried once. And if something fails after the switch-off, the reply says the season can still be completed and that some of its results, standings and verdicts may still be posted, for you to delete by hand. The log channel carries a line when the switch-off is saved and a closing line, *Messages removed*, once the take-downs are done. Asking twice before the first has started is refused. With no season running, disabling clears nothing and asks nothing — it is the cheap command it looks like.
+> **Disabling `results` while a season is ACTIVE destroys that season's championship.** You are warned and must confirm before anything is written — whether or not attendance is on — and the warning names what goes. You are then told at once that the change is under way ("⏳ Turning Results & Standings off. This message will be updated when it is done; if it takes longer, the log channel will say so."), and that message is updated with what went. The flag, the season's rows and the closing of its waiting rounds are saved together, so a stop at any moment leaves the season completable: the rounds that were waiting on results are closed, so their divisions finish. The messages come down after, and a stop in the middle of that is finished when the bot starts again. The purge is recorded in the log channel and audited as `RESULTS_SEASON_PURGED`, and each round closed is audited as a `round.status` change of its own. A message the bot cannot remove — most often because it has lost a permission in that channel — stops the queue like any failed job, and is tried again, and cleared by Retry or Discard, as set out under *A job that fails stops the queue* in the section on slash commands; where a league admin discards that removal, it is not counted as removed, and the reply and the log channel list each message with a link, for you to delete by hand. A league admin who discards the switch-off itself changes nothing, and the reply says Results & Standings is still on. A discard after the switch-off says the season can still be completed and that some of its results, standings and verdicts may still be posted, for you to delete by hand, as does something failing after it. The log channel carries a line when the switch-off is saved and a closing line, *Messages removed*, once the take-downs are done. Asking twice before the first has started is refused. With no season running, disabling clears nothing and asks nothing — it is the cheap command it looks like.
 
 Enabling is guarded where disabling mostly is not: no module but signup can be enabled once a season's placements are confirmed, while every module but signup can still be disabled until the season is pending completion. Disabling mid-season is **not** safe, whichever you turn off, and it is one-way until the season ends. `attendance` stops every check-in still to come; `results` additionally deletes the season's results outright, as described above. Both ask you to confirm first.
 
