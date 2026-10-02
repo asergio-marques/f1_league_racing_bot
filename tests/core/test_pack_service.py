@@ -2,7 +2,8 @@
 
 A Discord user id means the same on every server; a channel, role or message id does not.
 Pack keeps the first kind and clears the second, and is refused while the league has a
-current season in any stage short of completed or cancelled.
+current season in any stage short of completed or cancelled, or while the change queue holds a
+job (#439).
 """
 from __future__ import annotations
 
@@ -350,22 +351,49 @@ async def test_a_refused_pack_records_nothing(db_path):
 # ── The change queue (#439) ────────────────────────────────────────────────
 
 
-async def test_pack_drops_every_unfinished_change(db_path):
-    """A change left queued or running would go on changing Discord on a server the bot no longer serves;
-    the finished ones are history and stay."""
-    await _seed(db_path)
+async def _queue_change(db_path: str, state: str) -> None:
+    """A member's `/dummy` in the change queue in *state*, with one job named after the state."""
     async with get_connection(db_path) as db:
-        for state in ("QUEUED", "RUNNING", "DONE", "REFUSED", "DROPPED", "DISCARDED"):
-            cursor = await db.execute(
-                "INSERT INTO queued_changes (kind, dedup_key, origin, state, what) "
-                "VALUES ('dummy', ?, 'MEMBER', ?, '`/dummy`')",
-                (state, state),
-            )
-            await db.execute(
-                "INSERT INTO queued_change_steps (change_id, position, name) VALUES (?, 0, ?)",
-                (cursor.lastrowid, state),
-            )
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, origin, state, what) "
+            "VALUES ('dummy', ?, 'MEMBER', ?, '`/dummy`')",
+            (state, state),
+        )
+        await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name) VALUES (?, 0, ?)",
+            (cursor.lastrowid, state),
+        )
         await db.commit()
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a pack is not yet refused while the queue holds a job")
+@pytest.mark.parametrize("state", ["QUEUED", "RUNNING"])
+async def test_pack_is_refused_while_the_queue_holds_a_job(db_path, state):
+    """A job still to run, queued or in a change under way (a stopped job's change among them),
+    would go on changing Discord on a server the bot no longer serves. The pack is refused
+    inside its own transaction, as for a current season, so a change asked for between the
+    command's check and the pack cannot be dropped: nothing is cleared, nothing is recorded."""
+    await _seed(db_path)
+    await _queue_change(db_path, state)
+    scheduler = _scheduler()
+
+    with pytest.raises(PackRefused):
+        await pack(db_path, scheduler, **ACTOR)
+
+    scheduler.cancel_all.assert_not_called()
+    assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] == SERVER
+    assert [r[0] for r in await _all(db_path, "SELECT state FROM queued_changes")] == [state]
+    assert [r[0] for r in await _all(db_path, "SELECT name FROM queued_change_steps")] == [state]
+    rows = await _all(db_path, "SELECT change_type FROM audit_entries")
+    assert [r["change_type"] for r in rows] == ["X"]
+
+
+async def test_pack_keeps_every_finished_change(db_path):
+    """A pack is refused while the queue holds a job, so the changes it finds are finished ones:
+    history, kept with their jobs."""
+    await _seed(db_path)
+    for state in ("DONE", "REFUSED", "DROPPED", "DISCARDED"):
+        await _queue_change(db_path, state)
 
     await pack(db_path, _scheduler(), **ACTOR)
 
