@@ -1713,3 +1713,91 @@ async def test_a_change_ended_at_its_check_leaves_no_timer_behind(env):
     assert await queue._seconds_to_next_try() is None
     assert await _states(env) == ["DISCARDED", "DROPPED", "REFUSED"]
     assert ran == []
+
+
+async def test_a_bot_change_whose_check_passes_at_a_try_clears_its_stop_and_a_later_failure_of_its_job_is_a_first_failure(env):
+    """A bot change stopped at its check whose check lets it go at its one-minute try clears that
+    stop: one ✅ line says its job went through, and the stop notice loses its buttons. Its job then
+    failing is a first failure of its own: a new stop notice naming that fault, the schedule counted
+    from that moment, its next try one minute on."""
+    api = _api()
+    mode = {"refuse": False}
+    holder: dict[str, Any] = {"fail": None}
+
+    async def _check(_ctx):
+        if mode["refuse"]:
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=[_fails_while(holder, "a")], check=_check))
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the change did not stop"
+    [first] = [m for m in env.bot.log_channel.posted if m.id == job["notice_message_id"]]
+
+    mode["refuse"] = False
+    holder["fail"] = RuntimeError("boom")
+    await _try_at(env, 1)
+
+    went = WENT_THROUGH.format(id=job["id"], job=WHAT)
+    assert [line.split("\n")[0] for line in await _lines(env) if "went through" in line] == [went]
+    assert not getattr(first.view, "children", None)
+    again = await stopped_job(env.db_path)
+    assert again is not None and again["id"] == job["id"]
+    assert again["tries"] == 1
+    assert datetime.fromisoformat(again["failing_since"]) == NOW + timedelta(minutes=1)
+    assert datetime.fromisoformat(again["next_try_at"]) == NOW + timedelta(minutes=2)
+    [second] = [m for m in env.bot.log_channel.posted if "(RuntimeError)" in m.content]
+    assert second.id == again["notice_message_id"] and second.id != first.id
+    assert {child.custom_id for child in second.view.children} == {"queue:retry", "queue:discard"}
+    assert await _states(env) == ["RUNNING"]
+
+
+async def test_a_change_stopped_at_its_check_and_then_refused_or_dropped_leaves_no_timer(env):
+    """A change stopped at its check while the log channel refuses its stop notice, which then ends
+    at a try without any of its jobs running, leaves the worker nothing to wake for, neither a try
+    nor a notice to post again: whether the bot's change is found no longer due, or a member's is
+    refused. Once the log channel takes posts again, no stop notice of either is posted."""
+    api = _api()
+    mode = {"verdict": "go"}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        if mode["verdict"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    queue = _queue(env, _type(steps=[_act("a", ran)], check=_check))
+    env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+
+    async def _stopped_at_check(stop: str, ends: str, **ask) -> None:
+        mode["verdict"] = "go"
+        await _ask(env, **ask)
+        mode["verdict"] = stop
+        await run_queue(env.bot)
+        job = await stopped_job(env.db_path)
+        assert job is not None and job["notice_message_id"] is None, "no stop without a notice"
+        mode["verdict"] = ends
+        env.clock.advance(minutes=1)
+        await run_queue(env.bot)
+        env.clock.advance(hours=2)
+
+    await _stopped_at_check("refuse", "not_due", origin=api.ChangeOrigin.BOT)
+
+    assert await queue._seconds_to_next_try() is None
+
+    await _stopped_at_check("raise", "refuse", payload={"n": 2})
+
+    assert await queue._seconds_to_next_try() is None
+    env.bot.log_channel.fails = None
+    await run_queue(env.bot)
+
+    assert not [m for m in env.bot.log_channel.posted if "The queue is stopped at job #" in m.content]
+    assert await _states(env) == ["DROPPED", "REFUSED"]
+    assert ran == []
