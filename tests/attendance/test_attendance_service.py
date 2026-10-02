@@ -75,7 +75,6 @@ class TestDisableDeletesDivisionConfigs:
         assert div_cfg is None
 
 
-@pytest.mark.xfail(strict=True, reason="#439: attendance cannot switch off on a handed connection")
 async def test_attendance_switches_off_on_a_handed_connection(db_path):
     """Its flag down and its per-division channels cleared, its settings row kept, all on the
     caller's connection and saved only when the caller commits; it says whether attendance was
