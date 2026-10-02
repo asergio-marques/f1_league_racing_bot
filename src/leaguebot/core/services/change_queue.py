@@ -225,8 +225,8 @@ class ChangeQueue:
         self._bot = bot
         self._router = output_router
         self._clock = clock or (lambda: datetime.now(timezone.utc))
-        self._types: dict[str, ChangeType] = {}
-        self._held: dict[int, discord.Interaction] = {}
+        self._types = dict[str, ChangeType]()
+        self._held = dict[int, discord.Interaction]()
         self._signal = asyncio.Event()
         self._working = asyncio.Lock()
         self._asking = asyncio.Lock()
