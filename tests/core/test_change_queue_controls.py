@@ -116,7 +116,6 @@ def _buttons(message: Any) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_retry_by_a_league_manager_tries_the_job_at_once(env):
     """Before the job's next try is due, a league manager's Retry tries it at once: it goes
     through, the request and the change behind it run, the manager is told privately, the log
@@ -140,7 +139,6 @@ async def test_retry_by_a_league_manager_tries_the_job_at_once(env):
     assert _buttons(notice) == set()
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_retry_by_a_league_admin_tries_the_job_at_once(env):
     """A league admin holds the manager's tier within theirs: their Retry tries the job at once."""
     holder = {"fail": RuntimeError("boom")}
@@ -156,7 +154,6 @@ async def test_retry_by_a_league_admin_tries_the_job_at_once(env):
     assert any(ADMIN_NAMED in line and f"job #{job['id']}" in line for line in await _lines(env))
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_retry_after_the_hour_is_the_only_way_on_and_a_failed_retry_leaves_it_stopped(env):
     """Once the 60-minute try has failed, no try comes but a Retry. A Retry that fails leaves the
     queue stopped with no try scheduled; one that goes through sets the queue going."""
@@ -181,7 +178,6 @@ async def test_retry_after_the_hour_is_the_only_way_on_and_a_failed_retry_leaves
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_a_retry_whose_try_fails_is_recorded_naming_the_presser(env):
     """A Retry whose try fails writes one line naming the presser, the job and the kind of fault,
     and leaves the schedule as it stood."""
@@ -332,7 +328,6 @@ async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=CONTROLS)
 async def test_the_stop_notice_s_buttons_work_after_a_restart(env):
     """At start-up the queue registers the notice's view, persistent, with its fixed ids: Retry
     pressed on a notice posted before the restart tries the job."""

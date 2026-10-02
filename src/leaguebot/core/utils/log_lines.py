@@ -141,6 +141,21 @@ def went_through_line(job_id: int, job: str) -> str:
     return f"✅ Job #{job_id} ({job}) went through. The queue runs on."
 
 
+def retried_line(named: str, job_id: int, job: str, request: str) -> str:
+    """The log channel's line for *named* pressing Retry on job *job_id*, *job* being what it
+    does and *request* the change it belongs to."""
+    return f"{named} | Retry job #{job_id} | Retried\n  {job} for {request}"
+
+
+def retry_failed_line(named: str, job_id: int, job: str, fault: str) -> str:
+    """The log channel's line for the try *named* asked of job *job_id* failing, *fault* being the
+    kind of fault: the queue stays stopped, on the schedule it was on."""
+    return (
+        f"❌ Retry of job #{job_id} ({job}) by {named} failed ({fault}). The queue stays "
+        f"stopped."
+    )
+
+
 async def record_refusal(
     bot: Any,
     member: int | discord.abc.User | None,

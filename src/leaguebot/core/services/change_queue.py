@@ -77,16 +77,19 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.audit_service import record_change_on
 from leaguebot.core.services.queue_stop_view import QueueStopView
+from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.log_lines import (
     hour_line,
     refusal_line,
     refuse,
     reply_reason,
     restart_line,
+    retried_line,
+    retry_failed_line,
     stop_line,
     went_through_line,
 )
-from leaguebot.core.utils.member_names import member_named
+from leaguebot.core.utils.member_names import interaction_member, member_named
 from leaguebot.core.utils.messages import chunk_message
 
 if TYPE_CHECKING:
@@ -250,6 +253,9 @@ class ChangeQueue:
         # When each stopped job's notice was last attempted, for the job whose notice has not
         # landed: the schedule of its re-posting. Lost at a restart, which posts it at once.
         self._notice_tried: dict[int, datetime] = {}
+        # A job a Retry has made due, with who pressed it and when its next try stood before: a
+        # Retry that fails writes its own line and leaves the schedule as it was.
+        self._retrying: dict[int, tuple[str, str | None]] = {}
 
     # ------------------------------------------------------------------
     # Registering and asking
@@ -507,9 +513,12 @@ class ChangeQueue:
         )
 
     def forget_held(self) -> None:
-        """Drop every interaction held to update, for a pack or a factory reset, which delete the
-        changes they were held for."""
+        """Drop every interaction held to update, and what is remembered of stopped jobs (when
+        each notice was tried, and each Retry made), for a pack or a factory reset, which delete
+        the changes they belong to."""
         self._held.clear()
+        self._notice_tried.clear()
+        self._retrying.clear()
 
     async def stop(self) -> None:
         """Stop the worker, leaving any change where it stood for the next start."""
@@ -933,7 +942,9 @@ class ChangeQueue:
         schedule, `RETRY_AFTER`, counted from that first failure; a try that fails moves it to
         the next mark and writes no line, but for the last, which writes one saying the bot has
         stopped trying on its own, and leaves no try.
-        A partial result a failure carries is kept on the job. *row* is the job, or for a check
+        A Retry's try that fails (`retry`) writes one line naming the presser and the kind of
+        fault instead, and leaves the schedule as it stood. A partial result a failure carries
+        is kept on the job. *row* is the job, or for a check
         that fails before the change starts, the change's first job not done; *job* names it,
         the change's own words where none is given.
 
@@ -956,6 +967,12 @@ class ChangeQueue:
         partial = error.result if isinstance(error, StepFailedOnDiscord) else None
         named = job if job is not None else what
         line = hour_line(row["id"], named) if not first and next_try is None else None
+        retried = self._retrying.pop(row["id"], None)
+        if retried is not None:
+            # A Retry's try that fails is no mark of the schedule: it leaves it as it was.
+            presser, before = retried
+            next_try = None if before is None else datetime.fromisoformat(before)
+            line = retry_failed_line(presser, row["id"], named, kind)
         ids: list[int] = []
         async with get_connection(self._db_path) as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -1042,8 +1059,83 @@ class ChangeQueue:
     async def retry(
         self, notice_message_id: int | None, interaction: discord.Interaction
     ) -> None:
-        """Retry on the stop notice *notice_message_id*, pressed through *interaction*."""
-        raise NotImplementedError("Retry is built in the next commit")
+        """Retry on the stop notice *notice_message_id*, pressed through *interaction*.
+
+        The queue is stopped, so a Retry works directly on the queue's own records and is not
+        itself queued. It is a league manager's or a league admin's, at any time, and is refused,
+        privately and with a line in the log channel, to anyone else and where the notice's job
+        no longer stops the queue (it cleared, was discarded, or went with a pack). Otherwise the
+        job is made due now, the worker is woken, the presser is told and the log names them.
+        The try is the worker's, in the order of the queue: where it fails, `_stop` records it.
+        """
+        found = await self._stopped_at(notice_message_id)
+        what = "Retry of a stopped job" if found is None else f"Retry of job #{found[2]['id']}"
+        config = await self._bot.config_service.get_server_config()
+        member = interaction.user
+        if not isinstance(member, discord.Member) or not is_league_manager(config, member):
+            await refuse(
+                interaction,
+                "⛔ Only a league manager or a league admin may retry a stopped job.",
+                what=what,
+            )
+            return
+        if found is None:
+            await refuse(
+                interaction,
+                "⛔ That job no longer stops the queue, so there is nothing to retry.",
+                what=what,
+            )
+            return
+        change, steps, job = found
+        presser = interaction_member(interaction)
+        name = await self._name_job(change, job, self._step_context(change, steps, job))
+        before = self._retrying[job["id"]][1] if job["id"] in self._retrying else job["next_try_at"]
+        async with get_connection(self._db_path) as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await db.execute(
+                    "UPDATE queued_change_steps SET next_try_at = ? WHERE id = ? "
+                    "AND done_at IS NULL",
+                    (self._clock().isoformat(), job["id"]),
+                )
+                line_id = None
+                if cursor.rowcount == 1:
+                    line_id = await self._router.queue_log_on(
+                        db, retried_line(presser, job["id"], name, change["what"])
+                    )
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        self._retrying[job["id"]] = (presser, before)
+        await self._tell(interaction, f"🔁 Job #{job['id']} ({name}) is being tried again now.")
+        await self._router.deliver_queued([] if line_id is None else [line_id],
+                                          interaction=interaction)
+        self._signal.set()
+
+    async def _stopped_at(
+        self, notice_message_id: int | None
+    ) -> tuple[aiosqlite.Row, list[aiosqlite.Row], aiosqlite.Row] | None:
+        """The job the stop notice *notice_message_id* is of, with its change and the change's
+        steps, where it still stops the queue; None where it does not."""
+        if notice_message_id is None:
+            return None
+        for found in await self._stopped_jobs():
+            if found[2]["notice_message_id"] == notice_message_id:
+                return found
+        return None
+
+    @staticmethod
+    async def _tell(interaction: discord.Interaction, text: str) -> None:
+        """Answer the member who pressed, seen by them alone. Never raises: the press has done
+        what it did."""
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(text, ephemeral=True)
+            else:
+                await interaction.response.send_message(text, ephemeral=True)
+        except Exception:  # noqa: BLE001 — the press has been carried out and recorded
+            log.warning("could not tell the member what their press did", exc_info=True)
 
     async def discard(
         self, notice_message_id: int | None, interaction: discord.Interaction
@@ -1077,6 +1169,7 @@ class ChangeQueue:
                 change["id"], row["name"],
             )
             return None
+        self._retrying.pop(row["id"], None)
         for audit in result.audits:
             await self._audit(db, change, audit)
         ids: list[int] = []

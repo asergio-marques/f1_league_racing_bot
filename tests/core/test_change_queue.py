@@ -1505,7 +1505,6 @@ async def test_a_stopped_job_that_goes_through_says_so_and_the_queue_runs_on(env
     assert await _states(env) == ["DONE", "DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=STOPS)
 async def test_a_queue_stopped_at_a_restart_stays_stopped_until_retry_or_discard(env):
     """A restart within the hour makes no try of the stopped job, even when its try falls due: one
     ❌ line says the bot no longer tries it on its own, and a Retry sets the queue going."""
