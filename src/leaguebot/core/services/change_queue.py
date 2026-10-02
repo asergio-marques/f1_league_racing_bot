@@ -20,7 +20,9 @@ on it, never committing. The other kinds do Discord or legacy work with no conne
 marked in a save after it. Nothing is awaited inside a save but the connection.
 
 **Jobs are carried out strictly in order.** Each step of a change is a job with a number of its own,
-its `id` in `queued_change_steps`, never renumbered and shown wherever the job is named. A member's
+its `id` in `queued_change_steps`, never renumbered or reused (a restored state and a factory reset
+carry the numbering on: `highest_job_number`, `carry_job_numbering`) and shown wherever the job is
+named. A member's
 request is acknowledged once and is made of jobs that run one after another: `_choose` takes the
 RUNNING change, or else the QUEUED change with the lowest id, and nothing overtakes it.
 
@@ -1544,6 +1546,59 @@ def empty_queue_in(path: str | os.PathLike[str]) -> None:
             db.execute("DELETE FROM queued_change_steps")
         if "queued_changes" in tables:
             db.execute("DELETE FROM queued_changes")
+        db.commit()
+    finally:
+        db.close()
+
+
+def highest_job_number(path: str | os.PathLike[str]) -> int:
+    """The highest job number the league database at *path* has ever issued, or 0.
+
+    Read from the database's own count of the numbers it has issued, which a deleted job does not
+    lower, and from the jobs it holds. Synchronous, for a restore and a factory reset, which run
+    where no connection is open. Where the table is not there, 0.
+    """
+    db = sqlite3.connect(str(path))
+    try:
+        counted = 0
+        try:
+            row = db.execute(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'queued_change_steps'"
+            ).fetchone()
+            counted = int(row[0]) if row else 0
+            held = db.execute("SELECT COALESCE(MAX(id), 0) FROM queued_change_steps").fetchone()
+            return max(counted, int(held[0]))
+        except sqlite3.OperationalError:
+            return counted
+    finally:
+        db.close()
+
+
+def carry_job_numbering(path: str | os.PathLike[str], highest: int) -> None:
+    """Make the next job the league database at *path* numbers come after *highest*.
+
+    A database put in place of another (a restored state, a freshly migrated one at a factory
+    reset) would otherwise begin the numbering from its own count, and a number the log channel
+    already names would name a second job. Never lowers a count the database already has.
+    Synchronous, as `highest_job_number`.
+    """
+    if highest <= 0:
+        return
+    db = sqlite3.connect(str(path))
+    try:
+        row = db.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'queued_change_steps'"
+        ).fetchone()
+        if row is None:
+            db.execute(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES ('queued_change_steps', ?)",
+                (highest,),
+            )
+        elif int(row[0]) < highest:
+            db.execute(
+                "UPDATE sqlite_sequence SET seq = ? WHERE name = 'queued_change_steps'",
+                (highest,),
+            )
         db.commit()
     finally:
         db.close()

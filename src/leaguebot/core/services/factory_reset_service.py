@@ -30,6 +30,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services import backup_service
+from leaguebot.core.services.change_queue import carry_job_numbering, highest_job_number
 from leaguebot.core.services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -172,6 +173,9 @@ async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) ->
     nothing else, the counters reset, with no list of tables here to fall out of step with
     the schema. The backup API writes through SQLite's own locking, so it is safe while the
     bot's short-lived connections come and go.
+
+    **One counter is carried over: the job number.** A job's number is never reused, so the fresh
+    database is told the highest the live one has issued before it replaces it.
     """
     scheduler_service.cancel_all()
     if bot is not None:
@@ -182,6 +186,7 @@ async def wipe(db_path: str, scheduler_service, bot: LeagueBot | None = None) ->
     _remove_database(fresh)
     try:
         await run_migrations(str(fresh))
+        carry_job_numbering(fresh, highest_job_number(live) if live.is_file() else 0)
         origin = copy = None
         try:
             # Closed explicitly, as `backup_service.snapshot_database` explains.
