@@ -46,8 +46,9 @@ CLEARED = {
     ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"),
     ("core/cogs/season_cog.py", "_pending"),
     ("signup/services/wizard_service.py", "_correction_tasks"),
-    # The interactions the change queue holds to update each change's reply: a pack or a
-    # factory reset deletes the changes they belong to (#439).
+    # The interactions the change queue holds to update each change's reply: a factory reset
+    # deletes the changes they belong to (#439), and a pack finds none, being refused while the
+    # queue holds a job.
     ("core/services/change_queue.py", "_held"),
     # What the queue remembers of its stopped jobs: when each stop notice was last tried, and
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
@@ -136,8 +137,8 @@ async def test_the_clear_empties_every_store():
 
 
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
-    """A pack or a factory reset deletes the changes the queue holds replies for (#439), so the
-    clear makes the queue forget them: a change finishing afterwards updates no member's reply.
+    """A factory reset deletes the changes the queue holds replies for (#439), so the clear makes
+    the queue forget them: a change finishing afterwards updates no member's reply.
 
     Without `forget_held` in the clear the reply would still be updated, as
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.

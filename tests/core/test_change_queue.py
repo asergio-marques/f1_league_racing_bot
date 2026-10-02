@@ -891,8 +891,8 @@ async def test_the_worker_starts_once_though_the_bot_is_ready_twice(env):
 
 
 async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplog):
-    """As a pack or a factory reset would remove it while the step runs: the mark updates no
-    row, so the step's audits and lines are rolled back with it, and the host's log says so."""
+    """As a factory reset would remove it while the step runs: the mark updates no row, so the
+    step's audits and lines are rolled back with it, and the host's log says so."""
     caplog.set_level(logging.INFO)
     api = _api()
 

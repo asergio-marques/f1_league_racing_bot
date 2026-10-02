@@ -262,10 +262,10 @@ async def test_a_press_by_a_member_without_a_tier_is_refused_and_logged(env):
 
 async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
     """A notice whose job no longer stops the queue (it went through, a league admin discarded
-    it, or its job and change were deleted from the database, as a pack deletes an unfinished
-    change) is refused, privately and with a ⛔ line, and nothing is tried. The rows are deleted by
-    hand rather than by a pack, which would also free the server's claim; `test_pack_service.py`
-    pins what a pack deletes."""
+    it, or its job and change are gone from the database, as a factory reset erases them) is
+    refused, privately and with a ⛔ line, and nothing is tried. The rows are deleted by hand,
+    leaving the server's configuration in place: a pack is refused while the queue holds a job,
+    and a factory reset would erase the configuration too."""
     holder = {"fail": RuntimeError("boom")}
     ran: list[str] = []
     job = await _stop(env, holder, ran)
@@ -302,7 +302,7 @@ async def test_a_press_on_a_notice_whose_job_is_gone_is_refused_and_logged(env):
     await _ask(env)
     await run_queue(env.bot)
     packed = await stopped_job(env.db_path)
-    # Every change and job is deleted, finished ones too: a pack would delete the stopped one.
+    # Every change and job is deleted, finished ones too, as a factory reset would erase them.
     async with get_connection(env.db_path) as db:
         await db.execute("DELETE FROM queued_change_steps")
         await db.execute("DELETE FROM queued_changes")
