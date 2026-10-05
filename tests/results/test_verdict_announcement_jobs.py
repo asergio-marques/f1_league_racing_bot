@@ -236,7 +236,6 @@ async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_report_verdict_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
@@ -245,7 +244,6 @@ async def test_a_report_verdict_is_drawn_under_the_driver_s_server_name(tmp_path
     assert [item["driver_name"] for item in drawn] == ["Lewis"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeal_verdict_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
     league = await _appeals_league(tmp_path)
     await _approve_appeals(league, [penalty(LEWIS, seconds=-5)])
@@ -254,7 +252,6 @@ async def test_an_appeal_verdict_is_drawn_under_the_driver_s_server_name(tmp_pat
     assert [item["driver_name"] for item in drawn] == ["Lewis"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_driver_the_server_no_longer_knows_is_drawn_under_their_signup_name(
     tmp_path, drawn,
 ):

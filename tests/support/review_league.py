@@ -6,7 +6,8 @@ migrations, its round 3 at Silverstone with Lewis (101) and Max (102) in its Fea
 double with a real change queue and the real change types (`register_change_types`), "now" pinned.
 
 The Discord side is a fake channel per channel id (`channel`), recording every send, delete and
-channel deletion in one list of events, in order; image generation is off. Attendance is reached
+channel deletion in one list of events, in order, each carrying the league's server as its `guild`;
+image generation is off. Attendance is reached
 through the hook the builder hands the change types, `bot.attendance_after_review`, here an
 `AttendanceDouble` that checks the switch as the real hook does, records each call, and writes its
 record on the save it is handed into a table of the test's own (`attendance_recorded`).
@@ -290,6 +291,8 @@ class ReviewLeague:
         guild.get_member = MagicMock(side_effect=_member)
         guild.fetch_member = AsyncMock(side_effect=lambda uid: _member(uid))
         self.guild = guild
+        for each in self.channels.values():
+            each.guild = guild  # as a real text channel carries its server
         self.bot.get_channel = MagicMock(side_effect=_get)
         self.bot.fetch_channel = AsyncMock(side_effect=_fetch)
         self.bot.get_guild = MagicMock(return_value=guild)
