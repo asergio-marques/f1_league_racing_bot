@@ -1435,6 +1435,8 @@ async def _ask_reports_approved(
         {
             "round_id": state.round_id,
             "division_id": state.division_id,
+            "round_number": state.round_number,
+            "division_name": state.division_name,
             "staged": [penalty.to_payload() for penalty in state.staged],
             "pardons": [pardon.to_payload() for pardon in state.staged_pardons],
             "prompt_message_id": state.prompt_message_id,

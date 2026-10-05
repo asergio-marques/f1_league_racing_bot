@@ -141,12 +141,17 @@ async def _put_back(
 
     if stage == "final":
         await bot.change_queue.ask(
-            review_open_change.CLOSE_STALE_KIND, {"round_id": round_id},
+            review_open_change.CLOSE_STALE_KIND,
+            {
+                "round_id": round_id, "round_number": int(row["round_number"]),
+                "division_name": row["division_name"],
+            },
             origin=_BOT, what=f"closing the stale review of {round_label}",
         )
     elif stage == "appeals":
         payload: dict[str, Any] = {
             "round_id": round_id, "division_id": int(row["division_id"]),
+            "round_number": int(row["round_number"]), "division_name": row["division_name"],
         }
         if row["appeals_prompt_message_id"] is not None:
             payload["old_prompt_id"] = int(row["appeals_prompt_message_id"])
@@ -163,6 +168,7 @@ async def _put_back(
         payload = {
             "round_id": round_id, "label": "Provisional Results",
             "publish": not row["results_posted"],
+            "round_number": int(row["round_number"]), "division_name": row["division_name"],
         }
         if row["prompt_message_id"] is not None:
             payload["old_prompt_id"] = int(row["prompt_message_id"])

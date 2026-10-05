@@ -266,6 +266,8 @@ def report_approval_change(
                     "label": "Provisional Results",
                     "publish": not (row is not None and row["results_posted"]),
                     "old_prompt_id": ctx.payload.get("prompt_message_id"),
+                    "round_number": ctx.payload.get("round_number"),
+                    "division_name": ctx.payload.get("division_name"),
                 },
                 what="the penalty review, opened again after its approval was discarded",
             )
@@ -289,6 +291,8 @@ def report_approval_change(
                     "round_id": int(ctx.payload["round_id"]),
                     "division_id": int(ctx.payload["division_id"]),
                     "old_prompt_id": None,
+                    "round_number": ctx.payload.get("round_number"),
+                    "division_name": ctx.payload.get("division_name"),
                 },
                 what="the appeals review prompt, posted again after its post was discarded",
             ),)
@@ -334,12 +338,20 @@ def report_approval_change(
         ),
         _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
+    def doing(payload: dict[str, Any]) -> str:
+        if payload.get("round_number") is None:
+            return "Approving the round's reports"
+        return (
+            f"Approving round {payload['round_number']}'s reports "
+            f"({payload.get('division_name', 'its division')})"
+        )
+
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep(NAMES), PlannedStep(_APPLY), PlannedStep(_CLOSE)),
         steps=steps,
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",
-        doing=lambda _payload: "Approving the round's reports",
+        doing=doing,
         outcome=outcome,
     )

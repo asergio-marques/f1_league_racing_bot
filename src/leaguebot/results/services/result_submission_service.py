@@ -3472,9 +3472,17 @@ async def ask_review_open(
     put back when the bot next starts. The one place a round's review is asked for from a
     submission, for the first one and for a resubmission's return (#439).
     """
+    async with get_connection(bot.db_path) as db:
+        row = await (await db.execute(
+            "SELECT d.name FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "WHERE r.id = ?", (round_id,),
+        )).fetchone()
     change_id = await bot.change_queue.ask(
         "results.review.open",
-        {"round_id": round_id, **payload},
+        {
+            "round_id": round_id, "round_number": round_number,
+            "division_name": None if row is None else row["name"], **payload,
+        },
         actor=actor,
         origin=origin,
         what=f"the penalty review of round {round_number}",

@@ -124,6 +124,18 @@ _CLOSE = "close"
 _OPENABLE = ROUND_CANCELLABLE | {RoundStatus.AWAITING_REPORT_VERDICTS.value}
 
 
+def _naming(what: str, payload: dict[str, Any]) -> str:
+    """*what*, naming the round and division where the payload carries them, as the approvals' do.
+
+    `doing` reads the payload alone, so whoever asks for the change puts the round's number and
+    the division's name in it where it has them, and a request without them reads generically.
+    """
+    if payload.get("round_number") is None:
+        return what
+    division = payload.get("division_name") or "its division"
+    return f"{what} of round {payload['round_number']} ({division})"
+
+
 async def _guild_or_none(ctx: CheckContext) -> discord.Guild | None:
     """The league's server, or None where it is not in the cache. A member's request is then
     refused and the bot's has nothing it can do: it is dropped, to be asked for again at the next
@@ -376,6 +388,8 @@ def review_open_change() -> ChangeType:
             "label": payload.get("label") or "Provisional Results",
             "publish": not (stored is not None and stored["results_posted"]),
             "old_prompt_id": payload.get("old_prompt_id"),
+            "round_number": payload.get("round_number"),
+            "division_name": payload.get("division_name"),
         }
         if open_lost:
             for key in ("returning", "cancel_message_id"):
@@ -444,7 +458,7 @@ def review_open_change() -> ChangeType:
         steps=steps,
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",
-        doing=lambda _payload: "Opening the penalty review",
+        doing=lambda payload: _naming("Opening the penalty review", payload),
         outcome=outcome,
     )
 
@@ -520,6 +534,8 @@ def appeals_open_change() -> ChangeType:
             "round_id": int(ctx.payload["round_id"]),
             "division_id": int(ctx.payload["division_id"]),
             "old_prompt_id": None,
+            "round_number": ctx.payload.get("round_number"),
+            "division_name": ctx.payload.get("division_name"),
         }
         return StepResult(
             result={"closed": True, "reopened": True},
@@ -556,7 +572,7 @@ def appeals_open_change() -> ChangeType:
         steps=steps,
         check=check,
         key=lambda payload: f"{APPEALS_OPEN_KIND}:{payload['round_id']}",
-        doing=lambda _payload: "Posting the appeals review prompt again",
+        doing=lambda payload: _naming("Posting the appeals review prompt again", payload),
         outcome=outcome,
     )
 
@@ -643,6 +659,6 @@ def close_stale_change() -> ChangeType:
         steps=steps,
         check=check,
         key=lambda payload: f"{CLOSE_STALE_KIND}:{payload['round_id']}",
-        doing=lambda _payload: "Closing a stale penalty review",
+        doing=lambda payload: _naming("Closing a stale penalty review", payload),
         outcome=outcome,
     )

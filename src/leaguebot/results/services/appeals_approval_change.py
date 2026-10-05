@@ -261,6 +261,8 @@ def appeals_approval_change(
                     "round_id": int(ctx.payload["round_id"]),
                     "division_id": int(ctx.payload["division_id"]),
                     "old_prompt_id": ctx.payload.get("appeals_prompt_message_id"),
+                    "round_number": ctx.payload.get("round_number"),
+                    "division_name": ctx.payload.get("division_name"),
                 },
                 what="the appeals review, opened again after its approval was discarded",
             )
