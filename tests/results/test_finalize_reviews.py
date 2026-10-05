@@ -240,7 +240,7 @@ async def _set(db_path: str, sql: str, *args: Any) -> None:
 def _refused_on_the_queue(league: ReviewLeague, interaction: Any, says: str) -> None:
     """Refused as it was asked: Alex told why, the refusal naming Alex in the log channel."""
     assert says in acknowledgement(interaction)
-    assert f"refused for Alex (<@{STEWARD}>)" in league.log()
+    assert f"refused for Alex (`<@{STEWARD}>`)" in league.log()
 
 
 async def _nothing_approved(league: ReviewLeague) -> None:
@@ -280,7 +280,6 @@ async def test_a_settled_round_is_not_reopened_by_a_stale_press(tmp_path, status
     assert await penalty_records(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reports_are_not_approved_while_the_results_are_being_resubmitted(tmp_path):
     """**#402, as reported.** Resubmit took the review prompt down and left the approval message,
     whose Approve finalised the round on the results the manager had just said were wrong:
@@ -296,7 +295,6 @@ async def test_the_reports_are_not_approved_while_the_results_are_being_resubmit
     assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     """**#402's second half.** The review prompt stayed up through the appeals stage, and its
     Approve ran the report approval again: the results reposted, the attendance pipeline run a
@@ -314,7 +312,6 @@ async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing(tmp_path):
     """Cancelling a resubmission posts a fresh review and left the old approval message standing
     beside it, still bound to the review from before. The round is back where it was, so only the
@@ -1223,7 +1220,6 @@ async def _amend_round_two(db_path, *, division_id=DIVISION_ID, ended=False):
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_path):
     """Round 2 of Pro is being amended. Alex presses Approve on round 3's review with Lewis's
     penalty staged: refused as it is asked, saying where and when to approve again, the refusal
@@ -1908,7 +1904,7 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
 # display name and mention, and an approval writes one line of its own, not two.
 # ---------------------------------------------------------------------------
 
-_ALEX = f"Alex (<@{STEWARD}>)"
+_ALEX = f"Alex (`<@{STEWARD}>`)"
 
 
 def _line_of(league: ReviewLeague, heading: str) -> str:
@@ -1921,8 +1917,7 @@ def _line_of(league: ReviewLeague, heading: str) -> str:
 @pytest.mark.parametrize(
     "stage, token",
     [
-        pytest.param("reports", "PENALTY_REVIEW_APPROVED", id="reports",
-                     marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+        pytest.param("reports", "PENALTY_REVIEW_APPROVED", id="reports"),
         pytest.param("appeals", "APPEALS_REVIEW_APPROVED", id="appeals",
                      marks=pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)),
     ],
@@ -1940,8 +1935,14 @@ async def test_the_approval_names_the_member_who_approved(tmp_path, stage, token
     assert _line_of(league, token).startswith(f"{_ALEX} | {token} | Success")
 
 
-@pytest.mark.parametrize("discarded", ["post_session_results", "announce_verdict", "apply_sanction"])
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+@pytest.mark.parametrize(
+    "discarded",
+    [
+        "post_session_results",
+        pytest.param("announce_verdict", marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+        "apply_sanction",
+    ],
+)
 async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_path, discarded):
     """Alex's approval of round 3 (Pro)'s reports, one penalty staged and attendance on with Max
     owed an autoreserve, stops at the results post, Lewis's verdict or Max's sanction, and a
