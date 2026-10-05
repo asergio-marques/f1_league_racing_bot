@@ -608,10 +608,6 @@ def test_format_time_ms(ms, expected_str):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the last paste does not yet ask the change queue to open the penalty review",
-)
 async def test_submission_channel_not_closed_after_final_session(monkeypatch):
     """Structural check: run_result_submission_job ends by asking the change queue for
     `results.review.open` (not close_submission_channel) for normal rounds (#439, slice 2).

@@ -337,6 +337,16 @@ class ChangeQueue:
     # Registering and asking
     # ------------------------------------------------------------------
 
+    async def job_numbers(self, change_id: int) -> tuple[int | None, int | None]:
+        """The number of *change_id*'s first job not done, and of the job the queue is stopped
+        at (None where it is not stopped), for a request made with no interaction to
+        acknowledge, which says in a channel what the acknowledgement would."""
+        async with get_connection(self._db_path) as db:
+            steps = await self._read_steps(db, change_id)
+        first = next((row["id"] for row in steps if row["done_at"] is None), None)
+        stopped = await self._stopped_jobs()
+        return first, (stopped[0][2]["id"] if stopped else None)
+
     def register(self, change_type: ChangeType) -> None:
         """Make *change_type* known. A `SAVE` step carrying a `record` is refused: it writes in
         its own run."""
@@ -395,6 +405,12 @@ class ChangeQueue:
                 return None
             if verdict.kind is VerdictKind.NOT_DUE:
                 log.info("%s is no longer due, so it was not asked for: %s", what, verdict.reason)
+                return None
+            if origin is ChangeOrigin.MEMBER:
+                # A member's request refused with no interaction to tell (a paste, say) is not
+                # saved either: nobody asked for what the check refuses.
+                log.info("%s was refused, so it was not asked for: %s", what,
+                         verdict.reply or verdict.reason)
                 return None
 
         # The worker passes over this lock to choose its next change, so it cannot pick the

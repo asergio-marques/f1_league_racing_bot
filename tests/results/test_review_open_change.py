@@ -275,7 +275,6 @@ async def _recover(league: ReviewLeague) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_channel_is_marked_as_in_review(tmp_path):
     league = await _league(tmp_path)
 
@@ -284,7 +283,6 @@ async def test_the_channel_is_marked_as_in_review(tmp_path):
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_review_flag_is_set_before_any_posting(tmp_path):
     """A stop during posting has to look like a penalty-review orphan on the next restart, not a
     mid-submission one — the mid-submission recovery path deletes the session results and skips
@@ -299,7 +297,6 @@ async def test_the_review_flag_is_set_before_any_posting(tmp_path):
     assert league.sent_to(STANDINGS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_now_awaits_report_verdicts(tmp_path):
     league = await _league(tmp_path, name="open_status")
 
@@ -308,7 +305,6 @@ async def test_the_round_now_awaits_report_verdicts(tmp_path):
     assert await _round_status(league.db_path) == RoundStatus.AWAITING_REPORT_VERDICTS.value
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize("status", sorted(ROUND_CANCELLABLE))
 async def test_a_cancellable_round_moves_into_review(tmp_path, status):
     """Read from the model's own frozenset: a state added to what may be cancelled and not
@@ -320,7 +316,6 @@ async def test_a_cancellable_round_moves_into_review(tmp_path, status):
     assert await _round_status(league.db_path) == RoundStatus.AWAITING_REPORT_VERDICTS.value
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "status",
     [RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value],
@@ -337,7 +332,6 @@ async def test_a_round_past_review_is_not_dragged_backwards(tmp_path, status):
     assert _prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_in_review_can_no_longer_be_cancelled(tmp_path):
     """The drivers have reports and appeals to lodge, and calling the round off would take
     that from them. The status is what enforces it."""
@@ -353,7 +347,6 @@ async def test_a_round_in_review_can_no_longer_be_cancelled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_interim_results_and_standings_are_posted(tmp_path):
     league = await _league(tmp_path, name="open_posts")
 
@@ -364,7 +357,6 @@ async def test_the_interim_results_and_standings_are_posted(tmp_path):
     assert (await _channel_row(league.db_path))["results_posted"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_standings_are_ordered_by_the_names_they_are_posted_under(tmp_path):
     """The stored classification and the one the league is shown cannot be allowed to
     disagree, so the display names the `names` job resolves order the snapshot as well as label
@@ -384,7 +376,6 @@ async def test_the_standings_are_ordered_by_the_names_they_are_posted_under(tmp_
         assert [row[0] for row in await cursor.fetchall()] == [LEWIS, MAX]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmission_says_so_on_both_posts(tmp_path):
     """A division seeing a second provisional table needs to know it replaces the first
     rather than adds to it."""
@@ -398,7 +389,6 @@ async def test_a_resubmission_says_so_on_both_posts(tmp_path):
         assert all("Provisional Results (amended)" in content for content in posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_first_submission_is_labelled_plainly(tmp_path):
     league = await _league(tmp_path, name="open_plain")
 
@@ -410,7 +400,6 @@ async def test_a_first_submission_is_labelled_plainly(tmp_path):
     assert not any("(amended)" in content for content in posted)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_division_with_no_results_channel_posts_no_results(tmp_path):
     """Configuring one is optional, and the review has to open either way: a channel the
     division was never given plans no job."""
@@ -423,7 +412,6 @@ async def test_a_division_with_no_results_channel_posts_no_results(tmp_path):
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_division_with_no_standings_channel_posts_no_standings(tmp_path):
     league = await _league(tmp_path, name="open_nostand", standings_channel=None)
 
@@ -434,7 +422,6 @@ async def test_a_division_with_no_standings_channel_posts_no_standings(tmp_path)
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_deleted_results_channel_stops_the_queue_at_its_post(tmp_path):
     """The id is configured but the channel has gone. The post fails and stops the queue, the
     prompt waiting behind it, until the manager sets the channel and presses Retry."""
@@ -447,7 +434,6 @@ async def test_a_deleted_results_channel_stops_the_queue_at_its_post(tmp_path):
     assert _prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_division_with_no_configuration_still_enters_review(tmp_path):
     """Nothing is configured, so no post is planned — the review is the part that matters and
     it must not depend on the channels being set up."""
@@ -459,7 +445,6 @@ async def test_a_division_with_no_configuration_still_enters_review(tmp_path):
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_failure_to_post_stops_the_queue_before_the_review_opens(tmp_path):
     """The interim results are not swallowed any more: Discord's refusal stops the queue at the
     post, and the prompt, which waits for them, is not yet posted."""
@@ -472,7 +457,6 @@ async def test_a_failure_to_post_stops_the_queue_before_the_review_opens(tmp_pat
     assert _prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_failure_to_post_leaves_the_results_unposted(tmp_path):
     """`results_posted` is set only once the posts land, which is what makes the next restart
     post them rather than assume it was done."""
@@ -489,7 +473,6 @@ async def test_a_failure_to_post_leaves_the_results_unposted(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_skips_the_posting(tmp_path):
     """Asked with `publish = False` only where the results went out already — posting again
     would put a second provisional table in the division's channel after every restart."""
@@ -505,7 +488,6 @@ async def test_recovery_skips_the_posting(tmp_path):
     assert league.sent_to(STANDINGS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_still_opens_the_review(tmp_path):
     """Skipping the posting must not skip the flag, the status or the prompt — the round is
     being recovered *into* review."""
@@ -518,7 +500,6 @@ async def test_recovery_still_opens_the_review(tmp_path):
     assert await _round_status(league.db_path) == RoundStatus.AWAITING_REPORT_VERDICTS.value
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_that_does_not_exist_does_nothing(tmp_path):
     """A request outliving its round is no longer due: the bot's is dropped at its check rather
     than stopping the queue, and nothing is posted."""
@@ -536,7 +517,6 @@ async def test_a_round_that_does_not_exist_does_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_prompt_is_posted_to_the_submission_channel(tmp_path):
     """Where the stewards already are, and where the results were submitted."""
     league = await _league(tmp_path, name="open_prompt")
@@ -548,7 +528,6 @@ async def test_the_prompt_is_posted_to_the_submission_channel(tmp_path):
     assert prompts[0] in league.sent_to(SUBMISSION_CHANNEL)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_prompt_message_id_is_persisted(tmp_path):
     """Recovery deletes the old prompt once a new one stands; without the id it cannot, and the
     round ends up with two live prompts and two sets of staged penalties."""
@@ -559,7 +538,6 @@ async def test_the_prompt_message_id_is_persisted(tmp_path):
     assert (await _channel_row(league.db_path))["prompt_message_id"] == _prompts(league)[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_view_is_registered_for_persistent_routing(tmp_path):
     """Its buttons have to keep working across a restart, which is what `add_view` with the
     message id is for."""
@@ -576,7 +554,6 @@ async def test_the_view_is_registered_for_persistent_routing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_rounds_active_sessions_are_offered(tmp_path):
     """A steward can only penalise a session that is in the review, so one missing here is
     a session nobody can apply a penalty to."""
@@ -593,7 +570,6 @@ async def test_the_rounds_active_sessions_are_offered(tmp_path):
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_superseded_session_is_not_offered(tmp_path):
     """It is not what the round is any more, and penalising it would apply a penalty to
     results that were already replaced."""
@@ -607,7 +583,6 @@ async def test_a_superseded_session_is_not_offered(tmp_path):
     assert _prompt_view(league).state.session_types_present == [SessionType.FEATURE_RACE]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sessions_are_offered_in_racing_order(tmp_path):
     """Sprint before feature, qualifying before its race. A sprint round reviewed
     feature-first reads as a different race, and the steward is working from memory of the
@@ -627,7 +602,6 @@ async def test_the_sessions_are_offered_in_racing_order(tmp_path):
     assert _prompt_view(league).state.session_types_present == list(SessionType)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     """Every prompt the steward sees is titled from these, and the round number is what
     tells two reviews open at once apart."""
@@ -648,7 +622,6 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_interim_results_discord_refuses_stop_the_queue_and_are_retried_not_swallowed(
     tmp_path,
 ):
@@ -666,7 +639,6 @@ async def test_interim_results_discord_refuses_stop_the_queue_and_are_retried_no
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_review_prompt_waits_for_the_interim_results(tmp_path):
     league = await _league(tmp_path, name="open_prompt_waits")
 
@@ -677,7 +649,6 @@ async def test_the_review_prompt_waits_for_the_interim_results(tmp_path):
     assert _at(league, "send", STANDINGS_CHANNEL, league.sent_to(STANDINGS_CHANNEL)[0]) < prompt
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_interim_post_leaves_results_unposted_and_the_prompt_still_comes(
     tmp_path,
 ):
@@ -729,7 +700,6 @@ async def test_a_discarded_open_or_review_prompt_asks_for_the_review_again(tmp_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmission_is_published_as_amended(tmp_path):
     """Once a resubmission has replaced the results, the review opens again with the new
     results posted as "Provisional Results (amended)", the new message standing before the
@@ -797,7 +767,6 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
     assert row["resubmit_prompt_message_id"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmission_that_fails_before_the_swap_returns_to_review_and_says_so(tmp_path):
     """A resubmission that failed before its results were swapped in leaves the earlier results
     standing: the bot asks for the review back, and the log says the resubmission ended."""
@@ -813,7 +782,6 @@ async def test_a_resubmission_that_fails_before_the_swap_returns_to_review_and_s
     assert "resubmission of round 3" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_member_s_open_with_its_channel_gone_is_refused(tmp_path):
     league = await _league(tmp_path, name="open_member_gone")
     del league.channels[SUBMISSION_CHANNEL]
@@ -825,7 +793,6 @@ async def test_a_member_s_open_with_its_channel_gone_is_refused(tmp_path):
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_bot_s_open_with_its_channel_gone_stops_the_queue_with_the_reason(tmp_path):
     """A bot's request is not refused: its check stops the queue, giving its reason in the stop
     line, until the channel is back and someone presses Retry."""

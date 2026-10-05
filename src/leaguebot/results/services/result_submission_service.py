@@ -328,6 +328,25 @@ async def _build_penalty_review_state(
     )
 
 
+async def send_review_prompt(
+    bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"
+) -> discord.Message:
+    """Post the penalty review prompt of *state* in *sub_channel* and register its view, so that
+    its buttons keep working across a restart. Gives the message; *state* learns its id.
+
+    The one place the prompt is sent, which `enter_penalty_state` and the review's
+    `post_review_prompt` job both call (#439).
+    """
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewView, _render_prompt_content
+
+    view = PenaltyReviewView(state=state)
+    content = await _render_prompt_content(state)
+    msg = await sub_channel.send(content, view=view)
+    state.prompt_message_id = msg.id
+    bot.add_view(view, message_id=msg.id)
+    return msg
+
+
 async def enter_penalty_state(
     bot: LeagueBot,
     guild: discord.Guild,
@@ -354,7 +373,7 @@ async def enter_penalty_state(
     ``results_posted = 1`` in the DB (i.e. posting already completed before the crash).
     """
     from leaguebot.results.services import standings_service, results_post_service  # lazy imports
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState, PenaltyReviewView, _render_prompt_content
+    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
     db_path: str = bot.db_path
 
@@ -497,11 +516,7 @@ async def enter_penalty_state(
         division_name=division_name,
     )
 
-    view = PenaltyReviewView(state=state)
-    content = await _render_prompt_content(state)
-    msg = await sub_channel.send(content, view=view)
-    state.prompt_message_id = msg.id
-    bot.add_view(view, message_id=msg.id)
+    msg = await send_review_prompt(bot, sub_channel, state)
 
     # Persist the prompt message ID so recovery can delete it before reposting.
     async with get_connection(db_path) as db:
@@ -4808,6 +4823,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
     # 8. Per-session collection loop
     # ------------------------------------------------------------------
     cancelled_sessions: set[SessionType] = set()
+    last_author: discord.abc.User | None = None
     for session_type in sessions:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
 
@@ -4838,6 +4854,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                 ),
             )
 
+            last_author = msg.author
             content = msg.content.strip()
 
             if content.upper() == "CANCELLED":
@@ -5013,7 +5030,26 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         )
         await close_submission_channel(sub_channel.id, round_id, guild, db_path)
         return
-    await enter_penalty_state(bot, guild, round_id, division_id, sub_channel, season_id=season_id)
+    change_id = await bot.change_queue.ask(
+        "results.review.open",
+        {"round_id": round_id, "label": "Provisional Results", "publish": True},
+        actor=last_author,
+        what=f"the penalty review of round {round_number}",
+    )
+    if change_id is None:
+        line = (
+            f"⚠️ The penalty review of round {round_number} could not be asked for. The results "
+            "are saved; the review is put back when the bot next starts."
+        )
+    else:
+        first_job, stopped_at = await bot.change_queue.job_numbers(change_id)
+        line = f"⏳ The penalty review is being opened (job #{first_job})."
+        if stopped_at is not None:
+            line += (
+                f" The queue is stopped at job #{stopped_at}, so it opens once that job is "
+                "cleared."
+            )
+    await sub_channel.send(line)
 
 
 # ---------------------------------------------------------------------------
@@ -5151,16 +5187,33 @@ async def _next_paste(bot: LeagueBot, sub_channel, cancel_view: ResubmissionCanc
     return paste.result()
 
 
+CANCELLED_LINE = "↩️ **Resubmission cancelled.** The earlier results stand."
+
+
 async def _take_down_cancel_button(cancel_view: ResubmissionCancelView | None) -> None:
     if cancel_view is None:
         return
     cancel_view.stop()
     if cancel_view.message is None:
         return
+    await take_down_cancel_message(cancel_view.message)
+
+
+async def take_down_cancel_message(message: discord.Message | discord.PartialMessage) -> None:
+    """Take the Cancel button off the resubmission's announcement; one already gone is no fault.
+
+    Called by `_take_down_cancel_button` and by the review's job doing the same (#439).
+    """
     try:
-        await cancel_view.message.edit(view=None)
+        await message.edit(view=None)
     except (discord.NotFound, discord.HTTPException):
         pass
+
+
+async def send_cancelled_line(sub_channel: discord.TextChannel) -> None:
+    """Tell the submission channel that a resubmission was cancelled and the earlier results
+    stand. The one place it is sent, for `_resubmit_collection_task` and the review's job."""
+    await sub_channel.send(CANCELLED_LINE)
 
 
 async def _return_to_review(
@@ -5424,7 +5477,7 @@ async def _resubmit_collection_task(
 
     async def _cancelled() -> None:
         actor = cancel_view.cancelled_by if cancel_view is not None else None
-        await sub_channel.send("↩️ **Resubmission cancelled.** The earlier results stand.")
+        await send_cancelled_line(sub_channel)
         await record_abandoned(
             bot,
             actor,

@@ -77,7 +77,6 @@ TEAM_ROLE = 3001
 
 NOW = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
 REVIEW_OPEN = "results.review.open"
-NOT_BUILT = "#439: the last paste does not yet ask the change queue to open the penalty review"
 
 QUALI_PASTE = "1, <@101>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
 RACE_PASTE = "1, <@101>, T3001, 1:30:00.000, 1:20.000, N/A\n2, <@102>, T3001, +5.000, 1:21.000, N/A"
@@ -530,7 +529,6 @@ async def test_points_are_applied_for_each_saved_session(tmp_path):
     assert stubs["points"].await_count == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_is_handed_to_penalty_review(tmp_path):
     """The last paste asks for round 3's review to open, its first results published under
     "Provisional Results"; the channel stays open for the review."""
@@ -549,10 +547,7 @@ async def test_the_round_is_handed_to_penalty_review(tmp_path):
 
 @pytest.mark.parametrize(
     "stopped",
-    [
-        pytest.param(False, id="queue_clear", marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
-        pytest.param(True, id="queue_stopped", marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
-    ],
+    [pytest.param(False, id="queue_clear"), pytest.param(True, id="queue_stopped")],
 )
 async def test_the_last_paste_says_in_the_channel_that_the_review_is_being_opened(tmp_path, stopped):
     """A paste answers no interaction, so the channel is told: the penalty review is being
@@ -681,7 +676,6 @@ async def test_a_valid_fastest_lap_override_is_saved(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_session_can_be_cancelled(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_cancel_one")
     bot = _bot(db_path, ["cancelled", RACE_PASTE])
@@ -799,7 +793,6 @@ def _pastes_ending_the_amendment(db_path, pastes, *, before: int, seen: list):
     return AsyncMock(side_effect=wait_for)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="held_paste")
     await _open_amendment(db_path)

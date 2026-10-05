@@ -80,10 +80,12 @@ from leaguebot.results.services.results_post_service import (
     produce_session_results,
     produce_standings,
     set_standings_message_id_on,
+    standings_display_names,
 )
 
 log = logging.getLogger(__name__)
 
+NAMES = "names"
 POST_SESSION_RESULTS = "post_session_results"
 POST_STANDINGS = "post_standings"
 DELETE_MESSAGE = "delete_message"
@@ -102,6 +104,7 @@ _AMEND = "/results rounds amend"
 def posting_steps() -> dict[str, Step]:
     """The posting jobs, keyed by their names, for a change type's `steps`."""
     return {
+        NAMES: Step(NAMES, StepKind.ACT, _resolve_names, describe=_describe_names),
         POST_SESSION_RESULTS: Step(
             POST_SESSION_RESULTS, StepKind.ACT, _post_session_results,
             still_due=_session_still_due, describe=_describe_session_post,
@@ -272,6 +275,41 @@ def not_done(ctx: OutcomeContext) -> list[str]:
             link = result.get("link") or f"in <#{payload['channel_id']}>"
             lines.append(f"⚠️ The \"one moment\" notice could not be deleted ({link}): delete it by hand.")
     return lines
+
+
+# ---------------------------------------------------------------------------
+# The drivers' display names
+# ---------------------------------------------------------------------------
+
+
+async def _describe_names(ctx: StepContext) -> str:
+    return "looking up the drivers' display names for the standings"
+
+
+async def _resolve_names(ctx: StepContext) -> StepResult:
+    """Resolve, from Discord, the names the division's standings are drawn under.
+
+    A job of its own before the save that recomputes the snapshots, so that the save awaits
+    nothing but its connection; the names also order a full tie, so the stored classification and
+    the one the league is shown cannot disagree. Read by `display_names`. The division is the
+    job's own, or the one of the change's `round_id`.
+    """
+    guild = await _league_guild(ctx.bot)
+    division_id = ctx.step_payload.get("division_id")
+    if division_id is None:
+        division_id = (await _round_row(ctx.db_path, int(ctx.payload["round_id"])))["division_id"]
+    names = await standings_display_names(ctx.db_path, int(division_id), guild, ctx.bot)
+    return StepResult(result={"names": names})
+
+
+def display_names(ctx: StepContext) -> dict[int, str] | None:
+    """The names the change's `names` job resolved, or None where it resolved none (the keys
+    came through JSON as text)."""
+    for view in ctx.steps:
+        if view.name == NAMES and view.done:
+            found = (view.result or {}).get("names")
+            return None if found is None else {int(k): v for k, v in found.items()}
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -703,6 +741,6 @@ async def _delete_batch_notice(ctx: StepContext) -> StepResult:
 
 
 __all__ = [
-    "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
+    "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
     "POST_SESSION_RESULTS", "POST_STANDINGS", "not_done", "plan_posts", "posting_steps",
 ]
