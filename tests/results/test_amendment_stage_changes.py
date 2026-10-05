@@ -32,6 +32,8 @@ unbuilt.
 
 from __future__ import annotations
 
+import re
+
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -400,6 +402,10 @@ async def test_a_stopped_stage_retried_past_its_deadline_is_approved_but_not_car
     reply = updated_reply(interaction)
     assert "/results rounds amend" in reply
     assert "posted below" not in reply
+    assert re.search(r"half[- ](?:an )?hour", reply.lower()), (
+        "the reply does not say the half-hour has passed"
+    )
+    assert "undone" in reply.lower(), "the reply does not say the amendment will be undone"
 
     assert await _sweep(league, after=timedelta(hours=2)) == 1
 
