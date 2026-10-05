@@ -324,7 +324,9 @@ def not_done(ctx: OutcomeContext) -> list[str]:
     line naming the commands that finish them, **both sync commands** since a league reads a
     round's results and the division's standings separately and each has its own, or
     `/results rounds amend` alone while the season is pending completion, where the sync commands
-    are refused (the jobs carry which, since an outcome is formed with nothing awaited).
+    are refused (the jobs carry which, since an outcome is formed with nothing awaited). A table
+    that stopped part-way keeps the messages it had already sent, and a discard names them for
+    deletion by hand: nothing else will remove them (a retry did).
     """
     lines: list[str] = []
     pending = False
@@ -345,6 +347,13 @@ def not_done(ctx: OutcomeContext) -> list[str]:
             unposted = True
             pending = pending or payload["remedy"] == _AMEND
             lines.append(f"⚠️ Round {payload.get('round_number', '?')}'s standings were not posted.")
+        if view.name in (POST_SESSION_RESULTS, POST_STANDINGS) and result.get("new"):
+            ids = ", ".join(str(i) for i in result["new"])
+            lines.append(
+                f"⚠️ A part of it was posted before it stopped and stands in "
+                f"<#{result['channel_id']}> (message {ids}): delete it by hand, or the sync "
+                "will post the whole table beside it."
+            )
         elif view.name == DELETE_MESSAGE:
             link = result.get("link") or f"in <#{payload['channel_id']}>"
             lines.append(f"⚠️ An earlier message could not be deleted ({link}): delete it by hand.")
