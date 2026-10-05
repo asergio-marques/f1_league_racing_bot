@@ -40,6 +40,7 @@ from tests.support.change_queue import (
     retry_job,
     run_queue,
     tier_member,
+    updated_reply,
 )
 from tests.support.review_league import (
     DIVISION_ID,
@@ -71,8 +72,10 @@ def _nfa(driver: int) -> StagedPenalty:
     )
 
 
-async def _approve_reports(league: ReviewLeague, staged: list[StagedPenalty]) -> None:
-    """Alex, a league manager, presses Approve on round 3's review with *staged*."""
+async def _approve_reports(league: ReviewLeague, staged: list[StagedPenalty]) -> Any:
+    """Alex, a league manager, presses Approve on round 3's review with *staged*. Gives his
+    interaction, whose acknowledgement the queue updates with the outcome."""
+    interaction = member_interaction(league.bot, user=tier_member("manager"))
     await league.bot.change_queue.ask(
         "results.reports.approve",
         {
@@ -80,9 +83,10 @@ async def _approve_reports(league: ReviewLeague, staged: list[StagedPenalty]) ->
             "staged": [item.to_payload() for item in staged], "pardons": [],
             "prompt_message_id": PROMPT, "approval_message_id": None,
         },
-        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        interaction=interaction,
         what="✅ Approve on round 3's penalty review",
     )
+    return interaction
 
 
 async def _appeals_league(tmp_path: Any, **options: Any) -> ReviewLeague:
@@ -388,13 +392,16 @@ async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp
     beneath no heading, and the approval is recorded as incomplete."""
     league = await review_league(tmp_path)
     league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
-    await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
+    interaction = await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
     await run_queue(league.bot)
 
     assert await stopped_at(league) == "announce_heading"
     assert league.sent_to(VERDICTS_CHANNEL) == []
     assert await _announced(league) == 0
 
+    # The channel would take the heading now, so a build that tried it again behind the
+    # discarded job would show here.
+    league.channel(VERDICTS_CHANNEL).fail_when = None
     await discard_job(league.bot)
 
     assert await stopped_at(league) is None
@@ -402,6 +409,9 @@ async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp
     assert len(league.sent_to(VERDICTS_CHANNEL)) == 2
     assert await _announced(league) == 2
     assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+    assert "heading" in updated_reply(interaction).lower(), (
+        "the reply does not name the heading that was not posted"
+    )
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
