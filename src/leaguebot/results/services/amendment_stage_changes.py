@@ -130,6 +130,10 @@ _REBUILD_NOTICE = "\U0001f3a8 Rebuilding the division's results, standings and v
 _REPORTS_APPROVED = (
     "ℹ️ This amendment's reports are already approved; its appeals follow below."
 )
+_NOTHING_CHANGED_LAPSED = (
+    "Nothing was changed, and the amendment's half-hour has passed, so it will be undone in the "
+    "next few minutes. Run `/results rounds amend` again."
+)
 _VERDICT_COLUMNS = (
     "v.id AS id, v.race_result_id, v.qual_result_id, v.penalty_type, v.time_seconds, "
     "v.description, v.justification, r.driver_user_id AS driver_user_id, "
@@ -258,6 +262,19 @@ def amendment_stage_changes(
         others = await unfinished(ctx.db_path, [kind], excluding=ctx.change_id)
         return any(p.get("round_id") == round_id for p in others)
 
+    async def _closed_unapplied(db: aiosqlite.Connection, ctx: StepContext) -> dict[str, Any]:
+        """What `close` keeps where the stage's `apply` was discarded: whether the amendment's
+        half-hour has passed by now, which decides whether the manager may press Approve again or
+        the next sweep undoes the amendment."""
+        return {
+            "closed": True,
+            "lapsed": await _deadline_passed(db, int(ctx.payload["round_id"]), now()),
+        }
+
+    def _lapsed(ctx: OutcomeContext) -> bool:
+        closed = next((view for view in ctx.steps if view.name == _CLOSE), None)
+        return bool(((closed.result if closed is not None else None) or {}).get("lapsed"))
+
     # ── The report stage ──────────────────────────────────────────────────
 
     async def check_reports(ctx: CheckContext) -> Verdict:
@@ -321,10 +338,10 @@ def amendment_stage_changes(
             then=tuple(then),
         )
 
-    async def close_reports(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+    async def close_reports(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         applied = next((view for view in ctx.steps if view.name == _APPLY), None)
         if _unapplied(applied):
-            return StepResult(result={"closed": True})
+            return StepResult(result=await _closed_unapplied(db, ctx))
         assert applied is not None
         result = applied.result or {}
         text = (
@@ -346,6 +363,8 @@ def amendment_stage_changes(
         views = {view.name: view for view in ctx.steps}
         applied = views.get(_APPLY)
         if _unapplied(applied):
+            if _lapsed(ctx):
+                return _NOTHING_CHANGED_LAPSED
             return (
                 "Nothing was changed. Press Approve again on the amendment's report stage, "
                 "before it lapses."
@@ -423,10 +442,10 @@ def amendment_stage_changes(
             then=tuple(then),
         )
 
-    async def close_appeals(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+    async def close_appeals(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         applied = next((view for view in ctx.steps if view.name == _APPLY), None)
         if _unapplied(applied):
-            return StepResult(result={"closed": True})
+            return StepResult(result=await _closed_unapplied(db, ctx))
         assert applied is not None
         result = applied.result or {}
         left = _left(ctx)
@@ -446,6 +465,8 @@ def amendment_stage_changes(
     def outcome_appeals(ctx: OutcomeContext) -> str:
         applied = next((view for view in ctx.steps if view.name == _APPLY), None)
         if _unapplied(applied):
+            if _lapsed(ctx):
+                return _NOTHING_CHANGED_LAPSED
             return "Nothing was changed. Press Approve again on the amendment's appeals stage."
         left = _left(ctx)
         if left:
