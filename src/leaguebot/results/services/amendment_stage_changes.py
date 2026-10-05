@@ -154,6 +154,29 @@ def _sessions_text(values: list[str]) -> str:
     return ", ".join(values)
 
 
+def _past(expires_at: Any, now: datetime) -> bool:
+    """Whether the amendment's deadline *expires_at* has passed by the handed clock. A deadline
+    that cannot be read counts as passed: the amendment is not one to act on."""
+    try:
+        deadline = datetime.fromisoformat(expires_at)
+    except (TypeError, ValueError):
+        return True
+    if deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=now.tzinfo)
+    return deadline <= now
+
+
+async def _deadline_passed(db: aiosqlite.Connection, round_id: int, now: datetime) -> bool:
+    """Whether the half-hour of the amendment of *round_id* has passed. Read on the connection
+    handed, so a stage's save and its reply agree on the same row."""
+    row = await (
+        await db.execute(
+            "SELECT expires_at FROM round_amend_channels WHERE round_id = ?", (round_id,)
+        )
+    ).fetchone()
+    return row is None or row["expires_at"] is None or _past(row["expires_at"], now)
+
+
 async def _open_refusal(
     db_path: str, round_id: int, now: datetime, *, reports_stage: bool
 ) -> str | None:
@@ -174,13 +197,7 @@ async def _open_refusal(
         return _REPORTS_APPROVED
     if not reports_stage and row["reports_approved_at"] is None:
         return _AMENDMENT_NOT_OPEN
-    try:
-        deadline = datetime.fromisoformat(row["expires_at"])
-    except (TypeError, ValueError):
-        return _AMENDMENT_NOT_OPEN
-    if deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=now.tzinfo)
-    return _AMENDMENT_NOT_OPEN if deadline <= now else None
+    return _AMENDMENT_NOT_OPEN if _past(row["expires_at"], now) else None
 
 
 async def _amend_channel_of(db: aiosqlite.Connection, round_id: int) -> int:
@@ -277,23 +294,29 @@ def amendment_stage_changes(
             await _recompute_session_points_on(db, round_id)
         applied = await _applied_text(db, division_id, staged) if staged else ""
 
+        # The half-hour covers both steps and is never extended: a reports approval landing after
+        # it (stuck on the queue, then retried) is recorded, and nothing carries on from it. The
+        # amendment is undone at the next sweep, and the manager runs the command again.
+        late = await _deadline_passed(db, round_id, when)
         then: list[PlannedStep] = []
-        for key, what in (
+        taken_down = () if late else (
             ("prompt_message_id", "report review prompt"),
             ("approval_message_id", "approval message"),
-        ):
+        )
+        for key, what in taken_down:
             if payload.get(key) is not None:
                 then.append(PlannedStep(DELETE_MESSAGE, {
                     "channel_id": channel_id, "message_id": int(payload[key]), "what": what,
                 }))
-        then.append(PlannedStep(POST_AMENDMENT_APPEALS_PROMPT, {
-            "round_id": round_id, "division_id": division_id, "channel_id": channel_id,
-        }))
+        if not late:
+            then.append(PlannedStep(POST_AMENDMENT_APPEALS_PROMPT, {
+                "round_id": round_id, "division_id": division_id, "channel_id": channel_id,
+            }))
         return StepResult(
             result={
                 "round_number": round_number, "division_name": division_name,
                 "reports": len(staged), "applied": applied,
-                "sessions": list(payload["session_types"]),
+                "sessions": list(payload["session_types"]), "late": late,
             },
             then=tuple(then),
         )
@@ -314,6 +337,8 @@ def amendment_stage_changes(
             f"  reports: {result['reports'] or 'none'}\n"
             f"{text}"
             "  Nothing is published until the appeal stage is approved."
+            + ("\n  The half-hour had passed: the amendment is undone at the next sweep."
+               if result.get("late") else "")
         )
         return StepResult(result={"closed": True}, lines=(line,))
 
@@ -329,10 +354,14 @@ def amendment_stage_changes(
         result = applied.result or {}
         reports = int(result.get("reports", 0))
         what = f"{_plural(reports, 'report', 'reports')} kept" if reports else "no reports"
-        reply = (
-            f"✅ Round {result.get('round_number', '?')}'s amendment reports are approved "
+        named = f"Round {result.get('round_number', '?')}'s amendment reports are approved " \
             f"({result.get('division_name', '?')}): {what}."
-        )
+        if result.get("late"):
+            return (
+                f"⚠️ {named}\nThe amendment's half-hour has passed, so it will be undone in the "
+                "next few minutes. Run `/results rounds amend` again."
+            )
+        reply = f"✅ {named}"
         prompt = views.get(POST_AMENDMENT_APPEALS_PROMPT)
         if prompt is not None and _discarded(prompt.result):
             return (

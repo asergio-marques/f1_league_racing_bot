@@ -38,8 +38,6 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import pytest
-
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     acknowledgement,
@@ -82,10 +80,6 @@ from tests.support.review_league import (
 
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
-LATE_APPROVAL_NOT_BUILT = (
-    "#439: a report stage retried past the amendment's half-hour still posts its appeals stage "
-    "and says so"
-)
 
 #: The amendment's half-hour, from "now" as the queue's clock gives it.
 DEADLINE = (NOW + timedelta(minutes=30)).isoformat()
@@ -374,7 +368,6 @@ async def test_a_stopped_report_stage_left_past_its_deadline_is_not_swept_while_
     assert "put back" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=LATE_APPROVAL_NOT_BUILT)
 async def test_a_stopped_stage_retried_past_its_deadline_is_approved_but_not_carried_on(tmp_path):
     """The owner ruled (2026-10-05): an amendment's reports approval that lands after the
     amendment's half-hour, stuck on the queue and retried late, keeps the deadline. "The half-hour
