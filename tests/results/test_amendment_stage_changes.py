@@ -875,3 +875,28 @@ async def test_a_later_round_s_replacements_do_not_license_the_amended_round_s_t
     assert OLD_VERDICT in said and OLD_BANNER in said
     assert await _banners_left(league) == [OLD_BANNER]
 
+
+# ---------------------------------------------------------------------------
+# The attendance sheet and the sanctions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_sheet_and_the_sanctions_follow_the_running_totals_to_the_last_round(tmp_path):
+    """Results spec, amendment: "The attendance sheet shall be reposted once, against the round
+    the running totals stand at". Round 4 is final after the amended round 3, so the sheet is
+    drawn once, and the sanction thresholds read, against round 4; no driver is over one."""
+    from unittest.mock import AsyncMock
+
+    league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
+    sheet = AsyncMock(wraps=league.attendance.post_sheet)
+    owed = AsyncMock(wraps=league.attendance.sanction_candidates)
+    league.attendance.post_sheet = sheet
+    league.attendance.sanction_candidates = owed
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert sheet.await_count == 1
+    assert sheet.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
+    assert owed.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
