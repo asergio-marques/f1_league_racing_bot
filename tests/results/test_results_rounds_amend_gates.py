@@ -29,6 +29,7 @@ nothing reads and post nothing, and a league with the module off can still see t
 """
 from __future__ import annotations
 
+import json
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -477,3 +478,140 @@ async def test_several_sessions_can_be_chosen_at_once(tmp_path):
     view = _sent_view(interaction)
     select = next(item for item in view.children if isinstance(item, discord.ui.Select))
     assert (select.min_values, select.max_values) == (1, 2)
+
+
+# ---------------------------------------------------------------------------
+# A division with a job on the queue (owner, 2026-10-05, #439 slice 2)
+# ---------------------------------------------------------------------------
+
+#: Why the refusal is not yet built: the amend command does not read the queue.
+QUEUE_GATE_NOT_BUILT = "#439: amending is not yet refused while the division has a job on the queue"
+
+LATER_ROUND_ID = 22
+OTHER_DIVISION_ID = 12
+OTHER_ROUND_ID = 31
+
+
+async def _seed_queued_change(
+    db_path: str, *, round_id: int, state: str = "QUEUED", stopped: bool = False,
+) -> int:
+    """A review opening asked for *round_id*, in *state*, with its one job; the job has failed
+    and stops the queue where *stopped*. Gives the job's number."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "status) VALUES (?, ?, 4, '2026-02-08T18:00:00+00:00', 'NORMAL', 'AWAITING_RESULTS')",
+            (LATER_ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Am', 2, 556)",
+            (OTHER_DIVISION_ID, SEASON_ID),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "status) VALUES (?, ?, 3, '2026-02-01T18:00:00+00:00', 'NORMAL', 'AWAITING_RESULTS')",
+            (OTHER_ROUND_ID, OTHER_DIVISION_ID),
+        )
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, what) "
+            "VALUES ('results.review.open', ?, ?, 'MEMBER', ?, 'the last paste of a round')",
+            (f"results.review.open:{round_id}", json.dumps({"round_id": round_id}), state),
+        )
+        change_id = cursor.lastrowid
+        cursor = await db.execute(
+            "INSERT INTO queued_change_steps (change_id, position, name, payload, done_at, "
+            "tries, failing_since, last_failure) VALUES (?, 0, 'open', '{}', ?, ?, ?, ?)",
+            (
+                change_id,
+                "2026-10-05T12:00:00+00:00" if state == "DONE" else None,
+                1 if stopped else 0,
+                "2026-10-05T12:00:00+00:00" if stopped else None,
+                "OperationalError" if stopped else None,
+            ),
+        )
+        job = cursor.lastrowid
+        await db.commit()
+    assert job is not None
+    return job
+
+
+@pytest.mark.xfail(strict=True, reason=QUEUE_GATE_NOT_BUILT)
+@pytest.mark.parametrize("stopped", [False, True], ids=["queued", "stopped"])
+async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
+    tmp_path, stopped,
+):
+    """Owner, 2026-10-05: "It shouldn't be possible to amend a round of a division which has
+    jobs in the queue", any job naming a round of the division, queued, running or stopped on a
+    failure. Round 4's review opening, asked for by its last paste, is on the queue; amending
+    round 3 of the same division is refused, naming the job it waits on and how to clear it, and
+    nothing is amended: no channel is created."""
+    db_path = await _make_db(tmp_path, name=f"amend_queued_{'stopped' if stopped else 'waiting'}")
+    job = await _seed_queued_change(db_path, round_id=LATER_ROUND_ID, stopped=stopped)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    replied = _replied(interaction)
+    assert f"job #{job}" in replied, "the refusal does not name the job it waits on"
+    assert "Retry" in replied and "Discard" in replied
+    interaction.guild.create_text_channel.assert_not_called()
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM round_amend_channels")
+        assert (await cursor.fetchone())[0] == 0
+
+
+@pytest.mark.xfail(strict=True, reason=QUEUE_GATE_NOT_BUILT)
+async def test_a_job_naming_the_division_by_its_payload_alone_still_blocks_the_amendment(
+    tmp_path,
+):
+    """An approval's payload names its division as well as its round; either is enough to
+    count the job as the division's."""
+    db_path = await _make_db(tmp_path, name="amend_queued_division")
+    job = await _seed_queued_change(db_path, round_id=LATER_ROUND_ID)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE queued_changes SET kind = 'results.reports.approve', payload = ? "
+            "WHERE id = (SELECT change_id FROM queued_change_steps WHERE id = ?)",
+            (json.dumps({"round_id": LATER_ROUND_ID, "division_id": DIVISION_ID}), job),
+        )
+        await db.commit()
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _amend(cog, interaction, session=SessionType.FEATURE_RACE)
+
+    assert f"job #{job}" in _replied(interaction)
+    interaction.guild.create_text_channel.assert_not_called()
+
+
+async def test_a_job_of_another_division_does_not_hold_the_amendment(tmp_path):
+    """A job for another division's round does not block this one: the manager is asked which
+    session to amend, as with an empty queue."""
+    db_path = await _make_db(tmp_path, name="amend_other_division")
+    await _seed_queued_change(db_path, round_id=OTHER_ROUND_ID)
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _choose(cog, interaction, answer=None, cancel=True)
+
+    assert "Select the sessions to amend" in _replied(interaction), (
+        "the session choice was not offered"
+    )
+    assert "job #" not in _replied(interaction)
+
+
+async def test_a_finished_job_of_the_division_does_not_hold_the_amendment(tmp_path):
+    """Only a job still in hand blocks: one done is not."""
+    db_path = await _make_db(tmp_path, name="amend_done_job")
+    await _seed_queued_change(db_path, round_id=LATER_ROUND_ID, state="DONE")
+    cog = _make_cog(db_path)
+    interaction = _interaction()
+
+    await _choose(cog, interaction, answer=None, cancel=True)
+
+    assert "Select the sessions to amend" in _replied(interaction), (
+        "the session choice was not offered"
+    )
+    assert "job #" not in _replied(interaction)
