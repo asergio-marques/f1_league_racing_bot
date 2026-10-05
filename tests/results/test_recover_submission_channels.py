@@ -19,11 +19,6 @@ table reached the division before the crash, and it is passed straight through a
 `skip_results_post` — otherwise every restart adds another copy of the same table to the
 channel a league is reading.
 
-**A restart mid-finalisation warns before it re-prompts.** If `staged_penalties` is set the
-penalties were already written to the results before the crash, and the prompt comes back with
-an empty list. A steward who re-added them would double every penalty on the round, so the
-warning is posted first and says plainly not to.
-
 **The old prompt is deleted before the new one goes up.** Two live prompts over one round mean
 two staged lists, and whichever is approved second overwrites the first.
 
@@ -71,7 +66,6 @@ async def _make_db(
     closed: int = 0,
     in_penalty_review: int = 0,
     results_posted: int = 0,
-    staged_penalties: str | None = None,
     prompt_message_id: int | None = None,
     round_status: str = "AWAITING_RESULTS",
     with_results: bool = True,
@@ -103,16 +97,15 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
-            "closed, in_penalty_review, results_posted, staged_penalties, prompt_message_id, "
+            "closed, in_penalty_review, results_posted, prompt_message_id, "
             "resubmitting, resubmit_prompt_message_id) "
-            "VALUES (?, ?, '2026-02-01T00:00:00+00:00', ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, '2026-02-01T00:00:00+00:00', ?, ?, ?, ?, ?, ?)",
             (
                 ROUND_ID,
                 CHANNEL_ID,
                 closed,
                 in_penalty_review,
                 results_posted,
-                staged_penalties,
                 prompt_message_id,
                 resubmitting,
                 resubmit_prompt_message_id,
@@ -455,86 +448,6 @@ async def test_a_round_with_no_recorded_prompt_fetches_nothing(tmp_path):
     await _recover(stub)
 
     channel.fetch_message.assert_not_awaited()
-
-
-async def test_a_restart_mid_finalisation_warns_before_re_prompting(tmp_path):
-    """The penalties were already written to the results before the crash, and the prompt
-    comes back with an empty list — a steward who re-added them would double every one."""
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_staged",
-        in_penalty_review=1,
-        staged_penalties=(
-            '[{"driver_user_id": 101, "session_type": "FEATURE_RACE", '
-            '"penalty_type": "TIME", "penalty_seconds": 5}]'
-        ),
-    )
-    channel = _channel()
-    stub = _bot(db_path, channel=channel)
-
-    await _recover(stub)
-
-    posted = _posted(channel)
-    assert "already been applied" in posted or "already applied" in posted
-    assert "Do **not** re-add" in posted
-
-
-async def test_the_warning_lists_the_penalties_that_were_applied(tmp_path):
-    """A steward cannot check the results against a warning that does not say what to look
-    for."""
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_staged_list",
-        in_penalty_review=1,
-        staged_penalties=(
-            '[{"driver_user_id": 101, "session_type": "FEATURE_RACE", '
-            '"penalty_type": "TIME", "penalty_seconds": 5}]'
-        ),
-    )
-    channel = _channel()
-    stub = _bot(db_path, channel=channel)
-
-    await _recover(stub)
-
-    posted = _posted(channel)
-    assert "101" in posted
-    assert "Feature Race" in posted
-    assert "+5s" in posted
-
-
-async def test_a_disqualification_is_named_rather_than_given_seconds(tmp_path):
-    """A DSQ has no seconds, and "+Nones" would be the alternative."""
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_staged_dsq",
-        in_penalty_review=1,
-        staged_penalties=(
-            '[{"driver_user_id": 101, "session_type": "FEATURE_RACE", '
-            '"penalty_type": "DSQ", "penalty_seconds": null}]'
-        ),
-    )
-    channel = _channel()
-    stub = _bot(db_path, channel=channel)
-
-    await _recover(stub)
-
-    assert "DSQ" in _posted(channel)
-
-
-async def test_an_unreadable_warning_does_not_stop_the_re_prompt(tmp_path):
-    """Malformed JSON in that column is a broken state, and the prompt is what the round
-    actually needs back."""
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_staged_bad",
-        in_penalty_review=1,
-        staged_penalties="not json at all",
-    )
-    stub = _bot(db_path, channel=_channel())
-
-    stubs = await _recover(stub)
-
-    stubs["enter"].assert_awaited_once()
 
 
 async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path):
