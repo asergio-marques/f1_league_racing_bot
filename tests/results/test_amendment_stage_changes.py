@@ -54,6 +54,7 @@ from tests.support.change_queue import (
 from tests.support.review_league import (
     AMEND_CHANNEL,
     DIVISION_ID,
+    LATER_ROUND_ID,
     LEWIS,
     MAX,
     NOW,
@@ -577,3 +578,208 @@ async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
     appeals = [i for i, text in enumerate(said) if "Track limits" in text]
     assert len(reports) == 2 and len(appeals) == 1
     assert max(reports) < min(appeals)
+
+
+# ---------------------------------------------------------------------------
+# What the rebuild posts again, and what it leaves alone
+# ---------------------------------------------------------------------------
+
+#: Round 2 at Bahrain, before the amended round; round 5 at Monza, cancelled; round 7 at Suzuka,
+#: after round 4 but stored before it (a lower id).
+EARLIER_ROUND_ID = 19
+CANCELLED_ROUND_ID = 23
+LAST_ROUND_ID = 18
+#: What each of those rounds, and round 4, has standing in the results, standings and verdicts
+#: channels.
+OLD_ROUND_RESULTS = {EARLIER_ROUND_ID: 8970, LATER_ROUND_ID: 8971, CANCELLED_ROUND_ID: 8972,
+                     LAST_ROUND_ID: 8973}
+OLD_ROUND_STANDINGS = {EARLIER_ROUND_ID: 8974, LATER_ROUND_ID: 8975, LAST_ROUND_ID: 8976}
+EARLIER_VERDICT = 8977
+CANCELLED_VERDICT = 8978
+LATER_REPORT = 8979
+LATER_APPEAL = 8980
+#: The banner heading round 3's verdicts, and round 4's.
+OLD_BANNER = 8981
+LATER_BANNER = 8982
+
+
+async def _seed_round(
+    league: ReviewLeague, round_id: int, number: int, track: str, *, status: str = "FINAL",
+) -> dict[int, int]:
+    """Round *number* of Pro at *track* (round 4 is already there), its Feature Race with Lewis
+    first and Max second, its results posted, and, where it is not cancelled, its standings
+    posted. A cancelled round's session is cancelled with it. Gives each driver's result id."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, ?, '2026-02-01T18:00:00+00:00', 'NORMAL', ?, ?)",
+            (round_id, DIVISION_ID, number, track, status),
+        )
+        session = await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "config_name, results_message_id, results_message_ids) "
+            "VALUES (?, ?, 'FEATURE_RACE', ?, 'Standard', ?, ?)",
+            (round_id, DIVISION_ID, "CANCELLED" if status == "CANCELLED" else "ACTIVE",
+             OLD_ROUND_RESULTS[round_id], json.dumps([OLD_ROUND_RESULTS[round_id]])),
+        )
+        results: dict[int, int] = {}
+        for position, driver in enumerate((LEWIS, MAX), start=1):
+            cursor = await db.execute(
+                "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+                "team_instance_id, finishing_position, outcome, base_time_ms, points_awarded) "
+                "VALUES (?, ?, 3001, ?, 'CLASSIFIED', ?, ?)",
+                (session.lastrowid, driver, position, 3_600_000 + position * 1000,
+                 25 if position == 1 else 18),
+            )
+            results[driver] = int(cursor.lastrowid or 0)
+        if round_id in OLD_ROUND_STANDINGS:
+            await db.execute(
+                "DELETE FROM driver_standings_snapshots WHERE round_id = ?", (round_id,)
+            )
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+                "standing_position, total_points, standings_message_id, standings_message_ids) "
+                "VALUES (?, ?, ?, 1, 25, ?, ?)",
+                (round_id, DIVISION_ID, LEWIS, OLD_ROUND_STANDINGS[round_id],
+                 json.dumps([OLD_ROUND_STANDINGS[round_id]])),
+            )
+        await db.commit()
+    league.channel(RESULTS_CHANNEL).seed(OLD_ROUND_RESULTS[round_id], f"round {number} results")
+    if round_id in OLD_ROUND_STANDINGS:
+        league.channel(STANDINGS_CHANNEL).seed(
+            OLD_ROUND_STANDINGS[round_id], f"round {number} standings"
+        )
+    return results
+
+
+async def _announced_verdict(
+    league: ReviewLeague, result_id: int, anchor: int | None, *, description: str,
+    table: str = "penalty_records",
+) -> None:
+    """A 5-second verdict of *description* on *result_id*, announced as *anchor* in the verdicts
+    channel (where one is given): a report in `penalty_records`, or an upheld appeal in
+    `appeal_records`."""
+    async with get_connection(league.db_path) as db:
+        if table == "penalty_records":
+            await db.execute(
+                "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
+                "description, justification, applied_by, applied_at, announcement_message_id, "
+                "announcement_message_ids, announcement_channel_id) "
+                "VALUES (?, 'TIME', 5, ?, 'Lap 7', '77', ?, ?, ?, ?)",
+                (result_id, description, NOW.isoformat(), anchor,
+                 json.dumps([anchor]) if anchor else None,
+                 str(VERDICTS_CHANNEL) if anchor else None),
+            )
+        else:
+            await db.execute(
+                "INSERT INTO appeal_records (race_result_id, status, penalty_type, time_seconds, "
+                "description, justification, submitted_by, submitted_at, "
+                "announcement_message_id, announcement_message_ids, announcement_channel_id) "
+                "VALUES (?, 'UPHELD', 'TIME', 5, ?, 'Appeal upheld', '78', ?, ?, ?, ?)",
+                (result_id, description, NOW.isoformat(), anchor,
+                 json.dumps([anchor]) if anchor else None,
+                 str(VERDICTS_CHANNEL) if anchor else None),
+            )
+        await db.commit()
+    if anchor is not None:
+        league.channel(VERDICTS_CHANNEL).seed(anchor, description)
+
+
+async def _banner(league: ReviewLeague, round_id: int, message_id: int, *,
+                  heads_sanctions: bool = False) -> None:
+    """The banner heading *round_id*'s verdicts, standing in the verdicts channel, and heading an
+    attendance sanction card too where *heads_sanctions*."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO verdict_banner_messages (round_id, channel_id, message_id, posted_at, "
+            "heads_sanctions) VALUES (?, ?, ?, ?, ?)",
+            (round_id, str(VERDICTS_CHANNEL), str(message_id), NOW.isoformat(),
+             int(heads_sanctions)),
+        )
+        await db.commit()
+    league.channel(VERDICTS_CHANNEL).seed(message_id, "a banner")
+
+
+async def _banners_left(league: ReviewLeague) -> list[int]:
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT message_id FROM verdict_banner_messages ORDER BY id")
+        return [int(row[0]) for row in await cursor.fetchall()]
+
+
+def _rounds_headed(league: ReviewLeague, cid: int) -> list[int]:
+    """The round numbers headed in what the bot posted or edited in channel *cid*, in the order
+    it did so, each once."""
+    import re
+
+    messages = league.channel(cid).messages
+    seen: list[int] = []
+    for kind, ch, mid in league.events:
+        if ch != cid or kind not in ("send", "edit") or mid not in messages:
+            continue
+        for number in re.findall(r"Round (\d+)", str(messages[mid].content or "")):
+            if int(number) not in seen:
+                seen.append(int(number))
+    return seen
+
+
+def _sent_saying(league: ReviewLeague, text: str) -> list[int]:
+    channel = league.channel(VERDICTS_CHANNEL)
+    return [mid for mid in league.sent_to(VERDICTS_CHANNEL)
+            if text in str(getattr(channel.messages.get(mid), "content", "") or "")]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_rebuild_reposts_every_round_s_results_and_standings_in_round_order(tmp_path):
+    """Results spec, amendment: "Every round of the division shall be reposted, in round order,
+    and not the amended round alone", a repost being a new message. Round 2 comes before the
+    amended round 3; round 4 and round 7 after it, round 7 stored first; round 5 is cancelled."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    await _seed_round(league, EARLIER_ROUND_ID, 2, "Bahrain")
+    await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    await _seed_round(league, CANCELLED_ROUND_ID, 5, "Monza", status="CANCELLED")
+    await _seed_round(league, LAST_ROUND_ID, 7, "Suzuka")
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert _rounds_headed(league, RESULTS_CHANNEL) == [2, 3, 4, 7]
+    assert _rounds_headed(league, STANDINGS_CHANNEL) == [2, 3, 4, 7]
+    assert OLD_ROUND_RESULTS[CANCELLED_ROUND_ID] in league.channel(RESULTS_CHANNEL).messages
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_its_own_round(
+    tmp_path,
+):
+    """Results spec, amendment: "All of a round's verdicts shall be announced, in order, and not
+    only those the amendment changed", every round from the amended one on. Round 4 holds a
+    report for Max (pit lane speeding) and Lewis's upheld appeal (track limits), with the penalty
+    row upholding it writes beside it; round 2's verdict for Max, before the amended round, and
+    cancelled round 5's, stand."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    earlier = await _seed_round(league, EARLIER_ROUND_ID, 2, "Bahrain")
+    later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    cancelled = await _seed_round(league, CANCELLED_ROUND_ID, 5, "Monza", status="CANCELLED")
+    await _announced_verdict(league, earlier[MAX], EARLIER_VERDICT, description="Unsafe rejoin")
+    await _announced_verdict(league, cancelled[MAX], CANCELLED_VERDICT, description="Blocking")
+    await _announced_verdict(league, later[MAX], LATER_REPORT, description="Pit lane speeding")
+    await _announced_verdict(league, later[LEWIS], LATER_APPEAL, description="Track limits",
+                             table="appeal_records")
+    await _announced_verdict(league, later[LEWIS], None, description="Track limits")
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert _rounds_headed(league, VERDICTS_CHANNEL) == [3, 4]
+    [report] = _sent_saying(league, "Pit lane speeding")
+    [appeal] = _sent_saying(league, "Track limits")
+    said = league.channel(VERDICTS_CHANNEL).messages
+    assert "Round 4" in said[report].content and "Round 3" not in said[report].content
+    assert league.sent_to(VERDICTS_CHANNEL).index(report) < league.sent_to(
+        VERDICTS_CHANNEL).index(appeal)
+    assert await one(
+        league.db_path, "SELECT announcement_message_id FROM appeal_records"
+    ) == appeal, "the upheld appeal was not announced as an appeal"
+    assert LATER_REPORT not in said and LATER_APPEAL not in said
+    assert EARLIER_VERDICT in said and CANCELLED_VERDICT in said
+
