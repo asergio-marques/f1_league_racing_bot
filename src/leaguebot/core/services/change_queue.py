@@ -1300,9 +1300,11 @@ class ChangeQueue:
                     await db.rollback()
                     raise
             self._retrying[job["id"]] = (presser, before)
+            # Delivered under the lock the worker takes to choose its next change, so that the
+            # line saying the job is tried again stands above whatever its try then writes.
+            await self._router.deliver_queued([] if line_id is None else [line_id],
+                                              interaction=interaction)
         await self._tell(interaction, f"🔁 Job #{job['id']} ({name}) is being tried again now.")
-        await self._router.deliver_queued([] if line_id is None else [line_id],
-                                          interaction=interaction)
         self._signal.set()
 
     async def _stopped_at(
