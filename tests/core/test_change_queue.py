@@ -2091,3 +2091,13 @@ async def test_a_check_as_the_change_starts_knows_its_own_id(env):
 
     assert change_id is not None
     assert ids == [None, change_id]
+
+
+async def test_the_queue_gives_its_clock_as_now(env):
+    """A review's change types take "now" from the queue, so that their writers and the retry
+    schedule read one clock, and a test that moves it moves both."""
+    queue = _queue(env)
+
+    assert queue.now() == NOW
+    env.clock.advance(minutes=90)
+    assert queue.now() == NOW + timedelta(minutes=90)
