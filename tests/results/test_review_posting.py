@@ -749,8 +749,8 @@ async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path
     async with get_connection(league.db_path) as db:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
-            "track_name, status) VALUES (?, ?, 5, '2026-02-01T18:00:00+00:00', 'NORMAL', "
-            "'Monza', 'CANCELLED')",
+            "track_name, status) VALUES (?, ?, 6, '2026-02-01T18:00:00+00:00', 'NORMAL', "
+            "'Silverstone', 'CANCELLED')",
             (CANCELLED_ROUND_ID, DIVISION_ID),
         )
         await db.execute(
@@ -761,7 +761,7 @@ async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path
              json.dumps([OLD_CANCELLED_STANDINGS])),
         )
         await db.commit()
-    league.channel(STANDINGS_CHANNEL).seed(OLD_CANCELLED_STANDINGS, "round 5 standings")
+    league.channel(STANDINGS_CHANNEL).seed(OLD_CANCELLED_STANDINGS, "round 6 standings")
     await _ask(league, later_rounds=True)
     await run_queue(league.bot)
 
@@ -769,7 +769,7 @@ async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path
     assert CANCELLED_ROUND_ID not in await _standings_rounds(league)
     assert LATER_ROUND_ID in await _standings_rounds(league)
     standings = league.channel(STANDINGS_CHANNEL)
-    assert standings.messages[OLD_CANCELLED_STANDINGS].content == "round 5 standings"
+    assert standings.messages[OLD_CANCELLED_STANDINGS].content == "round 6 standings"
     assert OLD_CANCELLED_STANDINGS not in league.deleted_in(STANDINGS_CHANNEL)
 
 
