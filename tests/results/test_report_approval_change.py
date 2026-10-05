@@ -75,6 +75,7 @@ from tests.support.review_league import (
     round_status,
     run_until_done,
     stopped_at,
+    verdict_headings,
 )
 
 KIND = "results.reports.approve"
@@ -126,7 +127,9 @@ async def test_a_stop_after_the_penalties_are_saved_finishes_the_approval_on_res
     assert len(records) == 2
     announced = {int(record["announcement_message_id"]) for record in records}
     assert len(announced) == 2
-    assert sorted(league.sent_to(VERDICTS_CHANNEL)) == sorted(announced)
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert sorted(sent[1:]) == sorted(announced)
     assert len(league.attendance._calls("record_on")) == 1
     assert len(appeals_prompts(league)) == 1
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
@@ -168,8 +171,56 @@ async def test_a_stop_part_way_through_the_reposts_finishes_them_and_announces_e
     results = league.sent_to(RESULTS_CHANNEL)
     assert len(results) == 1
     assert set(league.channel(RESULTS_CHANNEL).messages) == set(results)
-    assert len(league.sent_to(VERDICTS_CHANNEL)) == 2
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 3
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_penalty_approval_posts_one_banner_across_its_verdicts_and_its_sanctions(
+    tmp_path,
+):
+    """Image spec, the verdict banner: one heading per approval, heading the attendance
+    sanctions as it heads the verdicts. Each later job reads the heading back from its row, so a
+    restart between two verdicts posts no second one."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    await _approve(league)
+    await run_until_done(league, "announce_verdict")
+
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 3
+    assert league.attendance._calls("announce_sanction") == [("announce_sanction", MAX_PROFILE)]
+    banners = await one(
+        league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages WHERE round_id = ?",
+        ROUND_ID,
+    )
+    assert banners == 1
+    assert await one(
+        league.db_path, "SELECT message_id FROM verdict_banner_messages WHERE round_id = ?",
+        ROUND_ID,
+    ) == str(sent[0])
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_an_approval_announcing_no_verdict_posts_no_heading(tmp_path):
+    """Image spec, the verdict banner: a heading is posted only where a verdict follows it."""
+    league = await review_league(tmp_path)
+    await _approve(league, staged=[], pardons=[pardon()])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert league.sent_to(VERDICTS_CHANNEL) == []
+    assert await one(
+        league.db_path, "SELECT COUNT(*) FROM verdict_banner_messages WHERE round_id = ?",
+        ROUND_ID,
+    ) == 0
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)

@@ -523,6 +523,19 @@ def points_fail() -> Any:
     )
 
 
+#: The written heading over a batch of round 3's verdicts, where image generation is off.
+HEADING = "**Season 1 Pro Round 3**"
+
+
+def verdict_headings(league: ReviewLeague) -> list[int]:
+    """The messages sent to the verdicts channel that are the written heading, in order."""
+    channel = league.channel(VERDICTS_CHANNEL)
+    return [
+        mid for mid in league.sent_to(VERDICTS_CHANNEL)
+        if getattr(channel.messages.get(mid), "content", None) == HEADING
+    ]
+
+
 def appeals_prompts(league: ReviewLeague) -> list[int]:
     return [
         mid for mid, message in league.channel(SUBMISSION_CHANNEL).messages.items()

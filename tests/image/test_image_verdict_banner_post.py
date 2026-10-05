@@ -585,19 +585,6 @@ def test_both_enforcement_sites_hand_the_poster_on():
         assert "head=head," in block[:600]
 
 
-def test_a_penalty_approval_shares_one_poster_with_the_attendance_pipeline():
-    """The whole point of `banner_for_round`: one header over one approval."""
-    import inspect
-
-    from leaguebot.results.services import result_submission_service
-
-    # The approval's body, once `finalize_penalty_review` has checked and claimed it (#402).
-    source = inspect.getsource(result_submission_service._apply_approved_reports)
-    assert source.count("banner_for_round(") == 1, "one poster, built once"
-    assert "post_penalty_announcements(\n                    bot, state, applied_records, head=" in source
-    assert "head=_verdict_banner," in source
-
-
 # ── heading_text ──────────────────────────────────────────────────────────
 
 

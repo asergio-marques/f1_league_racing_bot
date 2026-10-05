@@ -52,6 +52,7 @@ from tests.support.review_league import (
     round_status,
     run_until_done,
     stopped_at,
+    verdict_headings,
 )
 
 KIND = "results.appeals.approve"
@@ -178,7 +179,9 @@ async def test_a_stop_after_the_corrections_are_saved_announces_the_appeals_and_
     await run_queue(league.bot)
 
     assert await stopped_at(league) is None
-    assert len(league.sent_to(VERDICTS_CHANNEL)) == 1
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 2
     assert APPEALS_PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
     assert _channel_deletions(league) == [SUBMISSION_CHANNEL]
     assert appeals_prompts(league) == []
