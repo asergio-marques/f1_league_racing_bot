@@ -25,6 +25,7 @@ from typing import Any
 
 import pytest
 
+from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     acknowledgement,
     discard_job,
@@ -111,6 +112,14 @@ async def _appeal_records(db_path: str) -> int:
 async def _closed(db_path: str) -> int:
     return await one(db_path, "SELECT closed FROM round_submission_channels WHERE round_id = ?",
                      ROUND_ID)
+
+
+async def _division_active(league: ReviewLeague) -> None:
+    """Division 11 ACTIVE, as a division of an ongoing season is: only an ACTIVE division is
+    moved on to FINISHED."""
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (DIVISION_ID,))
+        await db.commit()
 
 
 def _channel_deletions(league: ReviewLeague) -> list[int]:
@@ -290,9 +299,9 @@ async def test_a_discarded_appeals_apply_reopens_the_appeals_review(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_is_final_and_its_division_status_refreshed_in_the_same_save(tmp_path):
     league = await _league(tmp_path)
+    await _division_active(league)
     await _approve(league)
     await run_until_done(league, "apply")
 
@@ -304,11 +313,11 @@ async def test_the_round_is_final_and_its_division_status_refreshed_in_the_same_
     assert league.sent_to(RESULTS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_season_is_wound_down_as_a_change_of_its_own_when_the_division_finishes(
     tmp_path,
 ):
     league = await _league(tmp_path)
+    await _division_active(league)
     await _approve(league)
     await run_until_done(league, "apply")
 

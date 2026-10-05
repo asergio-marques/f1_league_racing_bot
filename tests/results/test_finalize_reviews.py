@@ -702,10 +702,13 @@ async def test_a_cancelled_round_is_not_raised_to_final(tmp_path):
     assert await round_status(league.db_path) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_divisions_status_is_reconsidered(tmp_path):
-    """#154: the last round's appeals are what finishes a division."""
+    """#154: the last round's appeals are what finishes a division, ACTIVE as a division of an
+    ongoing season is."""
     league = await _appeals_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (DIVISION_ID,))
+        await db.commit()
 
     await _approve_appeals(league)
 
