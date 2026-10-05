@@ -63,7 +63,6 @@ from tests.support.review_league import (
     verdict_headings,
 )
 
-NOT_BUILT = "#439: a round's verdicts are not yet announced by jobs on the queue"
 APPEALS_PROMPT = 8902
 
 
@@ -276,9 +275,14 @@ async def test_a_driver_the_server_no_longer_knows_is_drawn_under_their_signup_n
     assert [item["driver_name"] for item in drawn] == ["Signed Up Lewis"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
+    """A test driver is no member of the server, so the server names nobody: the driver is
+    drawn under the name test mode gave it."""
     league = await review_league(tmp_path)
+    league.guild.get_member = MagicMock(return_value=None)
+    league.guild.fetch_member = AsyncMock(
+        side_effect=http_error(discord.NotFound, status=404, text="Unknown Member"),
+    )
     async with get_connection(league.db_path) as db:
         await db.execute(
             "UPDATE driver_profiles SET is_test_driver = 1, test_display_name = 'Test Lewis' "
