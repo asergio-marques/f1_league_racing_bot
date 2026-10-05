@@ -1098,3 +1098,73 @@ def test_a_best_lap_with_seconds_of_sixty_or_more_is_refused():
 def test_a_best_lap_under_a_minute_is_still_read():
     line = "1, <@123>, T456, Soft, 58.123, N/A"
     assert not isinstance(_validate_qualifying_row_wizard(line), str)
+
+
+# ---------------------------------------------------------------------------
+# _recompute_session_points_on — the points on a handed connection (#439)
+# ---------------------------------------------------------------------------
+
+
+async def test_recompute_session_points_on_raises_and_skips_unconfigured(tmp_path):
+    """A session that cannot be scored raises out of the call, so the approval's save rolls back
+    rather than publishing the old points; a session with no points configuration is skipped, not
+    a failure. A clean run scores on the connection it is handed and commits nothing."""
+    from unittest.mock import AsyncMock, patch
+
+    from leaguebot.core.db.database import get_connection, run_migrations
+    from leaguebot.results.services.result_submission_service import (
+        _recompute_session_points_on,
+    )
+
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        round_id = await _seed_round(db)
+        division_id = (
+            await (await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))).fetchone()
+        )["division_id"]
+        sessions = {}
+        for session_type, config_name in (("FEATURE_RACE", "Standard"), ("FEATURE_QUALIFYING", None)):
+            cursor = await db.execute(
+                "INSERT INTO session_results (round_id, division_id, session_type, status, "
+                "config_name) VALUES (?, ?, ?, 'ACTIVE', ?)",
+                (round_id, division_id, session_type, config_name),
+            )
+            sessions[session_type] = cursor.lastrowid
+        await db.commit()
+
+    target = "leaguebot.results.services.result_submission_service._apply_points_in_tx"
+    failing = AsyncMock(side_effect=RuntimeError("the points could not be calculated"))
+    async with get_connection(db_path) as db:
+        with patch(target, new=failing), pytest.raises(RuntimeError):
+            await _recompute_session_points_on(db, round_id)
+    assert [call.args[1] for call in failing.await_args_list] == [sessions["FEATURE_RACE"]]
+
+    scored: list[tuple[int, str, SessionType]] = []
+
+    async def _record(conn, session_result_id, season_id, config_name, session_type):
+        scored.append((session_result_id, config_name, session_type))
+        await conn.execute(
+            "UPDATE session_results SET config_name = 'Scored' WHERE id = ?", (session_result_id,)
+        )
+        return True
+
+    async def _config(session_result_id):
+        async with get_connection(db_path) as other:
+            row = await (await other.execute(
+                "SELECT config_name FROM session_results WHERE id = ?", (session_result_id,)
+            )).fetchone()
+        return row["config_name"]
+
+    async with get_connection(db_path) as db:
+        with patch(target, new=_record):
+            await _recompute_session_points_on(db, round_id)
+        own = await (await db.execute(
+            "SELECT config_name FROM session_results WHERE id = ?", (sessions["FEATURE_RACE"],)
+        )).fetchone()
+        assert own["config_name"] == "Scored"
+        assert await _config(sessions["FEATURE_RACE"]) == "Standard"
+        await db.rollback()
+
+    assert scored == [(sessions["FEATURE_RACE"], "Standard", SessionType.FEATURE_RACE)]
+    assert await _config(sessions["FEATURE_RACE"]) == "Standard"
