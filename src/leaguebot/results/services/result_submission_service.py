@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Iterable, Mapping, NamedTuple, TypeVar
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
@@ -1546,24 +1547,24 @@ async def _apply_staged_appeals(
     return records
 
 
+_ACTIVE_SESSIONS_OF_ROUND_SQL = """
+    SELECT sr.id AS session_result_id, sr.config_name, sr.session_type,
+           s.id AS season_id
+    FROM session_results sr
+    JOIN rounds r ON r.id = sr.round_id
+    JOIN divisions d ON d.id = r.division_id
+    JOIN seasons s ON s.id = d.season_id
+    WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+"""
+
+
 async def _recompute_session_points(db_path: str, round_id: int) -> None:
     """Re-run ``_apply_points_from_config`` for every ACTIVE session in *round_id*
     so that ``points_awarded`` and ``fastest_lap_bonus`` reflect any position changes
     caused by penalties applied to the new result tables.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT sr.id AS session_result_id, sr.config_name, sr.session_type,
-                   s.id AS season_id
-            FROM session_results sr
-            JOIN rounds r ON r.id = sr.round_id
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            """,
-            (round_id,),
-        )
+        cursor = await db.execute(_ACTIVE_SESSIONS_OF_ROUND_SQL, (round_id,))
         sessions = await cursor.fetchall()
 
     for row in sessions:
@@ -1582,6 +1583,31 @@ async def _recompute_session_points(db_path: str, round_id: int) -> None:
                 "_recompute_session_points: error for session_result %s",
                 row["session_result_id"],
             )
+
+
+async def _recompute_session_points_on(db: aiosqlite.Connection, round_id: int) -> None:
+    """Re-score every ACTIVE session of *round_id* on the save *db* belongs to, committing nothing.
+
+    What `_recompute_session_points` does, written on the connection it is handed through
+    `_apply_points_in_tx` so that the points are part of the approval's one save, and **raising
+    on the first session that cannot be scored** (issue #439, defect 3). The old form logged a
+    failure to the host and went on, so a round was published as approved with its old points;
+    here the failure rolls the whole save back and stops the change.
+
+    A session with no points configuration is not a failure: it is skipped, its rows keeping
+    the points they have, as the old form did.
+    """
+    cursor = await db.execute(_ACTIVE_SESSIONS_OF_ROUND_SQL, (round_id,))
+    for row in await cursor.fetchall():
+        if row["config_name"] is None:
+            continue
+        await _apply_points_in_tx(
+            db,
+            row["session_result_id"],
+            row["season_id"],
+            row["config_name"],
+            SessionType(row["session_type"]),
+        )
 
 
 async def _snapshot_staged_drivers(
