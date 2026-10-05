@@ -122,10 +122,15 @@ async def test_each_stage_of_an_amendment_is_a_change_of_its_own_kind(tmp_path, 
     assert "close" in change_type.steps
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "module",
-    ["results/services/report_approval_change.py", "results/services/appeals_approval_change.py"],
+    [
+        "results/services/report_approval_change.py",
+        pytest.param(
+            "results/services/appeals_approval_change.py",
+            marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT),
+        ),
+    ],
 )
 def test_the_first_pass_carries_no_amendment_branches_of_its_own(module):
     """Threading the amendment through the first pass is what made it unreadable, and what let
