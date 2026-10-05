@@ -126,10 +126,7 @@ async def test_each_stage_of_an_amendment_is_a_change_of_its_own_kind(tmp_path, 
     "module",
     [
         "results/services/report_approval_change.py",
-        pytest.param(
-            "results/services/appeals_approval_change.py",
-            marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT),
-        ),
+        "results/services/appeals_approval_change.py",
     ],
 )
 def test_the_first_pass_carries_no_amendment_branches_of_its_own(module):

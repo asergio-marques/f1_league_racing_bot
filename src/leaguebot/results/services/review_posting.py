@@ -40,6 +40,11 @@ to repair. No sync command is named while the bot is still trying the job: a syn
 second copy. Only a job discarded is named with the command that finishes it, or, while the season
 is pending completion, where the sync commands are refused, with `/results rounds amend` instead.
 
+**A channel is deleted by a job of its own** (`delete_channel`), last in an approval that ends a
+round's channel: a channel already gone completes it, and its `record` forgets the amendment record
+naming the channel in the save that marks it done. A channel Discord refuses to delete stops the
+queue, and once discarded is named for deletion by hand.
+
 **The batch notice is a pair of jobs** bracketing a republication, each a job like any other: a
 notice Discord refuses stops the queue (the owner's rule, every failure stops it).
 """
@@ -76,6 +81,7 @@ from leaguebot.results.services.results_post_service import (
     _label_from_status,
     _load_driver_rows,
     _sr_from_row,
+    delete_round_channel,
     driver_standings_for_display,
     produce_session_results,
     produce_standings,
@@ -91,6 +97,7 @@ POST_STANDINGS = "post_standings"
 DELETE_MESSAGE = "delete_message"
 POST_BATCH_NOTICE = "post_batch_notice"
 DELETE_BATCH_NOTICE = "delete_batch_notice"
+DELETE_CHANNEL = "delete_channel"
 
 #: The notice a republication posts in the submission channel while it draws, where its change
 #: type gives no words of its own.
@@ -124,6 +131,10 @@ def posting_steps() -> dict[str, Step]:
         DELETE_BATCH_NOTICE: Step(
             DELETE_BATCH_NOTICE, StepKind.DELETE, _delete_batch_notice,
             still_due=_notice_posted, describe=_describe_notice_delete,
+        ),
+        DELETE_CHANNEL: Step(
+            DELETE_CHANNEL, StepKind.DELETE, _delete_channel,
+            describe=_describe_channel_delete, record=_record_channel_deleted,
         ),
     }
 
@@ -245,27 +256,32 @@ def _standings_job(round_id: int, round_number: int, label: str, pending: bool) 
 def not_done(ctx: OutcomeContext) -> list[str]:
     """One line for each posting job a league admin discarded, in the order the jobs stood.
 
-    What was not done, and the command that finishes it where there is one: a table not posted
-    names the sync command (or `/results rounds amend`), a message not deleted is linked for
-    deletion by hand, and a notice left standing is linked too.
+    What was not done: a message not deleted is linked for deletion by hand, a notice left
+    standing is linked too, a channel left standing is named. The tables not posted end with one
+    line naming the commands that finish them, **both sync commands** since a league reads a
+    round's results and the division's standings separately and each has its own, or
+    `/results rounds amend` alone while the season is pending completion, where the sync commands
+    are refused (the jobs carry which, since an outcome is formed with nothing awaited).
     """
     lines: list[str] = []
+    pending = False
+    unposted = False
     for view in ctx.steps:
         result = view.result or {}
         if "discarded" not in result:
             continue
         payload = view.payload
         if view.name == POST_SESSION_RESULTS:
+            unposted = True
+            pending = pending or payload["remedy"] == _AMEND
             lines.append(
                 f"⚠️ Round {payload.get('round_number', '?')}'s "
-                f"{payload.get('session', 'results')} were not posted. Run `{payload['remedy']}` "
-                f"to post it."
+                f"{payload.get('session', 'results')} were not posted."
             )
         elif view.name == POST_STANDINGS:
-            lines.append(
-                f"⚠️ Round {payload.get('round_number', '?')}'s standings were not posted. "
-                f"Run `{payload['remedy']}` to post them."
-            )
+            unposted = True
+            pending = pending or payload["remedy"] == _AMEND
+            lines.append(f"⚠️ Round {payload.get('round_number', '?')}'s standings were not posted.")
         elif view.name == DELETE_MESSAGE:
             link = result.get("link") or f"in <#{payload['channel_id']}>"
             lines.append(f"⚠️ An earlier message could not be deleted ({link}): delete it by hand.")
@@ -274,6 +290,17 @@ def not_done(ctx: OutcomeContext) -> list[str]:
         elif view.name == DELETE_BATCH_NOTICE:
             link = result.get("link") or f"in <#{payload['channel_id']}>"
             lines.append(f"⚠️ The \"one moment\" notice could not be deleted ({link}): delete it by hand.")
+        elif view.name == DELETE_CHANNEL:
+            lines.append(
+                f"⚠️ The channel <#{payload['channel_id']}> could not be deleted: delete it by hand."
+            )
+    if unposted:
+        lines.append(
+            f"Repair the cause, then amend the round again with `{_AMEND}`: the sync commands are "
+            "closed while the season is pending completion."
+            if pending else
+            f"Repair the cause, then run `{_RESULTS_SYNC}` and `{_STANDINGS_SYNC}`."
+        )
     return lines
 
 
@@ -745,7 +772,53 @@ async def _delete_batch_notice(ctx: StepContext) -> StepResult:
     return StepResult(result={"deleted": True})
 
 
+# ---------------------------------------------------------------------------
+# Taking a channel down
+# ---------------------------------------------------------------------------
+
+
+async def _describe_channel_delete(ctx: StepContext) -> str:
+    payload = ctx.step_payload
+    return f"deleting the {payload.get('what', 'channel')} <#{payload['channel_id']}>"
+
+
+async def _delete_channel(ctx: StepContext) -> StepResult:
+    """Delete a round's submission or amendment channel: a channel already gone completes the job.
+
+    The job's `record` forgets the amendment record that names the channel, as
+    `close_submission_channel` does once the channel has gone, so a channel that could not be
+    deleted keeps it for the retry.
+    """
+    payload = ctx.step_payload
+    guild = await _league_guild(ctx.bot)
+    channel = guild.get_channel(int(payload["channel_id"]))
+    if channel is None:
+        return StepResult(result={"gone": True})
+    try:
+        await delete_round_channel(
+            channel, reason=payload.get("reason") or "Results submission complete"
+        )
+    except discord.NotFound:
+        raise
+    except discord.HTTPException as error:
+        raise StepFailedOnDiscord("the channel could not be deleted") from error
+    return StepResult(result={"deleted": True})
+
+
+async def _record_channel_deleted(
+    db: aiosqlite.Connection, ctx: StepContext, _result: StepResult
+) -> None:
+    """Forget the amendment record naming the channel, in the save that marks the deletion done:
+    scoped by the channel as well as the round, since a fresh amendment of the round may by now
+    hold its own record."""
+    payload = ctx.step_payload
+    await db.execute(
+        "DELETE FROM round_amend_channels WHERE round_id = ? AND channel_id = ?",
+        (int(payload["round_id"]), int(payload["channel_id"])),
+    )
+
+
 __all__ = [
-    "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
+    "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
     "POST_SESSION_RESULTS", "POST_STANDINGS", "not_done", "plan_posts", "posting_steps",
 ]

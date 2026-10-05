@@ -197,7 +197,6 @@ async def test_no_further_action_is_announced_as_no_penalty(tmp_path):
     assert "seconds" not in verdict
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeal_of_no_further_action_is_announced_as_no_penalty(tmp_path):
     league = await _appeals_league(tmp_path)
     await _approve_appeals(league, [_nfa(LEWIS)])
@@ -325,7 +324,6 @@ async def test_a_report_verdict_saves_the_message_and_channel_it_was_announced_i
     assert str(row["announcement_channel_id"]) == str(VERDICTS_CHANNEL)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeal_verdict_saves_the_message_it_was_announced_in(tmp_path):
     league = await _appeals_league(tmp_path)
     await _approve_appeals(league, [penalty(LEWIS, seconds=-5)])

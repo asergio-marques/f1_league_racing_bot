@@ -169,6 +169,19 @@ def _parse_ids(raw: str | None) -> list[int] | None:
     return ids or None
 
 
+async def delete_round_channel(
+    channel: discord.abc.GuildChannel | discord.Thread, *, reason: str
+) -> None:
+    """Delete a round's submission or amendment channel.
+
+    The one place one is deleted, which `close_submission_channel` (through
+    `_close_amend_channel_record`) and the queue's `delete_channel` job both call. Raises
+    `discord.NotFound` where the channel is already gone and `discord.HTTPException` where
+    Discord refuses; each caller says what either means for it.
+    """
+    await channel.delete(reason=reason)
+
+
 async def _delete_posting(
     channel: discord.TextChannel,
     anchor_msg_id: int,

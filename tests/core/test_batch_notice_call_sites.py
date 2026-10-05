@@ -185,7 +185,6 @@ async def test_a_report_approval_s_notice_brackets_its_republication(tmp_path):
     _assert_brackets_the_republication(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeals_approval_s_notice_brackets_its_republication_and_goes_before_the_channel(
     tmp_path,
 ):

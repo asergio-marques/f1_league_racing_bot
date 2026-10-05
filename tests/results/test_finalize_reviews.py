@@ -659,7 +659,6 @@ def _verdicts(league: ReviewLeague) -> list[int]:
     return [mid for mid in league.sent_to(VERDICTS_CHANNEL) if mid not in headings]
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_approving_appeals_finishes_the_round(tmp_path):
     league = await _appeals_league(tmp_path)
 
@@ -669,7 +668,6 @@ async def test_approving_appeals_finishes_the_round(tmp_path):
     assert await round_status(league.db_path) == "FINAL"
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_approving_appeals_marks_the_drivers_who_raced(tmp_path):
     """Where the former-driver flag is set, and the only place the first pass sets it (#216).
 
@@ -686,7 +684,6 @@ async def test_approving_appeals_marks_the_drivers_who_raced(tmp_path):
     assert await _profile_former(league.db_path, MAX_PROFILE) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_cancelled_round_marks_nobody(tmp_path):
     """A round that never became final has no final results to mark by."""
     league = await _appeals_league(tmp_path, round_status="CANCELLED")
@@ -696,7 +693,6 @@ async def test_a_cancelled_round_marks_nobody(tmp_path):
     assert await _profile_former(league.db_path, LEWIS_PROFILE) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_cancelled_round_is_not_raised_to_final(tmp_path):
     """By a view that outlived its cancellation."""
     league = await _appeals_league(tmp_path, round_status="CANCELLED")
@@ -718,7 +714,6 @@ async def test_the_divisions_status_is_reconsidered(tmp_path):
     ) == "FINISHED"
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_submission_channel_is_closed(tmp_path):
     league = await _appeals_league(tmp_path)
 
@@ -730,7 +725,6 @@ async def test_the_submission_channel_is_closed(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_results_are_reposted_as_final(tmp_path):
     league = await _appeals_league(tmp_path)
 
@@ -759,7 +753,6 @@ async def test_upheld_corrections_are_applied_and_recorded(tmp_path):
         ]
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_upheld_corrections_are_announced(tmp_path):
     league = await _appeals_league(tmp_path)
 
@@ -769,7 +762,6 @@ async def test_upheld_corrections_are_announced(tmp_path):
     assert f"<@{LEWIS}>" in str(league.channel(VERDICTS_CHANNEL).messages[verdict].content)
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_failed_appeal_announcement_does_not_un_approve_them(tmp_path):
     """The verdict Discord refuses stops the queue; the round is already final. Once a league
     admin discards it, the submission channel behind it is still deleted."""
@@ -790,7 +782,6 @@ async def test_a_failed_appeal_announcement_does_not_un_approve_them(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_an_appeals_review_with_no_corrections_applies_nothing(tmp_path):
     league = await _appeals_league(tmp_path)
 
@@ -801,7 +792,6 @@ async def test_an_appeals_review_with_no_corrections_applies_nothing(tmp_path):
     assert "corrections: none" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_path):
     """**D3.** The appeals approval reposts every graphic before the round's last jobs run, and a
     double click applied every correction twice. Round 3 (Pro) awaits its appeal verdicts with one
@@ -847,7 +837,6 @@ async def _appeals_in_hand(league: ReviewLeague, how: str) -> None:
         ("clear", "Yes, clear and proceed with no corrections"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_every_appeals_control_refuses_while_the_appeals_are_being_approved(
     tmp_path, kind, label, how
 ):
@@ -905,7 +894,6 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     ) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_failing_appeals_audit_does_not_stop_the_close(tmp_path):
     league = await _appeals_league(tmp_path)
     league.bot.log_channel.send = AsyncMock(side_effect=RuntimeError("no log"))
@@ -1007,7 +995,6 @@ async def test_a_missing_guild_is_reported_rather_than_skipped(tmp_path):
     assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_appeals_approval_reports_an_unpostable_repost(tmp_path):
     """The same, on the approval that takes a round to FINAL."""
     league = await _appeals_league(tmp_path)
@@ -1112,7 +1099,6 @@ async def test_an_approval_that_announced_everything_reports_no_verdict_fault(tm
     assert "⚠️" not in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_an_appeal_verdict_that_was_not_announced_is_reported(tmp_path):
     league = await _appeals_league(tmp_path)
 
@@ -1237,7 +1223,6 @@ async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_p
     assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_path):
     league = await _appeals_league(tmp_path)
     await _amend_round_two(league.db_path)
@@ -1917,8 +1902,7 @@ def _line_of(league: ReviewLeague, heading: str) -> str:
     "stage, token",
     [
         pytest.param("reports", "PENALTY_REVIEW_APPROVED", id="reports"),
-        pytest.param("appeals", "APPEALS_REVIEW_APPROVED", id="appeals",
-                     marks=pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)),
+        pytest.param("appeals", "APPEALS_REVIEW_APPROVED", id="appeals"),
     ],
 )
 async def test_the_approval_names_the_member_who_approved(tmp_path, stage, token):

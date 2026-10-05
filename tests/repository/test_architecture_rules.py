@@ -787,9 +787,9 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_close_amend_channel_record"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
+    ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
     ("signup/cogs/admin_review_cog.py", "AdminReviewCog.on_message"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._execute_channel_delete"): (1, PASS["signup"]),
@@ -1123,7 +1123,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "enter_penalty_state"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "finalize_appeals_review"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
@@ -1290,7 +1289,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The penalty and appeals approvals
     ("__main__.py", "_recover_orphaned_submission_channels"): (1, SLICE[2]),
-    ("results/services/result_submission_service.py", "finalize_appeals_review"): (1, SLICE[2]),
     ("results/services/result_submission_service.py", "_apply_staged_appeals"): (1, SLICE[2]),
     ("results/services/result_submission_service.py", "_clear_round_verdict_records"): (1, SLICE[2]),
     ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (1, SLICE[2]),

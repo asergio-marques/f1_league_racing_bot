@@ -505,10 +505,6 @@ async def test_adding_a_correction_asks_which_session(tmp_path):
     assert _sent_view(interaction) is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the appeals review's controls call the finaliser rather than asking the change queue",
-)
 async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     """There is nothing to lose, and a confirmation would be a click for its own sake.
 
@@ -530,10 +526,6 @@ async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     assert payload["staged"] == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the appeals review's controls call the finaliser rather than asking the change queue",
-)
 async def test_approving_the_appeals_asks_for_the_corrections_staged(tmp_path):
     """Alex presses ✅ Approve on round 3's appeals review with one 5-second correction for
     driver 101 staged. The press asks the queue for `results.appeals.approve` of round 3, handing
@@ -588,10 +580,6 @@ async def test_the_confirmation_says_what_clearing_would_do(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the appeals review's controls call the finaliser rather than asking the change queue",
-)
 async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     """Round 3's appeals review has one correction staged; Alex presses No Changes / Confirm and
     then confirms the clear. The list is emptied and the queue is asked for
@@ -820,13 +808,7 @@ def _all_lines(interaction, state) -> list[str]:
     "kind, label",
     [
         pytest.param("review", "Remove #1", id="remove-correction"),
-        pytest.param(
-            "clear", _APPEALS_CLEAR, id="clear",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#439: the clear's Confirm calls the finaliser rather than asking the change queue",
-            ),
-        ),
+        pytest.param("clear", _APPEALS_CLEAR, id="clear"),
     ],
 )
 async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind, label):
@@ -858,10 +840,6 @@ async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind,
         assert fragment in line, (fragment, line)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: No Changes / Confirm calls the finaliser rather than asking the change queue",
-)
 async def test_no_changes_writes_no_line_beside_the_approval_s_own(tmp_path):
     """Round 3's appeals review (division Pro) has nothing staged. Alex presses No Changes /
     Confirm, which asks the queue for the appeals approval at once; the approval (the queue's

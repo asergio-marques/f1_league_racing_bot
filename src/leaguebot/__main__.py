@@ -87,6 +87,7 @@ def register_change_types(bot: LeagueBot) -> None:
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.review_open_change import review_open_change
@@ -99,6 +100,11 @@ def register_change_types(bot: LeagueBot) -> None:
     # run (the queue is rebuilt at a restart), and reach attendance through the hook alone.
     bot.change_queue.register(
         report_approval_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
+    bot.change_queue.register(
+        appeals_approval_change(
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
         )
     )

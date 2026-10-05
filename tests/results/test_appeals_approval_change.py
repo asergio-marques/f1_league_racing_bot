@@ -122,7 +122,6 @@ def _channel_deletions(league: ReviewLeague) -> list[int]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_appeals_approved_then_asked_again_after_a_restart_are_applied_once(tmp_path):
     from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
 
@@ -142,7 +141,6 @@ async def test_appeals_approved_then_asked_again_after_a_restart_are_applied_onc
     assert await _appeal_records(league.db_path) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_press_after_a_stopped_approval_does_not_apply_the_corrections_twice(tmp_path):
     from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
 
@@ -168,7 +166,6 @@ async def test_a_press_after_a_stopped_approval_does_not_apply_the_corrections_t
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stop_after_the_corrections_are_saved_announces_the_appeals_and_deletes_the_channel_on_restart(
     tmp_path,
 ):
@@ -188,7 +185,6 @@ async def test_a_stop_after_the_corrections_are_saved_announces_the_appeals_and_
     assert appeals_prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_final_round_leaves_no_review_to_restore(tmp_path):
     league = await _league(tmp_path)
     await _approve(league)
@@ -204,7 +200,6 @@ async def test_a_final_round_leaves_no_review_to_restore(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_correction_whose_points_cannot_be_recalculated_changes_nothing(tmp_path):
     league = await _league(tmp_path)
     with points_fail():
@@ -218,7 +213,6 @@ async def test_a_correction_whose_points_cannot_be_recalculated_changes_nothing(
     assert await _closed(league.db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_final_results_repost_discord_refuses_is_retried(tmp_path):
     league = await _league(tmp_path)
     league.channel(RESULTS_CHANNEL).send_fails = http_error(text="Discord is down")
@@ -241,7 +235,6 @@ async def test_a_final_results_repost_discord_refuses_is_retried(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_channel_deletion_names_the_channel_for_deletion_by_hand(tmp_path):
     league = await _league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(status=403, text="Missing Access")
@@ -327,7 +320,6 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own_when_the_division
     assert wind_downs[0]["id"] > approvals[0]["id"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_no_changes_with_nothing_staged_finishes_the_round_through_the_queue(tmp_path):
     league = await _league(tmp_path)
     interaction = await _approve(league, staged=[])
@@ -342,7 +334,6 @@ async def test_no_changes_with_nothing_staged_finishes_the_round_through_the_que
     assert "0 corrections" not in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_second_appeals_approval_while_the_first_is_in_hand_is_refused(tmp_path):
     from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
 
@@ -356,7 +347,6 @@ async def test_a_second_appeals_approval_while_the_first_is_in_hand_is_refused(t
     assert await _appeal_penalty(league.db_path) == -5000
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_manager_is_told_the_round_is_final(tmp_path):
     league = await _league(tmp_path)
     interaction = await _approve(league)

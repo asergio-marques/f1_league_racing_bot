@@ -171,7 +171,6 @@ async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
     assert not await _closed(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_zero_corrections_advances_to_final(tmp_path):
     """Nothing staged: the round becomes FINAL (FR-010), its channel row closed."""
     from tests.support.change_queue import run_queue
@@ -212,7 +211,6 @@ async def test_a_penalty_review_cannot_reopen_a_round_that_has_ended(tmp_path):
     assert await penalty_records(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeals_review_cannot_reopen_a_cancelled_round(tmp_path):
     """The same guard the other side of it: a cancelled round must not become FINAL."""
     from tests.support.change_queue import run_queue
@@ -228,7 +226,6 @@ async def test_an_appeals_review_cannot_reopen_a_cancelled_round(tmp_path):
     assert await round_status(league.db_path) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path):
     """The end-to-end link that lets a season be completed at all (issue #154).
 
@@ -265,7 +262,6 @@ async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_full_lifecycle_states(tmp_path):
     """Walk the lifecycle from results-in to final, verifying each transition: the round is
     awaiting report verdicts, then appeal verdicts once its reports are approved, then final once
