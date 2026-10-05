@@ -269,7 +269,12 @@ async def _failed(ctx: StepContext, division_id: int, round_id: int, error: Exce
         log.exception("could not form the attendance sync hint for division %s", division_id)
         hint = _SYNC
     kept = {**(getattr(error, "result", None) or {}), "hint": hint}
-    return StepFailedOnDiscord(str(error) or type(error).__name__, result=kept)
+    failure = StepFailedOnDiscord(str(error) or type(error).__name__, result=kept)
+    if not isinstance(error, StepFailedOnDiscord):
+        # An unexpected fault stays the cause, which the stop notice names by its type. A failure
+        # the hook already worded is not wrapped, so the notice carries its reason: what to repair.
+        failure.__cause__ = error
+    return failure
 
 
 async def _channel_of(ctx: StepContext, round_id: int) -> tuple[Any, dict[str, Any]]:
@@ -437,7 +442,7 @@ async def _attendance_sheet(ctx: StepContext) -> StepResult:
             sanctioned={int(p) for p in payload.get("sanctioned", [])}, as_text=ctx.tries > 0,
         )
     except Exception as error:
-        raise await _failed(ctx, int(payload["division_id"]), int(payload["round_id"]), error) from error
+        raise await _failed(ctx, int(payload["division_id"]), int(payload["round_id"]), error)
     return StepResult()
 
 
@@ -522,7 +527,7 @@ async def _apply_sanction(ctx: StepContext) -> StepResult:
             int(payload["round_id"]), int(payload["division_id"]), payload["candidate"], None
         )
     except Exception as error:
-        raise await _failed(ctx, int(payload["division_id"]), int(payload["round_id"]), error) from error
+        raise await _failed(ctx, int(payload["division_id"]), int(payload["round_id"]), error)
     return StepResult()
 
 
