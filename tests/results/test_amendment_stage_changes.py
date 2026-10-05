@@ -958,13 +958,14 @@ async def test_an_earlier_round_s_banner_is_left_alone(tmp_path):
     assert _sent_saying(league, "Unsafe rejoin") == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_later_round_s_replacements_do_not_license_the_amended_round_s_take_down(
     tmp_path,
 ):
     """Results spec, amendment: a round's superseded announcements come down only once every
     one of *that round's* replacements is posted. Discord refuses round 3's verdict cards, and a
-    league admin discards each; round 4's report for Max is announced again."""
+    league admin discards each; round 4's report for Max is announced again. Each round's heading
+    is a job of its own (owner, Gate 2), so round 3's stands over no verdict, and both new
+    headings are recorded beside the old banner kept for round 3."""
     league = await _amend_league(tmp_path, reports_approved=True)
     later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
     await _announced_verdict(league, later[MAX], LATER_REPORT, description="Pit lane speeding")
@@ -985,7 +986,11 @@ async def test_a_later_round_s_replacements_do_not_license_the_amended_round_s_t
     assert len(_sent_saying(league, "Pit lane speeding")) == 1
     assert LATER_REPORT not in said and LATER_BANNER not in said
     assert OLD_VERDICT in said and OLD_BANNER in said
-    assert await _banners_left(league) == [OLD_BANNER]
+    [round_3_heading] = verdict_headings(league)
+    [round_4_heading] = _sent_saying(league, ROUND_4_HEADING)
+    assert round_3_heading in said
+    assert _sent_saying(league, "Corner cutting") == []
+    assert await _banners_left(league) == [OLD_BANNER, round_3_heading, round_4_heading]
 
 
 # ---------------------------------------------------------------------------
