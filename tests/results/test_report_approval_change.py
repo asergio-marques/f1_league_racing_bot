@@ -25,8 +25,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
@@ -80,7 +78,6 @@ from tests.support.review_league import (
 )
 
 KIND = "results.reports.approve"
-NOT_BUILT = "#439: the report approval is not yet a change on the queue"
 
 
 def _payload(*, staged: Any = None, pardons: Any = (), prompt: int = PROMPT,
@@ -219,7 +216,6 @@ async def test_an_approval_announcing_no_verdict_posts_no_heading(tmp_path):
     ) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_penalties_and_attendance_are_saved_in_one_save(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     async with get_connection(league.db_path) as db:

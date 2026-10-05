@@ -115,7 +115,6 @@ def test_the_approve_notice_goes_to_the_interaction_channel():
 # `async with` left to read, so these drive the approvals through the queue on the review league
 # of `tests.support.review_league` and read the order of what its channels saw.
 
-NOT_BUILT = "#439: a round's approvals are not yet changes on the queue"
 APPEALS_PROMPT = 8902
 
 

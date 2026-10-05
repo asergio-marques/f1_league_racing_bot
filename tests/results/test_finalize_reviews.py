@@ -1719,10 +1719,18 @@ async def test_the_amendment_rewrites_the_rounds_pardons_at_its_last_stage(tmp_p
 
 @pytest.mark.parametrize(
     "stage, kind",
-    [("reports", AMEND_REPORTS), ("appeals", AMEND_APPEALS)],
+    [
+        pytest.param(
+            "reports", AMEND_REPORTS,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#439: the amendment's report stage's Approve control does not yet ask "
+                "the change queue",
+            ),
+        ),
+        ("appeals", AMEND_APPEALS),
+    ],
 )
-@pytest.mark.xfail(strict=True, reason="#439: the amendment's Approve controls do not yet ask the "
-                   "change queue")
 async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     tmp_path, stage, kind
 ):
