@@ -27,6 +27,25 @@ import discord
 log = logging.getLogger(__name__)
 
 
+async def send_notice(channel, text: str):
+    """Send the notice *text* to *channel* and give the message, raising whatever Discord raises.
+
+    The send half of :func:`batch_notice`, for a caller that treats a notice that cannot be
+    posted as a failure of its own (a job of the change queue, which stops the queue at it).
+    """
+    return await channel.send(text)
+
+
+async def delete_notice(message) -> None:
+    """Delete the notice *message*, raising whatever Discord raises, a message already gone
+    (``discord.NotFound``) included.
+
+    The delete half of :func:`batch_notice`, for a caller that decides for itself what a notice
+    already gone, or one that cannot be deleted, means.
+    """
+    await message.delete()
+
+
 @asynccontextmanager
 async def batch_notice(channel, text: str):
     """Post *text* to *channel*, run the body, then delete the message.
@@ -45,7 +64,7 @@ async def batch_notice(channel, text: str):
     message = None
     if channel is not None:
         try:
-            message = await channel.send(text)
+            message = await send_notice(channel, text)
         except (discord.HTTPException, discord.Forbidden) as exc:
             log.warning("batch_notice: could not post the notice: %s", exc)
         except Exception:  # noqa: BLE001 — a courtesy never breaks its caller
@@ -56,7 +75,7 @@ async def batch_notice(channel, text: str):
     finally:
         if message is not None:
             try:
-                await message.delete()
+                await delete_notice(message)
             except discord.NotFound:
                 # The message, or the channel holding it, went first. `finalize_appeals_
                 # review` deletes the whole submission channel moments after its batch, so
