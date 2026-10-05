@@ -56,6 +56,7 @@ from tests.support.review_league import (
     PROMPT,
     RESULTS_CHANNEL,
     ROUND_ID,
+    SEASON_ID,
     SUBMISSION_CHANNEL,
     VERDICTS_CHANNEL,
     ReviewLeague,
@@ -202,6 +203,15 @@ async def test_the_snapshots_of_this_round_and_every_later_one_are_saved_with_th
     tmp_path,
 ):
     league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        # The Feature Race's "Standard" scale, so the penalty really moves the points:
+        # without one, the points are left as seeded (25 to Lewis, 18 to Max).
+        await db.executemany(
+            "INSERT INTO season_points_entries (season_id, config_name, session_type, "
+            "position, points) VALUES (?, 'Standard', 'FEATURE_RACE', ?, ?)",
+            [(SEASON_ID, 1, 25), (SEASON_ID, 2, 18)],
+        )
+        await db.commit()
     await _approve(league, staged=[penalty(LEWIS, seconds=30)])
     await run_until_done(league, "apply")
 
