@@ -11,8 +11,8 @@ and resumes after a stop:
    and travel in the steps that follow, since nothing could find them once the rows are gone.
    The order is today's: the results go before the rounds close, so the closing finds no results
    to mark former drivers by. It also asks, as changes of the bot's, for the hub's panel to be
-   refreshed and for the season to be wound down, which go ahead whatever befalls the
-   take-downs, as changes of their own (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
+   refreshed and for the season to be wound down, as changes of their own, which run after the
+   take-downs and the close, in the queue's order (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
 2. **`take_down`**, one for each message or channel: `results_purge_service.take_down`. **Each is
    a job like any other**, so a removal that fails stops the queue until it is cleared (decided with
    the owner, 2026-10-02, withdrawing the earlier "tried once"): the bot tries it again on the

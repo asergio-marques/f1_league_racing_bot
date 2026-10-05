@@ -291,7 +291,8 @@ def wind_down_change() -> ChangeType:
     """The change that takes a season whose every division is done to Pending completion.
 
     Asked by the bot in the save of whatever finished the last division, so that the wind-down,
-    which needs Discord, goes ahead whatever befalls the steps beside it. It is due only while
+    which needs Discord, runs as a change of its own, after the steps of the change that asked
+    for it. It is due only while
     the live season is in an ongoing stage with every division finished or cancelled; where it is
     not, the change is dropped. Its one step is `wind_down_ongoing`; where that fails, the queue
     stops at the job, and `describe` names it.

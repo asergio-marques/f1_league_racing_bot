@@ -243,7 +243,7 @@ def hub_refresh_change() -> ChangeType:
     """The change that brings the hub's panel up to date, asked for by the bot.
 
     Asked in the save of whatever may have changed what the panel offers, so that the panel is
-    refreshed once the change is saved, whatever befalls the steps after it. The payload's
+    refreshed as a change of its own, after the steps of the change that asked for it. The payload's
     ``command`` names what caused it, for the line of a panel that could not be refreshed.
     A fault string `refresh_panel` returns is today's "Hub panel not refreshed" line; an
     exception stops the queue at the job, which `describe` names as the refresh. Repeatable: two refreshes are harmless.
