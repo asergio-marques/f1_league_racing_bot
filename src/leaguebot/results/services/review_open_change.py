@@ -64,6 +64,7 @@ from leaguebot.core.utils.log_lines import abandoned_line
 from leaguebot.results.services import review_posting
 from leaguebot.results.services.result_submission_service import (
     _build_penalty_review_state,
+    held_by_amendment,
     send_cancelled_line,
     send_review_prompt,
     take_down_cancel_message,
@@ -133,6 +134,16 @@ def review_open_change() -> ChangeType:
         approving = await unfinished(ctx.db_path, [REPORTS_APPROVE], excluding=ctx.change_id)
         if any(p.get("round_id") == round_id for p in approving):
             return no("The round's reports are being approved.")
+        # Another round's amendment holds the division: opening this review would publish its
+        # unapproved standings, and leave them published if it were cancelled or lapsed. The
+        # amend command is refused while this change is in hand, so this is the paste's own
+        # check, made again where the standings are posted.
+        held = await held_by_amendment(
+            ctx.db_path, round_id, int(row["division_id"]),
+            then="The review opens once that ends.",
+        )
+        if held is not None:
+            return no(held)
         guild = await _league_guild(ctx.bot)
         if as_text_channel(guild.get_channel(int(row["channel_id"]))) is None:
             reason = (
