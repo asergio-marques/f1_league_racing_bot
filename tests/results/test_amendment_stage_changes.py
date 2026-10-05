@@ -835,7 +835,6 @@ async def test_each_round_s_verdicts_are_announced_again_under_one_heading_of_it
     assert await _banners_left(league) == new_headings
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_report_the_same_size_as_an_upheld_appeal_is_announced_as_a_report(tmp_path):
     """Results spec, amendment: "All of a round's verdicts shall be announced". Round 4 holds
     Lewis's upheld appeal (5 seconds, track limits), with the penalty row upholding it writes
@@ -858,14 +857,15 @@ async def test_a_report_the_same_size_as_an_upheld_appeal_is_announced_as_a_repo
     assert await stopped_at(league) is None
     [appeal] = _sent_saying(league, "Track limits")
     [report] = _sent_saying(league, "Unsafe rejoin")
-    assert await one(
+    # The column is TEXT, the message id written as its string.
+    assert int(await one(
         league.db_path, "SELECT announcement_message_id FROM appeal_records"
-    ) == appeal
-    assert await one(
+    )) == appeal
+    assert int(await one(
         league.db_path,
         "SELECT announcement_message_id FROM penalty_records WHERE description = ?",
         "Unsafe rejoin",
-    ) == report
+    )) == report
 
 
 # ---------------------------------------------------------------------------
