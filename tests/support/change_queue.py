@@ -250,6 +250,10 @@ def league_double(db_path: str) -> Any:
     """A bot double with the league's log and interaction channels, and a real `OutputRouter`.
 
     `bot.log_channel` and `bot.interaction_channel` record what each is sent.
+    `bot.attendance_after_review` is the attendance hook the builder hands the review's change
+    types (#439), as a league with attendance off sees it: every method does nothing, no driver
+    is owed a sanction, and the sync hint names `/attendance sync`. A test that runs the hook
+    replaces it.
     """
     from leaguebot.core.services.output_router import OutputRouter
 
@@ -271,6 +275,13 @@ def league_double(db_path: str) -> Any:
         )
     )
     bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    hook = MagicMock()
+    for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
+                 "apply_sanction", "announce_sanction", "refresh_lineup"):
+        setattr(hook, name, AsyncMock(return_value=None))
+    hook.sanction_candidates = AsyncMock(return_value=[])
+    hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
+    bot.attendance_after_review = hook
     return bot
 
 
