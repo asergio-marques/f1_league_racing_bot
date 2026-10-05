@@ -156,8 +156,9 @@ class AttendanceDouble:
 
     Every method does nothing while the league's attendance is off, as the real hook does.
     `candidates` are the drivers over a threshold; one whose profile is in `applied` is no longer
-    owed. `record_fails`, `sheet_fails` (a list, one per failing try) and `apply_fails` (by
-    profile) make a call raise.
+    owed. `record_fails`, `sheet_fails` (a list, one per failing try), `apply_fails` and
+    `announce_fails` (by profile) and `lineup_fails` (a list, one per failing try) make a call
+    raise.
     """
 
     def __init__(self, league: "ReviewLeague") -> None:
@@ -168,6 +169,8 @@ class AttendanceDouble:
         self.record_fails: Exception | None = None
         self.sheet_fails: list[Exception] = []
         self.apply_fails: dict[int, Exception] = {}
+        self.announce_fails: dict[int, Exception] = {}
+        self.lineup_fails: list[Exception] = []
 
     def _calls(self, name: str) -> list[tuple[Any, ...]]:
         return [call for call in self.calls if call[0] == name]
@@ -218,12 +221,18 @@ class AttendanceDouble:
                                 *, as_text: bool) -> None:
         if not self.league.attendance_on:
             return
-        self.calls.append(("announce_sanction", candidate["driver_profile_id"]))
+        profile = candidate["driver_profile_id"]
+        self.calls.append(("announce_sanction", profile))
+        failure = self.announce_fails.pop(profile, None)
+        if failure is not None:
+            raise failure
 
     async def refresh_lineup(self, division_id: int) -> None:
         if not self.league.attendance_on:
             return
         self.calls.append(("refresh_lineup", division_id))
+        if self.lineup_fails:
+            raise self.lineup_fails.pop(0)
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         return "Repair the cause, then run `/attendance sync division:Pro round:3`."

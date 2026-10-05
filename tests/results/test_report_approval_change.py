@@ -489,6 +489,25 @@ async def test_a_discarded_appeals_prompt_is_posted_again_at_once(tmp_path):
     ) == prompts[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_discarded_batch_notice_is_named_and_the_republication_goes_ahead(tmp_path):
+    league = await review_league(tmp_path)
+    league.channel(SUBMISSION_CHANNEL).fail_when = (
+        lambda content, _kwargs: "Updating" in content
+    )
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "post_batch_notice"
+
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None, "the notice's take-down stopped the queue"
+    assert len(league.sent_to(RESULTS_CHANNEL)) == 1
+    assert OLD_RESULTS not in league.channel(RESULTS_CHANNEL).messages
+    assert "notice" in updated_reply(interaction).lower()
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+
+
 # ---------------------------------------------------------------------------
 # Sanctions, one job per driver
 # ---------------------------------------------------------------------------
@@ -589,6 +608,51 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
     divisions = [call[1] for call in league.attendance._calls("post_sheet")]
     assert divisions[0] == DIVISION_ID
     assert sorted(divisions[1:]) == sorted([DIVISION_ID, OTHER_DIVISION_ID])
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_discarded_sanction_announcement_names_the_driver_as_applied_but_not_announced(
+    tmp_path,
+):
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.announce_fails = {
+        MAX_PROFILE: StepFailedOnDiscord("Missing Access"),
+    }
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "announce_sanction"
+
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert MAX_PROFILE in league.attendance.applied, "the sanction itself was undone"
+    reply = updated_reply(interaction)
+    assert "Max" in reply or f"<@{MAX}>" in reply
+    assert "applied" in reply.lower()
+    assert "not announced" in reply.lower()
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_discarded_lineup_refresh_says_it_is_posted_with_the_next_change_to_the_drivers(
+    tmp_path,
+):
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+    league.attendance.lineup_fails = [StepFailedOnDiscord("Missing Access")]
+    interaction = await _approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "refresh_lineup"
+
+    await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert MAX_PROFILE in league.attendance.applied
+    reply = updated_reply(interaction)
+    assert "lineup" in reply.lower()
+    assert "next change" in reply.lower()
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
 
 
 # ---------------------------------------------------------------------------
