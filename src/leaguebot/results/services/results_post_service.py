@@ -124,15 +124,22 @@ async def _send_chunked(
     try:
         for chunk in chunks:
             sent.append(await channel.send(chunk))
-    except Exception:
+    except Exception as failure:
         # **A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
         # until the whole posting is, so leaving them would strand the start of a table in the
         # channel with no route by which the bot could ever take it down.
+        stranded: list[int] = []
         for message in sent:
             try:
                 await message.delete()
             except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
                 log.warning("_send_chunked: could not take down chunk %s: %s", message.id, exc)
+                if not isinstance(exc, discord.NotFound):
+                    stranded.append(message.id)
+        if stranded:
+            # What it could not take down, on the failure itself, for a caller that keeps the
+            # ids and removes them before it posts again (the change queue's posting jobs).
+            setattr(failure, "left_standing", stranded)
         raise
     return sent
 
@@ -1192,8 +1199,8 @@ async def _get_standings_message_ids(
     return _parse_ids(row["message_ids"] if row else None)
 
 
-async def _set_standings_message_id(
-    db_path: str,
+async def set_standings_message_id_on(
+    db: aiosqlite.Connection,
     division_id: int,
     round_id: int,
     message_id: int | None,
@@ -1201,7 +1208,7 @@ async def _set_standings_message_id(
     *,
     message_ids: str | None = None,
 ) -> None:
-    """Persist *message_id* for *championship* on the top-ranked driver's row.
+    """Persist *message_id* for *championship* on the top-ranked driver's row, committing nothing.
 
     Written on every posting, textual or graphic, so the two flows never disagree about
     which message is which. The textual flow leaves the constructor column null.
@@ -1215,27 +1222,45 @@ async def _set_standings_message_id(
     recomputation that changes the leader reorders the rows without moving the id, and one left
     behind on a row that is no longer top would be read as the round's current posting by
     :func:`_get_standings_message_id` long after it had been replaced (#345).
+
+    It writes on the connection it is handed, so that the change queue saves a post's id in the
+    save that marks the post done.
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
+    await db.execute(
+        f"UPDATE driver_standings_snapshots SET {column} = NULL, {list_column} = NULL "  # noqa: S608
+        "WHERE round_id = ? AND division_id = ?",
+        (round_id, division_id),
+    )
+    await db.execute(
+        f"""
+        UPDATE driver_standings_snapshots
+        SET {column} = ?, {list_column} = ?
+        WHERE round_id = ? AND division_id = ?
+          AND driver_user_id = (
+              SELECT driver_user_id FROM driver_standings_snapshots
+              WHERE round_id = ? AND division_id = ?
+              ORDER BY standing_position ASC LIMIT 1
+          )
+        """,
+        (message_id, message_ids, round_id, division_id, round_id, division_id),
+    )
+
+
+async def _set_standings_message_id(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    message_id: int | None,
+    championship: str = STANDINGS_DRIVERS,
+    *,
+    message_ids: str | None = None,
+) -> None:
+    """:func:`set_standings_message_id_on`, saved on a connection of its own."""
     async with get_connection(db_path) as db:
-        await db.execute(
-            f"UPDATE driver_standings_snapshots SET {column} = NULL, {list_column} = NULL "  # noqa: S608
-            "WHERE round_id = ? AND division_id = ?",
-            (round_id, division_id),
-        )
-        await db.execute(
-            f"""
-            UPDATE driver_standings_snapshots
-            SET {column} = ?, {list_column} = ?
-            WHERE round_id = ? AND division_id = ?
-              AND driver_user_id = (
-                  SELECT driver_user_id FROM driver_standings_snapshots
-                  WHERE round_id = ? AND division_id = ?
-                  ORDER BY standing_position ASC LIMIT 1
-              )
-            """,
-            (message_id, message_ids, round_id, division_id, round_id, division_id),
+        await set_standings_message_id_on(
+            db, division_id, round_id, message_id, championship, message_ids=message_ids
         )
         await db.commit()
 

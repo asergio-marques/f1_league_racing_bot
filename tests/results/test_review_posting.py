@@ -342,7 +342,6 @@ async def _stop_notice(league: _League) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a republication still deletes before it posts")
 async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -358,7 +357,6 @@ async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_pat
     assert set(league.channel(RESULTS_CHANNEL).messages) == {new[0]}
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a post's id is not yet saved with its job's mark")
 async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -371,7 +369,6 @@ async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
     assert deletes and all(row["done_at"] is None for row in deletes)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a republication is not yet carried on after a stop")
 async def test_a_stop_between_the_post_and_the_delete_deletes_the_old_message_on_restart(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -391,7 +388,6 @@ async def test_a_stop_between_the_post_and_the_delete_deletes_the_old_message_on
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a refused post is not yet a job that stops the queue")
 async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text(tmp_path):
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
@@ -424,7 +420,6 @@ async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a stopped post is not yet named by what and where")
 async def test_a_stopped_post_is_named_by_what_it_posts_and_where(tmp_path):
     league = await _league(tmp_path)
     league.channel(RESULTS_CHANNEL).send_fails = http_error(
@@ -440,7 +435,6 @@ async def test_a_stopped_post_is_named_by_what_it_posts_and_where(tmp_path):
     assert "sync" not in notice
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a refused post still loses the old message")
 async def test_a_post_refused_leaves_the_old_message_standing(tmp_path):
     """The regression #237 pinned, on the queue: a channel the bot may no longer post in keeps
     what the league already had, and its id stays recorded."""
@@ -456,7 +450,6 @@ async def test_a_post_refused_leaves_the_old_message_standing(tmp_path):
     assert await _session_ids(league.db_path) == (OLD_RESULTS, [OLD_RESULTS])
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded post is not yet named with its remedy")
 async def test_a_discarded_post_leaves_the_old_message_and_is_named_with_the_sync_commands(
     tmp_path,
 ):
@@ -477,7 +470,6 @@ async def test_a_discarded_post_leaves_the_old_message_and_is_named_with_the_syn
     assert "/results rounds sync" in reply
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a discarded delete is not yet named with a link")
 async def test_a_discarded_delete_leaves_both_messages_and_links_the_old_one(tmp_path):
     league = await _league(tmp_path)
     results = league.channel(RESULTS_CHANNEL)
@@ -495,7 +487,6 @@ async def test_a_discarded_delete_leaves_both_messages_and_links_the_old_one(tmp
     assert old_link in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a post's channel is not yet read again on a retry")
 async def test_a_post_repointed_to_a_new_channel_lands_there_on_retry(tmp_path):
     league = await _league(tmp_path, results_message_id=None)
     league.gone.add(RESULTS_CHANNEL)
@@ -533,7 +524,6 @@ async def _set_results_channel(league: _League, channel_id: int) -> Any:
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a post's channel is not yet read again on a retry")
 async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end."""
     league = await _league(tmp_path, results_message_id=None)
@@ -578,7 +568,6 @@ async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_t
     assert set(ids) == standing
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     league = await _league(tmp_path, results_channel=None)
     await _ask(league)
@@ -590,7 +579,6 @@ async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
 async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
     """What `delete_and_repost_final_results` held: a session whose results were replaced is
     not published again, and its message is left alone."""
@@ -615,7 +603,6 @@ async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
     assert 8803 in league.channel(RESULTS_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the delete job is not yet built")
 async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     league = await _league(tmp_path)
     del league.channel(RESULTS_CHANNEL).messages[OLD_RESULTS]
@@ -628,7 +615,6 @@ async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the standings job is not yet built")
 async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_deleted(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -642,7 +628,6 @@ async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_delet
     assert standings.messages[OLD_STANDINGS].content != "provisional standings"
 
 
-@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_each_later_round_s_posted_standings_are_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: a later round whose standings were posted is
     posted again; one never posted is not."""
@@ -707,7 +692,6 @@ async def _standings_rounds(league: _League) -> list[int]:
     return rounds
 
 
-@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_later_rounds_standings_are_posted_again_in_round_order(tmp_path):
     """What `repost_subsequent_standings` held: a championship posted out of order reads as
     though the season ran that way, so the rounds go in round order, not in stored order."""
@@ -720,7 +704,6 @@ async def test_later_rounds_standings_are_posted_again_in_round_order(tmp_path):
     assert await _standings_rounds(league) == [ROUND_ID, LATER_ROUND_ID, LAST_ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_an_earlier_round_s_standings_are_not_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: a correction changes no round before it."""
     league = await _league(tmp_path)
@@ -739,7 +722,6 @@ CANCELLED_ROUND_ID = 17
 OLD_CANCELLED_STANDINGS = 8807
 
 
-@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path):
     """What `repost_subsequent_standings` held (`test_a_cancelled_round_is_skipped`, D135): a
     round cancelled after its standings were posted is not part of the championship, so a
@@ -773,7 +755,6 @@ async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path
     assert OLD_CANCELLED_STANDINGS not in league.deleted_in(STANDINGS_CHANNEL)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: "posted" is either championship, not the
     drivers' alone, since the picture can leave the two in different states."""
@@ -794,7 +775,6 @@ async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again
     assert LATER_ROUND_ID in await _standings_rounds(league)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_each_later_round_s_standings_are_headed_with_its_own_round_number(tmp_path):
     """What `repost_subsequent_standings` held: every round posted again is headed with its own
     number, and one headed with the corrected round's would title the season after one race.
@@ -895,7 +875,6 @@ async def _republish_with_the_picture_declined(league: _League) -> Any:
     return try_post
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
 async def test_the_republished_results_add_the_fastest_lap_bonus_to_the_points(tmp_path):
     """What `delete_and_repost_final_results` held: the fastest-lap point is stored apart from
     the points awarded, and a table showing only one of them understates whoever set it."""
@@ -907,7 +886,6 @@ async def test_the_republished_results_add_the_fastest_lap_bonus_to_the_points(t
     assert try_post.await_args.kwargs["points_map"] == {1001: 19}
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
 async def test_the_republished_results_are_headed_with_the_round_s_number_and_track(tmp_path):
     """What `delete_and_repost_final_results` held: the round is posted again under its own
     number and track."""
@@ -928,12 +906,10 @@ async def test_the_republished_results_are_headed_with_the_round_s_number_and_tr
     [
         pytest.param(
             "SPRINT", True, "Round 3 — Feature Race",
-            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
             id="sprint",
         ),
         pytest.param(
             "NORMAL", False, "Round 3 — Race",
-            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
             id="normal",
         ),
     ],
@@ -958,17 +934,14 @@ async def test_a_sprint_round_is_republished_laid_out_as_one(
     [
         pytest.param(
             0, False,
-            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
             id="left-out",
         ),
         pytest.param(
             1, True,
-            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
             id="shown",
         ),
         pytest.param(
             None, True,
-            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
             id="never-set",
         ),
     ],
@@ -999,7 +972,6 @@ async def test_the_republished_standings_follow_the_division_s_reserve_setting(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the batch notice is not yet a pair of jobs")
 async def test_the_batch_notice_brackets_the_republication(tmp_path):
     league = await _league(tmp_path)
     await _ask(league, notice=True)
@@ -1016,7 +988,6 @@ async def test_the_batch_notice_brackets_the_republication(tmp_path):
     assert league.channel(SUBMISSION_CHANNEL).messages == {}
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a refused batch notice is still swallowed")
 async def test_a_batch_notice_discord_refuses_stops_the_queue_like_any_job(tmp_path):
     league = await _league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).send_fails = http_error(text="Discord is down")
