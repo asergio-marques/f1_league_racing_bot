@@ -34,6 +34,7 @@ from leaguebot.results.services.verdict_announcement_service import (
     describe_penalty,
 )
 from tests.support.change_queue import (
+    attach_queue,
     discard_job,
     http_error,
     member_interaction,
@@ -45,9 +46,11 @@ from tests.support.change_queue import (
 from tests.support.review_league import (
     DIVISION_ID,
     HEADING,
+    LATER_ROUND_ID,
     LEWIS,
     LEWIS_PROFILE,
     MAX,
+    NOW,
     PROMPT,
     ROUND_ID,
     SUBMISSION_CHANNEL,
@@ -468,3 +471,81 @@ async def test_a_banner_that_cannot_be_drawn_heads_the_verdicts_in_words(tmp_pat
     assert verdict_headings(league) == sent[:1]
     assert len(sent) == 2
     assert await _announced(league) == 1
+
+
+# ---------------------------------------------------------------------------
+# A sheet or a sanction that stops the queue names what to repair
+# ---------------------------------------------------------------------------
+
+#: A channel the division was given and the server no longer holds.
+GONE_ATTENDANCE_CHANNEL = 706
+
+
+async def _no_attendance_channel(league: ReviewLeague) -> None:
+    """Division 11 was given an attendance channel the server no longer holds."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(GONE_ATTENDANCE_CHANNEL)),
+        )
+        await db.commit()
+
+
+async def _no_reserve_team(league: ReviewLeague) -> None:
+    """Division 11 sets an autoreserve threshold of one point and has no Reserve team. Lewis, in
+    the seat of team 3001, raced round 4, the last final round and so where the division's totals
+    stand, without an RSVP, which puts him on the threshold."""
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE attendance_config SET autoreserve_threshold = 1")
+        seat = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3001, 1, ?)",
+            (LEWIS_PROFILE,),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, 1, ?, ?)",
+            (LEWIS_PROFILE, DIVISION_ID, seat.lastrowid),
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+            "rsvp_status, attended) VALUES (?, ?, ?, 'NO_RSVP', 1)",
+            (LATER_ROUND_ID, DIVISION_ID, LEWIS_PROFILE),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "seed, job, reason, fault",
+    [
+        pytest.param(_no_attendance_channel, "attendance_sheet", "is not in the server",
+                     "StepFailedOnDiscord", id="sheet"),
+        pytest.param(_no_reserve_team, "apply_sanction", "the division has no Reserve team",
+                     "SanctionNotApplicable", id="sanction"),
+    ],
+)
+async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job, reason, fault):
+    """Attendance is on and its real hook, `AttendanceAfterReview`, is the one the change types
+    are handed. Division 11's attendance channel is gone from the server, or it has an
+    autoreserve threshold Lewis reaches and no Reserve team to move him to. Alex approves round
+    3's reports: the queue stops at the sheet, or at Lewis's sanction, and the stop line's fault
+    is the reason the hook gave, which says what to repair, never the name of an exception."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    league = await review_league(tmp_path, attendance=True)
+    await seed(league)
+    placement = MagicMock()
+    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+        setattr(placement, name, AsyncMock(return_value=None))
+    league.bot.attendance_after_review = AttendanceAfterReview(league.bot, placement)
+    attach_queue(league.bot, league.db_path, now=NOW)
+
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == job
+    [stop] = [line for line in league.bot.log_channel.sent
+              if "The queue is stopped at job #" in line]
+    assert reason in stop
+    assert fault not in stop and "StepFailedOnDiscord" not in stop
