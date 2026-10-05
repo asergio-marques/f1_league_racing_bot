@@ -470,7 +470,10 @@ async def test_a_stop_after_the_last_stage_is_saved_finishes_the_rebuild_on_rest
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_superseded_announcement_stays_where_a_replacement_was_discarded(tmp_path):
     league = await _amend_league(tmp_path, reports_approved=True)
-    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    # The heading goes first and is a job of its own (owner, Gate 2): only the verdicts are refused.
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: not content.startswith(
+        "**Season"
+    )
     interaction = await _approve_appeals(league)
     await run_queue(league.bot)
     assert await stopped_at(league) == "announce_verdict"

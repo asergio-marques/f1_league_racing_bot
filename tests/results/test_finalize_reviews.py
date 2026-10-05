@@ -1069,7 +1069,8 @@ async def test_a_reply_that_fails_does_not_stop_the_approval(tmp_path):
 async def _verdict_discarded(league: ReviewLeague, approve: Any) -> Any:
     """Discord refuses Lewis's verdict; the approval stops at it, and a league admin discards it.
     Gives Alex's interaction."""
-    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Permissions")
+    # The heading goes first and is a job of its own (owner, Gate 2): only the verdict is refused.
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content != HEADING
     interaction = await approve(league, staged=[league_penalty(LEWIS)])
     assert await stopped_at(league) == "announce_verdict"
     await discard_job(league.bot)
@@ -1077,7 +1078,6 @@ async def _verdict_discarded(league: ReviewLeague, approve: Any) -> Any:
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_unannounced_verdict_reaches_the_manager_and_the_log(tmp_path):
     league = await review_league(tmp_path)
 
@@ -1089,7 +1089,6 @@ async def test_an_unannounced_verdict_reaches_the_manager_and_the_log(tmp_path):
     assert "Lewis" in said or f"<@{LEWIS}>" in said
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_verdict_report_says_it_cannot_be_announced_again(tmp_path):
     """Telling a manager to re-run something would leave them believing it finished. The report
     directs the manager to post the verdict themselves (results spec, verdicts)."""
