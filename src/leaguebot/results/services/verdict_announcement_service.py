@@ -13,7 +13,9 @@ from pathlib import Path
 
 import aiosqlite
 import discord
+from types import SimpleNamespace
 
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.channel_registry_service import missing_channel_fault
 from leaguebot.core.services.channel_registry_service import as_text_channel
@@ -640,8 +642,12 @@ async def _send_verdict(
     justification_text: str,
     team_name: str | None = None,
     team_key: str | None = None,
+    as_text: bool = False,
 ) -> "object | None":
     """Post one verdict: as a graphic where the toggle allows, as text otherwise.
+
+    *as_text* posts the text where the toggle allows a graphic: a job's retry, the picture
+    being attempted on the first try alone (Constitution XIV rule 8, #439).
 
     Returns the message it sent, so the caller can record which message carries this verdict
     (#189). Without that the bot held nothing by which to find an announcement again, and an
@@ -658,7 +664,7 @@ async def _send_verdict(
     from leaguebot.image.services import image_verdict_post
 
     render = None
-    if await image_verdict_post.verdicts_enabled(bot):
+    if not as_text and await image_verdict_post.verdicts_enabled(bot):
         try:
             drawing = await image_verdict_post.build_drawing(
                 bot,
@@ -1073,6 +1079,109 @@ async def post_appeal_announcements(
     return faults
 
 
+def _sanction_texts(sanction_type: str, driver_ref: str, threshold: int) -> tuple[str, str, str]:
+    """The label, description and justification of an attendance sanction's card."""
+    if sanction_type == "AUTOSACK":
+        return (
+            "Sacked",
+            "Sacked due to accumulation of attendance points.",
+            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+            "removed from their full-time seat. Therefore, they have been removed from all "
+            "driving seats effective immediately, and their current full-time seat will be "
+            "offered to another driver.",
+        )
+    return (
+        "Moved to Reserve",
+        "Moved to Reserve due to accumulation of attendance points.",
+        f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+        "removed from their full-time seat. Therefore, they have been demoted to a reserve "
+        "driver effective immediately, and their current full-time seat will be offered to "
+        "another driver.",
+    )
+
+
+async def announce_sanction(
+    bot: LeagueBot,
+    db_path: str,
+    round_id: int,
+    driver_discord_id: int,
+    driver_display_name: str | None,
+    sanction_type: str,  # "AUTOSACK" or "AUTORESERVE"
+    threshold: int,
+    *,
+    as_text: bool = False,
+) -> None:
+    """Post a sanction's card in the round's verdicts channel, raising where it cannot.
+
+    What a queued sanction announcement is (#439): where `post_autosanction_announcement`
+    returns what it could not announce, this raises, for the queue to stop on and try again,
+    and the lines it would have returned are the failure's reason. The card goes beneath the
+    heading the round's verdicts already stand under, **read back from its row** and not from
+    a poster held in memory, so a stop and a restart between the verdicts and the sanctions
+    post no second one. A round whose verdicts posted no heading (no penalty was applied) is
+    headed here, as an attendance sanction has always headed itself. *as_text* leaves the
+    picture out of the card.
+
+    A division with no verdicts channel set is a failure, not a card skipped: a verdicts
+    channel is one the season cannot be approved without.
+    """
+    ctx = await _get_announcement_context(db_path, round_id)
+    if not ctx:
+        raise StepFailedOnDiscord(f"round {round_id} could not be read")
+    channel_id_raw = ctx.get("penalty_channel_id")
+    if channel_id_raw is None:
+        raise StepFailedOnDiscord(f"{ctx['division_name']} has no verdicts channel set")
+    channel = bot.get_channel(int(channel_id_raw))
+    if channel is None:
+        raise StepFailedOnDiscord(
+            f"{ctx['division_name']}'s verdicts channel (id {int(channel_id_raw)}) is not in "
+            "the server"
+        )
+
+    banners = await _banners_of(db_path, round_id)
+    if not banners:
+        poster = _banner_once_recorded(bot, channel, ctx, db_path, round_id)
+        await poster()
+        banner_id = getattr(poster.message, "id", None)
+    else:
+        banner_id = banners[-1][1]
+
+    driver_ref = f"<@{driver_discord_id}>"
+    if driver_display_name:
+        driver_ref += f" ({driver_display_name})"
+    penalty_label, description_text, justification_text = _sanction_texts(
+        sanction_type, driver_ref, threshold
+    )
+    try:
+        card = await _send_verdict(
+            bot,
+            channel,
+            db_path=db_path,
+            round_id=round_id,
+            kind=VerdictKind.ATTENDANCE_SANCTION,
+            season_number=ctx["season_number"],
+            division_name=ctx["division_name"],
+            round_number=ctx["round_number"],
+            session_label=None,
+            driver_discord_id=driver_discord_id,
+            driver_display_name=driver_display_name,
+            driver_name=await _graphic_name(
+                bot,
+                getattr(channel, "guild", None),
+                driver_discord_id,
+                fallback_display_name=driver_display_name,
+            ),
+            penalty_description=penalty_label,
+            description_text=description_text,
+            justification_text=justification_text,
+            as_text=as_text,
+        )
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord(f"the sanction's announcement could not be posted: {exc}") from exc
+    if card is not None and banner_id is not None:
+        await _mark_banner_over_sanction(db_path, SimpleNamespace(id=banner_id))
+
+
 async def post_autosanction_announcement(
     bot: LeagueBot,
     db_path: str,
@@ -1154,24 +1263,9 @@ async def post_autosanction_announcement(
     if driver_display_name:
         driver_ref += f" ({driver_display_name})"
 
-    if sanction_type == "AUTOSACK":
-        penalty_label = "Sacked"
-        description_text = "Sacked due to accumulation of attendance points."
-        justification_text = (
-            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
-            "removed from their full-time seat. Therefore, they have been removed from all "
-            "driving seats effective immediately, and their current full-time seat will be "
-            "offered to another driver."
-        )
-    else:  # AUTORESERVE
-        penalty_label = "Moved to Reserve"
-        description_text = "Moved to Reserve due to accumulation of attendance points."
-        justification_text = (
-            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
-            "removed from their full-time seat. Therefore, they have been demoted to a reserve "
-            "driver effective immediately, and their current full-time seat will be offered to "
-            "another driver."
-        )
+    penalty_label, description_text, justification_text = _sanction_texts(
+        sanction_type, driver_ref, threshold
+    )
 
     try:
         #  After every check that could still make this a no-op, so a banner is never
