@@ -568,6 +568,35 @@ async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_t
     assert standing == set(ids) | {OLD_RESULTS}
 
 
+async def test_a_discarded_part_posted_table_names_its_stranded_messages(tmp_path):
+    """The results post sends its first chunk and Discord refuses the second; the chunk sent
+    cannot be removed, nor on the retry. A league admin discards the job: the outcome names the
+    message left standing and its channel for deletion by hand, beside the line naming the sync
+    commands, as nothing else will remove it."""
+    league = await _league(tmp_path, results_message_id=None)
+    results = league.channel(RESULTS_CHANNEL)
+    results.fail_send_at = 2
+    results.delete_fails = http_error(text="Discord is down")
+    with patch("leaguebot.results.services.results_post_service._MSG_MAX", 40):
+        interaction = await _ask(league)
+        await run_queue(league.bot)
+        assert (await stopped_job(league.db_path))["name"] == "post_session_results"
+        stranded = league.sent_to(RESULTS_CHANNEL)
+        assert stranded and set(stranded) <= set(results.messages)
+
+        await retry_job(league.bot)
+        assert (await stopped_job(league.db_path))["name"] == "post_session_results"
+        await discard_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert set(stranded) <= set(results.messages)
+    reply = updated_reply(interaction)
+    [line] = [line for line in reply.splitlines() if "delete it by hand" in line]
+    assert f"<#{RESULTS_CHANNEL}>" in line
+    assert all(str(message_id) in line for message_id in stranded)
+    assert "/results rounds sync" in reply
+
+
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     league = await _league(tmp_path, results_channel=None)
     await _ask(league)
