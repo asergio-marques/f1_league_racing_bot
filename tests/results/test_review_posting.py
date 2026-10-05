@@ -998,3 +998,43 @@ async def test_a_batch_notice_discord_refuses_stops_the_queue_like_any_job(tmp_p
     assert job is not None and job["name"] == "post_batch_notice"
     assert league.sent_to(RESULTS_CHANNEL) == []
     assert league.sent_to(STANDINGS_CHANNEL) == []
+
+
+# ---------------------------------------------------------------------------
+# The drivers' display names
+# ---------------------------------------------------------------------------
+
+
+async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path):
+    """The names only order a full tie, so a server the bot cannot see leaves them unresolved
+    rather than stopping the queue: a post after the job stops it on the same fault."""
+    from leaguebot.core.models.change import PlannedStep, Verdict
+    from leaguebot.core.services.change_queue import ChangeType
+    from leaguebot.results.services import review_posting
+
+    league = await _league(tmp_path)
+    league.bot.get_guild = MagicMock(return_value=None)
+    league.bot.guilds = []
+
+    async def check(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    attach_queue(league.bot, league.db_path, now=NOW, types=[ChangeType(
+        kind=KIND,
+        opening=(PlannedStep(review_posting.NAMES),),
+        steps=review_posting.posting_steps(),
+        check=check,
+        key=lambda payload: f"{KIND}:{payload['round_id']}",
+        doing=lambda _payload: "Looking up the names",
+        outcome=lambda _ctx: "Looked up.",
+    )])
+    await league.bot.change_queue.ask(
+        KIND, {"round_id": ROUND_ID}, interaction=member_interaction(league.bot),
+        what="the test's names",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [names] = [row for row in await step_rows(league.db_path) if row["name"] == "names"]
+    assert names["done_at"] is not None
+    assert names["result"] == {"names": None}
