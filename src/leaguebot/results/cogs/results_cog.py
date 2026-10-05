@@ -2445,6 +2445,22 @@ class ResultsCog(commands.Cog):
             )
             return
 
+        # A division with a job of a round's review on the queue is not amended (#439): a review
+        # queued before the amendment began would publish its unapproved standings.
+        from leaguebot.results.services.review_changes import division_job_in_hand
+
+        waiting_on = await division_job_in_hand(self.bot.db_path, div.id)
+        if waiting_on is not None:
+            await refuse(
+                interaction,
+                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue (job "
+                f"#{waiting_on}), so it cannot be amended until that is done. Let it finish, or "
+                "press **Retry** or **Discard** on its notice if it has stopped, then amend "
+                "again.",
+                what=describe(interaction),
+            )
+            return
+
         # Load ACTIVE session_results
         async with get_connection(self.bot.db_path) as db:
             cursor = await db.execute(

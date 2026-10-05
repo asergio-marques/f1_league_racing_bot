@@ -484,9 +484,6 @@ async def test_several_sessions_can_be_chosen_at_once(tmp_path):
 # A division with a job on the queue (owner, 2026-10-05, #439 slice 2)
 # ---------------------------------------------------------------------------
 
-#: Why the refusal is not yet built: the amend command does not read the queue.
-QUEUE_GATE_NOT_BUILT = "#439: amending is not yet refused while the division has a job on the queue"
-
 LATER_ROUND_ID = 22
 OTHER_DIVISION_ID = 12
 OTHER_ROUND_ID = 31
@@ -572,7 +569,6 @@ def _gate_interaction():
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_GATE_NOT_BUILT)
 @pytest.mark.parametrize(
     ("state", "stopped"),
     [("QUEUED", False), ("RUNNING", False), ("RUNNING", True), ("QUEUED", True)],
@@ -604,7 +600,6 @@ async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUE_GATE_NOT_BUILT)
 async def test_a_job_naming_the_division_alone_still_blocks_the_amendment(tmp_path):
     """A change whose payload names the division and no round of it is the division's job too."""
     db_path = await _make_db(tmp_path, name="amend_queued_division")

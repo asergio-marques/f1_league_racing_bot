@@ -1802,6 +1802,30 @@ async def unfinished(
         return [json.loads(row["payload"]) for row in await cursor.fetchall()]
 
 
+async def in_hand(db_path: str, kinds: Collection[str]) -> list[tuple[dict[str, Any], int | None]]:
+    """Each change of *kinds* that is queued or running, a stopped one included, as its payload
+    and the number of the job it waits on, oldest first.
+
+    The job is the change's first job not yet done, which is the stopped one where the queue is
+    stopped at it, or `None` where every job is done and only the change's own close remains. It
+    is the number a manager sees on the notice, and so the one a refusal names. Read as
+    :func:`unfinished` is.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return []
+    marks = ", ".join("?" for _ in kinds)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT c.payload, (SELECT s.id FROM queued_change_steps s WHERE s.change_id = c.id "
+            "AND s.done_at IS NULL ORDER BY s.position LIMIT 1) AS job "
+            f"FROM queued_changes c WHERE c.kind IN ({marks}) "  # noqa: S608 — marks only
+            "AND c.state IN ('QUEUED', 'RUNNING') ORDER BY c.id",
+            tuple(kinds),
+        )
+        return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
+
+
 def highest_job_number(path: str | os.PathLike[str]) -> int:
     """The highest job number the league database at *path* has ever issued, or 0.
 
