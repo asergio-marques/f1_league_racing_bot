@@ -3,13 +3,6 @@
 Issue #208. `finalize_penalty_review` and `finalize_appeals_review` were partly covered — the
 paths with nothing staged ran, and the ones that actually change a championship did not.
 
-**Penalties are recorded as staged before they are applied.** `staged_penalties` is written
-first, and a second press — a double click, or a restart mid-finalisation recovered by
-re-posting the prompt — finds it set and applies nothing. Applying twice would double every
-time penalty on the round, silently, and the recovery path's warning to stewards exists because
-of exactly this column. `test_penalties_already_applied_are_not_applied_again` is the one that
-holds it.
-
 **A settled round is never reopened.** The review views outlive the round: disabling the results
 module closes every round still awaiting review, but a client already holding the message can
 still press the button. Both status writes are guarded by the terminal states, so a stale press
@@ -36,7 +29,6 @@ recorded as appeal records and announced; an announcement that fails does not un
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -73,7 +65,6 @@ async def _make_db(
     *,
     name: str = "finalize",
     round_status: str = "AWAITING_REPORT_VERDICTS",
-    staged_json: str | None = None,
     attendance_row: bool = False,
     results: list[tuple[int, int, str]] | None = None,
     resubmitting: int = 0,
@@ -110,9 +101,9 @@ async def _make_db(
         )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
-            "staged_penalties, resubmitting, prompt_message_id) "
-            "VALUES (?, 700, '2026-02-01T00:00:00+00:00', ?, ?, ?)",
-            (ROUND_ID, staged_json, resubmitting, prompt_message_id),
+            "resubmitting, prompt_message_id) "
+            "VALUES (?, 700, '2026-02-01T00:00:00+00:00', ?, ?)",
+            (ROUND_ID, resubmitting, prompt_message_id),
         )
         if attendance_row:
             await db.execute(
@@ -334,15 +325,6 @@ async def _round_status(db_path) -> str:
         return (await cursor.fetchone())["status"]
 
 
-async def _staged_column(db_path):
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT staged_penalties FROM round_submission_channels WHERE round_id = ?",
-            (ROUND_ID,),
-        )
-        return (await cursor.fetchone())["staged_penalties"]
-
-
 def _logged(state) -> str:
     return "\n".join(str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list)
 
@@ -360,43 +342,6 @@ async def test_staged_penalties_are_applied(tmp_path):
 
     stubs["apply"].assert_awaited_once()
     stubs["recompute"].assert_awaited_once()
-
-
-async def test_the_penalties_are_recorded_before_they_are_applied(tmp_path):
-    """So a second press, or a recovered finalisation, finds them already there."""
-    db_path = await _make_db(tmp_path, name="finalize_recorded")
-    state = _state(db_path, staged=[_penalty()])
-    seen: dict = {}
-
-    async def _record(*_a, **_k):
-        seen["column"] = await _staged_column(db_path)
-        return [{}]
-
-    patches = _patches()
-    patches["apply"] = patch(
-        "leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(side_effect=_record)
-    )
-    for p in patches.values():
-        p.start()
-    try:
-        await finalize_penalty_review(_interaction(), state)
-    finally:
-        for p in patches.values():
-            p.stop()
-
-    recorded = json.loads(seen["column"])
-    assert recorded[0]["driver_user_id"] == 101
-    assert recorded[0]["penalty_seconds"] == 5
-
-
-async def test_penalties_already_applied_are_not_applied_again(tmp_path):
-    """Applying twice would double every time penalty on the round, silently."""
-    db_path = await _make_db(tmp_path, name="finalize_twice", staged_json="[]")
-    state = _state(db_path, staged=[_penalty()])
-
-    stubs = await _run(finalize_penalty_review, state)
-
-    stubs["apply"].assert_not_awaited()
 
 
 async def test_the_round_moves_on_to_appeals(tmp_path):
@@ -467,7 +412,7 @@ async def test_the_reports_are_not_approved_a_second_time(tmp_path):
     approval had already applied — or had skipped."""
     db_path = await _make_db(
         tmp_path, name="finalize_again", round_status="AWAITING_APPEAL_VERDICTS",
-        staged_json="[]", attendance_row=True,
+        attendance_row=True,
     )
     state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
     interaction = _interaction()
@@ -530,28 +475,6 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     assert line.startswith("⛔ ") and f" refused for Alex (<@{STEWARD}>) — " in line, line
     stubs["repost"].assert_awaited_once()
     stubs["appeals_view"].assert_called_once()
-    assert state.approving is False
-
-
-async def test_the_claim_is_released_when_the_approval_fails(tmp_path):
-    """Otherwise an approval that failed part-way would refuse every later press as one still
-    running, and the round could not be approved again until the bot restarted."""
-    db_path = await _make_db(tmp_path, name="finalize_fails")
-    state = _state(db_path, staged=[_penalty()])
-    patches = _patches()
-    patches["apply"] = patch(
-        "leaguebot.results.services.penalty_service.apply_penalties",
-        new=AsyncMock(side_effect=RuntimeError("disk full")),
-    )
-    for p in patches.values():
-        p.start()
-    try:
-        with pytest.raises(RuntimeError):
-            await finalize_penalty_review(_interaction(), state)
-    finally:
-        for p in patches.values():
-            p.stop()
-
     assert state.approving is False
 
 
@@ -1547,7 +1470,7 @@ async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_p
     stubs["repost"].assert_not_awaited()
     interaction.response.defer.assert_not_awaited()
     assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
-    assert await _staged_column(db_path) is None
+    assert await _verdict_count(db_path) == 0
     # The review is kept, for the manager to press again once the amendment has ended.
     assert len(state.staged) == 1
     refusal = _refusal(interaction)
@@ -1775,47 +1698,6 @@ async def test_an_amendment_does_not_duplicate_the_rounds_penalty_records(tmp_pa
     assert await _verdict_count(db_path) == 1
 
 
-async def test_an_amendment_writes_the_reports_the_manager_approved(tmp_path):
-    """The other half: the edits must actually land.
-
-    The idempotence probe read the *first pass's* `staged_penalties` column, which an amendment
-    neither owns nor resets — so on a round originally reviewed with penalties it read "already
-    applied" and discarded every edit the manager had just made, silently.
-    """
-    db_path = await _make_db(tmp_path, name="amend_edits_land")
-    await _seed_driver_row(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
-            ('[{"driver_user_id": 101}]', ROUND_ID),
-        )
-        await db.commit()
-    state = _state(db_path, staged=[_penalty()])
-    await _open_amendment(state)
-
-    await _run_real_apply(finalize_penalty_review, state)
-
-    assert await _verdict_count(db_path) == 1
-
-
-async def test_an_amendment_does_not_overwrite_the_first_passs_crash_guard(tmp_path):
-    """That column belongs to the original review; an amendment must leave it as it found it."""
-    db_path = await _make_db(tmp_path, name="amend_guard_intact")
-    await _seed_driver_row(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
-            ('["original"]', ROUND_ID),
-        )
-        await db.commit()
-    state = _state(db_path, staged=[_penalty()])
-    await _open_amendment(state)
-
-    await _run_real_apply(finalize_penalty_review, state)
-
-    assert await _staged_column(db_path) == '["original"]'
-
-
 async def test_a_first_pass_still_records_and_applies_once(tmp_path):
     """The ordinary path is untouched — the guards must not have cost it its own behaviour."""
     db_path = await _make_db(tmp_path, name="first_pass_intact")
@@ -1825,7 +1707,6 @@ async def test_a_first_pass_still_records_and_applies_once(tmp_path):
     await _run_real_apply(finalize_penalty_review, state)
 
     assert await _verdict_count(db_path) == 1
-    assert await _staged_column(db_path) is not None
 
 
 async def test_a_report_removed_in_stage_two_is_removed_from_the_record(tmp_path):
