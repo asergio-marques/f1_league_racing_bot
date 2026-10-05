@@ -34,6 +34,7 @@ queue and is retried ("Retry like any job").
 """
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timedelta
 from typing import Any
@@ -1790,6 +1791,62 @@ async def test_the_amendment_rewrites_the_rounds_pardons_at_its_last_stage(tmp_p
 
     assert await stopped_at(league) is None
     assert league.attendance._calls("rewrite_pardons_on") == [("rewrite_pardons_on", ROUND_ID)]
+
+
+@pytest.mark.parametrize(
+    "stage, kind",
+    [("reports", AMEND_REPORTS), ("appeals", AMEND_APPEALS)],
+)
+@pytest.mark.xfail(strict=True, reason="#439: the amendment's Approve controls do not yet ask the "
+                   "change queue")
+async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
+    tmp_path, stage, kind
+):
+    """Alex, a league manager, presses Approve on the report stage of round 3 (Pro)'s amendment,
+    Lewis's 5-second report staged, or on its appeals stage, a 10-second correction for Max staged.
+    The press asks the queue for that stage's change, with the round, the division, the amended
+    sessions and what is staged in its payload, and Alex is answered at once that it is under way,
+    with its job number."""
+    from leaguebot.results.services.penalty_wizard import (
+        AppealsReviewView,
+        ApprovalView,
+        PenaltyReviewState,
+    )
+
+    league = await amend_league(tmp_path, reports_approved=stage == "appeals")
+    state = PenaltyReviewState(
+        round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMENDMENT_CHANNEL,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
+        bot=league.bot, round_number=3, division_name="Pro", is_amendment=True,
+    )
+    if stage == "reports":
+        state.staged = [league_penalty(LEWIS)]
+        state.prompt_message_id = AMEND_PROMPT
+        state.approval_message_id = AMEND_APPROVAL
+        view: Any = ApprovalView(state=state)
+        staged = [league_penalty(LEWIS).to_payload()]
+    else:
+        state.staged_appeals = [_correction()]
+        state.appeals_prompt_message_id = AMEND_APPEALS_PROMPT
+        view = AppealsReviewView(state=state)
+        staged = [_correction().to_payload()]
+    interaction = member_interaction(league.bot, user=_alex())
+
+    with patch(
+        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        new=AsyncMock(return_value=True),
+    ):
+        await view.approve_btn.callback(interaction)
+
+    [change] = await changes_of(league.db_path, kind)
+    payload = json.loads(change["payload"])
+    assert payload["round_id"] == ROUND_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert payload["session_types"] == ["FEATURE_RACE"]
+    assert payload["staged"] == staged
+    answered = acknowledgement(interaction)
+    assert answered.startswith("⏳")
+    assert "job #" in answered
 
 
 # ---------------------------------------------------------------------------
