@@ -5,8 +5,10 @@
 held that still holds is pinned here, through the queue: what a verdict says, the driver named
 rather than by their user id, the name the league recorded where the server no longer knows them,
 no further action announced as no penalty, the message and channel a verdict was announced in
-saved with it, and a verdicts channel missing or gone stopping the queue rather than being
-stepped over.
+saved with it, a verdicts channel missing or gone stopping the queue rather than being
+stepped over, and a heading over the verdicts that cannot be drawn, sent or posted at all costing
+the league no verdict (what `tests/image/test_image_verdict_banner_post.py` held of the two
+announcers).
 
 The league is `tests.support.review_league`'s: round 3 of division 11 (Pro), Lewis (101) its
 Feature Race winner, image generation off unless `drawn` switches the verdict graphic on. The
@@ -33,8 +35,10 @@ from leaguebot.results.services.verdict_announcement_service import (
 from tests.support.change_queue import http_error, member_interaction, run_queue, tier_member
 from tests.support.review_league import (
     DIVISION_ID,
+    HEADING,
     LEWIS,
     LEWIS_PROFILE,
+    MAX,
     PROMPT,
     ROUND_ID,
     SUBMISSION_CHANNEL,
@@ -44,6 +48,7 @@ from tests.support.review_league import (
     penalty,
     review_league,
     stopped_at,
+    verdict_headings,
 )
 
 NOT_BUILT = "#439: a round's verdicts are not yet announced by jobs on the queue"
@@ -328,3 +333,79 @@ async def test_a_deleted_verdicts_channel_stops_the_queue_at_its_verdict(tmp_pat
 
     assert await stopped_at(league) == "announce_verdict"
     assert await one(league.db_path, "SELECT COUNT(*) FROM penalty_records") == 1
+
+
+# ---------------------------------------------------------------------------
+# The heading over the verdicts never costs the league a verdict (image spec, verdict banner)
+# ---------------------------------------------------------------------------
+
+
+async def _announced(league: ReviewLeague) -> int:
+    return await one(
+        league.db_path,
+        "SELECT COUNT(*) FROM penalty_records WHERE announcement_message_id IS NOT NULL",
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_heading_discord_refuses_costs_the_league_no_verdict(tmp_path):
+    """The verdicts channel refuses the written heading alone: both verdicts are announced
+    beneath no heading, and the queue does not stop for it."""
+    league = await review_league(tmp_path)
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
+    await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert verdict_headings(league) == []
+    assert len(league.sent_to(VERDICTS_CHANNEL)) == 2
+    assert await _announced(league) == 2
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_heading_that_raises_costs_the_league_no_verdict(tmp_path, monkeypatch):
+    """The banner's poster raising, a fault in the bot, is swallowed: both verdicts go out."""
+    from leaguebot.image.services import image_verdict_banner_post
+
+    async def _boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("the banner could not be posted")
+
+    monkeypatch.setattr(image_verdict_banner_post, "try_post", _boom)
+    league = await review_league(tmp_path)
+    await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert verdict_headings(league) == []
+    assert len(league.sent_to(VERDICTS_CHANNEL)) == 2
+    assert await _announced(league) == 2
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_banner_that_cannot_be_drawn_heads_the_verdicts_in_words(tmp_path, monkeypatch):
+    """The banner switched on, its render failing for want of a rasteriser: the verdicts are
+    headed by the written heading instead, posted first, and the verdict follows it."""
+    from leaguebot.image.services import image_verdict_banner_post as banner
+
+    async def _enabled(_bot: Any) -> bool:
+        return True
+
+    async def _render(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
+        return banner.BannerRender(png=None, problem="RASTERISER")
+
+    async def _quiet(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(banner, "banner_enabled", _enabled)
+    monkeypatch.setattr(banner, "render_banner", _render)
+    monkeypatch.setattr(banner, "report", _quiet)
+    monkeypatch.setattr(banner, "report_notices", _quiet)
+    league = await review_league(tmp_path)
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 2
+    assert await _announced(league) == 1
