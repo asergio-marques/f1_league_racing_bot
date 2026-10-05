@@ -75,6 +75,7 @@ from tests.support.review_league import (
     race_rows,
     review_league,
     stopped_at,
+    verdict_headings,
 )
 
 REPORTS = "results.amendment.reports.approve"
@@ -912,20 +913,23 @@ async def test_a_round_left_with_no_verdict_loses_its_old_announcement_and_banne
     assert await _banners_left(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_banner_heading_a_sanction_card_is_kept(tmp_path):
     """Results spec, amendment: "A banner that also heads an attendance sanction card shall be
     kept, the card being no verdict and staying where it is." Round 3's old banner heads Lewis's
-    old verdict and a sanction card."""
+    old verdict and a sanction card. The rebuild's heading for round 3 is a job of its own (owner,
+    Gate 2), recorded as it is posted, so the table holds it beside the kept banner."""
     league = await _amend_league(tmp_path, reports_approved=True)
     await _banner(league, ROUND_ID, OLD_BANNER, heads_sanctions=True)
     await _approve_appeals(league)
     await run_queue(league.bot)
 
     assert await stopped_at(league) is None
-    assert OLD_VERDICT not in league.channel(VERDICTS_CHANNEL).messages
-    assert OLD_BANNER in league.channel(VERDICTS_CHANNEL).messages
-    assert await _banners_left(league) == [OLD_BANNER]
+    said = league.channel(VERDICTS_CHANNEL).messages
+    assert OLD_VERDICT not in said
+    assert OLD_BANNER in said
+    [heading] = verdict_headings(league)
+    assert heading in said
+    assert await _banners_left(league) == [OLD_BANNER, heading]
 
 
 #: The banner heading round 2's verdicts, before the amended round.
