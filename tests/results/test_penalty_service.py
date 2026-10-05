@@ -956,3 +956,35 @@ async def test_apply_penalties_on_stamps_with_the_handed_time_and_commits_nothin
                 await _apply_staged_appeals_on(db, round_id, division_id, staged, 999, now=now)
             await db.rollback()
         failing.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# What is staged travels on the queue as plain data (#439)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("decided", [{}, {"decided_by": "4242", "decided_at": "2026-09-01T18:00:00+00:00"}])
+def test_a_staged_penalty_and_a_staged_pardon_round_trip_their_payloads(decided):
+    """A change's payload is saved as JSON, so what is staged must come back from it as it went
+    in: a decision read back from the round keeps its author and its time, and a pardon its."""
+    import json
+
+    from leaguebot.results.services.penalty_wizard import StagedPardon
+
+    staged = StagedPenalty(
+        driver_user_id=101,
+        session_type=SessionType.FEATURE_RACE,
+        penalty_type="TIME",
+        penalty_seconds=5,
+        description="Corner cutting",
+        justification="Turn 4, lap 12",
+        **decided,
+    )
+    assert StagedPenalty.from_payload(json.loads(json.dumps(staged.to_payload()))) == staged
+
+    granted = {"granted_at": decided["decided_at"]} if decided else {}
+    pardon = StagedPardon(
+        driver_user_id=102, driver_profile_id=32, attendance_id=41, pardon_type="NO_RSVP",
+        justification="Told us in advance", grantor_id=77, **granted,
+    )
+    assert StagedPardon.from_payload(json.loads(json.dumps(pardon.to_payload()))) == pardon
