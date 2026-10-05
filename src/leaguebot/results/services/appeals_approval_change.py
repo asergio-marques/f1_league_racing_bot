@@ -67,8 +67,8 @@ from leaguebot.core.services.change_queue import (
     unfinished,
 )
 from leaguebot.core.services.driver_service import current_account_map_for_division
-from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
-from leaguebot.core.services.season_service import refresh_division_status_on, set_round_status_on
+from leaguebot.core.services import season_lifecycle_service, season_service
+from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.penalty_service import StagedPenalty
@@ -122,6 +122,8 @@ def appeals_approval_change(
         in_hand = await unfinished(ctx.db_path, [KIND], excluding=ctx.change_id)
         if any(p.get("round_id") == round_id for p in in_hand):
             return Verdict.refuse(_APPEALS_BEING_APPROVED, "The round's appeals are being approved.")
+        # The round must still be AWAITING_APPEAL_VERDICTS, which the first approval's save
+        # ends, so a round already made final is never approved twice (defect 1).
         refusal = await appeals_stage_refusal(
             ctx.db_path, round_id, payload.get("appeals_prompt_message_id")
         )
@@ -178,7 +180,7 @@ def appeals_approval_change(
         await recompute_former_drivers_for_round(db, round_id)
         # Approving the last round's appeals is what ends a division, and a division ending is
         # what lets `/season complete` run (#154).
-        division_done = await refresh_division_status_on(db, division_id)
+        division_done = await season_service.refresh_division_status_on(db, division_id)
         await db.execute(
             "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?", (round_id,)
         )
@@ -228,7 +230,10 @@ def appeals_approval_change(
             "channel_id": channel_id, "round_id": round_id, "what": "submission channel",
         }))
         follow_ons = (
-            (FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),)
+            (FollowOn(
+                season_lifecycle_service.wind_down_change().kind, {},
+                f"Winding the season down after {ctx.what}",
+            ),)
             if division_done else ()
         )
         return StepResult(

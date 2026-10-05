@@ -87,6 +87,7 @@ def register_change_types(bot: LeagueBot) -> None:
     """
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
+    from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
@@ -108,6 +109,10 @@ def register_change_types(bot: LeagueBot) -> None:
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
         )
     )
+    for stage in amendment_stage_changes(
+        attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+    ):
+        bot.change_queue.register(stage)
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
 
@@ -1449,10 +1454,16 @@ async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
 
     # The league's server is the one configured; the rows no longer say.
 
+    from leaguebot.results.services.result_submission_service import stage_in_hand
+
     for row in orphans:
         row_id: int = row["id"]
         round_id: int = row["round_id"]
         channel_id: int = row["channel_id"]
+        # An amendment whose stage is in hand on the queue, stopped included, is finished by the
+        # queue, not ended here ("Leave it while stuck").
+        if await stage_in_hand(bot.db_path, round_id):
+            continue
         try:
             _sessions = ", ".join(
                 str(st).replace("_", " ").title() for st in json.loads(row["session_types"])

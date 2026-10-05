@@ -308,7 +308,6 @@ async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
     await _recover_portrait_refresh_job(bot)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: an amendment's stages are not yet changes on the queue")
 async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp_path):
     """**A restart with an approval in hand finishes it** (#439). An amendment whose report stage
     was asked for and not yet carried out when the bot stopped is left by recovery: its row and

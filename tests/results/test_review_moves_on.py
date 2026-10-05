@@ -257,13 +257,6 @@ async def _amendment(db_path: str, *, reports_approved: bool) -> PenaltyReviewSt
     return state
 
 
-_READ_FROM_THE_ROW = (
-    "#439: an amendment's report stage is read from the review's memory, not from "
-    "reports_approved_at"
-)
-
-
-@pytest.mark.xfail(strict=True, reason=_READ_FROM_THE_ROW)
 async def test_an_amendments_reports_close_once_approved(tmp_path):
     """Its Remove said a report was removed after the stage that applied it was approved, and its
     Add staged one that would never be applied."""
@@ -275,7 +268,6 @@ async def test_an_amendments_reports_close_once_approved(tmp_path):
     assert "already approved" in refusal
 
 
-@pytest.mark.xfail(strict=True, reason=_READ_FROM_THE_ROW)
 @pytest.mark.parametrize("control", ["pardon_btn", "pw_pardon_remove_0", "AddPardonModal"])
 async def test_an_amendments_pardons_close_with_its_reports(tmp_path, control):
     """**As a first pass's do** (decided 2026-09-23). They stayed open through an amendment's

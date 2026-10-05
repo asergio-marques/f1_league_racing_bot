@@ -812,20 +812,8 @@ async def _stage_in_hand(db_path, *, stopped: bool) -> None:
 @pytest.mark.parametrize(
     "stopped",
     [
-        pytest.param(
-            False,
-            marks=pytest.mark.xfail(
-                strict=True, reason="#439: Cancel still puts the round back while a stage is queued"
-            ),
-            id="queued",
-        ),
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                strict=True, reason="#439: Cancel still puts the round back while a stage is stopped"
-            ),
-            id="stopped",
-        ),
+        pytest.param(False, id="queued"),
+        pytest.param(True, id="stopped"),
     ],
 )
 async def test_cancelling_while_a_stage_is_being_approved_says_so_and_puts_nothing_back(

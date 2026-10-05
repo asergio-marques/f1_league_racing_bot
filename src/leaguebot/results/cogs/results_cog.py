@@ -2785,6 +2785,22 @@ class ResultsCog(commands.Cog):
                     )
                     return
                 if stage_one_done[0]:
+                    from leaguebot.results.services.result_submission_service import (
+                        stage_in_hand,
+                    )
+
+                    # **A stage's approval on the change queue holds the amendment** (#439):
+                    # queued, running or stopped on a failure, it cannot be cancelled, and the
+                    # presser is told so before anything is said of putting the round back.
+                    if await stage_in_hand(self.bot.db_path, amended_round_id):
+                        await refuse(
+                            bi,
+                            "⏳ A stage of this amendment is being approved, so it cannot be "
+                            "cancelled now. If its approval is stopped, press Retry or Discard "
+                            "on its notice in the log channel.",
+                            what=cancel_what,
+                        )
+                        return
                     # **After stage one, cancelling is a revert** (#345). The corrected
                     # classification is already written, so stopping here would leave the
                     # round scored from it and posted from the old one until the sweep came.

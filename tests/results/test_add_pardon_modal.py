@@ -511,13 +511,7 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
         ("AWAITING_REPORT_VERDICTS", False, False, False),
         ("AWAITING_APPEAL_VERDICTS", False, False, True),
         ("FINAL", True, False, False),
-        pytest.param(
-            "FINAL", True, True, True,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#439: an amendment's report stage is not yet read from reports_approved_at",
-            ),
-        ),
+        ("FINAL", True, True, True),
     ],
 )
 async def test_pardons_close_when_the_reports_are_approved(

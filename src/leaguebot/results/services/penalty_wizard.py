@@ -125,10 +125,6 @@ class PenaltyReviewState:
     #:
     #: Read by the finalisers, which hand an amendment's stages to functions of their own.
     is_amendment: bool = False
-    #: Set once an amendment's report stage has been approved (#345). ``apply_penalties`` adds
-    #: to the penalty columns, so approving the stage a second time would add every report
-    #: again; a first pass is guarded by ``staged_penalties``, which an amendment does not own.
-    reports_approved: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +330,16 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
     wide, and both buttons would have to be pressed inside it.
     """
     if state.is_amendment:
-        if not state.reports_approved:
+        # Read from the amendment's row (#439): the stage was approved once its save was made,
+        # whichever process asks, and it is a change the queue carries out and resumes.
+        async with get_connection(state.db_path) as db:
+            row = await (
+                await db.execute(
+                    "SELECT reports_approved_at FROM round_amend_channels WHERE round_id = ?",
+                    (state.round_id,),
+                )
+            ).fetchone()
+        if row is None or row["reports_approved_at"] is None:
             return None
         return (
             "❌ This amendment's reports are already approved, so neither they nor its pardons "
@@ -1397,16 +1402,31 @@ async def _ask_reports_approved(
 
     The staged penalties and pardons travel in the change's payload as plain data, so what was
     staged survives a stop once it has been asked for. An amendment's report stage shares the
-    screens but not the change, and is still handed to its own function (#345).
+    screens and is a change of its own kind (`results.amendment.reports.approve`).
 
     The queue checks the review is current, that no approval of it is in hand and that no
     amendment holds the division, and refuses in the manager's reply where one fails, naming
     *what* in the log.
     """
     if state.is_amendment:
-        from leaguebot.results.services.result_submission_service import _approve_amendment_reports
+        from leaguebot.results.services.amendment_stage_changes import REPORTS_KIND
 
-        await _approve_amendment_reports(interaction, state)
+        await bot_of(interaction).change_queue.ask(
+            REPORTS_KIND,
+            {
+                "round_id": state.round_id,
+                "division_id": state.division_id,
+                "round_number": state.round_number,
+                "division_name": state.division_name,
+                "session_types": [st.value for st in state.session_types_present],
+                "staged": [penalty.to_payload() for penalty in state.staged],
+                "pardons": [pardon.to_payload() for pardon in state.staged_pardons],
+                "prompt_message_id": state.prompt_message_id,
+                "approval_message_id": state.approval_message_id,
+            },
+            interaction=interaction,
+            what=what,
+        )
         return
     from leaguebot.results.services.report_approval_change import KIND
 
@@ -1432,16 +1452,30 @@ async def _ask_appeals_approved(
 
     The staged corrections travel in the change's payload as plain data, so what was staged
     survives a stop once it has been asked for. An amendment's appeals stage shares the screens
-    but not the change, and is still handed to its own function (#345).
+    and is a change of its own kind (`results.amendment.appeals.approve`).
 
     The queue checks the review is current, that no approval of it is in hand and that no
     amendment holds the division, and refuses in the manager's reply where one fails, naming
     *what* in the log.
     """
     if state.is_amendment:
-        from leaguebot.results.services.result_submission_service import _approve_amendment_appeals
+        from leaguebot.results.services.amendment_stage_changes import APPEALS_KIND
 
-        await _approve_amendment_appeals(interaction, state)
+        await bot_of(interaction).change_queue.ask(
+            APPEALS_KIND,
+            {
+                "round_id": state.round_id,
+                "division_id": state.division_id,
+                "round_number": state.round_number,
+                "division_name": state.division_name,
+                "session_types": [st.value for st in state.session_types_present],
+                "staged": [correction.to_payload() for correction in state.staged_appeals],
+                "pardons": [pardon.to_payload() for pardon in state.staged_pardons],
+                "appeals_prompt_message_id": state.appeals_prompt_message_id,
+            },
+            interaction=interaction,
+            what=what,
+        )
         return
     from leaguebot.results.services.appeals_approval_change import KIND
 

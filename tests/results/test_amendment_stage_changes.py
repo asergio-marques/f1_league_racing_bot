@@ -246,7 +246,6 @@ async def _sweep(league: ReviewLeague, *, after: timedelta) -> int:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_report_stage_is_approved_once_across_a_restart(tmp_path):
     league = await _amend_league(tmp_path)
     await _approve_reports(league)
@@ -265,7 +264,6 @@ async def test_the_report_stage_is_approved_once_across_a_restart(tmp_path):
     assert "already approved" in acknowledgement(again)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_report_stage_writes_the_reports_the_manager_approved(tmp_path):
     league = await _amend_league(tmp_path)
     await _approve_reports(league)
@@ -284,7 +282,6 @@ async def test_the_report_stage_writes_the_reports_the_manager_approved(tmp_path
     assert "AMEND_STAGE_2 | Recorded" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_report_stage_whose_points_cannot_be_recalculated_writes_nothing_and_stays_open(
     tmp_path,
 ):
@@ -304,7 +301,6 @@ async def test_a_report_stage_whose_points_cannot_be_recalculated_writes_nothing
     assert not _amend_channel_deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_report_stage_apply_leaves_its_prompt_to_approve_again(tmp_path):
     league = await _amend_league(tmp_path)
     with points_fail():
@@ -324,7 +320,6 @@ async def test_a_discarded_report_stage_apply_leaves_its_prompt_to_approve_again
     assert AMEND_PROMPT not in league.channel(AMEND_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_path):
     league = await _amend_league(tmp_path)
     league.channel(AMEND_CHANNEL).fail_when = is_appeals_prompt
@@ -341,7 +336,6 @@ async def test_a_discarded_amendment_appeals_prompt_says_so_in_the_reply(tmp_pat
     assert _amend_appeals_prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_amendment_checks_read_the_handed_clock(tmp_path):
     league = await _amend_league(tmp_path, deadline="2099-01-01T00:00:00+00:00")
     _clock(league).now = datetime(2100, 1, 1, tzinfo=timezone.utc)
@@ -359,7 +353,6 @@ async def test_the_amendment_checks_read_the_handed_clock(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stopped_report_stage_left_past_its_deadline_is_not_swept_while_in_hand(tmp_path):
     league = await _amend_league(tmp_path)
     with points_fail():
@@ -375,7 +368,6 @@ async def test_a_stopped_report_stage_left_past_its_deadline_is_not_swept_while_
     assert "put back" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stopped_stage_retried_past_its_deadline_is_approved(tmp_path):
     league = await _amend_league(tmp_path)
     with points_fail():
@@ -408,7 +400,6 @@ async def test_a_discarded_stage_past_its_deadline_is_undone_at_the_next_sweep(t
     assert "put back" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
     from leaguebot.__main__ import _recover_orphaned_amend_channels
 
@@ -423,7 +414,6 @@ async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_pat
     assert not _amend_channel_deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancel_is_refused_while_a_stage_is_in_hand(tmp_path):
     from leaguebot.results.services.result_submission_service import cancel_amendment
 
@@ -444,7 +434,6 @@ async def test_cancel_is_refused_while_a_stage_is_in_hand(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stop_after_the_last_stage_is_saved_finishes_the_rebuild_on_restart(tmp_path):
     league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
     await _approve_appeals(league)
@@ -486,7 +475,6 @@ async def test_a_superseded_announcement_stays_where_a_replacement_was_discarded
     assert "RESULT_AMENDED | Incomplete" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_last_stage_s_reposts_are_retried(tmp_path):
     league = await _amend_league(tmp_path, reports_approved=True)
     results = league.channel(RESULTS_CHANNEL)
@@ -506,7 +494,6 @@ async def test_the_last_stage_s_reposts_are_retried(tmp_path):
     assert "RESULT_AMENDED | Success" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_amendment_reply_names_what_was_discarded(tmp_path):
     league = await _amend_league(tmp_path, reports_approved=True)
     league.channel(RESULTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
@@ -523,7 +510,6 @@ async def test_the_amendment_reply_names_what_was_discarded(tmp_path):
     assert "RESULT_AMENDED | Incomplete" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_repost_during_pending_completion_names_results_rounds_amend(tmp_path):
     league = await _amend_league(
         tmp_path, reports_approved=True, season_stage="PENDING_COMPLETION",
@@ -540,7 +526,6 @@ async def test_a_discarded_repost_during_pending_completion_names_results_rounds
     assert "/results rounds sync" not in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
     """Results spec, amendment: the division's channels are rebuilt "in the order a league reads
     them: the results, the standings, the attendance sheet, the round's report verdicts, then its
@@ -739,7 +724,6 @@ def _sent_saying(league: ReviewLeague, text: str) -> list[int]:
             if text in str(getattr(channel.messages.get(mid), "content", "") or "")]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_rebuild_reposts_every_round_s_results_and_standings_in_round_order(tmp_path):
     """Results spec, amendment: "Every round of the division shall be reposted, in round order,
     and not the amended round alone", a repost being a new message. Round 2 comes before the
@@ -800,7 +784,6 @@ async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_
 ROUND_4_HEADING = "**Season 1 Pro Round 4**"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_each_round_s_verdicts_are_announced_again_under_one_heading_of_its_own(tmp_path):
     """Image spec, verdict banner: "One banner is posted per approval", naming its round, and a
     batch of verdicts is headed however the league is configured. In the rebuild, round 3's
@@ -890,7 +873,6 @@ async def test_a_report_the_same_size_as_an_upheld_appeal_is_announced_as_a_repo
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_s_old_banner_comes_down_once_its_verdicts_are_announced_again(tmp_path):
     """Results spec, amendment: a round's superseded announcements, "and the banner heading
     them", are removed only once every one of that round's replacements has been posted. Round 3's
@@ -911,7 +893,6 @@ async def test_a_round_s_old_banner_comes_down_once_its_verdicts_are_announced_a
     assert OLD_BANNER not in await _banners_left(league)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_left_with_no_verdict_loses_its_old_announcement_and_banner(tmp_path):
     """Results spec, amendment: "A round left with no verdict at all shall have its superseded
     announcements and their banner removed likewise." The report stage approved no report for
@@ -951,7 +932,6 @@ async def test_a_banner_heading_a_sanction_card_is_kept(tmp_path):
 EARLIER_BANNER = 8983
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_earlier_round_s_banner_is_left_alone(tmp_path):
     """Results spec, amendment: the verdicts are announced again from the amended round on, so
     only those rounds' superseded announcements and banners come down. Round 2, before the
@@ -1009,7 +989,6 @@ async def test_a_later_round_s_replacements_do_not_license_the_amended_round_s_t
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sheet_and_the_sanctions_follow_the_running_totals_to_the_last_round(tmp_path):
     """Results spec, amendment: "The attendance sheet shall be reposted once, against the round
     the running totals stand at". Round 4 is final after the amended round 3, so the sheet is

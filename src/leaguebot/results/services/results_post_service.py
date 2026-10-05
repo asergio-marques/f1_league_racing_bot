@@ -765,8 +765,13 @@ async def produce_standings(
     *,
     bot: LeagueBot | None = None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    fresh: bool = False,
 ) -> list[PostedTable]:
     """Format and post (or edit-in-place) the driver and team standings, saving nothing.
+
+    With *fresh* the text is never edited in place: it is posted as a new message at the bottom of
+    the channel and the whole of what stood is handed back to be taken down, as a rebuild of a
+    division (an amendment's) needs, a repost being a new message.
 
     Returns the tables put up (:class:`PostedTable`), one for each message the text flow
     sent or edited (none where the picture drew every championship, which saved and replaced
@@ -888,7 +893,12 @@ async def produce_standings(
 
     sent_msg: discord.Message | None = None
     stale: list[int] = []
-    if existing_msg_id is not None:
+    if existing_msg_id is not None and fresh:
+        stale = list(
+            await _get_standings_message_ids(db_path, division_id, round_id, STANDINGS_DRIVERS)
+            or [existing_msg_id]
+        )
+    elif existing_msg_id is not None:
         try:
             existing_msg = await standings_channel.fetch_message(existing_msg_id)
             # Only edit in-place when the content fits in a single message; otherwise

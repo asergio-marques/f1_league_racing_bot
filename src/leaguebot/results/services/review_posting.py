@@ -246,11 +246,74 @@ async def plan_posts(
     return planned
 
 
-def _standings_job(round_id: int, round_number: int, label: str, pending: bool) -> PlannedStep:
-    return PlannedStep(POST_STANDINGS, {
+def _standings_job(
+    round_id: int, round_number: int, label: str, pending: bool, *, fresh: bool = False
+) -> PlannedStep:
+    payload: dict[str, Any] = {
         "round_id": round_id, "round_number": round_number, "label": label,
         "remedy": _AMEND if pending else _STANDINGS_SYNC,
-    })
+    }
+    if fresh:
+        payload["fresh"] = True
+    return PlannedStep(POST_STANDINGS, payload)
+
+
+async def plan_division_posts(db: aiosqlite.Connection, division_id: int) -> list[PlannedStep]:
+    """The jobs that rebuild everything a division's results and standings channels show, read on
+    *db*: every round's results in round order, then every round's standings in round order, each
+    a new message (a repost, never an edit), under the round's own lifecycle label.
+
+    Division-wide rather than one round, since a repost lands at the bottom of a channel and
+    replacing one round alone would read 2, 3, 4, 5, 1. A round with no ACTIVE session had nothing
+    posted and plans none; a channel the division was never given plans none of its jobs.
+    """
+    config = await (
+        await db.execute(
+            "SELECT results_channel_id, standings_channel_id FROM division_results_config "
+            "WHERE division_id = ?",
+            (division_id,),
+        )
+    ).fetchone()
+    if config is None:
+        return []
+    stage = await (
+        await db.execute(
+            "SELECT stage FROM seasons WHERE status IN ('SETUP', 'ACTIVE') ORDER BY id DESC LIMIT 1"
+        )
+    ).fetchone()
+    pending = stage is not None and stage["stage"] == SeasonStage.PENDING_COMPLETION.value
+    rounds = await (
+        await db.execute(
+            "SELECT DISTINCT r.id, r.round_number, r.status FROM rounds r "
+            "JOIN session_results sr ON sr.round_id = r.id "
+            "WHERE r.division_id = ? AND sr.status = 'ACTIVE' ORDER BY r.round_number",
+            (division_id,),
+        )
+    ).fetchall()
+    results: list[PlannedStep] = []
+    standings: list[PlannedStep] = []
+    for rnd in rounds:
+        label = _label_from_status(rnd["status"] or "")
+        if config["results_channel_id"]:
+            sessions = await (
+                await db.execute(
+                    "SELECT id, session_type FROM session_results "
+                    "WHERE round_id = ? AND status = 'ACTIVE' ORDER BY id",
+                    (rnd["id"],),
+                )
+            ).fetchall()
+            for session in sessions:
+                results.append(PlannedStep(POST_SESSION_RESULTS, {
+                    "session_id": int(session["id"]), "round_id": int(rnd["id"]), "label": label,
+                    "round_number": rnd["round_number"],
+                    "session": f"{_session_name(session['session_type'])} results",
+                    "remedy": _AMEND if pending else _RESULTS_SYNC,
+                }))
+        if config["standings_channel_id"]:
+            standings.append(
+                _standings_job(int(rnd["id"]), rnd["round_number"], label, pending, fresh=True)
+            )
+    return [*results, *standings]
 
 
 def not_done(ctx: OutcomeContext) -> list[str]:
@@ -564,6 +627,7 @@ async def _post_standings(ctx: StepContext) -> StepResult:
             ctx.db_path, division_id, round_id, rnd["round_number"], rnd["track_name"] or "Unknown",
             channel, driver_snaps, team_snaps, guild, show_reserves, payload["label"],
             bot=ctx.bot if ctx.tries == 0 else None,
+            fresh=bool(payload.get("fresh")),
         )
     except Exception as error:
         kept = _stranded(error, channel_id)
@@ -820,5 +884,5 @@ async def _record_channel_deleted(
 
 __all__ = [
     "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
-    "POST_SESSION_RESULTS", "POST_STANDINGS", "not_done", "plan_posts", "posting_steps",
+    "POST_SESSION_RESULTS", "POST_STANDINGS", "not_done", "plan_division_posts", "plan_posts", "posting_steps",
 ]

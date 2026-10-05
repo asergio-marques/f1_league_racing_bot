@@ -1448,7 +1448,6 @@ async def _descriptions(league: ReviewLeague) -> list[str]:
     return [record["description"] for record in await penalty_records(league.db_path)]
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_an_amendments_report_stage_takes_its_controls_down(tmp_path):
     """**The prompt as well as the approval**, as a first pass's. An amendment's pardons close with
     its reports (decided 2026-09-23), so nothing on the prompt is left to do; that the stage is
@@ -1462,7 +1461,6 @@ async def test_an_amendments_report_stage_takes_its_controls_down(tmp_path):
     assert (await amend_row(league))["reports_approved_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_an_amendment_does_not_duplicate_the_rounds_penalty_records(tmp_path):
     """**The defect the independent review found.** Lewis's 5-second report from the round's review
     still stands when the amendment's report stage approves it again: one record, five seconds."""
@@ -1488,7 +1486,6 @@ async def test_a_first_pass_still_records_and_applies_once(tmp_path):
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_report_removed_in_stage_two_is_removed_from_the_record(tmp_path):
     """Delete-and-rewrite is what makes the stage editable at all: Max's report, removed from the
     stage, is gone from the record once the stage is approved with nothing staged."""
@@ -1500,7 +1497,6 @@ async def test_a_report_removed_in_stage_two_is_removed_from_the_record(tmp_path
     assert await penalty_records(league.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_an_amendment_does_not_post_the_attendance_sheet_itself(tmp_path):
     """The sheet and the sanctions belong to the amendment's last stage (#345): the report stage,
     attendance on and Max over a threshold, posts no sheet and applies no sanction."""
@@ -1514,7 +1510,6 @@ async def test_an_amendment_does_not_post_the_attendance_sheet_itself(tmp_path):
     assert league.attendance._calls("apply_sanction") == []
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_the_report_stage_leaves_the_pardons_to_the_last_stage(tmp_path):
     league = await amend_league(tmp_path, attendance=True)
 
@@ -1523,7 +1518,6 @@ async def test_the_report_stage_leaves_the_pardons_to_the_last_stage(tmp_path):
     assert league.attendance._calls("rewrite_pardons_on") == []
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_an_amendment_announces_each_appeal_verdict_once(tmp_path):
     """The rebuild announces the round's verdicts, the correction just written among them; it is
     not announced a second time beside them (#345)."""
@@ -1538,7 +1532,6 @@ async def test_an_amendment_announces_each_appeal_verdict_once(tmp_path):
     assert len(corrections) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_an_amendment_does_not_double_an_unamended_sessions_penalties(tmp_path):
     """**The worst defect any review of this change found.** Lewis's 5 seconds in the Sprint Race,
     a session the amendment did not re-enter, stay 5 seconds when the Feature Race is amended."""
@@ -1554,7 +1547,6 @@ async def test_an_amendment_does_not_double_an_unamended_sessions_penalties(tmp_
     ) == 5000
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_the_other_sessions_verdict_records_survive_an_amendment(tmp_path):
     """Clearing the whole round would drop the Sprint Race's record, and nothing would write it
     back: the stage re-approves the amended session's reports only."""
@@ -1567,7 +1559,6 @@ async def test_the_other_sessions_verdict_records_survive_an_amendment(tmp_path)
     assert (await _descriptions(league)).count("Sprint contact") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_the_report_stage_rewrites_every_amended_session_and_no_other(tmp_path):
     """The amendment re-entered the Feature Qualifying and the Feature Race; its review keeps
     Lewis's race report and drops his qualifying disqualification. The Sprint Race, not amended,
@@ -1584,7 +1575,6 @@ async def test_the_report_stage_rewrites_every_amended_session_and_no_other(tmp_
     assert sorted(await _descriptions(league)) == ["Corner cutting", "Sprint"]
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_stage_of_an_amendment_no_longer_open_changes_nothing(tmp_path):
     """The amendment lapsed or was cancelled before Alex's press ran: nothing is written."""
     league = await amend_league(tmp_path)
@@ -1597,7 +1587,6 @@ async def test_a_stage_of_an_amendment_no_longer_open_changes_nothing(tmp_path):
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_the_appeal_stage_of_an_amendment_no_longer_open_changes_nothing(tmp_path):
     league = await amend_league(tmp_path, reports_approved=True)
     await _set(league.db_path, "DELETE FROM round_amend_channels")
@@ -1610,7 +1599,6 @@ async def test_the_appeal_stage_of_an_amendment_no_longer_open_changes_nothing(t
     assert "RESULT_AMENDED" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_kept_report_keeps_its_author_and_its_time(tmp_path):
     """**A verdict follows its driver with its justification, its author and its time.** Lewis's
     report, decided by 4242 on 1 February, is written back so, not stamped with Alex and now."""
@@ -1625,7 +1613,6 @@ async def test_a_kept_report_keeps_its_author_and_its_time(tmp_path):
     assert (record["applied_by"], record["applied_at"]) == ("4242", "2026-02-01T20:00:00")
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_fresh_report_is_stamped_in_utc(tmp_path):
     """A report with no time of its own is stamped with "now" from the clock the change types are
     handed, timezone-aware (#160)."""
@@ -1639,7 +1626,6 @@ async def test_a_fresh_report_is_stamped_in_utc(tmp_path):
     assert stamped == NOW
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_report_added_during_the_amendment_names_who_approved_it(tmp_path):
     league = await amend_league(tmp_path)
 
@@ -1649,7 +1635,6 @@ async def test_a_report_added_during_the_amendment_names_who_approved_it(tmp_pat
     assert record["applied_by"] == str(STEWARD)
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_kept_appeal_keeps_its_author_and_its_time(tmp_path):
     """Both rows an upheld appeal writes, its appeal record and the penalty row beside it."""
     league = await amend_league(tmp_path, reports_approved=True)
@@ -1667,7 +1652,6 @@ async def test_a_kept_appeal_keeps_its_author_and_its_time(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_fresh_appeal_is_stamped_in_utc(tmp_path):
     league = await amend_league(tmp_path, reports_approved=True)
 
@@ -1680,7 +1664,6 @@ async def test_a_fresh_appeal_is_stamped_in_utc(tmp_path):
     assert stamped == NOW
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_committed_amendment_marks_the_drivers_who_raced(tmp_path):
     """The appeals stage settles the former-driver flag, the round already FINAL (#216): Lewis
     raced it, and Max, a did-not-start, did not."""
@@ -1694,7 +1677,6 @@ async def test_a_committed_amendment_marks_the_drivers_who_raced(tmp_path):
     assert await _profile_former(league.db_path, MAX_PROFILE) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_committed_amendment_clears_a_driver_it_struck_out(tmp_path):
     """The half of #216 nothing could do before: driver 103 was a former driver by this round, and
     the amendment left them out of it. With no other final round marking them, the flag comes
@@ -1711,7 +1693,6 @@ async def test_a_committed_amendment_clears_a_driver_it_struck_out(tmp_path):
     assert await _profile_former(league.db_path, 33) == 0, "a driver struck out kept their flag"
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_committed_amendment_is_logged_as_result_amended(tmp_path):
     """The README tells a league to look for `RESULT_AMENDED`; the amendment is not logged as an
     ordinary appeals approval."""
@@ -1725,7 +1706,6 @@ async def test_a_committed_amendment_is_logged_as_result_amended(tmp_path):
     assert "APPEALS_REVIEW_APPROVED" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_the_amendment_rewrites_the_rounds_pardons_at_its_last_stage(tmp_path):
     """The round's pardons are rewritten through attendance's hook in the appeals stage's save,
     once, after the snapshot that a revert would restore is released."""
@@ -1801,7 +1781,6 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
 # stop notice names the kind of fault and never its message.
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path):
     """The report stage's save meets a database fault: the queue stops at it, the notice naming
     the fault's type and not its message; discarded, the reply leads Alex back to Approve and
@@ -1827,7 +1806,6 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
     assert await _descriptions(league) == ["Corner cutting"]
 
 
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path):
     """The appeals stage's points cannot be recalculated: the queue stops at its save, the notice
     naming the fault's type and not its message, and the amendment is neither undone nor
@@ -1848,9 +1826,7 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
 @pytest.mark.parametrize(
     "case",
     [
-        *(pytest.param(case, marks=pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT))
-          for case in ("reports-already-approved", "report-stage-not-open",
-                       "appeals-stage-not-open")),
+        "reports-already-approved", "report-stage-not-open", "appeals-stage-not-open",
         "a-first-pass-refusal",
     ],
 )
@@ -1999,7 +1975,6 @@ async def _amendment_stage(tmp_path: Any, token: str, outcome: str) -> ReviewLea
         ("RESULT_AMENDED", "Incomplete"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)
 async def test_each_stage_of_an_amendment_names_the_member_who_pressed(tmp_path, token, outcome):
     """Alex approves the report stage of round 3 (Pro)'s amendment, or its appeals stage, which
     runs clean or has its results post discarded by a league admin: the line each writes reads

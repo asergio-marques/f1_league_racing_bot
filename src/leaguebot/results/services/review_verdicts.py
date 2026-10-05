@@ -178,6 +178,23 @@ def plan_verdicts(
     ]
 
 
+def plan_round_verdicts(
+    round_id: int, round_number: int, penalties: list[dict[str, Any]],
+    appeals: list[dict[str, Any]],
+) -> list[PlannedStep]:
+    """One heading over round *round_id*'s verdicts, then one verdict for each of its *penalties*
+    (reports) and then each of its *appeals*: the run an amendment's rebuild announces again. A
+    round with neither plans nothing."""
+    if not penalties and not appeals:
+        return []
+    return [
+        *plan_verdicts(round_id, round_number, "penalty_records", penalties),
+        *plan_verdicts(round_id, round_number, "appeal_records", appeals)[
+            1 if penalties else 0:
+        ],
+    ]
+
+
 def plan_attendance(round_id: int, division_id: int, division_name: str) -> list[PlannedStep]:
     """The division's attendance sheet as at *round_id*, then the job that plans the sanctions the
     round's attendance owes. Callers pass the latest round the totals were carried to, which is
@@ -569,5 +586,5 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
 __all__ = [
     "ANNOUNCE_HEADING", "ANNOUNCE_SANCTION", "ANNOUNCE_VERDICT", "APPLY_SANCTION",
     "ATTENDANCE_SHEET", "PLAN_SANCTIONS", "POST_APPEALS_PROMPT", "REFRESH_LINEUP", "not_done", "plan_attendance",
-    "plan_verdicts", "verdict_steps",
+    "plan_round_verdicts", "plan_verdicts", "verdict_steps",
 ]

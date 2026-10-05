@@ -598,7 +598,6 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._get_standings_message_ids"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._load_driver_rows"): (1, PASS["results"]),
     ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._set_standings_message_id"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "leaguebot.attendance.services.attendance_service._recalculate_forward"): (1, PASS["attendance"]),
     ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("core/services/season_classification_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("core/services/season_classification_service.py", "leaguebot.results.services.results_post_service._get_show_reserves"): (2, PASS["results"]),
@@ -1121,7 +1120,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
-    ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "enter_penalty_state"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
@@ -1289,9 +1287,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # The penalty and appeals approvals
     ("__main__.py", "_recover_orphaned_submission_channels"): (1, SLICE[2]),
-    ("results/services/result_submission_service.py", "_apply_staged_appeals"): (1, SLICE[2]),
-    ("results/services/result_submission_service.py", "_clear_round_verdict_records"): (1, SLICE[2]),
-    ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (1, SLICE[2]),
     ("results/services/penalty_service.py", "apply_penalties"): (1, SLICE[2]),
     ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_and_repost_final_results"): (1, SLICE[2]),
@@ -1444,9 +1439,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "_claim_amendment"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_close_amend_channel_record"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "_rearm_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_recompute_former_drivers_after_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_release_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_remember_superseded_announcements"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "amend_round_results"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "close_submission_channel"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "create_submission_channel"): (1, PASS["results"]),
@@ -1457,7 +1449,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "save_session_result"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "snapshot_before_amendment"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "take_down_superseded_announcements"): (1, PASS["results"]),
     # Attendance's pass
     ("__main__.py", "_give_up_missed_check_in_call"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.answer_rsvp"): (1, PASS["attendance"]),

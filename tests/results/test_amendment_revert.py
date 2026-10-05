@@ -787,7 +787,6 @@ async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
     assert any("put back as it was" in part for part in beneath)
 
 
-@pytest.mark.xfail(strict=True, reason="#439: an amendment's stages are not yet changes on the queue")
 async def test_the_sweep_skips_an_amendment_whose_stage_is_in_hand(tmp_path):
     """**Leave it while stuck** (#439). A stage's approval asked for and waiting on the queue holds
     the amendment as the claim did: the sweep, past the half-hour, leaves it for the queue."""
