@@ -6,9 +6,10 @@ held that still holds is pinned here, through the queue: what a verdict says, th
 rather than by their user id, the name the league recorded where the server no longer knows them,
 no further action announced as no penalty, the message and channel a verdict was announced in
 saved with it, a verdicts channel missing or gone stopping the queue rather than being
-stepped over, and a heading over the verdicts that cannot be drawn, sent or posted at all costing
-the league no verdict (what `tests/image/test_image_verdict_banner_post.py` held of the two
-announcers).
+stepped over, and the heading over the verdicts: drawn in words where the banner cannot be drawn,
+and, where it cannot be posted at all, a job like any other that stops the queue until it is
+retried or discarded, a discarded heading letting the verdicts go out beneath none (decided with
+the owner at Gate 2, 2026-10-05, overruling a best-effort heading).
 
 The league is `tests.support.review_league`'s: round 3 of division 11 (Pro), Lewis (101) its
 Feature Race winner, image generation off unless `drawn` switches the verdict graphic on. The
@@ -32,7 +33,14 @@ from leaguebot.results.services.verdict_announcement_service import (
     NO_FURTHER_ACTION,
     describe_penalty,
 )
-from tests.support.change_queue import http_error, member_interaction, run_queue, tier_member
+from tests.support.change_queue import (
+    discard_job,
+    http_error,
+    member_interaction,
+    retry_job,
+    run_queue,
+    tier_member,
+)
 from tests.support.review_league import (
     DIVISION_ID,
     HEADING,
@@ -361,7 +369,7 @@ async def test_a_deleted_verdicts_channel_stops_the_queue_at_its_verdict(tmp_pat
 
 
 # ---------------------------------------------------------------------------
-# The heading over the verdicts never costs the league a verdict (image spec, verdict banner)
+# The heading over the verdicts is a job of its own (owner, Gate 2, 2026-10-05)
 # ---------------------------------------------------------------------------
 
 
@@ -373,36 +381,59 @@ async def _announced(league: ReviewLeague) -> int:
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
-async def test_a_heading_discord_refuses_costs_the_league_no_verdict(tmp_path):
-    """The verdicts channel refuses the written heading alone: both verdicts are announced
-    beneath no heading, and the queue does not stop for it."""
+async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp_path):
+    """The verdicts channel refuses the written heading alone. The heading is a job of its own,
+    so the queue stops at it and no verdict goes out ahead of it (owner, Gate 2, 2026-10-05:
+    "Heading stops the queue"). Once a league admin discards it, both verdicts are announced
+    beneath no heading, and the approval is recorded as incomplete."""
     league = await review_league(tmp_path)
     league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content == HEADING
     await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
     await run_queue(league.bot)
 
+    assert await stopped_at(league) == "announce_heading"
+    assert league.sent_to(VERDICTS_CHANNEL) == []
+    assert await _announced(league) == 0
+
+    await discard_job(league.bot)
+
     assert await stopped_at(league) is None
     assert verdict_headings(league) == []
     assert len(league.sent_to(VERDICTS_CHANNEL)) == 2
     assert await _announced(league) == 2
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
-async def test_a_heading_that_raises_costs_the_league_no_verdict(tmp_path, monkeypatch):
-    """The banner's poster raising, a fault in the bot, is swallowed: both verdicts go out."""
+async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_path, monkeypatch):
+    """The banner's poster raising, a fault in the bot, stops the queue at the heading like any
+    failure; no verdict goes out until it is cleared. A Retry once it works posts the heading
+    first, then both verdicts beneath it."""
     from leaguebot.image.services import image_verdict_banner_post
 
-    async def _boom(*_args: Any, **_kwargs: Any) -> None:
-        raise RuntimeError("the banner could not be posted")
+    real = image_verdict_banner_post.try_post
+    broken = {"on": True}
+
+    async def _boom(*args: Any, **kwargs: Any) -> Any:
+        if broken["on"]:
+            raise RuntimeError("the banner could not be posted")
+        return await real(*args, **kwargs)
 
     monkeypatch.setattr(image_verdict_banner_post, "try_post", _boom)
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS), penalty(MAX)])
     await run_queue(league.bot)
 
+    assert await stopped_at(league) == "announce_heading"
+    assert league.sent_to(VERDICTS_CHANNEL) == []
+
+    broken["on"] = False
+    await retry_job(league.bot)
+
     assert await stopped_at(league) is None
-    assert verdict_headings(league) == []
-    assert len(league.sent_to(VERDICTS_CHANNEL)) == 2
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    assert verdict_headings(league) == sent[:1]
+    assert len(sent) == 3
     assert await _announced(league) == 2
 
 
