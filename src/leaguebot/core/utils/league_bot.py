@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.output_router import OutputRouter
 
 
@@ -72,6 +73,8 @@ class LeagueBot(commands.Bot):
     signup_module_service: SignupModuleService
     wizard_service: WizardService
     attendance_service: AttendanceService
+    #: Attendance's share of a round's review, handed to results' change types (#439).
+    attendance_after_review: AttendanceAfterReview
     image_config_service: ImageConfigService
     image_validity_service: ImageValidityService
     image_render_service: ImageRenderService

@@ -41,8 +41,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import http_error
 
-NOT_BUILT = "#439: the attendance hook, AttendanceAfterReview, is not built yet"
-
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 51
 DIVISION_ID = 61
@@ -198,7 +196,6 @@ def _by_profile(candidates: list[dict[str, Any]]) -> dict[int, str]:
     return {c["driver_profile_id"]: c["sanction"] for c in candidates}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_driver_over_both_thresholds_is_owed_an_autosack_and_not_an_autoreserve(
     tmp_path,
 ):
@@ -215,7 +212,6 @@ async def test_a_driver_over_both_thresholds_is_owed_an_autosack_and_not_an_auto
     assert {c["driver_user_id"] for c in candidates} == {LEWIS, MAX}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_driver_signed_off_or_in_the_reserve_team_is_not_owed_a_sanction(tmp_path):
     """Attendance spec: a driver already sacked or already in the reserve team is not
     sanctioned a second time, so a retried sanction job applies only what is owed."""
@@ -234,7 +230,6 @@ async def test_a_driver_signed_off_or_in_the_reserve_team_is_not_owed_a_sanction
     assert candidates == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path):
     """Attendance spec: "a failure of the autoreserve of each driver owed one, not a sanction
     silently passed over". The driver is still owed it, and nothing is moved."""
@@ -251,7 +246,6 @@ async def test_an_autoreserve_in_a_division_with_no_reserve_team_raises(tmp_path
     placement.move_driver.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp_path):
     """Plan 2.6: the extracted `apply_sanction` takes the placement service as a parameter rather
     than reading `bot.placement_service`. Lewis is sacked; Max is moved to the Reserve team."""
@@ -271,7 +265,6 @@ async def test_a_sanction_is_applied_through_the_placement_service_handed_in(tmp
     assert placement.move_driver.await_args.kwargs["team_name"] == "Reserve"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(tmp_path):
     """Defect 4: the sheet's failure stops the queue and is retried there, so it raises
     `StepFailedOnDiscord`; nothing is put on the old retry queue, and the sheet posted earlier is
@@ -298,7 +291,6 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
@@ -328,7 +320,6 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_amended_round_s_attendance_is_rebuilt_both_ways_on_the_save_it_is_handed(
     tmp_path,
 ):
@@ -369,7 +360,6 @@ async def test_the_amended_round_s_attendance_is_rebuilt_both_ways_on_the_save_i
         assert (await _rows(db))[(AMENDED_ROUND, LEWIS)]["attended"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recording_a_round_carries_every_later_round_s_total_on_the_save_it_is_handed(
     tmp_path,
 ):
@@ -405,7 +395,6 @@ async def test_recording_a_round_carries_every_later_round_s_total_on_the_save_i
         assert (await _total(db, LATEST_ROUND))["total_points_after"] == 99
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_carries_exactly_the_pardons_handed_in_on_the_save_it_is_handed(
     tmp_path,
 ):
@@ -446,7 +435,6 @@ async def test_the_round_carries_exactly_the_pardons_handed_in_on_the_save_it_is
         assert [p[0] for p in await _pardons(db)] == ["ABSENT"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sanction_announcement_shares_the_round_s_verdict_heading(tmp_path):
     """Image spec, verdict banner: one heading per approval over its verdicts and its sanctions.
     Round 3's verdicts went out under the written heading, recorded against the round; Max's

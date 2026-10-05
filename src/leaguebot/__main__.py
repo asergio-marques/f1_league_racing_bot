@@ -179,6 +179,12 @@ async def main() -> None:
     bot.wizard_service.set_bot(bot)
     bot.attendance_service = AttendanceService(DB_PATH)
 
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    # Attendance's share of a round's review, handed the placement service it moves seats
+    # through; results' change types reach attendance through it alone (#439).
+    bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
+
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
