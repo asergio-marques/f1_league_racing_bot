@@ -1,37 +1,51 @@
-"""An amendment replays a round's review stages without moving the round (#345).
+"""An amendment replays a round's review stages without moving the round (#345, #439).
 
 The replay reuses the report and appeal *screens* wholesale — the same views, the same staging.
-What it must **not** reuse is the part of each first-pass finalisation that moves the round on or
+What it must **not** reuse is the part of each first-pass approval that moves the round on or
 publishes as it goes, because an amended round has already been everywhere it is going:
 
-- report review sets `AWAITING_APPEAL_VERDICTS`, reposts the round, announces its penalties and
-  runs the attendance pipeline;
-- appeal review sets `FINAL`, refreshes the division's status, and may wind the season down.
+- the report approval sets `AWAITING_APPEAL_VERDICTS`, reposts the round, announces its penalties
+  and runs the attendance jobs;
+- the appeals approval sets `FINAL`, refreshes the division's status, and may wind the season down.
 
 Replaying those against a settled round would send it backwards through states it left weeks
 ago, could finish a division or wind down a season a second time, and would publish a round
 half-amended — which an amendment abandoned part-way could then not take back.
 
-So each finaliser hands an amendment to a function of its own before doing anything else:
-`_approve_amendment_reports` and `_approve_amendment_appeals`. These tests pin that routing,
-and pin what the two amendment functions leave out.
+So an amendment's two stages are changes of their own kinds on the queue (#439, slice 2),
+`results.amendment.reports.approve` and `results.amendment.appeals.approve`, carried out by
+`results/services/amendment_stage_changes.py`, and the first pass's change types carry no
+amendment branch. These tests pin that split, and pin what the two stages' jobs leave out.
 
-**Asserted against the parsed source rather than by driving the finalisers.** Each first-pass
-finaliser is a hundred-odd lines reaching through Discord, the database, the attendance module
-and the image renderer; a test that ran one end to end would be pinning those rather than this.
-`test_finalize_reviews.py` drives the amendment functions themselves and counts rows. This is
-the technique `test_batch_notice_call_sites.py` uses, for the same reason.
+**Asserted against the change types' jobs and the parsed source rather than by running them.**
+`test_amendment_stage_changes.py` runs the stages through the queue and counts rows; this pins
+which jobs each stage can run at all, and what its saves never write. The change types are read
+from a queue the real builder (`register_change_types`) has registered them on, as the bot
+registers them. This is the technique `test_batch_notice_call_sites.py` used, for the same reason.
 """
 from __future__ import annotations
 
 import ast
+import functools
+import inspect
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+from tests.support.change_queue import attach_queue, league_double
 
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 MODULE = "results/services/result_submission_service.py"
+AMENDMENT = "results/services/amendment_stage_changes.py"
+REPORTS = "results.amendment.reports.approve"
+APPEALS = "results.amendment.appeals.approve"
+
+NOT_BUILT = "#439: an amendment's stages are not yet changes of their own on the queue"
+
+NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 
 
 def _function(relative: str, name: str) -> ast.AST:
@@ -50,141 +64,176 @@ def _code(node: ast.AST) -> str:
     return "\n".join(ast.unparse(statement) for statement in body)
 
 
-def _first_if(node: ast.AST) -> ast.If:
-    """The first `if` statement of the function's own body, imports and docstring aside."""
-    for statement in node.body:
-        if isinstance(statement, ast.If):
-            return statement
-        if isinstance(statement, (ast.Import, ast.ImportFrom)):
-            continue
-        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant):
-            continue
-        raise AssertionError(
-            f"{node.name} does something before routing an amendment: {ast.unparse(statement)}"
-        )
-    raise AssertionError(f"{node.name} has no top-level if")
+def _module_code(relative: str) -> str:
+    """A module's code with every docstring taken out, so that prose naming what it avoids
+    does not count as calling it."""
+    tree = ast.parse((SRC / relative).read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if (
+            isinstance(body, list) and body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str)
+        ):
+            node.body = body[1:] or [ast.Pass()]
+    return ast.unparse(tree)
 
 
-# ── The routing ───────────────────────────────────────────────────────────
+def _change_type(tmp_path: Path, kind: str) -> Any:
+    """The change type of *kind*, as the builder registers it on the bot's queue."""
+    bot = league_double(str(tmp_path / "league.db"))
+    queue = attach_queue(bot, str(tmp_path / "league.db"), now=NOW)
+    return queue._type(kind)
 
 
+def _job_source(change_type: Any, job: str) -> str:
+    """The source of the function a job of *change_type* runs, unwrapped from any partial."""
+    run = change_type.steps[job].run
+    while isinstance(run, functools.partial):
+        run = run.func
+    return inspect.getsource(inspect.unwrap(run))
+
+
+#: The jobs that publish, move a round on or run the attendance after a review.
+PUBLISHING_JOBS = [
+    "post_batch_notice",
+    "post_session_results",
+    "post_standings",
+    "announce_verdict",
+    "attendance_sheet",
+    "plan_sanctions",
+    "apply_sanction",
+    "announce_sanction",
+    "refresh_lineup",
+]
+
+
+# ── The split ─────────────────────────────────────────────────────────────
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+@pytest.mark.parametrize("kind", [REPORTS, APPEALS])
+async def test_each_stage_of_an_amendment_is_a_change_of_its_own_kind(tmp_path, kind):
+    """An amendment runs none of the first pass: its stages are kinds of their own, never a
+    branch inside the first pass's approvals."""
+    change_type = _change_type(tmp_path, kind)
+
+    assert change_type.kind == kind
+    assert "apply" in change_type.steps
+    assert "close" in change_type.steps
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
-    "finaliser, amendment_fn",
-    [
-        ("finalize_penalty_review", "_approve_amendment_reports"),
-        ("finalize_appeals_review", "_approve_amendment_appeals"),
-    ],
+    "module",
+    ["results/services/report_approval_change.py", "results/services/appeals_approval_change.py"],
 )
-def test_a_finaliser_hands_an_amendment_away_before_doing_anything(finaliser, amendment_fn):
-    """Before deferring, before reading a row: an amendment runs none of the first pass."""
-    guard = _first_if(_function(MODULE, finaliser))
-    body = "\n".join(ast.unparse(statement) for statement in guard.body)
-
-    assert "is_amendment" in ast.unparse(guard.test)
-    assert amendment_fn in body
-    assert isinstance(guard.body[-1], ast.Return)
-
-
-@pytest.mark.parametrize("finaliser", ["finalize_penalty_review", "finalize_appeals_review"])
-def test_the_first_pass_carries_no_amendment_branches_of_its_own(finaliser):
+def test_the_first_pass_carries_no_amendment_branches_of_its_own(module):
     """Threading the amendment through the first pass is what made it unreadable, and what let
-    a publishing step slip through unguarded. The routing at the top is the only mention."""
-    source = _code(_function(MODULE, finaliser))
-
-    assert source.count("is_amendment") == 1
+    a publishing step slip through unguarded. The first pass's change types never ask."""
+    assert "is_amendment" not in _module_code(module)
 
 
 # ── The report stage ──────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "call",
-    [
-        "delete_and_repost_final_results",
-        "repost_subsequent_standings",
-        "post_penalty_announcements",
-        "record_attendance_from_results",
-        "cascade_attendance_from_round",
-        "post_attendance_sheet",
-        "enforce_attendance_sanctions",
-        "UPDATE rounds",
-    ],
-)
-def test_the_amendments_report_stage_publishes_and_moves_nothing(call):
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+@pytest.mark.parametrize("job", PUBLISHING_JOBS)
+async def test_the_amendments_report_stage_publishes_and_moves_nothing(tmp_path, job):
     """Nothing is published until the last stage, and the attendance is the last stage's.
 
     Anything posted here would stay posted if the amendment were then reverted — the revert
     restores the classification and the verdicts, not the channels or the attendance record.
     """
-    assert call not in _code(_function(MODULE, "_approve_amendment_reports"))
+    assert job not in _change_type(tmp_path, REPORTS).steps
 
 
-def test_the_report_stage_clears_the_sessions_records_before_re_applying():
-    """`apply_penalties` only inserts, and adds to the stored penalty columns. Replaying a
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+@pytest.mark.parametrize("call", ["UPDATE rounds", "set_round_status", "record_on"])
+def test_neither_stage_moves_the_round_or_records_its_attendance_afresh(call):
+    """The round's status is never written by an amendment, and its attendance is recalculated
+    by the last stage rather than recorded as a first pass records it."""
+    assert call not in _module_code(AMENDMENT)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_report_stage_clears_the_sessions_records_before_re_applying(tmp_path):
+    """`apply_penalties_on` only inserts, and adds to the stored penalty columns. Replaying a
     round's reports over records still there duplicated every one of them.
-    `test_finalize_reviews.py` counts the rows; this pins the order."""
-    source = _code(_function(MODULE, "_approve_amendment_reports"))
+    `test_amendment_stage_changes.py` counts the rows; this pins the order in the stage's save."""
+    source = _job_source(_change_type(tmp_path, REPORTS), "apply")
 
-    assert source.index("_clear_round_verdict_records") < source.index("apply_penalties")
+    assert source.index("_clear_round_verdict_records_on") < source.index("apply_penalties_on")
 
 
-def test_the_report_stage_is_claimed_before_it_writes():
-    source = _code(_function(MODULE, "_approve_amendment_reports"))
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_report_stage_s_save_is_refused_where_the_amendment_is_no_longer_open(tmp_path):
+    """The stage's save sets `reports_approved_at` only on an amendment still unclaimed
+    (`expires_at IS NOT NULL`), so a stage approved after the sweep or Cancel took the amendment
+    writes nothing; one change at a time stops two stages running together."""
+    source = _job_source(_change_type(tmp_path, REPORTS), "apply")
 
-    assert source.index("_claim_amendment") < source.index("_clear_round_verdict_records")
+    assert "reports_approved_at" in source
+    assert "expires_at IS NOT NULL" in source
+    assert "_claim_amendment" not in source
 
 
 # ── The appeal stage ──────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize(
     "call",
-    [
-        "RoundStatus.FINAL",
-        "refresh_division_status",
-        "wind_down_ongoing",
-        "delete_and_repost_final_results",
-        "post_appeal_announcements",
-    ],
+    ["RoundStatus.FINAL", "refresh_division_status", "wind_down"],
 )
 def test_the_amendments_appeal_stage_never_moves_the_round(call):
     """FINAL, the division refresh and the season wind-down travel together, and an amended
-    round has had all three. Its appeals are announced by the rebuild, in order, not here."""
-    assert call not in _code(_function(MODULE, "_approve_amendment_appeals"))
+    round has had all three. Its appeals are announced by the rebuild, in order."""
+    assert call not in _module_code(AMENDMENT)
 
 
-def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved():
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved(tmp_path):
     """**The amendment's single rebuild, and its last act.** Rebuilding earlier would publish a
-    classification whose reports and appeals are still the old round's."""
-    source = _code(_function(MODULE, "_approve_amendment_appeals"))
+    classification whose reports and appeals are still the old round's. Its save recalculates
+    the standings and the attendance; its jobs republish the division between the notices."""
+    change_type = _change_type(tmp_path, APPEALS)
+    source = _job_source(change_type, "apply")
 
-    assert "replay_division_channels" in source
-    assert "_repost_attendance_after_amendment" in source
-    assert "take_down_superseded_announcements" in source
+    assert "cascade_recompute_from_round_on" in source
+    assert "recalculate_on" in source
+    for job in ("post_batch_notice", "post_session_results", "post_standings",
+                "attendance_sheet", "announce_verdict", "delete_batch_notice",
+                "delete_message", "delete_channel"):
+        assert job in change_type.steps, job
 
 
-def test_the_snapshot_is_released_before_the_rebuild_begins():
-    """Once anything is published the round must not be reverted from under it."""
-    source = _code(_function(MODULE, "_approve_amendment_appeals"))
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_snapshot_is_released_in_the_save_before_the_rebuild_begins(tmp_path):
+    """Once anything is published the round must not be reverted from under it: the release is
+    in the stage's save, and no publishing job opens the change ahead of it."""
+    change_type = _change_type(tmp_path, APPEALS)
 
-    assert source.index("_release_amendment") < source.index("replay_division_channels")
+    assert "_release_amendment" in _job_source(change_type, "apply")
+    opening = [planned.name for planned in change_type.opening]
+    assert not set(opening) & set(PUBLISHING_JOBS)
+    assert "apply" in opening
 
 
 # ── The first pass's appeal review ────────────────────────────────────────
 
 
-@pytest.mark.parametrize("moving_call", ["refresh_division_status", "wind_down_ongoing"])
-def test_a_settled_round_is_not_moved_on_by_the_first_pass(moving_call):
-    """A view rebuilt by restart recovery cannot carry `is_amendment`, so the round's own status
-    guards the three moving calls — each appearing once, inside that guard."""
-    node = _function(MODULE, "finalize_appeals_review")
-    guards = [
-        child for child in ast.walk(node)
-        if isinstance(child, ast.If) and "_round_is_final" in ast.unparse(child.test)
-    ]
-    guarded = "\n".join(ast.unparse(s) for guard in guards for s in guard.body)
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+@pytest.mark.parametrize("moving_call", ["refresh_division_status_on", "wind_down_change"])
+async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, moving_call):
+    """A review put back by restart recovery cannot carry `is_amendment`, so the appeals
+    approval's check refuses a round no longer awaiting its appeal verdicts, and the moving calls
+    appear in its save alone."""
+    change_type = _change_type(tmp_path, "results.appeals.approve")
+    module = _module_code("results/services/appeals_approval_change.py")
 
-    assert ast.unparse(node).count(moving_call) == guarded.count(moving_call) == 1
+    assert "AWAITING_APPEAL_VERDICTS" in inspect.getsource(inspect.unwrap(change_type.check))
+    assert moving_call in _job_source(change_type, "apply")
+    assert module.count(moving_call) == 1
 
 
 # ── Stage one ─────────────────────────────────────────────────────────────
@@ -214,7 +263,8 @@ def test_the_revert_publishes_nothing_either():
 
 
 def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
-    """Defaulting to False is what keeps every existing caller a first pass."""
+    """Defaulting to False is what keeps every existing caller a first pass. Whether an
+    amendment's reports are approved is read from its row's `reports_approved_at` (#439)."""
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
     state = PenaltyReviewState(
@@ -223,4 +273,3 @@ def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     )
 
     assert state.is_amendment is False
-    assert state.reports_approved is False
