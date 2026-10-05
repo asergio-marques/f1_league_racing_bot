@@ -1,12 +1,12 @@
-"""The four render batches that carry a notice, and the one ordering rule between them.
+"""The render batches that carry a notice, and the one ordering rule between them.
 
 `batch_notice` is tested on its own in `test_batch_notice.py`. What is left is whether
 each slow batch is actually inside one, and whether the appeals batch closes its notice
 before it deletes the channel the notice lives in — an ordering that is invisible to the
 helper and would fail only in production, silently, as an ignored `NotFound`.
 
-The wrapping is asserted against the parsed source rather than by driving four commands
-to completion. Each of these functions reaches a hundred-odd lines through Discord, the
+The season's wrapping is asserted against the parsed source rather than by driving its
+commands to completion. Each of these functions reaches a hundred-odd lines through Discord, the
 database and Inkscape; a test that ran them would be pinning those, not this, and would
 be the kind of host-dependent test the project bans. What matters here is structural:
 which statements sit inside the `async with`.
@@ -108,69 +108,134 @@ def test_the_approve_notice_goes_to_the_interaction_channel():
     assert isinstance(target, ast.Attribute) and target.attr == "channel"
 
 
-# ── The results flow ──────────────────────────────────────────────────────
+# ── The results flow, on the change queue (#439) ─────────────────────────
+#
+# A round's approvals are changes on the queue, and their notice is a pair of jobs of its own,
+# `post_batch_notice` and `delete_batch_notice`, planned around the republication. There is no
+# `async with` left to read, so these drive the approvals through the queue on the review league
+# of `tests.support.review_league` and read the order of what its channels saw.
+
+NOT_BUILT = "#439: a round's approvals are not yet changes on the queue"
+APPEALS_PROMPT = 8902
 
 
-def test_the_penalty_batch_is_wrapped():
-    node = _function("results/services/result_submission_service.py", "_apply_approved_reports")
-    blocks = _notices(node)
-
-    assert len(blocks) == 1
-    inside = _calls_within(blocks[0])
-    for expected in (
-        "delete_and_repost_final_results",
-        "repost_subsequent_standings",
-        "post_penalty_announcements",
-        "post_attendance_sheet",
-        "enforce_attendance_sanctions",
-    ):
-        assert expected in inside, f"{expected} draws graphics outside the notice"
+def _text(call) -> str:
+    return (call.args[0] if call.args else call.kwargs.get("content")) or ""
 
 
-def test_the_appeals_batch_is_wrapped():
-    node = _function("results/services/result_submission_service.py", "finalize_appeals_review")
-    blocks = _notices(node)
+def _review_notices(league) -> list[tuple[int, str]]:
+    """The notices sent to the submission channel, as (message id, text), in order."""
+    from tests.support.review_league import SUBMISSION_CHANNEL
 
-    assert len(blocks) == 1
-    inside = _calls_within(blocks[0])
-    assert "delete_and_repost_final_results" in inside
-    assert "repost_subsequent_standings" in inside
-    assert "post_appeal_announcements" in inside
+    channel = league.channel(SUBMISSION_CHANNEL)
+    texts = [_text(call) for call in channel.send.call_args_list]
+    return [
+        (mid, text) for mid, text in zip(league.sent_to(SUBMISSION_CHANNEL), texts)
+        if "one moment" in text.lower()
+    ]
 
 
-def test_the_appeals_notice_closes_before_the_channel_is_deleted():
-    """The ordering rule. `close_submission_channel` deletes the channel the notice sits
-    in; inside the block, the delete would race it and be swallowed as a `NotFound`,
-    leaving the notice visible until Discord caught up."""
-    node = _function("results/services/result_submission_service.py", "finalize_appeals_review")
-    block = _notices(node)[0]
-
-    assert "close_submission_channel" not in _calls_within(block), (
-        "the channel is deleted inside the notice block"
+def _assert_brackets_the_republication(league) -> int:
+    """One notice, in the submission channel alone, sent before the first results or standings
+    post and deleted after the last; it carries plain text for a league. Gives its id."""
+    from tests.support.review_league import (
+        RESULTS_CHANNEL, STANDINGS_CHANNEL, SUBMISSION_CHANNEL, VERDICTS_CHANNEL,
     )
-    assert "close_submission_channel" in _calls_within(node), (
-        "the appeals flow no longer closes its channel — this test needs rewriting"
-    )
-    closes_at = min(
-        sub.lineno
-        for sub in ast.walk(node)
-        if isinstance(sub, ast.Call)
-        and getattr(sub.func, "id", None) == "close_submission_channel"
-    )
-    assert block.end_lineno < closes_at, "the channel is closed before the notice ends"
+
+    notices = _review_notices(league)
+    assert len(notices) == 1
+    notice, text = notices[0]
+    _assert_plain_text(text)
+    for elsewhere in (RESULTS_CHANNEL, STANDINGS_CHANNEL, VERDICTS_CHANNEL):
+        assert not any(
+            "one moment" in _text(call).lower()
+            for call in league.channel(elsewhere).send.call_args_list
+        ), elsewhere
+    events = league.events
+    sent_at = events.index(("send", SUBMISSION_CHANNEL, notice))
+    deleted_at = events.index(("delete", SUBMISSION_CHANNEL, notice))
+    tables = [index for index, (_kind, cid, _mid) in enumerate(events)
+              if cid in (RESULTS_CHANNEL, STANDINGS_CHANNEL)]
+    assert tables and sent_at < min(tables) and max(tables) < deleted_at
+    return notice
 
 
-def test_both_results_flow_notices_target_the_submission_channel():
-    """Not the results, standings or verdicts channels the graphics land in: the person
-    waiting is the steward who pressed the button, and they are in here."""
-    for name in ("_apply_approved_reports", "finalize_appeals_review"):
-        node = _function("results/services/result_submission_service.py", name)
-        call = _notices(node)[0].items[0].context_expr
-        assert isinstance(call.args[0], ast.Name), name
-        assert call.args[0].id == "_notice_channel", name
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_report_approval_s_notice_brackets_its_republication(tmp_path):
+    """Round 3 of Pro awaits its report verdicts; a league manager approves a 5-second penalty
+    for Lewis, and the queue runs."""
+    from tests.support.change_queue import member_interaction, run_queue, tier_member
+    from tests.support.review_league import (
+        DIVISION_ID, LEWIS, PROMPT, ROUND_ID, penalty, review_league, stopped_at,
+    )
+
+    league = await review_league(tmp_path)
+    await league.bot.change_queue.ask(
+        "results.reports.approve",
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID,
+            "staged": [penalty(LEWIS).to_payload()], "pardons": [],
+            "prompt_message_id": PROMPT, "approval_message_id": None,
+        },
+        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        what="✅ Approve on round 3's penalty review",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    _assert_brackets_the_republication(league)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_an_appeals_approval_s_notice_brackets_its_republication_and_goes_before_the_channel(
+    tmp_path,
+):
+    """The ordering rule. Round 3 of Pro awaits its appeal verdicts; a league manager approves a
+    correction for Lewis, and the queue runs. The notice is deleted before the submission
+    channel it sits in, which the approval deletes last: deleted after, it would be swallowed as
+    a `NotFound` and leave the notice standing until Discord caught up."""
+    from tests.support.change_queue import member_interaction, run_queue, tier_member
+    from tests.support.review_league import (
+        DIVISION_ID, LEWIS, ROUND_ID, SUBMISSION_CHANNEL, penalty, review_league, stopped_at,
+    )
+
+    league = await review_league(
+        tmp_path, round_status="AWAITING_APPEAL_VERDICTS", other_division=False,
+        appeals_prompt=APPEALS_PROMPT,
+    )
+    league.channel(SUBMISSION_CHANNEL).seed(APPEALS_PROMPT, "appeals review")
+    await league.bot.change_queue.ask(
+        "results.appeals.approve",
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID,
+            "staged": [penalty(LEWIS).to_payload()],
+            "appeals_prompt_message_id": APPEALS_PROMPT,
+        },
+        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        what="✅ Approve on round 3's appeals review",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    notice = _assert_brackets_the_republication(league)
+    events = league.events
+    deleted_at = events.index(("delete", SUBMISSION_CHANNEL, notice))
+    channel_deleted_at = events.index(
+        ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL)
+    )
+    assert deleted_at < channel_deleted_at
 
 
 # ── What the notices say ──────────────────────────────────────────────────
+
+
+def _assert_plain_text(text: object) -> None:
+    """The notice is deleted, so nothing in it survives — and a league reads it, so it
+    names no channel ids, paths or internals."""
+    assert isinstance(text, str) and text.strip()
+    assert "one moment" in text.lower()
+    for forbidden in ("_id", "None", "png", "svg", "division_id"):
+        assert forbidden not in text
 
 
 @pytest.mark.parametrize(
@@ -178,17 +243,9 @@ def test_both_results_flow_notices_target_the_submission_channel():
     [
         ("core/cogs/season_cog.py", "season_review"),
         ("core/cogs/season_cog.py", "_do_approve"),
-        ("results/services/result_submission_service.py", "_apply_approved_reports"),
-        ("results/services/result_submission_service.py", "finalize_appeals_review"),
     ],
 )
 def test_every_notice_carries_plain_text_for_a_league(relative, function):
-    """The notice is deleted, so nothing in it survives — and a league reads it, so it
-    names no channel ids, paths or internals."""
+    """The season's two notices; the review's are read as they are sent, above."""
     call = _notices(_function(relative, function))[0].items[0].context_expr
-    text = call.args[1].value
-
-    assert isinstance(text, str) and text.strip()
-    assert "one moment" in text.lower()
-    for forbidden in ("_id", "None", "png", "svg", "division_id"):
-        assert forbidden not in text
+    _assert_plain_text(call.args[1].value)
