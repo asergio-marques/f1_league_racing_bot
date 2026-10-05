@@ -121,6 +121,10 @@ def _state(db_path: str, *, appeals=None) -> PenaltyReviewState:
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
+    # An approval is asked of the change queue (#439); a stub here, so that a press is seen by
+    # what it asks rather than by a change run against a stub bot.
+    bot.change_queue = MagicMock()
+    bot.change_queue.ask = AsyncMock()
     return PenaltyReviewState(
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
@@ -159,7 +163,33 @@ def _interaction():
     interaction.response.send_modal = AsyncMock(side_effect=_answer)
     interaction.followup = MagicMock()
     interaction.followup.send = AsyncMock()
+    # An approval is asked of the change queue (#439), reached through the interaction's bot.
+    interaction.client.change_queue = MagicMock()
+    interaction.client.change_queue.ask = AsyncMock()
     return interaction
+
+
+def _asked(interaction, state=None) -> list[tuple[str, dict]]:
+    """Every change asked of the queue by a press, through the interaction's bot or the
+    review's, as (kind, payload)."""
+    asks = list(interaction.client.change_queue.ask.await_args_list)
+    if state is not None:
+        asks += state.bot.change_queue.ask.await_args_list
+    return [(call.args[0], call.args[1]) for call in asks]
+
+
+def _asked_once(interaction, state, kind: str) -> dict:
+    """The payload of the one change of *kind* a press asked, with the press itself handed to
+    the queue for its acknowledgement."""
+    asks = [
+        call for call in interaction.client.change_queue.ask.await_args_list
+        + state.bot.change_queue.ask.await_args_list
+    ]
+    assert len(asks) == 1, asks
+    (call,) = asks
+    assert call.args[0] == kind
+    assert call.kwargs.get("interaction") is interaction
+    return call.args[1]
 
 
 def _replied(interaction) -> str:
@@ -191,13 +221,19 @@ def _manager(is_manager: bool = True):
 
 
 def _finalisers():
-    """Patch both terminal calls and the two prompt refreshers."""
+    """Patch both terminal calls and the two prompt refreshers.
+
+    The finalisers are stubbed while they stand and created where they are gone (#439), so that
+    a press that reaches one fails on what it asks of the queue, never on a finaliser run against
+    a stub bot."""
     return (
         patch(
-            "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.finalize_penalty_review",
+            new=AsyncMock(), create=True,
         ),
         patch(
-            "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
+            "leaguebot.results.services.result_submission_service.finalize_appeals_review",
+            new=AsyncMock(), create=True,
         ),
         patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()),
         patch("leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()),
@@ -236,13 +272,15 @@ async def test_a_button_with_no_state_finalises_nothing(view_cls, button):
     """Which is the half that matters: a round finalised from a half-recovered view would
     publish whatever the empty state contained."""
     view = view_cls(state=None)
+    interaction = _interaction()
     p1, p2, p3, p4 = _finalisers()
 
     with p1 as penalty, p2 as appeals, p3, p4:
-        await _press(view, button, _interaction())
+        await _press(view, button, interaction)
 
     penalty.assert_not_awaited()
     appeals.assert_not_awaited()
+    assert _asked(interaction) == []
 
 
 async def test_a_remove_button_with_no_state_says_so():
@@ -266,7 +304,8 @@ async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
     """The review happens in the submission channel, which drivers can see. A driver
     confirming the appeals step would finalise a round over the stewards' heads."""
     db_path = await _make_db(tmp_path, name=f"lm_{view_cls.__name__}_{button}")
-    view = view_cls(state=_state(db_path))
+    state = _state(db_path)
+    view = view_cls(state=state)
     interaction = _interaction()
     p1, p2, p3, p4 = _finalisers()
 
@@ -276,6 +315,7 @@ async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
     assert "Only league managers" in _replied(interaction)
     penalty.assert_not_awaited()
     appeals.assert_not_awaited()
+    assert _asked(interaction, state) == []
 
 
 async def test_only_a_league_manager_may_remove_a_correction(tmp_path):
@@ -319,16 +359,32 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     assert "staged list is intact" in _replied(interaction)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the approval message's Approve calls the finaliser rather than asking the change queue",
+)
 async def test_approving_finalises_the_review(tmp_path):
-    db_path = await _make_db(tmp_path, name="approve")
-    view = ApprovalView(state=_state(db_path))
+    """Alex presses Approve on the approval message of round 3's review, one 5-second penalty
+    for driver 101 staged. The press asks the queue for `results.reports.approve` of round 3,
+    handing it the press for its acknowledgement, with the penalty and the approval message in
+    its payload."""
+    db_path = await _make_db(
+        tmp_path, name="approve", round_status="AWAITING_REPORT_VERDICTS"
+    )
+    state = _state(db_path)
+    state.staged.append(_penalty())
+    view = ApprovalView(state=state)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
 
-    with _manager(), patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
-    ) as finalise:
-        await _press(view, "approve_btn", _interaction())
+    with _manager(), p1, p2, p3, p4:
+        await _press(view, "approve_btn", interaction)
 
-    finalise.assert_awaited_once()
+    payload = _asked_once(interaction, state, "results.reports.approve")
+    assert payload["round_id"] == ROUND_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert payload["approval_message_id"] == APPROVAL_MESSAGE_ID
+    assert payload["staged"] == [_penalty().to_payload()]
 
 
 async def test_an_archived_season_cannot_be_approved_into(tmp_path):
@@ -338,15 +394,20 @@ async def test_an_archived_season_cannot_be_approved_into(tmp_path):
     view = ApprovalView(state=_state(db_path))
     interaction = _interaction()
 
-    with _manager(), patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
-    ) as finalise:
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(), p1 as finalise, p2, p3, p4:
         await _press(view, "approve_btn", interaction)
 
     assert "archived" in _replied(interaction)
     finalise.assert_not_awaited()
+    assert _asked(interaction, view.state) == []
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the approval message's Approve calls the finaliser rather than asking the change queue",
+)
 async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     """The guard refuses an archived season, not an unresolvable one — a round whose chain
     cannot be read is a broken state, and refusing to finalise it would strand a review
@@ -355,13 +416,14 @@ async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     state = _state(db_path)
     state.round_id = 9999
     view = ApprovalView(state=state)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
 
-    with _manager(), patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review", new=AsyncMock()
-    ) as finalise:
-        await _press(view, "approve_btn", _interaction())
+    with _manager(), p1, p2, p3, p4:
+        await _press(view, "approve_btn", interaction)
 
-    finalise.assert_awaited_once()
+    payload = _asked_once(interaction, state, "results.reports.approve")
+    assert payload["round_id"] == 9999
 
 
 # ---------------------------------------------------------------------------
@@ -451,17 +513,52 @@ async def test_adding_a_correction_asks_which_session(tmp_path):
     assert _sent_view(interaction) is not None
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the appeals review's controls call the finaliser rather than asking the change queue",
+)
 async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
-    """There is nothing to lose, and a confirmation would be a click for its own sake."""
+    """There is nothing to lose, and a confirmation would be a click for its own sake.
+
+    Alex presses No Changes / Confirm on round 3's appeals review with nothing staged. The press
+    asks the queue at once for `results.appeals.approve` of round 3 with no corrections, handing
+    it the press for its acknowledgement."""
     db_path = await _make_db(tmp_path, name="appeals_confirm_empty")
-    view = AppealsReviewView(state=_state(db_path))
+    state = _state(db_path)
+    view = AppealsReviewView(state=state)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
 
-    with _manager(), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
-    ) as finalise:
-        await _press(view, "no_changes_btn", _interaction())
+    with _manager(), p1, p2, p3, p4:
+        await _press(view, "no_changes_btn", interaction)
 
-    finalise.assert_awaited_once()
+    payload = _asked_once(interaction, state, "results.appeals.approve")
+    assert payload["round_id"] == ROUND_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert payload["staged"] == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the appeals review's controls call the finaliser rather than asking the change queue",
+)
+async def test_approving_the_appeals_asks_for_the_corrections_staged(tmp_path):
+    """Alex presses ✅ Approve on round 3's appeals review with one 5-second correction for
+    driver 101 staged. The press asks the queue for `results.appeals.approve` of round 3, handing
+    it the press for its acknowledgement, the correction in its payload as plain data."""
+    db_path = await _make_db(tmp_path, name="appeals_approve")
+    state = _state(db_path, appeals=[_penalty()])
+    view = AppealsReviewView(state=state)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(), p1, p2, p3, p4:
+        await _press(view, "approve_btn", interaction)
+
+    payload = _asked_once(interaction, state, "results.appeals.approve")
+    assert payload["round_id"] == ROUND_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert payload["staged"] == [_penalty().to_payload()]
 
 
 async def test_confirming_with_corrections_staged_asks_first(tmp_path):
@@ -470,13 +567,13 @@ async def test_confirming_with_corrections_staged_asks_first(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_confirm_staged")
     view = AppealsReviewView(state=_state(db_path, appeals=[_penalty(), _penalty(102)]))
     interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
 
-    with _manager(), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
-    ) as finalise:
+    with _manager(), p1, p2 as finalise, p3, p4:
         await _press(view, "no_changes_btn", interaction)
 
     finalise.assert_not_awaited()
+    assert _asked(interaction, view.state) == []
     assert "**2** staged correction(s)" in _replied(interaction)
 
 
@@ -499,18 +596,27 @@ async def test_the_confirmation_says_what_clearing_would_do(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the appeals review's controls call the finaliser rather than asking the change queue",
+)
 async def test_confirming_the_clear_discards_and_finalises(tmp_path):
+    """Round 3's appeals review has one correction staged; Alex presses No Changes / Confirm and
+    then confirms the clear. The list is emptied and the queue is asked for
+    `results.appeals.approve` of round 3 with no corrections."""
     db_path = await _make_db(tmp_path, name="appeals_clear")
     state = _state(db_path, appeals=[_penalty()])
     view = _AppealsConfirmClearView(state=state)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
 
-    with _manager(), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
-    ) as finalise:
-        await _press(view, "confirm_btn", _interaction())
+    with _manager(), p1, p2, p3, p4:
+        await _press(view, "confirm_btn", interaction)
 
     assert state.staged_appeals == []
-    finalise.assert_awaited_once()
+    payload = _asked_once(interaction, state, "results.appeals.approve")
+    assert payload["round_id"] == ROUND_ID
+    assert payload["staged"] == []
 
 
 async def test_going_back_keeps_the_corrections(tmp_path):
@@ -526,13 +632,14 @@ async def test_going_back_keeps_the_corrections(tmp_path):
     view = _AppealsConfirmClearView(state=state)
     interaction = _interaction()
 
-    with _manager(True), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
-    ) as finalise:
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1, p2 as finalise, p3, p4:
         await _press(view, "cancel_btn", interaction)
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+    assert _asked(interaction, state) == []
     (line,) = _all_lines(interaction, state)
     _assert_appeals_clear_abandoned(line, "cancelled by Alex (<@77>)")
 
@@ -541,14 +648,15 @@ async def test_only_a_league_manager_may_confirm_the_clear(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_clear_lm")
     state = _state(db_path, appeals=[_penalty()])
     view = _AppealsConfirmClearView(state=state)
+    interaction = _interaction()
+    p1, p2, p3, p4 = _finalisers()
 
-    with _manager(False), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
-    ) as finalise:
-        await _press(view, "confirm_btn", _interaction())
+    with _manager(False), p1, p2 as finalise, p3, p4:
+        await _press(view, "confirm_btn", interaction)
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+    assert _asked(interaction, state) == []
 
 
 # ---------------------------------------------------------------------------
@@ -631,6 +739,7 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
 
     penalty.assert_not_awaited()
     appeals.assert_not_awaited()
+    assert _asked(interaction, state) == []
     refresh.assert_not_awaited()
     refresh_appeals.assert_not_awaited()
     interaction.response.send_modal.assert_not_awaited()
@@ -681,6 +790,7 @@ async def test_every_appeals_control_refuses_once_the_appeals_are_approved(
 
     penalty.assert_not_awaited()
     appeals.assert_not_awaited()
+    assert _asked(interaction, state) == []
     refresh.assert_not_awaited()
     refresh_appeals.assert_not_awaited()
     assert len(state.staged_appeals) == 1
@@ -716,8 +826,16 @@ def _all_lines(interaction, state) -> list[str]:
 
 @pytest.mark.parametrize(
     "kind, label",
-    [("review", "Remove #1"), ("clear", _APPEALS_CLEAR)],
-    ids=["remove-correction", "clear"],
+    [
+        pytest.param("review", "Remove #1", id="remove-correction"),
+        pytest.param(
+            "clear", _APPEALS_CLEAR, id="clear",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#439: the clear's Confirm calls the finaliser rather than asking the change queue",
+            ),
+        ),
+    ],
 )
 async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind, label):
     """Round 3's appeals review (division Pro) has two +5s corrections staged, for drivers 101
@@ -734,37 +852,46 @@ async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind,
     interaction = _interaction()
     p1, p2, p3, p4 = _finalisers()
 
-    with _manager(True), p1, p2 as appeals, p3, p4:
+    with _manager(True), p1, p2, p3, p4:
         await button.callback(interaction)
 
     removed = ["<@101>", "<@102>"] if kind == "clear" else ["<@101>"]
     assert [p.driver_user_id for p in state.staged_appeals] == ([] if kind == "clear" else [102])
-    assert appeals.await_count == (1 if kind == "clear" else 0)
+    assert [kind for kind, _payload in _asked(interaction, state)] == (
+        ["results.appeals.approve"] if kind == "clear" else []
+    )
     (line,) = _all_lines(interaction, state)
     assert not line.startswith(("⛔", "↩️", "⌛")), line
     for fragment in ("Alex (<@77>)", label, "appeals review of round 3 (Pro)", "+5s", *removed):
         assert fragment in line, (fragment, line)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: No Changes / Confirm calls the finaliser rather than asking the change queue",
+)
 async def test_no_changes_writes_no_line_beside_the_approval_s_own(tmp_path):
     """Round 3's appeals review (division Pro) has nothing staged. Alex presses No Changes /
-    Confirm, which approves the appeals at once; the approval (stubbed) writes its own line. The
-    press writes no second one: one action, one line."""
+    Confirm, which asks the queue for the appeals approval at once; the approval (the queue's
+    ask, stubbed) writes its own line, as its `close` does. The press writes no second one: one
+    action, one line."""
     db_path = await _make_db(tmp_path, name="appeals_no_changes_line")
     state = _state(db_path)
     view = AppealsReviewView(state=state)
     interaction = _interaction()
 
-    async def _approved(approving, _state, **_kwargs):
-        await approving.client.output_router.post_log("the approval's own line")
+    async def _approved(_kind, _payload, *, interaction, **_kwargs):
+        await interaction.client.output_router.post_log("the approval's own line")
 
-    with _manager(True), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review",
-        new=AsyncMock(side_effect=_approved),
-    ) as finalise:
+    interaction.client.change_queue.ask = AsyncMock(side_effect=_approved)
+    state.bot.change_queue = interaction.client.change_queue
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1, p2, p3, p4:
         await _press(view, "no_changes_btn", interaction)
 
-    finalise.assert_awaited_once()
+    interaction.client.change_queue.ask.assert_awaited_once()
+    assert interaction.client.change_queue.ask.await_args.args[0] == "results.appeals.approve"
     assert _all_lines(interaction, state) == ["the approval's own line"]
 
 
@@ -799,14 +926,15 @@ async def test_an_appeals_clear_confirmation_left_to_lapse_is_recorded(tmp_path)
     interaction = _interaction()
     interaction.edit_original_response = AsyncMock()
 
-    with _manager(True), patch(
-        "leaguebot.results.services.result_submission_service.finalize_appeals_review", new=AsyncMock()
-    ) as finalise:
+    p1, p2, p3, p4 = _finalisers()
+
+    with _manager(True), p1, p2 as finalise, p3, p4:
         await _press(view, "no_changes_btn", interaction)
         await _sent_view(interaction).on_timeout()
 
     assert len(state.staged_appeals) == 1
     finalise.assert_not_awaited()
+    assert _asked(interaction, state) == []
     (line,) = _all_lines(interaction, state)
     assert line.startswith("⌛ "), line
     _assert_appeals_clear_abandoned(line, "lapsed unconfirmed (started by Alex (<@77>))")
