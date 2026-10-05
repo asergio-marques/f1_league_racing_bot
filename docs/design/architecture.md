@@ -280,8 +280,8 @@ audit record, which is how some settings came to have none.
   the owning module's post again, as text where it would have been a picture (Constitution XIV,
   rule 8), 1, 5, 10, 15, 30 and 60 minutes after the job first failed, so that the last falls at
   the hour; a try that fails writes no line of its own but the last, which says the bot has
-  stopped trying on its own. *Retry,* a button a league manager or admin presses at any time, and
-  the only way on after the hour: the job is made due at once. *Discard,* a button a league admin
+  stopped trying on its own. *Retry,* a button a league manager or admin presses at any time but while that job is
+  being tried, and the only way on after the hour: the job is made due at once. *Discard,* a button a league admin
   presses, drops that one job, which the log records with what was not done, and the request's
   later jobs run on, each checking again whether it is still due. A change that had not yet begun,
   because its check failed, is dropped whole.
@@ -289,7 +289,11 @@ audit record, which is how some settings came to have none.
   Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
   and names the job. They work directly on the queue's own records, and are not changes put on the
   queue: the queue is stopped, so a change put on it could not run. Each press is saved with its own record (the line, and
-  for a Discard the audit record), and a press that is refused is recorded as well.
+  for a Discard the audit record), and a press that is refused is recorded as well. A press made
+  while the worker is trying that job's change, its check included, is refused, to be made again
+  once the try has ended: each press is taken under the lock the worker holds as it chooses a
+  change, and a press saved during a try could outlive the stop that try clears, so that a later
+  failure of the job would be read as the press's.
 
   After a restart a stopped job stays stopped, as "When the bot stops" in the core specification
   has it: the bot makes no try of its own, whatever the schedule had left, and only Retry or
