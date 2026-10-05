@@ -326,7 +326,6 @@ async def test_a_review_replaced_after_a_cancelled_resubmission_approves_nothing
     assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     """**A double click ran the approval twice**, the second press finding the round exactly as
     the first had while the first drew its graphics. A second Approve pressed while the first is
@@ -343,7 +342,7 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
 
     for interaction in (while_queued, while_running):
         assert acknowledgement(interaction) == _BEING_APPROVED
-    assert league.log().count(f"refused for Alex (<@{STEWARD}>)") == 2
+    assert league.log().count(f"refused for Alex (`<@{STEWARD}>`)") == 2
     assert len(await changes_of(league.db_path, REPORTS)) == 1
     assert len(await penalty_records(league.db_path)) == 1
     assert len(appeals_prompts(league)) == 1
@@ -775,7 +774,8 @@ async def test_a_failed_appeal_announcement_does_not_un_approve_them(tmp_path):
     """The verdict Discord refuses stops the queue; the round is already final. Once a league
     admin discards it, the submission channel behind it is still deleted."""
     league = await _appeals_league(tmp_path)
-    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    # The heading goes first and is a job of its own (owner, Gate 2): only the verdict is refused.
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content != HEADING
 
     await _approve_appeals(league, staged=[league_penalty(LEWIS)])
     assert await stopped_at(league) == "announce_verdict"
@@ -818,7 +818,7 @@ async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_pat
 
     for interaction in (while_queued, while_running):
         assert acknowledgement(interaction) == _APPEALS_BEING_APPROVED
-    assert league.log().count(f"refused for Alex (<@{STEWARD}>)") == 2
+    assert league.log().count(f"refused for Alex (`<@{STEWARD}>`)") == 2
     assert len(await changes_of(league.db_path, APPEALS)) == 1
     assert await one(league.db_path, "SELECT COUNT(*) FROM appeal_records") == 1
     assert await round_status(league.db_path) == "FINAL"
@@ -901,7 +901,7 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     assert replied == _APPEALS_BEING_APPROVED
     assert league.log().count(
         f"⛔ the “{label}” button of the appeals review of round 3 (Pro) refused for "
-        f"Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
+        f"Alex (`<@{STEWARD}>`) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
     ) == 1
 
 
@@ -1867,8 +1867,7 @@ async def test_a_failed_amendment_appeals_stage_names_the_kind_of_fault(tmp_path
         *(pytest.param(case, marks=pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT))
           for case in ("reports-already-approved", "report-stage-not-open",
                        "appeals-stage-not-open")),
-        pytest.param("a-first-pass-refusal",
-                     marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+        "a-first-pass-refusal",
     ],
 )
 async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_path, case):
@@ -1892,7 +1891,7 @@ async def test_every_results_rounds_amend_refusal_reaches_the_log_channel(tmp_pa
     await run_queue(league.bot)
 
     [line] = [str(line) for line in league.bot.log_channel.sent if str(line).startswith("⛔")]
-    assert f"refused for Alex (<@{STEWARD}>)" in line
+    assert f"refused for Alex (`<@{STEWARD}>`)" in line
     if case == "a-first-pass-refusal":
         assert "penalty review" in line
         assert "amendment" not in line and "/results rounds amend" not in line
@@ -1940,7 +1939,7 @@ async def test_the_approval_names_the_member_who_approved(tmp_path, stage, token
     "discarded",
     [
         "post_session_results",
-        pytest.param("announce_verdict", marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+        "announce_verdict",
         "apply_sanction",
     ],
 )
@@ -1954,7 +1953,8 @@ async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_
     if discarded == "post_session_results":
         league.channel(RESULTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
     elif discarded == "announce_verdict":
-        league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+        # The heading goes first and is a job of its own (owner, Gate 2): only the verdict fails.
+        league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content != HEADING
     else:
         league.attendance.apply_fails = {MAX_PROFILE: RuntimeError("no Reserve team")}
 
