@@ -554,6 +554,31 @@ async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
+async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
+    """What `delete_and_repost_final_results` held: a session whose results were replaced is
+    not published again, and its message is left alone."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "config_name, results_message_id) "
+            "VALUES (?, ?, 'FEATURE_QUALIFYING', 'SUPERSEDED', 'Standard', 8803)",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.commit()
+    league.channel(RESULTS_CHANNEL).seed(8803, "replaced qualifying")
+    await _ask(league)
+    await run_queue(league.bot)
+
+    posts = [row for row in await step_rows(league.db_path)
+             if row["name"] == "post_session_results"]
+    assert len(posts) == 1
+    assert len(league.sent_to(RESULTS_CHANNEL)) == 1
+    assert league.deleted_in(RESULTS_CHANNEL) == [OLD_RESULTS]
+    assert 8803 in league.channel(RESULTS_CHANNEL).messages
+
+
 @pytest.mark.xfail(strict=True, reason="#439: the delete job is not yet built")
 async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     league = await _league(tmp_path)
