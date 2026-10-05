@@ -1,6 +1,6 @@
 """penalty_wizard.py — Post-submission inline penalty review wizard.
 
-Activated by ``enter_penalty_state`` in *result_submission_service.py* once all
+Activated by the change `results.review.open` (*review_open_change.py*) once all
 sessions for a round have been submitted or cancelled.  The submission channel
 stays open and a :class:`PenaltyReviewView` prompt is posted there.
 

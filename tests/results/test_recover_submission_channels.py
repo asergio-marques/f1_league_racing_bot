@@ -59,7 +59,6 @@ DIVISION_ID = 11
 ROUND_ID = 21
 CHANNEL_ID = 700
 PROMPT_MESSAGE_ID = 8800
-NOT_BUILT = "#439: restart recovery does not yet ask the change queue to put a review back"
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +380,6 @@ async def test_a_round_in_review_keeps_its_channel_and_its_results(tmp_path):
     channel.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_penalty_review_prompt_is_re_posted(tmp_path):
     """Recovery asks the queue, as the bot, to open the review again; it posts nothing itself."""
     db_path = await _make_db(tmp_path, name="recover_reprompt", in_penalty_review=1)
@@ -395,7 +393,6 @@ async def test_the_penalty_review_prompt_is_re_posted(tmp_path):
     channel.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_interim_results_already_posted_are_not_posted_again(tmp_path):
     """Otherwise every restart adds another copy of the same provisional table to the
     channel a league is reading."""
@@ -409,7 +406,6 @@ async def test_interim_results_already_posted_are_not_posted_again(tmp_path):
     assert _asked_once(stub, "results.review.open")["publish"] is False
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_interim_results_never_posted_are_posted_now(tmp_path):
     """The crash came before they went out, so the division has seen nothing."""
     db_path = await _make_db(
@@ -422,7 +418,6 @@ async def test_interim_results_never_posted_are_posted_now(tmp_path):
     assert _asked_once(stub, "results.review.open")["publish"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_old_prompt_is_deleted_once_the_new_one_stands(tmp_path):
     """Two live prompts over one round mean two staged lists, and whichever is approved
     second overwrites the first. Recovery hands the old prompt's id to the change, which deletes
@@ -443,7 +438,6 @@ async def test_the_old_prompt_is_deleted_once_the_new_one_stands(tmp_path):
     channel._old.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_prompt_already_gone_does_not_stop_the_re_post(tmp_path):
     """Deleted by hand, or by a previous partial recovery — either way the new prompt is
     what matters."""
@@ -510,7 +504,6 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_awaiting_appeals_gets_the_appeals_prompt_back(tmp_path):
     """A different prompt from the penalty one: the penalties are settled and what is
     outstanding is the appeals against them. Recovery asks the queue for it, as the bot, and
@@ -594,7 +587,6 @@ async def _resubmitting_flag(db_path) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
     db_path = await _resubmitting_db(tmp_path, "recover_resubmit")
     channel = _channel()
@@ -684,7 +676,6 @@ async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path)
     channel._old.edit.assert_awaited_once_with(view=None)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recovery(tmp_path):
     db_path = await _resubmitting_db(
         tmp_path, "recover_resubmit_gone", resubmit_prompt_message_id=6100

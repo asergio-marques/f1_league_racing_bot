@@ -182,7 +182,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
     ("__main__.py", "_recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("__main__.py", "main.on_ready._recover_signup_close_timers"): (1, PASS["signup"]),
-    ("__main__.py", "staged_penalties_warning"): (1, PASS["results"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.post_check_in"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
@@ -583,8 +582,6 @@ def _private_names_across_modules() -> Counter[tuple[str, str]]:
 
 
 KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content"): (1, PASS["results"]),
-    ("__main__.py", "leaguebot.results.services.result_submission_service._build_penalty_review_state"): (1, PASS["results"]),
     ("__main__.py", "leaguebot.attendance.services.rsvp_service._report_call_failure"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
@@ -711,7 +708,7 @@ def _direct_posts() -> Counter[tuple[str, str]]:
 KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_abandon_interrupted_resubmission"): (2, PASS["results"]),
     ("__main__.py", "_recover_expired_review_prompts"): (2, HANDLERS),
-    ("__main__.py", "_recover_orphaned_submission_channels"): (4, PASS["results"]),
+    ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("core/cogs/bot_cog.py", "_open_progress"): (1, HANDLERS),
     ("core/cogs/module_cog.py", "execute_forced_close"): (2, PASS["signup"]),
     ("results/cogs/results_cog.py", "ResultsCog._amend_round_results"): (6, PASS["results"]),
@@ -1120,7 +1117,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/services/test_roster_service.py", "_ensure_single_config"): (4, PASS["core"]),
     ("image/services/image_lineup_post.py", "try_post"): (2, PASS["image"]),
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
-    ("results/services/result_submission_service.py", "enter_penalty_state"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "recompute_former_drivers_for_round"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "run_result_submission_job"): (1, PASS["results"]),
@@ -1442,7 +1438,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "amend_round_results"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "close_submission_channel"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "create_submission_channel"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "enter_penalty_state"): (3, PASS["results"]),
     ("results/services/result_submission_service.py", "enter_resubmit_flow"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "replace_round_results"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "revert_abandoned_amendment"): (1, PASS["results"]),

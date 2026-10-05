@@ -1802,6 +1802,27 @@ async def unfinished(
         return [json.loads(row["payload"]) for row in await cursor.fetchall()]
 
 
+async def ever_asked(db_path: str, kinds: Collection[str]) -> list[dict[str, Any]]:
+    """The payloads of every change of *kinds* the queue has recorded, in whatever state, oldest
+    first.
+
+    Where :func:`unfinished` gives only what is in hand, this gives what was asked for at all: a
+    change done, discarded, dropped or refused at its start is still a record that it was asked
+    for. A change refused when it was asked is not saved, so is not given. Read on a connection of
+    its own.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return []
+    marks = ", ".join("?" for _ in kinds)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) ORDER BY id",  # noqa: S608 — marks only
+            tuple(kinds),
+        )
+        return [json.loads(row["payload"]) for row in await cursor.fetchall()]
+
+
 async def in_hand(db_path: str, kinds: Collection[str]) -> list[tuple[dict[str, Any], int | None]]:
     """Each change of *kinds* that is queued or running, a stopped one included, as its payload
     and the number of the job it waits on, oldest first.

@@ -823,7 +823,6 @@ async def _ask_report_approval(league: ReviewLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
     league = await _league(tmp_path, name="recover_in_hand", in_review=True,
                            results_posted=True, prompt=PROMPT,
@@ -856,7 +855,6 @@ async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path)
     assert _prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_old_prompt(
     tmp_path,
 ):
@@ -916,7 +914,6 @@ async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
         assert (await cursor.fetchone())[0] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_path):
     """The appeals prompt is posted again as a change, its id saved for the next restart and its
     view registered so its buttons keep working across the next restart too."""
@@ -939,7 +936,6 @@ async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_pat
     assert await changes_of(league.db_path, KIND) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path):
     """Only a run from before #439 can leave a final round with its channel open. It is closed,
     with a line, rather than its dead review posted again at every restart."""
@@ -957,7 +953,6 @@ async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path)
     assert "round 3" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_no_longer_warns_of_penalties_already_applied(tmp_path):
     """The queue carries what was staged, so "already applied" can no longer happen: the
     warning is gone, and the column it read with it."""

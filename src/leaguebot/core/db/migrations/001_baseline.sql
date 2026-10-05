@@ -273,7 +273,7 @@ CREATE TABLE round_submission_channels (
                    ON DELETE CASCADE,
     channel_id INTEGER NOT NULL,
     created_at TEXT    NOT NULL,
-    closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, staged_penalties TEXT, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER, resubmit_started_by INTEGER,
+    closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER, resubmit_started_by INTEGER,
     -- appeals_prompt_message_id: the appeals review's prompt in the submission channel, saved with
     -- its post, so that a prompt put back after a restart takes the old one down (#439).
     appeals_prompt_message_id INTEGER,
