@@ -39,6 +39,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.attendance.services.attendance_service import SanctionOutcome
 from leaguebot.results.services.penalty_service import StagedPenalty
@@ -61,6 +62,7 @@ from tests.support.review_league import (
     APPROVAL,
     LATER_ROUND_ID,
     LEWIS,
+    LEWIS_PROFILE,
     MAX,
     MAX_PROFILE,
     OLD_RESULTS,
@@ -70,6 +72,7 @@ from tests.support.review_league import (
     VERDICTS_CHANNEL,
     ReviewLeague,
     appeals_prompts,
+    block_queue,
     candidate as league_candidate,
     changes_of,
     is_appeals_prompt,
@@ -82,6 +85,7 @@ from tests.support.review_league import (
     round_status,
     run_until_done,
     stopped_at,
+    verdict_headings,
 )
 from tests.support.teams import seed_team_instances
 
@@ -849,97 +853,156 @@ async def test_a_clean_sanction_run_tells_the_manager_nothing_more(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The appeals review
+# The appeals review, on the change queue (#439)
 # ---------------------------------------------------------------------------
+#
+# Stage two is the change `results.appeals.approve`, asked as the appeals review's Approve asks
+# it: round 3 of division 11 (Pro) awaits its appeal verdicts, its appeals prompt standing in the
+# submission channel, division 11 the season's only division and round 3 its last still open.
+
+APPEALS = "results.appeals.approve"
+APPEALS_PROMPT = 8902
+APPEALS_NOT_BUILT = "#439: the appeals approval is not yet a change on the queue"
 
 
+async def _appeals_league(tmp_path: Any, *, round_status: str = "AWAITING_APPEAL_VERDICTS",
+                          **options: Any) -> ReviewLeague:
+    league = await review_league(
+        tmp_path, round_status=round_status, other_division=False,
+        appeals_prompt=APPEALS_PROMPT, **options,
+    )
+    league.channel(SUBMISSION_CHANNEL).seed(APPEALS_PROMPT, "appeals review")
+    return league
+
+
+async def _ask_appeals(league: ReviewLeague, *, staged: Any = ()) -> Any:
+    """Alex presses Approve on round 3's appeals review; the queue is not yet run. Gives Alex's
+    interaction."""
+    interaction = member_interaction(league.bot, user=_alex())
+    await league.bot.change_queue.ask(
+        APPEALS,
+        {
+            "round_id": ROUND_ID,
+            "division_id": DIVISION_ID,
+            "staged": [item.to_payload() for item in staged],
+            "appeals_prompt_message_id": APPEALS_PROMPT,
+        },
+        interaction=interaction,
+        what="✅ Approve on round 3's appeals review",
+    )
+    return interaction
+
+
+async def _approve_appeals(league: ReviewLeague, **payload: Any) -> Any:
+    """Alex approves round 3's appeals and the queue runs until it is clear or stopped."""
+    interaction = await _ask_appeals(league, **payload)
+    await run_queue(league.bot)
+    return interaction
+
+
+async def _profile_former(db_path: str, profile_id: int) -> int:
+    return await one(
+        db_path, "SELECT former_driver FROM driver_profiles WHERE id = ?", profile_id
+    )
+
+
+def _verdicts(league: ReviewLeague) -> list[int]:
+    """The verdicts announced, the heading over them left out."""
+    headings = verdict_headings(league)
+    return [mid for mid in league.sent_to(VERDICTS_CHANNEL) if mid not in headings]
+
+
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_approving_appeals_finishes_the_round(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_final", round_status="AWAITING_APPEAL_VERDICTS")
+    league = await _appeals_league(tmp_path)
 
-    await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    assert await _round_status(db_path) == "FINAL"
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "FINAL"
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_approving_appeals_marks_the_drivers_who_raced(tmp_path):
     """Where the former-driver flag is set, and the only place the first pass sets it (#216).
 
     The round becomes FINAL here, so this is the moment its results stop being provisional.
-    Driver 32's only entry is a did-not-start, so they did not race it.
+    Max's only entry is a did-not-start, so he did not race it.
     """
-    db_path = await _make_db(
-        tmp_path,
-        name="appeals_former",
-        round_status="AWAITING_APPEAL_VERDICTS",
-        results=[(31, 101, "CLASSIFIED"), (32, 102, "DNS")],
-    )
+    league = await _appeals_league(tmp_path)
+    await _set(league.db_path,
+               "UPDATE race_session_results SET outcome = 'DNS' WHERE driver_user_id = ?", MAX)
 
-    await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    assert await _former(db_path, 31) == 1
-    assert await _former(db_path, 32) == 0
+    assert await _profile_former(league.db_path, LEWIS_PROFILE) == 1
+    assert await _profile_former(league.db_path, MAX_PROFILE) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_cancelled_round_marks_nobody(tmp_path):
     """A round that never became final has no final results to mark by."""
-    db_path = await _make_db(
-        tmp_path,
-        name="appeals_cancelled_former",
-        round_status="CANCELLED",
-        results=[(31, 101, "CLASSIFIED")],
-    )
+    league = await _appeals_league(tmp_path, round_status="CANCELLED")
 
-    await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    assert await _former(db_path, 31) == 0
+    assert await _profile_former(league.db_path, LEWIS_PROFILE) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_cancelled_round_is_not_raised_to_final(tmp_path):
     """By a view that outlived its cancellation."""
-    db_path = await _make_db(tmp_path, name="appeals_cancelled", round_status="CANCELLED")
+    league = await _appeals_league(tmp_path, round_status="CANCELLED")
 
-    await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    assert await _round_status(db_path) == "CANCELLED"
+    assert await round_status(league.db_path) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_divisions_status_is_reconsidered(tmp_path):
     """#154: the last round's appeals are what finishes a division."""
-    db_path = await _make_db(tmp_path, name="appeals_division", round_status="AWAITING_APPEAL_VERDICTS")
+    league = await _appeals_league(tmp_path)
 
-    stubs = await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    stubs["refresh"].assert_awaited_once()
+    assert await one(
+        league.db_path, "SELECT status FROM divisions WHERE id = ?", DIVISION_ID
+    ) == "FINISHED"
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_submission_channel_is_closed(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_close", round_status="AWAITING_APPEAL_VERDICTS")
+    league = await _appeals_league(tmp_path)
 
-    stubs = await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    stubs["close"].assert_awaited_once()
+    assert await one(league.db_path, "SELECT closed FROM round_submission_channels") == 1
+    assert ("delete_channel", SUBMISSION_CHANNEL) in [
+        (kind, cid) for kind, cid, _ in league.events
+    ]
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_results_are_reposted_as_final(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_repost", round_status="AWAITING_APPEAL_VERDICTS")
+    league = await _appeals_league(tmp_path)
 
-    stubs = await _run(finalize_appeals_review, _state(db_path))
+    await _approve_appeals(league)
 
-    assert stubs["repost"].await_args.kwargs["label"] == "Final Results"
+    posted = league.channel(RESULTS_CHANNEL).messages
+    assert any("Final Results" in str(posted[mid].content)
+               for mid in league.sent_to(RESULTS_CHANNEL))
+    assert OLD_RESULTS not in posted
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_upheld_corrections_are_applied_and_recorded(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_upheld", round_status="AWAITING_APPEAL_VERDICTS")
+    league = await _appeals_league(tmp_path)
 
-    stubs = await _run(
-        finalize_appeals_review,
-        _state(db_path, appeals=[_penalty()]),
-        apply_result=[{"race_result_id": None, "qual_result_id": None}],
-    )
+    await _approve_appeals(league, staged=[league_penalty(LEWIS)])
 
-    stubs["apply"].assert_awaited_once()
-    assert stubs["apply"].await_args.kwargs["_phase"] == "APPEAL"
-    async with get_connection(db_path) as db:
+    assert (await race_rows(league.db_path))[LEWIS]["appeal_time_penalties_ms"] == 5000
+    async with get_connection(league.db_path) as db:
         cursor = await db.execute(
             "SELECT status, penalty_type, time_seconds, description, submitted_by "
             "FROM appeal_records"
@@ -949,107 +1012,83 @@ async def test_upheld_corrections_are_applied_and_recorded(tmp_path):
         ]
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_upheld_corrections_are_announced(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_announce", round_status="AWAITING_APPEAL_VERDICTS")
+    league = await _appeals_league(tmp_path)
 
-    stubs = await _run(
-        finalize_appeals_review,
-        _state(db_path, appeals=[_penalty()]),
-        apply_result=[{"race_result_id": None, "qual_result_id": None}],
-    )
+    await _approve_appeals(league, staged=[league_penalty(LEWIS)])
 
-    stubs["appeal_announce"].assert_awaited_once()
-    records = stubs["appeal_announce"].await_args.args[2]
-    assert records[0]["driver_user_id"] == 101
+    (verdict,) = _verdicts(league)
+    assert f"<@{LEWIS}>" in str(league.channel(VERDICTS_CHANNEL).messages[verdict].content)
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_failed_appeal_announcement_does_not_un_approve_them(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_announce_fail", round_status="AWAITING_APPEAL_VERDICTS")
+    """The verdict Discord refuses stops the queue; the round is already final. Once a league
+    admin discards it, the submission channel behind it is still deleted."""
+    league = await _appeals_league(tmp_path)
+    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
 
-    stubs = await _run(
-        finalize_appeals_review,
-        _state(db_path, appeals=[_penalty()]),
-        apply_result=[{"race_result_id": None, "qual_result_id": None}],
-        announce_error=RuntimeError("no channel"),
-    )
+    await _approve_appeals(league, staged=[league_penalty(LEWIS)])
+    assert await stopped_at(league) == "announce_verdict"
+    assert await round_status(league.db_path) == "FINAL"
+    await discard_job(league.bot)
+    await run_queue(league.bot)
 
-    assert await _round_status(db_path) == "FINAL"
-    stubs["close"].assert_awaited_once()
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "FINAL"
+    assert ("delete_channel", SUBMISSION_CHANNEL) in [
+        (kind, cid) for kind, cid, _ in league.events
+    ]
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_an_appeals_review_with_no_corrections_applies_nothing(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_none", round_status="AWAITING_APPEAL_VERDICTS")
-    state = _state(db_path)
+    league = await _appeals_league(tmp_path)
 
-    stubs = await _run(finalize_appeals_review, state)
+    await _approve_appeals(league)
 
-    stubs["apply"].assert_not_awaited()
-    stubs["appeal_announce"].assert_not_awaited()
-    assert "corrections: none" in _logged(state)
-
-
-_APPEALS_BEING_APPROVED = "⏳ This round's appeals are being approved."
+    assert await one(league.db_path, "SELECT COUNT(*) FROM appeal_records") == 0
+    assert league.sent_to(VERDICTS_CHANNEL) == []
+    assert "corrections: none" in league.log()
 
 
-async def _while_the_appeals_are_approved(state, press):
-    """Approve round 3's appeals and, while the approval is still reposting, await *press*.
-
-    Returns the stubs, the approval finished."""
-    reposting, release = asyncio.Event(), asyncio.Event()
-
-    async def _slow_repost(*_a, **_k):
-        reposting.set()
-        await release.wait()
-        return []
-
-    patches = _patches(apply_result=[{"race_result_id": None, "qual_result_id": None}])
-    patches["repost"] = patch(
-        "leaguebot.results.services.results_post_service.delete_and_repost_final_results",
-        new=AsyncMock(side_effect=_slow_repost),
-    )
-    stubs = {key: p.start() for key, p in patches.items()}
-    try:
-        first = asyncio.create_task(finalize_appeals_review(_interaction(), state))
-        await reposting.wait()
-        pressed = asyncio.create_task(press())
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        release.set()
-        await asyncio.gather(first, pressed)
-    finally:
-        for p in patches.values():
-            p.stop()
-    return stubs
-
-
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_path):
-    """**D3.** The appeals approval reposts every graphic before it makes the round FINAL, and
-    until then a second Approve found the round as the first had — so a double click applied
-    every correction twice. Round 3 (Pro) awaits its appeal verdicts with one correction staged;
-    Alex approves, and presses again while the first approval is still reposting. The second
-    press is refused, its refusal recorded, and the correction is applied once."""
-    db_path = await _make_db(
-        tmp_path, name="appeals_at_once", round_status="AWAITING_APPEAL_VERDICTS"
-    )
-    state = _state(db_path, appeals=[_penalty()])
-    second = _interaction()
+    """**D3.** The appeals approval reposts every graphic before the round's last jobs run, and a
+    double click applied every correction twice. Round 3 (Pro) awaits its appeal verdicts with one
+    correction staged; Alex approves, and presses again while the first is queued and while it is
+    running. Each second press is refused, its refusal recorded, and the correction applied once."""
+    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
 
-    stubs = await _while_the_appeals_are_approved(
-        state, lambda: finalize_appeals_review(second, state)
-    )
+    league = await _appeals_league(tmp_path)
+    await _ask_appeals(league, staged=[league_penalty(LEWIS)])
+    while_queued = await _ask_appeals(league, staged=[league_penalty(LEWIS)])
+    await run_until_done(league, "names")
+    while_running = await _ask_appeals(league, staged=[league_penalty(LEWIS)])
+    await run_queue(league.bot)
 
-    assert second.response.send_message.await_args.args[0] == _APPEALS_BEING_APPROVED
-    second.response.defer.assert_not_awaited()
-    (line,) = [call.args[0] for call in second.client.output_router.post_log.await_args_list]
-    assert line.startswith("⛔ "), line
-    assert line.endswith(
-        f" refused for Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
-    ), line
-    stubs["apply"].assert_awaited_once()
-    stubs["repost"].assert_awaited_once()
-    assert await _round_status(db_path) == "FINAL"
+    for interaction in (while_queued, while_running):
+        assert acknowledgement(interaction) == _APPEALS_BEING_APPROVED
+    assert league.log().count(f"refused for Alex (<@{STEWARD}>)") == 2
+    assert len(await changes_of(league.db_path, APPEALS)) == 1
+    assert await one(league.db_path, "SELECT COUNT(*) FROM appeal_records") == 1
+    assert await round_status(league.db_path) == "FINAL"
 
 
+async def _appeals_in_hand(league: ReviewLeague, how: str) -> None:
+    """Round 3's appeals approval, one correction staged, left in hand: *queued* behind a job
+    stopped before it, or *stopped* itself at the final results Discord refuses."""
+    if how == "queued":
+        await block_queue(league)
+        await _ask_appeals(league, staged=[league_penalty(LEWIS)])
+    else:
+        league.channel(RESULTS_CHANNEL).send_fails = http_error(text="Discord is down")
+        await _approve_appeals(league, staged=[league_penalty(LEWIS)])
+        assert await stopped_at(league) == "post_session_results"
+
+
+@pytest.mark.parametrize("how", ["queued", "stopped"])
 @pytest.mark.parametrize(
     "kind, label",
     [
@@ -1060,29 +1099,40 @@ async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_pat
         ("clear", "Yes, clear and proceed with no corrections"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_every_appeals_control_refuses_while_the_appeals_are_being_approved(
-    tmp_path, kind, label
+    tmp_path, kind, label, how
 ):
-    """**D3.** Round 3's appeals (Pro) are being approved with one correction staged, and the
-    appeals prompt and its clear confirmation are still on screen. Alex, a league manager,
-    presses one of their buttons meanwhile. It is refused as the approval under way: nothing is
-    staged, removed, cleared or approved a second time, and exactly one line records the
-    refusal, naming the button, the review, Alex and the reason."""
+    """**D3.** Round 3's appeals (Pro) are being approved with one correction staged, queued
+    behind a stopped job or stopped themselves, and the appeals prompt and its clear confirmation
+    are still on screen. Alex, a league manager, presses one of their buttons meanwhile. It is
+    refused as the approval under way (results spec, stage two: "Once the approval is under way
+    or done"): nothing is staged, removed, cleared or asked a second time, and one line records
+    the refusal, naming the button, the review, Alex and the reason."""
     from leaguebot.results.services.penalty_wizard import (
+        _APPEALS_BEING_APPROVED,
         AppealsReviewView,
+        PenaltyReviewState,
         _AppealsConfirmClearView,
+        _appeals_review_moved_on,
     )
 
-    db_path = await _make_db(
-        tmp_path, name="appeals_controls", round_status="AWAITING_APPEAL_VERDICTS"
+    league = await _appeals_league(tmp_path)
+    state = PenaltyReviewState(
+        round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
+        bot=league.bot, staged_appeals=[league_penalty(LEWIS)],
+        appeals_prompt_message_id=APPEALS_PROMPT, round_number=3, division_name="Pro",
     )
-    state = _state(db_path, appeals=[_penalty()])
+    assert await _appeals_review_moved_on(state) is None
+    await _appeals_in_hand(league, how)
+    assert await _appeals_review_moved_on(state) == _APPEALS_BEING_APPROVED
     view = (
         _AppealsConfirmClearView(state=state) if kind == "clear"
         else AppealsReviewView(state=state)
     )
     button = next(item for item in view.children if getattr(item, "label", None) == label)
-    interaction = _interaction()
+    interaction = member_interaction(league.bot, user=_alex())
 
     with patch(
         "leaguebot.results.services.penalty_wizard._is_league_manager",
@@ -1090,308 +1140,314 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     ), patch(
         "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh_appeals:
-        stubs = await _while_the_appeals_are_approved(
-            state, lambda: button.callback(interaction)
-        )
+        await button.callback(interaction)
 
     refresh_appeals.assert_not_awaited()
     assert len(state.staged_appeals) == 1
-    stubs["apply"].assert_awaited_once()
-    stubs["repost"].assert_awaited_once()
+    assert len(await changes_of(league.db_path, APPEALS)) == 1
     (replied,) = [
         str(call.args[0])
         for call in interaction.response.send_message.await_args_list
         + interaction.followup.send.await_args_list
     ]
     assert replied == _APPEALS_BEING_APPROVED
-    (line,) = [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
-    assert line == (
+    assert league.log().count(
         f"⛔ the “{label}” button of the appeals review of round 3 (Pro) refused for "
         f"Alex (<@{STEWARD}>) — {_APPEALS_BEING_APPROVED.split(' ', 1)[1]}"
-    )
+    ) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_a_failing_appeals_audit_does_not_stop_the_close(tmp_path):
-    db_path = await _make_db(tmp_path, name="appeals_logfail", round_status="AWAITING_APPEAL_VERDICTS")
-    state = _state(db_path)
-    state.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log"))
+    league = await _appeals_league(tmp_path)
+    league.bot.log_channel.send = AsyncMock(side_effect=RuntimeError("no log"))
 
-    stubs = await _run(finalize_appeals_review, state)
+    await _approve_appeals(league)
 
-    stubs["close"].assert_awaited_once()
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "FINAL"
+    assert ("delete_channel", SUBMISSION_CHANNEL) in [
+        (kind, cid) for kind, cid, _ in league.events
+    ]
 
 
 # ---------------------------------------------------------------------------
 # A repost that did not land reaches the league (#237)
 #
-# The cascade deletes each message before posting its replacement, so a channel that has
-# gone missing leaves the round with nothing posted. It used to be swallowed entirely: the
-# approval logged `| Success` and the manager was told the same.
+# It used to be swallowed entirely: the approval logged `| Success` and the manager was told the
+# same. On the queue a post Discord refuses stops it and is tried again; once a league admin
+# discards it, the outcome and the approval's `| Incomplete` line name it, with the commands that
+# finish the job.
 # ---------------------------------------------------------------------------
 
-FAULT = "**Alpha** — the results channel <#501> no longer exists."
+
+async def _discard_until_clear(league: ReviewLeague) -> None:
+    """Discard every job the queue stops at, until it runs clear."""
+    for _ in range(20):
+        if await stopped_at(league) is None:
+            return
+        await discard_job(league.bot)
+    raise AssertionError("the queue never ran clear")
 
 
+def _after(text: str, heading: str) -> str:
+    """What *text* says from *heading* on."""
+    assert heading in text, text
+    return text.split(heading, 1)[1]
+
+
+async def _results_post_discarded(league: ReviewLeague, approve: Any) -> Any:
+    """Discord refuses round 3's results; the approval stops at the post, and a league admin
+    discards it. Gives Alex's interaction."""
+    league.channel(RESULTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    interaction = await approve(league, staged=[league_penalty(LEWIS)])
+    assert await stopped_at(league) == "post_session_results"
+    await discard_job(league.bot)
+    assert await stopped_at(league) is None
+    return interaction
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_repost_that_could_not_post_tells_the_manager(tmp_path):
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()])
-    interaction = _interaction()
+    league = await review_league(tmp_path)
 
-    await _run(
-        finalize_penalty_review, state, interaction, repost_faults=[FAULT]
-    )
+    interaction = await _results_post_discarded(league, _approve_reports)
 
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
-    assert FAULT in said
+    said = updated_reply(interaction)
+    assert "⚠️" in said
     assert "/results rounds sync" in said
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_repost_that_could_not_post_reaches_the_log_channel(tmp_path):
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()])
+    league = await review_league(tmp_path)
 
-    await _run(finalize_penalty_review, state, repost_faults=[FAULT])
+    await _results_post_discarded(league, _approve_reports)
 
-    logged = _logged(state)
-    assert "RESULTS_REPOST | Incomplete" in logged
-    assert FAULT in logged
+    assert "/results rounds sync" in _after(league.log(), "PENALTY_REVIEW_APPROVED | Incomplete")
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_approval_is_logged_as_incomplete_when_the_repost_failed(tmp_path):
     """The audit line says what the approval achieved, not what it attempted."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()])
+    league = await review_league(tmp_path)
 
-    await _run(finalize_penalty_review, state, repost_faults=[FAULT])
+    await _results_post_discarded(league, _approve_reports)
 
-    assert "PENALTY_REVIEW_APPROVED | Incomplete" in _logged(state)
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+    assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_approval_is_logged_as_success_when_everything_posted(tmp_path):
     """The counterpart, so `| Incomplete` cannot be the answer to everything."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()])
+    league = await review_league(tmp_path)
 
-    await _run(finalize_penalty_review, state)
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    logged = _logged(state)
-    assert "PENALTY_REVIEW_APPROVED | Success" in logged
-    assert "RESULTS_REPOST | Incomplete" not in logged
+    assert "PENALTY_REVIEW_APPROVED | Success" in league.log()
+    assert "| Incomplete" not in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_missing_guild_is_reported_rather_than_skipped(tmp_path):
-    """`if guild:` used to skip both reposts without a word (#237)."""
-    db_path = await _make_db(tmp_path)
-    state = _state(db_path, staged=[_penalty()])
+    """`if guild:` used to skip both reposts without a word (#237). Without the server the posts
+    stop the queue; once a league admin discards them, the approval's line is `| Incomplete`."""
+    league = await review_league(tmp_path)
+    league.bot.get_guild = MagicMock(return_value=None)
 
-    await _run(finalize_penalty_review, state, _interaction(guild=False))
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
+    assert await stopped_at(league) is not None
+    await _discard_until_clear(league)
 
-    logged = _logged(state)
-    assert "PENALTY_REVIEW_APPROVED | Incomplete" in logged
-    assert "could not be reached" in logged
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+    assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_appeals_approval_reports_an_unpostable_repost(tmp_path):
     """The same, on the approval that takes a round to FINAL."""
-    db_path = await _make_db(
-        tmp_path, name="appeals_unpostable", round_status="AWAITING_APPEAL_VERDICTS"
-    )
-    state = _state(db_path, appeals=[_penalty()])
-    interaction = _interaction()
+    league = await _appeals_league(tmp_path)
 
-    await _run(finalize_appeals_review, state, interaction, repost_faults=[FAULT])
+    interaction = await _results_post_discarded(league, _approve_appeals)
 
-    logged = _logged(state)
-    assert "APPEALS_REVIEW_APPROVED | Incomplete" in logged
-    assert FAULT in logged
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
+    assert "APPEALS_REVIEW_APPROVED | Incomplete" in league.log()
+    said = updated_reply(interaction)
+    assert "/results rounds sync" in said
     assert "/results standings sync" in said
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_fault_both_reposts_found_is_reported_once(tmp_path):
-    """Both reposts run over the same division and word it identically (#237 review).
+    """The manager repairs what is named, so reading the same thing twice is a false count of the
+    problems in front of them (#237 review). Round 3's results post is discarded while its
+    standings, and round 4's, go out: the reply and the approval's line name the results once."""
+    league = await review_league(tmp_path)
 
-    The manager repairs one channel, so reading the same bullet twice is a false count of
-    the problems in front of them.
-    """
-    db_path = await _make_db(tmp_path, name="dup_fault")
-    state = _state(db_path, staged=[_penalty()])
-    interaction = _interaction()
+    interaction = await _results_post_discarded(league, _approve_reports)
 
-    await _run(
-        finalize_penalty_review, state, interaction,
-        repost_faults=[FAULT], subsequent_faults=[FAULT],
-    )
-
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
-    assert said.count(FAULT) == 1
-    assert _logged(state).count(FAULT) == 1
+    assert updated_reply(interaction).count("/results rounds sync") == 1
+    assert _after(
+        league.log(), "PENALTY_REVIEW_APPROVED | Incomplete"
+    ).count("/results rounds sync") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_log_channel_that_refuses_still_tells_the_manager(tmp_path):
-    """The report is two messages, and neither may take the other down with it.
+    """The log channel is the league's record and the reply is the manager's; a failure to write
+    one must not swallow the other, or the approval goes back to being silent in exactly the way
+    #237 is about."""
+    league = await review_league(tmp_path)
+    league.bot.log_channel.send = AsyncMock(side_effect=RuntimeError("no log channel"))
 
-    The log channel is the league's record and the reply is the manager's; a failure to
-    write one must not swallow the other, or the approval goes back to being silent in
-    exactly the way #237 is about.
-    """
-    db_path = await _make_db(tmp_path, name="log_refuses")
-    state = _state(db_path, staged=[_penalty()])
-    state.bot.output_router.post_log = AsyncMock(side_effect=RuntimeError("no log channel"))
-    interaction = _interaction()
+    interaction = await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    await _run(
-        finalize_penalty_review, state, interaction, repost_faults=[FAULT]
-    )
-
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
-    assert FAULT in said
+    assert await stopped_at(league) is None
+    assert "Round 3's reports are approved" in updated_reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_reply_that_fails_does_not_stop_the_approval(tmp_path):
     """The manager may have dismissed the interaction; the approval still stands."""
-    db_path = await _make_db(tmp_path, name="reply_fails")
-    state = _state(db_path, staged=[_penalty()])
-    interaction = _interaction()
+    league = await review_league(tmp_path)
+    interaction = await _ask_reports(league, staged=[league_penalty(LEWIS)])
+    interaction.edit_original_response = AsyncMock(side_effect=RuntimeError("unknown webhook"))
     interaction.followup.send = AsyncMock(side_effect=RuntimeError("unknown webhook"))
 
-    await _run(
-        finalize_penalty_review, state, interaction, repost_faults=[FAULT]
-    )
+    await run_queue(league.bot)
 
-    assert "RESULTS_REPOST | Incomplete" in _logged(state)
-    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert await stopped_at(league) is None
+    assert "PENALTY_REVIEW_APPROVED | Success" in league.log()
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
 # ---------------------------------------------------------------------------
 # A verdict that was not announced, and attendance that was not recorded (#237)
 # ---------------------------------------------------------------------------
 
-VERDICT_FAULT = "**Alpha** — the verdict for <@99> was not announced: Missing Permissions."
+
+async def _verdict_discarded(league: ReviewLeague, approve: Any) -> Any:
+    """Discord refuses Lewis's verdict; the approval stops at it, and a league admin discards it.
+    Gives Alex's interaction."""
+    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Permissions")
+    interaction = await approve(league, staged=[league_penalty(LEWIS)])
+    assert await stopped_at(league) == "announce_verdict"
+    await discard_job(league.bot)
+    assert await stopped_at(league) is None
+    return interaction
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_unannounced_verdict_reaches_the_manager_and_the_log(tmp_path):
-    db_path = await _make_db(tmp_path, name="verdict_fault")
-    state = _state(db_path, staged=[_penalty()])
-    interaction = _interaction()
+    league = await review_league(tmp_path)
 
-    await _run(
-        finalize_penalty_review, state, interaction, verdict_faults=[VERDICT_FAULT]
-    )
+    interaction = await _verdict_discarded(league, _approve_reports)
 
-    logged = _logged(state)
-    assert "VERDICTS | Incomplete" in logged
-    assert VERDICT_FAULT in logged
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
-    assert VERDICT_FAULT in said
+    assert f"<@{LEWIS}>" in _after(league.log(), "PENALTY_REVIEW_APPROVED | Incomplete")
+    said = updated_reply(interaction)
+    assert "⚠️" in said
+    assert "Lewis" in said or f"<@{LEWIS}>" in said
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_verdict_report_says_it_cannot_be_announced_again(tmp_path):
-    """Telling a manager to re-run something would leave them believing it finished."""
-    db_path = await _make_db(tmp_path, name="verdict_hint")
-    state = _state(db_path, staged=[_penalty()])
-    interaction = _interaction()
+    """Telling a manager to re-run something would leave them believing it finished. The report
+    directs the manager to post the verdict themselves (results spec, verdicts)."""
+    league = await review_league(tmp_path)
 
-    await _run(
-        finalize_penalty_review, state, interaction, verdict_faults=[VERDICT_FAULT]
-    )
+    interaction = await _verdict_discarded(league, _approve_reports)
 
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
-    assert "cannot announce a verdict a second time" in said
+    said = updated_reply(interaction).lower()
+    assert "post it" in said or "post the verdict" in said
+    assert "/results rounds sync" not in said
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_approval_that_announced_everything_reports_no_verdict_fault(tmp_path):
-    """The counterpart — the stub returning an empty list must stay silent."""
-    db_path = await _make_db(tmp_path, name="verdict_clean")
-    state = _state(db_path, staged=[_penalty()])
+    """The counterpart: every verdict announced leaves nothing to report."""
+    league = await review_league(tmp_path)
 
-    await _run(finalize_penalty_review, state)
+    interaction = await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    assert "VERDICTS | Incomplete" not in _logged(state)
+    assert await stopped_at(league) is None
+    assert "| Incomplete" not in league.log()
+    assert "⚠️" not in updated_reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_an_appeal_verdict_that_was_not_announced_is_reported(tmp_path):
-    db_path = await _make_db(
-        tmp_path, name="appeal_verdict", round_status="AWAITING_APPEAL_VERDICTS"
-    )
-    state = _state(db_path, appeals=[_penalty()])
+    league = await _appeals_league(tmp_path)
 
-    await _run(finalize_appeals_review, state, verdict_faults=[VERDICT_FAULT])
+    await _verdict_discarded(league, _approve_appeals)
 
-    assert "VERDICTS | Incomplete" in _logged(state)
+    assert f"<@{LEWIS}>" in _after(league.log(), "APPEALS_REVIEW_APPROVED | Incomplete")
 
 
-@pytest.mark.parametrize("failing", ["record", "distribute"])
-async def test_attendance_that_was_not_recorded_is_reported(tmp_path, failing):
-    """The two steps that write to the database, which leave the record wrong (#237).
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_attendance_that_was_not_recorded_is_reported(tmp_path):
+    """The round's attendance is written in the approval's own save (\"Whole approval fails\"), so
+    a fault in it stops the approval whole, its reason in the stop notice, and nothing is changed.
+    Once a league admin discards it, Alex is told nothing was changed and the review is posted
+    again."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.record_fails = RuntimeError("disk is full")
 
-    Reported under a heading of their own rather than with the sanctions: that report skips
-    the log channel when the sanctions run has already written its own entry.
-    """
-    db_path = await _make_db(tmp_path, name=f"att_{failing}", attendance_row=True)
-    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
-    interaction = _interaction()
+    interaction = await _approve_reports(league, staged=[league_penalty(LEWIS)])
+    assert await stopped_at(league) == "apply"
+    assert await penalty_records(league.db_path) == []
+    assert await one(league.db_path, "SELECT COUNT(*) FROM attendance_recorded") == 0
+    await discard_job(league.bot)
 
-    await _run(
-        finalize_penalty_review, state, interaction,
-        attendance_errors={failing: RuntimeError("disk is full")},
-    )
-
-    logged = _logged(state)
-    assert "ATTENDANCE_RECORD | Incomplete" in logged
-    assert "disk is full" in logged
-    said = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
-    assert "/attendance sync" in said
+    assert await penalty_records(league.db_path) == []
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
+    assert "nothing was changed" in updated_reply(interaction).lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_posting_step_that_fails_is_not_reported_as_a_record_failure(tmp_path):
-    """The sheet is a picture of the record, not the record — its failure is a different kind."""
-    db_path = await _make_db(tmp_path, name="att_sheet", attendance_row=True)
-    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+    """The sheet is a picture of the record, not the record: its failure stops the queue at the
+    sheet, the round's attendance and penalties already saved."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.sheet_fails = [StepFailedOnDiscord("no attendance channel")]
 
-    await _run(
-        finalize_penalty_review, state,
-        attendance_errors={"sheet": RuntimeError("no attendance channel")},
-    )
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    assert "ATTENDANCE_RECORD | Incomplete" not in _logged(state)
-
-
-@pytest.mark.parametrize("failing", ["record", "distribute"])
-async def test_the_sanctions_are_not_run_on_a_record_known_to_be_wrong(tmp_path, failing):
-    """An autosack takes a driver's seat, so it is never applied on unsound totals (#237).
-
-    The thresholds read `total_points_after`, which the two failing steps write. Where
-    recording fails but distribution succeeds the column is populated and *wrong* — and can
-    be wrong upward, a driver who attended having been scored absent — so the candidate
-    query does not screen it out. `/attendance sync` repairs the record and applies whatever
-    is owed, which is where the run belongs.
-    """
-    db_path = await _make_db(tmp_path, name=f"defer_{failing}", attendance_row=True)
-    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
-
-    stubs = await _run(
-        finalize_penalty_review, state,
-        attendance_errors={failing: RuntimeError("disk is full")},
-    )
-
-    stubs["sanctions"].assert_not_awaited()
-    logged = _logged(state)
-    assert "ATTENDANCE_RECORD | Incomplete" in logged
-    assert "no driver was checked" in logged
+    assert await stopped_at(league) == "attendance_sheet"
+    assert league.attendance._calls("record_on") == [("record_on", ROUND_ID, DIVISION_ID)]
+    assert len(await penalty_records(league.db_path)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_sanctions_are_not_run_on_a_record_known_to_be_wrong(tmp_path):
+    """An autosack takes a driver's seat, so it is never applied on unsound totals (#237). A
+    record that cannot be written stops the approval at its save, and no driver is checked
+    against a threshold."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
+    owed = AsyncMock(wraps=league.attendance.sanction_candidates)
+    league.attendance.sanction_candidates = owed
+    league.attendance.record_fails = RuntimeError("disk is full")
+
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
+
+    assert await stopped_at(league) == "apply"
+    owed.assert_not_awaited()
+    assert league.attendance._calls("apply_sanction") == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sanctions_still_run_when_the_record_is_sound(tmp_path):
-    """The counterpart — a failed *posting* must not defer them."""
-    db_path = await _make_db(tmp_path, name="defer_none", attendance_row=True)
-    state = _state(db_path, staged=[_penalty()], attendance_enabled=True)
+    """The counterpart: a sheet that could not be posted delays the sanctions behind it, never
+    skips them. Once a league admin discards the sheet, Max's autoreserve is applied."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
+    league.attendance.sheet_fails = [StepFailedOnDiscord("no attendance channel")]
 
-    stubs = await _run(
-        finalize_penalty_review, state,
-        attendance_errors={"sheet": RuntimeError("no attendance channel")},
-    )
+    await _approve_reports(league)
+    assert await stopped_at(league) == "attendance_sheet"
+    await discard_job(league.bot)
 
-    stubs["sanctions"].assert_awaited()
+    assert league.attendance._calls("apply_sanction") == [("apply_sanction", MAX_PROFILE)]
 
 
 # ---------------------------------------------------------------------------
@@ -2811,97 +2867,82 @@ def _line_under(state, heading: str) -> str:
     return lines[0]
 
 
+def _line_of(league: ReviewLeague, heading: str) -> str:
+    """The one line the league's log channel was given under *heading*."""
+    lines = [str(line) for line in league.bot.log_channel.sent if heading in str(line)]
+    assert len(lines) == 1, lines
+    return lines[0]
+
+
 @pytest.mark.parametrize(
-    "fn, status, token",
+    "stage, token",
     [
-        pytest.param(
-            finalize_penalty_review, "AWAITING_REPORT_VERDICTS", "PENALTY_REVIEW_APPROVED",
-            id="reports",
-        ),
-        pytest.param(
-            finalize_appeals_review, "AWAITING_APPEAL_VERDICTS", "APPEALS_REVIEW_APPROVED",
-            id="appeals",
-        ),
+        pytest.param("reports", "PENALTY_REVIEW_APPROVED", id="reports",
+                     marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+        pytest.param("appeals", "APPEALS_REVIEW_APPROVED", id="appeals",
+                     marks=pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)),
     ],
 )
-async def test_the_approval_names_the_member_who_approved(tmp_path, fn, status, token):
+async def test_the_approval_names_the_member_who_approved(tmp_path, stage, token):
     """Alex approves the reports (or the appeals) of round 3 (Pro) with one penalty staged:
     the approval's line reads "Alex (<@77>) | <TOKEN> | Success"."""
-    db_path = await _make_db(tmp_path, name=f"named_{token}", round_status=status)
-    state = _state(db_path, staged=[_penalty()], appeals=[_penalty()])
+    if stage == "reports":
+        league = await review_league(tmp_path)
+        await _approve_reports(league, staged=[league_penalty(LEWIS)])
+    else:
+        league = await _appeals_league(tmp_path)
+        await _approve_appeals(league, staged=[league_penalty(LEWIS)])
 
-    await _run(fn, state)
-
-    assert _line_under(state, token).startswith(f"{_ALEX} | {token} | Success")
-
-
-async def _press_with(tmp_path, heading: str):
-    """Alex approves round 3 (Pro)'s reports with one penalty staged, attendance on where the
-    heading is an attendance one, and the part of the approval under *heading* failing."""
-    db_path = await _make_db(tmp_path, name=f"incomplete_{heading[:8]}", attendance_row=True)
-    attendance = heading.startswith("ATTENDANCE")
-    state = _state(db_path, staged=[_penalty()], attendance_enabled=attendance)
-    interaction = _interaction(guild=heading != "ATTENDANCE_SANCTIONS | Incomplete")
-    faults = {
-        "RESULTS_REPOST | Incomplete": {"repost_faults": [FAULT]},
-        "VERDICTS | Incomplete": {"apply_result": [{"id": 1}], "verdict_faults": [FAULT]},
-        "ATTENDANCE_RECORD | Incomplete": {
-            "attendance_errors": {"record": RuntimeError("disk is full")}
-        },
-        "ATTENDANCE_SANCTIONS | Incomplete": {},
-    }[heading]
-    await _run(finalize_penalty_review, state, interaction, **faults)
-    return state
+    assert _line_of(league, token).startswith(f"{_ALEX} | {token} | Success")
 
 
-@pytest.mark.parametrize(
-    "heading",
-    [
-        "RESULTS_REPOST | Incomplete",
-        "VERDICTS | Incomplete",
-        "ATTENDANCE_RECORD | Incomplete",
-        "ATTENDANCE_SANCTIONS | Incomplete",
-    ],
-)
-async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_path, heading):
-    """Alex's approval could not repost the results, announce a verdict, record the
-    attendance, or reach the server to run the sanctions: the entry under each heading
-    names Alex, who pressed, as "Alex (<@77>) | <HEADING>"."""
-    state = await _press_with(tmp_path, heading)
+@pytest.mark.parametrize("discarded", ["post_session_results", "announce_verdict", "apply_sanction"])
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_path, discarded):
+    """Alex's approval of round 3 (Pro)'s reports, one penalty staged and attendance on with Max
+    owed an autoreserve, stops at the results post, Lewis's verdict or Max's sanction, and a
+    league admin discards it. The approval's line names Alex, who pressed, not the admin:
+    "Alex (<@77>) | PENALTY_REVIEW_APPROVED | Incomplete"."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
+    if discarded == "post_session_results":
+        league.channel(RESULTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    elif discarded == "announce_verdict":
+        league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    else:
+        league.attendance.apply_fails = {MAX_PROFILE: RuntimeError("no Reserve team")}
 
-    assert _line_under(state, heading).startswith(f"{_ALEX} | {heading}")
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
+    assert await stopped_at(league) == discarded
+    await discard_job(league.bot)
+    assert await stopped_at(league) is None
 
-
-async def test_an_approval_with_penalties_writes_one_line(tmp_path):
-    """Alex approves round 3 (Pro)'s reports with driver 101 disqualified from the Feature
-    Race, the penalty applied for real: the log channel gets the approval's one line, which
-    counts the penalty, and no PENALTIES_APPLIED line beside it."""
-    db_path = await _make_db(
-        tmp_path, name="one_line", results=[(31, 101, "CLASSIFIED"), (32, 102, "CLASSIFIED")]
+    assert _line_of(league, "PENALTY_REVIEW_APPROVED").startswith(
+        f"{_ALEX} | PENALTY_REVIEW_APPROVED | Incomplete"
     )
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_an_approval_with_penalties_writes_one_line(tmp_path):
+    """Alex approves round 3 (Pro)'s reports with Lewis disqualified from the Feature Race, the
+    penalty applied for real: the log channel gets the approval's one line, written as it
+    closes, which counts the penalty, and no PENALTIES_APPLIED line beside it."""
     dsq = StagedPenalty(
-        driver_user_id=101,
+        driver_user_id=LEWIS,
         session_type=SessionType.FEATURE_RACE,
         penalty_type="DSQ",
         penalty_seconds=None,
         description="Unsafe release",
         justification="Pit lane, lap 20",
     )
-    state = _state(db_path, staged=[dsq])
-    patches = _patches()
-    patches.pop("apply")
-    started = [p.start() for p in patches.values()]
-    try:
-        await finalize_penalty_review(_interaction(), state)
-    finally:
-        for p in patches.values():
-            p.stop()
-    assert started
+    league = await review_league(tmp_path)
 
-    logged = [str(c.args[0]) for c in state.bot.output_router.post_log.await_args_list]
-    assert len(logged) == 1, logged
-    assert "PENALTY_REVIEW_APPROVED | Success" in logged[0]
-    assert "penalties: 1" in logged[0]
+    await _approve_reports(league, staged=[dsq])
+
+    line = _line_of(league, "PENALTY_REVIEW_APPROVED")
+    assert "PENALTY_REVIEW_APPROVED | Success" in line
+    assert "penalties: 1" in line
+    assert "PENALTIES_APPLIED" not in league.log()
 
 
 async def _amendment_stage(tmp_path, token: str):
