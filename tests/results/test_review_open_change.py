@@ -46,8 +46,10 @@ from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
     MEMBER_ID,
     SERVER_ID,
+    acknowledgement,
     discard_job,
     http_error,
+    member_interaction,
     restart_queue,
     retry_job,
     run_queue,
@@ -72,7 +74,6 @@ from tests.support.review_league import (
 from tests.support.teams import seed_team_instances
 
 KIND = "results.review.open"
-NOT_BUILT = "#439: opening a round's review is not yet a change on the queue"
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -616,6 +617,77 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     assert state.round_number == 3
     assert state.division_name == "Pro"
     assert state.submission_channel_id == SUBMISSION_CHANNEL
+
+
+@pytest.mark.parametrize(
+    "route", ["reports-approve", "reports-approve-bare", "paste", "recovery", "appeals-recovery"],
+)
+async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
+    """What a review's change is doing names round 3 (Pro) wherever its payload carries the
+    round's number and the division's name: the approval of its reports as Alex presses Approve,
+    read in his acknowledgement; the opening of its review asked for by the last paste
+    (`ask_review_open`), read in the refusal of the paste asked again, the queue held stopped so
+    nothing starts, or by restart recovery; and the appeals prompt recovery posts again. A bot's
+    request has no acknowledgement, so its change type's own wording of the saved payload is read.
+    An approval asked with a bare payload reads as it did before."""
+    import json
+    import logging
+
+    from leaguebot.results.services.result_submission_service import ask_review_open
+    from leaguebot.results.services.review_open_change import (
+        APPEALS_OPEN_KIND,
+        appeals_open_change,
+        review_open_change,
+    )
+
+    caplog.set_level(logging.INFO, logger="leaguebot.core.services.change_queue")
+    appeals = route == "appeals-recovery"
+    league = await _league(
+        tmp_path, name=f"names_{route}", in_review=True, results_posted=True,
+        prompt=None if appeals else PROMPT,
+        appeals_prompt=OLD_APPEALS_PROMPT if appeals else None,
+        round_status=(RoundStatus.AWAITING_APPEAL_VERDICTS if appeals
+                      else RoundStatus.AWAITING_REPORT_VERDICTS).value,
+    )
+    alex = tier_member("manager", display_name="Alex", name="Alex#0001")
+    await block_queue(league)
+
+    if route.startswith("reports-approve"):
+        payload: dict = {"round_id": ROUND_ID, "division_id": DIVISION_ID, "staged": [],
+                         "pardons": [], "prompt_message_id": PROMPT, "approval_message_id": None}
+        if route == "reports-approve":
+            payload.update(round_number=3, division_name="Pro")
+        interaction = member_interaction(league.bot, user=alex)
+        await league.bot.change_queue.ask(
+            "results.reports.approve", payload, interaction=interaction,
+            what="✅ Approve on round 3's penalty review",
+        )
+        said = acknowledgement(interaction)
+        if route == "reports-approve":
+            assert said.startswith("⏳ Approving round 3's reports (Pro).")
+        else:
+            assert said.startswith("⏳ Approving the round's reports.")
+        return
+
+    if route == "paste":
+        for _ in range(2):
+            await ask_review_open(
+                league.bot, league.channel(SUBMISSION_CHANNEL), ROUND_ID, 3,
+                {"label": "Provisional Results", "publish": False}, actor=alex,
+            )
+        assert any(
+            "Opening the penalty review of round 3 (Pro) has already been asked for"
+            in record.getMessage() for record in caplog.records
+        )
+    else:
+        await _recover(league)
+
+    kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change()) if appeals
+                         else (KIND, review_open_change()))
+    [change] = await changes_of(league.db_path, kind)
+    saved = json.loads(change["payload"])
+    assert (saved["round_number"], saved["division_name"]) == (3, "Pro")
+    assert change_type.doing(saved).endswith("of round 3 (Pro)")
 
 
 # ---------------------------------------------------------------------------
