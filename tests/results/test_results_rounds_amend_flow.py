@@ -787,6 +787,88 @@ async def test_cancelling_too_late_says_so(tmp_path):
     assert "Too late" in str(press.followup.send.await_args.args[0])
 
 
+async def _stage_in_hand(db_path, *, stopped: bool) -> None:
+    """Round 3's report-stage approval on the change queue: waiting its turn, or stopped at its
+    save after a failed try."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, actor_id, what) "
+            "VALUES ('results.amendment.reports.approve', ?, ?, 'MEMBER', ?, ?, "
+            "'Approve on round 3''s amendment')",
+            (f"results.amendment.reports.approve:{ROUND_ID}",
+             json.dumps({"round_id": ROUND_ID, "division_id": DIVISION_ID}),
+             "RUNNING" if stopped else "QUEUED", USER_ID),
+        )
+        if stopped:
+            await db.execute(
+                "INSERT INTO queued_change_steps (change_id, position, name, tries, next_try_at, "
+                "failing_since, last_failure) VALUES (?, 0, 'apply', 1, "
+                "'2026-02-01T21:01:00+00:00', '2026-02-01T21:00:00+00:00', 'database is locked')",
+                (cursor.lastrowid,),
+            )
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "stopped",
+    [
+        pytest.param(
+            False,
+            marks=pytest.mark.xfail(
+                strict=True, reason="#439: Cancel still puts the round back while a stage is queued"
+            ),
+            id="queued",
+        ),
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                strict=True, reason="#439: Cancel still puts the round back while a stage is stopped"
+            ),
+            id="stopped",
+        ),
+    ],
+)
+async def test_cancelling_while_a_stage_is_being_approved_says_so_and_puts_nothing_back(
+    tmp_path, stopped,
+):
+    """"Leave it while stuck": while a stage's approval is on the queue, queued or stopped, the
+    amendment cannot be cancelled, and Cancel says the stage is being approved rather than that the
+    round is being put back."""
+    db_path = await _make_db(tmp_path, name="amend_cancel_in_hand")
+    channel = _amend_channel()
+    interaction = _interaction(channel, message=_message())
+    await _amend(_make_cog(db_path), interaction)
+    await _stage_in_hand(db_path, stopped=stopped)
+    async with get_connection(db_path) as db:
+        before = dict(await (await db.execute(
+            "SELECT pre_amendment_state, expires_at FROM round_amend_channels"
+        )).fetchone())
+
+    view = channel.send.await_args_list[0].kwargs["view"]
+    press = MagicMock()
+    press.user = SimpleNamespace(id=USER_ID)
+    press.response = MagicMock()
+    press.response.send_message = AsyncMock()
+    press.response.is_done = MagicMock(return_value=False)
+    press.followup = MagicMock()
+    press.followup.send = AsyncMock()
+    await type(view).cancel_btn(view, press, MagicMock())
+
+    told = "\n".join(
+        str(c.args[0] if c.args else c.kwargs.get("content"))
+        for c in [*press.response.send_message.await_args_list,
+                  *press.followup.send.await_args_list]
+    )
+    assert "being approved" in told
+    assert "putting the round back" not in told.lower()
+    async with get_connection(db_path) as db:
+        after = dict(await (await db.execute(
+            "SELECT pre_amendment_state, expires_at FROM round_amend_channels"
+        )).fetchone())
+    assert after == before
+    channel.delete.assert_not_awaited()
+
+
 async def test_a_failed_write_puts_back_what_it_had_written_before_tidying_up(tmp_path):
     """The classification is written in one transaction, but its points and standings after it
     are not. Tidying up deleted the channel's record — and the snapshot with it — so a failure
