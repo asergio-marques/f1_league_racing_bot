@@ -628,6 +628,183 @@ async def test_each_later_round_s_posted_standings_are_posted_again(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# What a republished table shows
+# ---------------------------------------------------------------------------
+
+
+async def _seed_classification(
+    db_path: str, *, round_format: str = "NORMAL", reserves: int | None = 1,
+) -> None:
+    """Round 3's Feature Race won by driver 1001 for Team 3001, scored 18 points with the
+    fastest-lap point stored apart; driver 1002 seated in the division's reserve team and second
+    in round 3's standings. *reserves* is the division's reserve setting, or None where the
+    division never set it."""
+    from tests.support.teams import seed_team_instances
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET format = ? WHERE id = ?", (round_format, ROUND_ID))
+        await seed_team_instances(db, DIVISION_ID, 3001)
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
+            "VALUES (3002, ?, 'Reserve', 'Reserve', 2, 1)",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (52, '1002', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (3002, 1, 52)"
+        )
+        session_id = (await (await db.execute(
+            "SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,),
+        )).fetchone())["id"]
+        await db.execute(
+            "INSERT INTO race_session_results (session_result_id, driver_user_id, "
+            "team_instance_id, finishing_position, outcome, base_time_ms, fastest_lap, "
+            "fastest_lap_bonus, points_awarded) "
+            "VALUES (?, 1001, 3001, 1, 'CLASSIFIED', 3600000, '1:30.000', 1, 18)",
+            (session_id,),
+        )
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+            "standing_position, total_points, standings_message_id, standings_message_ids) "
+            "VALUES (?, ?, 1002, 2, 10, ?, ?)",
+            (ROUND_ID, DIVISION_ID, OLD_STANDINGS, json.dumps([OLD_STANDINGS])),
+        )
+        if reserves is None:
+            await db.execute(
+                "DELETE FROM division_results_config WHERE division_id = ?", (DIVISION_ID,),
+            )
+            await db.execute(
+                "INSERT INTO division_results_config (division_id, results_channel_id, "
+                "standings_channel_id) VALUES (?, ?, ?)",
+                (DIVISION_ID, RESULTS_CHANNEL, STANDINGS_CHANNEL),
+            )
+        else:
+            await db.execute(
+                "UPDATE division_results_config SET reserves_in_standings = ? "
+                "WHERE division_id = ?",
+                (reserves, DIVISION_ID),
+            )
+        await db.commit()
+
+
+async def _republish_with_the_picture_declined(league: _League) -> Any:
+    """Republish round 3 with image generation on and the picture declined, so the results go
+    out as text after the picture was asked for; give the picture's stand-in."""
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    with patch(
+        "leaguebot.image.services.image_results_post.try_post",
+        new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
+    ) as try_post:
+        await _ask(league)
+        await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is None
+    return try_post
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
+async def test_the_republished_results_add_the_fastest_lap_bonus_to_the_points(tmp_path):
+    """What `delete_and_repost_final_results` held: the fastest-lap point is stored apart from
+    the points awarded, and a table showing only one of them understates whoever set it."""
+    league = await _league(tmp_path)
+    await _seed_classification(league.db_path)
+    try_post = await _republish_with_the_picture_declined(league)
+
+    try_post.assert_awaited_once()
+    assert try_post.await_args.kwargs["points_map"] == {1001: 19}
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned")
+async def test_the_republished_results_are_headed_with_the_round_s_number_and_track(tmp_path):
+    """What `delete_and_repost_final_results` held: the round is posted again under its own
+    number and track."""
+    league = await _league(tmp_path)
+    await _seed_classification(league.db_path)
+    try_post = await _republish_with_the_picture_declined(league)
+
+    kwargs = try_post.await_args.kwargs
+    assert kwargs["round_number"] == 3
+    assert kwargs["race_name"] == "Silverstone"
+    new = league.sent_to(RESULTS_CHANNEL)
+    assert len(new) == 1
+    assert "Pro Round 3" in league.channel(RESULTS_CHANNEL).messages[new[0]].content
+
+
+@pytest.mark.parametrize(
+    "round_format, is_sprint, heading",
+    [
+        pytest.param(
+            "SPRINT", True, "Round 3 — Feature Race",
+            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
+            id="sprint",
+        ),
+        pytest.param(
+            "NORMAL", False, "Round 3 — Race",
+            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
+            id="normal",
+        ),
+    ],
+)
+async def test_a_sprint_round_is_republished_laid_out_as_one(
+    tmp_path, round_format, is_sprint, heading,
+):
+    """What `delete_and_repost_final_results` held: the layout is read from the round's format,
+    not inferred from the sessions present; a normal round's race is headed "Race"."""
+    league = await _league(tmp_path)
+    await _seed_classification(league.db_path, round_format=round_format)
+    try_post = await _republish_with_the_picture_declined(league)
+
+    assert try_post.await_args.kwargs["is_sprint"] is is_sprint
+    new = league.sent_to(RESULTS_CHANNEL)
+    content = league.channel(RESULTS_CHANNEL).messages[new[0]].content
+    assert f"{heading}**" in content
+
+
+@pytest.mark.parametrize(
+    "reserves, shown",
+    [
+        pytest.param(
+            0, False,
+            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
+            id="left-out",
+        ),
+        pytest.param(
+            1, True,
+            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
+            id="shown",
+        ),
+        pytest.param(
+            None, True,
+            marks=pytest.mark.xfail(strict=True, reason="#439: the posting jobs are not yet planned"),
+            id="never-set",
+        ),
+    ],
+)
+async def test_the_republished_standings_follow_the_division_s_reserve_setting(
+    tmp_path, reserves, shown,
+):
+    """What `delete_and_repost_final_results` and `repost_subsequent_standings` held: a league
+    that leaves reserves out of its championship does not see them come back with a
+    republication, and a division that never set it shows them."""
+    league = await _league(tmp_path)
+    await _seed_classification(league.db_path, reserves=reserves)
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    standings = league.channel(STANDINGS_CHANNEL)
+    text = "\n".join(
+        message.content for mid, message in standings.messages.items()
+        if mid != OLD_LATER_STANDINGS
+    )
+    assert "<@1001>" in text
+    assert ("<@1002>" in text) is shown
+
+
+# ---------------------------------------------------------------------------
 # The batch notice
 # ---------------------------------------------------------------------------
 
