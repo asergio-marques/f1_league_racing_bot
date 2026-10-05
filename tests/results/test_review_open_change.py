@@ -942,6 +942,8 @@ async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_path):
+    """The appeals prompt is posted again as a change, its id saved for the next restart and its
+    view registered so its buttons keep working across the next restart too."""
     league = await _league(tmp_path, name="recover_appeals", in_review=True,
                            results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
                            round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
@@ -956,6 +958,8 @@ async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_pat
     assert len(prompts) == 1
     assert OLD_APPEALS_PROMPT not in league.channel(SUBMISSION_CHANNEL).messages
     assert (await _channel_row(league.db_path))["appeals_prompt_message_id"] == prompts[0]
+    assert any(call.kwargs.get("message_id") == prompts[0]
+               for call in league.bot.add_view.call_args_list)
     assert await changes_of(league.db_path, KIND) == []
 
 

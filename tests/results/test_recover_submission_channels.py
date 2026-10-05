@@ -14,13 +14,20 @@ channel too and gets the appeals prompt back. Deleting a review channel would ta
 race's results with it, so `test_a_round_in_review_keeps_its_channel_and_its_results` is the
 one to read before simplifying the branches.
 
-**Interim results are not posted twice.** `results_posted` records whether the provisional
-table reached the division before the crash, and it is passed straight through as
-`skip_results_post` — otherwise every restart adds another copy of the same table to the
-channel a league is reading.
+**A review is put back through the change queue** (#439, slice 2). Recovery no longer posts a
+prompt itself: it asks, as the bot, for `results.review.open` (a round in its report stage) or
+`results.appeals.open` (a round awaiting appeals), and the queue does the rest. What the change then
+does is pinned in `test_review_open_change.py`; this file pins what recovery asks for. The queue
+here is a stand-in that records each request.
 
-**The old prompt is deleted before the new one goes up.** Two live prompts over one round mean
-two staged lists, and whichever is approved second overwrites the first.
+**Interim results are not posted twice.** `results_posted` records whether the provisional
+table reached the division before the crash, and the request carries `publish = not
+results_posted` — otherwise every restart adds another copy of the same table to the channel a
+league is reading.
+
+**The old prompt is replaced, once the new one stands.** Two live prompts over one round mean two
+staged lists, and whichever is approved second overwrites the first; the request carries the old
+prompt's id for the change to delete after posting the new one.
 
 **A mid-submission orphan is announced.** The sessions submitted before the crash are gone and
 the manager has to re-enter them; that is not something to discover from an empty wizard.
@@ -52,6 +59,7 @@ DIVISION_ID = 11
 ROUND_ID = 21
 CHANNEL_ID = 700
 PROMPT_MESSAGE_ID = 8800
+NOT_BUILT = "#439: restart recovery does not yet ask the change queue to put a review back"
 
 
 # ---------------------------------------------------------------------------
@@ -159,33 +167,37 @@ def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
     stub.get_guild = MagicMock(return_value=None if guild_missing else guild)
     stub._guild = guild
     stub._channel = channel
+    stub.change_queue = MagicMock()
+    stub.change_queue.ask = AsyncMock(return_value=1)
     return stub
 
 
 async def _recover(stub):
-    """Run recovery with everything it reaches into stubbed."""
-    state = MagicMock()
+    """Run recovery, with the submission wizard's re-run stubbed; the queue's requests are
+    recorded on the bot's stand-in queue."""
     with patch(
-        "leaguebot.results.services.result_submission_service._build_penalty_review_state",
-        new=AsyncMock(return_value=state),
-    ), patch(
-        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
-    ) as enter, patch(
         "leaguebot.results.services.result_submission_service.run_result_submission_job", new=AsyncMock()
-    ) as rerun, patch(
-        "leaguebot.results.services.penalty_wizard.AppealsReviewView", new=MagicMock()
-    ) as appeals_view, patch(
-        "leaguebot.results.services.penalty_wizard._render_appeals_prompt_content",
-        new=AsyncMock(return_value="appeals prompt"),
-    ), patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()) as create_task:
+    ) as rerun, patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()) as create_task:
         await bot_module._recover_orphaned_submission_channels(stub)
-    return {
-        "enter": enter,
-        "rerun": rerun,
-        "appeals_view": appeals_view,
-        "create_task": create_task,
-        "state": state,
-    }
+    return {"rerun": rerun, "create_task": create_task}
+
+
+def _asked(stub) -> list[tuple[str, dict]]:
+    """Each request recovery put to the queue: its kind and its payload."""
+    asked = []
+    for call in stub.change_queue.ask.await_args_list:
+        kind = call.args[0] if call.args else call.kwargs["kind"]
+        payload = call.args[1] if len(call.args) > 1 else call.kwargs["payload"]
+        asked.append((kind, payload))
+    return asked
+
+
+def _asked_once(stub, kind: str) -> dict:
+    """The payload of the one request of *kind*, which is for round 3."""
+    payloads = [payload for asked, payload in _asked(stub) if asked == kind]
+    assert len(payloads) == 1, _asked(stub)
+    assert payloads[0]["round_id"] == ROUND_ID
+    return payloads[0]
 
 
 async def _rows(db_path, table) -> int:
@@ -220,7 +232,7 @@ async def test_a_closed_channel_is_left_alone(tmp_path):
     assert await _rows(db_path, "round_submission_channels") == 1
     assert await _rows(db_path, "session_results") == 1
     stubs["rerun"].assert_not_awaited()
-    stubs["enter"].assert_not_awaited()
+    assert _asked(stub) == []
 
 
 async def test_a_restart_with_nothing_open_does_nothing(tmp_path):
@@ -369,15 +381,21 @@ async def test_a_round_in_review_keeps_its_channel_and_its_results(tmp_path):
     channel.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_penalty_review_prompt_is_re_posted(tmp_path):
+    """Recovery asks the queue, as the bot, to open the review again; it posts nothing itself."""
     db_path = await _make_db(tmp_path, name="recover_reprompt", in_penalty_review=1)
-    stub = _bot(db_path, channel=_channel())
+    channel = _channel()
+    stub = _bot(db_path, channel=channel)
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
-    stubs["enter"].assert_awaited_once()
+    _asked_once(stub, "results.review.open")
+    assert [kind for kind, _ in _asked(stub)] == ["results.review.open"]
+    channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_interim_results_already_posted_are_not_posted_again(tmp_path):
     """Otherwise every restart adds another copy of the same provisional table to the
     channel a league is reading."""
@@ -386,11 +404,12 @@ async def test_interim_results_already_posted_are_not_posted_again(tmp_path):
     )
     stub = _bot(db_path, channel=_channel())
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
-    assert stubs["enter"].await_args.kwargs["skip_results_post"] is True
+    assert _asked_once(stub, "results.review.open")["publish"] is False
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_interim_results_never_posted_are_posted_now(tmp_path):
     """The crash came before they went out, so the division has seen nothing."""
     db_path = await _make_db(
@@ -398,14 +417,17 @@ async def test_interim_results_never_posted_are_posted_now(tmp_path):
     )
     stub = _bot(db_path, channel=_channel())
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
-    assert stubs["enter"].await_args.kwargs["skip_results_post"] is False
+    assert _asked_once(stub, "results.review.open")["publish"] is True
 
 
-async def test_the_old_prompt_is_deleted_first(tmp_path):
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_old_prompt_is_deleted_once_the_new_one_stands(tmp_path):
     """Two live prompts over one round mean two staged lists, and whichever is approved
-    second overwrites the first."""
+    second overwrites the first. Recovery hands the old prompt's id to the change, which deletes
+    it once the new prompt is posted (`test_review_open_change.py` pins the order); recovery
+    itself deletes nothing."""
     db_path = await _make_db(
         tmp_path,
         name="recover_oldprompt",
@@ -417,10 +439,11 @@ async def test_the_old_prompt_is_deleted_first(tmp_path):
 
     await _recover(stub)
 
-    channel.fetch_message.assert_awaited_once_with(PROMPT_MESSAGE_ID)
-    channel._old.delete.assert_awaited_once()
+    assert _asked_once(stub, "results.review.open")["old_prompt_id"] == PROMPT_MESSAGE_ID
+    channel._old.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_prompt_already_gone_does_not_stop_the_re_post(tmp_path):
     """Deleted by hand, or by a previous partial recovery — either way the new prompt is
     what matters."""
@@ -432,9 +455,9 @@ async def test_a_prompt_already_gone_does_not_stop_the_re_post(tmp_path):
     )
     stub = _bot(db_path, channel=_channel(fetch_fails=True))
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
-    stubs["enter"].assert_awaited_once()
+    _asked_once(stub, "results.review.open")
 
 
 async def test_a_round_with_no_recorded_prompt_fetches_nothing(tmp_path):
@@ -456,21 +479,20 @@ async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path):
     db_path = await _make_db(tmp_path, name="recover_review_noguild", in_penalty_review=1)
     stub = _bot(db_path, guild_missing=True, channel=None)
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
     assert await _rows(db_path, "round_submission_channels") == 1
     assert await _rows(db_path, "session_results") == 1
-    stubs["enter"].assert_not_awaited()
 
 
 async def test_a_review_whose_channel_is_missing_is_left_intact(tmp_path):
     db_path = await _make_db(tmp_path, name="recover_review_nochannel", in_penalty_review=1)
     stub = _bot(db_path, channel=None)
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
+    assert await _rows(db_path, "round_submission_channels") == 1
     assert await _rows(db_path, "session_results") == 1
-    stubs["enter"].assert_not_awaited()
 
 
 async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
@@ -478,14 +500,9 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     recovered, nor stop the bot finishing its start-up at all."""
     db_path = await _make_db(tmp_path, name="recover_review_fails", in_penalty_review=1)
     stub = _bot(db_path, channel=_channel())
+    stub.change_queue.ask = AsyncMock(side_effect=RuntimeError("the database is locked"))
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.enter_penalty_state",
-        new=AsyncMock(side_effect=RuntimeError("Discord is down")),
-    ), patch(
-        "leaguebot.results.services.penalty_wizard.AppealsReviewView", new=MagicMock()
-    ), patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()):
-        await bot_module._recover_orphaned_submission_channels(stub)  # must not raise
+    await _recover(stub)  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -493,9 +510,11 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_round_awaiting_appeals_gets_the_appeals_prompt_back(tmp_path):
     """A different prompt from the penalty one: the penalties are settled and what is
-    outstanding is the appeals against them."""
+    outstanding is the appeals against them. Recovery asks the queue for it, as the bot, and
+    posts nothing itself."""
     db_path = await _make_db(
         tmp_path,
         name="recover_appeals",
@@ -505,42 +524,11 @@ async def test_a_round_awaiting_appeals_gets_the_appeals_prompt_back(tmp_path):
     channel = _channel()
     stub = _bot(db_path, channel=channel)
 
-    stubs = await _recover(stub)
-
-    stubs["appeals_view"].assert_called_once()
-    stubs["enter"].assert_not_awaited()
-    assert "appeals prompt" in _posted(channel)
-
-
-async def test_the_appeals_view_is_registered_for_persistent_routing(tmp_path):
-    """Its buttons have to keep working across the *next* restart too."""
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_appeals_view",
-        in_penalty_review=1,
-        round_status="AWAITING_APPEAL_VERDICTS",
-    )
-    stub = _bot(db_path, channel=_channel())
-
     await _recover(stub)
 
-    stub.add_view.assert_called_once()
-    assert stub.add_view.call_args.kwargs["message_id"] == 9900
-
-
-async def test_the_appeals_prompt_message_id_is_kept_on_the_state(tmp_path):
-    """The next recovery deletes the old prompt by it."""
-    db_path = await _make_db(
-        tmp_path,
-        name="recover_appeals_id",
-        in_penalty_review=1,
-        round_status="AWAITING_APPEAL_VERDICTS",
-    )
-    stub = _bot(db_path, channel=_channel())
-
-    stubs = await _recover(stub)
-
-    assert stubs["state"].appeals_prompt_message_id == 9900
+    _asked_once(stub, "results.appeals.open")
+    assert [kind for kind, _ in _asked(stub)] == ["results.appeals.open"]
+    channel.send.assert_not_awaited()
 
 
 async def test_an_appeals_round_keeps_its_results(tmp_path):
@@ -566,12 +554,9 @@ async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
         round_status="AWAITING_APPEAL_VERDICTS",
     )
     stub = _bot(db_path, channel=_channel())
+    stub.change_queue.ask = AsyncMock(side_effect=RuntimeError("the database is locked"))
 
-    with patch(
-        "leaguebot.results.services.result_submission_service._build_penalty_review_state",
-        new=AsyncMock(side_effect=RuntimeError("no state")),
-    ), patch("leaguebot.__main__.asyncio.create_task", new=MagicMock()):
-        await bot_module._recover_orphaned_submission_channels(stub)  # must not raise
+    await _recover(stub)  # must not raise
 
 
 async def test_an_appeals_round_whose_guild_is_missing_is_left_intact(tmp_path):
@@ -583,9 +568,9 @@ async def test_an_appeals_round_whose_guild_is_missing_is_left_intact(tmp_path):
     )
     stub = _bot(db_path, guild_missing=True, channel=None)
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
-    stubs["appeals_view"].assert_not_called()
+    assert await _rows(db_path, "round_submission_channels") == 1
     assert await _rows(db_path, "session_results") == 1
 
 
@@ -609,6 +594,7 @@ async def _resubmitting_flag(db_path) -> int:
         return (await cursor.fetchone())[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
     db_path = await _resubmitting_db(tmp_path, "recover_resubmit")
     channel = _channel()
@@ -619,8 +605,7 @@ async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_rev
     assert await _rows(db_path, "session_results") == 1
     channel.delete.assert_not_awaited()
     stubs["rerun"].assert_not_called()
-    stubs["enter"].assert_awaited_once()
-    assert stubs["enter"].await_args.kwargs["skip_results_post"] is True
+    assert _asked_once(stub, "results.review.open")["publish"] is False
 
 
 async def test_a_restart_mid_resubmission_clears_the_flag(tmp_path):
@@ -699,16 +684,17 @@ async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path)
     channel._old.edit.assert_awaited_once_with(view=None)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recovery(tmp_path):
     db_path = await _resubmitting_db(
         tmp_path, "recover_resubmit_gone", resubmit_prompt_message_id=6100
     )
     stub = _bot(db_path, channel=_channel(fetch_fails=True))
 
-    stubs = await _recover(stub)
+    await _recover(stub)
 
     assert await _resubmitting_flag(db_path) == 0
-    stubs["enter"].assert_awaited_once()
+    _asked_once(stub, "results.review.open")
 
 
 async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_out(tmp_path):
