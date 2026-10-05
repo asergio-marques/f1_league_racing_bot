@@ -1273,3 +1273,130 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
         "Repair the cause, then amend the round again with "
         "`/results rounds amend division_name:Main` — "
     )
+
+
+# ---------------------------------------------------------------------------
+# The producers post and nothing more (#439)
+#
+# `produce_session_results` and `produce_standings` send, and hand back what they put up and
+# what it replaces: the change queue saves the new ids with a job's done mark and takes the old
+# messages down as jobs of their own, once the new ones stand.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_producers_post_without_saving_or_deleting(tmp_path):
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.models.session_result import SessionResult
+    from leaguebot.results.services.results_post_service import (
+        PostedTable,
+        produce_session_results,
+        produce_standings,
+    )
+    from tests.support.review_league import (
+        DIVISION_ID,
+        OLD_RESULTS,
+        OLD_STANDINGS,
+        RESULTS_CHANNEL,
+        ROUND_ID,
+        STANDINGS_CHANNEL,
+        channel,
+        make_db,
+    )
+
+    continuation = OLD_STANDINGS + 1
+    db_path = await make_db(
+        tmp_path, attendance=False, config_name="Standard",
+        round_status="AWAITING_REPORT_VERDICTS", verdicts_channel=True, other_division=False,
+        appeals_prompt=None,
+    )
+    async with get_connection(db_path) as db:
+        # The standings stand as two messages, the anchor and one continuation.
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_ids = ? "
+            "WHERE standings_message_id = ?",
+            (f"[{OLD_STANDINGS}, {continuation}]", OLD_STANDINGS),
+        )
+        session_id = (await (await db.execute(
+            "SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,))).fetchone())[0]
+        await db.commit()
+
+    async def _stored() -> tuple:
+        async with get_connection(db_path) as db:
+            results = await (await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results")).fetchone()
+            standings = await (await db.execute(
+                "SELECT standings_message_id, standings_message_ids "
+                "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,))).fetchone()
+        return tuple(results), tuple(standings)
+
+    stored = await _stored()
+    events: list[tuple[str, int, int]] = []
+    results_channel = channel(RESULTS_CHANNEL, events)
+    results_channel.seed(OLD_RESULTS, "provisional results")
+    standings_channel = channel(STANDINGS_CHANNEL, events)
+    standings_channel.seed(OLD_STANDINGS, "provisional standings")
+    standings_channel.seed(continuation, "provisional standings, continued")
+    guild = MagicMock()
+    guild.get_member.return_value = None
+    guild.get_role.return_value = None
+
+    session = SessionResult(
+        id=session_id, round_id=ROUND_ID, division_id=DIVISION_ID,
+        session_type="FEATURE_RACE", status="ACTIVE", config_name="Standard",
+        submitted_by=None, submitted_at=None, results_message_id=OLD_RESULTS,
+    )
+
+    async def _results(**kwargs) -> PostedTable:
+        return await produce_session_results(
+            db_path, session, [], {}, results_channel, guild, 3, "Silverstone",
+            "Provisional Results", **kwargs,
+        )
+
+    async def _standings(label: str = "Provisional Results", **kwargs) -> list[PostedTable]:
+        return await produce_standings(
+            db_path, DIVISION_ID, ROUND_ID, 3, "Silverstone", standings_channel, [], [],
+            guild, True, label, **kwargs,
+        )
+
+    # A session's results: posted afresh, the old posting handed back and left standing.
+    posted = await _results()
+    sent = [mid for kind, cid, mid in events if kind == "send" and cid == RESULTS_CHANNEL]
+    assert posted == PostedTable(sent, [OLD_RESULTS])
+    assert OLD_RESULTS in results_channel.messages
+
+    # Standings that fit: edited in place, only the continuation it no longer fills handed back.
+    assert await _standings() == [
+        PostedTable([OLD_STANDINGS], [continuation], edited=True, championship="drivers")
+    ]
+
+    # Standings too long for one message: sent afresh, the whole previous posting handed back.
+    long_label = "\n".join(f"Provisional line {n}" for n in range(200))
+    tables = await _standings(long_label)
+    assert len(tables) == 1 and len(tables[0].new) > 1
+    assert tables[0].old == [OLD_STANDINGS, continuation]
+    assert tables[0].edited is False
+
+    assert not [event for event in events if event[0] == "delete"]
+    assert {OLD_STANDINGS, continuation} <= set(standings_channel.messages)
+    assert await _stored() == stored
+
+    # The stored anchor deleted by hand: sent afresh, nothing handed back.
+    del standings_channel.messages[OLD_STANDINGS]
+    tables = await _standings()
+    assert len(tables) == 1 and tables[0].old == [] and tables[0].edited is False
+
+    # The picture saves and replaces for itself, leaving the caller nothing to do.
+    drew = MagicMock(applicable=True, message_id=9990, rejects=False, fallback_championships=[])
+    bot = MagicMock()
+    with patch(
+        "leaguebot.image.services.image_results_post.try_post", new=AsyncMock(return_value=drew)
+    ):
+        assert await _results(bot=bot) == PostedTable([9990], [], drawn=True)
+    with patch(
+        "leaguebot.image.services.image_standings_post.try_post", new=AsyncMock(return_value=drew)
+    ):
+        assert await _standings(bot=bot) == []
+
+    assert not [event for event in events if event[0] == "delete"]
+    assert await _stored() == stored
