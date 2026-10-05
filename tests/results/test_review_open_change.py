@@ -838,11 +838,15 @@ async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
     assert PROMPT in league.channel(SUBMISSION_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path):
+    """The session is scored by a points configuration, so the approval's recalculation is
+    reached and its failure stops the approval at `apply` (a session with none is skipped)."""
     league = await _league(tmp_path, name="recover_stopped", in_review=True,
                            results_posted=True, prompt=PROMPT,
                            round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE session_results SET config_name = 'Standard'")
+        await db.commit()
     with points_fail():
         await _ask_report_approval(league)
         await run_queue(league.bot)
