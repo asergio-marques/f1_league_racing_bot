@@ -1008,7 +1008,7 @@ _SPLICED_WRITE = re.compile(
 TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_purge_service.py", "_delete_rows"):
         (2, "results' own result, standings and submission tables"),
-    ("results/services/verdict_announcement_service.py", "_record_announcement"):
+    ("results/services/verdict_announcement_service.py", "_record_announcement_on"):
         (1, "the penalty and appeal records, results' own"),
     ("results/services/result_submission_service.py", "_detach_verdicts"):
         (1, "the penalty and appeal records, results' own"),

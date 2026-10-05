@@ -373,15 +373,28 @@ async def _record_banner(db_path: str, round_id: int, channel_id, message) -> No
         return
     try:
         async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO verdict_banner_messages "
-                "(round_id, channel_id, message_id, posted_at) VALUES (?, ?, ?, ?)",
-                (round_id, str(channel_id), str(message_id),
-                 datetime.now(timezone.utc).isoformat()),
+            await _record_banner_on(
+                db, round_id, channel_id, message_id, now=datetime.now(timezone.utc)
             )
             await db.commit()
     except Exception:  # noqa: BLE001 — the banner went out; only the record of it failed
         log.exception("could not record the banner of round %s", round_id)
+
+
+async def _record_banner_on(
+    db: aiosqlite.Connection, round_id: int, channel_id, message_id: int, *, now: datetime
+) -> None:
+    """Note the banner of a round's verdicts on *db*, committing nothing and swallowing nothing.
+
+    What `_record_banner` writes, for a job's ``record``, which saves it with the job's done
+    mark: a failure here is the job's failure, and the post is sent again, not left unrecorded.
+    The time is *now*, from the queue's clock.
+    """
+    await db.execute(
+        "INSERT INTO verdict_banner_messages "
+        "(round_id, channel_id, message_id, posted_at) VALUES (?, ?, ?, ?)",
+        (round_id, str(channel_id), str(message_id), now.isoformat()),
+    )
 
 
 async def _banners_of_on(db: aiosqlite.Connection, round_id: int) -> list[tuple[str, int]]:
@@ -425,13 +438,18 @@ async def _mark_banner_over_sanction(db_path: str, banner) -> None:
         return
     try:
         async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE verdict_banner_messages SET heads_sanctions = 1 WHERE message_id = ?",
-                (str(banner_id),),
-            )
+            await _mark_banner_over_sanction_on(db, banner_id)
             await db.commit()
     except Exception:  # noqa: BLE001
         log.exception("could not note banner %s as heading a sanction card", banner_id)
+
+
+async def _mark_banner_over_sanction_on(db: aiosqlite.Connection, banner_id: int) -> None:
+    """Note that the banner *banner_id* heads a sanction card, on *db*; commits nothing."""
+    await db.execute(
+        "UPDATE verdict_banner_messages SET heads_sanctions = 1 WHERE message_id = ?",
+        (str(banner_id),),
+    )
 
 
 async def _banners_heading_sanctions_on(
@@ -581,15 +599,26 @@ async def _record_announcement(
         return
     try:
         async with get_connection(db_path) as db:
-            await db.execute(
-                f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608 — literal table
-                "announcement_message_ids = ?, announcement_channel_id = ? WHERE id = ?",
-                (str(message_id), _json.dumps([message_id]), 
-                 str(channel_id) if channel_id is not None else None, record_id),
-            )
+            await _record_announcement_on(db, table, record_id, message_id, channel_id)
             await db.commit()
     except Exception:  # noqa: BLE001 — the announcement went out; only the record of it failed
         log.exception("could not record the announcement of %s row %s", table, record_id)
+
+
+async def _record_announcement_on(
+    db: aiosqlite.Connection, table: str, record_id: int, message_id: int, channel_id: int | None
+) -> None:
+    """Record which message carries a verdict on *db*; commits nothing, swallows nothing.
+
+    What `_record_announcement` writes, for a job's ``record``, which saves it with the job's
+    done mark. *table* is ``penalty_records`` or ``appeal_records``, written as a literal.
+    """
+    await db.execute(
+        f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608 — literal table
+        "announcement_message_ids = ?, announcement_channel_id = ? WHERE id = ?",
+        (str(message_id), _json.dumps([message_id]),
+         str(channel_id) if channel_id is not None else None, record_id),
+    )
 
 
 async def _send_verdict(

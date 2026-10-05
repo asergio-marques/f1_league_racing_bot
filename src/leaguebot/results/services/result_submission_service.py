@@ -1502,49 +1502,103 @@ async def _apply_staged_appeals(
     await _recompute_session_points(db_path, round_id)
 
     # INSERT appeal_records — order mirrors applied_pr (same ordering as staged_appeals).
-    records: list[dict] = []
-    now_str = _dt.datetime.now(_dt.timezone.utc).isoformat()
     async with get_connection(db_path) as db:
-        for sp, pr in zip(staged_appeals, applied_pr):
-            race_result_id = pr.get("race_result_id")
-            qual_result_id = pr.get("qual_result_id")
-            cursor = await db.execute(
-                """
-                INSERT INTO appeal_records (
-                    race_result_id, qual_result_id,
-                    status, penalty_type, time_seconds,
-                    description, justification, submitted_by, submitted_at,
-                    announcement_channel_id
-                ) VALUES (?, ?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
-                """,
-                (
-                    race_result_id,
-                    qual_result_id,
-                    sp.penalty_type,
-                    sp.penalty_seconds,
-                    sp.description,
-                    sp.justification,
-                    # An appeal read back from the round keeps its own author and time (#345).
-                    sp.decided_by or str(actor_id),
-                    sp.decided_at or now_str,
-                ),
-            )
-            records.append(
-                {
-                    "id": cursor.lastrowid,
-                    "race_result_id": race_result_id,
-                    "qual_result_id": qual_result_id,
-                    "driver_user_id": sp.driver_user_id,
-                    "penalty_type": sp.penalty_type,
-                    "time_seconds": sp.penalty_seconds,
-                    "description": sp.description,
-                    "justification": sp.justification,
-                    "submitted_by": sp.decided_by or str(actor_id),
-                    "announcement_channel_id": None,
-                }
-            )
+        records = await _insert_appeal_records_on(
+            db, staged_appeals, applied_pr, actor_id, now=_dt.datetime.now(_dt.timezone.utc)
+        )
         await db.commit()
     return records
+
+
+async def _insert_appeal_records_on(
+    db: aiosqlite.Connection,
+    staged_appeals: list,
+    applied_pr: list[dict],
+    actor_id: int,
+    *,
+    now: datetime,
+) -> list[dict]:
+    """Write one ``appeal_records`` row per upheld correction on *db*, committing nothing.
+
+    *applied_pr* are the penalty records the corrections were applied as, in the order the
+    corrections were staged. Each appeal keeps its own author and time where it was read back
+    from the round (#345), and is given *now* otherwise. Returns the records written, shaped as
+    the verdict announcement reads them.
+    """
+    records: list[dict] = []
+    now_str = now.isoformat()
+    for sp, pr in zip(staged_appeals, applied_pr):
+        race_result_id = pr.get("race_result_id")
+        qual_result_id = pr.get("qual_result_id")
+        cursor = await db.execute(
+            """
+            INSERT INTO appeal_records (
+                race_result_id, qual_result_id,
+                status, penalty_type, time_seconds,
+                description, justification, submitted_by, submitted_at,
+                announcement_channel_id
+            ) VALUES (?, ?, 'UPHELD', ?, ?, ?, ?, ?, ?, NULL)
+            """,
+            (
+                race_result_id,
+                qual_result_id,
+                sp.penalty_type,
+                sp.penalty_seconds,
+                sp.description,
+                sp.justification,
+                # An appeal read back from the round keeps its own author and time (#345).
+                sp.decided_by or str(actor_id),
+                sp.decided_at or now_str,
+            ),
+        )
+        records.append(
+            {
+                "id": cursor.lastrowid,
+                "race_result_id": race_result_id,
+                "qual_result_id": qual_result_id,
+                "driver_user_id": sp.driver_user_id,
+                "penalty_type": sp.penalty_type,
+                "time_seconds": sp.penalty_seconds,
+                "description": sp.description,
+                "justification": sp.justification,
+                "submitted_by": sp.decided_by or str(actor_id),
+                "announcement_channel_id": None,
+            }
+        )
+    return records
+
+
+async def _apply_staged_appeals_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    staged_appeals: list,
+    actor_id: int,
+    *,
+    now: datetime,
+) -> list[dict]:
+    """Apply a round's upheld appeal corrections on *db* and record each as an appeal record.
+
+    What `_apply_staged_appeals` does, written on the connection it is handed and committing
+    nothing, so the corrections, the points they move and the appeal records are one save with
+    the rest of the stage. The points are recalculated by `_recompute_session_points_on`, which
+    **raises** on a session it cannot score: the save is rolled back and the change stops,
+    where the old form logged the failure and published the old points (defect 3).
+
+    Shared by the first pass and the amendment's appeal stage. Returns the appeal records
+    written, shaped as the verdict announcement reads them, in the order the corrections were
+    staged.
+    """
+    from leaguebot.results.services import penalty_service as _ps
+
+    if not staged_appeals:
+        return []
+
+    applied_pr = await _ps.apply_penalties_on(
+        db, round_id, division_id, staged_appeals, actor_id, now=now, _phase="APPEAL",
+    )
+    await _recompute_session_points_on(db, round_id)
+    return await _insert_appeal_records_on(db, staged_appeals, applied_pr, actor_id, now=now)
 
 
 _ACTIVE_SESSIONS_OF_ROUND_SQL = """
@@ -2001,6 +2055,15 @@ async def _season_id_for_division(db_path: str, division_id: int) -> int | None:
 async def _remember_superseded_announcements(
     db_path: str, round_id: int, session_types: list[SessionType]
 ) -> None:
+    """:func:`_remember_superseded_announcements_on`, saved on a connection of its own."""
+    async with get_connection(db_path) as db:
+        await _remember_superseded_announcements_on(db, round_id, session_types)
+        await db.commit()
+
+
+async def _remember_superseded_announcements_on(
+    db: aiosqlite.Connection, round_id: int, session_types: list[SessionType]
+) -> None:
     """Note the amended sessions' verdict announcements, before their records are cleared.
 
     The report stage deletes the session's verdict records and writes the approved set back, so
@@ -2015,27 +2078,28 @@ async def _remember_superseded_announcements(
     **The first capture stands.** It is taken before any record is cleared, so a later one —
     a report stage retried after a failure — would read what the first had already cleared and
     overwrite the list with less.
+
+    Commits nothing: the amendment's report stage saves it with the clearing of the records
+    and the writing of the approved set, so a stop between them cannot lose the list.
     """
     from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
 
     rows: list[dict] = []
-    async with get_connection(db_path) as db:
-        for table in VERDICT_TABLES:
-            rows.extend(
-                await select_verdicts(
-                    db, table,
-                    "v.announcement_message_id AS anchor, v.announcement_message_ids AS chunks, "
-                    "v.announcement_channel_id AS channel_id, r.driver_user_id AS driver_user_id",
-                    round_id=round_id, session_types=session_types,
-                    where=" AND v.announcement_message_id IS NOT NULL",
-                )
+    for table in VERDICT_TABLES:
+        rows.extend(
+            await select_verdicts(
+                db, table,
+                "v.announcement_message_id AS anchor, v.announcement_message_ids AS chunks, "
+                "v.announcement_channel_id AS channel_id, r.driver_user_id AS driver_user_id",
+                round_id=round_id, session_types=session_types,
+                where=" AND v.announcement_message_id IS NOT NULL",
             )
-        await db.execute(
-            "UPDATE round_amend_channels SET superseded_announcements = ? "
-            "WHERE round_id = ? AND superseded_announcements IS NULL",
-            (_json.dumps(rows) if rows else None, round_id),
         )
-        await db.commit()
+    await db.execute(
+        "UPDATE round_amend_channels SET superseded_announcements = ? "
+        "WHERE round_id = ? AND superseded_announcements IS NULL",
+        (_json.dumps(rows) if rows else None, round_id),
+    )
 
 
 async def take_down_superseded_announcements(bot: LeagueBot, db_path: str, round_id: int) -> list[str]:
@@ -2111,6 +2175,15 @@ async def _superseded_left_standing(db_path: str, round_id: int, guild) -> list[
 async def _clear_round_verdict_records(
     db_path: str, round_id: int, session_types: "list[SessionType] | None" = None
 ) -> None:
+    """:func:`_clear_round_verdict_records_on`, saved on a connection of its own."""
+    async with get_connection(db_path) as db:
+        await _clear_round_verdict_records_on(db, round_id, session_types)
+        await db.commit()
+
+
+async def _clear_round_verdict_records_on(
+    db: aiosqlite.Connection, round_id: int, session_types: "list[SessionType] | None" = None
+) -> None:
     """Remove a round's penalty and appeal records so the approved set can be written whole.
 
     **The amendment rewrites rather than adds** (#345). ``apply_penalties`` only ever inserts,
@@ -2127,15 +2200,15 @@ async def _clear_round_verdict_records(
 
     Deleting them is also what releases the foreign key, so the rows may be rewritten against
     whichever driver rows the corrected classification produced.
+
+    Commits nothing, so the amendment's report stage clears and rewrites in one save.
     """
     from leaguebot.results.services.verdict_records import delete_verdicts
 
     # Scoped to the sessions given, because those are all an amendment replays: clearing the
     # whole round would drop the decisions of sessions whose reports are never re-approved,
     # losing them outright.
-    async with get_connection(db_path) as db:
-        await delete_verdicts(db, round_id=round_id, session_types=session_types)
-        await db.commit()
+    await delete_verdicts(db, round_id=round_id, session_types=session_types)
 
 
 #: How long an amendment may sit unapproved before it is reverted (#345).
