@@ -92,7 +92,6 @@ async def _insert_submission_channel(db_path: str, round_id: int, channel_id: in
 # Feature Race, its submission channel open, and round 4 already final.
 # ---------------------------------------------------------------------------
 
-NOT_BUILT = "#439: a round's approvals are not yet changes on the queue"
 APPEALS_PROMPT = 8902
 
 
@@ -311,7 +310,6 @@ async def test_penalty_records_inserted_when_staged(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_channel_row_is_closed_in_the_appeals_approval_s_save(tmp_path):
     """The reports approved, the submission channel's row stays open while the appeals review is
     in progress. The appeals approved, the row is closed by its `apply` save, before the channel

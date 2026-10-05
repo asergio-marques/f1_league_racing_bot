@@ -448,10 +448,11 @@ def pardon() -> StagedPardon:
 
 
 async def run_until_done(league: ReviewLeague, job: str) -> None:
-    """Run the queue one job at a time until the first *job* is done, as a stop just after it."""
+    """Run the queue one job at a time until the most recent *job* is done, as a stop just after
+    it: that of the change asked last, not one an earlier change has already finished."""
     for _ in range(40):
         rows = [row for row in await step_rows(league.db_path) if row["name"] == job]
-        if rows and rows[0]["done_at"] is not None:
+        if rows and rows[-1]["done_at"] is not None:
             return
         await run_queue(league.bot, steps=1)
     raise AssertionError(f"{job} was never done")
