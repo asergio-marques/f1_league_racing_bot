@@ -1754,6 +1754,32 @@ async def test_a_bot_change_whose_check_passes_at_a_try_clears_its_stop_and_a_la
     assert {child.custom_id for child in second.view.children} == {"queue:retry", "queue:discard"}
     assert await _states(env) == ["RUNNING"]
 
+    # The same again, with the log channel refusing the job's own notice: the cleared stop's
+    # notice is not kept on the job, so the new notice is posted, with its buttons, at the next
+    # pass once the log channel takes posts again.
+    await discard_job(env.bot)
+    holder["fail"] = None
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["notice_message_id"] is not None
+
+    mode["refuse"] = False
+    holder["fail"] = RuntimeError("boom")
+    env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+    await _try_at(env, 2)
+    again = await stopped_job(env.db_path)
+    assert again is not None and again["id"] == job["id"] and again["notice_message_id"] is None
+
+    env.bot.log_channel.fails = None
+    await _try_at(env, 3)
+    again = await stopped_job(env.db_path)
+    assert again is not None and again["notice_message_id"] is not None
+    [third] = [m for m in env.bot.log_channel.posted if m.id == again["notice_message_id"]]
+    assert third.id != job["notice_message_id"]
+    assert {child.custom_id for child in third.view.children} == {"queue:retry", "queue:discard"}
+
 
 async def test_a_change_stopped_at_its_check_and_then_refused_or_dropped_leaves_no_timer(env):
     """A change stopped at its check while the log channel refuses its stop notice, which then ends

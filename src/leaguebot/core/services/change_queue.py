@@ -796,8 +796,8 @@ class ChangeQueue:
                 if cursor.rowcount == 1 and stopped and pending is not None:
                     await db.execute(
                         "UPDATE queued_change_steps SET tries = 0, failing_since = NULL, "
-                        "last_failure = NULL, next_try_at = NULL "
-                        "WHERE id = ? AND done_at IS NULL",
+                        "last_failure = NULL, next_try_at = NULL, notice_message_id = NULL, "
+                        "notice_channel_id = NULL WHERE id = ? AND done_at IS NULL",
                         (pending["id"],),
                     )
                     line_id = await self._router.queue_log_on(
