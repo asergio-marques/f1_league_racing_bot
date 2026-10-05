@@ -783,3 +783,95 @@ async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_
     assert LATER_REPORT not in said and LATER_APPEAL not in said
     assert EARLIER_VERDICT in said and CANCELLED_VERDICT in said
 
+
+# ---------------------------------------------------------------------------
+# The superseded announcements and their banners
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_round_s_old_banner_comes_down_once_its_verdicts_are_announced_again(tmp_path):
+    """Results spec, amendment: a round's superseded announcements, "and the banner heading
+    them", are removed only once every one of that round's replacements has been posted. Round 3's
+    old banner heads Lewis's old verdict."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    await _banner(league, ROUND_ID, OLD_BANNER)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    replacements = _sent_saying(league, "Corner cutting")
+    assert len(replacements) == 2
+    taken_down = league.events.index(("delete", VERDICTS_CHANNEL, OLD_BANNER))
+    assert taken_down > max(
+        league.events.index(("send", VERDICTS_CHANNEL, mid)) for mid in replacements
+    )
+    assert OLD_VERDICT not in league.channel(VERDICTS_CHANNEL).messages
+    assert OLD_BANNER not in await _banners_left(league)
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_round_left_with_no_verdict_loses_its_old_announcement_and_banner(tmp_path):
+    """Results spec, amendment: "A round left with no verdict at all shall have its superseded
+    announcements and their banner removed likewise." The report stage approved no report for
+    round 3, Lewis's old verdict and its banner standing."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute("DELETE FROM penalty_records")
+        await db.commit()
+    await _banner(league, ROUND_ID, OLD_BANNER)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert _sent_saying(league, "Corner cutting") == []
+    assert OLD_VERDICT not in league.channel(VERDICTS_CHANNEL).messages
+    assert OLD_BANNER not in league.channel(VERDICTS_CHANNEL).messages
+    assert await _banners_left(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_banner_heading_a_sanction_card_is_kept(tmp_path):
+    """Results spec, amendment: "A banner that also heads an attendance sanction card shall be
+    kept, the card being no verdict and staying where it is." Round 3's old banner heads Lewis's
+    old verdict and a sanction card."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    await _banner(league, ROUND_ID, OLD_BANNER, heads_sanctions=True)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert OLD_VERDICT not in league.channel(VERDICTS_CHANNEL).messages
+    assert OLD_BANNER in league.channel(VERDICTS_CHANNEL).messages
+    assert await _banners_left(league) == [OLD_BANNER]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_later_round_s_replacements_do_not_license_the_amended_round_s_take_down(
+    tmp_path,
+):
+    """Results spec, amendment: a round's superseded announcements come down only once every
+    one of *that round's* replacements is posted. Discord refuses round 3's verdict cards, and a
+    league admin discards each; round 4's report for Max is announced again."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    await _announced_verdict(league, later[MAX], LATER_REPORT, description="Pit lane speeding")
+    await _banner(league, ROUND_ID, OLD_BANNER)
+    await _banner(league, LATER_ROUND_ID, LATER_BANNER)
+    league.channel(VERDICTS_CHANNEL).fail_when = (
+        lambda content, _kwargs: "Round 3" in content and "Corner cutting" in content
+    )
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+    for _ in range(6):
+        if await stopped_at(league) != "announce_verdict":
+            break
+        await discard_job(league.bot)
+
+    assert await stopped_at(league) is None
+    said = league.channel(VERDICTS_CHANNEL).messages
+    assert len(_sent_saying(league, "Pit lane speeding")) == 1
+    assert LATER_REPORT not in said and LATER_BANNER not in said
+    assert OLD_VERDICT in said and OLD_BANNER in said
+    assert await _banners_left(league) == [OLD_BANNER]
+
