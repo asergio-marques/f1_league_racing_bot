@@ -742,7 +742,6 @@ async def test_the_rebuild_reposts_every_round_s_results_and_standings_in_round_
     assert OLD_ROUND_RESULTS[CANCELLED_ROUND_ID] in league.channel(RESULTS_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_its_own_round(
     tmp_path,
 ):
@@ -773,9 +772,10 @@ async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_
     assert "Round 4" in said[report].content and "Round 3" not in said[report].content
     assert league.sent_to(VERDICTS_CHANNEL).index(report) < league.sent_to(
         VERDICTS_CHANNEL).index(appeal)
-    assert await one(
+    # The column is TEXT, the message id written as its string.
+    assert int(await one(
         league.db_path, "SELECT announcement_message_id FROM appeal_records"
-    ) == appeal, "the upheld appeal was not announced as an appeal"
+    )) == appeal, "the upheld appeal was not announced as an appeal"
     assert LATER_REPORT not in said and LATER_APPEAL not in said
     assert EARLIER_VERDICT in said and CANCELLED_VERDICT in said
 
