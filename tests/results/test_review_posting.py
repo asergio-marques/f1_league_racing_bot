@@ -544,7 +544,6 @@ async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#439: a part-sent post is not yet removed before a retry")
 async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_try(tmp_path):
     league = await _league(tmp_path, results_message_id=None)
     results = league.channel(RESULTS_CHANNEL)
@@ -565,7 +564,8 @@ async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_t
     assert not standing & set(first_try)
     _anchor, ids = await _session_ids(league.db_path)
     assert ids is not None and len(ids) >= 2
-    assert set(ids) == standing
+    # Besides the retry's own messages the channel holds only the unrelated one every test seeds.
+    assert set(ids) == standing - {OLD_RESULTS}
 
 
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
