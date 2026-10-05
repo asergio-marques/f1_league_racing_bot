@@ -47,7 +47,8 @@ def _bot(channel):
 @pytest.mark.asyncio
 async def test_post_log_returns_the_posted_message():
     sent = []
-    router = OutputRouter(_bot(_channel(sent)))
+    bot = _bot(_channel(sent))
+    router = OutputRouter(bot, bot.config_service)
 
     message = await router.post_log("something happened")
 
@@ -59,7 +60,8 @@ async def test_post_log_returns_the_posted_message():
 async def test_a_split_block_returns_its_first_message():
     """So a link lands a reader at the top of the block rather than its tail."""
     sent = []
-    router = OutputRouter(_bot(_channel(sent)))
+    bot = _bot(_channel(sent))
+    router = OutputRouter(bot, bot.config_service)
 
     message = await router.post_log("\n".join(f"line {i}" * 40 for i in range(200)))
 
@@ -72,7 +74,8 @@ async def test_post_forecast_still_returns_its_last_message():
     """Its callers store the id to edit that message later (calendar, constructor
     standings). Returning a different one would repoint those edits."""
     sent = []
-    router = OutputRouter(_bot(_channel(sent)))
+    bot = _bot(_channel(sent))
+    router = OutputRouter(bot, bot.config_service)
     division = MagicMock(forecast_channel_id=99)
 
     message = await router.post_forecast(
@@ -88,7 +91,7 @@ async def test_post_log_returns_none_when_the_server_has_no_config():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
 
-    assert await OutputRouter(bot).post_log("anything") is None
+    assert await OutputRouter(bot, bot.config_service).post_log("anything") is None
 
 
 @pytest.mark.asyncio
@@ -101,7 +104,7 @@ async def test_post_log_returns_none_when_the_channel_cannot_be_reached():
         return_value=MagicMock(log_channel_id=99, interaction_channel_id=98)
     )
 
-    assert await OutputRouter(bot).post_log("anything") is None
+    assert await OutputRouter(bot, bot.config_service).post_log("anything") is None
     asked = [call.args[0] for call in bot.get_channel.call_args_list]
     asked += [call.args[0] for call in bot.fetch_channel.await_args_list]
     assert set(asked) == {99}
@@ -113,7 +116,8 @@ async def test_every_mention_in_a_log_line_is_written_as_code(mention):
     """Named without notifying: the log channel mentions nobody (#362 builds the forms from the
     shared ones, which also wraps `<@!123>`)."""
     sent = []
-    router = OutputRouter(_bot(_channel(sent)))
+    bot = _bot(_channel(sent))
+    router = OutputRouter(bot, bot.config_service)
 
     await router.post_log(f"{mention} did something")
 
@@ -127,7 +131,7 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_posts_nothing(
 
     bot = MagicMock()
     bot.fetch_channel = AsyncMock()
-    router = OutputRouter(bot)
+    router = OutputRouter(bot, bot.config_service)
 
     assert await router.post_forecast(ForecastChannel(None), "forecast") is None
     bot.get_channel.assert_not_called()
@@ -151,7 +155,8 @@ def _unconfigured_bot(channel) -> MagicMock:
 
 
 async def test_the_router_says_where_the_log_goes():
-    router = OutputRouter(_bot(_channel([])))
+    bot = _bot(_channel([]))
+    router = OutputRouter(bot, bot.config_service)
 
     assert await router.log_destination() == 99
 
@@ -160,7 +165,7 @@ async def test_the_router_says_there_is_no_log_before_the_bot_is_set_up():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
 
-    assert await OutputRouter(bot).log_destination() is None
+    assert await OutputRouter(bot, bot.config_service).log_destination() is None
 
 
 async def test_a_line_for_a_given_channel_is_written_as_any_other():
@@ -169,7 +174,7 @@ async def test_a_line_for_a_given_channel_is_written_as_any_other():
     sent = []
     bot = _unconfigured_bot(_channel(sent))
 
-    message = await OutputRouter(bot).post_log("<@77> reset the league", channel=555)
+    message = await OutputRouter(bot, bot.config_service).post_log("<@77> reset the league", channel=555)
 
     assert message is not None
     bot.get_channel.assert_called_once_with(555)
@@ -182,7 +187,7 @@ async def test_a_long_line_for_a_given_channel_is_split_and_returns_its_first_me
     sent = []
     bot = _unconfigured_bot(_channel(sent))
 
-    message = await OutputRouter(bot).post_log(
+    message = await OutputRouter(bot, bot.config_service).post_log(
         "\n".join(f"line {i}" * 40 for i in range(200)), channel=555
     )
 
@@ -224,7 +229,7 @@ async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redir
     if where == "gone":
         bot.get_channel = MagicMock(return_value=None)
         bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(), "gone"))
-    router = OutputRouter(bot, retry_db_path=str(tmp_path / "retry.db"))
+    router = OutputRouter(bot, bot.config_service, retry_db_path=str(tmp_path / "retry.db"))
 
     assert await router.post_log("the league was reset", channel=555) is None
 

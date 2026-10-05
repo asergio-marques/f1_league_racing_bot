@@ -147,11 +147,11 @@ async def main() -> None:
     bot.scheduler_service = SchedulerService(
         DB_PATH, SCHEDULER_DB_PATH or None
     )
-    bot.output_router = OutputRouter(bot, retry_db_path=DB_PATH)
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=DB_PATH)
     # The queue is handed the router, and is started by `on_ready`, after the recoveries.
     from leaguebot.core.services.change_queue import ChangeQueue
 
-    bot.change_queue = ChangeQueue(DB_PATH, bot, bot.output_router)
+    bot.change_queue = ChangeQueue(DB_PATH, bot, bot.output_router, bot.config_service)
     bot.driver_service = DriverService(DB_PATH)
     bot.team_service = TeamService(DB_PATH)
 

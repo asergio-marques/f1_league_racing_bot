@@ -17,16 +17,15 @@ from typing import Any
 
 
 class ChangeState(str, Enum):
-    """Where a change stands. It runs QUEUED, RUNNING, DONE; WAITING while one of its steps waits
-    on a retry; and ends REFUSED, DROPPED or FAULTED."""
+    """Where a change stands. It runs QUEUED, RUNNING, DONE, or ends REFUSED, DROPPED or
+    DISCARDED. A job that fails stops the queue without changing its change's state."""
 
     QUEUED = "QUEUED"
     RUNNING = "RUNNING"
-    WAITING = "WAITING"
     DONE = "DONE"
     REFUSED = "REFUSED"
     DROPPED = "DROPPED"
-    FAULTED = "FAULTED"
+    DISCARDED = "DISCARDED"
 
 
 class ChangeOrigin(str, Enum):
@@ -55,7 +54,6 @@ class VerdictKind(str, Enum):
     GO = "GO"
     REFUSE = "REFUSE"
     NOT_DUE = "NOT_DUE"
-    REPAIRABLE = "REPAIRABLE"
 
 
 @dataclass(frozen=True)
@@ -64,8 +62,7 @@ class Verdict:
 
     `go()`: carry on. `refuse(reply)`: a member's change is not allowed, `reply` being what the
     member is told and `reason` an optional line written beneath the refusal's line in the log
-    channel. `not_due(reason)`: the bot's change no longer has anything to do. `repairable(reason)`:
-    the bot's change lacks something a league can repair, so it waits and says what.
+    channel. `not_due(reason)`: the bot's change no longer has anything to do.
     """
 
     kind: VerdictKind
@@ -84,10 +81,6 @@ class Verdict:
     def not_due(cls, reason: str) -> Verdict:
         return cls(VerdictKind.NOT_DUE, reason=reason)
 
-    @classmethod
-    def repairable(cls, reason: str) -> Verdict:
-        return cls(VerdictKind.REPAIRABLE, reason=reason)
-
 
 @dataclass(frozen=True)
 class AuditRecord:
@@ -105,7 +98,6 @@ class PlannedStep:
 
     name: str
     payload: dict[str, Any] = field(default_factory=dict)
-    places: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,8 +115,7 @@ class StepResult:
     """What a step returns for the worker to save with the step's mark.
 
     `result` is kept with the step; `audits` and `lines` are written in the same save; `then` are
-    steps inserted after this one; `follow_ons` are changes asked for; `places` are added to the
-    places the change holds.
+    steps inserted after this one; `follow_ons` are changes asked for.
     """
 
     result: dict[str, Any] = field(default_factory=dict)
@@ -132,14 +123,14 @@ class StepResult:
     lines: tuple[str, ...] = ()
     then: tuple[PlannedStep, ...] = ()
     follow_ons: tuple[FollowOn, ...] = ()
-    places: tuple[str, ...] = ()
 
 
 class StepFailedOnDiscord(Exception):
     """Raised by step code for a failure Discord caused.
 
-    `result` is plain data the step wants kept where the step is tried once, such as the ids of
-    what it could not remove.
+    `result` is plain data the step wants kept on the job that stops the queue, such as the ids of
+    what it could not remove, which a Discard then reads. Raised `from` the Discord failure that
+    caused it, the stop notice names that failure's type as the kind of fault.
     """
 
     def __init__(self, reason: str, *, result: dict[str, Any] | None = None) -> None:

@@ -1,9 +1,9 @@
 """OutputRouter — the one writer of the log channel, and the poster of a forecast's text.
 
-It is **not** the way every post leaves the bot. A graphic, an embed, a message carrying
-buttons, and every post the bot later replaces in place are sent by the module that makes
-them, so a forecast drawn as a graphic, a calendar or a results table never passes through
-here. Which channels exist, and what each may carry, is Constitution Principle VII and
+It is **not** the way every post leaves the bot. A graphic, an embed, and every post the bot
+later replaces in place are sent by the module that makes them, so a forecast drawn as a
+graphic, a calendar or a results table never passes through here. The one message with buttons
+that does is the change queue's stop notice, sent to the log channel (`post_notice`). Which channels exist, and what each may carry, is Constitution Principle VII and
 `core/services/channel_registry_service.py`.
 
 What it holds, for its two kinds of post, are the rules for them: a mention in a log line
@@ -37,6 +37,7 @@ from leaguebot.core.utils.messages import chunk_message
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -68,8 +69,17 @@ class ForecastChannel:
 class OutputRouter:
     """Writes the log channel and a forecast's text, each failure contained; see above."""
 
-    def __init__(self, bot: "LeagueBot", retry_db_path: "Optional[str]" = None) -> None:
+    def __init__(
+        self,
+        bot: "LeagueBot",
+        config_service: "ConfigService",
+        retry_db_path: "Optional[str]" = None,
+    ) -> None:
         self._bot = bot
+        # Handed in by the builder, which is the one place services are wired (architecture.md,
+        # "Services stay attached to the bot, and are built in one place"): the router reads the
+        # log channel from it and looks no service up on the bot.
+        self._config = config_service
         self._retry_db_path: Optional[str] = retry_db_path
         # The warnings still to be sent, kept so that no task is dropped.
         self._tasks: set[asyncio.Task[None]] = set()
@@ -107,7 +117,7 @@ class OutputRouter:
         erase the configuration (the factory reset) asks here first and hands the answer back to
         :meth:`post_log` as *channel*, once the configuration that would have named it is gone.
         """
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         return None if config is None else config.log_channel_id
 
     async def post_log(
@@ -147,7 +157,7 @@ class OutputRouter:
                 channel, content, enqueue_on_failure=False, fallback_label="log",
                 return_first=True,
             )
-        config = await self._bot.config_service.get_server_config()
+        config = await self._config.get_server_config()
         if config is None:
             log.error("post_log: the bot is not set up, so there is no log channel")
             return None
@@ -162,6 +172,57 @@ class OutputRouter:
             await self._warn_member(channel_id)
 
         return msg
+
+    async def post_notice(
+        self,
+        content: str,
+        view: discord.ui.View,
+        *,
+        interaction: "Optional[discord.Interaction]" = None,
+    ) -> "Optional[discord.Message]":
+        """Post *content* to the log channel as a notice carrying *view*'s buttons.
+
+        Formed and sent as a log line is, mentions wrapped and the separator appended, but **never
+        put on the retry queue**: a line retried would come back without its buttons, so the
+        caller keeps the notice itself and posts it again until it lands. Where the post fails
+        the member whose interaction *interaction* is, where it can still be answered, is
+        warned here, as `post_log` does (`_warn_member`), so the caller never does.
+
+        Returns the message, which carries the view, or ``None`` where it could not be posted or
+        the bot is not set up.
+        """
+        config = await self._config.get_server_config()
+        if config is None:
+            log.error("post_notice: the bot is not set up, so there is no log channel")
+            return None
+        channel_id = config.log_channel_id
+        message = await self._send(
+            channel_id, self._as_log_line(content), enqueue_on_failure=False,
+            fallback_label="log", view=view,
+        )
+        if message is None:
+            await self._warn_member(channel_id, interaction)
+        return message
+
+    async def strip_view(self, channel_id: int, message_id: int) -> None:
+        """Take the buttons off the message *message_id* of channel *channel_id*.
+
+        A message already gone is no failure; any other failure goes to the host's log. Never
+        raises.
+        """
+        try:
+            channel = self._bot.get_channel(channel_id)
+            if channel is None:
+                channel = await self._bot.fetch_channel(channel_id)
+            if not isinstance(channel, discord.TextChannel):
+                log.error("strip_view: channel id=%s is not a text channel", channel_id)
+                return
+            await channel.get_partial_message(message_id).edit(view=None)
+        except discord.NotFound:
+            return
+        except Exception:  # noqa: BLE001 — the buttons are cosmetic once the job has cleared
+            log.error("strip_view: could not take the buttons off message id=%s", message_id,
+                      exc_info=True)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -324,6 +385,7 @@ class OutputRouter:
         enqueue_on_failure: bool = False,
         fallback_label: str = "unknown",
         return_first: bool = False,
+        view: "Optional[discord.ui.View]" = None,
     ) -> "Optional[discord.Message]":
         """Attempt to send *content* to *channel_id*.
 
@@ -335,16 +397,23 @@ class OutputRouter:
         reader to the start of what it wrote. It defaults to False because the forecast
         callers store the returned id to edit that message later, and returning a
         different one would repoint those edits.
+
+        *view* is sent with the last part, so that its buttons end the message.
         """
         message, reason, retryable = await self._try_send(
-            channel_id, content, fallback_label, return_first
+            channel_id, content, fallback_label, return_first, view
         )
         if message is None and retryable:
             await self._enqueue_if_configured(enqueue_on_failure, channel_id, content, reason)
         return message
 
     async def _try_send(
-        self, channel_id: int, content: str, fallback_label: str, return_first: bool
+        self,
+        channel_id: int,
+        content: str,
+        fallback_label: str,
+        return_first: bool,
+        view: "Optional[discord.ui.View]" = None,
     ) -> "tuple[Optional[discord.Message], str, bool]":
         """Send *content*, and say how it went: the message, or None with why and whether a
         retry could mend it (a refused or failed post can; a channel not found cannot).
@@ -371,8 +440,16 @@ class OutputRouter:
             # Discord messages have a 2000-char limit; chunk if needed
             first_msg: Optional[discord.Message] = None
             last_msg: Optional[discord.Message] = None
-            for chunk in chunk_message(content):
-                last_msg = await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+            chunks = chunk_message(content)
+            for number, chunk in enumerate(chunks, start=1):
+                if view is not None and number == len(chunks):
+                    last_msg = await channel.send(
+                        chunk, allowed_mentions=discord.AllowedMentions.none(), view=view
+                    )
+                else:
+                    last_msg = await channel.send(
+                        chunk, allowed_mentions=discord.AllowedMentions.none()
+                    )
                 if first_msg is None:
                     first_msg = last_msg
             return (first_msg if return_first else last_msg), "", False

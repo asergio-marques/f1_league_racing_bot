@@ -35,7 +35,11 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from leaguebot.core.services.change_queue import empty_queue_in
+from leaguebot.core.services.change_queue import (
+    carry_job_numbering,
+    empty_queue_in,
+    highest_job_number,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -411,6 +415,10 @@ def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool
     emptied in the staged file before it is swapped in: a change saved with the state would be
     carried out again against a server whose messages it no longer knows. A stop before the swap
     leaves the staged file, still to be emptied at the next start.
+
+    **A restored state carries the job numbering on.** The live database's highest job number is
+    written into the staged file before the swap, so the next job is numbered above every job the
+    bot has numbered and no number in the log channel names two jobs.
     """
     swapped = False
     for live in (Path(db_path), Path(jobstore_path)):
@@ -427,6 +435,8 @@ def apply_staged_restore(db_path: str | Path, jobstore_path: str | Path) -> bool
             continue
         if live == Path(db_path):
             empty_queue_in(staged)
+            if live.is_file():
+                carry_job_numbering(staged, highest_job_number(live))
         for residue in (f"{live}-wal", f"{live}-shm"):
             Path(residue).unlink(missing_ok=True)
         os.replace(staged, live)

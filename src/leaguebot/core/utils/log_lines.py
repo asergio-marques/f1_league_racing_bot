@@ -3,8 +3,8 @@
 Every command, button and form that changes something, or tries to, records every outcome in
 the log channel — a success, a refusal or a failure, whoever used it (the core specification's
 "The record of what changed"). A failure is `report_failure`'s, in
-`core/utils/interaction_errors.py`. This module holds the other two, so that each standard line
-is formed in one place:
+`core/utils/interaction_errors.py`. This module holds the other two, and the change queue's
+lines, so that each standard line is formed in one place:
 
 - **`refuse`** answers the member, seen by them alone, and writes one line:
   "⛔ {what} refused for {member} — {reason}". The line itself is **`record_refusal`**'s, which
@@ -101,6 +101,72 @@ def refusal_line(named: str, what: str, reason: str, *, detail: str | None = Non
     """
     line = f"⛔ {what} refused for {named} — {reason}"
     return f"{line}\n{detail}" if detail else line
+
+
+def stop_line(job_id: int, job: str, request: str, asker: str, fault: str) -> str:
+    """The log channel's line for the queue stopping at job *job_id*, *job* being what it does,
+    *request* the change it belongs to, *asker* who asked and *fault* the kind of fault.
+
+    The change queue's line, formed here with the others.
+    """
+    return (
+        f"❌ The queue is stopped at job #{job_id}: {job} for {request} ({asker}) failed "
+        f"({fault}). The bot tries again 1, 5, 10, 15, 30 and 60 minutes after this; a league "
+        f"manager or admin may press Retry at any time, and a league admin may press Discard "
+        f"to drop it."
+    )
+
+
+def hour_line(job_id: int, job: str) -> str:
+    """The log channel's line for job *job_id* still failing after an hour: the bot tries no more
+    on its own."""
+    return (
+        f"❌ Job #{job_id} ({job}) still fails after an hour. The bot has stopped trying on its "
+        f"own: press Retry on its notice, or Discard."
+    )
+
+
+def restart_line(job_id: int, job: str) -> str:
+    """The log channel's line for the queue still stopped at job *job_id* after a restart: the bot
+    no longer tries it on its own."""
+    return (
+        f"❌ The queue is still stopped at job #{job_id} ({job}). After the restart the bot no "
+        f"longer tries it on its own: press Retry or Discard on its notice."
+    )
+
+
+def went_through_line(job_id: int, job: str) -> str:
+    """The log channel's line for a stopped job *job_id* going through, on a try or a Retry: the
+    queue runs on."""
+    return f"✅ Job #{job_id} ({job}) went through. The queue runs on."
+
+
+def cleared_line(job_id: int, job: str, why: str) -> str:
+    """The log channel's line for a stopped job *job_id* clearing without going through, *why*
+    saying how: it was no longer due and was dropped, or its request was refused at its check.
+    The queue runs on."""
+    return f"ℹ️ Job #{job_id} ({job}) no longer stops the queue: {why}. The queue runs on."
+
+
+def retried_line(named: str, job_id: int, job: str, request: str) -> str:
+    """The log channel's line for *named* pressing Retry on job *job_id*, *job* being what it
+    does and *request* the change it belongs to."""
+    return f"{named} | Retry job #{job_id} | Retried\n  {job} for {request}"
+
+
+def retry_failed_line(named: str, job_id: int, job: str, fault: str) -> str:
+    """The log channel's line for the try *named* asked of job *job_id* failing, *fault* being the
+    kind of fault: the queue stays stopped, on the schedule it was on."""
+    return (
+        f"❌ Retry of job #{job_id} ({job}) by {named} failed ({fault}). The queue stays "
+        f"stopped."
+    )
+
+
+def discarded_line(named: str, job_id: int, job: str, request: str) -> str:
+    """The log channel's line for *named*, a league admin, discarding job *job_id*, *job* being
+    what it does and *request* the change it belongs to: what was not done is beneath it."""
+    return f"{named} | Discard job #{job_id} | Discarded\n  not done: {job} for {request}"
 
 
 async def record_refusal(

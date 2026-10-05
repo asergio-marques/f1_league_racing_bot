@@ -20,10 +20,11 @@ was recorded to find them by.
 
 **The switch-off is carried out on the change queue** (#439, defect 8). Its first step erases the
 rows, drops the flag and closes the rounds in one save, keeping the ids of every message to take
-down; a step for each message or channel then takes it down, tried once, and a closing step counts
-what went. These tests press the confirmation and run the queue to the end, and read the reply as
-the acknowledgement was updated. A message the bot could not remove is read from the links that
-reply carries.
+down; a job for each message or channel then takes it down, and a closing job counts what went.
+These tests press the confirmation and run the queue to the end, and read the reply as the
+acknowledgement was updated. A removal that fails stops the queue until it is cleared (owner,
+2026-10-02): the tests of a message the bot could not remove discard it as a league admin would,
+and read it from the links the reply then carries.
 
 Every test that constructs the confirmation view is `async def`: apt's discord.py 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it.
@@ -47,10 +48,12 @@ from tests.support.change_queue import (
     LOG_CHANNEL_ID,
     SERVER_ID,
     attach_queue,
+    discard_job,
     league_double,
     member,
     member_interaction,
     run_queue,
+    stopped_job,
     updated_reply,
 )
 from tests.support.teams import seed_team_instances
@@ -378,6 +381,18 @@ async def _disable(cog: ModuleCog) -> MagicMock:
     return interaction
 
 
+async def _disable_discarding(cog: ModuleCog) -> tuple[MagicMock, int]:
+    """Press the confirmation and run the queue, then discard, as a league admin, every job that
+    stops it, running the queue on after each. Gives the interaction and how many were discarded.
+    """
+    interaction = await _disable(cog)
+    discarded = 0
+    while await stopped_job(cog.bot.db_path) is not None and discarded < 10:
+        await discard_job(cog.bot)
+        discarded += 1
+    return interaction, discarded
+
+
 def _left_standing(reply: str) -> list[str]:
     """The link of every message the reply names as left standing, in the order named."""
     return re.findall(r"https://discord\.com/channels/\S+", reply)
@@ -608,8 +623,10 @@ async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
 
-    reply = updated_reply(await _disable(cog))
+    interaction, discarded = await _disable_discarding(cog)
+    reply = updated_reply(interaction)
 
+    assert discarded == 1
     assert "1 verdict(s) removed" in reply
     assert _left_standing(reply) == [_link(VERDICTS_CHANNEL_ID, 5001)]
     assert cog.bot.channels[VERDICTS_CHANNEL_ID].deleted_messages == [6001]
@@ -622,7 +639,10 @@ async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
 
-    reply = updated_reply(await _disable(cog))
+    interaction, discarded = await _disable_discarding(cog)
+    reply = updated_reply(interaction)
+
+    assert discarded == 1
 
     assert _left_standing(reply) == [_link(RESULTS_CHANNEL_ID, 1000)]
     # the two standings messages, and not the results one
@@ -636,7 +656,10 @@ async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[STANDINGS_CHANNEL_ID].refuse = {3000}
 
-    reply = updated_reply(await _disable(cog))
+    interaction, discarded = await _disable_discarding(cog)
+    reply = updated_reply(interaction)
+
+    assert discarded == 1
 
     assert _left_standing(reply) == [_link(STANDINGS_CHANNEL_ID, 3000)]
     assert "2 results and standings message(s)" in reply
@@ -650,9 +673,10 @@ async def test_the_reply_links_a_verdict_left_standing(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
 
-    interaction = await _disable(cog)
+    interaction, discarded = await _disable_discarding(cog)
 
     reply = updated_reply(interaction)
+    assert discarded == 1
     assert "1 message(s) could not be removed" in reply
     assert _link(VERDICTS_CHANNEL_ID, 5001) in reply
 
@@ -679,7 +703,10 @@ async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
     cog = _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {7001}
 
-    reply = updated_reply(await _disable(cog))
+    interaction, discarded = await _disable_discarding(cog)
+    reply = updated_reply(interaction)
+
+    assert discarded == 1
 
     assert _left_standing(reply) == [_link(VERDICTS_CHANNEL_ID, 7001)]
     assert await _count(db_path, "verdict_banner_messages") == 1
@@ -729,11 +756,14 @@ async def test_a_guild_out_of_cache_still_erases_the_rows(tmp_path) -> None:
 
     Nor to leave the league guessing what is still posted: every message is named with its link,
     built from the ids saved with the switch-off and the league's server as the bot records it,
-    for removal by hand, and none is counted as removed (#439).
+    for removal by hand, and none is counted as removed (#439). Each of the four removals (the
+    three messages and the round's submission channel) stops the queue until a league admin
+    discards it.
     """
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    interaction = await _disable(_make_cog(db_path, guild=False))
+    interaction, discarded = await _disable_discarding(_make_cog(db_path, guild=False))
 
+    assert discarded == 4
     assert await _count(db_path, "session_results") == 0
     assert await _count(db_path, "driver_standings_snapshots") == 0
     reply = updated_reply(interaction)

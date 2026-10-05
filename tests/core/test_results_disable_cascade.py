@@ -24,7 +24,6 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
@@ -45,10 +44,18 @@ from tests.support.change_queue import (
 SERVER_ID = 6611
 ACTOR_ID = 4242
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-ACKNOWLEDGEMENT = (
-    "⏳ Turning Results & Standings off. This message will be updated when it is done; "
-    "if it takes longer, the log channel will say so."
-)
+#: The opening of the line the queue writes when a job stops it.
+STOPPED_AT = "❌ The queue is stopped at job #"
+
+
+def _acknowledges(text: str) -> bool:
+    """Whether *text* is the admin's acknowledgement: the switch-off under way, to be updated when
+    it is done. The job number it also names is pinned in `test_change_queue.py`."""
+    return (
+        text.startswith("⏳ Turning Results & Standings off")
+        and "This message will be updated when it is done" in text
+        and "the log channel will say so." in text
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -327,9 +334,9 @@ async def test_only_the_actor_may_confirm(tmp_path):
 async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     tmp_path, monkeypatch,
 ):
-    """The disable goes through, and a season that could not be wound down afterwards is
-    reported in a line of its own: the wind-down is a change of its own, asked for in the
-    switch-off's save, so its fault names it and the switch-off's line carries no "not done"
+    """The disable goes through, and a season that could not be wound down afterwards stops the
+    queue at the wind-down's own job: the wind-down is a change of its own, asked for in the
+    switch-off's save, so the stop names it and the switch-off's line carries no "not done"
     (#439)."""
     from leaguebot.core.services import hub_service, season_lifecycle_service
 
@@ -363,13 +370,11 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     first, *beneath = switch_off[0].splitlines()
     assert first.startswith(f"Admin (`<@{ACTOR_ID}>`) | /module disable results")
     assert not any(text.startswith("  not done:") for text in beneath)
-    assert any(
-        line.startswith(
-            "❌ Winding the season down after `/module disable results` failed for "
-            f"Admin (`<@{ACTOR_ID}>`) — RuntimeError. The details are in the host's log."
-        )
-        for line in lines
-    )
+    [stop] = [line for line in lines if line.startswith(STOPPED_AT)]
+    assert "winding the season down" in stop
+    assert "`/module disable results`" in stop
+    assert f"Admin (`<@{ACTOR_ID}>`)" in stop
+    assert "failed (RuntimeError)." in stop
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +396,7 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     await cog._disable_results(interaction)
 
     interaction.response.defer.assert_not_awaited()
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     assert "view" not in interaction.response.send_message.await_args.kwargs
 
     await run_queue(cog.bot)

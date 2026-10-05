@@ -76,7 +76,7 @@ class TestOutputRouterEnqueuesOnFailure:
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, retry_db_path=db_path)
+        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
 
         mock_channel = _make_text_channel_mock(
             send_side_effect=discord.HTTPException(
@@ -96,7 +96,7 @@ class TestOutputRouterEnqueuesOnFailure:
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, retry_db_path=db_path)
+        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
 
         mock_channel = _make_text_channel_mock(
             send_side_effect=discord.Forbidden(MagicMock(status=403), "missing access")
@@ -113,7 +113,7 @@ class TestOutputRouterEnqueuesOnFailure:
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, retry_db_path=None)
+        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=None)
 
         mock_channel = _make_text_channel_mock(
             send_side_effect=discord.HTTPException(MagicMock(status=503), "error")
@@ -130,7 +130,7 @@ class TestOutputRouterEnqueuesOnFailure:
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, retry_db_path=db_path)
+        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
 
         mock_channel = _make_text_channel_mock(
             send_side_effect=discord.HTTPException(MagicMock(status=503), "error")

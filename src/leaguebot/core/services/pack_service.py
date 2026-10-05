@@ -12,14 +12,16 @@ short of completed or cancelled, which is read off the lifecycle `stage` rather 
 coarser `status`. A current season's divisions are built on this server's roles and channels,
 and a league does not pack up and leave with one under way.
 
-**Changes still waiting are dropped.** A change in the queue (`change_queue`) that has not
-finished, queued, running or waiting on a retry, is deleted with its steps: left alone it would
-go on changing Discord on a server the bot no longer serves, which a pack must not do. A change
-the worker is running as the pack lands saves nothing, since its mark finds no row (see
-`ChangeQueue`). The reply does not name them.
+**Refused while the queue holds a job** (decided 2026-10-02): a change in the queue
+(`change_queue`) that has not finished, queued, running or stopped on a failed job, would go on
+changing Discord on a server the bot no longer serves. A pack does not drop it: it is refused,
+naming the job it would wait on, so that the admin lets the queue empty, or presses Retry or
+Discard on a stopped job's notice, and packs again. A pack therefore finds only finished
+changes, which are history and stay with their jobs, and has none to delete.
 
-**One transaction.** The check and every write share one `BEGIN IMMEDIATE`, so a season set
-up between the check and the release cannot be stranded on a server the bot has left. The
+**One transaction.** The checks and every write share one `BEGIN IMMEDIATE`, so a season or a
+change set up between the checks and the release cannot be stranded on a server the bot has
+left, nor go on changing a server it has. The
 audit entry shares it too (issue #383): every pack that takes effect is recorded, and a
 refused one records nothing.
 
@@ -56,12 +58,29 @@ KEPT_JOBS: frozenset[str] = frozenset({PORTRAIT_REFRESH_JOB_ID})
 
 
 class PackRefused(Exception):
-    """The league has a current season. Carries its number and stage for the refusal."""
+    """The pack is refused, for one of two reasons the command words for the admin.
 
-    def __init__(self, season_number: int, stage: str | None) -> None:
+    The league has a current season: *season_number* and *stage* say which. Or the queue
+    holds a job: *job_id* is the job the pack would wait on, and *stopped* says it failed and
+    holds the queue until Retry or Discard. The other pair is then None (or False).
+    """
+
+    def __init__(
+        self,
+        season_number: int | None = None,
+        stage: str | None = None,
+        *,
+        job_id: int | None = None,
+        stopped: bool = False,
+    ) -> None:
         self.season_number = season_number
         self.stage = stage
-        super().__init__(f"season {season_number} is current (stage {stage})")
+        self.job_id = job_id
+        self.stopped = stopped
+        if job_id is not None:
+            super().__init__(f"the queue holds job #{job_id}" + (" (stopped)" if stopped else ""))
+        else:
+            super().__init__(f"season {season_number} is current (stage {stage})")
 
 
 @dataclass(frozen=True)
@@ -72,6 +91,23 @@ class PackResult:
     wizards: int
     queued_messages: int
     scheduled_jobs: int
+
+
+async def pending_job(db) -> tuple[int, bool] | None:
+    """The job a pack would wait on as (number, stopped), or None where the queue is empty.
+
+    The first job not yet done of the oldest change still open, which is the one the worker
+    runs next, or the one holding it where it has failed (*stopped*): the queue runs in order.
+    """
+    row = await (
+        await db.execute(
+            "SELECT s.id, s.failing_since IS NOT NULL FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id "
+            "WHERE c.state IN ('QUEUED', 'RUNNING') AND s.done_at IS NULL "
+            "ORDER BY c.id, s.position LIMIT 1"
+        )
+    ).fetchone()
+    return None if row is None else (int(row[0]), bool(row[1]))
 
 
 async def current_season(db) -> tuple[int, str | None] | None:
@@ -144,6 +180,9 @@ async def pack(
             season = await current_season(db)
             if season is not None:
                 raise PackRefused(*season)
+            job = await pending_job(db)
+            if job is not None:
+                raise PackRefused(job_id=job[0], stopped=job[1])
 
             cleared = await _cleared_configuration(db)
 
@@ -151,12 +190,7 @@ async def pack(
             wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
             queued = (await db.execute("DELETE FROM pending_messages")).rowcount
             await db.execute("DELETE FROM season_review_prompts")
-            # A change still waiting would go on changing Discord on a server the bot no
-            # longer serves. The finished ones are history and stay; the steps go with their
-            # change.
-            await db.execute(
-                "DELETE FROM queued_changes WHERE state IN ('QUEUED', 'RUNNING', 'WAITING')"
-            )
+            # No change is open (refused above), so the queue holds only history, which stays.
 
             # The signup module stays enabled with nothing configured, which is the state
             # `/module enable signup` itself leaves it in.

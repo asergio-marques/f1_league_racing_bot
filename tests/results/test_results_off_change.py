@@ -3,10 +3,14 @@
 `/module disable results` used to commit the flag, then erase the season over many calls to
 Discord, and only then close the rounds waiting on results. A stop between the first and the last
 left rounds nothing could ever close, and a season that could never be completed. The switch-off
-is now one change on the queue: its first step erases the season's rows, drops the flag and closes
-the rounds in one save, keeping the ids of every message to take down; one step for each message
-or channel then takes it down, tried once; a closing step counts what went. The hub refresh and
-the season's wind-down are changes of their own, asked for in the switch-off's save.
+is now one change on the queue: its first job erases the season's rows, drops the flag and closes
+the rounds in one save, keeping the ids of every message to take down; one job for each message
+or channel then takes it down; a closing job counts what went. The hub refresh and the season's
+wind-down are changes of their own, asked for in the switch-off's save.
+
+A job that fails stops the queue until it is cleared (owner, 2026-10-02): the bot tries it again
+after 1, 5, 10, 15, 30 and 60 minutes, then only Retry moves it on, and a league admin's Discard
+drops it. A removal discarded is named to the league with its link and not counted.
 
 These run the real change types the builder registers, through the confirmation the league
 presses, on a database built by the migrations, with "now" pinned. Discord is a fake server whose
@@ -35,6 +39,7 @@ from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
     change_rows,
+    discard_job,
     http_error,
     league_double,
     maybe_await,
@@ -43,7 +48,7 @@ from tests.support.change_queue import (
     restart_queue,
     run_queue,
     seed_server,
-    step_rows,
+    stopped_job,
     updated_reply,
 )
 from tests.support.teams import seed_team_instances
@@ -52,11 +57,17 @@ NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 WHAT = "`/module disable results`"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-ACKNOWLEDGEMENT = (
-    "⏳ Turning Results & Standings off. This message will be updated when it is done; "
-    "if it takes longer, the log channel will say so."
-)
 SUCCESS = "✅ Results & Standings module disabled."
+NOTHING_CHANGED = "Nothing was changed: Results & Standings is still on."
+COMPLETABLE = "the season can still be completed"
+#: The rest of that sentence: some of the season's messages may remain, for removal by hand.
+MAY_REMAIN = "may still be posted — delete them by hand"
+#: The stop line's opening and the line after the hour, as the queue writes them.
+STOPPED_AT = "❌ The queue is stopped at job #"
+HOUR_LINE = (
+    "❌ Job #{id} ({job}) still fails after an hour. The bot has stopped trying on its own: "
+    "press Retry on its notice, or Discard."
+)
 
 RESULTS_CHANNEL_ID = 9001
 STANDINGS_CHANNEL_ID = 9002
@@ -66,6 +77,16 @@ AMEND_CHANNEL_ID = 9100
 
 def _link(channel_id: int, message_id: int) -> str:
     return f"https://discord.com/channels/{SERVER_ID}/{channel_id}/{message_id}"
+
+
+def _acknowledges(text: str) -> bool:
+    """Whether *text* is the admin's acknowledgement: the switch-off under way, to be updated when
+    it is done. The job number it also names is pinned in `test_change_queue.py`."""
+    return (
+        text.startswith("⏳ Turning Results & Standings off")
+        and "This message will be updated when it is done" in text
+        and "the log channel will say so." in text
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +398,23 @@ def _deleted(bot: Any, channel_id: int) -> list[int]:
     return sorted(bot.channels[channel_id].deleted_messages)
 
 
+async def _stop_lines(bot: Any) -> list[str]:
+    return [line for line in await _lines(bot) if line.startswith(STOPPED_AT)]
+
+
+async def _discard_line(bot: Any, job_id: int) -> str:
+    """The log line recording the admin's Discard of job #*job_id*, with what was not done."""
+    return await _line_starting(bot, f"{NAMED} | Discard job #{job_id} | Discarded")
+
+
+async def _stopped_change(db_path: str) -> dict[str, Any]:
+    """The change whose job the queue is stopped at."""
+    job = await stopped_job(db_path)
+    assert job is not None, "the queue is not stopped"
+    [change] = [row for row in await change_rows(db_path) if row["id"] == job["change_id"]]
+    return change
+
+
 # ---------------------------------------------------------------------------
 # The switch-off, in one save — defect 8
 # ---------------------------------------------------------------------------
@@ -458,23 +496,52 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
 
 
 async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_path):
-    from leaguebot.core.utils.interaction_errors import failure_reply
-
+    """The switch-off's save failing stops the queue at it, with nothing saved: the stop names the
+    fault, the admin's reply says the request is stopped at that job, and results is still on."""
     seeded = await _seed(tmp_path)
     await _closing_the_rounds_fails(seeded.db_path)
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
     await run_queue(bot)
 
-    assert updated_reply(interaction) == failure_reply(
-        WHAT, "Nothing was changed: Results & Standings is still on."
+    job = await stopped_job(seeded.db_path)
+    assert job is not None and job["name"] == "switch_off"
+    [stop] = await _stop_lines(bot)
+    assert f"for {WHAT} ({NAMED}) failed (IntegrityError)." in stop
+    reply = updated_reply(interaction)
+    assert reply.startswith("❌") and f"job #{job['id']}" in reply
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "RUNNING"
+    assert await _flag(seeded.db_path) == 1
+    assert await _count(seeded.db_path, "session_results") == 1
+
+
+async def test_a_discarded_switch_off_says_nothing_was_changed(tmp_path):
+    """A league admin discarding the switch-off whose save failed leaves results on and the season
+    untouched, and the admin's reply says nothing was changed. The stop notice and the Discard line
+    name the job as turning Results & Standings off."""
+    seeded = await _seed(tmp_path)
+    await _closing_the_rounds_fails(seeded.db_path)
+    bot = _league(seeded.db_path)
+    interaction = await _confirm(bot)
+    await run_queue(bot)
+    job = await stopped_job(seeded.db_path)
+    [stop] = await _stop_lines(bot)
+    assert stop.startswith(
+        f"{STOPPED_AT}{job['id']}: turning Results & Standings off for {WHAT} ({NAMED}) failed"
     )
-    assert any(
-        line.startswith(f"❌ {WHAT} failed for {NAMED} — IntegrityError. "
-                        "The details are in the host's log.")
-        for line in await _lines(bot)
+
+    await discard_job(bot)
+
+    assert (
+        f"not done: turning Results & Standings off for {WHAT}"
+        in await _discard_line(bot, job["id"])
     )
-    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "FAULTED"
+    assert NOTHING_CHANGED in updated_reply(interaction)
+    assert COMPLETABLE not in updated_reply(interaction)
+    assert await stopped_job(seeded.db_path) is None
+    assert await _flag(seeded.db_path) == 1
+    assert await _count(seeded.db_path, "session_results") == 1
+    assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "AWAITING_RESULTS"
 
 
 # ---------------------------------------------------------------------------
@@ -526,8 +593,13 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
 
 
-async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_counted(tmp_path):
-    """The owner's "Try once" (2026-10-01): handed to the league, never retried."""
+async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_linked_not_counted(
+    tmp_path,
+):
+    """A removal Discord refuses stops the queue and is tried again a minute on, like any job (owner,
+    2026-10-02, withdrawing "Try once"); once a league admin discards it, its message is linked for
+    removal by hand and not counted. The stop notice and the Discard line name the job by what it
+    removes and that message's link, so a manager knows what to fix before pressing Retry."""
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
     bot = _league(seeded.db_path)
@@ -535,10 +607,22 @@ async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_coun
     interaction = await _confirm(bot)
 
     await run_queue(bot)
-    bot.clock.advance(hours=2)
+    job = await stopped_job(seeded.db_path)
+    assert job["name"] == "take_down"
+    removal = f"removing the verdict ({_link(VERDICTS_CHANNEL_ID, 5001)})"
+    [stop] = await _stop_lines(bot)
+    assert stop.startswith(
+        f"{STOPPED_AT}{job['id']}: {removal} for {WHAT} ({NAMED}) failed (Forbidden)."
+    )
+    bot.clock.advance(minutes=1)
     await run_queue(bot)
+    assert bot.channels[VERDICTS_CHANNEL_ID].attempts.count(5001) == 2
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "RUNNING"
 
-    assert bot.channels[VERDICTS_CHANNEL_ID].attempts.count(5001) == 1
+    await discard_job(bot)
+
+    assert bot.channels[VERDICTS_CHANNEL_ID].attempts.count(5001) == 2
+    assert f"not done: {removal} for {WHAT}" in await _discard_line(bot, job["id"])
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     reply = updated_reply(interaction)
     assert "1 verdict(s) removed" in reply
@@ -551,6 +635,8 @@ async def test_a_message_the_bot_cannot_remove_is_tried_once_and_linked_not_coun
 async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_line_with_their_links(  # noqa: E501
     tmp_path,
 ):
+    """Two removals Discord refuses each stop the queue; once a league admin discards both, both
+    messages are linked in the admin's reply and in the closing line."""
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
     bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
@@ -558,6 +644,8 @@ async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_li
     interaction = await _confirm(bot)
 
     await run_queue(bot)
+    await discard_job(bot)
+    await discard_job(bot)
 
     links = {_link(RESULTS_CHANNEL_ID, 1000), _link(STANDINGS_CHANNEL_ID, 2000)}
     reply = updated_reply(interaction)
@@ -596,8 +684,8 @@ async def test_the_closing_line_counts_what_was_removed(tmp_path):
 
 
 async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(tmp_path):
-    from leaguebot.core.utils.interaction_errors import failure_reply
-
+    """A removal failing on the bot's own fault stops the queue after the switch-off; once a league
+    admin discards it, the reply says the season can still be completed and links its message."""
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
     bot.broken = {RESULTS_CHANNEL_ID}
@@ -605,13 +693,57 @@ async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(t
 
     await run_queue(bot)
 
-    assert updated_reply(interaction) == failure_reply(
-        WHAT,
-        "Results & Standings is off and every round waiting on results is closed, so the "
-        "season can still be completed, but some of its results, standings and verdicts may "
-        "still be posted — delete them by hand.",
+    assert (await stopped_job(seeded.db_path))["name"] == "take_down"
+    [stop] = await _stop_lines(bot)
+    assert "failed (RuntimeError)." in stop
+    assert await _flag(seeded.db_path) == 0
+    assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "FINAL"
+
+    await discard_job(bot)
+
+    reply = updated_reply(interaction)
+    assert COMPLETABLE in reply
+    assert _link(RESULTS_CHANNEL_ID, 1000) in reply
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
+
+
+async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_completed(
+    tmp_path, monkeypatch,
+):
+    """The closing job failing after every message is down stops the queue; once a league admin
+    discards it, the admin's reply still says the season can still be completed and that some of
+    its messages may remain for removal by hand, and counts what the removals did take down. The
+    stop notice and the Discard line name the job as counting what was removed."""
+    from leaguebot.results.services import results_off_change
+
+    monkeypatch.setattr(
+        results_off_change, "_forget_banners_on", AsyncMock(side_effect=RuntimeError("stuck"))
     )
-    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "FAULTED"
+    seeded = await _seed(tmp_path)
+    await _announce_verdicts(seeded.db_path)
+    bot = _league(seeded.db_path)
+    interaction = await _confirm(bot)
+    await run_queue(bot)
+    job = await stopped_job(seeded.db_path)
+    assert job["name"] == "close"
+    [stop] = await _stop_lines(bot)
+    assert stop.startswith(
+        f"{STOPPED_AT}{job['id']}: counting what was removed for {WHAT} ({NAMED}) failed "
+        "(RuntimeError)."
+    )
+
+    await discard_job(bot)
+
+    assert (
+        f"not done: counting what was removed for {WHAT}" in await _discard_line(bot, job["id"])
+    )
+
+    reply = updated_reply(interaction)
+    assert COMPLETABLE in reply
+    assert MAY_REMAIN in reply
+    assert NOTHING_CHANGED not in reply
+    assert "3 results and standings message(s) and 2 verdict(s) removed" in reply
+    assert await stopped_job(seeded.db_path) is None
     assert await _flag(seeded.db_path) == 0
     assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "FINAL"
 
@@ -643,6 +775,8 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path, monkeyp
 async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off_stands(
     tmp_path, monkeypatch,
 ):
+    """The wind-down failing stops the queue at its job, named as winding the season down; the
+    switch-off, done before it, stands, and the admin's reply is its success."""
     from leaguebot.core.services import season_lifecycle_service
 
     monkeypatch.setattr(
@@ -655,23 +789,23 @@ async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off
 
     await run_queue(bot)
 
-    lines = await _lines(bot)
-    assert any(
-        line.startswith(f"❌ Winding the season down after {WHAT} failed for {NAMED} — "
-                        "RuntimeError. The details are in the host's log.")
-        for line in lines
-    )
-    assert not any("not done" in line for line in lines)
+    [stop] = await _stop_lines(bot)
+    assert "winding the season down" in stop
+    assert "failed (RuntimeError)." in stop
+    assert (await _stopped_change(seeded.db_path))["kind"] == "season.wind_down"
+    assert not any("not done" in line for line in await _lines(bot))
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     assert await _flag(seeded.db_path) == 0
     assert await _round_status(seeded.db_path, seeded.round_ids[0]) == "FINAL"
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
-async def test_a_wind_down_discord_keeps_failing_is_reported_as_still_at_work_after_an_hour(
+async def test_a_wind_down_discord_keeps_failing_says_only_retry_continues_after_the_hour(
     tmp_path, monkeypatch,
 ):
-    """The wind-down is not tried once: Discord failing it is retried, and reported after an hour."""
+    """Discord failing the wind-down stops the queue: the bot tries it again 1, 5, 10, 15, 30 and
+    60 minutes after the first failure, then writes one ❌ line saying only Retry continues, and
+    tries it no more."""
     from leaguebot.core.services import season_lifecycle_service
 
     monkeypatch.setattr(
@@ -683,25 +817,25 @@ async def test_a_wind_down_discord_keeps_failing_is_reported_as_still_at_work_af
     await _confirm(bot)
     await run_queue(bot)
 
-    def _still_at_work(lines: list[str]) -> list[str]:
-        return [line for line in lines if "is still at work" in line]
+    def _after_the_hour(lines: list[str]) -> list[str]:
+        return [line for line in lines if "still fails after an hour" in line]
 
-    while bot.clock.now - NOW < timedelta(hours=1):
-        assert _still_at_work(await _lines(bot)) == []
-        [step] = [s for s in await step_rows(seeded.db_path)
-                  if s["done_at"] is None and s["next_try_at"]]
-        bot.clock.now = datetime.fromisoformat(step["next_try_at"])
+    for minutes in (1, 5, 10, 15, 30):
+        bot.clock.now = NOW + timedelta(minutes=minutes)
         await run_queue(bot)
+        assert _after_the_hour(await _lines(bot)) == []
+    bot.clock.now = NOW + timedelta(minutes=60)
+    await run_queue(bot)
 
-    [line] = _still_at_work(await _lines(bot))
-    assert line.startswith(
-        f"⚠️ Winding the season down after {WHAT} for {NAMED} is still at work: it has failed "
-        "for over an hour ("
-    )
-    assert "Missing Access" in line
-    divider = "\n" + "\u2015" * 36
-    assert line.removesuffix(divider).endswith("). The bot keeps trying.")
-    assert (await _change(seeded.db_path, "season.wind_down"))["state"] == "WAITING"
+    job = await stopped_job(seeded.db_path)
+    hour = HOUR_LINE.format(id=job["id"], job="winding the season down")
+    assert [line.split("\n")[0] for line in _after_the_hour(await _lines(bot))] == [hour]
+    assert job["next_try_at"] is None
+    assert job["tries"] == 7
+    bot.clock.now = NOW + timedelta(days=1)
+    await run_queue(bot)
+    assert (await stopped_job(seeded.db_path))["tries"] == 7
+    assert (await _change(seeded.db_path, "season.wind_down"))["state"] == "RUNNING"
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
@@ -727,6 +861,8 @@ async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path, monkeypatch)
 async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     tmp_path, monkeypatch,
 ):
+    """The hub refresh failing stops the queue at the refresh's own job, named as refreshing the
+    hub panel; the switch-off, done before it, keeps its success."""
     from leaguebot.core.services import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(side_effect=RuntimeError("x")))
@@ -736,13 +872,11 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
 
     await run_queue(bot)
 
-    lines = await _lines(bot)
-    assert any(
-        line.startswith(f"❌ Refreshing the hub panel after {WHAT} failed for {NAMED} — "
-                        "RuntimeError. The details are in the host's log.")
-        for line in lines
-    )
-    assert not any(line.startswith(f"❌ {WHAT} failed") for line in lines)
+    [stop] = await _stop_lines(bot)
+    assert "refreshing the hub panel" in stop
+    assert "failed (RuntimeError)." in stop
+    assert (await _stopped_change(seeded.db_path))["kind"] == "hub.refresh"
+    assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
@@ -823,7 +957,7 @@ async def test_a_switch_off_asked_while_results_is_on_and_run_once_it_is_off_is_
     await run_queue(bot)
 
     refusal = "⚠️ Results & Standings module is already disabled."
-    assert acknowledgement(second) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(second))
     assert updated_reply(second) == refusal
     assert f"⛔ {WHAT} refused for {NAMED} — Results & Standings module is already disabled." in (
         "\n".join(await _lines(bot))
@@ -890,7 +1024,7 @@ async def test_the_admin_is_told_at_once_and_the_reply_is_updated_with_what_went
     bot = _league(seeded.db_path)
     interaction = await _confirm(bot)
 
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     interaction.response.defer.assert_not_awaited()
     interaction.edit_original_response.assert_not_awaited()
 
@@ -919,12 +1053,21 @@ async def test_an_outcome_after_a_restart_is_left_to_the_log_channel(tmp_path):
 async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_left_standing(
     tmp_path,
 ):
+    """With the league's server out of the cache, each of the four removals (three messages and the
+    round's submission channel) stops the queue; once a league admin discards each, the rows are
+    erased and all three messages are linked."""
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path, guild=False)
     interaction = await _confirm(bot)
 
     await run_queue(bot)
+    discarded = 0
+    while await stopped_job(seeded.db_path) is not None and discarded < 10:
+        assert (await stopped_job(seeded.db_path))["name"] == "take_down"
+        await discard_job(bot)
+        discarded += 1
 
+    assert discarded == 4
     assert await _count(seeded.db_path, "session_results") == 0
     assert await _count(seeded.db_path, "penalty_records") == 0
     reply = updated_reply(interaction)

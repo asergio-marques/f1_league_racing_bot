@@ -10,10 +10,11 @@ Everything of the queue is imported inside a test, so this file collects while i
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -29,6 +30,7 @@ from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
     change_rows,
+    discard_job,
     http_error,
     league_double,
     maybe_await,
@@ -40,6 +42,7 @@ from tests.support.change_queue import (
     run_queue,
     seed_server,
     step_rows,
+    stopped_job,
     updated_reply,
 )
 
@@ -49,10 +52,29 @@ WHAT = "`/dummy`"
 DOING = "Doing the dummy thing"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
 NAMED = f"Admin (`<@{MEMBER_ID}>`)"
-ACKNOWLEDGEMENT = (
-    f"⏳ {DOING}. This message will be updated when it is done; if it takes longer, "
-    "the log channel will say so."
+#: The stop line's opening, the job and the request it names filled in.
+STOPPED_AT = "❌ The queue is stopped at job #{id}: {job} for {request} ({asker}) failed ({fault})."
+#: The lines of a stopped job, its number and what it was filled in.
+WENT_THROUGH = "✅ Job #{id} ({job}) went through. The queue runs on."
+RESTART_LINE = (
+    "❌ The queue is still stopped at job #{id} ({job}). After the restart the bot no longer "
+    "tries it on its own: press Retry or Discard on its notice."
 )
+HOUR_LINE = (
+    "❌ Job #{id} ({job}) still fails after an hour. The bot has stopped trying on its own: "
+    "press Retry on its notice, or Discard."
+)
+
+
+def _acknowledges(text: str) -> bool:
+    """Whether *text* is the member's acknowledgement: the change under way, to be updated when it
+    is done. The job number it also names is pinned by its own test."""
+    return (
+        text.startswith("⏳")
+        and DOING in text
+        and "This message will be updated when it is done" in text
+        and "the log channel will say so." in text
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -78,30 +100,37 @@ def _api() -> SimpleNamespace:
     )
 
 
-def _type(kind: str = "dummy", *, steps, check=None, outcome="✅ Done.",
-          fault_outcome="Nothing was changed.", places=(), repeatable=False,
-          overrides_waiting=False, opening=None) -> Any:
-    """A change type running *steps* in the order given, each opened with no payload."""
+def _type(kind: str = "dummy", *, steps, check=None, outcome="✅ Done.", repeatable=False,
+          opening=None) -> Any:
+    """A change type running *steps* in the order given, each opened with no payload.
+
+    A change type has no outcome for a fault, since a failure stops the queue rather than ending
+    the change; the queue built before that rule still demands one, so it is handed one only
+    where `ChangeType` declares it.
+    """
     api = _api()
 
     async def _go(_ctx):
         return api.Verdict.go()
 
+    declared = {f.name for f in dataclasses.fields(api.ChangeType)}
+    withdrawn: dict[str, Any] = (
+        {"fault_outcome": lambda _ctx: "Nothing was changed."}
+        if "fault_outcome" in declared else {}
+    )
     return api.ChangeType(
         kind=kind,
         opening=(
             tuple(opening) if opening is not None
-            else tuple(api.PlannedStep(s.name, {}, places=tuple(places)) for s in steps)
+            else tuple(api.PlannedStep(s.name, {}) for s in steps)
         ),
         steps={s.name: s for s in steps},
         check=check or _go,
         key=lambda payload: f"{kind}|{json.dumps(payload, sort_keys=True)}",
         doing=lambda _payload: DOING,
         outcome=outcome if callable(outcome) else (lambda _ctx: outcome),
-        fault_outcome=lambda _ctx: fault_outcome,
-        places=lambda _payload: tuple(places),
         repeatable=repeatable,
-        overrides_waiting=overrides_waiting,
+        **withdrawn,
     )
 
 
@@ -214,37 +243,63 @@ async def test_a_step_s_writes_and_its_mark_commit_together(env):
     assert [s["done_at"] for s in await step_rows(env.db_path)] == [None]
 
 
+
 async def test_a_fault_stops_the_change_and_keeps_what_earlier_steps_saved(env):
+    """A job the bot faults on stops the queue there: the jobs before it keep what they saved,
+    and neither the change's later jobs nor a change asked after it run."""
     ran: list[str] = []
-    _queue(env, _type(steps=[
-        _save("a", "first"), _save("b", "second", fails=RuntimeError("boom")), _act("c", ran),
-    ]))
+    _queue(
+        env,
+        _type(steps=[
+            _save("a", "first"), _save("b", "second", fails=RuntimeError("boom")), _act("c", ran),
+        ]),
+        _type("later", steps=[_act("later", ran)]),
+    )
 
     await _ask(env)
+    await _ask(env, "later")
     await run_queue(env.bot)
 
     assert await _scratch(env) == ["first"]
-    assert [bool(s["done_at"]) for s in await step_rows(env.db_path)] == [True, False, False]
+    assert [bool(s["done_at"]) for s in await step_rows(env.db_path)] == [
+        True, False, False, False,
+    ]
     assert ran == []
-    assert await _states(env) == ["FAULTED"]
+    assert await _states(env) == ["RUNNING", "QUEUED"]
+    assert (await stopped_job(env.db_path))["name"] == "b"
 
 
 async def test_a_fault_is_reported_to_the_member_the_log_channel_and_the_host(env, caplog):
-    from leaguebot.core.utils.interaction_errors import failure_reply
-
+    """The stop notice is one ❌ message in the log channel naming job #N, what it was, the
+    request, who asked and the kind of fault, carrying the Retry and Discard buttons; the member's
+    acknowledgement says the request is stopped at that job; the traceback is in the host's log."""
     caplog.set_level(logging.INFO)
-    _queue(env, _type(steps=[_act("a", [], fails=RuntimeError("boom"))],
-                      fault_outcome="Nothing was changed."))
+    api = _api()
+
+    async def _boom(_ctx):
+        raise RuntimeError("boom")
+
+    async def _describe(_ctx):
+        return "doing the dummy step"
+
+    _queue(env, _type(steps=[api.Step("a", api.StepKind.ACT, _boom, describe=_describe)]))
     interaction = member_interaction(env.bot)
 
     await _ask(env, interaction=interaction)
     await run_queue(env.bot)
 
-    assert updated_reply(interaction) == failure_reply(WHAT, "Nothing was changed.")
-    assert (
-        f"❌ {WHAT} failed for {NAMED} — RuntimeError. The details are in the host's log."
-        in "\n".join(await _lines(env))
+    job = await stopped_job(env.db_path)
+    stop = STOPPED_AT.format(
+        id=job["id"], job="doing the dummy step", request=WHAT, asker=NAMED, fault="RuntimeError",
     )
+    [notice] = [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+    assert "a league manager or admin may press Retry" in notice.content
+    assert "a league admin may press Discard" in notice.content
+    assert {child.custom_id for child in notice.view.children} == {"queue:retry", "queue:discard"}
+    assert job["notice_message_id"] == notice.id
+    reply = updated_reply(interaction)
+    assert reply.startswith("❌")
+    assert f"job #{job['id']}" in reply
     assert any("boom" in str(r.exc_info[1]) for r in _host_errors(caplog))
 
 
@@ -311,7 +366,7 @@ async def test_a_change_whose_check_fails_when_it_runs_is_refused_and_says_why(e
     holder["refuse"] = True
     await run_queue(env.bot)
 
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     assert updated_reply(interaction) == "⚠️ Not now."
     assert f"⛔ {WHAT} refused for {NAMED} — Not now." in "\n".join(await _lines(env))
     assert await _states(env) == ["REFUSED"]
@@ -341,35 +396,55 @@ async def test_a_bot_change_no_longer_due_is_dropped(env, caplog):
     assert any("the season has ended" in r.getMessage() for r in caplog.records)
 
 
-async def test_a_bot_change_lacking_what_the_league_can_repair_waits_and_says_so(env):
-    """It waits on the retries, and one line, not one per try, says what is missing."""
-    holder = {"repairable": False}
+
+async def test_a_bot_change_its_check_refuses_stops_the_queue_and_is_checked_at_each_try(env):
+    """A bot change its check refuses stops the queue before it starts, the stop line giving the
+    check's reason once, not once per try; the check runs again at each try, and once it lets the
+    change go, the change and those behind it run."""
+    holder = {"refused": False}
+    checks: list[str] = []
     ran: list[str] = []
 
     async def _check(_ctx):
         api = _api()
-        if holder["repairable"]:
-            return api.Verdict.repairable("the forecast channel is missing")
+        checks.append("checked")
+        if holder["refused"]:
+            return api.Verdict.refuse(
+                "The forecast channel is missing.", "the forecast channel is missing",
+            )
         return api.Verdict.go()
 
-    _queue(env, _type(steps=[_act("a", ran)], check=_check))
+    _queue(env, _type(steps=[_act("a", ran)], check=_check),
+           _type("later", steps=[_act("later", ran)]))
     api = _api()
 
     await _ask(env, origin=api.ChangeOrigin.BOT)
-    holder["repairable"] = True
+    await _ask(env, "later")
+    holder["refused"] = True
     await run_queue(env.bot)
 
-    assert await _states(env) == ["WAITING"]
+    assert await _states(env) == ["QUEUED", "QUEUED"]
     assert ran == []
+    assert (await stopped_job(env.db_path))["name"] == "a"
     saying = [line for line in await _lines(env) if "the forecast channel is missing" in line]
     assert len(saying) == 1
+    assert "The queue is stopped at job #" in saying[0]
 
-    env.clock.advance(seconds=30)
+    tried = len(checks)
+    env.clock.advance(minutes=1)
     await run_queue(env.bot)
 
+    assert len(checks) == tried + 1
     saying = [line for line in await _lines(env) if "the forecast channel is missing" in line]
     assert len(saying) == 1
     assert ran == []
+
+    holder["refused"] = False
+    env.clock.advance(minutes=4)
+    await run_queue(env.bot)
+
+    assert ran == ["a", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
 
 
 async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is_refused_saying_so(env):
@@ -383,16 +458,17 @@ async def test_a_request_repeating_the_last_change_asked_for_before_it_starts_is
         f"{DOING} has already been asked for and has not started yet, "
         "so it was not asked for again."
     )
-    assert acknowledgement(first) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(first))
     assert acknowledgement(second) == f"⚠️ {reason}"
     assert len(await change_rows(env.db_path)) == 1
     # The line drops the reply's opening mark, which its own mark replaces.
     assert f"⛔ {WHAT} refused for {NAMED} — {reason}" in "\n".join(await _lines(env))
 
 
+
 async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it(env):
     """Whatever became of the change asked for in between: here it has already finished, ahead of
-    a change held behind one waiting on a retry, and the held one may still be asked for again."""
+    changes held behind a stopped job, and the held one may still be asked for again."""
     api = _api()
     held = {"fail": api.StepFailedOnDiscord("Missing Access")}
 
@@ -403,9 +479,9 @@ async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it
 
     _queue(
         env,
-        _type("waiting", steps=[api.Step("post", api.StepKind.ACT, _fails)], places=("channel:1",)),
-        _type("dummy", steps=[_act("a", [])], places=("channel:1",)),
-        _type("elsewhere", steps=[_act("b", [])], places=("channel:2",)),
+        _type("stopping", steps=[api.Step("post", api.StepKind.ACT, _fails)]),
+        _type("dummy", steps=[_act("a", [])]),
+        _type("elsewhere", steps=[_act("b", [])]),
     )
 
     await _ask(env, "dummy")
@@ -414,7 +490,7 @@ async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it
     assert [r["kind"] for r in await change_rows(env.db_path)] == ["dummy", "elsewhere", "dummy"]
 
     await run_queue(env.bot)
-    await _ask(env, "waiting")
+    await _ask(env, "stopping")
     await run_queue(env.bot)
     await _ask(env, "dummy")
     await _ask(env, "elsewhere")
@@ -422,14 +498,14 @@ async def test_a_change_is_queued_again_once_another_has_been_asked_for_after_it
 
     rows = await change_rows(env.db_path)
     assert [(r["kind"], r["state"]) for r in rows[3:]] == [
-        ("waiting", "WAITING"), ("dummy", "QUEUED"), ("elsewhere", "DONE"),
+        ("stopping", "RUNNING"), ("dummy", "QUEUED"), ("elsewhere", "QUEUED"),
     ]
 
     await _ask(env, "dummy")
 
     rows = await change_rows(env.db_path)
     assert [(r["kind"], r["state"]) for r in rows[3:]] == [
-        ("waiting", "WAITING"), ("dummy", "QUEUED"), ("elsewhere", "DONE"), ("dummy", "QUEUED"),
+        ("stopping", "RUNNING"), ("dummy", "QUEUED"), ("elsewhere", "QUEUED"), ("dummy", "QUEUED"),
     ]
 
 
@@ -476,7 +552,7 @@ async def test_the_member_is_told_at_once_that_the_change_is_under_way(env):
 
     await _ask(env, interaction=interaction)
 
-    assert acknowledgement(interaction) == ACKNOWLEDGEMENT
+    assert _acknowledges(acknowledgement(interaction))
     assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
     assert interaction.edit_original_response.await_count == 0
     [row] = await change_rows(env.db_path)
@@ -815,8 +891,8 @@ async def test_the_worker_starts_once_though_the_bot_is_ready_twice(env):
 
 
 async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplog):
-    """As a pack or a factory reset would remove it while the step runs: the mark updates no
-    row, so the step's audits and lines are rolled back with it, and the host's log says so."""
+    """As a factory reset would remove it while the step runs: the mark updates no row, so the
+    step's audits and lines are rolled back with it, and the host's log says so."""
     caplog.set_level(logging.INFO)
     api = _api()
 
@@ -844,14 +920,17 @@ async def test_a_step_whose_change_was_removed_under_it_saves_nothing(env, caplo
                if r.name.endswith("change_queue"))
 
 
-async def test_a_change_of_a_kind_the_bot_no_longer_knows_is_faulted_not_lost(env):
+
+async def test_a_change_of_a_kind_the_bot_no_longer_knows_stops_the_queue_until_discarded(env):
+    """A change of a kind no longer registered stops the queue, named with its asker, and is
+    kept until a league admin discards it."""
     _queue(env)
     async with get_connection(env.db_path) as db:
         await db.execute(
             "INSERT INTO queued_changes (kind, dedup_key, payload, origin, state, actor_id, "
-            "actor_name, actor_display, what, places) "
+            "actor_name, actor_display, what) "
             "VALUES ('vanished', 'vanished', '{}', 'MEMBER', 'QUEUED', ?, 'Admin#0001', 'Admin', "
-            "'`/gone`', '[]')",
+            "'`/gone`')",
             (MEMBER_ID,),
         )
         await db.execute(
@@ -861,12 +940,19 @@ async def test_a_change_of_a_kind_the_bot_no_longer_knows_is_faulted_not_lost(en
 
     await run_queue(env.bot)
 
-    assert await _states(env) == ["FAULTED"]
-    assert f"❌ `/gone` failed for {NAMED}" in "\n".join(await _lines(env))
+    assert await _states(env) == ["QUEUED"]
+    stop = [line for line in await _lines(env) if "The queue is stopped at job #" in line]
+    assert len(stop) == 1
+    assert f"`/gone` ({NAMED})" in stop[0]
+
+    await discard_job(env.bot)
+
+    assert await _states(env) == ["DISCARDED"]
 
 
 async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
-    """The bot carries no `output_router`: the queue never looks one up on it."""
+    """The bot carries no `output_router`: the queue never looks one up on it. Its success line
+    and the stop notice of the job that faults both reach the log channel through the router."""
     router = env.bot.output_router
     del env.bot.output_router
     attach_queue(env.bot, env.db_path, now=env.clock, router=router, types=())
@@ -880,7 +966,10 @@ async def test_the_queue_writes_its_lines_through_the_router_it_was_handed(env):
 
     sent = "\n".join(env.bot.log_channel.sent)
     assert "Admin (`<@4242>`) | /dummy | Success" in sent
-    assert f"❌ {WHAT} failed for {NAMED} — RuntimeError." in sent
+    job = await stopped_job(env.db_path)
+    assert STOPPED_AT.format(
+        id=job["id"], job=WHAT, request=WHAT, asker=NAMED, fault="RuntimeError",
+    ) in sent
 
 
 # ---------------------------------------------------------------------------
@@ -976,9 +1065,11 @@ async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_r
     assert updated_reply(interaction) == "✅ The dummy thing is done."
 
 
-async def test_a_check_that_raises_faults_its_change_and_a_later_change_still_runs(env):
-    """A check raising as its change starts faults that change alone; so does an outcome that
-    cannot be worded, which leaves its change done. The changes behind each still run."""
+
+async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it_is_discarded(env):
+    """A check raising as its change starts stops the queue on that change, and the changes
+    behind it wait; once a league admin discards it they run. An outcome that cannot be worded
+    still leaves its change done."""
     holder = {"raise": False}
     ran: list[str] = []
 
@@ -1003,12 +1094,16 @@ async def test_a_check_that_raises_faults_its_change_and_a_later_change_still_ru
     holder["raise"] = True
     await run_queue(env.bot)
 
-    assert await _states(env) == ["FAULTED", "DONE", "DONE"]
+    assert await _states(env) == ["QUEUED", "QUEUED", "QUEUED"]
+    assert ran == []
+    stop = [line for line in await _lines(env) if "The queue is stopped at job #" in line]
+    assert len(stop) == 1
+    assert "`/checked`" in stop[0] and "(RuntimeError)" in stop[0]
+
+    await discard_job(env.bot)
+
+    assert await _states(env) == ["DISCARDED", "DONE", "DONE"]
     assert ran == ["w", "a"]
-    assert (
-        f"❌ `/checked` failed for {NAMED} — RuntimeError. The details are in the host's log."
-        in "\n".join(await _lines(env))
-    )
 
 
 async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monkeypatch):
@@ -1109,7 +1204,7 @@ async def test_an_interaction_already_answered_is_acknowledged_through_a_followu
 
     assert interaction.response.send_message.await_count == 0
     [sent] = interaction.followup.send.await_args_list
-    assert (sent.args[0] if sent.args else sent.kwargs.get("content")) == ACKNOWLEDGEMENT
+    assert _acknowledges(sent.args[0] if sent.args else sent.kwargs.get("content"))
     assert sent.kwargs.get("ephemeral") is True and sent.kwargs.get("wait") is True
     assert interaction.edit_original_response.await_count == 0
     [edit] = message.edit.await_args_list
@@ -1163,3 +1258,572 @@ async def test_a_refusal_s_reason_is_written_beneath_the_refusal_line(env):
     lines = "\n".join(await _lines(env))
     assert f"⛔ `/at-once` refused for {NAMED} — Not now.\n{detail}" in lines
     assert f"⛔ `/later` refused for {NAMED} — Not now.\n{detail}" in lines
+
+
+# ---------------------------------------------------------------------------
+# Jobs, and a queue stopped at one
+# ---------------------------------------------------------------------------
+
+
+
+
+def _fails_while(holder: dict, name: str = "post", *, ran: list | None = None, **step) -> Any:
+    """An `ACT` job failing with `holder["fail"]` while it is set, and going through once cleared."""
+    api = _api()
+
+    async def _run(_ctx):
+        if ran is not None:
+            ran.append(name)
+        if holder.get("fail") is not None:
+            raise holder["fail"]
+        return api.StepResult()
+
+    return api.Step(name, api.StepKind.ACT, _run, **step)
+
+
+def _described(text: str) -> Any:
+    async def _describe(_ctx):
+        return text
+
+    return _describe
+
+
+async def _try_at(env, minutes: float) -> None:
+    """Set the clock to *minutes* after NOW, and run the queue."""
+    env.clock.now = NOW + timedelta(minutes=minutes)
+    await run_queue(env.bot)
+
+
+async def test_every_job_has_its_own_id_that_planning_later_jobs_leaves_alone(env):
+    """Each job saved gets a number of its own, never shared with another job of any request, and
+    a job planning more jobs before the last one renumbers neither itself nor the last."""
+    api = _api()
+
+    async def _plan(db, _ctx):
+        return api.StepResult(then=(api.PlannedStep("each", {"n": 1}),
+                                    api.PlannedStep("each", {"n": 2})))
+
+    async def _each(_ctx):
+        return api.StepResult()
+
+    _queue(
+        env,
+        _type(steps=[api.Step("plan", api.StepKind.SAVE, _plan),
+                     api.Step("each", api.StepKind.ACT, _each), _act("last", [])],
+              opening=[api.PlannedStep("plan", {}), api.PlannedStep("last", {})]),
+        _type("other", steps=[_act("o", [])]),
+    )
+
+    await _ask(env)
+    await _ask(env, "other")
+    before = {s["name"]: s["id"] for s in await step_rows(env.db_path) if s["change_id"] == 1}
+    await run_queue(env.bot)
+
+    steps = await step_rows(env.db_path)
+    ids = [s["id"] for s in steps]
+    assert len(set(ids)) == len(ids) == 5
+    assert {s["name"]: s["id"] for s in steps if s["name"] in ("plan", "last")} == before
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def _numbered(env, *payloads: int) -> int:
+    """Ask for one change per payload and run them; give the highest job number saved."""
+    for n in payloads:
+        await _ask(env, payload={"n": n})
+    await run_queue(env.bot)
+    return max(s["id"] for s in await step_rows(env.db_path))
+
+
+async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_it(env, tmp_path):
+    """A state saved after job #1, then jobs #2 and #3 done, then the state restored: the next job
+    asked for is numbered above #3, so no number in the log channel names two jobs."""
+    from leaguebot.core.services import backup_service
+
+    _queue(env, _type(steps=[_act("a", [])]))
+    jobstore = str(tmp_path / "scheduler.db")
+    await _numbered(env, 1)
+    backup_service.save(env.db_path, jobstore)
+    highest = await _numbered(env, 2, 3)
+
+    backup_service.stage_restore(env.db_path, jobstore)
+    assert backup_service.apply_staged_restore(env.db_path, jobstore) is True
+    _queue(env, _type(steps=[_act("a", [])]))
+    await _ask(env, payload={"n": 4})
+
+    [job] = await step_rows(env.db_path)
+    assert job["id"] > highest
+
+
+async def test_a_job_after_a_factory_reset_is_numbered_above_every_job_before_it(env):
+    """Jobs #1 and #2 done, then a factory reset and the server set up again: the next job asked
+    for is numbered above #2, so no number in the log channel names two jobs."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.services import factory_reset_service
+
+    _queue(env, _type(steps=[_act("a", [])]))
+    highest = await _numbered(env, 1, 2)
+
+    await factory_reset_service.wipe(env.db_path, MagicMock())
+    await seed_server(env.db_path)
+    _queue(env, _type(steps=[_act("a", [])]))
+    await _ask(env, payload={"n": 3})
+
+    [job] = await step_rows(env.db_path)
+    assert job["id"] > highest
+
+
+async def test_the_acknowledgement_names_the_request_s_first_job(env):
+    """The member's acknowledgement names the job number of the request's first job."""
+    _queue(env, _type(steps=[_act("a", []), _act("b", [])]))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+
+    first, _second = await step_rows(env.db_path)
+    reply = acknowledgement(interaction)
+    assert _acknowledges(reply)
+    assert f"job #{first['id']}" in reply
+
+
+async def test_a_change_asked_while_the_queue_is_stopped_joins_the_back_and_says_so(env):
+    """A request made while the queue is stopped is saved and acknowledged as under way, the
+    acknowledgement adding that the queue is stopped at job #N; it runs only once that job is
+    cleared."""
+    api = _api()
+    holder = {"fail": api.StepFailedOnDiscord("Missing Access")}
+    ran: list[str] = []
+    _queue(env, _type("stopping", steps=[_fails_while(holder)]),
+           _type("dummy", steps=[_act("a", ran)]))
+
+    await _ask(env, "stopping")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    interaction = member_interaction(env.bot)
+    await _ask(env, "dummy", interaction=interaction)
+    await run_queue(env.bot)
+
+    reply = acknowledgement(interaction)
+    assert _acknowledges(reply)
+    assert f"stopped at job #{job['id']}" in reply
+    assert [(r["kind"], r["state"]) for r in await change_rows(env.db_path)] == [
+        ("stopping", "RUNNING"), ("dummy", "QUEUED"),
+    ]
+    assert ran == []
+
+    await discard_job(env.bot)
+
+    assert ran == ["a"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_a_switch_off_asked_while_the_queue_is_stopped_waits_behind_it(env):
+    """A switch-off is no exception: asked while the queue is stopped, it waits behind the stopped
+    job like any change, and runs once that job is cleared."""
+    api = _api()
+    holder = {"fail": api.StepFailedOnDiscord("Missing Access")}
+    ran: list[str] = []
+    switch_off = _type("switch_off", steps=[_act("off", ran)])
+    if "overrides_waiting" in {f.name for f in dataclasses.fields(api.ChangeType)}:
+        # The queue built before the rule let a switch-off overtake a waiting change.
+        switch_off = dataclasses.replace(switch_off, overrides_waiting=True)
+    _queue(env, _type("stopping", steps=[_fails_while(holder)]), switch_off)
+
+    await _ask(env, "stopping")
+    await run_queue(env.bot)
+    await _ask(env, "switch_off")
+    await run_queue(env.bot)
+
+    assert ran == []
+    assert await _states(env) == ["RUNNING", "QUEUED"]
+
+    await discard_job(env.bot)
+
+    assert ran == ["off"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_a_stop_is_retried_after_1_5_10_15_30_and_60_minutes_counted_from_the_first_failure(env):
+    """The bot's own tries fall 1, 5, 10, 15, 30 and 60 minutes after the job first failed, however
+    late a try before them ran: a try made at 3 minutes leaves the next at 5."""
+    ran: list[str] = []
+    holder = {"fail": RuntimeError("boom")}
+    _queue(env, _type(steps=[_fails_while(holder, ran=ran)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job["failing_since"] == NOW.isoformat()
+    marks = [datetime.fromisoformat(job["next_try_at"]) - NOW]
+
+    await _try_at(env, 3)
+    for at in (5, 10, 15, 30):
+        job = await stopped_job(env.db_path)
+        marks.append(datetime.fromisoformat(job["next_try_at"]) - NOW)
+        await _try_at(env, at - 0.5)
+        assert (await stopped_job(env.db_path))["tries"] == job["tries"]
+        await _try_at(env, at)
+    job = await stopped_job(env.db_path)
+    marks.append(datetime.fromisoformat(job["next_try_at"]) - NOW)
+
+    assert [mark.total_seconds() / 60 for mark in marks] == [1, 5, 10, 15, 30, 60]
+    assert len(ran) == 6
+    assert job["tries"] == 6
+    assert job["failing_since"] == NOW.isoformat()
+
+
+async def test_after_the_sixty_minute_try_fails_the_log_says_only_retry_continues_and_no_try_is_made(env):
+    """The 60-minute try that fails writes one ❌ line naming the job, by the change's own words
+    where the job has none; no try follows, and the worker is set to wake for none."""
+    ran: list[str] = []
+    _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")}, ran=ran)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    for at in (1, 5, 10, 15, 30, 60):
+        await _try_at(env, at)
+
+    job = await stopped_job(env.db_path)
+    hour = HOUR_LINE.format(id=job["id"], job=WHAT)
+    assert [line.split("\n")[0] for line in await _lines(env)
+            if "still fails after an hour" in line] == [hour]
+    assert job["next_try_at"] is None
+    assert len(ran) == 7
+
+    await _try_at(env, 60 * 24)
+
+    assert len(ran) == 7
+    assert await env.bot.change_queue._seconds_to_next_try() is None
+
+
+async def test_a_failed_automatic_try_writes_no_line_of_its_own(env):
+    """Only the stop is told: the tries at 1, 5, 10, 15 and 30 minutes that fail add nothing to the
+    log channel and leave the member's reply as the stop left it."""
+    _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")})]))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+    lines = await _lines(env)
+    edits = interaction.edit_original_response.await_count
+    assert any("The queue is stopped at job #" in line for line in lines)
+
+    for at in (1, 5, 10, 15, 30):
+        await _try_at(env, at)
+
+    assert (await stopped_job(env.db_path))["tries"] == 6
+    assert await _lines(env) == lines
+    assert interaction.edit_original_response.await_count == edits
+
+
+async def test_a_stopped_job_that_goes_through_says_so_and_the_queue_runs_on(env):
+    """A stopped job going through at a try writes one ✅ line naming it, and the jobs and
+    changes behind it run."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    _queue(
+        env,
+        _type(steps=[_fails_while(holder, describe=_described("posting the dummy")),
+                     _act("after", ran)]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    holder["fail"] = None
+    await _try_at(env, 1)
+
+    went = WENT_THROUGH.format(id=job["id"], job="posting the dummy")
+    assert [line.split("\n")[0] for line in await _lines(env) if "went through" in line] == [went]
+    assert ran == ["after", "later"]
+    assert await stopped_job(env.db_path) is None
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_a_queue_stopped_at_a_restart_stays_stopped_until_retry_or_discard(env):
+    """A restart within the hour makes no try of the stopped job, even when its try falls due: one
+    ❌ line says the bot no longer tries it on its own, and a Retry sets the queue going."""
+    from tests.support.change_queue import retry_job
+
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    _queue(env, _type(steps=[_fails_while(holder, ran=ran)]),
+           _type("later", steps=[_act("later", ran)]))
+
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    env.clock.advance(minutes=2)
+
+    await restart_queue(env.bot)
+    try:
+        await run_queue(env.bot)
+        assert (await stopped_job(env.db_path))["next_try_at"] is None
+        env.clock.advance(hours=2)
+        await run_queue(env.bot)
+
+        assert ran == ["post"]
+        restart = RESTART_LINE.format(id=job["id"], job=WHAT)
+        assert [line.split("\n")[0] for line in await _lines(env)
+                if "After the restart" in line] == [restart]
+
+        holder["fail"] = None
+        await retry_job(env.bot)
+    finally:
+        await maybe_await(env.bot.change_queue.stop())
+
+    assert ran == ["post", "post", "later"]
+    assert await _states(env) == ["DONE", "DONE"]
+
+
+async def test_a_fault_while_recording_a_stop_is_logged_and_the_job_is_tried_again(env, caplog,
+                                                                                   monkeypatch):
+    """Where the stop's own save raises, the worker's catch-all logs it to the host and looks again
+    after its pause: the job, not marked stopped, runs again, and its failure is recorded then."""
+    from leaguebot.core.services import change_queue
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
+    ran: list[str] = []
+    queue = _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")}, ran=ran)]))
+    record_stop = queue._stop
+    calls = {"n": 0}
+
+    async def _locked_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return await record_stop(*args, **kwargs)
+
+    monkeypatch.setattr(queue, "_stop", _locked_once)
+
+    await _ask(env)
+    await maybe_await(queue.start())
+    try:
+        async def _stopped() -> bool:
+            return await stopped_job(env.db_path) is not None
+
+        await _eventually(_stopped)
+    finally:
+        await maybe_await(queue.stop())
+
+    assert ran == ["post", "post"]
+    assert (await stopped_job(env.db_path))["tries"] == 1
+    assert any("database is locked" in str(r.exc_info[1]) for r in _host_errors(caplog))
+
+
+async def test_the_member_s_reply_says_what_a_discard_left_undone(env):
+    """Discarding a request's stopped job drops that job alone: it is kept done, with who
+    discarded it and when, the request's later jobs run, and its outcome, reading the discard,
+    tells the member what was not done."""
+    ran: list[str] = []
+
+    def _outcome(ctx):
+        undone = [s.name for s in ctx.steps if (s.result or {}).get("discarded")]
+        return f"⚠️ Done, but not: {', '.join(undone)}." if undone else "✅ Done."
+
+    _queue(env, _type(steps=[_fails_while({"fail": RuntimeError("boom")}, ran=ran),
+                             _act("after", ran)], outcome=_outcome))
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+    await discard_job(env.bot)
+
+    assert ran == ["post", "after"]
+    post, after = await step_rows(env.db_path)
+    assert post["done_at"] is not None and after["done_at"] is not None
+    assert post["result"]["discarded"]["at"] == NOW.isoformat()
+    assert "by" in post["result"]["discarded"]
+    assert "⚠️ Done, but not: post." in updated_reply(interaction)
+    assert await _states(env) == ["DONE"]
+
+
+async def test_discarding_a_change_whose_check_failed_drops_the_whole_change(env):
+    """A bot change stopped at its check before it started is dropped whole by Discard: none of
+    its jobs runs, it ends DISCARDED, and the change behind it runs."""
+    ran: list[str] = []
+
+    async def _refused(_ctx):
+        return _api().Verdict.refuse("The forecast channel is missing.", "it is missing")
+
+    _queue(env, _type(steps=[_act("a", ran), _act("b", ran)], check=_refused),
+           _type("later", steps=[_act("later", ran)]))
+
+    await _ask(env, origin=_api().ChangeOrigin.BOT)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "a"
+
+    await discard_job(env.bot)
+
+    assert ran == ["later"]
+    assert await _states(env) == ["DISCARDED", "DONE"]
+
+
+async def test_a_change_ended_at_its_check_leaves_no_timer_behind(env):
+    """A change stopped at its check that then ends without any of its jobs running leaves the
+    worker no try to wake for, once the time its next try was set for has passed: whether a league
+    admin discards it, a try finds the bot's change no longer due, or a try refuses a member's."""
+    api = _api()
+    mode = {"verdict": "go"}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        if mode["verdict"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    queue = _queue(env, _type(steps=[_act("a", ran)], check=_check))
+
+    async def _stopped_at_check(verdict: str, **ask) -> None:
+        mode["verdict"] = "go"
+        await _ask(env, **ask)
+        mode["verdict"] = verdict
+        await run_queue(env.bot)
+        assert await stopped_job(env.db_path) is not None, "the change did not stop"
+
+    await _stopped_at_check("refuse", origin=api.ChangeOrigin.BOT)
+    await discard_job(env.bot)
+    env.clock.advance(minutes=2)
+
+    assert await queue._seconds_to_next_try() is None
+
+    await _stopped_at_check("raise", payload={"n": 2}, origin=api.ChangeOrigin.BOT)
+    mode["verdict"] = "not_due"
+    env.clock.advance(minutes=1)
+    await run_queue(env.bot)
+    env.clock.advance(minutes=2)
+
+    assert await queue._seconds_to_next_try() is None
+
+    await _stopped_at_check("raise", payload={"n": 3})
+    mode["verdict"] = "refuse"
+    env.clock.advance(minutes=1)
+    await run_queue(env.bot)
+    env.clock.advance(minutes=2)
+
+    assert await queue._seconds_to_next_try() is None
+    assert await _states(env) == ["DISCARDED", "DROPPED", "REFUSED"]
+    assert ran == []
+
+
+async def test_a_bot_change_whose_check_passes_at_a_try_clears_its_stop_and_a_later_failure_of_its_job_is_a_first_failure(env):
+    """A bot change stopped at its check whose check lets it go at its one-minute try clears that
+    stop: one ✅ line says its job went through, and the stop notice loses its buttons. Its job then
+    failing is a first failure of its own: a new stop notice naming that fault, the schedule counted
+    from that moment, its next try one minute on."""
+    api = _api()
+    mode = {"refuse": False}
+    holder: dict[str, Any] = {"fail": None}
+
+    async def _check(_ctx):
+        if mode["refuse"]:
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=[_fails_while(holder, "a")], check=_check))
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None, "the change did not stop"
+    [first] = [m for m in env.bot.log_channel.posted if m.id == job["notice_message_id"]]
+
+    mode["refuse"] = False
+    holder["fail"] = RuntimeError("boom")
+    await _try_at(env, 1)
+
+    went = WENT_THROUGH.format(id=job["id"], job=WHAT)
+    assert [line.split("\n")[0] for line in await _lines(env) if "went through" in line] == [went]
+    assert not getattr(first.view, "children", None)
+    again = await stopped_job(env.db_path)
+    assert again is not None and again["id"] == job["id"]
+    assert again["tries"] == 1
+    assert datetime.fromisoformat(again["failing_since"]) == NOW + timedelta(minutes=1)
+    assert datetime.fromisoformat(again["next_try_at"]) == NOW + timedelta(minutes=2)
+    [second] = [m for m in env.bot.log_channel.posted if "(RuntimeError)" in m.content]
+    assert second.id == again["notice_message_id"] and second.id != first.id
+    assert {child.custom_id for child in second.view.children} == {"queue:retry", "queue:discard"}
+    assert await _states(env) == ["RUNNING"]
+
+    # The same again, with the log channel refusing the job's own notice: the cleared stop's
+    # notice is not kept on the job, so the new notice is posted, with its buttons, at the next
+    # pass once the log channel takes posts again.
+    await discard_job(env.bot)
+    holder["fail"] = None
+    await _ask(env, origin=api.ChangeOrigin.BOT)
+    mode["refuse"] = True
+    await run_queue(env.bot)
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["notice_message_id"] is not None
+
+    mode["refuse"] = False
+    holder["fail"] = RuntimeError("boom")
+    env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+    await _try_at(env, 2)
+    again = await stopped_job(env.db_path)
+    assert again is not None and again["id"] == job["id"] and again["notice_message_id"] is None
+
+    env.bot.log_channel.fails = None
+    await _try_at(env, 3)
+    again = await stopped_job(env.db_path)
+    assert again is not None and again["notice_message_id"] is not None
+    [third] = [m for m in env.bot.log_channel.posted if m.id == again["notice_message_id"]]
+    assert third.id != job["notice_message_id"]
+    assert {child.custom_id for child in third.view.children} == {"queue:retry", "queue:discard"}
+
+
+async def test_a_change_stopped_at_its_check_and_then_refused_or_dropped_leaves_no_timer(env):
+    """A change stopped at its check while the log channel refuses its stop notice, which then ends
+    at a try without any of its jobs running, leaves the worker nothing to wake for, neither a try
+    nor a notice to post again: whether the bot's change is found no longer due, or a member's is
+    refused. Once the log channel takes posts again, no stop notice of either is posted."""
+    api = _api()
+    mode = {"verdict": "go"}
+    ran: list[str] = []
+
+    async def _check(_ctx):
+        if mode["verdict"] == "raise":
+            raise RuntimeError("the check broke")
+        if mode["verdict"] == "refuse":
+            return api.Verdict.refuse("The forecast channel is missing.", "it is missing")
+        if mode["verdict"] == "not_due":
+            return api.Verdict.not_due("the season has ended")
+        return api.Verdict.go()
+
+    queue = _queue(env, _type(steps=[_act("a", ran)], check=_check))
+    env.bot.log_channel.fails = http_error(discord.Forbidden, status=403, text="Missing Access")
+
+    async def _stopped_at_check(stop: str, ends: str, **ask) -> None:
+        mode["verdict"] = "go"
+        await _ask(env, **ask)
+        mode["verdict"] = stop
+        await run_queue(env.bot)
+        job = await stopped_job(env.db_path)
+        assert job is not None and job["notice_message_id"] is None, "no stop without a notice"
+        mode["verdict"] = ends
+        env.clock.advance(minutes=1)
+        await run_queue(env.bot)
+        env.clock.advance(hours=2)
+
+    await _stopped_at_check("refuse", "not_due", origin=api.ChangeOrigin.BOT)
+
+    assert await queue._seconds_to_next_try() is None
+
+    await _stopped_at_check("raise", "refuse", payload={"n": 2})
+
+    assert await queue._seconds_to_next_try() is None
+    env.bot.log_channel.fails = None
+    await run_queue(env.bot)
+
+    assert not [m for m in env.bot.log_channel.posted if "The queue is stopped at job #" in m.content]
+    assert await _states(env) == ["DROPPED", "REFUSED"]
+    assert ran == []

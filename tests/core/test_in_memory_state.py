@@ -7,10 +7,12 @@ are added.
 """
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -44,9 +46,14 @@ CLEARED = {
     ("signup/cogs/admin_review_cog.py", "_PENDING_REASONS"),
     ("core/cogs/season_cog.py", "_pending"),
     ("signup/services/wizard_service.py", "_correction_tasks"),
-    # The interactions the change queue holds to update each change's reply: a pack or a
-    # factory reset deletes the changes they belong to (#439).
+    # The interactions the change queue holds to update each change's reply: a factory reset
+    # deletes the changes they belong to (#439), and a pack finds none, being refused while the
+    # queue holds a job.
     ("core/services/change_queue.py", "_held"),
+    # What the queue remembers of its stopped jobs: when each stop notice was last tried, and
+    # each Retry under way. `forget_held` clears them with the interactions above (#439).
+    ("core/services/change_queue.py", "_notice_tried"),
+    ("core/services/change_queue.py", "_retrying"),
 }
 
 #: Stores that hold no league state, and why.
@@ -130,8 +137,8 @@ async def test_the_clear_empties_every_store():
 
 
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
-    """A pack or a factory reset deletes the changes the queue holds replies for (#439), so the
-    clear makes the queue forget them: a change finishing afterwards updates no member's reply.
+    """A factory reset deletes the changes the queue holds replies for (#439), so the clear makes
+    the queue forget them: a change finishing afterwards updates no member's reply.
 
     Without `forget_held` in the clear the reply would still be updated, as
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
@@ -154,6 +161,12 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
         ran.append("a")
         return StepResult()
 
+    # A failure stops the queue rather than ending the change, so a change type has no outcome
+    # for a fault; the queue built before that rule still demands one where it declares it.
+    withdrawn: dict[str, Any] = (
+        {"fault_outcome": lambda _ctx: "Nothing was changed."}
+        if "fault_outcome" in {f.name for f in dataclasses.fields(ChangeType)} else {}
+    )
     attach_queue(
         bot,
         db_path,
@@ -167,7 +180,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
                 key=lambda payload: "dummy",
                 doing=lambda _payload: "Doing the dummy thing",
                 outcome=lambda _ctx: "✅ Done.",
-                fault_outcome=lambda _ctx: "Nothing was changed.",
+                **withdrawn,
             )
         ],
     )

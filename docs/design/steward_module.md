@@ -195,7 +195,8 @@ applied, reading the module's downtime record, written at start by the start ste
 ahead of it, and after a gateway cut by the change `on_resumed` asks for; then act on the event if
 its row still says it is due, and otherwise re-arm it at its moved moment. So a window that merely
 contained the outage, with no boundary falling inside it, moves when its own end falls due. A cycle
-close waiting for a repaired channel is the change queue's (§4).
+close waiting for a repaired channel is the change queue's (§4): it is a stopped job, and no wake is
+handed to it.
 
 **Downtime is measured by a heartbeat, because nothing measures it today.** The bot writes
 `last_seen_at` on a timer and at a clean shutdown; the gap on start is `now - last_seen_at`. A
@@ -208,7 +209,11 @@ record, also through the queue; the steps of a handler's change read that record
 `last_seen_at`, and apply what has not yet been applied. Through the queue, a heartbeat waits behind
 a change's posts, so a crash during a long run of posts counts that wait as downtime and lengthens
 windows by a little more than the outage. That is accepted, since the queue holds every change to
-the bot's data.
+the bot's data. The heartbeat and the record of the gap at start also wait behind a stop: a queue
+stopped on a failed job holds them until the job is retried or discarded, and a stop that spans a
+restart is then counted as downtime. A stop is not downtime under [STW-RST-002], so this is a gap
+in the design, not a decision; how the heartbeat is to get round a stopped queue is not settled
+here.
 
 *Rejected:* deriving the gap from the jobs that missed their fire time. It only sees boundaries
 that fell inside the gap, and the case the rule is mostly about is a window that merely *contained*
@@ -248,8 +253,9 @@ makes a bounded transaction possible at all.
 
 **Then the postings, outside it, and idempotent.** The close is a change on the queue, and the
 queue's step marks alone decide where it resumes: [STW-CYC-110] and [STW-RST-004] are kept by the
-queue carrying it on from its first step not done when the bot starts and when a channel-setting
-command runs (architecture.md, "How a change is carried out"). The `steward_cycle_closes` row keeps
+queue stopping at the close's job, staying stopped across a restart, and carrying the close on from
+that job when Retry is pressed once the channel is set; setting the channel wakes nothing
+(architecture.md, "How a change is carried out"). The `steward_cycle_closes` row keeps
 `posted_at` only as the record [STW-CYC-111] asks for, written once the postings are made. §7
 records each message in the same save as its step's mark, which is what later edits and deletions
 find.
@@ -448,7 +454,7 @@ database with an open cycle and a `last_seen_at` an hour ago, run the start step
 handlers events as the sweep would, against a stubbed guild, then run the queue, and assert on the
 rows and on what was posted. Two cases cover [STW-RST-001] and [STW-RST-002]: a boundary that passed
 during the outage, and a window that merely spanned it, moved when its end falls due. [STW-RST-004]
-is the change queue's, and is tested with a close left waiting on the queue.
+is the change queue's, and is tested with a close left stopped on the queue, then retried.
 
 **Discord is a `MagicMock`, and a test that builds a view is `async def`.** apt's 2.5.0 calls
 `asyncio.get_running_loop()` in `View.__init__` where the pinned 2.7.1 defers it, so a sync test

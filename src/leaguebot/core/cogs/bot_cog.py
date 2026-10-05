@@ -691,9 +691,10 @@ class BotCog(commands.Cog):
         """Clear everything tied to this server, keep the league, and free the claim.
 
         The log is written *before* the pack, because the pack clears the log channel. The
-        refusal for a current season is therefore asked first, read-only, so that the log
-        does not announce a pack that will not happen; the service asks again inside its own
-        transaction, and the rare season set up between the two is recorded as a refusal.
+        refusals for a current season and for a job in the queue are therefore asked first,
+        read-only, so that the log does not announce a pack that will not happen; the service
+        asks again inside its own transaction, and the rare season or change set up between
+        the two is recorded as a refusal.
 
         The line is written as the pack begins, so it says the pack is under way and what it
         will clear, never that it is done: once the pack has run there is no log channel to
@@ -713,10 +714,14 @@ class BotCog(commands.Cog):
 
         async with get_connection(self.bot.db_path) as db:
             season = await pack_service.current_season(db)
+            job = await pack_service.pending_job(db)
         if season is not None:
             await refuse(
                 interaction, _current_season_refusal(*season), what=describe(interaction)
             )
+            return
+        if job is not None:
+            await refuse(interaction, _queue_refusal(*job), what=describe(interaction))
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -736,11 +741,13 @@ class BotCog(commands.Cog):
                 actor_name=str(interaction.user),
             )
         except pack_service.PackRefused as refused:
-            await refuse(
-                interaction,
-                _current_season_refusal(refused.season_number, refused.stage),
-                what=describe(interaction),
-            )
+            if refused.job_id is not None:
+                reason = _queue_refusal(refused.job_id, refused.stopped)
+            elif refused.season_number is not None:
+                reason = _current_season_refusal(refused.season_number, refused.stage)
+            else:
+                raise
+            await refuse(interaction, reason, what=describe(interaction))
             return
 
         await interaction.followup.send(
@@ -1007,6 +1014,20 @@ async def _open_progress(user: discord.User | discord.Member) -> discord.Message
     except discord.HTTPException:
         log.warning("factory reset: could not message %s; progress goes to the log only", user)
         return None
+
+
+def _queue_refusal(job_id: int, stopped: bool) -> str:
+    """Why pack will not run while the queue holds a job, naming the job it would wait on."""
+    if stopped:
+        return (
+            f"⛔ The bot does not leave a server while its queue holds a job, and the queue is "
+            f"stopped at job #{job_id}. A league manager or admin can press Retry on its notice "
+            f"in the log channel, or a league admin Discard, and then pack again."
+        )
+    return (
+        f"⛔ The bot does not leave a server while its queue holds a job: job #{job_id} is "
+        f"still to run. Let it finish, then pack again."
+    )
 
 
 def _current_season_refusal(season_number: int, stage: str | None) -> str:

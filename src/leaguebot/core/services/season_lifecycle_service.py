@@ -291,10 +291,11 @@ def wind_down_change() -> ChangeType:
     """The change that takes a season whose every division is done to Pending completion.
 
     Asked by the bot in the save of whatever finished the last division, so that the wind-down,
-    which needs Discord, goes ahead whatever befalls the steps beside it. It is due only while
+    which needs Discord, runs as a change of its own, after the steps of the change that asked
+    for it. It is due only while
     the live season is in an ongoing stage with every division finished or cancelled; where it is
-    not, the change is dropped. Its one step is `wind_down_ongoing`, retried in the generic way
-    where Discord fails it.
+    not, the change is dropped. Its one step is `wind_down_ongoing`; where that fails, the queue
+    stops at the job, and `describe` names it.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -310,18 +311,22 @@ def wind_down_change() -> ChangeType:
         moved = await wind_down_ongoing(ctx.bot)
         return StepResult(result={"moved": moved})
 
+    async def describe(_ctx: StepContext) -> str:
+        return "winding the season down"
+
     def outcome(_ctx: OutcomeContext) -> str:
         return ""
 
     return ChangeType(
         kind=WIND_DOWN,
         opening=(PlannedStep(_WIND_DOWN_STEP),),
-        steps={_WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down)},
+        steps={
+            _WIND_DOWN_STEP: Step(_WIND_DOWN_STEP, StepKind.ACT, wind_down, describe=describe)
+        },
         check=check,
         key=lambda _payload: WIND_DOWN,
         doing=lambda _payload: "Winding the season down",
         outcome=outcome,
-        fault_outcome=outcome,
     )
 
 

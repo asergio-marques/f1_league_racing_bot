@@ -202,21 +202,22 @@ audit record, which is how some settings came to have none.
 - **Checked before it is queued, and again before it runs.** Whatever can be checked is checked (the
   channel exists, the bot may post there, the text fits, the change is allowed in the season's
   current stage): once when it is asked for, and again when the worker takes it up, since changes
-  ahead of it may have moved the season on. A request a person made that fails is refused. A change
-  a timer, an event, or a handler or start step the sweep calls asked for is dropped once its work
-  is no longer due, as a job that fires after its work was cancelled does nothing (see "Timed work
-  and restarts"). Where it fails a check the league can repair (a channel, set by a command; the
-  bot's permission, restored in Discord), it waits instead, and is retried the way a step that
-  failed because of Discord is (below); meanwhile the log channel records what failed, as the core
-  specification's "Setting the bot up" has it do. Any other check it fails is a fault (below). This
-  is the gate `steward_module.md` §4 designs for a cycle's close, made bot-wide.
+  ahead of it may have moved the season on. A request a person made that fails is refused, and the queue goes on.
+  A change a timer, an event, or a handler or start step the sweep calls asked for is dropped once
+  its work is no longer due, as a job that fires after its work was cancelled does nothing (see
+  "Timed work and restarts"). Where it is refused by its check for any reason but that its work is
+  no longer due (a channel unset, the bot's permission lost), it has nobody to refuse, so it stops
+  the queue like a job that fails (below), at its first job and with the check's reason, and is
+  checked again at each try. So does any change, a member's included, whose check raises as it
+  starts; meanwhile the log channel records what failed, as the core
+  specification's "Setting the bot up" has it do. This `steward_module.md` §4 designs for a cycle's close, made bot-wide.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
   `steward_module.md` §4 does for the cycle close.
 - **One change at a time.** One worker runs one change at a time, across the whole bot, since SQLite
   lets one writer in at a time anyway. It takes changes in the order they were put on it, the
-  exception being a change waiting to be retried (below). Two presses of the same button can no
+  with no exception: nothing overtakes a change, not even one whose job is stopped (below). Two presses of the same button can no
   longer run into each other. A change's posts hold the worker while they are sent, so a long run of
   posts delays the changes behind it; that is the price of one change at a time.
 - **The same change is not queued twice in a row.** A change is named by what it does, what it acts
@@ -229,7 +230,12 @@ audit record, which is how some settings came to have none.
   never turned away as a repeat, since it reads what it posts when it runs. A change that can only
   be done once, such as approving a round's appeals, is refused by the checks once it has been done,
   since the round has moved on.
-- **Steps, each saved with its mark.** A change is made of steps. The worker opens each saving
+- **Steps, each saved with its mark.** A change is made of steps, and each step is a job with a
+  number of its own, which every line about the job carries (the core specification's "How a
+  change is carried out" says it is never reused; the database issues the numbers, and a
+  restore and a factory reset, which put another database in place of the live one, write the
+  live one's highest number into it first). A member's request is
+  acknowledged once, though it is made of jobs that run one after another. The worker opens each saving
   step's connection and hands it down, so the step's changes, the change's audit record where it
   has one, and the mark saying the step is done all commit together or not at all. After a
   restart, the worker carries on from the first step not marked done, and nothing marked done is
@@ -246,44 +252,64 @@ audit record, which is how some settings came to have none.
   stops after a post is sent but before its id is saved, the step runs again after the restart and
   sends a second copy, and the first copy is left behind. And the old and new messages stand
   together between a post and the deletion after it: until the change finishes on restart, if the
-  bot stops in between, or for as long as the deletion waits on a retry. The design accepts both,
+  bot stops in between, or for as long as the deletion's stop lasts (below). The design accepts
+  both,
   and Constitution XIV rule 8 ("at most one such message stands at any moment") is amended with the
   queue to allow them. Scanning the channel to spot such a copy is not done: `steward_module.md` §7
   rejects scanning a channel as guesswork, and that reasoning carries over.
-- **A step that fails because of Discord is retried, without holding up the queue.** It is retried
-  with growing waits, up to a fixed ceiling, by running the owning module's post again, as text
-  where it would have been a picture (Constitution XIV, rule 8). While it waits, it steps aside: a
-  later change that would post to the same place, or change what the waiting step is about to post,
-  waits behind it, and every other change goes ahead. Two kinds of change are never held behind it.
-  A command that repairs what the step needs, such as setting a channel, runs, and the waiting step
-  is tried again at once; a repair made in Discord, such as restoring the bot's permission, is found
-  at the next try. And a change that makes the waiting step's work no longer due, such as cancelling
-  its round or turning its module off, runs, and the waiting change is checked again after it: its
-  steps whose work is no longer due are dropped and the rest go ahead, since switching a module off
-  stops that module's work and no other's (the core specification's "Modules"). A step that keeps
-  failing is reported to the log channel, as the core specification's "When the bot stops" requires
-  of a failed post, in the form the owning specification asks for (for a republication, the results
-  specification's "A republication that does not land shall be reported", with the commands that
-  finish the job), and it is still retried. Discord answering that a message is already gone is no
-  failure: a step that deletes it is done, and one that edits it is done too, with a line in the log
-  channel saying the message was gone.
 
-  *Rejected:* stopping a change at its first failed step.
+  A deletion that fails stops the queue like any other job (below). A deletion that follows a post
+  which was discarded deletes nothing, since the post left no new message for the old one to give
+  way to. A deletion that is discarded leaves both messages standing.
+- **A job that fails stops the queue.** The queue is a list of jobs carried out in order, one at a
+  time, and a job that fails, whether from Discord or from the bot (a post refused, a fault in the
+  bot's own code, a check that raises as a change starts), stops it there until the job is
+  cleared. Nothing behind it runs: a change that makes the stopped job's work no longer due
+  cannot overtake it either. The change keeps its state and the stop is the job's own record
+  (when it first failed, how often it has been tried, when it is next due), so it survives a
+  restart. What the job's earlier steps saved stays saved, which is why anything that must be all
+  or nothing is saved in one step; the failed step's own save is rolled back, so a try runs it
+  afresh. A new change asked for meanwhile is acknowledged as usual, joins the back of the queue and
+  says that the queue is stopped. Discord answering that a message is already gone is no failure: a
+  job that deletes it is done, and one that edits it is done too, with a line in the log channel
+  saying the message was gone.
 
-  **The exception is a step tried once.** Where a step's owning specification asks that a failure be
-  handed to the league instead of retried, the step is registered as tried once: turning Results &
-  Standings off does so for each message it removes (the results specification's "Assigning channels
-  to divisions"). Its failure completes the step and is kept in the step's result, for the change's
-  outcome to report; it neither waits nor holds a place, and it does not stop its change, so the
-  rejection above stands. The reason is that the specification asks for such a message to be named
-  to the league with a link, for removal by hand, and not counted as removed, which a retry for an
-  hour would delay. A step that deletes still counts a message already gone as done.
+  A job is cleared in one of three ways, which the core specification's "How a change is carried
+  out" holds, with the schedule, who may press each button and the lines written; what follows is
+  the mechanism. *The bot's own tries:* it runs the job again, by running
+  the owning module's post again, as text where it would have been a picture (Constitution XIV,
+  rule 8), 1, 5, 10, 15, 30 and 60 minutes after the job first failed, so that the last falls at
+  the hour; a try that fails writes no line of its own but the last, which says the bot has
+  stopped trying on its own. *Retry,* a button a league manager or admin presses at any time but while that job is
+  being tried, and the only way on after the hour: the job is made due at once. *Discard,* a button a league admin
+  presses, drops that one job, which the log records with what was not done, and the request's
+  later jobs run on, each checking again whether it is still due. A change that had not yet begun,
+  because its check failed, is dropped whole.
 
-  *Rejected:* retrying such a step like any other, which delays naming the message by an hour or
-  more.
-- **A step that fails for any other reason is a fault.** The change stops there and goes to the
-  failure path (see "Errors and failures"), and holds nothing up. What its earlier steps saved
-  stays saved, which is why anything that must be all or nothing is saved in one step.
+  Both buttons are on the stop notice, the one log-channel message that says the queue is stopped
+  and names the job. They work directly on the queue's own records, and are not changes put on the
+  queue: the queue is stopped, so a change put on it could not run. Each press is saved with its own record (the line, and
+  for a Discard the audit record), and a press that is refused is recorded as well. A press made
+  while the worker is trying that job's change, its check included, is refused, to be made again
+  once the try has ended: each press is taken under the lock the worker holds as it chooses a
+  change, and a press saved during a try could outlive the stop that try clears, so that a later
+  failure of the job would be read as the press's.
+
+  After a restart a stopped job stays stopped, as "When the bot stops" in the core specification
+  has it: the bot makes no try of its own, whatever the schedule had left, and only Retry or
+  Discard moves the queue. A change a
+  stop cut off with no job failed carries on from its first step not done.
+
+  *Rejected:* a failed job stepping aside while later changes go ahead, and a job tried once and
+  handed to the league, as turning results off once did for a message it removes. Each is a
+  second rule beside "every failure stops the queue", which is the rule the core specification's
+  "How a change is carried out" records. Also rejected: an automatic try after a restart, which
+  "When the bot stops" in the core specification rules out.
+- **A failure that cannot be recorded is logged, and the job tried again.** Where the stop's own
+  save raises, nothing is marked stopped: the worker's catch-all (`ChangeQueue._work`) puts the
+  error in the host's log, the worker pauses and looks again, and the job runs again, so that its
+  failure is recorded then. Where the save committed and only the notice's post raised, the stop
+  stands and the notice is posted again (see "Posting to Discord").
 - **The record is the queue's.** The queue writes the records the specifications ask of a change:
   for every change to the league's configuration, an audit record and a log-channel line (the core
   specification's "The record of what changed"), and for any other change, whatever log line its own
@@ -425,8 +451,9 @@ Start-up:
 5. runs the start-up sweep once, when Discord first connects, while every other change, whether a
    member or a Discord event asks for it, waits until the sweep has put its own on the queue, so
    none overtakes a missed event that would have happened first;
-6. starts the queue, which carries on with any change a stop cut off, and tries a change waiting on
-   a repair again at once;
+6. starts the queue, which carries on with any change a stop cut off, leaves a job that was stopped
+   on a failure stopped, to be cleared by Retry or Discard, and posts again any stop notice that
+   never landed;
 7. only then lets scheduled jobs run.
 
 Tests can then run the whole start-up in order, instead of checking its order by searching the
@@ -479,7 +506,7 @@ kind has its own rules for failures and for later changes:
 
 | Kind | Examples | What sets it apart |
 |---|---|---|
-| **Log line** | configuration changes, outcomes, failures | sent to the log channel and retried by its own handler, not by the change queue; what a log line may hold is the core specification's "The record of what changed" |
+| **Log line** | configuration changes, outcomes, failures | sent to the log channel and retried by its own handler, not by the change queue; what a log line may hold is the core specification's "The record of what changed". The queue's stop notice is a log line with buttons, which the router posts without putting it on that retry |
 | **Standing post** | calendar, lineup, standings, attendance sheet, forecast | each new one replaces the last, and the old message is deleted after the new one is up |
 | **Notice** | a cancellation notice, a verdict | its id is kept wherever it might later be edited or deleted |
 | **Bot-owned channel** | a results submission channel, a driver's own signup channel | deleted whole with its channel; only a post the bot must find again, such as a prompt it replaces, has its id kept |
@@ -500,8 +527,8 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
   message it replaces in the step after, so each table keeps one writer. A message nobody recorded
   can never be found again, to be edited or deleted.
 - **Who it may mention,** stated where it is sent.
-- **What happens if it fails:** it is retried, and named in the log channel if it keeps failing (a
-  log line that keeps failing, in the host's log). A log line the log channel cannot take is also
+- **What happens if it fails:** a post inside a change stops the queue and is retried on its
+  schedule, and named in the log channel (a log line that keeps failing, in the host's log). A log line the log channel cannot take is also
   told to the member it records (the core specification's "The record of what changed" holds who
   is told and when): the router finds the interaction through `core/utils/answering.py`, which
   records the one a task is answering, or takes the one the change queue holds, and the host's log
@@ -516,12 +543,18 @@ Retrying is the change queue's, except for log lines. The log line's handler is 
   that cannot be posted written to the host's log. The cog learns the log channel from the router
   before the wipe and posts to it directly.
 
-**A failed post is sent again by its owning module, on the queue's retry.** A post that fails inside
-a change is retried by the change queue, which runs the owning module's post again, as text. The
-text is then written at the moment it is finally sent, and the owning module saves the new message's
-id as it always does. No
-queue ever holds a picture; the constitution's Principle XIV, rule 8, says why. The old retry
+**A failed post is sent again by its owning module, on the queue's schedule.** A post that fails
+inside a change is a job that fails, and stops the queue (see "How a change is carried out"): the
+queue runs the owning module's post again, as text, on that schedule. The text is then written at
+the moment it is finally sent, and the owning module saves the new message's id as it always does.
+No queue ever holds a picture; the constitution's Principle XIV, rule 8, says why. The old retry
 queue is kept for log lines only.
+
+The stop notice is the one log line that must keep its buttons, so it is not put on that queue,
+which would send it again without them. It is posted through the router after the stop is saved,
+the message it lands as is kept on the job, and the worker posts it again while none has landed, at
+the retry marks and hourly after them. The member is told where it fails, as for any log line the
+log channel cannot take.
 
 *Rejected:* the retry queue re-sending its stored text and writing the new message's id back
 itself. *Rejected:* no longer retrying these posts. *Rejected:* keeping the retry queue for posts
@@ -536,7 +569,8 @@ registry (`channel_registry_service`).
 
 **Each kind of starting point has one failure path.** Whatever fails in the end, the full error goes
 to the host's log and one line goes to the log channel, and reporting it never raises another error.
-A step still being retried has not failed yet. A change that succeeds is recorded in the log channel
+A job the bot is trying again is reported as it first fails, again after the last of the bot's
+own tries, and at each Retry that fails, and not at the bot's other tries. A change that succeeds is recorded in the log channel
 as its specification asks; a failure always is. A command that asks for a change meets two in turn:
 `report_failure` if the request itself fails, and the queue once the change is under way.
 
@@ -593,11 +627,13 @@ to it would switch off the one failure path for every command.
    where it has written anything it first tries to put the round back, then reports its own
    failure and says what became of the round, for example that it was put back as it was, that
    it is not put back yet, or that there was nothing to put back. Its reply may name the kind of fault in plain words (`describe_fault`), which the standard reply
-   never does, as the core specification's "When a command fails" allows an amendment alone;
+   never does, as the core specification's "When a command fails" allows an amendment alone. The change queue's worker is a failure path too, and the
+   fallback where a stop cannot be recorded: its catch-all (`ChangeQueue._work`) puts the error
+   in the host's log, the worker pauses and looks again, and the job runs again, so that its
+   failure is recorded then;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
-   the rest. Inside a queued change, each item is a step: a Discord failure is retried, and a fault
-   stops the change, so items that must each go ahead whatever befalls the others are queued as
-   changes of their own. Outside one, the failure goes to the failure path of whatever started the
+   the rest. Inside a queued change, each item is a job: one that fails stops the queue until
+   it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
    work (above). Neither applies where an operation's own rule is all or nothing, as a points
    amendment's is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, where the report itself might fail;

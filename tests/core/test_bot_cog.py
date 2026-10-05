@@ -853,6 +853,100 @@ async def test_bot_pack_is_refused_while_a_season_is_current_and_is_recorded(tmp
     assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
 
 
+async def _seed_pending_job(db_path: str, *, stopped: bool) -> int:
+    """One member's `/dummy` in the change queue, and the number of the job a pack would wait on.
+
+    Not *stopped*: the change waits its turn, its first job, #12, not yet run. *stopped*: its
+    first job, #33, went through; its second, #34, failed on Discord more than an hour ago, its
+    stop notice stands in the log channel and the bot no longer tries it on its own.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO queued_changes (kind, dedup_key, origin, state, actor_id, actor_name, "
+            "actor_display, what) VALUES ('dummy', 'dummy', 'MEMBER', ?, 8, 'member', "
+            "'Member', '`/dummy`')",
+            ("RUNNING" if stopped else "QUEUED",),
+        )
+        change_id = cursor.lastrowid
+        if stopped:
+            await db.execute(
+                "INSERT INTO queued_change_steps (id, change_id, position, name, done_at, result) "
+                "VALUES (33, ?, 0, 'a', '2026-10-01T12:00:00+00:00', '{}')",
+                (change_id,),
+            )
+            await db.execute(
+                "INSERT INTO queued_change_steps (id, change_id, position, name, tries, "
+                "failing_since, last_failure, notice_message_id, notice_channel_id) "
+                "VALUES (34, ?, 1, 'b', 7, '2026-10-01T12:00:00+00:00', 'Forbidden', 9001, ?)",
+                (change_id, CONFIGURED_LOG),
+            )
+        else:
+            await db.execute(
+                "INSERT INTO queued_change_steps (id, change_id, position, name) "
+                "VALUES (12, ?, 0, 'a')",
+                (change_id,),
+            )
+        await db.commit()
+    return 34 if stopped else 12
+
+
+async def _queue_rows(db_path: str) -> list[tuple]:
+    async with get_connection(db_path) as db:
+        changes = await (await db.execute("SELECT id, state FROM queued_changes")).fetchall()
+        jobs = await (
+            await db.execute("SELECT id, done_at FROM queued_change_steps ORDER BY id")
+        ).fetchall()
+    return [tuple(r) for r in changes] + [tuple(r) for r in jobs]
+
+
+async def test_bot_pack_is_refused_while_a_job_waits_in_the_queue_and_names_it(tmp_path):
+    """A job still to run would go on changing Discord on a server the bot no longer serves, so
+    a pack waits for the queue to empty (#439): refused before anything is cleared, naming the
+    job and telling the admin to let it finish, and the refusal recorded in the log channel."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    job = await _seed_pending_job(db_path, stopped=False)
+    before = await _queue_rows(db_path)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert f"job #{job}" in reply
+    assert "finish" in reply
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert await _queue_rows(db_path) == before
+    bot.scheduler_service.cancel_all.assert_not_called()
+    assert await _audit_rows(db_path) == []
+    assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
+
+
+async def test_bot_pack_is_refused_while_the_queue_is_stopped_and_names_the_stopped_job(tmp_path):
+    """A stopped job holds the queue until a league manager or admin presses Retry, or a league
+    admin Discard, on its notice (#439): the pack is refused naming the stopped job and those two
+    ways on, and the refusal recorded in the log channel."""
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    job = await _seed_pending_job(db_path, stopped=True)
+    before = await _queue_rows(db_path)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    reply = interaction.response.send_message.call_args.args[0]
+    assert f"job #{job}" in reply
+    assert "Retry" in reply and "Discard" in reply
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert await _queue_rows(db_path) == before
+    bot.scheduler_service.cancel_all.assert_not_called()
+    assert await _audit_rows(db_path) == []
+    assert _log_lines(bot) == [f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"]
+
+
 async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
     """The one line a pack writes goes before it, while the log channel is still the league's.
 
@@ -906,6 +1000,44 @@ async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypa
     reply = interaction.followup.send.call_args.args[0]
     assert "Season 4 is current" in reply
     # The line the pack wrote as it began, then the standard refusal (#482).
+    lines = _log_lines(bot)
+    assert len(lines) == 2
+    assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
+
+
+async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season(
+    tmp_path, monkeypatch
+):
+    """A change asked for after the command's own check has passed is caught by the pack's
+    refusal inside its transaction (#439), and the admin is told of the job it would wait on,
+    not of a season the league does not have: the reply names the job and says to let it finish,
+    and the log channel records the refusal after the line the pack wrote as it began."""
+    from leaguebot.core.services import pack_service
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    packed = pack_service.pack
+    jobs = []
+
+    async def racing(*args, **kwargs):
+        jobs.append(await _seed_pending_job(db_path, stopped=False))
+        return await packed(*args, **kwargs)
+
+    monkeypatch.setattr(pack_service, "pack", racing)
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _refusable(bot, _interaction(channel_id=CONFIGURED_CHANNEL), "bot pack")
+
+    await _unwrap(cog.handle_pack)(cog, interaction, "CONFIRM")
+
+    [job] = jobs
+    reply = interaction.followup.send.call_args.args[0]
+    assert f"job #{job}" in reply
+    assert "finish" in reply
+    assert "Season" not in reply and "season" not in reply
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert [state for _, state in (await _queue_rows(db_path))[:1]] == ["QUEUED"]
+    bot.scheduler_service.cancel_all.assert_not_called()
     lines = _log_lines(bot)
     assert len(lines) == 2
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
