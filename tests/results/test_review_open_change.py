@@ -44,6 +44,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (
+    MEMBER_ID,
     SERVER_ID,
     discard_job,
     http_error,
@@ -780,6 +781,13 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
         league, "send", SUBMISSION_CHANNEL, cancel_lines[0]
     )
     assert league.log().count("resubmission of round 3") == 1
+    lines = league.bot.log_channel.sent
+    [cancel] = [line for line in lines if "cancelled by" in line]
+    assert cancel.startswith("↩️ ")
+    assert f"cancelled by Alex (<@{MEMBER_ID}>)" in cancel.split("\n", 1)[0]
+    assert "The earlier results stand." in cancel
+    assert "Press 🔄 Resubmit Initial Results to start again." in cancel
+    assert not any("RESULTS_RESUBMISSION | Cancelled" in line for line in lines)
     assert submission.messages[CANCEL_MESSAGE].view is None
     row = await _channel_row(league.db_path)
     assert row["resubmitting"] == 0
