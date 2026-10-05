@@ -2074,6 +2074,53 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     assert sorted(p["n"] for p in found) == ["other", "queued", "stopped"]
 
 
+async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
+    """`ever_asked` gives the payloads of every change of the kinds asked that the queue saved,
+    oldest first, whether done, dropped at its check, discarded or still queued, and none of
+    another kind. A request its check refuses as it is asked is not saved, so is not given."""
+    from leaguebot.core.services.change_queue import ever_asked
+
+    api = _api()
+    armed = {"on": False}
+
+    async def _check(ctx):
+        n = ctx.payload["n"]
+        if n == "refused":
+            return api.Verdict.refuse("⚠️ Not now.")
+        if not armed["on"]:
+            return api.Verdict.go()
+        if n == "dropped":
+            return api.Verdict.not_due("no longer due")
+        if n == "discarded":
+            return api.Verdict.refuse("The channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    _queue(
+        env,
+        _type("watched", steps=[_act("work", [])], check=_check),
+        _type("other", steps=[_act("other", [])]),
+    )
+    bot = api.ChangeOrigin.BOT
+
+    await _ask(env, "watched", {"n": "done"})
+    await _ask(env, "other", {"n": "other"})
+    await _ask(env, "watched", {"n": "dropped"}, origin=bot)
+    await _ask(env, "watched", {"n": "discarded"}, origin=bot)
+    armed["on"] = True
+    await run_queue(env.bot)
+    await discard_job(env.bot)
+    assert await _ask(env, "watched", {"n": "refused"}) is None
+    await _ask(env, "watched", {"n": "queued"})
+
+    assert await _states(env) == ["DONE", "DONE", "DROPPED", "DISCARDED", "QUEUED"]
+    found = await maybe_await(ever_asked(env.db_path, ["watched"]))
+    assert [p["n"] for p in found] == ["done", "dropped", "discarded", "queued"]
+    found = await maybe_await(ever_asked(env.db_path, ["other"]))
+    assert [p["n"] for p in found] == ["other"]
+    found = await maybe_await(ever_asked(env.db_path, ["watched", "other"]))
+    assert [p["n"] for p in found] == ["done", "other", "dropped", "discarded", "queued"]
+
+
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""
