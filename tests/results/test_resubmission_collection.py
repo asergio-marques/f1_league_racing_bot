@@ -84,7 +84,6 @@ CANCEL_MESSAGE = 7300
 NOW = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
 REVIEW_OPEN = "results.review.open"
 AMENDED = "Provisional Results (amended)"
-NOT_BUILT = "#439: the resubmission does not yet ask the change queue to put the review back"
 
 QUALI_PASTE = "1, <@101>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
 RACE_PASTE = "1, <@101>, T3001, 1:30:00.000, 1:20.000, N/A\n2, <@102>, T3001, +5.000, 1:21.000, N/A"
@@ -160,6 +159,7 @@ def _channel():
     channel = MagicMock()
     channel.id = SUB_CHANNEL
     sent = MagicMock()
+    sent.id = CANCEL_MESSAGE
     sent.edit = AsyncMock()
     channel.send = AsyncMock(return_value=sent)
     return channel
@@ -312,7 +312,6 @@ async def _sessions(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_resubmitting_reads_its_round_from_the_database(tmp_path):
     """**Issue #210.** The real `_get_round_context` selected neither `season_id` nor
     `round_format`, so the task raised on its first read — inside a background task nobody
@@ -364,7 +363,6 @@ async def test_a_guild_the_bot_is_not_in_collects_nothing(tmp_path):
     assert stubs["returns"] == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_failing_to_load_the_division_says_so_in_the_channel(tmp_path):
     """The manager has just been told to paste the results again; silence would leave them
     pasting into a channel nothing reads. With nothing to collect with, the bot asks for the
@@ -423,7 +421,6 @@ async def test_a_sprint_round_asks_for_all_four_sessions(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_goes_back_to_penalty_review_as_a_resubmission(tmp_path):
     """So the provisional tables it reposts say they replace the earlier ones."""
     db_path = await _make_db(tmp_path, name="resubmit_handover")
@@ -478,7 +475,6 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path)
     assert bot.wait_for.await_count == 3
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_session_can_be_cancelled(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_cancel_one")
 
@@ -560,7 +556,6 @@ async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_team_agreement_is_checked_against_the_resubmission_not_the_old_results(tmp_path):
     """The stored results are the ones being replaced, and may carry exactly the wrong team
     that made the manager resubmit. Checking against them would refuse the correction."""
@@ -589,7 +584,6 @@ async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path):
     assert bot.wait_for.await_count == 3
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
     """The new results could not be saved: the channel is told the earlier ones still stand,
     and the bot asks for the review back, as failed, publishing nothing."""
@@ -660,7 +654,6 @@ def _pastes_around_an_amendment(db_path, pastes, *, opens=None, ends: int, seen:
     return AsyncMock(side_effect=wait_for)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_held")
     await _seed_old_results(db_path)
@@ -766,7 +759,6 @@ async def test_cancelling_the_resubmission_keeps_the_earlier_results(tmp_path):
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(tmp_path):
     """The results were never touched and are already posted, so the review is asked back
     without them being posted a second time, naming the Cancel button's message for the
@@ -785,7 +777,6 @@ async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(t
     assert back.get("label") != AMENDED
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancelling_the_resubmission_is_logged(tmp_path):
     """A cancel is recorded as every cancel is, by the review's return, once the prompt is back
     (`test_review_open_change.py`). That return is asked in the name of the manager who
@@ -802,7 +793,6 @@ async def test_cancelling_the_resubmission_is_logged(tmp_path):
     assert back["actor_id"] == MANAGER
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(tmp_path):
     """The last session's configuration menu is its own wait. A cancel landing there must
     still stop the swap that would otherwise follow it."""
@@ -829,7 +819,6 @@ async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(
     assert back["publish"] is False
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmission(tmp_path):
     """Alex pastes the qualifying session of a resubmission and, with two configurations
     attached, is asked to choose one; instead he presses Cancel and never chooses. The
@@ -856,7 +845,6 @@ async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmiss
     assert back["actor_id"] == MANAGER
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_completed_resubmission_takes_down_the_cancel_button(tmp_path):
     """Once the swap has landed there is nothing left to cancel."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_done")
@@ -1058,7 +1046,6 @@ async def test_a_resubmission_failing_before_any_paste_is_recorded(tmp_path, rou
     assert "The earlier results stand." in replies
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):
     """Issue #210, end to end. The button used to delete the results and start a collection
     that raised on its first line; every part of it was tested with the next part stubbed."""
@@ -1078,7 +1065,6 @@ async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):
     assert [back["label"] for back in returns] == [AMENDED]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_staged_penalties_stay_discarded_after_cancelling(tmp_path):
     """Resubmit logged and cleared them. Cancelling keeps the results, not the staged list —
     the review comes back empty, as the announcement's log already recorded."""

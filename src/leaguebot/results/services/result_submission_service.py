@@ -12,6 +12,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat, RoundStatus
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
@@ -5030,10 +5031,38 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         )
         await close_submission_channel(sub_channel.id, round_id, guild, db_path)
         return
+    await ask_review_open(
+        bot, sub_channel, round_id, round_number,
+        {"label": "Provisional Results", "publish": True}, actor=last_author, say=True,
+    )
+
+
+async def ask_review_open(
+    bot: LeagueBot,
+    sub_channel: discord.TextChannel,
+    round_id: int,
+    round_number: int,
+    payload: Mapping[str, Any],
+    *,
+    actor: Any = None,
+    origin: ChangeOrigin = ChangeOrigin.MEMBER,
+    say: bool = False,
+) -> None:
+    """Ask the queue to open round *round_id*'s penalty review, with *payload*'s keys beside the
+    round's (`results.review.open`), in the name of *actor*, the member who pasted the last
+    session or pressed Cancel; the bot's own request (a failure) names none.
+
+    A paste answers no interaction, so with *say* the channel is told that the review is being
+    opened, with its job number, and where the queue is stopped, at which job. Where the request
+    is refused or no longer due, the channel is told the round is kept as it is and the review is
+    put back when the bot next starts. The one place a round's review is asked for from a
+    submission, for the first one and for a resubmission's return (#439).
+    """
     change_id = await bot.change_queue.ask(
         "results.review.open",
-        {"round_id": round_id, "label": "Provisional Results", "publish": True},
-        actor=last_author,
+        {"round_id": round_id, **payload},
+        actor=actor,
+        origin=origin,
         what=f"the penalty review of round {round_number}",
     )
     if change_id is None:
@@ -5041,7 +5070,7 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
             f"⚠️ The penalty review of round {round_number} could not be asked for. The results "
             "are saved; the review is put back when the bot next starts."
         )
-    else:
+    elif say:
         first_job, stopped_at = await bot.change_queue.job_numbers(change_id)
         line = f"⏳ The penalty review is being opened (job #{first_job})."
         if stopped_at is not None:
@@ -5049,6 +5078,8 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
                 f" The queue is stopped at job #{stopped_at}, so it opens once that job is "
                 "cleared."
             )
+    else:
+        return
     await sub_channel.send(line)
 
 
@@ -5216,32 +5247,43 @@ async def send_cancelled_line(sub_channel: discord.TextChannel) -> None:
     await sub_channel.send(CANCELLED_LINE)
 
 
-async def _return_to_review(
-    bot: LeagueBot,
-    guild: discord.Guild,
-    round_id: int,
-    division_id: int,
-    sub_channel,
-    season_id: int,
-    cancel_view: ResubmissionCancelView | None,
-) -> None:
-    """End a resubmission without replacing anything, and put the penalty review back.
+def _member_of(guild: discord.Guild, user_id: int | None) -> discord.abc.Snowflake | None:
+    """The member *user_id* on *guild*, or a bare reference to them where they have left, so
+    that a change asked in their name records who they were; nobody for no id."""
+    if user_id is None:
+        return None
+    return guild.get_member(user_id) or discord.Object(id=user_id)
 
-    Used when the manager cancels and when the resubmission fails before the swap. Either way
-    the round's results are the ones it held before Resubmit was pressed, and they are already
-    posted, so the prompt comes back without reposting them.
+
+async def _ask_return_to_review(
+    bot: LeagueBot,
+    sub_channel: discord.TextChannel,
+    round_id: int,
+    round_number: int,
+    cancel_view: ResubmissionCancelView | None,
+    *,
+    returning: str,
+    actor: Any = None,
+    origin: ChangeOrigin = ChangeOrigin.BOT,
+) -> None:
+    """End a resubmission without replacing anything, and ask for the penalty review back.
+
+    Used when the manager cancels (*returning* ``"cancelled"``, in their name) and when the
+    resubmission fails before the swap (``"failed"``, the bot's). Either way the round's results
+    are the ones it held before Resubmit was pressed, and they are already posted, so the review
+    is asked for with nothing published. What becomes of the request is `results.review.open`'s:
+    it clears `resubmitting`, takes the Cancel button off the message named in the request, and
+    puts the prompt back before it writes the cancel's line in the channel and the log (#439).
     """
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "UPDATE round_submission_channels "
-            "SET resubmitting = 0, resubmit_prompt_message_id = NULL WHERE round_id = ?",
-            (round_id,),
-        )
-        await db.commit()
-    await _take_down_cancel_button(cancel_view)
-    await enter_penalty_state(
-        bot, guild, round_id, division_id, sub_channel,
-        season_id=season_id, skip_results_post=True,
+    message_id = None
+    if cancel_view is not None:
+        cancel_view.stop()
+        if cancel_view.message is not None:
+            message_id = cancel_view.message.id
+    await ask_review_open(
+        bot, sub_channel, round_id, round_number,
+        {"publish": False, "returning": returning, "cancel_message_id": message_id},
+        actor=actor, origin=origin,
     )
 
 
@@ -5422,11 +5464,12 @@ async def _resubmit_collection_task(
     Mirrors run_result_submission_job but skips channel creation, and writes nothing until
     the last session is in: each validated session is held as a `CollectedSession`, and
     `replace_round_results` swaps the lot for the round's existing results in one transaction.
-    The earlier results stand until then (issue #210). On completion calls
-    enter_penalty_state(..., is_resubmission=True).
+    The earlier results stand until then (issue #210). On completion asks the queue for
+    `results.review.open`, publishing the new results as "Provisional Results (amended)".
 
     *cancel_view* is the announcement's Cancel button. Pressed, or where the resubmission fails
-    before the swap, the round goes back to penalty review with the results it had.
+    before the swap, the review is asked for back (`_ask_return_to_review`) with the results the
+    round had.
 
     *interaction* is the Resubmit press that started this, and *what* names its button and
     review, as the press's refusals do; without one the button alone is named. A resubmission
@@ -5476,20 +5519,11 @@ async def _resubmit_collection_task(
         return
 
     async def _cancelled() -> None:
-        actor = cancel_view.cancelled_by if cancel_view is not None else None
-        await send_cancelled_line(sub_channel)
-        await record_abandoned(
-            bot,
-            actor,
-            what=f"the resubmission of round {round_number} ({division_name})",
-            lapsed=False,
-            detail=(
-                "The earlier results stand.\n"
-                "Press 🔄 Resubmit Initial Results to start again."
-            ),
-        )
-        await _return_to_review(
-            bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
+        await _ask_return_to_review(
+            bot, sub_channel, round_id, round_number, cancel_view,
+            returning="cancelled",
+            actor=_member_of(guild, cancel_view.cancelled_by if cancel_view is not None else None),
+            origin=ChangeOrigin.MEMBER,
         )
 
     try:
@@ -5508,8 +5542,8 @@ async def _resubmit_collection_task(
             "❌ Resubmission failed: could not load division data. The earlier results still stand."
         )
         await _record_failure(exc)
-        await _return_to_review(
-            bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
+        await _ask_return_to_review(
+            bot, sub_channel, round_id, round_number, cancel_view, returning="failed"
         )
         return
 
@@ -5529,6 +5563,7 @@ async def _resubmit_collection_task(
 
     cancelled_sessions: set[SessionType] = set()
     collected: list[CollectedSession] = []
+    last_author_id: int | None = None
     for session_type in sessions:
         label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
         if session_type.is_qualifying:
@@ -5563,6 +5598,7 @@ async def _resubmit_collection_task(
                 if held:
                     await sub_channel.send(held)
                     continue
+                last_author_id = msg.author.id
                 collected.append(
                     CollectedSession(session_type, "CANCELLED", None, msg.author.id)
                 )
@@ -5660,6 +5696,7 @@ async def _resubmit_collection_task(
                     _row_dict_from_race(r) for r in _rows_of_kind(parsed_rows, ParsedRaceRow)
                 ]
 
+            last_author_id = msg.author.id
             collected.append(
                 CollectedSession(
                     session_type, "ACTIVE", selected_config, msg.author.id,
@@ -5682,8 +5719,8 @@ async def _resubmit_collection_task(
             "❌ Resubmission failed: the new results could not be saved. "
             "The earlier results still stand."
         )
-        await _return_to_review(
-            bot, guild, round_id, division_id, sub_channel, season_id, cancel_view
+        await _ask_return_to_review(
+            bot, sub_channel, round_id, round_number, cancel_view, returning="failed"
         )
         return
     await _take_down_cancel_button(cancel_view)
@@ -5693,10 +5730,10 @@ async def _resubmit_collection_task(
         await close_submission_channel(sub_channel.id, round_id, guild, db_path)
         return
 
-    await enter_penalty_state(
-        bot, guild, round_id, division_id, sub_channel,
-        season_id=season_id,
-        is_resubmission=True,
+    await ask_review_open(
+        bot, sub_channel, round_id, round_number,
+        {"label": "Provisional Results (amended)", "publish": True},
+        actor=_member_of(guild, last_author_id), say=True,
     )
 
 
