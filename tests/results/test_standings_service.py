@@ -1589,3 +1589,80 @@ def test_teams_are_ordered_by_the_same_countback():
         team_meta={10: (0, "Alpha"), 20: (0, "Bravo")},
     )
     assert ordered == [20, 10]
+
+
+# ---------------------------------------------------------------------------
+# The snapshot writers on a handed connection (#439)
+# ---------------------------------------------------------------------------
+
+
+async def _snapshot_totals(db, table: str, key: str) -> dict[tuple[int, int], int]:
+    """(round, driver or team) -> total points, as *db* sees them."""
+    rows = await (await db.execute(f"SELECT round_id, {key}, total_points FROM {table}")).fetchall()
+    return {(r["round_id"], int(r[key])): r["total_points"] for r in rows}
+
+
+async def test_the_on_forms_write_on_the_handed_connection(db_path):
+    """A review's save recomputes the standings on its own connection: the writers read the points
+    it has just rewritten, write what a rollback takes back, and commit nothing themselves.
+    Persisting the same snapshots twice leaves one row per driver and team."""
+    from leaguebot.results.services.standings_service import (
+        cascade_recompute_from_round_on,
+        compute_and_persist_round_on,
+        compute_driver_standings_on,
+        compute_team_standings_on,
+        persist_snapshots_on,
+    )
+
+    names = {1: "zulu", 2: "alpha"}
+    async with get_connection(db_path) as db:
+        div_id, _ = await _bootstrap(db, server_id=97)
+        await _seat(db, div_id, "Alpha", [(1, "zulu"), (2, "alpha")], team_id=901)
+        r1 = await _round(db, div_id, 1)
+        r2 = await _round(db, div_id, 2)
+        sr = await _session(db, r1, div_id)
+        await _result(db, sr, 1, 1, 25, team=901)
+        await _result(db, sr, 2, 2, 18, team=901)
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        # The save's own points change, made before the standings are recomputed.
+        await db.execute(
+            "UPDATE race_session_results SET points_awarded = 10 WHERE driver_user_id = 1"
+        )
+        await compute_and_persist_round_on(db, r1, div_id, names)
+        assert await _snapshot_totals(db, "driver_standings_snapshots", "driver_user_id") == {
+            (r1, 1): 10, (r1, 2): 18,
+        }
+
+        await cascade_recompute_from_round_on(db, div_id, r1, names)
+        assert await _snapshot_totals(db, "driver_standings_snapshots", "driver_user_id") == {
+            (r1, 1): 10, (r1, 2): 18, (r2, 1): 10, (r2, 2): 18,
+        }
+        assert await _snapshot_totals(db, "team_standings_snapshots", "team_instance_id") == {
+            (r1, 901): 28, (r2, 901): 28,
+        }
+        await db.rollback()
+
+    async with get_connection(db_path) as other:
+        assert await _snapshot_totals(other, "driver_standings_snapshots", "driver_user_id") == {}
+        assert await _snapshot_totals(other, "team_standings_snapshots", "team_instance_id") == {}
+        points = await (await other.execute(
+            "SELECT points_awarded FROM race_session_results WHERE driver_user_id = 1"
+        )).fetchone()
+    assert points[0] == 25
+
+    async with get_connection(db_path) as db:
+        drivers = await compute_driver_standings_on(db, div_id, r1, names)
+        teams = await compute_team_standings_on(db, div_id, r1)
+        await persist_snapshots_on(db, drivers, teams)
+        await persist_snapshots_on(db, drivers, teams)
+        assert await _snapshot_totals(db, "driver_standings_snapshots", "driver_user_id") == {
+            (r1, 1): 25, (r1, 2): 18,
+        }
+        driver_rows = await (await db.execute(
+            "SELECT COUNT(*) FROM driver_standings_snapshots")).fetchone()
+        team_rows = await (await db.execute(
+            "SELECT COUNT(*) FROM team_standings_snapshots")).fetchone()
+        await db.rollback()
+    assert (driver_rows[0], team_rows[0]) == (2, 1)
