@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -62,6 +62,7 @@ from tests.support.review_league import (
     MAX_PROFILE,
     PROMPT,
     ReviewLeague,
+    block_queue,
     changes_of,
     penalty,
     points_fail,
@@ -857,6 +858,43 @@ async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path)
     assert await changes_of(league.db_path, KIND) == []
     assert await stopped_at(league) == "apply"
     assert _prompts(league) == []
+
+
+async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tmp_path):
+    """The last paste of round 3 has asked for its review, every session's results in and the
+    review flag still down, and the open waits behind an earlier job the queue is stopped at. A
+    restart finds the round with no review open, as a first paste cut short would look, but the
+    open is in hand on the queue: the results and the submission channel are kept, the wizard is
+    not run again and the review is not asked for twice. Once the stopped job is retried, the
+    review opens."""
+    league = await _league(tmp_path, name="recover_queued_paste")
+    holder = await block_queue(league)
+    await _open(league)
+    assert await stopped_at(league) == "block"
+    assert (await _channel_row(league.db_path))["in_penalty_review"] == 0
+
+    with patch(
+        "leaguebot.results.services.result_submission_service.run_result_submission_job",
+        new=AsyncMock(),
+    ) as wizard:
+        await _recover(league)
+
+    wizard.assert_not_called()
+    assert len(await changes_of(league.db_path, KIND)) == 1
+    assert ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) not in league.events
+    assert (await _channel_row(league.db_path))["closed"] == 0
+    async with get_connection(league.db_path) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM session_results WHERE round_id = ?",
+                                  (ROUND_ID,))
+        assert (await cursor.fetchone())[0] == 1
+
+    holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert await stopped_at(league) is None
+    assert (await _channel_row(league.db_path))["in_penalty_review"] == 1
+    assert len(_prompts(league)) == 1
+    assert len(await changes_of(league.db_path, KIND)) == 1
 
 
 async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_old_prompt(
