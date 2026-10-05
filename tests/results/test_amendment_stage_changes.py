@@ -54,6 +54,7 @@ from tests.support.change_queue import (
 from tests.support.review_league import (
     AMEND_CHANNEL,
     DIVISION_ID,
+    HEADING,
     LATER_ROUND_ID,
     LEWIS,
     MAX,
@@ -784,6 +785,91 @@ async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_
     assert EARLIER_VERDICT in said and CANCELLED_VERDICT in said
 
 
+#: The written heading over a batch of round 4's verdicts, image generation being off.
+ROUND_4_HEADING = "**Season 1 Pro Round 4**"
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_each_round_s_verdicts_are_announced_again_under_one_heading_of_its_own(tmp_path):
+    """Image spec, verdict banner: "One banner is posted per approval", naming its round, and a
+    batch of verdicts is headed however the league is configured. In the rebuild, round 3's
+    reports and its upheld correction sit under one heading for round 3, and round 4's report
+    under one for round 4. The headings the rebuild posts are new, so the take-down of the
+    superseded banners leaves them standing. Round 3's amendment has its reports approved (Lewis's
+    and Max's); round 4 holds Max's announced report; each round has its old banner."""
+    from leaguebot.results.models.points_config import SessionType
+    from leaguebot.results.services.penalty_service import StagedPenalty
+
+    league = await _amend_league(tmp_path, reports_approved=True)
+    later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    await _announced_verdict(league, later[MAX], LATER_REPORT, description="Pit lane speeding")
+    await _banner(league, ROUND_ID, OLD_BANNER)
+    await _banner(league, LATER_ROUND_ID, LATER_BANNER)
+    correction = StagedPenalty(
+        driver_user_id=MAX, session_type=SessionType.FEATURE_RACE, penalty_type="TIME",
+        penalty_seconds=10, description="Track limits", justification="Appeal upheld, lap 7",
+    )
+    await league.bot.change_queue.ask(
+        APPEALS,
+        {
+            "round_id": ROUND_ID,
+            "division_id": DIVISION_ID,
+            "session_types": ["FEATURE_RACE"],
+            "staged": [correction.to_payload()],
+            "pardons": [],
+            "appeals_prompt_message_id": AMEND_APPEALS_PROMPT,
+        },
+        interaction=_manager(league),
+        what="✅ Approve on round 3's amendment appeals",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    channel = league.channel(VERDICTS_CHANNEL)
+    sent = league.sent_to(VERDICTS_CHANNEL)
+    said = [str(channel.messages[mid].content or "") for mid in sent]
+    headings = [i for i, text in enumerate(said) if text in (HEADING, ROUND_4_HEADING)]
+    assert [said[i] for i in headings] == [HEADING, ROUND_4_HEADING]
+    round_3 = [i for i, text in enumerate(said)
+               if "Corner cutting" in text or "Track limits" in text]
+    [round_4] = [i for i, text in enumerate(said) if "Pit lane speeding" in text]
+    assert len(round_3) == 3
+    assert headings[0] < min(round_3) and max(round_3) < headings[1] < round_4
+    new_headings = [sent[i] for i in headings]
+    assert all(mid in channel.messages for mid in new_headings)
+    assert OLD_BANNER not in channel.messages and LATER_BANNER not in channel.messages
+    assert await _banners_left(league) == new_headings
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_report_the_same_size_as_an_upheld_appeal_is_announced_as_a_report(tmp_path):
+    """Results spec, amendment: "All of a round's verdicts shall be announced". Round 4 holds
+    Lewis's upheld appeal (5 seconds, track limits), with the penalty row upholding it writes
+    beside it, and a separate 5-second report for Lewis (unsafe rejoin), neither yet announced.
+    The upheld appeal is announced once, as an appeal; the report of the same size is no copy of
+    it, and is announced as a report."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    await _announced_verdict(league, later[LEWIS], None, description="Track limits",
+                             table="appeal_records")
+    await _announced_verdict(league, later[LEWIS], None, description="Track limits")
+    await _announced_verdict(league, later[LEWIS], None, description="Unsafe rejoin")
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    [appeal] = _sent_saying(league, "Track limits")
+    [report] = _sent_saying(league, "Unsafe rejoin")
+    assert await one(
+        league.db_path, "SELECT announcement_message_id FROM appeal_records"
+    ) == appeal
+    assert await one(
+        league.db_path,
+        "SELECT announcement_message_id FROM penalty_records WHERE description = ?",
+        "Unsafe rejoin",
+    ) == report
+
+
 # ---------------------------------------------------------------------------
 # The superseded announcements and their banners
 # ---------------------------------------------------------------------------
@@ -844,6 +930,33 @@ async def test_a_banner_heading_a_sanction_card_is_kept(tmp_path):
     assert OLD_VERDICT not in league.channel(VERDICTS_CHANNEL).messages
     assert OLD_BANNER in league.channel(VERDICTS_CHANNEL).messages
     assert await _banners_left(league) == [OLD_BANNER]
+
+
+#: The banner heading round 2's verdicts, before the amended round.
+EARLIER_BANNER = 8983
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_an_earlier_round_s_banner_is_left_alone(tmp_path):
+    """Results spec, amendment: the verdicts are announced again from the amended round on, so
+    only those rounds' superseded announcements and banners come down. Round 2, before the
+    amended round 3, has Max's announced verdict under its own banner; round 3's old banner heads
+    Lewis's old verdict."""
+    league = await _amend_league(tmp_path, reports_approved=True)
+    earlier = await _seed_round(league, EARLIER_ROUND_ID, 2, "Bahrain")
+    await _announced_verdict(league, earlier[MAX], EARLIER_VERDICT, description="Unsafe rejoin")
+    await _banner(league, EARLIER_ROUND_ID, EARLIER_BANNER)
+    await _banner(league, ROUND_ID, OLD_BANNER)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    said = league.channel(VERDICTS_CHANNEL).messages
+    assert EARLIER_BANNER in said and EARLIER_VERDICT in said
+    assert OLD_BANNER not in said
+    assert EARLIER_BANNER in await _banners_left(league)
+    assert OLD_BANNER not in await _banners_left(league)
+    assert _sent_saying(league, "Unsafe rejoin") == []
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
