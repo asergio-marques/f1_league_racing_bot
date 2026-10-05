@@ -533,3 +533,47 @@ async def test_a_discarded_repost_during_pending_completion_names_results_rounds
     reply = updated_reply(interaction)
     assert "/results rounds amend" in reply
     assert "/results rounds sync" not in reply
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
+    """Results spec, amendment: the division's channels are rebuilt "in the order a league reads
+    them: the results, the standings, the attendance sheet, the round's report verdicts, then its
+    appeal verdicts". Round 3's amendment, its reports approved (Lewis's and Max's) and attendance
+    on, has its appeals stage approved by Alex with a 10-second correction for Max upheld."""
+    from leaguebot.results.services.penalty_service import StagedPenalty
+    from leaguebot.results.models.points_config import SessionType
+
+    league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
+    correction = StagedPenalty(
+        driver_user_id=MAX, session_type=SessionType.FEATURE_RACE, penalty_type="TIME",
+        penalty_seconds=10, description="Track limits", justification="Appeal upheld, lap 7",
+    )
+    await league.bot.change_queue.ask(
+        APPEALS,
+        {
+            "round_id": ROUND_ID,
+            "division_id": DIVISION_ID,
+            "session_types": ["FEATURE_RACE"],
+            "staged": [correction.to_payload()],
+            "pardons": [],
+            "appeals_prompt_message_id": AMEND_APPEALS_PROMPT,
+        },
+        interaction=_manager(league),
+        what="✅ Approve on round 3's amendment appeals",
+    )
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    [change] = await changes_of(league.db_path, APPEALS)
+    jobs = [row["name"] for row in await step_rows(league.db_path, change["id"])]
+    first = {name: jobs.index(name) for name in
+             ("post_session_results", "post_standings", "attendance_sheet", "announce_verdict")}
+    assert (first["post_session_results"] < first["post_standings"] < first["attendance_sheet"]
+            < first["announce_verdict"])
+    channel = league.channel(VERDICTS_CHANNEL)
+    said = [channel.messages[mid].content or "" for mid in league.sent_to(VERDICTS_CHANNEL)]
+    reports = [i for i, text in enumerate(said) if "Corner cutting" in text]
+    appeals = [i for i, text in enumerate(said) if "Track limits" in text]
+    assert len(reports) == 2 and len(appeals) == 1
+    assert max(reports) < min(appeals)
