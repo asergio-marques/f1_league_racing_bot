@@ -344,25 +344,31 @@ async def test_an_appeal_verdict_saves_the_message_it_was_announced_in(tmp_path)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_division_with_no_verdicts_channel_stops_the_queue_at_its_report_verdict(
     tmp_path,
 ):
+    """The heading over the verdicts has nowhere to go either, and stops the queue first; once a
+    league admin discards it, the verdict stops it in turn rather than being stepped over."""
     league = await review_league(tmp_path, verdicts_channel=False)
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
 
+    assert await stopped_at(league) == "announce_heading"
+    await discard_job(league.bot)
     assert await stopped_at(league) == "announce_verdict"
     assert await one(league.db_path, "SELECT COUNT(*) FROM penalty_records") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_deleted_verdicts_channel_stops_the_queue_at_its_verdict(tmp_path):
+    """As with no verdicts channel: the heading stops the queue first, and once it is discarded
+    the verdict stops it in turn."""
     league = await review_league(tmp_path)
     del league.channels[VERDICTS_CHANNEL]
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
 
+    assert await stopped_at(league) == "announce_heading"
+    await discard_job(league.bot)
     assert await stopped_at(league) == "announce_verdict"
     assert await one(league.db_path, "SELECT COUNT(*) FROM penalty_records") == 1
 

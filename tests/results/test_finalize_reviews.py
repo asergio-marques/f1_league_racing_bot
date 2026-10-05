@@ -66,6 +66,7 @@ from tests.support.change_queue import (
 from tests.support.review_league import (
     AMEND_CHANNEL as AMENDMENT_CHANNEL,
     APPROVAL,
+    HEADING,
     LATER_ROUND_ID,
     LEWIS,
     LEWIS_PROFILE,
@@ -426,12 +427,12 @@ async def test_applied_penalties_are_announced(tmp_path):
     assert int(record["announcement_message_id"]) in league.sent_to(VERDICTS_CHANNEL)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_failed_announcement_does_not_stop_the_review(tmp_path):
     """The penalties are applied and the round moved on by then. The verdict Discord refuses stops
-    the queue; once a league admin discards it, the appeals prompt behind it still comes."""
+    the queue; once a league admin discards it, the appeals prompt behind it still comes. The
+    heading over the verdicts goes out, so that the verdict is the job that stops."""
     league = await review_league(tmp_path)
-    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content != HEADING
 
     await _approve_reports(league, staged=[league_penalty(LEWIS)])
     assert await stopped_at(league) == "announce_verdict"

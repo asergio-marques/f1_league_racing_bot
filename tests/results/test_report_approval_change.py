@@ -46,6 +46,7 @@ from tests.support.review_league import (
     APPROVAL,
     AMEND_CHANNEL,
     DIVISION_ID,
+    HEADING,
     LATER_ROUND_ID,
     LEWIS,
     LEWIS_PROFILE,
@@ -413,12 +414,12 @@ async def test_a_repost_discord_refuses_is_retried_and_the_approval_finishes_onc
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_verdict_is_named_incomplete_and_the_manager_is_told_to_post_it(
     tmp_path,
 ):
     league = await review_league(tmp_path)
-    league.channel(VERDICTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    # The heading over the verdicts goes out, so that the verdict is the job that stops.
+    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: content != HEADING
     interaction = await _approve(league, staged=[penalty(LEWIS)])
     await run_queue(league.bot)
     assert await stopped_at(league) == "announce_verdict"
