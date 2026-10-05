@@ -858,11 +858,14 @@ async def test_a_report_the_same_size_as_an_upheld_appeal_is_announced_as_a_repo
     it, and is announced as a report."""
     league = await _amend_league(tmp_path, reports_approved=True)
     later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
+    # The report is seeded first, as production writes it (the report stage before the appeals
+    # stage), so it holds the lower id: a pairing on the driver, session, type and seconds alone
+    # would then claim it rather than the upheld appeal's own row, and this test would fail.
+    await _announced_verdict(league, later[LEWIS], None, description="Unsafe rejoin")
     await _announced_verdict(league, later[LEWIS], None, description="Track limits",
                              table="appeal_records")
     await _announced_verdict(league, later[LEWIS], None, description="Track limits",
                              justification="Appeal upheld")
-    await _announced_verdict(league, later[LEWIS], None, description="Unsafe rejoin")
     await _approve_appeals(league)
     await run_queue(league.bot)
 
