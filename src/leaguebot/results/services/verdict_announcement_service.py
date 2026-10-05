@@ -473,15 +473,6 @@ async def _forget_banners_on(db: aiosqlite.Connection, message_ids: list[int]) -
     )
 
 
-async def _forget_banners(db_path: str, message_ids: list[int]) -> None:
-    """Drop the records of banners that have been taken down."""
-    if not message_ids:
-        return
-    async with get_connection(db_path) as db:
-        await _forget_banners_on(db, message_ids)
-        await db.commit()
-
-
 async def _get_result_context(db_path: str, race_result_id: int | None, qual_result_id: int | None) -> dict:
     """Return round_number, session_type, format for a race or qualifying result row."""
     async with get_connection(db_path) as db:
@@ -551,43 +542,13 @@ def _build_announcement_message(
     )
 
 
-async def _record_announcement(
-    db_path: str, table: str, record_id: int | None, message, channel_id: int | None
-) -> None:
-    """Record which message carries a verdict, so it can be found again (#189).
-
-    ``penalty_records`` and ``appeal_records`` stored the channel an announcement went to and
-    nothing more, so the bot could not edit, delete or replace one by any route. An amendment
-    therefore rescored the classification a verdict was applied to and left the verdict itself
-    standing, contradicting it, with no command to put it right.
-
-    Both the anchor id and the chunk list are written. A verdict is one message today, but the
-    column pair is the one every other posting uses and a batch that grows past Discord's limit
-    would otherwise reintroduce the guesswork `_delete_posting` exists to remove (#345).
-
-    A failure here is logged, never raised: the verdict *was* announced, and losing the record
-    of where is a smaller harm than turning a delivered announcement into a reported fault.
-    """
-    if record_id is None or message is None:
-        return
-    message_id = getattr(message, "id", None)
-    if message_id is None:
-        return
-    try:
-        async with get_connection(db_path) as db:
-            await _record_announcement_on(db, table, record_id, message_id, channel_id)
-            await db.commit()
-    except Exception:  # noqa: BLE001 — the announcement went out; only the record of it failed
-        log.exception("could not record the announcement of %s row %s", table, record_id)
-
-
 async def _record_announcement_on(
     db: aiosqlite.Connection, table: str, record_id: int, message_id: int, channel_id: int | None
 ) -> None:
     """Record which message carries a verdict on *db*; commits nothing, swallows nothing.
 
-    What `_record_announcement` writes, for a job's ``record``, which saves it with the job's
-    done mark. *table* is ``penalty_records`` or ``appeal_records``, written as a literal.
+    Written for a job's ``record``, which saves it with the job's done mark, so that where a
+    verdict went is never lost to a stop between the post and the mark (#189). *table* is ``penalty_records`` or ``appeal_records``, written as a literal.
     """
     await db.execute(
         f"UPDATE {table} SET announcement_message_id = ?, "  # noqa: S608 — literal table
