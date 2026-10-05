@@ -35,12 +35,25 @@ that.
 
 `test_pressing_resubmit_collects_and_replaces_the_results` runs the whole path from the button,
 because every piece of it was tested with the next piece stubbed and the whole never worked.
+
+**The round goes back to review through the change queue** (#439, slice 2): the collection asks
+`results.review.open` rather than opening the review itself. After the swap it asks for the new
+results to be published as "Provisional Results (amended)"; after a cancel, or a failure before
+the swap, it asks with `returning` set and nothing published, naming the Cancel button's message
+so the review's own jobs take the button down. What becomes of the request (the prompt, the
+cancel's line in the channel and in the log, `resubmitting` cleared) is the change type's, and is
+tested in `test_review_open_change.py`. The bot's queue here is a real one, `results.review.open`
+standing in as a change type of this file's own, so what the collection asks is read from the
+queue's table.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -48,6 +61,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 import leaguebot.results.services.penalty_wizard as pw
+from leaguebot.results.services import result_submission_service
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.result_submission_service import (
@@ -55,6 +69,7 @@ from leaguebot.results.services.result_submission_service import (
     _resubmit_collection_task,
     enter_resubmit_flow,
 )
+from tests.support.change_queue import attach_queue, change_rows
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 14108
@@ -64,6 +79,12 @@ ROUND_ID = 21
 SUB_CHANNEL = 7100
 MANAGER = 77
 TEAM_ROLE = 3001
+CANCEL_MESSAGE = 7300
+
+NOW = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
+REVIEW_OPEN = "results.review.open"
+AMENDED = "Provisional Results (amended)"
+NOT_BUILT = "#439: the resubmission does not yet ask the change queue to put the review back"
 
 QUALI_PASTE = "1, <@101>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
 RACE_PASTE = "1, <@101>, T3001, 1:30:00.000, 1:20.000, N/A\n2, <@102>, T3001, +5.000, 1:21.000, N/A"
@@ -154,8 +175,56 @@ def _bot(db_path, pastes, *, guild=True):
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(return_value=SimpleNamespace())
     bot.wait_for = AsyncMock(side_effect=[_message(p) for p in pastes])
-    bot.get_guild = MagicMock(return_value=MagicMock() if guild else None)
+    league = MagicMock()
+    alex = MagicMock()
+    alex.id = MANAGER
+    alex.display_name = "Alex"
+    league.get_member = MagicMock(return_value=alex)
+    bot.get_guild = MagicMock(return_value=league if guild else None)
+    attach_queue(bot, db_path, now=NOW, types=[_stand_in(REVIEW_OPEN)])
     return bot
+
+
+def _stand_in(kind: str) -> Any:
+    """A change type of *kind* with one job, which does nothing. It stands in for
+    `results.review.open`, whose own tests are elsewhere."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+
+    async def act(_ctx: Any) -> Any:
+        return StepResult()
+
+    async def check(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    return ChangeType(
+        kind=kind,
+        opening=(PlannedStep("open"),),
+        steps={"open": Step("open", StepKind.ACT, act)},
+        check=check,
+        key=lambda payload: f"{kind}:{payload.get('round_id')}",
+        doing=lambda _payload: f"Doing {kind}",
+        outcome=lambda _ctx: "Done.",
+    )
+
+
+async def _returns(db_path) -> list[dict]:
+    """Every request to open round 3's review that was asked for, in the order asked: its
+    payload, with the change's `origin` and `actor_id` beside it under those keys."""
+    return [
+        {**json.loads(row["payload"]), "origin": row["origin"], "actor_id": row["actor_id"]}
+        for row in await change_rows(db_path) if row["kind"] == REVIEW_OPEN
+    ]
+
+
+def _handover_stub() -> dict:
+    """The review opener from before the review moved onto the queue (#439), kept inert while
+    it stands: the review it would open is not this file's subject."""
+    if hasattr(result_submission_service, "enter_penalty_state"):
+        return {"handover": patch.object(
+            result_submission_service, "enter_penalty_state", new=AsyncMock()
+        )}
+    return {}
 
 
 async def _run(
@@ -202,13 +271,11 @@ async def _run(
             "leaguebot.results.services.result_submission_service._apply_points_in_tx",
             new=AsyncMock(return_value=True),
         ),
-        "penalty": patch(
-            "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
-        ),
         "close": patch(
             "leaguebot.results.services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
     }
+    patches.update(_handover_stub())
     started = {k: p.start() for k, p in patches.items()}
     try:
         await _resubmit_collection_task(ROUND_ID, DIVISION_ID, bot, channel, cancel_view)
@@ -216,6 +283,7 @@ async def _run(
         for p in patches.values():
             p.stop()
     started["channel"] = channel
+    started["returns"] = await _returns(bot.db_path)
     return started
 
 
@@ -244,6 +312,7 @@ async def _sessions(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_resubmitting_reads_its_round_from_the_database(tmp_path):
     """**Issue #210.** The real `_get_round_context` selected neither `season_id` nor
     `round_format`, so the task raised on its first read — inside a background task nobody
@@ -254,7 +323,7 @@ async def test_resubmitting_reads_its_round_from_the_database(tmp_path):
 
     assert "Resubmitting results for **Round 3** (Pro)" in _said(stubs["channel"])
     assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
-    assert stubs["penalty"].await_args.kwargs["season_id"] == SEASON_ID
+    assert [r["round_id"] for r in stubs["returns"]] == [ROUND_ID]
 
 
 # ---------------------------------------------------------------------------
@@ -292,12 +361,14 @@ async def test_a_guild_the_bot_is_not_in_collects_nothing(tmp_path):
     stubs = await _run(bot)
 
     bot.wait_for.assert_not_awaited()
-    stubs["penalty"].assert_not_awaited()
+    assert stubs["returns"] == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_failing_to_load_the_division_says_so_in_the_channel(tmp_path):
     """The manager has just been told to paste the results again; silence would leave them
-    pasting into a channel nothing reads."""
+    pasting into a channel nothing reads. With nothing to collect with, the bot asks for the
+    review back, as failed, publishing nothing."""
     db_path = await _make_db(tmp_path, name="resubmit_novalid")
     bot = _bot(db_path, [])
 
@@ -308,8 +379,10 @@ async def test_failing_to_load_the_division_says_so_in_the_channel(tmp_path):
     assert "Resubmission failed: could not load division data" in _said(stubs["channel"])
     bot.wait_for.assert_not_awaited()
     # Nothing to collect with, so the round goes back to the review it came from.
-    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
-    assert await _resubmitting(db_path) == 0
+    [back] = stubs["returns"]
+    assert back["returning"] == "failed"
+    assert back["publish"] is False
+    assert back["origin"] == "BOT"
 
 
 async def test_the_existing_channel_is_reused_and_the_resubmission_announced(tmp_path):
@@ -350,15 +423,18 @@ async def test_a_sprint_round_asks_for_all_four_sessions(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_goes_back_to_penalty_review_as_a_resubmission(tmp_path):
     """So the provisional tables it reposts say they replace the earlier ones."""
     db_path = await _make_db(tmp_path, name="resubmit_handover")
 
     stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
 
-    stubs["penalty"].assert_awaited_once()
-    assert stubs["penalty"].await_args.kwargs["is_resubmission"] is True
-    assert stubs["penalty"].await_args.kwargs["season_id"] == SEASON_ID
+    [back] = stubs["returns"]
+    assert back["round_id"] == ROUND_ID
+    assert back["label"] == AMENDED
+    assert back["publish"] is True
+    assert not back.get("returning")
 
 
 async def test_points_are_applied_for_each_saved_session(tmp_path):
@@ -402,13 +478,14 @@ async def test_a_fastest_lap_override_naming_a_non_finisher_is_refused(tmp_path)
     assert bot.wait_for.await_count == 3
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_session_can_be_cancelled(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_cancel_one")
 
     stubs = await _run(_bot(db_path, ["CANCELLED", RACE_PASTE]))
 
     assert (await _sessions(db_path))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
-    stubs["penalty"].assert_awaited_once()
+    assert len(stubs["returns"]) == 1
 
 
 async def test_every_session_cancelled_closes_the_channel(tmp_path):
@@ -417,7 +494,7 @@ async def test_every_session_cancelled_closes_the_channel(tmp_path):
     stubs = await _run(_bot(db_path, ["cancelled", "CANCELLED"]))
 
     stubs["close"].assert_awaited_once()
-    stubs["penalty"].assert_not_awaited()
+    assert stubs["returns"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +560,7 @@ async def test_the_earlier_results_stand_until_the_last_session_is_in(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_team_agreement_is_checked_against_the_resubmission_not_the_old_results(tmp_path):
     """The stored results are the ones being replaced, and may carry exactly the wrong team
     that made the manager resubmit. Checking against them would refuse the correction."""
@@ -492,7 +570,7 @@ async def test_team_agreement_is_checked_against_the_resubmission_not_the_old_re
     stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
 
     assert "Validation failed" not in _said(stubs["channel"])
-    stubs["penalty"].assert_awaited_once()
+    assert len(stubs["returns"]) == 1
 
 
 async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path):
@@ -511,7 +589,10 @@ async def test_a_team_disagreement_within_the_resubmission_is_refused(tmp_path):
     assert bot.wait_for.await_count == 3
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
+    """The new results could not be saved: the channel is told the earlier ones still stand,
+    and the bot asks for the review back, as failed, publishing nothing."""
     db_path = await _make_db(tmp_path, name="resubmit_swap_fails")
     await _seed_old_results(db_path)
 
@@ -523,9 +604,10 @@ async def test_a_failed_swap_says_the_earlier_results_still_stand(tmp_path):
 
     assert "The earlier results still stand" in _said(stubs["channel"])
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
-    stubs["penalty"].assert_awaited_once()
-    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
-    assert await _resubmitting(db_path) == 0
+    [back] = stubs["returns"]
+    assert back["returning"] == "failed"
+    assert back["publish"] is False
+    assert back["origin"] == "BOT"
 
 
 # ---------------------------------------------------------------------------
@@ -578,6 +660,7 @@ def _pastes_around_an_amendment(db_path, pastes, *, opens=None, ends: int, seen:
     return AsyncMock(side_effect=wait_for)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="resubmit_held")
     await _seed_old_results(db_path)
@@ -594,7 +677,7 @@ async def test_a_resubmitted_paste_is_refused_while_another_round_is_amended(tmp
     assert "Paste **" in said and "again then." in said
     assert bot.wait_for.await_count == 3
     assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
-    stubs["penalty"].assert_awaited_once()
+    assert len(stubs["returns"]) == 1
 
 
 async def test_the_last_paste_refused_leaves_the_earlier_results_standing(tmp_path):
@@ -641,6 +724,7 @@ async def test_cancelling_a_resubmitted_session_is_refused_while_amended(tmp_pat
 def _cancel_view():
     view = ResubmissionCancelView(SimpleNamespace(db_path="", bot=MagicMock()))
     view.message = MagicMock()
+    view.message.id = CANCEL_MESSAGE
     view.message.edit = AsyncMock()
     return view
 
@@ -680,45 +764,45 @@ async def test_cancelling_the_resubmission_keeps_the_earlier_results(tmp_path):
     await _run(_cancelled_on_second_wait(db_path, view), cancel_view=view)
 
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
-    assert await _resubmitting(db_path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancelling_the_resubmission_returns_the_round_to_penalty_review(tmp_path):
-    """The results were never touched and are already posted, so the prompt comes back
-    without them being posted a second time."""
+    """The results were never touched and are already posted, so the review is asked back
+    without them being posted a second time, naming the Cancel button's message for the
+    review to take the button down."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_review")
     await _seed_old_results(db_path)
     view = _cancel_view()
 
     stubs = await _run(_cancelled_on_second_wait(db_path, view), cancel_view=view)
 
-    stubs["penalty"].assert_awaited_once()
-    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
-    assert "is_resubmission" not in stubs["penalty"].await_args.kwargs
-    assert "Resubmission cancelled" in _said(stubs["channel"])
-    view.message.edit.assert_awaited_once_with(view=None)
+    [back] = stubs["returns"]
+    assert back["returning"] == "cancelled"
+    assert back["publish"] is False
+    assert back["cancel_message_id"] == CANCEL_MESSAGE
+    assert back["origin"] == "MEMBER"
+    assert back.get("label") != AMENDED
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancelling_the_resubmission_is_logged(tmp_path):
-    """A cancel is recorded as every cancel is: one line naming who cancelled, by display name
-    and mention, with what became of the change and what to do next beneath it."""
+    """A cancel is recorded as every cancel is, by the review's return, once the prompt is back
+    (`test_review_open_change.py`). That return is asked in the name of the manager who
+    pressed Cancel, so its line names him."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_log")
     await _seed_old_results(db_path)
     view = _cancel_view()
     bot = _cancelled_on_second_wait(db_path, view)
-    bot.get_guild.return_value.get_member.return_value.display_name = "Alex"
 
-    await _run(bot, cancel_view=view)
+    stubs = await _run(bot, cancel_view=view)
 
-    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
-    [cancel] = [line for line in lines if "cancelled by" in line]
-    assert cancel.startswith("↩️ ")
-    assert f"cancelled by Alex (<@{MANAGER}>)" in cancel.split("\n", 1)[0]
-    assert "The earlier results stand." in cancel
-    assert "Press 🔄 Resubmit Initial Results to start again." in cancel
-    assert not any("RESULTS_RESUBMISSION | Cancelled" in line for line in lines)
+    [back] = stubs["returns"]
+    assert back["returning"] == "cancelled"
+    assert back["actor_id"] == MANAGER
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(tmp_path):
     """The last session's configuration menu is its own wait. A cancel landing there must
     still stop the swap that would otherwise follow it."""
@@ -740,19 +824,21 @@ async def test_cancel_pressed_while_choosing_the_configuration_replaces_nothing(
     )
 
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
-    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
+    [back] = stubs["returns"]
+    assert back["returning"] == "cancelled"
+    assert back["publish"] is False
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmission(tmp_path):
     """Alex pastes the qualifying session of a resubmission and, with two configurations
     attached, is asked to choose one; instead he presses Cancel and never chooses. The
-    resubmission ends there: the earlier results stand, the resubmitting flag is cleared, the
-    round goes back to its penalty review without reposting, and one cancel line names him."""
+    resubmission ends there: the earlier results stand, and the review is asked back once, in
+    his name, as cancelled and without reposting."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_choosing")
     await _seed_old_results(db_path)
     view = _cancel_view()
     bot = _bot(db_path, [QUALI_PASTE])
-    bot.get_guild.return_value.get_member.return_value.display_name = "Alex"
 
     async def _nobody_chooses():
         _press_cancel(view)
@@ -764,15 +850,13 @@ async def test_cancel_pressed_during_the_configuration_choice_ends_the_resubmiss
     )
 
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
-    assert await _resubmitting(db_path) == 0
-    stubs["penalty"].assert_awaited_once()
-    assert stubs["penalty"].await_args.kwargs["skip_results_post"] is True
-    assert "Resubmission cancelled" in _said(stubs["channel"])
-    lines = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
-    [cancel] = [line for line in lines if line.startswith("↩️ ")]
-    assert f"cancelled by Alex (<@{MANAGER}>)" in cancel.split("\n", 1)[0]
+    [back] = stubs["returns"]
+    assert back["returning"] == "cancelled"
+    assert back["publish"] is False
+    assert back["actor_id"] == MANAGER
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_completed_resubmission_takes_down_the_cancel_button(tmp_path):
     """Once the swap has landed there is nothing left to cancel."""
     db_path = await _make_db(tmp_path, name="resubmit_cancel_done")
@@ -782,7 +866,7 @@ async def test_a_completed_resubmission_takes_down_the_cancel_button(tmp_path):
     stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]), cancel_view=view)
 
     view.message.edit.assert_awaited_once_with(view=None)
-    assert stubs["penalty"].await_args.kwargs["is_resubmission"] is True
+    assert [back["label"] for back in stubs["returns"]] == [AMENDED]
 
 
 async def test_a_paste_is_still_collected_when_nobody_presses_cancel(tmp_path):
@@ -883,7 +967,8 @@ def _pressed_resubmit():
 
 async def _press_resubmit_and_collect(bot, state):
     """Press Resubmit and wait for the collection it starts, stubbing only Discord and the
-    division lookups the collection's own tests already cover."""
+    division lookups the collection's own tests already cover. Gives every request to open the
+    review asked for, as `_returns` does."""
     with patch(
         "leaguebot.results.services.result_submission_service._build_division_validation_data",
         new=AsyncMock(
@@ -892,13 +977,18 @@ async def _press_resubmit_and_collect(bot, state):
     ), patch(
         "leaguebot.results.services.season_points_service.get_attached_config_names",
         new=AsyncMock(return_value=["Standard"]),
-    ), patch(
-        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
-    ) as penalty:
-        await enter_resubmit_flow(_pressed_resubmit(), state)
-        task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{ROUND_ID}")
-        await asyncio.wait_for(task, timeout=5)
-    return penalty
+    ):
+        handover = _handover_stub()
+        for stub in handover.values():
+            stub.start()
+        try:
+            await enter_resubmit_flow(_pressed_resubmit(), state)
+            task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{ROUND_ID}")
+            await asyncio.wait_for(task, timeout=5)
+        finally:
+            for stub in handover.values():
+                stub.stop()
+    return await _returns(bot.db_path)
 
 
 async def _press_resubmit_and_fail(bot, state, *, validation_error=None):
@@ -915,12 +1005,17 @@ async def _press_resubmit_and_fail(bot, state, *, validation_error=None):
     ), patch(
         "leaguebot.results.services.season_points_service.get_attached_config_names",
         new=AsyncMock(return_value=["Standard"]),
-    ), patch(
-        "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
     ):
-        await enter_resubmit_flow(interaction, state)
-        task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{state.round_id}")
-        await asyncio.wait_for(task, timeout=5)
+        handover = _handover_stub()
+        for stub in handover.values():
+            stub.start()
+        try:
+            await enter_resubmit_flow(interaction, state)
+            task = next(t for t in asyncio.all_tasks() if t.get_name() == f"resubmit_r{state.round_id}")
+            await asyncio.wait_for(task, timeout=5)
+        finally:
+            for stub in handover.values():
+                stub.stop()
     return interaction
 
 
@@ -963,6 +1058,7 @@ async def test_a_resubmission_failing_before_any_paste_is_recorded(tmp_path, rou
     assert "The earlier results stand." in replies
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):
     """Issue #210, end to end. The button used to delete the results and start a collection
     that raised on its first line; every part of it was tested with the next part stubbed."""
@@ -972,16 +1068,17 @@ async def test_pressing_resubmit_collects_and_replaces_the_results(tmp_path):
     bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
     bot.get_channel = MagicMock(return_value=channel)
 
-    penalty = await _press_resubmit_and_collect(bot, _review_state(bot))
+    returns = await _press_resubmit_and_collect(bot, _review_state(bot))
 
     assert [s[:2] for s in await _sessions(db_path)] == [
         ("FEATURE_QUALIFYING", "ACTIVE"),
         ("FEATURE_RACE", "ACTIVE"),
     ]
     assert await _resubmitting(db_path) == 0
-    assert penalty.await_args.kwargs["is_resubmission"] is True
+    assert [back["label"] for back in returns] == [AMENDED]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_staged_penalties_stay_discarded_after_cancelling(tmp_path):
     """Resubmit logged and cleared them. Cancelling keeps the results, not the staged list —
     the review comes back empty, as the announcement's log already recorded."""
@@ -1006,8 +1103,8 @@ async def test_staged_penalties_stay_discarded_after_cancelling(tmp_path):
 
     bot.wait_for = AsyncMock(side_effect=_wait_for)
 
-    penalty = await _press_resubmit_and_collect(bot, state)
+    returns = await _press_resubmit_and_collect(bot, state)
 
     assert state.staged == []
     assert await _sessions(db_path) == [("FEATURE_RACE", "ACTIVE", None)]
-    assert penalty.await_args.kwargs["skip_results_post"] is True
+    assert [back["publish"] for back in returns] == [False]
