@@ -1228,7 +1228,8 @@ class ChangeQueue:
         The queue is stopped, so a Retry works directly on the queue's own records and is not
         itself queued. It is a league manager's or a league admin's, at any time, and is refused,
         privately and with a line in the log channel, to anyone else and where the notice's job
-        no longer stops the queue (it cleared, was discarded, or went with a pack). Otherwise the
+        no longer stops the queue (it cleared, was discarded, or went with a pack), and where the
+        worker is trying the job's change at that moment, as a Discard is. Otherwise the
         job is made due now, the worker is woken, the presser is told and the log names them.
         The try is the worker's, in the order of the queue: where it fails, `_stop` records it.
         """
@@ -1250,28 +1251,52 @@ class ChangeQueue:
                 what=what,
             )
             return
-        change, steps, job = found
         presser = interaction_member(interaction)
-        name = await self._name_job(change, job, self._step_context(change, steps, job))
-        before = self._retrying[job["id"]][1] if job["id"] in self._retrying else job["next_try_at"]
-        async with get_connection(self._db_path) as db:
-            await db.execute("BEGIN IMMEDIATE")
-            try:
-                cursor = await db.execute(
-                    "UPDATE queued_change_steps SET next_try_at = ? WHERE id = ? "
-                    "AND done_at IS NULL",
-                    (self._clock().isoformat(), job["id"]),
+        # Under `_asking`, as a Discard is: the worker holds it as it chooses a change and sets
+        # `_trying` under it, so a Retry is saved before the worker chooses, or finds the change
+        # in hand and is refused. A press saved while a try is under way would leave its entry
+        # behind once the try had cleared the stop, and a later failure would be read as the
+        # Retry's.
+        async with self._asking:
+            if self._trying == found[0]["id"]:
+                await refuse(
+                    interaction,
+                    f"⛔ Job #{found[2]['id']} is being tried now. Press Retry again once the "
+                    f"try has ended, if it still stops the queue.",
+                    what="Retry of a stopped job",
                 )
-                line_id = None
-                if cursor.rowcount == 1:
-                    line_id = await self._router.queue_log_on(
-                        db, retried_line(presser, job["id"], name, change["what"])
+                return
+            found = await self._stopped_at(notice_message_id)
+            if found is None:
+                await refuse(
+                    interaction,
+                    "⛔ That job no longer stops the queue, so there is nothing to retry.",
+                    what=what,
+                )
+                return
+            change, steps, job = found
+            name = await self._name_job(change, job, self._step_context(change, steps, job))
+            before = (
+                self._retrying[job["id"]][1] if job["id"] in self._retrying else job["next_try_at"]
+            )
+            async with get_connection(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                try:
+                    cursor = await db.execute(
+                        "UPDATE queued_change_steps SET next_try_at = ? WHERE id = ? "
+                        "AND done_at IS NULL",
+                        (self._clock().isoformat(), job["id"]),
                     )
-                await db.commit()
-            except BaseException:
-                await db.rollback()
-                raise
-        self._retrying[job["id"]] = (presser, before)
+                    line_id = None
+                    if cursor.rowcount == 1:
+                        line_id = await self._router.queue_log_on(
+                            db, retried_line(presser, job["id"], name, change["what"])
+                        )
+                    await db.commit()
+                except BaseException:
+                    await db.rollback()
+                    raise
+            self._retrying[job["id"]] = (presser, before)
         await self._tell(interaction, f"🔁 Job #{job['id']} ({name}) is being tried again now.")
         await self._router.deliver_queued([] if line_id is None else [line_id],
                                           interaction=interaction)

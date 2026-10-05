@@ -13,7 +13,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import discord
-import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.core.test_change_queue import (  # noqa: F401 — `env` is the fixture
@@ -56,10 +55,6 @@ ADMIN_NAMED = "Boss (`<@6161>`)"
 #: The line of a stopped job clearing without going through, its number, what it was and why
 #: filled in.
 CLEARED = "ℹ️ Job #{id} ({job}) no longer stops the queue: {why}. The queue runs on."
-#: The reason a Retry pressed while the worker tries its job is refused, until the build says it.
-BEING_TRIED = (
-    "#439: a Retry pressed while its job or its change's check is being tried is not refused"
-)
 
 
 def _manager() -> Any:
@@ -613,7 +608,6 @@ async def test_discard_saves_the_partial_result_a_try_kept_while_the_press_waite
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=BEING_TRIED)
 async def test_a_retry_of_a_job_being_tried_is_refused_and_the_try_s_outcome_stands(env):
     """A Retry pressed while the worker tries the stopped job, or the check of a change stopped at
     its check, is refused privately as being tried now, with a ⛔ line naming the manager, and the
