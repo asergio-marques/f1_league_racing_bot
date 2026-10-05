@@ -4,20 +4,15 @@ Tests cover:
 - result_status transitions in the DB
 - Zero-staged-penalties still advances to AWAITING_APPEAL_VERDICTS (FR-009)
 - Zero-staged-corrections still advances to FINAL (FR-010)
-- channel-close only at FINAL (round_submission_channels.closed = 1)
-- results rounds amend rejected before FINAL, accepted at FINAL
+- channel-close only at FINAL (round_submission_channels.closed = 1), in the appeals approval's
+  save
 - penalty_records and appeal_records rows created when staged lists are non-empty
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_wizard import PenaltyReviewState
-from leaguebot.results.services.penalty_service import StagedPenalty
 from tests.support.teams import seed_team_instances
 
 
@@ -68,40 +63,11 @@ async def _bootstrap(db_path: str) -> tuple[int, int, int]:
     return season_id, division_id, round_id
 
 
-async def _insert_session_with_drivers(db_path: str, round_id: int, division_id: int) -> int:
-    """Insert a 2-driver FEATURE_RACE session. Returns session_result_id."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "INSERT INTO session_results (round_id, division_id, session_type, status, config_name) "
-            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'STD')",
-            (round_id, division_id),
-        )
-        sr_id = cursor.lastrowid
-        await db.execute(
-            "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
-            "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
-            "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
-            "VALUES (?, 1, 100, 1, 'CLASSIFIED', 1200000, 0, 0, 0, 25, 0)",
-            (sr_id,),
-        )
-        await db.execute(
-            "INSERT INTO race_session_results "
-            "(session_result_id, driver_user_id, team_instance_id, finishing_position, "
-            "outcome, base_time_ms, ingame_time_penalties_ms, postrace_time_penalties_ms, "
-            "appeal_time_penalties_ms, points_awarded, fastest_lap_bonus) "
-            "VALUES (?, 2, 200, 2, 'CLASSIFIED', 1210000, 0, 0, 0, 18, 0)",
-            (sr_id,),
-        )
-        await db.commit()
-    return sr_id
-
-
 async def _insert_submission_channel(db_path: str, round_id: int, channel_id: int = 555) -> None:
     """Mark a round as in_penalty_review in round_submission_channels.
 
-    The round goes to AWAITING_REPORT_VERDICTS with it, as `enter_penalty_state` moves it in the
-    same transaction: a penalty review is approved only while its round awaits one (#402).
+    The round goes to AWAITING_REPORT_VERDICTS with it, as the review's opening save moves it:
+    a penalty review is approved only while its round awaits one (#402).
     """
     async with get_connection(db_path) as db:
         await db.execute(
@@ -116,184 +82,109 @@ async def _insert_submission_channel(db_path: str, round_id: int, channel_id: in
         await db.commit()
 
 
-def _make_state(
-    db_path: str,
-    round_id: int,
-    division_id: int,
-    bot,
-    channel_id: int = 555,
-) -> PenaltyReviewState:
-    return PenaltyReviewState(
-        round_id=round_id,
-        division_id=division_id,
-        submission_channel_id=channel_id,
-        session_types_present=[SessionType.FEATURE_RACE],
-        db_path=db_path,
-        bot=bot,
-        round_number=1,
-        division_name="Main",
+# ---------------------------------------------------------------------------
+# The two approvals, on the change queue (#439)
+#
+# Approving a round's reports and its appeals are changes on the queue
+# (`results.reports.approve`, `results.appeals.approve`), asked as the review's Approve controls
+# ask them and carried out by running the queue. These run on the review league of
+# `tests.support.review_league`: round 3 of division 11 (Pro), Lewis (101) and Max (102) in its
+# Feature Race, its submission channel open, and round 4 already final.
+# ---------------------------------------------------------------------------
+
+NOT_BUILT = "#439: a round's approvals are not yet changes on the queue"
+APPEALS_PROMPT = 8902
+
+
+async def _appeals_league(tmp_path, **options):
+    """Round 3 awaiting its appeal verdicts, its appeals prompt standing."""
+    from tests.support.review_league import SUBMISSION_CHANNEL, review_league
+
+    league = await review_league(
+        tmp_path, round_status="AWAITING_APPEAL_VERDICTS", other_division=False,
+        appeals_prompt=APPEALS_PROMPT, **options,
+    )
+    league.channel(SUBMISSION_CHANNEL).seed(APPEALS_PROMPT, "appeals review")
+    return league
+
+
+async def _approve_reports(league, staged=()) -> None:
+    """A league manager presses Approve on round 3's penalty review with *staged*, and the queue
+    runs."""
+    from tests.support.change_queue import member_interaction, run_queue, tier_member
+    from tests.support.review_league import DIVISION_ID, PROMPT, ROUND_ID
+
+    await league.bot.change_queue.ask(
+        "results.reports.approve",
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID,
+            "staged": [item.to_payload() for item in staged], "pardons": [],
+            "prompt_message_id": PROMPT, "approval_message_id": None,
+        },
+        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        what="✅ Approve on round 3's penalty review",
+    )
+    await run_queue(league.bot)
+
+
+async def _approve_appeals(league, staged=()) -> None:
+    """A league manager presses Approve on round 3's appeals review, the one the channel
+    records, with *staged*; the queue is not yet run."""
+    from tests.support.change_queue import member_interaction, tier_member
+    from tests.support.review_league import DIVISION_ID, ROUND_ID, one
+
+    prompt = await one(
+        league.db_path,
+        "SELECT appeals_prompt_message_id FROM round_submission_channels WHERE round_id = ?",
+        ROUND_ID,
+    )
+    await league.bot.change_queue.ask(
+        "results.appeals.approve",
+        {
+            "round_id": ROUND_ID, "division_id": DIVISION_ID,
+            "staged": [item.to_payload() for item in staged],
+            "appeals_prompt_message_id": prompt,
+        },
+        interaction=member_interaction(league.bot, user=tier_member("manager")),
+        what="✅ Approve on round 3's appeals review",
     )
 
 
-def _make_bot() -> MagicMock:
-    """Stub bot with essential attributes used by finalize functions."""
-    bot = MagicMock()
-    bot.db_path = ":memory:"
+async def _closed(league) -> bool:
+    from tests.support.review_league import ROUND_ID, one
 
-    # Mock the channel returned by bot.get_channel
-    mock_channel = MagicMock()
-    mock_channel.send = AsyncMock(return_value=_make_message())
-    mock_channel.delete = AsyncMock()
-    mock_channel.fetch_message = AsyncMock(return_value=_make_message())
-    mock_channel.edit = AsyncMock()
-    mock_channel.set_permissions = AsyncMock()
-    mock_channel.category = None
-    bot.get_channel.return_value = mock_channel
-
-    bot.add_view = MagicMock()
-
-    class _OutputRouter:
-        async def post_log(self, *args, **kwargs):
-            pass
-
-    bot.output_router = _OutputRouter()
-
-    class _ModuleService:
-        async def is_attendance_enabled(self, *args, **kwargs):
-            return False
-
-    bot.module_service = _ModuleService()
-    return bot
+    return bool(await one(
+        league.db_path, "SELECT closed FROM round_submission_channels WHERE round_id = ?",
+        ROUND_ID,
+    ))
 
 
-def _make_message() -> MagicMock:
-    msg = MagicMock()
-    msg.id = 99999
-    msg.edit = AsyncMock()
-    msg.delete = AsyncMock()
-    return msg
-
-
-def _make_interaction(guild: MagicMock, user_id: int = 999) -> MagicMock:
-    interaction = MagicMock()
-    interaction.guild = guild
-    interaction.user = MagicMock()
-    interaction.user.id = user_id
-    interaction.response = MagicMock()
-    interaction.response.defer = AsyncMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _make_guild() -> MagicMock:
-    guild = MagicMock()
-    mock_channel = MagicMock()
-    mock_channel.send = AsyncMock(return_value=_make_message())
-    mock_channel.delete = AsyncMock()
-    mock_channel.fetch_message = AsyncMock(return_value=_make_message())
-    mock_channel.edit = AsyncMock()
-    mock_channel.set_permissions = AsyncMock()
-    mock_channel.category = None
-    mock_channel.overwrites = {}
-    guild.get_channel.return_value = mock_channel
-    guild.me = MagicMock()
-    return guild
-
-
-async def _get_round_status(db_path: str, round_id: int) -> str:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
-        row = await cursor.fetchone()
-    return row["status"] if row else "UNKNOWN"
-
-
-async def _is_channel_closed(db_path: str, round_id: int) -> bool:
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT closed FROM round_submission_channels WHERE round_id = ?", (round_id,)
-        )
-        row = await cursor.fetchone()
-    return bool(row["closed"]) if row else False
-
-
-# ---------------------------------------------------------------------------
-# T028-1: AWAITING_REPORT_VERDICTS → AWAITING_APPEAL_VERDICTS, zero staged penalties (FR-009)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
-    """Empty staged list — round advances to AWAITING_APPEAL_VERDICTS, channel stays open."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    """Nothing staged: the round advances to AWAITING_APPEAL_VERDICTS (FR-009), channel open."""
+    from tests.support.review_league import review_league, round_status, stopped_at
 
-    bot = _make_bot()
-    guild = _make_guild()
-    state = _make_state(db_path, round_id, division_id, bot)
-    interaction = _make_interaction(guild)
+    league = await review_league(tmp_path, other_division=False)
+    await _approve_reports(league)
 
-    # Patch _rps functions to avoid complex Discord channel resolution
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(interaction, state)
-
-    # the round must now be awaiting appeal verdicts
-    status = await _get_round_status(db_path, round_id)
-    assert status == "AWAITING_APPEAL_VERDICTS"
-
-    # Channel must NOT be closed
-    assert not await _is_channel_closed(db_path, round_id)
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert not await _closed(league)
 
 
-# ---------------------------------------------------------------------------
-# T028-2: AWAITING_APPEAL_VERDICTS → FINAL with zero staged corrections (FR-010)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_zero_corrections_advances_to_final(tmp_path):
-    """Empty staged appeals — round advances to FINAL, channel closed."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    """Nothing staged: the round becomes FINAL (FR-010), its channel row closed."""
+    from tests.support.change_queue import run_queue
+    from tests.support.review_league import round_status, stopped_at
 
-    # Manually set status to POST_RACE_PENALTY
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = ?", (round_id,)
-        )
-        await db.commit()
+    league = await _appeals_league(tmp_path)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
 
-    bot = _make_bot()
-    guild = _make_guild()
-    state = _make_state(db_path, round_id, division_id, bot)
-    interaction = _make_interaction(guild)
-
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import finalize_appeals_review
-        await finalize_appeals_review(interaction, state)
-
-    # the results must now be final
-    status = await _get_round_status(db_path, round_id)
-    assert status == "FINAL"
-
-    # Channel must be closed
-    assert await _is_channel_closed(db_path, round_id)
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "FINAL"
+    assert await _closed(league)
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +192,7 @@ async def test_zero_corrections_advances_to_final(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_penalty_review_cannot_reopen_a_round_that_has_ended(tmp_path):
     """Switching the results module off closes every round still awaiting a review.
 
@@ -309,260 +200,143 @@ async def test_a_penalty_review_cannot_reopen_a_round_that_has_ended(tmp_path):
     deleted, but a client already holding the message can still press the button. Unguarded,
     that write dragged the closed round back to AWAITING_APPEAL_VERDICTS — its division would
     un-finish, `/season complete` would refuse again, and the league would be back in the dead
-    end the disable had just got it out of.
+    end the disable had just got it out of. The approval is refused at its check; nothing is
+    applied.
     """
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    from tests.support.review_league import (
+        LEWIS, penalty, penalty_records, review_league, round_status,
+    )
 
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (round_id,))
-        await db.commit()
+    league = await review_league(tmp_path, round_status="FINAL", other_division=False)
+    await _approve_reports(league, [penalty(LEWIS)])
 
-    state = _make_state(db_path, round_id, division_id, _make_bot())
-    interaction = _make_interaction(_make_guild())
-
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(interaction, state)
-
-    assert await _get_round_status(db_path, round_id) == "FINAL"
+    assert await round_status(league.db_path) == "FINAL"
+    assert await penalty_records(league.db_path) == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeals_review_cannot_reopen_a_cancelled_round(tmp_path):
     """The same guard the other side of it: a cancelled round must not become FINAL."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    from tests.support.change_queue import run_queue
+    from tests.support.review_league import SUBMISSION_CHANNEL, review_league, round_status
 
-    async with get_connection(db_path) as db:
-        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", (round_id,))
-        await db.commit()
+    league = await review_league(
+        tmp_path, round_status="CANCELLED", other_division=False, appeals_prompt=APPEALS_PROMPT,
+    )
+    league.channel(SUBMISSION_CHANNEL).seed(APPEALS_PROMPT, "appeals review")
+    await _approve_appeals(league)
+    await run_queue(league.bot)
 
-    state = _make_state(db_path, round_id, division_id, _make_bot())
-    interaction = _make_interaction(_make_guild())
-
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import finalize_appeals_review
-        await finalize_appeals_review(interaction, state)
-
-    assert await _get_round_status(db_path, round_id) == "CANCELLED"
+    assert await round_status(league.db_path) == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_approving_the_last_rounds_appeals_finishes_the_division(tmp_path):
     """The end-to-end link that lets a season be completed at all (issue #154).
 
     Approving a round's appeals is the only place a round becomes FINAL, and so the only place a
     division can finish by racing. Until this was wired up, `/season complete` gated on a column
-    nothing wrote and no season could ever be completed. This test starts from the division a
-    league actually has — ACTIVE, with its last round in appeals — and asserts the whole chain,
-    rather than calling refresh_division_status directly as the unit tests do.
+    nothing wrote and no season could ever be completed. This starts from the division a league
+    actually has — ACTIVE, its last round in appeals and every other round final — and asserts
+    the whole chain.
     """
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    from tests.support.change_queue import run_queue
+    from tests.support.review_league import DIVISION_ID, one, round_status, stopped_at
 
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET status = 'AWAITING_APPEAL_VERDICTS' WHERE id = ?", (round_id,)
-        )
-        await db.execute(
-            "UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (division_id,)
-        )
+    league = await _appeals_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = ?", (DIVISION_ID,))
         await db.commit()
 
-    bot = _make_bot()
-    guild = _make_guild()
-    state = _make_state(db_path, round_id, division_id, bot)
-    interaction = _make_interaction(guild)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
 
-    async def _division_status() -> str:
-        async with get_connection(db_path) as db:
-            cur = await db.execute(
-                "SELECT status FROM divisions WHERE id = ?", (division_id,)
-            )
-            return (await cur.fetchone())["status"]
-
-    assert await _division_status() == "ACTIVE"
-
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import finalize_appeals_review
-        await finalize_appeals_review(interaction, state)
-
-    assert await _get_round_status(db_path, round_id) == "FINAL"
-    assert await _division_status() == "FINISHED"
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "FINAL"
+    assert await one(
+        league.db_path, "SELECT status FROM divisions WHERE id = ?", DIVISION_ID,
+    ) == "FINISHED"
 
     # and with its only division finished, the season is now completable
     from leaguebot.core.services.season_service import SeasonService
-    assert await SeasonService(db_path).all_divisions_finished() is True
+    assert await SeasonService(league.db_path).all_divisions_finished() is True
 
 
 # ---------------------------------------------------------------------------
-# T028-3: Full lifecycle PROVISIONAL → POST_RACE_PENALTY → FINAL
+# The full lifecycle: awaiting report verdicts → awaiting appeal verdicts → final
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_full_lifecycle_states(tmp_path):
-    """Walk the lifecycle from results-in to final, verifying each transition.
+    """Walk the lifecycle from results-in to final, verifying each transition: the round is
+    awaiting report verdicts, then appeal verdicts once its reports are approved, then final once
+    its appeals are."""
+    from tests.support.change_queue import run_queue
+    from tests.support.review_league import review_league, round_status, stopped_at
 
-    The chain gained states with migration 053: the old `PROVISIONAL` covered a round not yet
-    due, one due but unentered, and one entered but unjudged. This walk starts where results are
-    in — `_insert_session_with_drivers` puts them there — so the round is awaiting report
-    verdicts, then appeal verdicts, then final.
-    """
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    league = await review_league(tmp_path, other_division=False)
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
-    bot = _make_bot()
-    guild = _make_guild()
-    state = _make_state(db_path, round_id, division_id, bot)
+    await _approve_reports(league)
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert not await _closed(league)
 
-    # 1. Results are in, so reports are what the round is waiting on
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", (round_id,)
-        )
-        await db.commit()
-    assert await _get_round_status(db_path, round_id) == "AWAITING_REPORT_VERDICTS"
-
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import (
-            finalize_penalty_review,
-            finalize_appeals_review,
-        )
-
-        # 2. Report verdicts approved → awaiting appeal verdicts
-        interaction1 = _make_interaction(guild)
-        await finalize_penalty_review(interaction1, state)
-        assert await _get_round_status(db_path, round_id) == "AWAITING_APPEAL_VERDICTS"
-        assert not await _is_channel_closed(db_path, round_id)
-
-        # 3. Appeal verdicts approved → final
-        interaction2 = _make_interaction(guild)
-        await finalize_appeals_review(interaction2, state)
-        assert await _get_round_status(db_path, round_id) == "FINAL"
-        assert await _is_channel_closed(db_path, round_id)
+    await _approve_appeals(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) is None
+    assert await round_status(league.db_path) == "FINAL"
+    assert await _closed(league)
 
 
 # ---------------------------------------------------------------------------
-# T028-4: penalty_records rows created when staged penalties are non-empty
+# penalty_records rows created when staged penalties are non-empty
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_penalty_records_inserted_when_staged(tmp_path):
-    """Staged penalties produce penalty_records rows in the DB."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    sr_id = await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
+    """A 5-second penalty staged for Lewis produces one penalty record, on his race result."""
+    from tests.support.review_league import LEWIS, one, penalty, review_league, stopped_at
 
-    # Get the race_session_results id for driver 1
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM race_session_results WHERE session_result_id = ? AND driver_user_id = 1",
-            (sr_id,),
-        )
-        rsr_row = await cursor.fetchone()
-    race_result_id = rsr_row["id"]
-
-    bot = _make_bot()
-    guild = _make_guild()
-    state = _make_state(db_path, round_id, division_id, bot)
-    state.staged.append(
-        StagedPenalty(
-            driver_user_id=1,
-            session_type=SessionType.FEATURE_RACE,
-            penalty_type="TIME",
-            penalty_seconds=5,
-            description="Collision",
-            justification="Forced off track",
-        )
+    league = await review_league(tmp_path, other_division=False)
+    race_result_id = await one(
+        league.db_path, "SELECT id FROM race_session_results WHERE driver_user_id = ?", LEWIS,
     )
-    interaction = _make_interaction(guild)
+    await _approve_reports(league, [penalty(LEWIS)])
 
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-        patch("leaguebot.results.services.verdict_announcement_service.post_appeal_announcements", new=AsyncMock()),
-    ):
-        bot.output_router = MagicMock()
-        bot.output_router.post_log = AsyncMock()
-
-        from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(interaction, state)
-
-    # Check penalty_records was inserted
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT COUNT(*) AS cnt FROM penalty_records WHERE race_result_id = ?",
-            (race_result_id,),
-        )
-        row = await cursor.fetchone()
-    assert row["cnt"] == 1
+    assert await stopped_at(league) is None
+    assert await one(
+        league.db_path, "SELECT COUNT(*) FROM penalty_records WHERE race_result_id = ?",
+        race_result_id,
+    ) == 1
 
 
 # ---------------------------------------------------------------------------
-# T028-5: Channel remains open after penalty review (not closed at POST_RACE_PENALTY)
+# The channel row closes in the appeals approval's save, and not before
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_channel_not_closed_after_penalty_review(tmp_path):
-    """Submission channel must NOT be closed when advancing to POST_RACE_PENALTY."""
-    db_path = str(tmp_path / "test.db")
-    await run_migrations(db_path)
-    _, division_id, round_id = await _bootstrap(db_path)
-    await _insert_session_with_drivers(db_path, round_id, division_id)
-    await _insert_submission_channel(db_path, round_id)
 
-    bot = _make_bot()
-    guild = _make_guild()
-    state = _make_state(db_path, round_id, division_id, bot)
-    interaction = _make_interaction(guild)
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_the_channel_row_is_closed_in_the_appeals_approval_s_save(tmp_path):
+    """The reports approved, the submission channel's row stays open while the appeals review is
+    in progress. The appeals approved, the row is closed by its `apply` save, before the channel
+    itself is deleted (defect 6)."""
+    from tests.support.review_league import (
+        SUBMISSION_CHANNEL, review_league, run_until_done, stopped_at,
+    )
 
-    with (
-        patch("leaguebot.results.services.results_post_service.delete_and_repost_final_results", new=AsyncMock()),
-        patch("leaguebot.results.services.results_post_service.repost_subsequent_standings", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_service.apply_penalties", new=AsyncMock(return_value=[])),
-        patch("leaguebot.results.services.verdict_announcement_service.post_penalty_announcements", new=AsyncMock()),
-    ):
-        from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(interaction, state)
+    league = await review_league(tmp_path, other_division=False)
+    await _approve_reports(league)
+    assert await stopped_at(league) is None
+    assert not await _closed(league)
 
-    # Should NOT be closed — appeals review still in progress
-    assert not await _is_channel_closed(db_path, round_id)
+    await _approve_appeals(league)
+    await run_until_done(league, "apply")
+
+    assert await _closed(league)
+    assert ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) not in league.events
 
 
 # ---------------------------------------------------------------------------
