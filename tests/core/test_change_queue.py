@@ -1835,10 +1835,6 @@ async def test_a_change_stopped_at_its_check_and_then_refused_or_dropped_leaves_
 # and the changes still in hand
 # ---------------------------------------------------------------------------
 
-#: Why they fail until the queue says which changes are still in hand.
-NO_UNFINISHED = "#439: the queue has no unfinished read and a check no change id"
-
-
 def _data(result: Any) -> dict:
     """What a step returned, as its record is handed it: the step's result, or its `StepResult`."""
     return dict(getattr(result, "result", result) or {})
@@ -2014,7 +2010,6 @@ async def test_a_save_step_cannot_carry_a_record(env):
         queue.register(_type(steps=[step]))
 
 
-@pytest.mark.xfail(strict=True, reason=NO_UNFINISHED)
 async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     """`unfinished` gives the payloads of the changes of the kinds asked that are queued or
     running (a running one asking about its own kind finds itself), a stopped one included, and not those done, refused, dropped or discarded, nor
@@ -2079,7 +2074,6 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     assert sorted(p["n"] for p in found) == ["other", "queued", "stopped"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_UNFINISHED)
 async def test_a_check_as_the_change_starts_knows_its_own_id(env):
     """A check asked when the change is asked for has no change id; the same check as the change
     starts is handed the change's id, so that it can leave itself out of `unfinished`."""

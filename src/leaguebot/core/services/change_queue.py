@@ -77,6 +77,15 @@ not use the bot to look up other services).
 **The check runs twice**: when the change is asked for, so that a member is refused at once, and
 when it starts, since what it checked may have changed in between.
 
+**What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
+payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included
+(its state stays as it was) and the one named in *excluding* left out, which a check handed its own
+`change_id` uses to leave itself out. A check uses it to refuse a press while the same approval is
+already in hand, and a restart's recovery and a sweep use it to leave alone what the queue is still
+carrying out. It gives what the repeat rule below does not: that refuses a repeat only while the
+first has not started, where a specification may ask for the refusal while the first is still being
+applied, whatever its position.
+
 **A request repeating a change is refused only while it could still be the same request:** where
 the last change asked for, whatever became of any other, has the same key and has not started.
 Asked again once anything else has been asked for after it, or once it has started, a change is
@@ -96,7 +105,7 @@ import json
 import logging
 import os
 import sqlite3
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -172,12 +181,17 @@ class _Held:
 
 @dataclass(frozen=True)
 class CheckContext:
-    """What a change type's check reads: the request, the bot for Discord, and the database."""
+    """What a change type's check reads: the request, the bot for Discord, and the database.
+
+    *change_id* is the change's id where the check runs as the change starts, None where it is
+    asked about a request not yet made: a check that reads `unfinished` leaves itself out with it.
+    """
 
     payload: dict[str, Any]
     bot: "LeagueBot"
     db_path: str
     origin: ChangeOrigin
+    change_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -785,6 +799,7 @@ class ChangeQueue:
                     self._bot,
                     self._db_path,
                     ChangeOrigin(change["origin"]),
+                    change["id"],
                 )
             )
         except Exception as error:  # noqa: BLE001 — a check that raises stops the queue
@@ -1741,6 +1756,28 @@ def empty_queue_in(path: str | os.PathLike[str]) -> None:
         db.commit()
     finally:
         db.close()
+
+
+async def unfinished(
+    db_path: str, kinds: Collection[str], *, excluding: int | None = None
+) -> list[dict[str, Any]]:
+    """The payloads of the changes of *kinds* that are queued or running, a stopped one included,
+    oldest first, leaving out the change whose id is *excluding*.
+
+    A change done, refused, dropped or discarded is not in hand and is not given. Read on a
+    connection of its own, so a check may call it while the queue is between jobs.
+    """
+    kinds = list(kinds)
+    if not kinds:
+        return []
+    marks = ", ".join("?" for _ in kinds)
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
+            "AND state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR id != ?) ORDER BY id",
+            (*kinds, excluding, excluding),
+        )
+        return [json.loads(row["payload"]) for row in await cursor.fetchall()]
 
 
 def highest_job_number(path: str | os.PathLike[str]) -> int:
