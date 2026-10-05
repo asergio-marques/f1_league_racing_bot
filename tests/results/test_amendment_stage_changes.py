@@ -655,19 +655,25 @@ async def _seed_round(
 
 async def _announced_verdict(
     league: ReviewLeague, result_id: int, anchor: int | None, *, description: str,
-    table: str = "penalty_records",
+    table: str = "penalty_records", justification: str | None = None,
 ) -> None:
     """A 5-second verdict of *description* on *result_id*, announced as *anchor* in the verdicts
     channel (where one is given): a report in `penalty_records`, or an upheld appeal in
-    `appeal_records`."""
+    `appeal_records`.
+
+    *justification* defaults to "Lap 7" for a report and "Appeal upheld" for an appeal. The
+    penalty row that upholding an appeal writes beside it is seeded with the appeal's own
+    justification, "Appeal upheld": upholding copies the description and the justification into
+    both rows, and `penalty_service.reports_only` pairs the two on all six fields, the text
+    included, so a row with any other justification is a separate report."""
     async with get_connection(league.db_path) as db:
         if table == "penalty_records":
             await db.execute(
                 "INSERT INTO penalty_records (race_result_id, penalty_type, time_seconds, "
                 "description, justification, applied_by, applied_at, announcement_message_id, "
                 "announcement_message_ids, announcement_channel_id) "
-                "VALUES (?, 'TIME', 5, ?, 'Lap 7', '77', ?, ?, ?, ?)",
-                (result_id, description, NOW.isoformat(), anchor,
+                "VALUES (?, 'TIME', 5, ?, ?, '77', ?, ?, ?, ?)",
+                (result_id, description, justification or "Lap 7", NOW.isoformat(), anchor,
                  json.dumps([anchor]) if anchor else None,
                  str(VERDICTS_CHANNEL) if anchor else None),
             )
@@ -676,8 +682,9 @@ async def _announced_verdict(
                 "INSERT INTO appeal_records (race_result_id, status, penalty_type, time_seconds, "
                 "description, justification, submitted_by, submitted_at, "
                 "announcement_message_id, announcement_message_ids, announcement_channel_id) "
-                "VALUES (?, 'UPHELD', 'TIME', 5, ?, 'Appeal upheld', '78', ?, ?, ?, ?)",
-                (result_id, description, NOW.isoformat(), anchor,
+                "VALUES (?, 'UPHELD', 'TIME', 5, ?, ?, '78', ?, ?, ?, ?)",
+                (result_id, description, justification or "Appeal upheld", NOW.isoformat(),
+                 anchor,
                  json.dumps([anchor]) if anchor else None,
                  str(VERDICTS_CHANNEL) if anchor else None),
             )
@@ -766,7 +773,8 @@ async def test_every_verdict_from_the_amended_round_on_is_announced_again_under_
     await _announced_verdict(league, later[MAX], LATER_REPORT, description="Pit lane speeding")
     await _announced_verdict(league, later[LEWIS], LATER_APPEAL, description="Track limits",
                              table="appeal_records")
-    await _announced_verdict(league, later[LEWIS], None, description="Track limits")
+    await _announced_verdict(league, later[LEWIS], None, description="Track limits",
+                             justification="Appeal upheld")
     await _approve_appeals(league)
     await run_queue(league.bot)
 
@@ -852,7 +860,8 @@ async def test_a_report_the_same_size_as_an_upheld_appeal_is_announced_as_a_repo
     later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
     await _announced_verdict(league, later[LEWIS], None, description="Track limits",
                              table="appeal_records")
-    await _announced_verdict(league, later[LEWIS], None, description="Track limits")
+    await _announced_verdict(league, later[LEWIS], None, description="Track limits",
+                             justification="Appeal upheld")
     await _announced_verdict(league, later[LEWIS], None, description="Unsafe rejoin")
     await _approve_appeals(league)
     await run_queue(league.bot)
