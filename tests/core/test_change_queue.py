@@ -39,6 +39,7 @@ from tests.support.change_queue import (
     queued_log_lines,
     register,
     restart_queue,
+    retry_job,
     run_queue,
     seed_server,
     step_rows,
@@ -1827,3 +1828,282 @@ async def test_a_change_stopped_at_its_check_and_then_refused_or_dropped_leaves_
     assert not [m for m in env.bot.log_channel.posted if "The queue is stopped at job #" in m.content]
     assert await _states(env) == ["DROPPED", "REFUSED"]
     assert ran == []
+
+
+# ---------------------------------------------------------------------------
+# What a review needs of the queue (#439, slice 2): a step's record, what a stopped job kept,
+# and the changes still in hand
+# ---------------------------------------------------------------------------
+
+#: Why the tests below fail until slice 2 gives a step its `record`.
+NO_RECORD = "#439: a step carries no record saved with its mark"
+#: Why they fail until a stopped job's next try is handed what its last try kept.
+NO_KEPT = "#439: a step's context carries no kept result"
+#: Why they fail until the queue says which changes are still in hand.
+NO_UNFINISHED = "#439: the queue has no unfinished read and a check no change id"
+
+
+def _data(result: Any) -> dict:
+    """What a step returned, as its record is handed it: the step's result, or its `StepResult`."""
+    return dict(getattr(result, "result", result) or {})
+
+
+def _recording(*, ran: list | None = None, raising: dict | None = None) -> Any:
+    """A record writing the step's `id` into the test's scratch table on the handed connection,
+    raising after the write while `raising["fail"]` is set."""
+
+    async def _record(db, _ctx, result):
+        if ran is not None:
+            ran.append("record")
+        await db.execute("INSERT INTO scratch (v) VALUES (?)", (str(_data(result).get("id")),))
+        if raising is not None and raising.get("fail") is not None:
+            raise raising["fail"]
+
+    return _record
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORD)
+async def test_a_posting_step_saves_what_its_record_writes_with_its_mark(env):
+    """A post's message id lands in the same save as the post's done mark: where the save fails
+    after the record has written, neither the row nor the mark is kept, and once it goes through
+    both are."""
+    api = _api()
+    holder: dict = {"fail": RuntimeError("the save failed")}
+
+    async def _post(_ctx):
+        return api.StepResult(result={"id": 42})
+
+    _queue(env, _type(steps=[
+        api.Step("post", api.StepKind.ACT, _post, record=_recording(raising=holder)),
+    ]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    assert await _scratch(env) == []
+    assert [s["done_at"] for s in await step_rows(env.db_path)] == [None]
+
+    holder["fail"] = None
+    await retry_job(env.bot)
+
+    assert await _scratch(env) == ["42"]
+    assert all(s["done_at"] for s in await step_rows(env.db_path))
+    assert await _states(env) == ["DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORD)
+async def test_a_record_that_raises_stops_the_queue_and_keeps_the_step_s_result(env):
+    """A record that raises stops the queue at its job, the stop notice naming the job; what the
+    step returned is kept on the job, and a Retry runs the step again with it in `ctx.kept`, so
+    that the next try can remove what the last one sent."""
+    api = _api()
+    holder: dict = {"fail": RuntimeError("the record broke")}
+    kept: list = []
+
+    async def _post(ctx):
+        kept.append(ctx.kept)
+        return api.StepResult(result={"id": 7, "sent": [7]})
+
+    _queue(env, _type(steps=[
+        api.Step("post", api.StepKind.ACT, _post, record=_recording(raising=holder),
+                 describe=_described("posting round 3's results")),
+    ]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert job is not None and job["name"] == "post"
+    stop = STOPPED_AT.format(
+        id=job["id"], job="posting round 3's results", request=WHAT, asker=NAMED,
+        fault="RuntimeError",
+    )
+    assert [m for m in env.bot.log_channel.posted if m.content.startswith(stop)]
+    assert job["result"] == {"id": 7, "sent": [7]}
+    assert await _scratch(env) == []
+
+    holder["fail"] = None
+    await retry_job(env.bot)
+
+    assert kept == [None, {"id": 7, "sent": [7]}]
+    assert await _scratch(env) == ["7"]
+    assert await _states(env) == ["DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_KEPT)
+async def test_a_stopped_job_s_next_try_reads_what_its_last_try_kept(env):
+    """A step that fails on Discord part-way keeps what it had sent on the job; its next try reads
+    it from `ctx.kept`, where a first try reads None."""
+    api = _api()
+    kept: list = []
+
+    async def _post(ctx):
+        kept.append(ctx.kept)
+        if len(kept) == 1:
+            raise api.StepFailedOnDiscord("Discord refused", result={"sent": [1, 2]})
+        return api.StepResult()
+
+    _queue(env, _type(steps=[api.Step("post", api.StepKind.ACT, _post)]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    await _try_at(env, 1)
+
+    assert kept == [None, {"sent": [1, 2]}]
+    assert await _states(env) == ["DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORD)
+async def test_a_record_is_not_run_for_a_job_not_due_or_discarded(env):
+    """A job found no longer due, and a job a league admin discards, sent nothing, so neither's
+    record runs and nothing is written for them."""
+    api = _api()
+    ran: list[str] = []
+
+    async def _not_due(_ctx):
+        return False
+
+    async def _post(_ctx):
+        return api.StepResult(result={"id": 1})
+
+    async def _fails(_ctx):
+        raise RuntimeError("boom")
+
+    _queue(env, _type(steps=[
+        api.Step("skipped", api.StepKind.ACT, _post, still_due=_not_due,
+                 record=_recording(ran=ran)),
+        api.Step("stuck", api.StepKind.ACT, _fails, record=_recording(ran=ran)),
+    ]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+    assert (await stopped_job(env.db_path))["name"] == "stuck"
+    await discard_job(env.bot)
+
+    assert ran == []
+    assert await _scratch(env) == []
+    assert await _states(env) == ["DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORD)
+async def test_a_delete_finding_its_message_gone_still_runs_its_record(env):
+    """A `DELETE` job whose message is already gone completes, and its record still runs in the
+    save that marks it, so that a channel found deleted still has its row removed."""
+    api = _api()
+    ran: list[str] = []
+
+    async def _delete(_ctx):
+        raise http_error(discord.NotFound, status=404, text="Unknown Channel")
+
+    _queue(env, _type(steps=[
+        api.Step("delete", api.StepKind.DELETE, _delete, record=_recording(ran=ran)),
+    ]))
+
+    await _ask(env)
+    await run_queue(env.bot)
+
+    assert ran == ["record"]
+    assert len(await _scratch(env)) == 1
+    assert all(s["done_at"] for s in await step_rows(env.db_path))
+    assert await _states(env) == ["DONE"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_RECORD)
+async def test_a_save_step_cannot_carry_a_record(env):
+    """A `SAVE` step writes in its own save, so registering one that carries a record is
+    refused."""
+    api = _api()
+
+    async def _write(db, _ctx):
+        return api.StepResult()
+
+    step = api.Step("save", api.StepKind.SAVE, _write, record=_recording())
+    queue = _queue(env)
+
+    with pytest.raises((ValueError, TypeError)):
+        queue.register(_type(steps=[step]))
+
+
+@pytest.mark.xfail(strict=True, reason=NO_UNFINISHED)
+async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
+    """`unfinished` gives the payloads of the changes of the kinds asked that are queued or
+    running (a running one asking about its own kind finds itself), a stopped one included, and not those done, refused, dropped or discarded, nor
+    those of other kinds; the change named in `excluding` is left out."""
+    from leaguebot.core.services.change_queue import unfinished
+
+    api = _api()
+    armed = {"on": False}
+    seen_running: list = []
+
+    async def _check(ctx):
+        n = ctx.payload["n"]
+        if not armed["on"]:
+            return api.Verdict.go()
+        if n == "refused":
+            return api.Verdict.refuse("⚠️ Not now.")
+        if n == "dropped":
+            return api.Verdict.not_due("no longer due")
+        if n == "discarded":
+            return api.Verdict.refuse("The channel is missing.", "it is missing")
+        return api.Verdict.go()
+
+    async def _work(ctx):
+        n = ctx.payload["n"]
+        if n == "running":
+            found = await maybe_await(unfinished(env.db_path, ["solo"]))
+            seen_running.extend(p["n"] for p in found)
+        if n == "stopped":
+            raise RuntimeError("boom")
+        return api.StepResult()
+
+    _queue(
+        env,
+        _type("watched", steps=[api.Step("work", api.StepKind.ACT, _work)], check=_check),
+        _type("solo", steps=[api.Step("work", api.StepKind.ACT, _work)]),
+        _type("other", steps=[_act("other", [])]),
+    )
+    bot = api.ChangeOrigin.BOT
+
+    await _ask(env, "solo", {"n": "running"})
+    await _ask(env, "watched", {"n": "done"})
+    await _ask(env, "watched", {"n": "refused"})
+    await _ask(env, "watched", {"n": "dropped"}, origin=bot)
+    await _ask(env, "watched", {"n": "discarded"}, origin=bot)
+    armed["on"] = True
+    await run_queue(env.bot)
+    await discard_job(env.bot)
+    stopped_id = await _ask(env, "watched", {"n": "stopped"})
+    await run_queue(env.bot)
+    await _ask(env, "watched", {"n": "queued"})
+    await _ask(env, "other", {"n": "other"})
+
+    assert seen_running == ["running"]
+    assert await _states(env) == [
+        "DONE", "DONE", "REFUSED", "DROPPED", "DISCARDED", "RUNNING", "QUEUED", "QUEUED",
+    ]
+    found = await maybe_await(unfinished(env.db_path, ["watched"]))
+    assert sorted(p["n"] for p in found) == ["queued", "stopped"]
+    found = await maybe_await(unfinished(env.db_path, ["watched"], excluding=stopped_id))
+    assert [p["n"] for p in found] == ["queued"]
+    found = await maybe_await(unfinished(env.db_path, ["watched", "other"]))
+    assert sorted(p["n"] for p in found) == ["other", "queued", "stopped"]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_UNFINISHED)
+async def test_a_check_as_the_change_starts_knows_its_own_id(env):
+    """A check asked when the change is asked for has no change id; the same check as the change
+    starts is handed the change's id, so that it can leave itself out of `unfinished`."""
+    api = _api()
+    ids: list = []
+
+    async def _check(ctx):
+        ids.append(ctx.change_id)
+        return api.Verdict.go()
+
+    _queue(env, _type(steps=[_act("a", [])], check=_check))
+
+    change_id = await _ask(env)
+    await run_queue(env.bot)
+
+    assert change_id is not None
+    assert ids == [None, change_id]
