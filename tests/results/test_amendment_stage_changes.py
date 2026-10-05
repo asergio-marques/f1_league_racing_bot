@@ -383,7 +383,6 @@ async def test_a_stopped_stage_retried_past_its_deadline_is_approved(tmp_path):
     assert len(_amend_appeals_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_stage_past_its_deadline_is_undone_at_the_next_sweep(tmp_path):
     league = await _amend_league(tmp_path)
     with points_fail():

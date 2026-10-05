@@ -249,7 +249,9 @@ async def seed_server(db_path: str) -> None:
 def league_double(db_path: str) -> Any:
     """A bot double with the league's log and interaction channels, and a real `OutputRouter`.
 
-    `bot.log_channel` and `bot.interaction_channel` record what each is sent.
+    `bot.log_channel` and `bot.interaction_channel` record what each is sent. The league's server
+    is `SERVER_ID`, as `config_service.get_league_server_id` gives it; `bot.get_guild` finds no
+    guild for it until a test gives one.
     `bot.attendance_after_review` is the attendance hook the builder hands the review's change
     types (#439), as a league with attendance off sees it: every method does nothing, no driver
     is owed a sanction, and the sync hint names `/attendance sync`. A test that runs the hook
@@ -274,6 +276,7 @@ def league_double(db_path: str) -> Any:
             league_admin_role_id=ADMIN_ROLE_ID,
         )
     )
+    bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
     hook = MagicMock()
     for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
