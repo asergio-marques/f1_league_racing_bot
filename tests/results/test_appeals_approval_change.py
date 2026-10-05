@@ -23,8 +23,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-import pytest
-
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     acknowledgement,
@@ -59,7 +57,6 @@ from tests.support.review_league import (
 
 KIND = "results.appeals.approve"
 APPEALS_PROMPT = 8902
-NOT_BUILT = "#439: the appeals approval is not yet a change on the queue"
 
 
 async def _league(tmp_path: Any, **options: Any) -> ReviewLeague:
@@ -261,13 +258,14 @@ async def test_a_discarded_channel_deletion_names_the_channel_for_deletion_by_ha
     assert await round_status(league.db_path) == "FINAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_division_with_no_verdicts_channel_stops_the_queue_at_its_verdict(tmp_path):
+    """The heading is a job of its own planned ahead of the verdicts, needing the same channel
+    (owner, Gate 2), so it is where the queue stops; the missing channel is not stepped over."""
     league = await _league(tmp_path, verdicts_channel=False)
     await _approve(league)
     await run_queue(league.bot)
 
-    assert await stopped_at(league) == "announce_verdict"
+    assert await stopped_at(league) == "announce_heading"
     assert await round_status(league.db_path) == "FINAL"
 
 
