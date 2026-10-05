@@ -4,7 +4,7 @@ sanctions that follow (#439, slice 2).
 The approvals of a round's reports and appeals, and an amendment's replay, plan these jobs from
 this module, as they plan their posts from `review_posting`: `plan_verdicts` gives the heading and
 one verdict for each record an approval saved, `plan_attendance` the sheet and the sanctions after
-it, `verdict_steps(now)` the jobs themselves for a change type's `steps`, and `not_done(ctx)` one
+it, `verdict_steps(now, attendance)` the jobs themselves for a change type's `steps`, and `not_done(ctx)` one
 line for each job a league admin discarded, for the outcome and the `Incomplete` line.
 
 **Every failure stops the queue** (the owner's rule), and so a job here never swallows what the
@@ -62,6 +62,7 @@ from leaguebot.core.services.change_queue import OutcomeContext, Step, StepConte
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services import verdict_announcement_service as vas
+from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.result_submission_service import (
     _build_penalty_review_state,
     send_appeals_prompt,
@@ -83,9 +84,19 @@ REFRESH_LINEUP = "refresh_lineup"
 _SYNC = "Run `/attendance sync` to finish it."
 
 
-def verdict_steps(now: Callable[[], datetime]) -> dict[str, Step]:
+def verdict_steps(
+    now: Callable[[], datetime], attendance: AttendanceAfterReview
+) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
-    queue's clock, which stamps the heading's record."""
+    queue's clock, which stamps the heading's record; *attendance* the hook the builder handed
+    the change type, which the jobs use and never look up on the bot."""
+
+    def bound(fn: Any) -> Any:
+        async def run(ctx: StepContext) -> Any:
+            return await fn(ctx, attendance)
+
+        return run
+
 
     async def record_heading(db: Any, ctx: StepContext, result: StepResult) -> None:
         await vas._record_banner_on(
@@ -121,22 +132,22 @@ def verdict_steps(now: Callable[[], datetime]) -> dict[str, Step]:
             record=record_verdict,
         ),
         ATTENDANCE_SHEET: Step(
-            ATTENDANCE_SHEET, StepKind.ACT, _attendance_sheet, still_due=_after_a_sanction,
+            ATTENDANCE_SHEET, StepKind.ACT, bound(_attendance_sheet), still_due=_after_a_sanction,
             describe=_describe_sheet,
         ),
         PLAN_SANCTIONS: Step(
-            PLAN_SANCTIONS, StepKind.ACT, _plan_sanctions, describe=_describe_plan,
+            PLAN_SANCTIONS, StepKind.ACT, bound(_plan_sanctions), describe=_describe_plan,
         ),
         APPLY_SANCTION: Step(
-            APPLY_SANCTION, StepKind.ACT, _apply_sanction, still_due=_still_owed,
+            APPLY_SANCTION, StepKind.ACT, bound(_apply_sanction), still_due=bound(_still_owed),
             describe=_describe_apply,
         ),
         ANNOUNCE_SANCTION: Step(
-            ANNOUNCE_SANCTION, StepKind.ACT, _announce_sanction, still_due=_was_applied,
+            ANNOUNCE_SANCTION, StepKind.ACT, bound(_announce_sanction), still_due=_was_applied,
             describe=_describe_announce,
         ),
         REFRESH_LINEUP: Step(
-            REFRESH_LINEUP, StepKind.ACT, _refresh_lineup, still_due=_after_a_sanction,
+            REFRESH_LINEUP, StepKind.ACT, bound(_refresh_lineup), still_due=_after_a_sanction,
             describe=_describe_lineup,
         ),
     }
@@ -253,18 +264,16 @@ def not_done(ctx: OutcomeContext) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _hook(ctx: StepContext) -> Any:
-    return ctx.bot.attendance_after_review
-
-
-async def _failed(ctx: StepContext, division_id: int, round_id: int, error: Exception) -> Exception:
+async def _failed(
+    hook: AttendanceAfterReview, division_id: int, round_id: int, error: Exception
+) -> Exception:
     """*error* as the failure a job stops the queue with, carrying on its kept result the line
     telling the manager how to finish the job should it be discarded. A fault in the bot's own
     reach of the league's server stands as it is."""
     if isinstance(error, GuildUnavailable):
         return error
     try:
-        hint = await _hook(ctx).sync_hint(division_id, round_id)
+        hint = await hook.sync_hint(division_id, round_id)
     except Exception:  # noqa: BLE001 — the hint is a courtesy to the failure it rides on
         log.exception("could not form the attendance sync hint for division %s", division_id)
         hint = _SYNC
@@ -434,15 +443,15 @@ async def _describe_sheet(ctx: StepContext) -> str:
     return f"posting the attendance sheet of {ctx.step_payload.get('division', 'the division')}"
 
 
-async def _attendance_sheet(ctx: StepContext) -> StepResult:
+async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     try:
-        await _hook(ctx).post_sheet(
+        await hook.post_sheet(
             int(payload["round_id"]), int(payload["division_id"]),
             sanctioned={int(p) for p in payload.get("sanctioned", [])}, as_text=ctx.tries > 0,
         )
     except Exception as error:
-        raise await _failed(ctx, int(payload["division_id"]), int(payload["round_id"]), error)
+        raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
     return StepResult()
 
 
@@ -461,11 +470,11 @@ async def _describe_plan(ctx: StepContext) -> str:
     )
 
 
-async def _plan_sanctions(ctx: StepContext) -> StepResult:
+async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
     division = payload.get("division", "the division")
-    owed = await _hook(ctx).sanction_candidates(round_id, division_id)
+    owed = await hook.sanction_candidates(round_id, division_id)
     planned: list[PlannedStep] = []
     for candidate in owed:
         job = {"round_id": round_id, "division_id": division_id, "division": division,
@@ -495,11 +504,11 @@ def _same_driver(view: Any, payload: dict[str, Any]) -> bool:
     )
 
 
-async def _still_owed(ctx: StepContext) -> bool:
+async def _still_owed(ctx: StepContext, hook: AttendanceAfterReview) -> bool:
     """The driver is still over the threshold and not yet sanctioned, so a try applies only what
     is owed and a driver `/attendance sync` sanctioned meanwhile is not sanctioned twice."""
     payload = ctx.step_payload
-    owed = await _hook(ctx).sanction_candidates(int(payload["round_id"]), int(payload["division_id"]))
+    owed = await hook.sanction_candidates(int(payload["round_id"]), int(payload["division_id"]))
     return any(c["driver_profile_id"] == payload["candidate"]["driver_profile_id"] for c in owed)
 
 
@@ -520,14 +529,14 @@ async def _describe_apply(ctx: StepContext) -> str:
     )
 
 
-async def _apply_sanction(ctx: StepContext) -> StepResult:
+async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     try:
-        await _hook(ctx).apply_sanction(
+        await hook.apply_sanction(
             int(payload["round_id"]), int(payload["division_id"]), payload["candidate"], None
         )
     except Exception as error:
-        raise await _failed(ctx, int(payload["division_id"]), int(payload["round_id"]), error)
+        raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
     return StepResult()
 
 
@@ -539,9 +548,9 @@ async def _describe_announce(ctx: StepContext) -> str:
     )
 
 
-async def _announce_sanction(ctx: StepContext) -> StepResult:
+async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
-    await _hook(ctx).announce_sanction(
+    await hook.announce_sanction(
         int(payload["round_id"]), int(payload["division_id"]), payload["candidate"],
         as_text=ctx.tries > 0,
     )
@@ -552,8 +561,8 @@ async def _describe_lineup(ctx: StepContext) -> str:
     return f"posting the lineup of {ctx.step_payload.get('division', 'the division')} afresh"
 
 
-async def _refresh_lineup(ctx: StepContext) -> StepResult:
-    await _hook(ctx).refresh_lineup(int(ctx.step_payload["division_id"]))
+async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
+    await hook.refresh_lineup(int(ctx.step_payload["division_id"]))
     return StepResult()
 
 
