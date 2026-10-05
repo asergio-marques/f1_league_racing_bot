@@ -851,3 +851,108 @@ async def test_apply_penalties_neither_reposts_nor_logs(tmp_path):
     recompute.assert_not_awaited()
     repost.assert_not_awaited()
     bot.output_router.post_log.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# The writers on a handed connection, each taking the time (#439)
+#
+# A change's one save holds the penalties, the appeals and the records of where each verdict
+# was posted, so none of these commits, and each is stamped with the queue's clock rather than
+# reading one of its own.
+# ---------------------------------------------------------------------------
+
+
+async def test_apply_penalties_on_stamps_with_the_handed_time_and_commits_nothing(tmp_path):
+    import datetime
+    from unittest.mock import AsyncMock, patch
+
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.penalty_service import apply_penalties_on
+    from leaguebot.results.services.result_submission_service import _apply_staged_appeals_on
+    from leaguebot.results.services.verdict_announcement_service import (
+        _mark_banner_over_sanction_on,
+        _record_announcement_on,
+        _record_banner_on,
+    )
+
+    now = datetime.datetime(2026, 10, 5, 12, 0, tzinfo=datetime.timezone.utc)
+    db_path, round_id, division_id, sr_id = await _seed_one_session(tmp_path, "FEATURE_RACE")
+    staged = [
+        StagedPenalty(
+            driver_user_id=2,
+            session_type=SessionType.FEATURE_RACE,
+            penalty_type="TIME",
+            penalty_seconds=5,
+        )
+    ]
+
+    async def _driver_rows(db):
+        cursor = await db.execute(
+            "SELECT driver_user_id, finishing_position, postrace_time_penalties_ms, "
+            "appeal_time_penalties_ms FROM race_session_results ORDER BY driver_user_id"
+        )
+        return [tuple(row) for row in await cursor.fetchall()]
+
+    async def _counts(db) -> dict[str, int]:
+        found = {}
+        for table, where in (
+            ("penalty_records", ""),
+            ("appeal_records", ""),
+            ("verdict_banner_messages", ""),
+            ("penalty_records", " WHERE announcement_message_id IS NOT NULL"),
+        ):
+            row = await (await db.execute(f"SELECT COUNT(*) FROM {table}{where}")).fetchone()
+            found[table + where] = row[0]
+        return found
+
+    async with get_connection(db_path) as db:
+        before = await _driver_rows(db)
+        empty = await _counts(db)
+
+        inserted = await apply_penalties_on(db, round_id, division_id, staged, 999, now=now)
+        await _record_announcement_on(db, "penalty_records", inserted[0]["id"], 8700, 704)
+        await _record_banner_on(db, round_id, 704, 8701, now=now)
+        await _mark_banner_over_sanction_on(db, 8701)
+
+        applied_at = (await (await db.execute(
+            "SELECT applied_at, announcement_message_id FROM penalty_records")).fetchone())
+        banner = (await (await db.execute(
+            "SELECT posted_at, heads_sanctions FROM verdict_banner_messages")).fetchone())
+        assert tuple(applied_at) == (now.isoformat(), "8700")
+        assert tuple(banner) == (now.isoformat(), 1)
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        appeals = await _apply_staged_appeals_on(
+            db, round_id, division_id, staged, 999, now=now,
+        )
+        submitted_at = (await (await db.execute(
+            "SELECT submitted_at FROM appeal_records WHERE id = ?", (appeals[0]["id"],)
+        )).fetchone())[0]
+        assert submitted_at == now.isoformat()
+        await db.rollback()
+
+    async with get_connection(db_path) as db:
+        assert await _counts(db) == empty
+        assert await _driver_rows(db) == before
+
+    # The session carries no points configuration: it is not scored, so a scorer that would
+    # fail is never reached. Given one, the scorer's failure comes out of the call.
+    failing = AsyncMock(side_effect=RuntimeError("the points could not be calculated"))
+    target = "leaguebot.results.services.result_submission_service._apply_points_in_tx"
+    with patch(target, new=failing):
+        async with get_connection(db_path) as db:
+            await _apply_staged_appeals_on(db, round_id, division_id, staged, 999, now=now)
+            await db.rollback()
+        failing.assert_not_awaited()
+
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "UPDATE session_results SET config_name = 'Standard' WHERE id = ?", (sr_id,)
+            )
+            await db.commit()
+        async with get_connection(db_path) as db:
+            with pytest.raises(RuntimeError):
+                await _apply_staged_appeals_on(db, round_id, division_id, staged, 999, now=now)
+            await db.rollback()
+        failing.assert_awaited_once()
