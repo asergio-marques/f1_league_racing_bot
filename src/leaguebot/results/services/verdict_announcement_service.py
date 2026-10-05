@@ -1182,6 +1182,102 @@ async def announce_sanction(
         await _mark_banner_over_sanction(db_path, SimpleNamespace(id=banner_id))
 
 
+async def announce_verdict(
+    bot: LeagueBot,
+    db_path: str,
+    round_id: int,
+    table: str,
+    record: dict,
+    *,
+    as_text: bool = False,
+) -> tuple[int, int]:
+    """Announce one verdict in the round's verdicts channel, raising where it cannot.
+
+    What a queued `announce_verdict` job is (#439): *table* is ``penalty_records`` or
+    ``appeal_records`` and *record* the row's data as the approval's save wrote it (its id, the
+    result it was applied to, the driver, the penalty, the description and the justification).
+    Where `post_penalty_announcements` and `post_appeal_announcements` return what they could not
+    announce, this raises, for the queue to stop on and try again: a division with no verdicts
+    channel set, a verdicts channel not in the server and a result that cannot be read each
+    fail it, the results specification saying such a division is "reported, not skipped". The
+    heading is the round's `announce_heading` job and not this one's. *as_text* leaves the
+    picture out, as a retry does (Constitution XIV, rule 8).
+
+    Gives the message's id and its channel's, which the job's record saves with the verdict.
+    """
+    ctx = await _get_announcement_context(db_path, round_id)
+    if not ctx:
+        raise StepFailedOnDiscord(f"round {round_id} could not be read")
+    channel_id_raw = ctx.get("penalty_channel_id")
+    if channel_id_raw is None:
+        raise StepFailedOnDiscord(f"{ctx['division_name']} has no verdicts channel set")
+    channel = bot.get_channel(int(channel_id_raw))
+    if channel is None:
+        raise StepFailedOnDiscord(
+            f"{ctx['division_name']}'s verdicts channel (id {int(channel_id_raw)}) is not in "
+            "the server"
+        )
+    result_ctx = await _get_result_context(
+        db_path, record.get("race_result_id"), record.get("qual_result_id")
+    )
+    if not result_ctx:
+        raise LookupError(
+            f"the result of {_driver_label(record.get('driver_user_id'))}'s verdict could not be read"
+        )
+    # The verdict names the driver by the account they use now, whichever the result was
+    # recorded under (issue #243).
+    async with get_connection(db_path) as db:
+        current_of = await current_account_map_for_division(db, result_ctx["division_id"])
+        cursor = await db.execute(
+            "SELECT test_display_name FROM driver_profiles "
+            "WHERE CAST(discord_user_id AS INTEGER) = ?",
+            (current_of.get(int(record["driver_user_id"]), int(record["driver_user_id"])),),
+        )
+        profile = await cursor.fetchone()
+    driver_discord_id = current_of.get(int(record["driver_user_id"]), int(record["driver_user_id"]))
+    test_display_name: str | None = profile["test_display_name"] if profile else None
+    is_sprint = str(result_ctx["format"]).upper() == "SPRINT"
+    session_label = results_formatter.format_session_label(
+        SessionType(result_ctx["session_type"]), is_sprint=is_sprint
+    )
+    guild = getattr(channel, "guild", None)
+    try:
+        message = await _send_verdict(
+            bot,
+            channel,
+            db_path=db_path,
+            round_id=result_ctx["round_id"],
+            kind=VerdictKind.PENALTY if table == "penalty_records" else VerdictKind.APPEAL,
+            season_number=ctx["season_number"],
+            division_name=ctx["division_name"],
+            round_number=result_ctx["round_number"],
+            session_label=session_label,
+            driver_discord_id=driver_discord_id,
+            driver_display_name=test_display_name,
+            driver_name=await _graphic_name(
+                bot, guild, driver_discord_id, fallback_display_name=test_display_name
+            ),
+            penalty_description=describe_penalty(
+                record.get("penalty_type"), record.get("time_seconds")
+            ),
+            description_text=record.get("description") or NOT_PROVIDED,
+            justification_text=record.get("justification") or NOT_PROVIDED,
+            team_name=await image_verdict_post.team_name_for_entry(
+                bot, guild, division_id=result_ctx["division_id"],
+                team_id=record.get("team_instance_id"),
+            ),
+            team_key=await image_verdict_post.team_key_for_entry(
+                bot, team_id=record.get("team_instance_id")
+            ),
+            as_text=as_text,
+        )
+    except discord.HTTPException as exc:
+        raise StepFailedOnDiscord(f"the verdict could not be posted: {exc}") from exc
+    if message is None:
+        raise StepFailedOnDiscord("the verdict could not be posted")
+    return int(getattr(message, "id")), int(channel.id)
+
+
 async def post_autosanction_announcement(
     bot: LeagueBot,
     db_path: str,
