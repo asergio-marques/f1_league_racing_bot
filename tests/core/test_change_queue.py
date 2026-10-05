@@ -1835,10 +1835,6 @@ async def test_a_change_stopped_at_its_check_and_then_refused_or_dropped_leaves_
 # and the changes still in hand
 # ---------------------------------------------------------------------------
 
-#: Why the tests below fail until slice 2 gives a step its `record`.
-NO_RECORD = "#439: a step carries no record saved with its mark"
-#: Why they fail until a stopped job's next try is handed what its last try kept.
-NO_KEPT = "#439: a step's context carries no kept result"
 #: Why they fail until the queue says which changes are still in hand.
 NO_UNFINISHED = "#439: the queue has no unfinished read and a check no change id"
 
@@ -1890,7 +1886,6 @@ async def test_a_posting_step_saves_what_its_record_writes_with_its_mark(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORD)
 async def test_a_record_that_raises_stops_the_queue_and_keeps_the_step_s_result(env):
     """A record that raises stops the queue at its job, the stop notice naming the job; what the
     step returned is kept on the job, and a Retry runs the step again with it in `ctx.kept`, so
@@ -1929,7 +1924,6 @@ async def test_a_record_that_raises_stops_the_queue_and_keeps_the_step_s_result(
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_KEPT)
 async def test_a_stopped_job_s_next_try_reads_what_its_last_try_kept(env):
     """A step that fails on Discord part-way keeps what it had sent on the job; its next try reads
     it from `ctx.kept`, where a first try reads None."""

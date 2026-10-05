@@ -21,8 +21,8 @@ deleted), and never for a job found no longer due or discarded, which sent nothi
 `SAVE` job after each post to write its id, which doubles the jobs a change numbers and stops on.
 A record that raises rolls the save back and stops the queue like any failure, and the result the
 step returned is kept on the job as the partial result a failure on Discord keeps, so that the next
-try can remove the copy already sent before it posts again: a second copy is accepted only where
-the bot stops, not where a save fails.
+try can remove the copy already sent before it posts again (`StepContext.kept`): a second copy is
+accepted only where the bot stops, not where a save fails.
 
 **One change runs at a time, in the order asked.** One asyncio task, `ChangeQueue._task`, is kept
 on the instance and started by `start()` (idempotent), from `on_ready` and never from an
@@ -215,12 +215,16 @@ class StepContext(OutcomeContext):
     """What a step reads: the change as `OutcomeContext` gives it, and the step itself.
 
     *tries* is how many times the step has failed on Discord before, so that a posting step can
-    post as text on a retry (Constitution XIV, rule 8).
+    post as text on a retry (Constitution XIV, rule 8). *kept* is what the stopped job's last try
+    left on it (the `result` of the `StepFailedOnDiscord` it raised, or the result a record that
+    raised had been handed), None on a first try: a posting job reads it to remove the messages its
+    last try sent before it posts again.
     """
 
     step_name: str = ""
     step_payload: dict[str, Any] = field(default_factory=dict)
     tries: int = 0
+    kept: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -595,6 +599,7 @@ class ChangeQueue:
             step_name=row["name"],
             step_payload=json.loads(row["payload"]),
             tries=row["tries"],
+            kept=json.loads(row["result"]) if row["result"] else None,
         )
 
     def forget_held(self) -> None:
