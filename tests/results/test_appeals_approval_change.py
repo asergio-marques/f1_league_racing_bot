@@ -258,7 +258,7 @@ async def test_a_discarded_channel_deletion_names_the_channel_for_deletion_by_ha
     assert await round_status(league.db_path) == "FINAL"
 
 
-async def test_a_division_with_no_verdicts_channel_stops_the_queue_at_its_verdict(tmp_path):
+async def test_a_division_with_no_verdicts_channel_stops_the_queue_at_its_heading(tmp_path):
     """The heading is a job of its own planned ahead of the verdicts, needing the same channel
     (owner, Gate 2), so it is where the queue stops; the missing channel is not stepped over."""
     league = await _league(tmp_path, verdicts_channel=False)
