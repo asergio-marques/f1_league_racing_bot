@@ -36,11 +36,21 @@ without one and warned about, rather than refusing a round whose drivers have ju
 **Anything missing before the channel exists stops the job quietly and logs why.** A guild the
 bot is not in, a division without a results channel, a channel that has since been deleted —
 none of these can open a submission, and none should crash the scheduler thread.
+
+**The last paste asks the change queue to open the penalty review** (#439, slice 2): the wizard
+asks `results.review.open` rather than opening the review itself, and, since a paste answers no
+interaction, says in the submission channel that the review is being opened, with its job number
+and, where the queue is stopped, the job it is stopped at. The bot's queue is a real one here,
+`results.review.open` standing in as a change type of this file's own, so what the wizard asks is
+read from the queue's table and the review itself is left to `test_review_open_change.py`.
 """
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -48,10 +58,12 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
+from leaguebot.results.services import result_submission_service
 from leaguebot.results.services.result_submission_service import (
     get_sessions_for_format,
     run_result_submission_job,
 )
+from tests.support.change_queue import attach_queue, change_rows, register, run_queue, step_rows
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 14008
@@ -62,6 +74,10 @@ RESULTS_CHANNEL = 700
 SUB_CHANNEL = 7100
 MANAGER = 77
 TEAM_ROLE = 3001
+
+NOW = datetime(2026, 2, 1, 20, 0, tzinfo=timezone.utc)
+REVIEW_OPEN = "results.review.open"
+NOT_BUILT = "#439: the last paste does not yet ask the change queue to open the penalty review"
 
 QUALI_PASTE = "1, <@101>, T3001, Soft, 1:19.000, N/A\n2, <@102>, T3001, Soft, 1:19.500, +0.500"
 RACE_PASTE = "1, <@101>, T3001, 1:30:00.000, 1:20.000, N/A\n2, <@102>, T3001, +5.000, 1:21.000, N/A"
@@ -166,7 +182,40 @@ def _bot(
     bot.get_guild = MagicMock(return_value=g if guild else None)
     bot._results = results
     bot._guild = g
+    attach_queue(bot, db_path, now=NOW, types=[_change_type(REVIEW_OPEN)])
     return bot
+
+
+def _change_type(kind: str, *, fails: bool = False) -> Any:
+    """A change type of *kind* with one job, `open`, which does nothing, or, with *fails*, is
+    refused by Discord and so stops the queue. It stands in for `results.review.open`, whose own
+    tests are elsewhere, and as a job that stops the queue ahead of the paste."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step, StepFailedOnDiscord
+
+    async def act(_ctx: Any) -> Any:
+        if fails:
+            raise StepFailedOnDiscord("Missing Access")
+        return StepResult()
+
+    async def check(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    return ChangeType(
+        kind=kind,
+        opening=(PlannedStep("open"),),
+        steps={"open": Step("open", StepKind.ACT, act)},
+        check=check,
+        key=lambda payload: f"{kind}:{payload.get('round_id')}",
+        doing=lambda _payload: f"Doing {kind}",
+        outcome=lambda _ctx: "Done.",
+    )
+
+
+async def _opened(db_path) -> list[dict]:
+    """The payload of every `results.review.open` asked for, in the order asked."""
+    return [json.loads(row["payload"]) for row in await change_rows(db_path)
+            if row["kind"] == REVIEW_OPEN]
 
 
 async def _run(
@@ -202,9 +251,6 @@ async def _run(
         "points": patch(
             "leaguebot.results.services.result_submission_service._apply_points_from_config", new=AsyncMock()
         ),
-        "penalty": patch(
-            "leaguebot.results.services.result_submission_service.enter_penalty_state", new=AsyncMock()
-        ),
         "close": patch(
             "leaguebot.results.services.result_submission_service.close_submission_channel", new=AsyncMock()
         ),
@@ -212,6 +258,12 @@ async def _run(
             "leaguebot.core.services.season_service.SeasonService.refresh_division_status", new=AsyncMock()
         ),
     }
+    if hasattr(result_submission_service, "enter_penalty_state"):
+        # The handover before the review moved onto the queue (#439), kept inert while it
+        # stands: the review it would open is not this file's subject.
+        patches["handover"] = patch.object(
+            result_submission_service, "enter_penalty_state", new=AsyncMock()
+        )
     started = {k: p.start() for k, p in patches.items()}
     try:
         await run_result_submission_job(ROUND_ID, bot)
@@ -219,6 +271,7 @@ async def _run(
         for p in patches.values():
             p.stop()
     started["sub"] = sub
+    started["opened"] = await _opened(bot.db_path)
     return started
 
 
@@ -354,7 +407,7 @@ async def test_a_channel_discord_refuses_to_create_stops_the_job(tmp_path):
     )
 
     bot.wait_for.assert_not_awaited()
-    stubs["penalty"].assert_not_awaited()
+    assert stubs["opened"] == []
 
 
 async def test_the_channel_is_opened_to_both_league_roles(tmp_path):
@@ -477,14 +530,61 @@ async def test_points_are_applied_for_each_saved_session(tmp_path):
     assert stubs["points"].await_count == 2
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_is_handed_to_penalty_review(tmp_path):
+    """The last paste asks for round 3's review to open, its first results published under
+    "Provisional Results"; the channel stays open for the review."""
     db_path = await _make_db(tmp_path, name="wizard_handover")
 
     stubs = await _run(_bot(db_path, [QUALI_PASTE, RACE_PASTE]))
 
-    stubs["penalty"].assert_awaited_once()
-    assert stubs["penalty"].await_args.kwargs["season_id"] == SEASON_ID
+    assert len(stubs["opened"]) == 1
+    payload = stubs["opened"][0]
+    assert payload["round_id"] == ROUND_ID
+    assert payload["label"] == "Provisional Results"
+    assert payload["publish"] is True
+    assert not payload.get("returning")
     stubs["close"].assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "stopped",
+    [
+        pytest.param(False, id="queue_clear", marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+        pytest.param(True, id="queue_stopped", marks=pytest.mark.xfail(strict=True, reason=NOT_BUILT)),
+    ],
+)
+async def test_the_last_paste_says_in_the_channel_that_the_review_is_being_opened(tmp_path, stopped):
+    """A paste answers no interaction, so the channel is told: the penalty review is being
+    opened, with its job number, and, where the queue is stopped, the job it is stopped at."""
+    db_path = await _make_db(tmp_path, name=f"wizard_said_{stopped}")
+    bot = _bot(db_path, [QUALI_PASTE, RACE_PASTE])
+    blocker = None
+    if stopped:
+        # The stop's log line is queued and delivered through the router; its notice is not
+        # this test's subject.
+        bot.output_router.queue_log_on = AsyncMock(return_value=None)
+        bot.output_router.deliver_queued = AsyncMock()
+        register(bot, _change_type("test.blocker", fails=True))
+        await bot.change_queue.ask("test.blocker", {}, what="the blocker")
+        await run_queue(bot)
+        blocker = (await step_rows(db_path))[0]
+        assert blocker["failing_since"] is not None
+
+    stubs = await _run(bot)
+
+    changes = [row for row in await change_rows(db_path) if row["kind"] == REVIEW_OPEN]
+    assert len(changes) == 1
+    first_job = (await step_rows(db_path, changes[0]["id"]))[0]["id"]
+    lines = [line for line in _said(stubs["sub"]).splitlines()
+             if "penalty review" in line.lower() and "being opened" in line.lower()]
+    assert len(lines) == 1
+    assert f"job #{first_job}" in lines[0]
+    if stopped:
+        assert f"job #{blocker['id']}" in lines[0]
+        assert "stopped" in lines[0]
+    else:
+        assert "stopped" not in lines[0]
 
 
 async def test_the_wait_ignores_the_bot_and_other_channels(tmp_path):
@@ -581,6 +681,7 @@ async def test_a_valid_fastest_lap_override_is_saved(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_session_can_be_cancelled(tmp_path):
     db_path = await _make_db(tmp_path, name="wizard_cancel_one")
     bot = _bot(db_path, ["cancelled", RACE_PASTE])
@@ -589,7 +690,7 @@ async def test_a_session_can_be_cancelled(tmp_path):
 
     assert (await _sessions(db_path))[0][:2] == ("FEATURE_QUALIFYING", "CANCELLED")
     assert "was cancelled" in _said(bot._results)
-    stubs["penalty"].assert_awaited_once()
+    assert len(stubs["opened"]) == 1
 
 
 async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(tmp_path):
@@ -599,7 +700,7 @@ async def test_every_session_cancelled_closes_the_channel_instead_of_reviewing(t
     stubs = await _run(_bot(db_path, ["CANCELLED", "CANCELLED"]))
 
     stubs["close"].assert_awaited_once()
-    stubs["penalty"].assert_not_awaited()
+    assert stubs["opened"] == []
     assert "no penalty review required" in _said(stubs["sub"])
 
 
@@ -698,6 +799,7 @@ def _pastes_ending_the_amendment(db_path, pastes, *, before: int, seen: list):
     return AsyncMock(side_effect=wait_for)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path):
     db_path = await _make_db(tmp_path, name="held_paste")
     await _open_amendment(db_path)
@@ -715,7 +817,7 @@ async def test_a_paste_is_refused_while_another_round_is_amended(tmp_path):
     assert "Paste **" in said and "again then." in said
     # Asked again, and entered once the amendment had ended.
     assert [s[0] for s in await _sessions(db_path)] == ["FEATURE_QUALIFYING", "FEATURE_RACE"]
-    stubs["penalty"].assert_awaited_once()
+    assert len(stubs["opened"]) == 1
     # A refused paste was never accepted, and the log does not say it was.
     assert _logged(bot).count("RESULT_SUBMISSION_ACCEPTED") == 2
 
