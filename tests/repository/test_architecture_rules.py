@@ -1296,7 +1296,7 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "_clear_round_verdict_records"): (1, SLICE[2]),
     ("results/services/result_submission_service.py", "_rewrite_round_pardons"): (1, SLICE[2]),
     ("results/services/penalty_service.py", "apply_penalties"): (1, SLICE[2]),
-    ("results/services/standings_service.py", "persist_snapshots"): (1, SLICE[2]),
+    ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_and_repost_final_results"): (1, SLICE[2]),
     ("results/services/results_post_service.py", "_set_standings_message_id"): (1, SLICE[2]),
     ("results/services/verdict_announcement_service.py", "_record_announcement"): (1, SLICE[2]),
