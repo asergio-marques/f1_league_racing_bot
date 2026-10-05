@@ -1862,7 +1862,6 @@ def _recording(*, ran: list | None = None, raising: dict | None = None) -> Any:
     return _record
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORD)
 async def test_a_posting_step_saves_what_its_record_writes_with_its_mark(env):
     """A post's message id lands in the same save as the post's done mark: where the save fails
     after the record has written, neither the row nor the mark is kept, and once it goes through
@@ -1953,7 +1952,6 @@ async def test_a_stopped_job_s_next_try_reads_what_its_last_try_kept(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORD)
 async def test_a_record_is_not_run_for_a_job_not_due_or_discarded(env):
     """A job found no longer due, and a job a league admin discards, sent nothing, so neither's
     record runs and nothing is written for them."""
@@ -1985,7 +1983,6 @@ async def test_a_record_is_not_run_for_a_job_not_due_or_discarded(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORD)
 async def test_a_delete_finding_its_message_gone_still_runs_its_record(env):
     """A `DELETE` job whose message is already gone completes, and its record still runs in the
     save that marks it, so that a channel found deleted still has its row removed."""
@@ -2008,7 +2005,6 @@ async def test_a_delete_finding_its_message_gone_still_runs_its_record(env):
     assert await _states(env) == ["DONE"]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_RECORD)
 async def test_a_save_step_cannot_carry_a_record(env):
     """A `SAVE` step writes in its own save, so registering one that carries a record is
     refused."""
