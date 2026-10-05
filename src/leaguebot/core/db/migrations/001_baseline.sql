@@ -274,6 +274,9 @@ CREATE TABLE round_submission_channels (
     channel_id INTEGER NOT NULL,
     created_at TEXT    NOT NULL,
     closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, staged_penalties TEXT, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER, resubmit_started_by INTEGER,
+    -- appeals_prompt_message_id: the appeals review's prompt in the submission channel, saved with
+    -- its post, so that a prompt put back after a restart takes the old one down (#439).
+    appeals_prompt_message_id INTEGER,
     UNIQUE (round_id)
 );
 
@@ -654,6 +657,10 @@ CREATE TABLE "round_amend_channels" (
     -- reverting one that lapsed can name them in the log channel. NULL only where a row was
     -- written without it, which the command never does.
     started_by   INTEGER,
+    -- reports_approved_at: when the amendment's report stage was approved (#439). NULL until then.
+    -- The stage's approval is a change on the queue, which keeps nothing in memory, so the row
+    -- is what says the report stage is done and the pardons close with it.
+    reports_approved_at TEXT,
     -- One amendment of a round at a time; the command allows one per division besides.
     UNIQUE (round_id)
 );
