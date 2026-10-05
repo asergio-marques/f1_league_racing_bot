@@ -518,6 +518,42 @@ async def test_a_post_repointed_to_a_new_channel_lands_there_on_retry(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
+async def _set_results_channel(league: _League, channel_id: int) -> Any:
+    """Run `/results channel results` for Pro as the league manager Alex, through the command's
+    own body and the real season service. Gives Alex's interaction."""
+    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.results.cogs.results_cog import ResultsCog
+
+    league.bot.season_service = SeasonService(league.db_path)
+    cog = ResultsCog.__new__(ResultsCog)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.user.display_name = "Alex"
+    await cog._set_division_channel(interaction, "Pro", league.channel(channel_id), "results")
+    return interaction
+
+
+@pytest.mark.xfail(strict=True, reason="#439: a post's channel is not yet read again on a retry")
+async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end."""
+    league = await _league(tmp_path, results_message_id=None)
+    league.gone.add(RESULTS_CHANNEL)
+    await _ask(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_session_results"
+
+    manager = await _set_results_channel(league, NEW_RESULTS_CHANNEL)
+    assert "updated to" in str(manager.response.send_message.await_args.args[0])
+    assert await stopped_job(league.db_path) is not None, "setting the channel ran the job"
+    await retry_job(league.bot)
+
+    new = league.sent_to(NEW_RESULTS_CHANNEL)
+    assert len(new) == 1
+    assert await _session_ids(league.db_path) == (new[0], [new[0]])
+    assert await stopped_job(league.db_path) is None
+
+
 @pytest.mark.xfail(strict=True, reason="#439: a part-sent post is not yet removed before a retry")
 async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_try(tmp_path):
     league = await _league(tmp_path, results_message_id=None)
