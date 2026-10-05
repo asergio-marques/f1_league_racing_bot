@@ -22,6 +22,7 @@ from leaguebot.attendance.models.attendance import (
     DriverRoundAttendance,
     RsvpEmbedMessage,
 )
+from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -651,6 +652,8 @@ async def record_attendance_from_results(
     db_path: str,
     round_id: int,
     division_id: int,
+    *,
+    db=None,
 ) -> None:
     """Populate attended flag for every full-time driver in the division (FR-001–FR-004).
 
@@ -660,8 +663,12 @@ async def record_attendance_from_results(
     - during amendment recalculation this function is still called the same way but the
       caller is responsible for passing updated DriverSessionResult rows (FR-028).
     - cancelled rounds: skipped (no attendance recording for cancelled rounds).
+
+    *db* joins a transaction the caller already opened, and is then the caller's to commit;
+    see :func:`_shared_or_own`. A change's save hands its own, so the round's attendance lands
+    with the penalties and points or not at all (#439).
     """
-    async with get_connection(db_path) as db:
+    async with _shared_or_own(db_path, db) as (db, _owned):
         # Guard: skip if round is cancelled.
         cursor = await db.execute(
             "SELECT status FROM rounds WHERE id = ?",
@@ -734,7 +741,8 @@ async def record_attendance_from_results(
                         "UPDATE driver_round_attendance SET attended = 0 WHERE id = ?",
                         (dra_id,),
                     )
-        await db.commit()
+        if _owned:
+            await db.commit()
 
 
 async def record_attendance_from_results_full_recompute(
@@ -1017,6 +1025,31 @@ async def distribute_attendance_points(
             await db.commit()
 
 
+async def _rewrite_round_pardons_on(
+    db, round_id: int, staged_pardons: list, now: datetime
+) -> None:
+    """Leave the round carrying exactly the pardons the report stage held, on *db*.
+
+    ``INSERT OR IGNORE``, which the first pass uses, cannot express a pardon the manager
+    removed, so the round's pardons go first and the approved set is written whole. A pardon
+    kept keeps the time it was granted; one staged now takes *now*, the queue's clock. Commits
+    nothing: it is a step of the amendment's save.
+    """
+    await db.execute(
+        "DELETE FROM attendance_pardons WHERE attendance_id IN "
+        "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
+        (round_id,),
+    )
+    for pardon in staged_pardons:
+        await db.execute(
+            "INSERT OR IGNORE INTO attendance_pardons "
+            "(attendance_id, pardon_type, justification, granted_by, granted_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (pardon.attendance_id, pardon.pardon_type, pardon.justification,
+             pardon.grantor_id, getattr(pardon, "granted_at", None) or now.isoformat()),
+        )
+
+
 async def post_attendance_sheet(
     bot: LeagueBot,
     guild: discord.Guild,
@@ -1025,8 +1058,19 @@ async def post_attendance_sheet(
     division_id: int,
     sanctioned_profile_ids: set[int] | None = None,
     occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    *,
+    raise_on_failure: bool = False,
+    as_text: bool = False,
 ) -> None:
     """Post a new sheet to the division's attendance channel, replacing the prior one.
+
+    **A sheet that cannot be posted is raised, where the caller is a job on the change queue**
+    (*raise_on_failure*, #439): a channel the division was given and the guild no longer holds,
+    or a send Discord refuses, raises `StepFailedOnDiscord`, so the queue stops on the job and
+    tries it again, and nothing is put on the old retry queue, which would post a second copy
+    beside the retry. A division never given a channel, and a cancelled round, post nothing and
+    raise nothing either way. *as_text* leaves the graphic out, which is how a job retries
+    (Constitution XIV rule 8).
 
     Pass ``sanctioned_profile_ids`` to annotate those drivers with "(reached point limit)"
     on this posting.
@@ -1077,6 +1121,10 @@ async def post_attendance_sheet(
     channel = as_text_channel(guild.get_channel(channel_id))
     if channel is None:
         log.warning("post_attendance_sheet: channel %s not found for division %s", channel_id, division_id)
+        if raise_on_failure:
+            raise StepFailedOnDiscord(
+                f"the attendance channel (id {channel_id}) is not in the server"
+            )
         return
 
     # Build sheet content.
@@ -1158,16 +1206,20 @@ async def post_attendance_sheet(
     # leaves ``attachment`` None and the textual sheet below is posted exactly as it always
     # was. The graphic never gates this posting, and this posting never gates a sanction
     # (XIV.7 — image output adds no precondition).
-    attachment = await _sheet_attachment(
-        bot,
-        guild,
-        db_path,
-        round_id=round_id,
-        division_id=division_id,
-        sorted_drivers=sorted_drivers,
-        cfg_row=cfg_row,
-        sanctioned_profile_ids=sanctioned_profile_ids,
-        occasion=occasion,
+    attachment = (
+        None
+        if as_text
+        else await _sheet_attachment(
+            bot,
+            guild,
+            db_path,
+            round_id=round_id,
+            division_id=division_id,
+            sorted_drivers=sorted_drivers,
+            cfg_row=cfg_row,
+            sanctioned_profile_ids=sanctioned_profile_ids,
+            occasion=occasion,
+        )
     )
 
     # ── Produce ───────────────────────────────────────────────────────────
@@ -1189,6 +1241,10 @@ async def post_attendance_sheet(
             new_msg = await channel.send(content)
     except discord.HTTPException as exc:
         log.warning("post_attendance_sheet: failed to post sheet for division %s: %s", division_id, exc)
+        if raise_on_failure:
+            raise StepFailedOnDiscord(
+                f"the attendance sheet could not be posted: {exc}"
+            ) from exc
         # A failure of the **service** rather than of the generation: it is the textual sheet
         # that is enqueued, never the rendered image (XIV.8, FR-060). The queue is durable and
         # outlives the state that filled it, so a picture retried an hour from now would be a
@@ -1652,6 +1708,218 @@ class SanctionOutcome:
         ] + list(self.posting_faults)
 
 
+class SanctionNotApplicable(Exception):
+    """A sanction that cannot be applied to a driver who is owed it: a division with no Reserve
+    team to move them to. A failure of the sanction, never one passed over in silence."""
+
+
+async def _thresholds(db_path: str) -> tuple[int | None, int | None]:
+    """The (autoreserve, autosack) thresholds, each None where unset or off (FR-027)."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT autoreserve_threshold, autosack_threshold FROM attendance_config"
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None, None
+    return row["autoreserve_threshold"] or None, row["autosack_threshold"] or None
+
+
+async def _display_name_of(db_path: str, profile_id: int) -> str | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT test_display_name FROM driver_profiles WHERE id = ?", (profile_id,)
+        )
+        row = await cursor.fetchone()
+    return None if row is None else row["test_display_name"]
+
+
+async def owed_sanctions(
+    db_path: str, round_id: int, division_id: int, season_id: int | None = None
+) -> tuple[list[dict], list[tuple[int, int]]]:
+    """The sanctions the division's drivers owe at *round_id*, and who is passed over.
+
+    The first list holds a candidate for each full-time driver whose total as at *round_id*
+    is over a threshold and who is not already sanctioned: ``driver_profile_id``,
+    ``driver_user_id``, ``sanction`` (``"AUTOSACK"``, which supersedes ``"AUTORESERVE"``,
+    FR-025) and ``other_divisions``, the divisions an autosack reaches (issue #220), as the
+    sheet of each is posted again. The second holds the ``(profile id, total)`` of each driver
+    over the autosack threshold already signed off, the one refusal that is expected rather
+    than a failure (I1); a driver already in the Reserve team is passed over without a word
+    (FR-026). Both are empty where attendance sets no threshold (FR-027).
+
+    A driver sanctioned drops out of the first list, which is what makes a sanction safe to try
+    again: one run applies only what is still owed. Reads only; the one source of who is owed,
+    for the committing run below and for the review's jobs (#439).
+    """
+    autoreserve_threshold, autosack_threshold = await _thresholds(db_path)
+    if not autoreserve_threshold and not autosack_threshold:
+        return [], []
+    async with get_connection(db_path) as db:
+        if season_id is None:
+            row = await (
+                await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
+            ).fetchone()
+            if row is None:
+                return [], []
+            season_id = int(row["season_id"])
+        cursor = await db.execute(
+            """
+            SELECT dra.driver_profile_id, dra.total_points_after,
+                   dp.discord_user_id, dp.current_state
+            FROM driver_round_attendance dra
+            JOIN driver_season_assignments dsa
+                ON dsa.driver_profile_id = dra.driver_profile_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
+            WHERE dra.round_id = ?
+              AND dra.division_id = ?
+              AND ti.division_id = ?
+              AND ti.is_reserve = 0
+              AND dra.total_points_after IS NOT NULL
+            """,
+            (round_id, division_id, division_id),
+        )
+        driver_rows = await cursor.fetchall()
+
+        owed: list[dict] = []
+        signed_off: list[tuple[int, int]] = []
+        for row in driver_rows:
+            profile_id = row["driver_profile_id"]
+            total = row["total_points_after"] or 0
+            if autosack_threshold and total >= autosack_threshold:
+                if row["current_state"] == "NOT_SIGNED_UP":
+                    signed_off.append((profile_id, total))
+                    continue
+                # Autosack takes every seat in every division (issue #220), so every division
+                # the driver sits in has its sheet posted again, not only this one.
+                cursor = await db.execute(
+                    "SELECT division_id FROM driver_season_assignments "
+                    "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
+                    (profile_id, season_id, division_id),
+                )
+                owed.append({
+                    "driver_profile_id": profile_id,
+                    "driver_user_id": int(row["discord_user_id"]),
+                    "sanction": "AUTOSACK",
+                    "other_divisions": [o["division_id"] for o in await cursor.fetchall()],
+                })
+                continue  # autosack supersedes autoreserve (FR-025)
+            if autoreserve_threshold and total >= autoreserve_threshold:
+                cursor = await db.execute(
+                    """
+                    SELECT ti.is_reserve
+                    FROM driver_season_assignments dsa
+                    JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                    JOIN team_instances ti ON ti.id = ts.team_instance_id
+                    WHERE dsa.driver_profile_id = ?
+                      AND dsa.season_id = ?
+                      AND dsa.division_id = ?
+                    """,
+                    (profile_id, season_id, division_id),
+                )
+                seat_row = await cursor.fetchone()
+                if seat_row and seat_row["is_reserve"]:
+                    continue  # already in Reserve — skip (FR-026)
+                owed.append({
+                    "driver_profile_id": profile_id,
+                    "driver_user_id": int(row["discord_user_id"]),
+                    "sanction": "AUTORESERVE",
+                    "other_divisions": [],
+                })
+    return owed, signed_off
+
+
+async def apply_sanction(
+    bot: LeagueBot,
+    guild: discord.Guild,
+    db_path: str,
+    placement,
+    round_id: int,
+    division_id: int,
+    candidate: dict,
+    *,
+    season_id: int | None = None,
+    actor=None,
+) -> None:
+    """Apply one driver's sanction, and write its line in the log channel.
+
+    *placement* is the placement service, handed in rather than read off the bot (#439).
+    *actor* is who the sanction is done as: ``None`` is the bot, which is what a run has always
+    been. **Raises** where the sanction does not apply: `SanctionNotApplicable` for a division
+    with no Reserve team (a failure of the autoreserve, not a sanction passed over), and
+    whatever the placement service raises where Discord refuses a role change. A sack revokes
+    roles through Discord before it writes, so nothing is undone here; the caller decides what a
+    failure means (the run records it and takes the next driver, a queue job stops).
+    """
+    acting = actor if actor is not None else bot.user
+    # Sanctions are enforced by a bot that has logged in, which is when it has a user.
+    assert acting is not None, "sanctions enforced before the bot logged in"
+    profile_id = candidate["driver_profile_id"]
+    discord_user_id = str(candidate["driver_user_id"])
+    autoreserve_threshold, autosack_threshold = await _thresholds(db_path)
+    async with get_connection(db_path) as db:
+        if season_id is None:
+            row = await (
+                await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
+            ).fetchone()
+            if row is None:
+                raise SanctionNotApplicable(f"division {division_id} is not in a season")
+            season_id = int(row["season_id"])
+        row = await (await db.execute(
+            "SELECT total_points_after FROM driver_round_attendance "
+            "WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?",
+            (round_id, division_id, profile_id),
+        )).fetchone()
+        total = (row["total_points_after"] if row else None) or 0
+        reserve_row = await (await db.execute(
+            "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 1 LIMIT 1",
+            (division_id,),
+        )).fetchone()
+    driver = f"<@{discord_user_id}>"
+    display_name = await _display_name_of(db_path, profile_id)
+    if display_name:
+        driver += f" ({display_name})"
+
+    if candidate["sanction"] == "AUTOSACK":
+        await placement.sack_driver(
+            driver_profile_id=profile_id,
+            season_id=season_id,
+            acting_user_id=acting.id,
+            acting_user_name=str(acting),
+            guild=guild,
+            discord_user_id=discord_user_id,
+        )
+        await bot.output_router.post_log(
+            f"ATTENDANCE_AUTOSACK | {driver}"
+            f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
+        )
+        return
+
+    if reserve_row is None:
+        raise SanctionNotApplicable("the division has no Reserve team")
+    reserve_team_name: str = reserve_row["name"]
+    # One move rather than an unassign and an assign (issue #220): the driver keeps a seat
+    # throughout, their roles are swapped once, and the lineup is posted once rather than twice.
+    await placement.move_driver(
+        driver_profile_id=profile_id,
+        season_id=season_id,
+        from_division_id=division_id,
+        to_division_id=division_id,
+        team_name=reserve_team_name,
+        acting_user_id=acting.id,
+        acting_user_name=str(acting),
+        guild=guild,
+        discord_user_id=discord_user_id,
+    )
+    await bot.output_router.post_log(
+        f"ATTENDANCE_AUTORESERVE | {driver}"
+        f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
+        f" → moved to {reserve_team_name}",
+    )
+
+
 async def enforce_attendance_sanctions(
     bot: LeagueBot,
     guild: discord.Guild,
@@ -1692,187 +1960,66 @@ async def enforce_attendance_sanctions(
     if not autoreserve_threshold and not autosack_threshold:
         return outcome  # both disabled — nothing to do (FR-027)
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT dra.driver_profile_id, dra.total_points_after,
-                   dp.discord_user_id, dp.test_display_name, dp.current_state
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = dra.driver_profile_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND ti.is_reserve = 0
-              AND dra.total_points_after IS NOT NULL
-            """,
-            (round_id, division_id, division_id),
-        )
-        driver_rows = await cursor.fetchall()
-
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.results.services import verdict_announcement_service as _vas
     if head is None:
         head = _vas.banner_for_round(bot, db_path, round_id)
     placement: PlacementService = bot.placement_service
-    # Sanctions are enforced by a bot that has logged in, which is when it has a user.
-    acting = bot.user
-    assert acting is not None, "sanctions enforced before the bot logged in"
-    acting_id = acting.id
-    acting_name = str(acting)
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
     sanctioned_profile_ids: set[int] = set()
     # Other divisions an autosacked driver sat in, and who of theirs was sacked from them.
     other_divisions: dict[int, set[int]] = {}
 
-    for row in driver_rows:
-        profile_id = row["driver_profile_id"]
-        discord_user_id = str(row["discord_user_id"])
-        discord_user_id_int = int(row["discord_user_id"])
-        test_display_name: str | None = row["test_display_name"]
-        total = row["total_points_after"] or 0
+    owed, signed_off = await owed_sanctions(db_path, round_id, division_id, season_id)
+    for profile_id, total in signed_off:
+        # Already signed off — the one refusal that is expected, not a failure (I1).
+        await bot.output_router.post_log(
+            f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
+            f"already NOT_SIGNED_UP (total={total})",
+        )
 
-        def _driver_ref(uid: int, name: str | None) -> str:
-            return f"<@{uid}>" + (f" ({name})" if name else "")
-
-        driver = _driver_ref(discord_user_id_int, test_display_name)
-
-        # Autosack supersedes autoreserve (FR-025).
-        if autosack_threshold and total >= autosack_threshold:
-            if row["current_state"] == "NOT_SIGNED_UP":
-                # Already signed off — the one refusal that is expected, not a failure (I1).
-                await bot.output_router.post_log(
-                    f"ATTENDANCE_AUTOSACK | No-op | driver_profile_id={profile_id} "
-                    f"already NOT_SIGNED_UP (total={total})",
-                )
-                continue
-            # Autosack takes every seat in every division (issue #220), so every division
-            # the driver sits in has its sheet posted again, not only this one.
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    "SELECT division_id FROM driver_season_assignments "
-                    "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
-                    (profile_id, season_id, division_id),
-                )
-                for other in await cursor.fetchall():
-                    other_divisions.setdefault(other["division_id"], set()).add(profile_id)
-            try:
-                await placement.sack_driver(
-                    driver_profile_id=profile_id,
-                    season_id=season_id,
-                    acting_user_id=acting_id,
-                    acting_user_name=acting_name,
-                    guild=guild,
-                    discord_user_id=discord_user_id,
-                )
-                sanctioned_profile_ids.add(profile_id)
-                outcome.applied.append((driver, "autosack"))
-                await bot.output_router.post_log(
-                    f"ATTENDANCE_AUTOSACK | {driver}"
-                    f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
-                )
-                # An announcement that never went out is recorded with the run (#237). The
-                # `except` below only ever caught what *raised*, and this returns quietly
-                # instead — so `ATTENDANCE_SANCTIONS | Incomplete` has been promising a
-                # line about unannounced sanctions that it could not produce.
-                outcome.posting_faults += await _vas.post_autosanction_announcement(
-                    bot=bot,
-                    db_path=db_path,
-                    round_id=round_id,
-                    driver_discord_id=discord_user_id_int,
-                    driver_display_name=test_display_name,
-                    sanction_type="AUTOSACK",
-                    threshold=autosack_threshold,
-                    head=head,
-                )
-            except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
-                log.exception(
-                    "enforce_attendance_sanctions: autosack failed for profile %s", profile_id
-                )
-                outcome.failed.append((driver, "autosack", _failure_reason(
-                    exc, applied=profile_id in sanctioned_profile_ids
-                )))
-            continue  # skip autoreserve for this driver (FR-025)
-
-        if autoreserve_threshold and total >= autoreserve_threshold:
-            # Check if already in Reserve (FR-026).
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    """
-                    SELECT ti.is_reserve
-                    FROM driver_season_assignments dsa
-                    JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                    JOIN team_instances ti ON ti.id = ts.team_instance_id
-                    WHERE dsa.driver_profile_id = ?
-                      AND dsa.season_id = ?
-                      AND dsa.division_id = ?
-                    """,
-                    (profile_id, season_id, division_id),
-                )
-                seat_row = await cursor.fetchone()
-
-            if seat_row and seat_row["is_reserve"]:
-                continue  # already in Reserve — skip (FR-026)
-
-            # Look up Reserve team name for this division.
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    "SELECT name FROM team_instances WHERE division_id = ? AND is_reserve = 1 LIMIT 1",
-                    (division_id,),
-                )
-                reserve_row = await cursor.fetchone()
-
-            if reserve_row is None:
-                outcome.failed.append(
-                    (driver, "autoreserve", "the division has no Reserve team")
-                )
-                continue
-
-            reserve_team_name: str = reserve_row["name"]
-
-            try:
-                # One move rather than an unassign and an assign (issue #220): the driver
-                # keeps a seat throughout, their roles are swapped once, and the lineup is
-                # posted once rather than twice.
-                await placement.move_driver(
-                    driver_profile_id=profile_id,
-                    season_id=season_id,
-                    from_division_id=division_id,
-                    to_division_id=division_id,
-                    team_name=reserve_team_name,
-                    acting_user_id=acting_id,
-                    acting_user_name=acting_name,
-                    guild=guild,
-                    discord_user_id=discord_user_id,
-                )
-                sanctioned_profile_ids.add(profile_id)
-                outcome.applied.append((driver, "autoreserve"))
-                await bot.output_router.post_log(
-                    f"ATTENDANCE_AUTORESERVE | {driver}"
-                    f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
-                    f" → moved to {reserve_team_name}",
-                )
-                outcome.posting_faults += await _vas.post_autosanction_announcement(
-                    bot=bot,
-                    db_path=db_path,
-                    round_id=round_id,
-                    driver_discord_id=discord_user_id_int,
-                    driver_display_name=test_display_name,
-                    sanction_type="AUTORESERVE",
-                    threshold=autoreserve_threshold,
-                    head=head,
-                )
-            except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
-                log.exception(
-                    "enforce_attendance_sanctions: autoreserve failed for profile %s", profile_id
-                )
-                outcome.failed.append((driver, "autoreserve", _failure_reason(
-                    exc, applied=profile_id in sanctioned_profile_ids
-                )))
+    for candidate in owed:
+        profile_id = candidate["driver_profile_id"]
+        sanction = candidate["sanction"]
+        label = "autosack" if sanction == "AUTOSACK" else "autoreserve"
+        driver_discord_id = int(candidate["driver_user_id"])
+        test_display_name = await _display_name_of(db_path, profile_id)
+        driver = f"<@{driver_discord_id}>" + (f" ({test_display_name})" if test_display_name else "")
+        try:
+            await apply_sanction(
+                bot, guild, db_path, placement, round_id, division_id, candidate,
+                season_id=season_id,
+            )
+            sanctioned_profile_ids.add(profile_id)
+            outcome.applied.append((driver, label))
+            for other in candidate["other_divisions"]:
+                other_divisions.setdefault(other, set()).add(profile_id)
+            # An announcement that never went out is recorded with the run (#237). The
+            # `except` below only ever caught what *raised*, and this returns quietly
+            # instead — so `ATTENDANCE_SANCTIONS | Incomplete` has been promising a
+            # line about unannounced sanctions that it could not produce.
+            outcome.posting_faults += await _vas.post_autosanction_announcement(
+                bot=bot,
+                db_path=db_path,
+                round_id=round_id,
+                driver_discord_id=driver_discord_id,
+                driver_display_name=test_display_name,
+                sanction_type=sanction,
+                threshold=(
+                    autosack_threshold if sanction == "AUTOSACK" else autoreserve_threshold
+                ) or 0,
+                head=head,
+            )
+        except SanctionNotApplicable as exc:
+            outcome.failed.append((driver, label, str(exc)))
+        except Exception as exc:  # noqa: BLE001 — recorded, reported, and the next driver taken
+            log.exception(
+                "enforce_attendance_sanctions: %s failed for profile %s", label, profile_id
+            )
+            outcome.failed.append((driver, label, _failure_reason(
+                exc, applied=profile_id in sanctioned_profile_ids
+            )))
 
     # Refresh lineup and re-post attendance sheet with sanctioned annotations.
     if sanctioned_profile_ids:
@@ -1997,7 +2144,7 @@ async def recalculate_attendance_for_round(
 
 
 async def _recalculate_forward(
-    db_path: str, round_id: int, division_id: int, *, recompute: str
+    db_path: str, round_id: int, division_id: int, *, recompute: str, db=None
 ) -> list[int]:
     """Recompute *round_id* and carry the running total through every finalised round after
     it, in **one transaction** (#187). Returns the ids of the rounds it touched, in order.
@@ -2020,10 +2167,14 @@ async def _recalculate_forward(
 
     The rebuild is a **full** one (FR-028), without the upgrade-only constraint, so it can
     flip a driver from present to absent. That is why it is not reached under ``"none"``.
+
+    *db* joins a transaction the caller already opened, and is then the caller's to commit
+    (see :func:`_shared_or_own`): an approval's save hands its own, so the recalculation is
+    saved with everything else the approval writes (#439).
     """
     if recompute not in {"all", "round", "none"}:
         raise ValueError(f"unknown recompute mode {recompute!r}")
-    async with get_connection(db_path) as db:
+    async with _shared_or_own(db_path, db) as (db, _owned):
         # FR-028: full recompute without upgrade-only constraint.
         if recompute in {"all", "round"}:
             await record_attendance_from_results_full_recompute(
@@ -2053,7 +2204,8 @@ async def _recalculate_forward(
                 )
             await distribute_attendance_points(db_path, sub_round_id, division_id, db=db)
 
-        await db.commit()
+        if _owned:
+            await db.commit()
     return [round_id, *subsequent_rounds]
 
 

@@ -459,7 +459,7 @@ def test_both_enforcement_sites_hand_the_poster_on():
 
     source = inspect.getsource(attendance_service)
     blocks = source.split("post_autosanction_announcement(")[1:]
-    assert len(blocks) == 2, "only the autosack and autoreserve enforcements announce"
+    assert len(blocks) == 1, "only the enforcement loop, for both sanctions, announces"
     for block in blocks:
         assert "head=head," in block[:600]
 

@@ -407,7 +407,7 @@ def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic(
     """A pardon is no verdict: it is a logging-channel record, whatever the toggle says.
 
     Asserted structurally because it is a fact about *where* the announcement is called from:
-    the two enforcement sites, and nowhere else. A pardon changes the points a round conferred
+    the enforcement loop, which serves both sanctions, and nowhere else. A pardon changes the points a round conferred
     and announces nothing.
     """
     import inspect
@@ -416,7 +416,7 @@ def test_an_attendance_pardon_reaches_no_verdict_announcement_and_so_no_graphic(
 
     source = inspect.getsource(attendance_service)
     calls = source.count("post_autosanction_announcement(")
-    assert calls == 2, "only the autosack and autoreserve enforcements may announce"
+    assert calls == 1, "only the enforcement loop, for both sanctions, may announce"
 
     for block in source.split("post_autosanction_announcement(")[1:]:
         preceding = source.split(block)[0][-600:] if block else ""
