@@ -80,7 +80,10 @@ from tests.support.review_league import (
 
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
-NOT_BUILT = "#439: an amendment's stages are not yet changes on the queue"
+LATE_APPROVAL_NOT_BUILT = (
+    "#439: a report stage retried past the amendment's half-hour still posts its appeals stage "
+    "and says so"
+)
 
 #: The amendment's half-hour, from "now" as the queue's clock gives it.
 DEADLINE = (NOW + timedelta(minutes=30)).isoformat()
@@ -369,19 +372,40 @@ async def test_a_stopped_report_stage_left_past_its_deadline_is_not_swept_while_
     assert "put back" not in league.log()
 
 
-async def test_a_stopped_stage_retried_past_its_deadline_is_approved(tmp_path):
+@pytest.mark.xfail(strict=True, reason=LATE_APPROVAL_NOT_BUILT)
+async def test_a_stopped_stage_retried_past_its_deadline_is_approved_but_not_carried_on(tmp_path):
+    """The owner ruled (2026-10-05): an amendment's reports approval that lands after the
+    amendment's half-hour, stuck on the queue and retried late, keeps the deadline. "The half-hour
+    covers both steps and is never extended." The reply says the half-hour has passed, the
+    amendment will be undone in the next few minutes, and to run /results rounds amend again,
+    never that its appeals stage is posted below.
+
+    The reports are recorded as approved; no appeals prompt is posted, as it could not be
+    approved; and the next sweep undoes the amendment. Alex presses Approve ten minutes before
+    the half-hour ends and the retry lands a minute after it, so that his reply, which the queue
+    updates only for fourteen minutes, is still updated."""
     league = await _amend_league(tmp_path)
+    _clock(league).advance(minutes=20)
     with points_fail():
-        await _approve_reports(league)
+        interaction = await _approve_reports(league)
         await run_queue(league.bot)
-    _clock(league).advance(hours=2)
+    _clock(league).advance(minutes=11)
 
     await retry_job(league.bot)
 
     assert await stopped_at(league) is None
     assert (await _amend_row(league))["reports_approved_at"] is not None
     assert await _record_drivers(league) == [LEWIS]
-    assert len(_amend_appeals_prompts(league)) == 1
+    assert _amend_appeals_prompts(league) == []
+    reply = updated_reply(interaction)
+    assert "/results rounds amend" in reply
+    assert "posted below" not in reply
+
+    assert await _sweep(league, after=timedelta(hours=2)) == 1
+
+    row = await _amend_row(league)
+    assert row is None or row["pre_amendment_state"] is None
+    assert _amend_channel_deleted(league)
 
 
 async def test_a_discarded_stage_past_its_deadline_is_undone_at_the_next_sweep(tmp_path):
