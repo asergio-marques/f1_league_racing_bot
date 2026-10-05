@@ -608,23 +608,26 @@ def test_format_time_ms(ms, expected_str):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#439: the last paste does not yet ask the change queue to open the penalty review",
+)
 async def test_submission_channel_not_closed_after_final_session(monkeypatch):
-    """Structural check: run_result_submission_job ends by calling enter_penalty_state
-    (not close_submission_channel) for normal rounds.
+    """Structural check: run_result_submission_job ends by asking the change queue for
+    `results.review.open` (not close_submission_channel) for normal rounds (#439, slice 2).
 
-    The only legitimate close_submission_channel call in the 9+10 block is for the
-    all-cancelled early-exit path. We verify that enter_penalty_state is the final
-    call after all session loops and that it appears after any early-exit returns."""
+    The only legitimate close_submission_channel call is for the all-cancelled early-exit path.
+    We verify that the ask is the final step after all session loops and that it appears after
+    any early-exit returns."""
     import inspect
     from leaguebot.results.services.result_submission_service import run_result_submission_job
 
     source = inspect.getsource(run_result_submission_job)
-    final_block = source[source.rfind("# 9+10"):]
-    assert "enter_penalty_state" in final_block
-    # close_submission_channel may appear for the all-cancelled early-exit branch,
-    # but enter_penalty_state must also be present as the normal-round final call.
-    # Verify enter_penalty_state appears at the END of the block, after any early returns.
-    assert final_block.rfind("enter_penalty_state") > final_block.rfind("close_submission_channel")
+    assert "results.review.open" in source
+    assert "enter_penalty_state" not in source
+    # close_submission_channel may appear for the all-cancelled early-exit branch, but the ask
+    # must come after it, as the normal round's final call.
+    assert source.rfind("results.review.open") > source.rfind("close_submission_channel")
 
 
 async def test_penalty_state_entered_after_final_session(tmp_path):
