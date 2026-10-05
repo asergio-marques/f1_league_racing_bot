@@ -150,6 +150,8 @@ def _bot(*, guild=True, attendance=False):
     # The amendment reposts the attendance sheet where the module is on (#345); off by
     # default here so these tests stay about the results.
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    # The rebuild is the last stage's change (#439), asked of the queue; stage one asks none.
+    bot.change_queue.ask = AsyncMock()
     return bot
 
 
@@ -176,12 +178,6 @@ async def _amend(
         "leaguebot.results.services.results_post_service.repost_round_results",
         new=AsyncMock(return_value=list(repost_faults or [])),
     ) as repost, patch(
-        "leaguebot.results.services.results_post_service.replay_division_channels",
-        new=AsyncMock(return_value=[]),
-    ) as replay, patch(
-        "leaguebot.results.services.result_submission_service._repost_attendance_after_amendment",
-        new=AsyncMock(return_value=[]),
-    ) as subsequent, patch(
         "leaguebot.results.services.standings_service.cascade_recompute_from_round", new=AsyncMock()
     ) as cascade:
         await amend_round_results(
@@ -196,8 +192,7 @@ async def _amend(
         "bot": bot,
         "apply_points": apply_points,
         "repost": repost,
-        "replay": replay,
-        "subsequent": subsequent,
+        "asked": bot.change_queue.ask,
         "cascade": cascade,
     }
 
@@ -573,7 +568,7 @@ async def test_stage_one_publishes_nothing(tmp_path):
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
     stubs["repost"].assert_not_awaited()
-    stubs["replay"].assert_not_awaited()
+    stubs["asked"].assert_not_awaited()
 
 
 async def test_stage_one_does_not_rebuild_the_division(tmp_path):
@@ -587,8 +582,8 @@ async def test_stage_one_does_not_rebuild_the_division(tmp_path):
 
     stubs = await _amend(db_path, [_race_row(101, 1)])
 
-    stubs["replay"].assert_not_awaited()
-    stubs["subsequent"].assert_not_awaited()
+    stubs["asked"].assert_not_awaited()
+    assert stubs["bot"].attendance_after_review.method_calls == []
 
 
 async def test_the_standings_are_recomputed_before_the_channels_are_rebuilt(tmp_path):
