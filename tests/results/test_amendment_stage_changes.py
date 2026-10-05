@@ -455,12 +455,13 @@ async def test_a_stop_after_the_last_stage_is_saved_finishes_the_rebuild_on_rest
     assert "RESULT_AMENDED | Success" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_superseded_announcement_stays_where_a_replacement_was_discarded(tmp_path):
     league = await _amend_league(tmp_path, reports_approved=True)
-    # The heading goes first and is a job of its own (owner, Gate 2): only the verdicts are refused.
-    league.channel(VERDICTS_CHANNEL).fail_when = lambda content, _kwargs: not content.startswith(
-        "**Season"
+    # The heading goes first and is a job of its own (owner, Gate 2): only Lewis's verdict, the
+    # replacement of OLD_VERDICT, is refused, picked by its text, since a verdict starts
+    # "**Season 1 Pro Round 3 — ..." as the heading does.
+    league.channel(VERDICTS_CHANNEL).fail_when = (
+        lambda content, _kwargs: f"**Driver**: <@{LEWIS}>" in content
     )
     interaction = await _approve_appeals(league)
     await run_queue(league.bot)
