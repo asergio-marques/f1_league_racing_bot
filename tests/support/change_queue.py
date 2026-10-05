@@ -375,10 +375,16 @@ async def step_rows(db_path: str, change_id: int | None = None) -> list[dict[str
 
 
 async def stopped_job(db_path: str) -> dict[str, Any] | None:
-    """The job the queue is stopped at: not done, and failed since `failing_since`; or None."""
+    """The job the queue is stopped at: not done, and failed since `failing_since`; or None.
+
+    Only a job of a change still QUEUED or RUNNING counts: a change that has ended (discarded
+    at a job, say) leaves the job it stopped at as it was."""
+    live = {row["id"] for row in await change_rows(db_path)
+            if row["state"] in ("QUEUED", "RUNNING")}
     stopped = [
         row for row in await step_rows(db_path)
-        if row["done_at"] is None and row["failing_since"] is not None
+        if row["change_id"] in live and row["done_at"] is None
+        and row["failing_since"] is not None
     ]
     return stopped[0] if stopped else None
 

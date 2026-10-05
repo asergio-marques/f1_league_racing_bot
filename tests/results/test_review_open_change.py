@@ -881,7 +881,6 @@ async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_o
     assert league.sent_to(RESULTS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
     """The paste asked for the review, its `open` save failed and was discarded, and the review
     `close` asked for again was discarded at its check (the channel was gone then): nothing is in
