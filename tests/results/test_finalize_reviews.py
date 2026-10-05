@@ -1719,17 +1719,7 @@ async def test_the_amendment_rewrites_the_rounds_pardons_at_its_last_stage(tmp_p
 
 @pytest.mark.parametrize(
     "stage, kind",
-    [
-        pytest.param(
-            "reports", AMEND_REPORTS,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#439: the amendment's report stage's Approve control does not yet ask "
-                "the change queue",
-            ),
-        ),
-        ("appeals", AMEND_APPEALS),
-    ],
+    [("reports", AMEND_REPORTS), ("appeals", AMEND_APPEALS)],
 )
 async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     tmp_path, stage, kind
@@ -1738,7 +1728,7 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     Lewis's 5-second report staged, or on its appeals stage, a 10-second correction for Max staged.
     The press asks the queue for that stage's change, with the round, the division, the amended
     sessions and what is staged in its payload, and Alex is answered at once that it is under way,
-    with its job number."""
+    with its job number. The report stage's Approve is pressed on its approval message."""
     from leaguebot.results.services.penalty_wizard import (
         AppealsReviewView,
         ApprovalView,
@@ -1763,6 +1753,9 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
         view = AppealsReviewView(state=state)
         staged = [_correction().to_payload()]
     interaction = member_interaction(league.bot, user=_alex())
+    if stage == "reports":
+        # The report stage's Approve sits on its approval message, which the control requires.
+        interaction.message.id = AMEND_APPROVAL
 
     with patch(
         "leaguebot.results.services.penalty_wizard._is_league_manager",
