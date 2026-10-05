@@ -739,7 +739,6 @@ async def test_the_results_are_reposted_as_final(tmp_path):
     assert OLD_RESULTS not in posted
 
 
-@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_upheld_corrections_are_applied_and_recorded(tmp_path):
     league = await _appeals_league(tmp_path)
 
