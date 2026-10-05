@@ -735,6 +735,44 @@ async def test_an_earlier_round_s_standings_are_not_posted_again(tmp_path):
     assert OLD_EARLIER_STANDINGS not in league.deleted_in(STANDINGS_CHANNEL)
 
 
+CANCELLED_ROUND_ID = 17
+OLD_CANCELLED_STANDINGS = 8807
+
+
+@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
+async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path):
+    """What `repost_subsequent_standings` held (`test_a_cancelled_round_is_skipped`, D135): a
+    round cancelled after its standings were posted is not part of the championship, so a
+    first-pass approval of an earlier round republishes no standings for it, and its old message
+    is left alone."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, 5, '2026-02-01T18:00:00+00:00', 'NORMAL', "
+            "'Monza', 'CANCELLED')",
+            (CANCELLED_ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+            "standing_position, total_points, standings_message_id, standings_message_ids) "
+            "VALUES (?, ?, 1001, 1, 25, ?, ?)",
+            (CANCELLED_ROUND_ID, DIVISION_ID, OLD_CANCELLED_STANDINGS,
+             json.dumps([OLD_CANCELLED_STANDINGS])),
+        )
+        await db.commit()
+    league.channel(STANDINGS_CHANNEL).seed(OLD_CANCELLED_STANDINGS, "round 5 standings")
+    await _ask(league, later_rounds=True)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert CANCELLED_ROUND_ID not in await _standings_rounds(league)
+    assert LATER_ROUND_ID in await _standings_rounds(league)
+    standings = league.channel(STANDINGS_CHANNEL)
+    assert standings.messages[OLD_CANCELLED_STANDINGS].content == "round 5 standings"
+    assert OLD_CANCELLED_STANDINGS not in league.deleted_in(STANDINGS_CHANNEL)
+
+
 @pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
 async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: "posted" is either championship, not the
