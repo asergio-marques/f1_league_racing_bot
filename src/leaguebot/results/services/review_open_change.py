@@ -197,13 +197,16 @@ def review_open_change() -> ChangeType:
         # Another round's amendment holds the division: opening this review would publish its
         # unapproved standings, and leave them published if it were cancelled or lapsed. The
         # amend command is refused while this change is in hand, so this is the paste's own
-        # check, made again where the standings are posted.
-        held = await held_by_amendment(
-            ctx.db_path, round_id, int(row["division_id"]),
-            then="The review opens once that ends.",
-        )
-        if held is not None:
-            return no(held)
+        # check, made again where the standings are posted. A review put back without publishing
+        # (a resubmission's cancel or failure, a restart's) computes and posts nothing, so the
+        # amendment holds nothing it could expose: refusing it would strand the round.
+        if bool(ctx.payload.get("publish", True)):
+            held = await held_by_amendment(
+                ctx.db_path, round_id, int(row["division_id"]),
+                then="The review opens once that ends.",
+            )
+            if held is not None:
+                return no(held)
         guild = await _guild_or_none(ctx)
         if guild is None:
             return no(_NO_SERVER)
