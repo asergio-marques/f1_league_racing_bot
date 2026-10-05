@@ -720,7 +720,6 @@ async def test_a_resubmission_is_published_as_amended(tmp_path):
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_path):
     """A cancel puts the review back first: its line in the channel and in the log come after
     the prompt stands, never while the prompt is still owed. The cancel button is taken off."""
@@ -757,7 +756,7 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
     lines = league.bot.log_channel.sent
     [cancel] = [line for line in lines if "cancelled by" in line]
     assert cancel.startswith("↩️ ")
-    assert f"cancelled by Alex (<@{MEMBER_ID}>)" in cancel.split("\n", 1)[0]
+    assert f"cancelled by Alex (`<@{MEMBER_ID}>`)" in cancel.split("\n", 1)[0]
     assert "The earlier results stand." in cancel
     assert "Press 🔄 Resubmit Initial Results to start again." in cancel
     assert not any("RESULTS_RESUBMISSION | Cancelled" in line for line in lines)
