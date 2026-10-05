@@ -663,6 +663,122 @@ async def test_each_later_round_s_posted_standings_are_posted_again(tmp_path):
     assert ("edit", STANDINGS_CHANNEL, OLD_LATER_STANDINGS) in league.events
 
 
+EARLIER_ROUND_ID = 19
+LAST_ROUND_ID = 18
+OLD_EARLIER_STANDINGS = 8803
+OLD_LAST_STANDINGS = 8805
+TEAMS_ONLY_STANDINGS = 8806
+
+
+async def _seed_rounds_either_side(league: _League) -> None:
+    """Round 2 at Bahrain, before round 3, with its standings posted; round 7 at Suzuka, after
+    round 4 but stored before it (a lower id), with its standings posted."""
+    async with get_connection(league.db_path) as db:
+        for round_id, number, track, message_id in (
+            (EARLIER_ROUND_ID, 2, "Bahrain", OLD_EARLIER_STANDINGS),
+            (LAST_ROUND_ID, 7, "Suzuka", OLD_LAST_STANDINGS),
+        ):
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+                "track_name, status) VALUES (?, ?, ?, '2026-02-01T18:00:00+00:00', 'NORMAL', "
+                "?, 'FINAL')",
+                (round_id, DIVISION_ID, number, track),
+            )
+            await db.execute(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+                "standing_position, total_points, standings_message_id, standings_message_ids) "
+                "VALUES (?, ?, 1001, 1, 25, ?, ?)",
+                (round_id, DIVISION_ID, message_id, json.dumps([message_id])),
+            )
+        await db.commit()
+    league.channel(STANDINGS_CHANNEL).seed(OLD_EARLIER_STANDINGS, "round 2 standings")
+    league.channel(STANDINGS_CHANNEL).seed(OLD_LAST_STANDINGS, "round 7 standings")
+
+
+async def _standings_rounds(league: _League) -> list[int]:
+    """The rounds the `post_standings` jobs posted, each once, in the order the jobs ran."""
+    rounds: list[int] = []
+    for row in await step_rows(league.db_path):
+        if row["name"] != "post_standings" or not row["payload"]:
+            continue
+        round_id = json.loads(row["payload"]).get("round_id")
+        if round_id not in rounds:
+            rounds.append(round_id)
+    return rounds
+
+
+@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
+async def test_later_rounds_standings_are_posted_again_in_round_order(tmp_path):
+    """What `repost_subsequent_standings` held: a championship posted out of order reads as
+    though the season ran that way, so the rounds go in round order, not in stored order."""
+    league = await _league(tmp_path)
+    await _seed_rounds_either_side(league)
+    await _ask(league, later_rounds=True)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _standings_rounds(league) == [ROUND_ID, LATER_ROUND_ID, LAST_ROUND_ID]
+
+
+@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
+async def test_an_earlier_round_s_standings_are_not_posted_again(tmp_path):
+    """What `repost_subsequent_standings` held: a correction changes no round before it."""
+    league = await _league(tmp_path)
+    await _seed_rounds_either_side(league)
+    await _ask(league, later_rounds=True)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert EARLIER_ROUND_ID not in await _standings_rounds(league)
+    standings = league.channel(STANDINGS_CHANNEL)
+    assert standings.messages[OLD_EARLIER_STANDINGS].content == "round 2 standings"
+    assert OLD_EARLIER_STANDINGS not in league.deleted_in(STANDINGS_CHANNEL)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
+async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again(tmp_path):
+    """What `repost_subsequent_standings` held: "posted" is either championship, not the
+    drivers' alone, since the picture can leave the two in different states."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_id = NULL, "
+            "standings_message_ids = NULL, constructor_standings_message_id = ?, "
+            "constructor_standings_message_ids = ? WHERE round_id = ?",
+            (TEAMS_ONLY_STANDINGS, json.dumps([TEAMS_ONLY_STANDINGS]), LATER_ROUND_ID),
+        )
+        await db.commit()
+    league.channel(STANDINGS_CHANNEL).seed(TEAMS_ONLY_STANDINGS, "round 4 team standings")
+    await _ask(league, later_rounds=True)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert LATER_ROUND_ID in await _standings_rounds(league)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: later rounds' standings are not yet planned as jobs")
+async def test_each_later_round_s_standings_are_headed_with_its_own_round_number(tmp_path):
+    """What `repost_subsequent_standings` held: every round posted again is headed with its own
+    number, and one headed with the corrected round's would title the season after one race.
+    The text heading carries the round's number; its track goes to the picture alone."""
+    import re
+
+    league = await _league(tmp_path)
+    await _seed_rounds_either_side(league)
+    await _ask(league, later_rounds=True)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    standings = league.channel(STANDINGS_CHANNEL)
+    touched = [mid for kind, ch, mid in league.events
+               if ch == STANDINGS_CHANNEL and kind in ("send", "edit")
+               and mid in standings.messages]
+    contents = [standings.messages[mid].content or "" for mid in touched]
+    headed = {int(number) for content in contents
+              for number in re.findall(r"Pro Round (\d+) ", content)}
+    assert headed == {3, 4, 7}
+
+
 # ---------------------------------------------------------------------------
 # What a republished table shows
 # ---------------------------------------------------------------------------
