@@ -511,7 +511,13 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
         ("AWAITING_REPORT_VERDICTS", False, False, False),
         ("AWAITING_APPEAL_VERDICTS", False, False, True),
         ("FINAL", True, False, False),
-        ("FINAL", True, True, True),
+        pytest.param(
+            "FINAL", True, True, True,
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#439: an amendment's report stage is not yet read from reports_approved_at",
+            ),
+        ),
     ],
 )
 async def test_pardons_close_when_the_reports_are_approved(
@@ -520,13 +526,27 @@ async def test_pardons_close_when_the_reports_are_approved(
     """The one check behind staging a pardon and removing one (#356, #402). A first pass grants
     its pardons as its reports are approved, and its round moves on to appeals. An amendment's
     round is FINAL throughout, so its status closes nothing; its pardons close with its reports
-    all the same (decided 2026-09-23), though it writes them only as its appeals are approved."""
+    all the same (decided 2026-09-23), though it writes them only as its appeals are approved.
+
+    An amendment's report stage is approved once its row's `reports_approved_at` is set (#439):
+    the database says so, not the review's memory, so the answer survives a restart."""
     from leaguebot.results.services.penalty_wizard import _review_moved_on
 
     db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
     state = _state(db_path)
     state.is_amendment = amendment
-    state.reports_approved = reports_approved
+    if amendment:
+        approved = ", reports_approved_at" if reports_approved else ""
+        async with get_connection(db_path) as db:
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                f"created_at, pre_amendment_state, expires_at{approved}) VALUES (?, 8200, "
+                "'[\"FEATURE_RACE\"]', '2026-02-02T00:00:00+00:00', '{}', "
+                "'2099-01-01T00:00:00+00:00'"
+                + (", '2026-02-02T00:10:00+00:00'" if reports_approved else "") + ")",
+                (state.round_id,),
+            )
+            await db.commit()
 
     assert (await _review_moved_on(state) is not None) is closed
 
