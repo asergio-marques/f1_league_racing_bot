@@ -196,7 +196,6 @@ async def _make_db(
 # round 3 of division 11 (Pro), Lewis (101) and Max (102) in its Feature Race, its results and
 # standings posted provisionally, its review prompt standing in the submission channel.
 
-NOT_BUILT = "#439: the report approval is not yet a change on the queue"
 REPORTS = "results.reports.approve"
 
 
