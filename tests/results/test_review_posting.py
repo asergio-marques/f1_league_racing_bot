@@ -565,7 +565,7 @@ async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_t
     _anchor, ids = await _session_ids(league.db_path)
     assert ids is not None and len(ids) >= 2
     # Besides the retry's own messages the channel holds only the unrelated one every test seeds.
-    assert set(ids) == standing - {OLD_RESULTS}
+    assert standing == set(ids) | {OLD_RESULTS}
 
 
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
