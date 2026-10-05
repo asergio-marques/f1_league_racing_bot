@@ -20,6 +20,8 @@ is unbuilt.
 """
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 import pytest
@@ -360,6 +362,9 @@ async def test_the_manager_is_told_the_round_is_final(tmp_path):
     league = await _league(tmp_path)
     interaction = await _approve(league)
     assert acknowledgement(interaction).startswith("⏳")
+    assert re.search(r"job #\d+", acknowledgement(interaction)), (
+        "the appeals approval's acknowledgement does not name its job"
+    )
 
     await run_queue(league.bot)
 

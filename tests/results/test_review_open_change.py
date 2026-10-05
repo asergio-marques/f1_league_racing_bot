@@ -777,6 +777,9 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
     cancel_lines = [mid for mid in league.sent_to(SUBMISSION_CHANNEL)
                     if "Resubmission cancelled" in submission.messages[mid].content]
     assert len(cancel_lines) == 1
+    assert submission.messages[cancel_lines[0]].content == (
+        "↩️ Resubmission cancelled. The earlier results stand."
+    )
     assert _at(league, "send", SUBMISSION_CHANNEL, prompt) < _at(
         league, "send", SUBMISSION_CHANNEL, cancel_lines[0]
     )
