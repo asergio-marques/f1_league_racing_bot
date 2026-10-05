@@ -294,6 +294,11 @@ async def test_an_attendance_sheet_discord_refuses_stops_the_queue_and_is_retrie
     await run_queue(league.bot)
 
     assert await stopped_at(league) == "attendance_sheet"
+    notice = league.log()
+    assert "attendance" in notice.lower() and "Pro" in notice, (
+        "the stop notice does not name the sheet and its division"
+    )
+    assert "/attendance sync" not in notice, "sync was named while the bot still tries the sheet"
     await retry_job(league.bot)
 
     assert await stopped_at(league) is None
@@ -469,6 +474,12 @@ async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
 
     assert await stopped_at(league) == "apply_sanction"
     assert league.attendance._calls("announce_sanction") == []
+    notice = league.log()
+    assert str(MAX) in notice, "the stop notice does not name the driver"
+    assert "reserve" in notice.lower(), "the stop notice does not name the sanction"
+    assert "/attendance sync" not in notice, (
+        "sync was named while the bot still tries the sanction"
+    )
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
