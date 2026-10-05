@@ -1131,7 +1131,9 @@ class ChangeQueue:
         partial = error.result if isinstance(error, StepFailedOnDiscord) else None
         named = job if job is not None else what
         line = hour_line(row["id"], named) if not first and next_try is None else None
-        retried = self._retrying.pop(row["id"], None)
+        # Read, not popped: the entry goes once the save has committed, so a save that raises
+        # leaves it for the try the worker makes again, which is still the Retry's.
+        retried = self._retrying.get(row["id"])
         if retried is not None:
             # A Retry's try that fails is no mark of the schedule: it leaves it as it was.
             presser, before = retried
@@ -1162,6 +1164,7 @@ class ChangeQueue:
             except BaseException:
                 await db.rollback()
                 raise
+        self._retrying.pop(row["id"], None)
         await self._router.deliver_queued(ids, interaction=self._answerable(change))
         if first:
             await self._post_notice(change, row["id"], named, kind)
