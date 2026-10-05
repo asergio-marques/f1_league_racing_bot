@@ -609,7 +609,6 @@ async def test_a_clean_sanction_run_tells_the_manager_nothing_more(tmp_path):
 
 APPEALS = "results.appeals.approve"
 APPEALS_PROMPT = 8902
-APPEALS_NOT_BUILT = "#439: the appeals approval is not yet a change on the queue"
 
 
 async def _appeals_league(tmp_path: Any, *, round_status: str = "AWAITING_APPEAL_VERDICTS",
@@ -1335,7 +1334,6 @@ async def test_an_ended_amendment_or_another_season_leaves_the_season_free(tmp_p
 
 AMEND_REPORTS = "results.amendment.reports.approve"
 AMEND_APPEALS = "results.amendment.appeals.approve"
-AMEND_NOT_BUILT = "#439: an amendment's stages are not yet changes on the queue"
 
 
 async def _ask_amend_reports(league: ReviewLeague, *, staged: Any = None,
@@ -1997,15 +1995,15 @@ async def test_each_stage_of_an_amendment_names_the_member_who_pressed(tmp_path,
 @pytest.mark.parametrize(
     "token, carries",
     [
-        pytest.param("AMEND_STAGE_2", "applied: +5s for <@101> in FEATURE_RACE", id="amend-reports",
-                     marks=pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT)),
         pytest.param(
-            "RESULT_AMENDED", "appeals applied: +10s for <@102> in FEATURE_RACE", id="amend-appeals",
-            marks=pytest.mark.xfail(strict=True, reason=AMEND_NOT_BUILT),
+            "AMEND_STAGE_2", "applied: +5s for `<@101>` in FEATURE_RACE", id="amend-reports",
         ),
         pytest.param(
-            "APPEALS_REVIEW_APPROVED", "applied: +10s for <@102> in FEATURE_RACE", id="appeals",
-            marks=pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT),
+            "RESULT_AMENDED", "appeals applied: +10s for `<@102>` in FEATURE_RACE",
+            id="amend-appeals",
+        ),
+        pytest.param(
+            "APPEALS_REVIEW_APPROVED", "applied: +10s for `<@102>` in FEATURE_RACE", id="appeals",
         ),
     ],
 )
@@ -2014,7 +2012,8 @@ async def test_amend_stage_two_and_appeals_lines_carry_what_was_applied(tmp_path
     report stage of round 3 (Pro)'s amendment with +5s for Lewis (101) in the Feature Race, or its
     appeals stage with a +10s correction for Max (102); or approves the appeals of round 3 (Pro),
     not an amendment, with that correction. The stage's one line names the penalty or correction,
-    the driver and the session."""
+    the driver and the session, the mention wrapped in backticks as the log router writes every
+    mention in a line."""
     if token == "APPEALS_REVIEW_APPROVED":
         league = await _appeals_league(tmp_path)
         await _approve_appeals(league, staged=[_correction()])
