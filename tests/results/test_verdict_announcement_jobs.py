@@ -198,6 +198,31 @@ async def test_an_appeal_of_no_further_action_is_announced_as_no_penalty(tmp_pat
     assert "Disqualified" not in verdict
 
 
+CURRENT_ACCOUNT = 31337
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(tmp_path):
+    """Core specification, driver accounts: everything posted from then on names the driver by
+    their current account. Lewis's result stands under 101; his profile has since moved to
+    31337."""
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
+            (str(CURRENT_ACCOUNT), LEWIS_PROFILE),
+        )
+        await db.commit()
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    channel = league.channel(VERDICTS_CHANNEL)
+    sent = [channel.messages[mid].content or "" for mid in league.sent_to(VERDICTS_CHANNEL)]
+    assert [content for content in sent if f"<@{CURRENT_ACCOUNT}>" in content]
+    assert not [content for content in sent if f"<@{LEWIS}>" in content]
+
+
 # ---------------------------------------------------------------------------
 # The verdict graphic names the driver, never their user id (#141)
 # ---------------------------------------------------------------------------
