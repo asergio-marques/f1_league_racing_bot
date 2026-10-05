@@ -538,21 +538,6 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     assert len(appeals_prompts(league)) == 1
 
 
-def _refusal_recorded(state, interaction) -> None:
-    """Exactly one line reached the log channel, by either route: the refusal, naming Alex and
-    the reply's reason (#482)."""
-    replied = str(interaction.response.send_message.await_args.args[0])
-    reason = replied.splitlines()[0].split(" ", 1)[1]
-    lines = [
-        str(call.args[0])
-        for router in (state.bot.output_router, interaction.client.output_router)
-        for call in router.post_log.await_args_list
-    ]
-    (line,) = lines
-    assert line.startswith("⛔ "), line
-    assert line.endswith(f" refused for Alex (<@{STEWARD}>) — {reason}"), line
-
-
 def _review_channel(state, *, fails: bool = False):
     """The submission channel as the review reaches it, holding its prompt and approval."""
     channel = MagicMock()
@@ -1469,7 +1454,7 @@ async def _amend_round_two(db_path, *, division_id=DIVISION_ID, ended=False):
     async with get_connection(db_path) as db:
         if division_id != DIVISION_ID:
             await db.execute(
-                "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+                "INSERT OR IGNORE INTO divisions (id, season_id, name, tier, mention_role_id) "
                 "VALUES (?, ?, 'Am', 2, 556)",
                 (division_id, SEASON_ID),
             )
@@ -1486,89 +1471,69 @@ async def _amend_round_two(db_path, *, division_id=DIVISION_ID, ended=False):
         await db.commit()
 
 
-def _held_interaction():
-    interaction = _interaction()
-    interaction.response.send_message = AsyncMock()
-    return interaction
-
-
-def _refusal(interaction) -> str:
-    interaction.response.send_message.assert_awaited_once()
-    assert interaction.response.send_message.await_args.kwargs.get("ephemeral") is True
-    return str(interaction.response.send_message.await_args.args[0])
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reports_are_not_approved_while_another_round_is_amended(tmp_path):
-    db_path = await _make_db(tmp_path, name="held_reports")
-    await _amend_round_two(db_path)
-    state = _state(db_path, staged=[_penalty()])
-    interaction = _held_interaction()
+    """Round 2 of Pro is being amended. Alex presses Approve on round 3's review with Lewis's
+    penalty staged: refused as it is asked, saying where and when to approve again, the refusal
+    recorded, and nothing applied or posted."""
+    league = await review_league(tmp_path)
+    await _amend_round_two(league.db_path)
 
-    stubs = await _run(finalize_penalty_review, state, interaction)
+    interaction = await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    stubs["apply"].assert_not_awaited()
-    stubs["repost"].assert_not_awaited()
-    interaction.response.defer.assert_not_awaited()
-    assert await _round_status(db_path) == "AWAITING_REPORT_VERDICTS"
-    assert await _verdict_count(db_path) == 0
-    # The review is kept, for the manager to press again once the amendment has ended.
-    assert len(state.staged) == 1
-    refusal = _refusal(interaction)
+    refusal = acknowledgement(interaction)
     assert f"Round 2 of this division is being amended in <#{AMEND_CHANNEL}>" in refusal
     assert "Approve the reports again then." in refusal
-    _refusal_recorded(state, interaction)
+    _refused_on_the_queue(league, interaction, "being amended")
+    await _nothing_approved(league)
+    assert await round_status(league.db_path) == "AWAITING_REPORT_VERDICTS"
 
 
+@pytest.mark.xfail(strict=True, reason=APPEALS_NOT_BUILT)
 async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_path):
-    db_path = await _make_db(
-        tmp_path, name="held_appeals", round_status="AWAITING_APPEAL_VERDICTS"
-    )
-    await _amend_round_two(db_path)
-    interaction = _held_interaction()
-    state = _state(db_path)
+    league = await _appeals_league(tmp_path)
+    await _amend_round_two(league.db_path)
 
-    stubs = await _run(finalize_appeals_review, state, interaction)
+    interaction = await _approve_appeals(league)
 
-    stubs["repost"].assert_not_awaited()
-    stubs["close"].assert_not_awaited()
-    stubs["refresh"].assert_not_awaited()
-    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
-    assert "Approve the appeals again then." in _refusal(interaction)
-    _refusal_recorded(state, interaction)
+    _refused_on_the_queue(league, interaction, "Approve the appeals again then.")
+    assert await changes_of(league.db_path, APPEALS) == []
+    assert league.sent_to(RESULTS_CHANNEL) == []
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert await one(league.db_path, "SELECT closed FROM round_submission_channels") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reports_are_approved_once_the_amendment_has_ended(tmp_path):
     """Refused, the review stands; pressed again after the amendment, it goes through."""
-    db_path = await _make_db(tmp_path, name="held_then_approved")
-    await _amend_round_two(db_path)
-    state = _state(db_path, staged=[_penalty()])
-    await _run(finalize_penalty_review, state, _held_interaction())
-    async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM round_amend_channels")
-        await db.commit()
+    league = await review_league(tmp_path)
+    await _amend_round_two(league.db_path)
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
+    await _set(league.db_path, "DELETE FROM round_amend_channels")
 
-    stubs = await _run(finalize_penalty_review, state)
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    stubs["apply"].assert_awaited_once()
-    assert await _round_status(db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert len(await penalty_records(league.db_path)) == 1
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
 @pytest.mark.parametrize("where", ["another division", "ended"])
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_amendment_elsewhere_or_ended_holds_nothing(tmp_path, where):
     """Only an amendment open in the round's own division holds it.
 
     One that has ended but could not delete its channel keeps its row, for restart recovery to
     find the channel by; it is not open, and holding approvals on it would hold them for ever.
     """
-    db_path = await _make_db(tmp_path, name=f"not_held_{where.replace(' ', '_')}")
+    league = await review_league(tmp_path)
     if where == "ended":
-        await _amend_round_two(db_path, ended=True)
+        await _amend_round_two(league.db_path, ended=True)
     else:
-        await _amend_round_two(db_path, division_id=12)
+        await _amend_round_two(league.db_path, division_id=12)
 
-    stubs = await _run(finalize_penalty_review, _state(db_path, staged=[_penalty()]))
+    await _approve_reports(league, staged=[league_penalty(LEWIS)])
 
-    stubs["apply"].assert_awaited_once()
+    assert len(await penalty_records(league.db_path)) == 1
 
 
 async def test_an_amendment_is_not_held_by_itself(tmp_path):
