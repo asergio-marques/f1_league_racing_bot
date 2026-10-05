@@ -72,7 +72,7 @@ class AttendanceAfterReview:
     ) -> None:
         if not await self._enabled_on(db):
             return
-        await _att.record_attendance_from_results(self._db_path, round_id, division_id, db=db)
+        await _att.record_attendance_from_results_on(db, round_id, division_id)
         for pardon in pardons:
             await db.execute(
                 "INSERT OR IGNORE INTO attendance_pardons "

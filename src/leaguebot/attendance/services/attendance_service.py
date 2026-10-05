@@ -648,12 +648,10 @@ log = logging.getLogger(__name__)
 # Attendance pipeline — new functions added by 033-attendance-tracking
 # ---------------------------------------------------------------------------
 
-async def record_attendance_from_results(
-    db_path: str,
+async def record_attendance_from_results_on(
+    db: aiosqlite.Connection,
     round_id: int,
     division_id: int,
-    *,
-    db=None,
 ) -> None:
     """Populate attended flag for every full-time driver in the division (FR-001–FR-004).
 
@@ -664,85 +662,97 @@ async def record_attendance_from_results(
       caller is responsible for passing updated DriverSessionResult rows (FR-028).
     - cancelled rounds: skipped (no attendance recording for cancelled rounds).
 
-    *db* joins a transaction the caller already opened, and is then the caller's to commit;
-    see :func:`_shared_or_own`. A change's save hands its own, so the round's attendance lands
-    with the penalties and points or not at all (#439).
+    Written on *db*, the connection a change's save hands it, and commits nothing: the round's
+    attendance lands with the penalties and points or not at all (#439).
     """
-    async with _shared_or_own(db_path, db) as (db, _owned):
-        # Guard: skip if round is cancelled.
-        cursor = await db.execute(
-            "SELECT status FROM rounds WHERE id = ?",
-            (round_id,),
-        )
-        round_row = await cursor.fetchone()
-        if round_row is None or round_row["status"] == "CANCELLED":
-            log.info("record_attendance_from_results: skipping cancelled round %s", round_id)
-            return
+    # Guard: skip if round is cancelled.
+    cursor = await db.execute(
+        "SELECT status FROM rounds WHERE id = ?",
+        (round_id,),
+    )
+    round_row = await cursor.fetchone()
+    if round_row is None or round_row["status"] == "CANCELLED":
+        log.info("record_attendance_from_results: skipping cancelled round %s", round_id)
+        return
 
-        # Set of driver_profile_ids who have any result row for this round.
-        # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
-        cursor = await db.execute(
-            """
-            SELECT DISTINCT driver_profile_id FROM (
-                SELECT rsr.driver_profile_id
-                FROM race_session_results rsr
-                JOIN session_results sr ON sr.id = rsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-                UNION ALL
-                SELECT qsr.driver_profile_id
-                FROM qualifying_session_results qsr
-                JOIN session_results sr ON sr.id = qsr.session_result_id
-                WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            ) WHERE driver_profile_id IS NOT NULL
-            """,
-            (round_id, round_id),
-        )
-        attended_rows = await cursor.fetchall()
-        attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
+    # Set of driver_profile_ids who have any result row for this round.
+    # Outcome modifier is irrelevant — any row counts as attended (DSQ/DNS included).
+    cursor = await db.execute(
+        """
+        SELECT DISTINCT driver_profile_id FROM (
+            SELECT rsr.driver_profile_id
+            FROM race_session_results rsr
+            JOIN session_results sr ON sr.id = rsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+            UNION ALL
+            SELECT qsr.driver_profile_id
+            FROM qualifying_session_results qsr
+            JOIN session_results sr ON sr.id = qsr.session_result_id
+            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
+        ) WHERE driver_profile_id IS NOT NULL
+        """,
+        (round_id, round_id),
+    )
+    attended_rows = await cursor.fetchall()
+    attended_ids: set[int] = {r["driver_profile_id"] for r in attended_rows}
 
-        # Full-time DRA rows for this round, plus allocated reserve DRA rows
-        # (assigned_team_id IS NOT NULL); unallocated reserves are excluded (FR-002).
-        cursor = await db.execute(
-            """
-            SELECT dra.id, dra.driver_profile_id, dra.attended
-            FROM driver_round_attendance dra
-            JOIN driver_season_assignments dsa
-                ON dsa.driver_profile_id = dra.driver_profile_id
-            JOIN team_seats ts ON ts.id = dsa.team_seat_id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dra.round_id = ?
-              AND dra.division_id = ?
-              AND ti.division_id = ?
-              AND (
-                  ti.is_reserve = 0
-                  OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
-              )
-            """,
-            (round_id, division_id, division_id),
-        )
-        dra_rows = await cursor.fetchall()
+    # Full-time DRA rows for this round, plus allocated reserve DRA rows
+    # (assigned_team_id IS NOT NULL); unallocated reserves are excluded (FR-002).
+    cursor = await db.execute(
+        """
+        SELECT dra.id, dra.driver_profile_id, dra.attended
+        FROM driver_round_attendance dra
+        JOIN driver_season_assignments dsa
+            ON dsa.driver_profile_id = dra.driver_profile_id
+        JOIN team_seats ts ON ts.id = dsa.team_seat_id
+        JOIN team_instances ti ON ti.id = ts.team_instance_id
+        WHERE dra.round_id = ?
+          AND dra.division_id = ?
+          AND ti.division_id = ?
+          AND (
+              ti.is_reserve = 0
+              OR (ti.is_reserve = 1 AND dra.assigned_team_id IS NOT NULL)
+          )
+        """,
+        (round_id, division_id, division_id),
+    )
+    dra_rows = await cursor.fetchall()
 
-        for row in dra_rows:
-            dra_id = row["id"]
-            profile_id = row["driver_profile_id"]
-            current_attended = row["attended"]
+    for row in dra_rows:
+        dra_id = row["id"]
+        profile_id = row["driver_profile_id"]
+        current_attended = row["attended"]
 
-            if profile_id in attended_ids:
-                # Only write if upgrading NULL → 1 or 0 → 1 (FR-003).
-                if current_attended != 1:
-                    await db.execute(
-                        "UPDATE driver_round_attendance SET attended = 1 WHERE id = ?",
-                        (dra_id,),
-                    )
-            else:
-                # Only write if currently NULL — never revert 1 → 0 (FR-003).
-                if current_attended is None:
-                    await db.execute(
-                        "UPDATE driver_round_attendance SET attended = 0 WHERE id = ?",
-                        (dra_id,),
-                    )
-        if _owned:
-            await db.commit()
+        if profile_id in attended_ids:
+            # Only write if upgrading NULL → 1 or 0 → 1 (FR-003).
+            if current_attended != 1:
+                await db.execute(
+                    "UPDATE driver_round_attendance SET attended = 1 WHERE id = ?",
+                    (dra_id,),
+                )
+        else:
+            # Only write if currently NULL — never revert 1 → 0 (FR-003).
+            if current_attended is None:
+                await db.execute(
+                    "UPDATE driver_round_attendance SET attended = 0 WHERE id = ?",
+                    (dra_id,),
+                )
+
+
+async def record_attendance_from_results(
+    db_path: str,
+    round_id: int,
+    division_id: int,
+) -> None:
+    """Record the round's attendance in a save of its own: :func:`record_attendance_from_results_on`
+    on a connection it opens and commits.
+
+    A change's save calls the ``_on`` form on its own connection; this one is for a caller
+    that has none.
+    """
+    async with get_connection(db_path) as db:
+        await record_attendance_from_results_on(db, round_id, division_id)
+        await db.commit()
 
 
 async def record_attendance_from_results_full_recompute(

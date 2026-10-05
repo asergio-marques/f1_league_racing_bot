@@ -1288,9 +1288,9 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_post_service.py", "_set_standings_message_id"): (1, SLICE[2]),
     ("results/services/verdict_announcement_service.py", "_record_banner"): (1, SLICE[2]),
     ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, SLICE[2]),
-    ("attendance/services/attendance_service.py", "record_attendance_from_results"): (1, SLICE[2]),
-    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, SLICE[2]),
-    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, SLICE[2]),
+    ("attendance/services/attendance_service.py", "record_attendance_from_results"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The amendment approval
     ("core/services/amendment_service.py", "approve_amendment"): (1, SLICE[3]),
     ("results/services/results_post_service.py", "_repost_results_rounds"): (1, SLICE[3]),
