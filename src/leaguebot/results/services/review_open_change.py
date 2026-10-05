@@ -21,9 +21,16 @@ It is now a list of jobs the queue saves and resumes:
 5. For a restart, **`delete_message`** for the old prompt, once the new one stands; for a
    resubmission's return, **`take_down_cancel`** (an `EDIT`) taking the Cancel button off its
    announcement, and for a cancel, **`post_cancel_line`**.
-6. **`close`**, one save, writing the log line: for a paste, that the review is open; for a
-   cancel, the cancel's line, now after the prompt is back; for a lapse or a failure, the line of
-   the resubmission that ended.
+6. **`close`**, one save, **an opening job** so that it runs last whatever was discarded before
+   it, writing the log line: for a paste, that the review is open; for a cancel, the cancel's line,
+   now after the prompt is back; for a lapse or a failure, the line of the resubmission that
+   ended. **A Discard reopens the review** ("Discard reopens the review"): where `open` or the
+   prompt's post was discarded, `close` asks, in its own save, as the bot, for
+   `results.review.open` again, with the dead prompt's id as ``old_prompt_id``, so that a fresh
+   prompt replaces it. Where the interim results already stand it asks with ``publish`` unset,
+   as recovery does, and records them as posted in the same save. A discarded `open` wrote
+   nothing, so the request it asks for carries the return (``returning`` and
+   ``cancel_message_id``) on.
 
 **The check refuses a member and drops the bot.** A member's request is refused where the round
 cannot enter a review, its submission channel's row is closed or the channel is gone, or the
@@ -34,16 +41,27 @@ with the check's reason, since the manager can set it right and press Retry.
 The payload is ``round_id``, ``label``, ``publish`` (whether the interim results go out),
 ``returning`` (``"cancelled"``, ``"lapsed"`` or ``"failed"`` for a resubmission's return),
 ``cancel_message_id`` and ``old_prompt_id``.
+
+**Two more kinds put a review back after a restart, as the bot.** `results.appeals.open` posts a
+round's appeals prompt again, replacing the old one once the new one stands; its `close` asks for
+it again where a Discard dropped the post. `results.review.close_stale` closes a FINAL round whose
+submission row a run from before this change left open: its channel is deleted and its row marked
+closed with the deletion, and a line says so, in place of the dead review that used to be posted
+again at every restart. Both are dropped, not stopped, where they are no longer due.
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import aiosqlite
+import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
+    FollowOn,
+    GuildUnavailable,
     PlannedStep,
     StepKind,
     StepResult,
@@ -61,7 +79,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.utils.log_lines import abandoned_line
-from leaguebot.results.services import review_posting
+from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.result_submission_service import (
     _build_penalty_review_state,
     held_by_amendment,
@@ -71,22 +89,30 @@ from leaguebot.results.services.result_submission_service import (
 )
 from leaguebot.results.services.results_post_service import _delete_posting
 from leaguebot.results.services.review_posting import (
+    DELETE_CHANNEL,
     DELETE_MESSAGE,
     NAMES,
     POST_SESSION_RESULTS,
     POST_STANDINGS,
     _channel,
     _league_guild,
+    _record_channel_deleted,
     display_names,
     plan_posts,
     posting_steps,
 )
 from leaguebot.results.services.standings_service import compute_and_persist_round_on
 
-__all__ = ["KIND", "review_open_change"]
+__all__ = [
+    "APPEALS_OPEN_KIND", "CLOSE_STALE_KIND", "KIND", "appeals_open_change", "close_stale_change",
+    "review_open_change",
+]
 
 KIND = "results.review.open"
+APPEALS_OPEN_KIND = "results.appeals.open"
+CLOSE_STALE_KIND = "results.review.close_stale"
 REPORTS_APPROVE = "results.reports.approve"
+APPEALS_APPROVE = "results.appeals.approve"
 
 _OPEN = "open"
 _POST_REVIEW_PROMPT = "post_review_prompt"
@@ -96,6 +122,28 @@ _CLOSE = "close"
 
 #: Where a round may stand for its review to open: before it, or in the report stage already.
 _OPENABLE = ROUND_CANCELLABLE | {RoundStatus.AWAITING_REPORT_VERDICTS.value}
+
+
+async def _guild_or_none(ctx: CheckContext) -> discord.Guild | None:
+    """The league's server, or None where it is not in the cache. A member's request is then
+    refused and the bot's has nothing it can do: it is dropped, to be asked for again at the next
+    restart, where a check that raised would stop the queue at the change, and a Discard that
+    asks for the review again would ask for ever."""
+    try:
+        return await _league_guild(ctx.bot)
+    except GuildUnavailable:
+        return None
+
+
+_NO_SERVER = "The league's server is not in the cache."
+
+
+def _discarded(result: dict[str, Any] | None) -> bool:
+    return "discarded" in (result or {})
+
+
+def _dropped(result: dict[str, Any] | None) -> bool:
+    return bool((result or {}).get("dropped"))
 
 
 async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | None:
@@ -144,7 +192,9 @@ def review_open_change() -> ChangeType:
         )
         if held is not None:
             return no(held)
-        guild = await _league_guild(ctx.bot)
+        guild = await _guild_or_none(ctx)
+        if guild is None:
+            return no(_NO_SERVER)
         if as_text_channel(guild.get_channel(int(row["channel_id"]))) is None:
             reason = (
                 f"The submission channel <#{row['channel_id']}> no longer exists or cannot be "
@@ -200,8 +250,14 @@ def review_open_change() -> ChangeType:
             }))
         if returning == "cancelled":
             then.append(PlannedStep(_POST_CANCEL_LINE, {"channel_id": channel_id}))
-        then.append(PlannedStep(_CLOSE))
         return StepResult(result={"opened": True}, then=tuple(then))
+
+    async def names_not_discarded(ctx: StepContext) -> bool:
+        """The save reads the display names only where the results are published, and is due
+        only where they were resolved: a discarded `names` leaves nothing changed."""
+        if not bool(ctx.payload.get("publish", True)):
+            return True
+        return not any(view.name == NAMES and _discarded(view.result) for view in ctx.steps)
 
     async def post_review_prompt(ctx: StepContext) -> StepResult:
         round_id = int(ctx.payload["round_id"])
@@ -255,19 +311,29 @@ def review_open_change() -> ChangeType:
 
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
+        round_id = int(payload["round_id"])
         row = await (
             await db.execute(
                 "SELECT r.round_number, d.name AS division_name FROM rounds r "
                 "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-                (int(payload["round_id"]),),
+                (round_id,),
             )
         ).fetchone()
         number = "?" if row is None else row["round_number"]
         division = "" if row is None else f" ({row['division_name']})"
+        views = {view.name: view for view in ctx.steps}
+        opened = views.get(_OPEN)
+        open_lost = opened is None or _discarded(opened.result) or _dropped(opened.result)
+        prompt = views.get(_POST_REVIEW_PROMPT)
+        prompt_lost = prompt is not None and _discarded(prompt.result)
+
         returning = payload.get("returning")
         resubmission = f"the resubmission of round {number}{division}"
-        lines: tuple[str, ...]
-        if returning == "cancelled":
+        lines: tuple[str, ...] = ()
+        if open_lost:
+            # Nothing was changed: the Discard's own line records it.
+            pass
+        elif returning == "cancelled":
             lines = (abandoned_line(
                 ctx.named, resubmission, lapsed=False,
                 detail="The earlier results stand.\nPress 🔄 Resubmit Initial Results to start again.",
@@ -286,9 +352,44 @@ def review_open_change() -> ChangeType:
         elif ctx.actor_id is not None:
             lines = (f"{ctx.named} | Penalty review opened | Success\n"
                      f"  round {number}{division}",)
-        else:
-            lines = ()
-        return StepResult(result={"closed": True}, lines=lines)
+        if not (open_lost or prompt_lost):
+            return StepResult(result={"closed": True}, lines=lines)
+
+        # "Discard reopens the review": a fresh prompt replaces the dead one, and the interim
+        # results are not posted twice where they already stand.
+        if prompt_lost and bool(payload.get("publish", True)) and not any(
+            _discarded(view.result) for view in ctx.steps
+            if view.name in (POST_SESSION_RESULTS, POST_STANDINGS)
+        ):
+            await db.execute(
+                "UPDATE round_submission_channels SET results_posted = 1 WHERE round_id = ?",
+                (round_id,),
+            )
+        stored = await (
+            await db.execute(
+                "SELECT results_posted FROM round_submission_channels WHERE round_id = ?",
+                (round_id,),
+            )
+        ).fetchone()
+        again: dict[str, Any] = {
+            "round_id": round_id,
+            "label": payload.get("label") or "Provisional Results",
+            "publish": not (stored is not None and stored["results_posted"]),
+            "old_prompt_id": payload.get("old_prompt_id"),
+        }
+        if open_lost:
+            for key in ("returning", "cancel_message_id"):
+                if payload.get(key) is not None:
+                    again[key] = payload[key]
+        return StepResult(
+            result={"closed": True, "reopened": True},
+            lines=lines,
+            follow_ons=(FollowOn(
+                KIND, again,
+                f"the penalty review of round {number}, opened again after a job of it was "
+                "discarded",
+            ),),
+        )
 
     async def describe_open(_ctx: StepContext) -> str:
         return "opening the penalty review"
@@ -310,18 +411,21 @@ def review_open_change() -> ChangeType:
     def outcome(ctx: OutcomeContext) -> str:
         done = {view.name: view for view in ctx.steps}
         opened = done.get(_OPEN)
-        if opened is None or "discarded" in (opened.result or {}):
+        if opened is None or _discarded(opened.result) or _dropped(opened.result):
             return "Nothing was changed. The penalty review is being opened again."
         reply = f"✅ The penalty review is open (round {ctx.payload['round_id']})."
         lines = review_posting.not_done(ctx)
         if (done.get(_POST_REVIEW_PROMPT) is not None
-                and "discarded" in (done[_POST_REVIEW_PROMPT].result or {})):
+                and _discarded(done[_POST_REVIEW_PROMPT].result)):
             lines.append("⚠️ The penalty review prompt was not posted. It is being posted again.")
         return "\n".join([reply, *lines])
 
     steps: dict[str, Step] = {
         **{name: step for name, step in posting_steps().items()},
-        _OPEN: Step(_OPEN, StepKind.SAVE, open_review, describe=describe_open),
+        _OPEN: Step(
+            _OPEN, StepKind.SAVE, open_review, still_due=names_not_discarded,
+            describe=describe_open,
+        ),
         _POST_REVIEW_PROMPT: Step(
             _POST_REVIEW_PROMPT, StepKind.ACT, post_review_prompt,
             describe=describe_prompt, record=record_prompt,
@@ -336,10 +440,209 @@ def review_open_change() -> ChangeType:
     }
     return ChangeType(
         kind=KIND,
-        opening=(PlannedStep(NAMES), PlannedStep(_OPEN)),
+        opening=(PlannedStep(NAMES), PlannedStep(_OPEN), PlannedStep(_CLOSE)),
         steps=steps,
         check=check,
         key=lambda payload: f"{KIND}:{payload['round_id']}",
         doing=lambda _payload: "Opening the penalty review",
+        outcome=outcome,
+    )
+
+
+def _refusal(ctx: CheckContext, reason: str) -> Verdict:
+    """A member's request is refused; the bot's request has nothing left to do."""
+    if ctx.origin is ChangeOrigin.MEMBER:
+        return Verdict.refuse(f"⚠️ {reason}", reason)
+    return Verdict.not_due(reason)
+
+
+def appeals_open_change() -> ChangeType:
+    """The change that posts a round's appeals prompt again, as the bot, after a restart or a
+    Discard; see the module. Its payload is ``round_id``, ``division_id`` and ``old_prompt_id``,
+    the prompt it replaces once the new one stands."""
+
+    async def check(ctx: CheckContext) -> Verdict:
+        round_id = int(ctx.payload["round_id"])
+        row = await _round_and_channel(ctx.db_path, round_id)
+        if row is None:
+            return _refusal(ctx, "The round is no longer there.")
+        if row["status"] != RoundStatus.AWAITING_APPEAL_VERDICTS.value:
+            return _refusal(ctx, "The round is no longer awaiting its appeal verdicts.")
+        if row["channel_id"] is None or row["closed"]:
+            return _refusal(ctx, "The round's submission channel is closed.")
+        approving = await unfinished(ctx.db_path, [APPEALS_APPROVE], excluding=ctx.change_id)
+        if any(p.get("round_id") == round_id for p in approving):
+            return _refusal(ctx, "The round's appeals are being approved.")
+        guild = await _guild_or_none(ctx)
+        if guild is None:
+            return _refusal(ctx, _NO_SERVER)
+        if as_text_channel(guild.get_channel(int(row["channel_id"]))) is None:
+            reason = (
+                f"The submission channel <#{row['channel_id']}> no longer exists or cannot be "
+                f"posted in. Set it right, then retry."
+            )
+            return Verdict.refuse(f"⚠️ {reason}", reason)
+        return Verdict.go()
+
+    async def plan(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Plan the prompt, then the old prompt's deletion: the new one stands first."""
+        round_id = int(ctx.payload["round_id"])
+        row = await (
+            await db.execute(
+                "SELECT r.division_id, rsc.channel_id FROM rounds r "
+                "JOIN round_submission_channels rsc ON rsc.round_id = r.id WHERE r.id = ?",
+                (round_id,),
+            )
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"round {round_id} has no submission channel to post a prompt in")
+        then = [PlannedStep(
+            review_verdicts.POST_APPEALS_PROMPT,
+            {"round_id": round_id, "division_id": int(row["division_id"])},
+        )]
+        if ctx.payload.get("old_prompt_id") is not None:
+            then.append(PlannedStep(DELETE_MESSAGE, {
+                "channel_id": int(row["channel_id"]),
+                "message_id": int(ctx.payload["old_prompt_id"]),
+                "what": "appeals review prompt",
+            }))
+        return StepResult(result={"planned": True}, then=tuple(then))
+
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Where the prompt's post was discarded, ask for it again: the stage stays open with no
+        prompt otherwise ("Discard reopens the review")."""
+        if not any(
+            view.name == review_verdicts.POST_APPEALS_PROMPT and _discarded(view.result)
+            for view in ctx.steps
+        ):
+            return StepResult(result={"closed": True})
+        again = {
+            "round_id": int(ctx.payload["round_id"]),
+            "division_id": int(ctx.payload["division_id"]),
+            "old_prompt_id": None,
+        }
+        return StepResult(
+            result={"closed": True, "reopened": True},
+            follow_ons=(FollowOn(
+                APPEALS_OPEN_KIND, again,
+                "the appeals review prompt, posted again after its post was discarded",
+            ),),
+        )
+
+    async def describe_plan(_ctx: StepContext) -> str:
+        return "working out where the appeals review prompt goes"
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording that the appeals review prompt is back"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        left = review_posting.not_done(ctx)
+        prompt = next(
+            (v for v in ctx.steps if v.name == review_verdicts.POST_APPEALS_PROMPT), None
+        )
+        if prompt is not None and _discarded(prompt.result):
+            left.append("⚠️ The appeals review prompt was not posted. It is being posted again.")
+        return "\n".join(["✅ The appeals review prompt is posted again.", *left])
+
+    steps: dict[str, Step] = {
+        **posting_steps(),
+        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
+        _OPEN: Step(_OPEN, StepKind.SAVE, plan, describe=describe_plan),
+        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+    }
+    return ChangeType(
+        kind=APPEALS_OPEN_KIND,
+        opening=(PlannedStep(_OPEN), PlannedStep(_CLOSE)),
+        steps=steps,
+        check=check,
+        key=lambda payload: f"{APPEALS_OPEN_KIND}:{payload['round_id']}",
+        doing=lambda _payload: "Posting the appeals review prompt again",
+        outcome=outcome,
+    )
+
+
+def close_stale_change() -> ChangeType:
+    """The change that closes a FINAL round's submission channel a run from before this change
+    left open; see the module. Its payload is ``round_id``."""
+
+    async def check(ctx: CheckContext) -> Verdict:
+        row = await _round_and_channel(ctx.db_path, int(ctx.payload["round_id"]))
+        if row is None:
+            return _refusal(ctx, "The round is no longer there.")
+        if row["status"] != RoundStatus.FINAL.value:
+            return _refusal(ctx, "The round is not final, so its review is not stale.")
+        if row["channel_id"] is None or row["closed"]:
+            return _refusal(ctx, "The round's submission channel is already closed.")
+        return Verdict.go()
+
+    async def stale(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        round_id = int(ctx.payload["round_id"])
+        row = await (
+            await db.execute(
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?",
+                (round_id,),
+            )
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"round {round_id} has no submission channel to close")
+        return StepResult(
+            result={"planned": True},
+            then=(PlannedStep(DELETE_CHANNEL, {
+                "channel_id": int(row["channel_id"]), "round_id": round_id,
+                "what": "submission channel", "reason": "Stale penalty review closed",
+            }),),
+        )
+
+    async def record_closed(
+        db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+    ) -> None:
+        """Mark the row closed with the deletion, so a channel that could not be deleted keeps
+        its row for the retry."""
+        await db.execute(
+            "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?",
+            (int(ctx.step_payload["round_id"]),),
+        )
+        await _record_channel_deleted(db, ctx, result)
+
+    async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        row = await (
+            await db.execute(
+                "SELECT r.round_number, d.name AS division_name FROM rounds r "
+                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+                (int(ctx.payload["round_id"]),),
+            )
+        ).fetchone()
+        where = "" if row is None else f"round {row['round_number']} ({row['division_name']})"
+        return StepResult(
+            result={"closed": True},
+            lines=(
+                f"{ctx.named} | Stale penalty review closed | Success\n"
+                f"  {where}\n"
+                "  The round is final, and its submission channel was left open by an older run: "
+                "it was closed.",
+            ),
+        )
+
+    async def describe_stale(_ctx: StepContext) -> str:
+        return "closing a final round's stale submission channel"
+
+    async def describe_close(_ctx: StepContext) -> str:
+        return "recording that the stale penalty review was closed"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        return "\n".join(["✅ The stale penalty review is closed.", *review_posting.not_done(ctx)])
+
+    steps: dict[str, Step] = {
+        DELETE_CHANNEL: replace(posting_steps()[DELETE_CHANNEL], record=record_closed),
+        _OPEN: Step(_OPEN, StepKind.SAVE, stale, describe=describe_stale),
+        _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
+    }
+    return ChangeType(
+        kind=CLOSE_STALE_KIND,
+        opening=(PlannedStep(_OPEN), PlannedStep(_CLOSE)),
+        steps=steps,
+        check=check,
+        key=lambda payload: f"{CLOSE_STALE_KIND}:{payload['round_id']}",
+        doing=lambda _payload: "Closing a stale penalty review",
         outcome=outcome,
     )

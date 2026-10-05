@@ -262,7 +262,6 @@ async def test_a_division_with_no_verdicts_channel_stops_the_queue_at_its_verdic
     assert await round_status(league.db_path) == "FINAL"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_appeals_apply_reopens_the_appeals_review(tmp_path):
     league = await _league(tmp_path)
     with points_fail():

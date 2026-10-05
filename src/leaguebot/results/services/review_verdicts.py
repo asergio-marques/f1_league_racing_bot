@@ -111,18 +111,8 @@ def verdict_steps(
             int(result.result["message_id"]), result.result["channel_id"],
         )
 
-    async def record_appeals_prompt(db: Any, ctx: StepContext, result: StepResult) -> None:
-        await db.execute(
-            "UPDATE round_submission_channels SET appeals_prompt_message_id = ? "
-            "WHERE round_id = ?",
-            (int(result.result["message_id"]), int(ctx.step_payload["round_id"])),
-        )
-
     return {
-        POST_APPEALS_PROMPT: Step(
-            POST_APPEALS_PROMPT, StepKind.ACT, _post_appeals_prompt,
-            describe=_describe_appeals_prompt, record=record_appeals_prompt,
-        ),
+        POST_APPEALS_PROMPT: appeals_prompt_step(),
         ANNOUNCE_HEADING: Step(
             ANNOUNCE_HEADING, StepKind.ACT, _announce_heading, describe=_describe_heading,
             record=record_heading,
@@ -341,6 +331,26 @@ async def _take_down_kept(channel: Any, ctx: StepContext) -> None:
 # ---------------------------------------------------------------------------
 # The appeals prompt
 # ---------------------------------------------------------------------------
+
+
+def appeals_prompt_step() -> Step:
+    """The `post_appeals_prompt` job on its own, for a change type whose whole business is the
+    prompt (`results.appeals.open`) as well as for those that open the appeals stage after their
+    verdicts. It is planned with a payload naming the ``round_id`` and ``division_id``."""
+
+    async def record(db: Any, ctx: StepContext, result: StepResult) -> None:
+        await db.execute(
+            "UPDATE round_submission_channels SET appeals_prompt_message_id = ? "
+            "WHERE round_id = ?",
+            (int(result.result["message_id"]), int(ctx.step_payload["round_id"])),
+        )
+
+    return Step(
+        POST_APPEALS_PROMPT, StepKind.ACT, _post_appeals_prompt,
+        describe=_describe_appeals_prompt, record=record,
+    )
+
+
 
 
 async def _submission_channel_id(db_path: str, round_id: int) -> int | None:
@@ -585,6 +595,7 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
 
 __all__ = [
     "ANNOUNCE_HEADING", "ANNOUNCE_SANCTION", "ANNOUNCE_VERDICT", "APPLY_SANCTION",
-    "ATTENDANCE_SHEET", "PLAN_SANCTIONS", "POST_APPEALS_PROMPT", "REFRESH_LINEUP", "not_done", "plan_attendance",
+    "ATTENDANCE_SHEET", "PLAN_SANCTIONS", "POST_APPEALS_PROMPT", "REFRESH_LINEUP", "appeals_prompt_step",
+    "not_done", "plan_attendance",
     "plan_round_verdicts", "plan_verdicts", "verdict_steps",
 ]

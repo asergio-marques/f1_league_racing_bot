@@ -96,6 +96,7 @@ from leaguebot.results.services.standings_service import cascade_recompute_from_
 __all__ = ["KIND", "appeals_approval_change"]
 
 KIND = "results.appeals.approve"
+APPEALS_OPEN = "results.appeals.open"
 
 _APPLY = "apply"
 _CLOSE = "close"
@@ -251,8 +252,19 @@ def appeals_approval_change(
             applied is None or _discarded(applied.result)
             or bool((applied.result or {}).get("dropped"))
         ):
-            # Nothing was changed and the review stands: the discard's own line records it.
-            return StepResult(result={"closed": True})
+            # Nothing was changed and the review stands, its prompt dead beside nothing: the
+            # discard's own line records it, and the appeals prompt is asked for again, as the
+            # bot, so that a fresh one replaces the dead one ("Discard reopens the review").
+            reopen = FollowOn(
+                APPEALS_OPEN,
+                {
+                    "round_id": int(ctx.payload["round_id"]),
+                    "division_id": int(ctx.payload["division_id"]),
+                    "old_prompt_id": ctx.payload.get("appeals_prompt_message_id"),
+                },
+                what="the appeals review, opened again after its approval was discarded",
+            )
+            return StepResult(result={"closed": True, "reopened": True}, follow_ons=(reopen,))
         left = [*review_posting.not_done(ctx), *review_verdicts.not_done(ctx)]
         outcome = "Incomplete" if left else "Success"
         line = (
@@ -274,7 +286,10 @@ def appeals_approval_change(
             applied is None or _discarded(applied.result)
             or (applied.result or {}).get("dropped")
         ):
-            return "Nothing was changed. Press Approve again on the appeals review."
+            return (
+                "Nothing was changed. The appeals review is posted again: press Approve again "
+                "on it."
+            )
         result = applied.result or {}
         corrections = int(result.get("corrections", 0))
         what = (

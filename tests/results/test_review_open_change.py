@@ -665,7 +665,6 @@ async def test_a_discarded_interim_post_leaves_results_unposted_and_the_prompt_s
     assert (await _channel_row(league.db_path))["results_posted"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 @pytest.mark.parametrize("job", ["open", "post_review_prompt"])
 async def test_a_discarded_open_or_review_prompt_asks_for_the_review_again(tmp_path, job):
     """"Discard reopens the review": once the `open` save or the prompt's post is discarded,

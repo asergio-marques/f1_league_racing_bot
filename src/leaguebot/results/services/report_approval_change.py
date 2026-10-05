@@ -94,6 +94,7 @@ __all__ = ["KIND", "report_approval_change"]
 
 KIND = "results.reports.approve"
 REVIEW_OPEN = "results.review.open"
+APPEALS_OPEN = "results.appeals.open"
 
 _APPLY = "apply"
 _CLOSE = "close"
@@ -277,7 +278,21 @@ def report_approval_change(
             + str((applied.result or {}).get("body", ""))
             + "".join(f"\n  {text}" for text in left)
         )
-        return StepResult(result={"closed": True}, lines=(line,))
+        # "Discard reopens the review": the stage is open with no prompt where its post was
+        # discarded, so the prompt is asked for again, as the bot.
+        prompt = next((v for v in ctx.steps if v.name == review_verdicts.POST_APPEALS_PROMPT), None)
+        follow_ons: tuple[FollowOn, ...] = ()
+        if prompt is not None and _discarded(prompt.result):
+            follow_ons = (FollowOn(
+                APPEALS_OPEN,
+                {
+                    "round_id": int(ctx.payload["round_id"]),
+                    "division_id": int(ctx.payload["division_id"]),
+                    "old_prompt_id": None,
+                },
+                what="the appeals review prompt, posted again after its post was discarded",
+            ),)
+        return StepResult(result={"closed": True}, lines=(line,), follow_ons=follow_ons)
 
     async def describe_apply(_ctx: StepContext) -> str:
         return "approving the round's reports"

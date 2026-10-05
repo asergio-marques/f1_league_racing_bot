@@ -459,7 +459,6 @@ async def test_a_discarded_apply_reopens_the_review_with_a_fresh_prompt(tmp_path
     assert len(await penalty_records(league.db_path)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_appeals_prompt_is_posted_again_at_once(tmp_path):
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt

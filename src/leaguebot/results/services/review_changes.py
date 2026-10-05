@@ -27,6 +27,8 @@ __all__ = ["REVIEW_KINDS", "division_job_in_hand", "round_in_hand"]
 #: Every kind of change that carries out part of a round's review.
 REVIEW_KINDS: tuple[str, ...] = (
     review_open_change.KIND,
+    review_open_change.APPEALS_OPEN_KIND,
+    review_open_change.CLOSE_STALE_KIND,
     report_approval_change.KIND,
     appeals_approval_change.KIND,
     amendment_stage_changes.REPORTS_KIND,
