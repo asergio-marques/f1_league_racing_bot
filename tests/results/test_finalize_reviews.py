@@ -59,8 +59,10 @@ from tests.support.change_queue import (
 )
 from tests.support.review_league import (
     APPROVAL,
+    LATER_ROUND_ID,
     LEWIS,
     MAX,
+    MAX_PROFILE,
     OLD_RESULTS,
     PROMPT,
     RESULTS_CHANNEL,
@@ -68,9 +70,11 @@ from tests.support.review_league import (
     VERDICTS_CHANNEL,
     ReviewLeague,
     appeals_prompts,
+    candidate as league_candidate,
     changes_of,
     is_appeals_prompt,
     one,
+    pardon as league_pardon,
     penalty as league_penalty,
     penalty_records,
     race_rows,
@@ -725,214 +729,122 @@ async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
 # ---------------------------------------------------------------------------
 # The attendance pipeline inside it
 # ---------------------------------------------------------------------------
+#
+# On the queue, attendance is reached through the hook the builder hands the change types, here
+# review_league's double: the round's record is written in the approval's save (`record_on`), the
+# sheet and each sanction are jobs of their own.
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_attendance_pipeline_runs_where_attendance_is_on(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_on")
+    league = await review_league(tmp_path, attendance=True)
 
-    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
+    await _approve_reports(league)
 
-    for step in ("record", "distribute", "sheet", "sanctions"):
-        stubs[step].assert_awaited_once()
+    assert league.attendance._calls("record_on") == [("record_on", ROUND_ID, DIVISION_ID)]
+    assert [call[1] for call in league.attendance._calls("post_sheet")] == [DIVISION_ID]
+    assert await one(league.db_path, "SELECT COUNT(*) FROM attendance_recorded") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_attendance_pipeline_does_not_run_where_attendance_is_off(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_off")
+    league = await review_league(tmp_path, attendance=False)
 
-    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=False))
+    await _approve_reports(league)
 
-    for step in ("record", "distribute", "sheet", "sanctions"):
-        stubs[step].assert_not_awaited()
-
-
-async def _later_rounds(db_path, statuses: dict[int, str]) -> None:
-    """Rounds after the fixture's round 3, by number, with the ids 100 + the number."""
-    async with get_connection(db_path) as db:
-        for number, status in statuses.items():
-            await db.execute(
-                "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
-                "status) VALUES (?, ?, ?, '2026-03-01T18:00:00+00:00', 'NORMAL', ?)",
-                (100 + number, DIVISION_ID, number, status),
-            )
-        await db.commit()
+    assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
+    assert league.attendance.calls == []
+    assert await one(league.db_path, "SELECT COUNT(*) FROM attendance_recorded") == 0
 
 
-async def test_an_amended_round_redistributes_every_later_round(tmp_path):
-    """Issue #238. `/results rounds amend` re-runs this review for a round that may sit well
-    behind the season's latest, and every later round's stored total was worked out from the
-    figure the amendment has just changed. A round not yet finalised holds no total to
-    correct and is left alone."""
-    db_path = await _make_db(tmp_path, name="att_cascade")
-    await _later_rounds(db_path, {4: "FINAL", 5: "AWAITING_APPEAL_VERDICTS", 6: "NOT_RUN"})
-
-    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
-
-    assert [c.args[1] for c in stubs["distribute"].await_args_list] == [ROUND_ID, 104, 105]
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sheet_and_the_sanctions_follow_the_cascade_to_its_last_round(tmp_path):
     """Issue #238. Each round's stored total is the driver's total as at that round, so
-    amending round 3 of ten leaves the division's current standing on the last round scored —
-    and it is the current standing the sheet must show and the thresholds must be read
+    approving round 3 while round 4 is already final leaves the division's current standing on
+    round 4 — and it is the current standing the sheet must show and the thresholds must be read
     from."""
-    db_path = await _make_db(tmp_path, name="att_cascade_latest")
-    await _later_rounds(db_path, {4: "FINAL", 5: "FINAL"})
+    league = await review_league(tmp_path, attendance=True)
+    sheet = AsyncMock(wraps=league.attendance.post_sheet)
+    owed = AsyncMock(wraps=league.attendance.sanction_candidates)
+    league.attendance.post_sheet = sheet
+    league.attendance.sanction_candidates = owed
 
-    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
+    await _approve_reports(league)
 
-    assert stubs["sheet"].await_args.args[3] == 105
-    assert stubs["sanctions"].await_args.args[3] == 105
-
-
-async def test_a_failed_cascade_leaves_the_sheet_on_the_round_approved(tmp_path):
-    """Nothing was written, so there is no later round to follow it to — and the sanctions
-    are deferred in any case."""
-    db_path = await _make_db(tmp_path, name="att_cascade_failed")
-    await _later_rounds(db_path, {4: "FINAL"})
-
-    stubs = await _run(
-        finalize_penalty_review,
-        _state(db_path, attendance_enabled=True),
-        attendance_errors={"distribute": RuntimeError("boom")},
-    )
-
-    assert stubs["sheet"].await_args.args[3] == ROUND_ID
-    stubs["sanctions"].assert_not_awaited()
+    assert sheet.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
+    assert owed.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
 
 
-async def test_rounds_before_the_amended_one_keep_their_totals(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_cascade_earlier")
-    await _later_rounds(db_path, {1: "FINAL", 2: "FINAL"})
-
-    stubs = await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True))
-
-    stubs["distribute"].assert_awaited_once()
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_staged_pardons_are_persisted(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_pardons", attendance_row=True)
-    pardon = StagedPardon(
-        driver_user_id=101,
-        driver_profile_id=31,
-        attendance_id=41,
-        pardon_type="NO_RSVP",
-        justification="Power cut",
-        grantor_id=STEWARD,
-    )
+    """The pardons staged on the review are handed to the round's attendance record, written in
+    the approval's own save."""
+    league = await review_league(tmp_path, attendance=True)
 
-    await _run(
-        finalize_penalty_review, _state(db_path, pardons=[pardon], attendance_enabled=True)
-    )
+    await _approve_reports(league, pardons=[league_pardon()])
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT attendance_id, pardon_type, justification, granted_by "
-            "FROM attendance_pardons"
-        )
-        assert [tuple(r) for r in await cursor.fetchall()] == [
-            (41, "NO_RSVP", "Power cut", STEWARD)
-        ]
+    assert await one(league.db_path, "SELECT pardons FROM attendance_recorded") == 1
 
 
-async def test_a_pardon_is_not_granted_twice(tmp_path):
-    """A recovered finalisation runs this again; the insert is idempotent."""
-    db_path = await _make_db(tmp_path, name="att_pardons_twice", attendance_row=True)
-    pardon = StagedPardon(101, 31, 41, "NO_RSVP", "Power cut", STEWARD)
-
-    await _run(
-        finalize_penalty_review, _state(db_path, pardons=[pardon], attendance_enabled=True)
-    )
-    await _run(
-        finalize_penalty_review, _state(db_path, pardons=[pardon], attendance_enabled=True)
-    )
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM attendance_pardons")
-        assert (await cursor.fetchone())[0] == 1
-
-
-@pytest.mark.parametrize("failing", ["record", "distribute", "sheet", "sanctions"])
-async def test_one_failing_attendance_step_does_not_stop_the_others(tmp_path, failing):
-    """The penalty verdicts are already published by the time this runs.
-
-    **The sanctions are the one exception, and only for the two steps that write** (#237).
-    A failed `record`, or a failed distribution — which since #238 carries the later rounds'
-    totals with it — leaves `total_points_after` wrong rather than absent,
-    so the candidate query cannot screen it out, and an autosack applied on it would take a
-    driver's seat on a number the bot already knows is unsound. Those two defer the run to
-    `/attendance sync`; everything else still carries on regardless.
-    """
-    db_path = await _make_db(tmp_path, name=f"att_fail_{failing}")
-    state = _state(db_path, attendance_enabled=True)
-
-    stubs = await _run(
-        finalize_penalty_review, state, attendance_errors={failing: RuntimeError("boom")}
-    )
-
-    defers_the_sanctions = failing in ("record", "distribute")
-    for step in ("record", "distribute", "sheet"):
-        stubs[step].assert_awaited_once()
-    if defers_the_sanctions:
-        stubs["sanctions"].assert_not_awaited()
-    else:
-        stubs["sanctions"].assert_awaited_once()
-    assert state.appeals_prompt_message_id == 9900
-
-
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_without_a_guild_nothing_is_posted_but_points_are_distributed(tmp_path):
-    """The sanctions cannot run without the server — and that is reported, never skipped
-    in silence (#239)."""
-    db_path = await _make_db(tmp_path, name="att_noguild")
-    state = _state(db_path, attendance_enabled=True)
-    interaction = _interaction(guild=False)
+    """The round's attendance is in the approval's save, which needs no server. What needs the
+    server cannot be posted, and stops the queue rather than being skipped in silence (#239)."""
+    league = await review_league(tmp_path, attendance=True)
+    league.bot.get_guild = MagicMock(return_value=None)
 
-    stubs = await _run(finalize_penalty_review, state, interaction)
+    await _approve_reports(league)
 
-    stubs["distribute"].assert_awaited_once()
-    stubs["sheet"].assert_not_awaited()
-    stubs["sanctions"].assert_not_awaited()
-    assert "could not be reached" in interaction.followup.send.await_args.args[0]
-    assert "ATTENDANCE_SANCTIONS | Incomplete" in _logged(state)
+    assert league.attendance._calls("record_on") == [("record_on", ROUND_ID, DIVISION_ID)]
+    assert await stopped_at(league) is not None
+    assert league.attendance._calls("post_sheet") == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_incomplete_sanctions_are_told_to_the_approving_manager(tmp_path):
-    """#239. The approval used to report nothing of a sanction that did not apply. The run
-    logs its own failures, so the manager is told here and the log is not told twice."""
-    db_path = await _make_db(tmp_path, name="att_incomplete")
-    state = _state(db_path, attendance_enabled=True)
-    interaction = _interaction()
-    outcome = SanctionOutcome(failed=[("<@5> (Five)", "autoreserve", "no Reserve team")])
+    """#239. The approval used to report nothing of a sanction that did not apply. Max's
+    autoreserve does not apply and stops the queue; once a league admin discards it, Alex's reply
+    names Max's sanction as not applied, with the `/attendance sync` that finishes it."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
+    league.attendance.apply_fails = {MAX_PROFILE: RuntimeError("no Reserve team")}
 
-    await _run(finalize_penalty_review, state, interaction, sanction_outcome=outcome)
+    interaction = await _approve_reports(league)
+    assert await stopped_at(league) == "apply_sanction"
+    await discard_job(league.bot)
 
-    told = interaction.followup.send.await_args
-    assert "<@5> (Five) — autoreserve: no Reserve team" in told.args[0]
-    assert "/attendance sync" in told.args[0]
-    assert told.kwargs["ephemeral"] is True
-    assert "ATTENDANCE_SANCTIONS" not in _logged(state)
+    told = updated_reply(interaction)
+    assert f"<@{MAX}>" in told or "Max" in told
+    assert "/attendance sync" in told
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sanction_run_that_raises_reaches_the_log_channel(tmp_path):
-    """#239. A run that fails outright never logged anything a league could read."""
-    db_path = await _make_db(tmp_path, name="att_raises")
-    state = _state(db_path, attendance_enabled=True)
-    interaction = _interaction()
+    """#239. A sanction run that failed outright never logged anything a league could read. A
+    sanction that raises stops the queue, the stop notice reaching the log channel; once a league
+    admin discards it, the approval's line names it with `/attendance sync`."""
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
+    league.attendance.apply_fails = {MAX_PROFILE: RuntimeError("database is locked")}
 
-    await _run(
-        finalize_penalty_review, state, interaction,
-        attendance_errors={"sanctions": RuntimeError("database is locked")},
-    )
+    await _approve_reports(league)
+    assert await stopped_at(league) == "apply_sanction"
+    await discard_job(league.bot)
 
-    assert "the sanctions could not be run: database is locked" in _logged(state)
-    assert "/attendance sync" in interaction.followup.send.await_args.args[0]
+    assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
+    assert "/attendance sync" in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_clean_sanction_run_tells_the_manager_nothing_more(tmp_path):
-    db_path = await _make_db(tmp_path, name="att_clean")
-    interaction = _interaction()
+    league = await review_league(tmp_path, attendance=True)
+    league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
 
-    await _run(finalize_penalty_review, _state(db_path, attendance_enabled=True), interaction)
+    interaction = await _approve_reports(league)
 
+    assert await stopped_at(league) is None
+    told = updated_reply(interaction)
+    assert "⚠️" not in told and "/attendance sync" not in told
     interaction.followup.send.assert_not_awaited()
 
 

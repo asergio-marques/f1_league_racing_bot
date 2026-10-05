@@ -370,6 +370,42 @@ async def test_the_amended_round_s_attendance_is_rebuilt_both_ways_on_the_save_i
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_BUILT)
+async def test_recording_a_round_carries_every_later_round_s_total_on_the_save_it_is_handed(
+    tmp_path,
+):
+    """#238, on the hook (was test_finalize_reviews.py's
+    test_an_amended_round_redistributes_every_later_round): round 7, already final, holds a
+    running total for Max worked out before round 3 was recorded. Recording round 3 carries
+    round 7's total on from round 3's, on the connection handed in; rolled back, round 7 keeps
+    the total it held."""
+    db_path = await _db(tmp_path)
+    await _totals(db_path, AMENDED_ROUND, {MAX: 0})
+    await _totals(db_path, LATEST_ROUND, {MAX: 99})
+
+    async def _total(db: Any, round_id: int) -> Any:
+        cursor = await db.execute(
+            "SELECT points_awarded, total_points_after FROM driver_round_attendance "
+            "WHERE round_id = ? AND driver_profile_id = ?",
+            (round_id, MAX),
+        )
+        return await cursor.fetchone()
+
+    async with get_connection(db_path) as db:
+        await _hook(_bot(db_path), _placement()).record_on(
+            db, AMENDED_ROUND, DIVISION_ID, [], NOW,
+        )
+        recorded, later = await _total(db, AMENDED_ROUND), await _total(db, LATEST_ROUND)
+        await db.rollback()
+
+    assert later["total_points_after"] != 99
+    assert later["total_points_after"] == (
+        (recorded["total_points_after"] or 0) + (later["points_awarded"] or 0)
+    )
+    async with get_connection(db_path) as db:
+        assert (await _total(db, LATEST_ROUND))["total_points_after"] == 99
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_carries_exactly_the_pardons_handed_in_on_the_save_it_is_handed(
     tmp_path,
 ):
