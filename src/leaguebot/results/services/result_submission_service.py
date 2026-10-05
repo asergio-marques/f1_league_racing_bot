@@ -534,440 +534,6 @@ async def enter_penalty_state(
     )
 
 
-async def finalize_penalty_review(
-    interaction: discord.Interaction,
-    state,  # PenaltyReviewState — forward-ref to avoid import cycle
-    *,
-    what: str | None = None,
-) -> None:
-    """Apply staged penalties, repost with 'Post-Race Penalty Results' label, and
-    transition the submission channel to appeals review.
-
-    Sets rounds.status = 'AWAITING_APPEAL_VERDICTS', then posts an AppealsReviewView
-    prompt and keeps the submission channel open.
-
-    Called from :meth:`ApprovalView.approve_btn` and
-    :meth:`PenaltyReviewView.approve_btn`.
-
-    An amendment's report stage shares the screens but not this body, and is handed to
-    :func:`_approve_amendment_reports` before anything here runs (#345).
-
-    **A review that has moved on approves nothing** (#402). Its prompt and its approval message
-    outlived the stage they were posted for, so an Approve could land on a round whose results
-    a resubmission was replacing, whose reports were already approved, or whose review had been
-    replaced by another — and ran the whole approval on it: reposts, attendance, a second
-    appeals prompt. The check is the one every other control of the review asks.
-
-    **Once at a time.** The approval draws every graphic the round posts before it moves the
-    round on, and a second press in that time found the round exactly as the first had.
-    ``approving`` is claimed after the last await of the checks, so two presses cannot both pass
-    them, and released however the approval ends, so one that fails can be pressed again.
-
-    **A refusal is recorded** as *what* refused (#482): the button pressed and its review, named
-    by the button that calls this. A call without one names the review's Approve button from
-    *state*, which only a test makes.
-    """
-    from leaguebot.results.services.penalty_wizard import (
-        _BEING_APPROVED,
-        _button,
-        _review_moved_on,
-    )
-
-    if getattr(state, "is_amendment", False):
-        await _approve_amendment_reports(interaction, state)
-        return
-
-    refusal = await _review_moved_on(state)
-    if refusal is None:
-        refusal = await held_by_amendment(
-            state.db_path, state.round_id, state.division_id,
-            then="Approve the reports again then.",
-        )
-    if refusal is None and state.approving:
-        refusal = _BEING_APPROVED
-    if refusal is not None:
-        await refuse(interaction, refusal, what=what or _button("✅ Approve", state))
-        return
-
-    state.approving = True
-    try:
-        await _apply_approved_reports(interaction, state)
-    finally:
-        state.approving = False
-
-
-async def _apply_approved_reports(interaction: discord.Interaction, state) -> None:
-    """What approving a first pass's reports does, once :func:`finalize_penalty_review` has
-    checked the review is current and claimed it.
-
-    **The approval's line is written last**, once the appeals review has been posted: a review
-    that could not be posted, because its channel is out of reach or its send failed, marks it
-    Incomplete, and the manager is told under an
-    ``APPEALS_PROMPT | Incomplete`` entry (#482). The prompt stays last of all, so that nobody
-    can approve the appeals while this pipeline is still running.
-    """
-    import json as _json
-    from leaguebot.results.services import results_post_service as _rps
-    from leaguebot.results.services import penalty_service as _ps
-    from leaguebot.results.services import verdict_announcement_service as _vas
-
-    await interaction.response.defer(ephemeral=True)
-
-    db_path: str = state.db_path
-    bot = state.bot
-    round_id: int = state.round_id
-    division_id: int = state.division_id
-    guild = interaction.guild
-    actor_id: int = interaction.user.id
-
-    # Pre-penalty snapshot for audit log
-    pre_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
-
-    # Apply staged penalties (idempotent: staged_penalties column guards against double-apply)
-    async with get_connection(db_path) as _db:
-        _rsc = await _db.execute(
-            "SELECT staged_penalties FROM round_submission_channels WHERE round_id = ?",
-            (round_id,),
-        )
-        _rsc_row = await _rsc.fetchone()
-    penalties_already_applied = bool(_rsc_row and _rsc_row["staged_penalties"] is not None)
-
-    if state.staged and not penalties_already_applied:
-        penalty_json = _json.dumps(
-            [
-                {
-                    "driver_user_id": sp.driver_user_id,
-                    "session_type": sp.session_type.value,
-                    "penalty_type": sp.penalty_type,
-                    "penalty_seconds": sp.penalty_seconds,
-                    "description": sp.description,
-                    "justification": sp.justification,
-                }
-                for sp in state.staged
-            ]
-        )
-        async with get_connection(db_path) as _db:
-            await _db.execute(
-                "UPDATE round_submission_channels SET staged_penalties = ? WHERE round_id = ?",
-                (penalty_json, round_id),
-            )
-            await _db.commit()
-
-        applied_records = await _ps.apply_penalties(
-            db_path, round_id, division_id, state.staged,
-            applied_by=actor_id, bot=bot,
-        )
-        await _recompute_session_points(db_path, round_id)
-
-    else:
-        applied_records = []
-
-    # Post-penalty snapshot
-    post_snapshot = await _snapshot_staged_drivers(db_path, round_id, division_id, state.staged)
-
-    # Everything from here to the end of the attendance pipeline draws graphics: every
-    # session's results, both standings, one verdict per penalty, the attendance sheet,
-    # and — where anyone was sanctioned — the lineup and the sheet a second time. On the
-    # Pi that is a long silence, so it is covered by a single notice in the submission
-    # channel, this flow's equivalent of the channel a command was typed in.
-    _notice_channel = guild.get_channel(state.submission_channel_id) if guild else None
-    async with batch_notice(
-        _notice_channel,
-        "\U0001f3a8 Updating results, standings and verdicts — one moment.",
-    ):
-        # Repost results/standings with "Post-Race Penalty Results" label.
-        #
-        # What the cascade could not post is collected rather than discarded (#237). A
-        # missing guild is a fault in its own right: it used to skip both reposts in
-        # silence, leaving the round rescored and every posted standing stale.
-        repost_faults: list[str] = []
-        if guild is None:
-            repost_faults.append(
-                "The league's server could not be reached, so the results and standings "
-                "were not reposted."
-            )
-        else:
-            repost_faults = _rps.merge_faults(
-                await _rps.delete_and_repost_final_results(
-                    db_path, round_id, division_id, guild,
-                    label="Post-Race Penalty Results", bot=bot_of(interaction),
-                ),
-                await _rps.repost_subsequent_standings(
-                    db_path, division_id, round_id, guild, bot=bot_of(interaction),
-                ),
-            )
-
-        # Report verdicts are in; the round now waits on appeals.
-        #
-        # Guarded against a round that has already ended, as the write into
-        # AWAITING_REPORT_VERDICTS above is guarded against one that has already moved on. The
-        # review view lives in the submission channel and outlives the round: switching the
-        # results module off closes every round still awaiting a review and deletes the
-        # channel, but a client already holding the message can still press the button, and an
-        # unguarded write would drag the closed round back into an awaiting state — stranding
-        # the season all over again, which is the whole of issue #167.
-        #
-        # The guard names the terminal states rather than the state expected before this one,
-        # because that is the actual rule: a settled round must not be reopened. Pinning the
-        # prior state instead would also refuse the recovery path, which rebuilds this review
-        # from whatever state the round was left in by a crash.
-        async with get_connection(db_path) as db:
-            await db.execute(
-                f"UPDATE rounds SET status = ? WHERE id = ? AND status NOT IN ({_TERMINAL_SQL})",
-                (RoundStatus.AWAITING_APPEAL_VERDICTS.value, round_id),
-            )
-            await db.commit()
-
-        # The report stage's controls come down as the round leaves it (#402).
-        from leaguebot.results.services.penalty_wizard import _take_down_report_stage
-        await _take_down_report_stage(state)
-
-        # Audit log PENALTY_REVIEW_APPROVED
-        penalty_log = [
-            {
-                "driver_user_id": sp.driver_user_id,
-                "session_type": sp.session_type.value,
-                "penalty_type": sp.penalty_type,
-                "penalty_seconds": sp.penalty_seconds,
-                "description": sp.description,
-                "justification": sp.justification,
-            }
-            for sp in state.staged
-        ]
-        old_val = _json.dumps(
-            {"status": RoundStatus.AWAITING_REPORT_VERDICTS.value, "affected_drivers": pre_snapshot}
-        )
-        new_val = _json.dumps(
-            {
-                "status": RoundStatus.AWAITING_APPEAL_VERDICTS.value,
-                "affected_drivers": post_snapshot,
-                "penalties": penalty_log,
-                "actor_id": actor_id,
-            }
-        )
-        # Written once the appeals review has been opened, below the pipeline: whether it could
-        # be opened decides whether this line is a success (#482).
-        approval_body: str | None = None
-        try:
-            async with get_connection(db_path) as db:
-                cursor = await db.execute(
-                    "SELECT 1 FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                    (division_id,),
-                )
-                srv_row = await cursor.fetchone()
-            if srv_row:
-                n_penalties = len(state.staged)
-                approval_body = (
-                    f"  round: {state.round_number} ({state.division_name})\n"
-                    + (f"  penalties: {n_penalties}\n" if n_penalties else "  penalties: none\n")
-                    + f"  old={old_val}\n  new={new_val}"
-                )
-        except Exception:
-            log.exception("finalize_penalty_review: error reading the season for round %s", round_id)
-
-        if repost_faults:
-            await _report_unpostable_results(
-                interaction, bot, db_path, division_id, repost_faults
-            )
-
-        # One banner heads everything this approval posts to the verdicts channel — the
-        # penalty verdicts here, and the attendance sanctions the pipeline below enforces
-        # into the same channel for the same round. Built once and handed to both, so a
-        # league reads one header over one run (decided 2026-09-09). Nothing is queried
-        # until the first verdict actually goes out.
-        _verdict_banner = _vas.banner_for_round(bot, db_path, round_id)
-
-        # Post verdict announcements. Non-blocking, but no longer silent (#237): a penalty
-        # that is applied and never announced leaves the driver with a changed
-        # classification and no explanation of it.
-        verdict_faults: list[str] = []
-        if applied_records:
-            try:
-                verdict_faults = await _vas.post_penalty_announcements(
-                    bot, state, applied_records, head=_verdict_banner
-                )
-            except Exception as exc:  # noqa: BLE001 — the approval still stands
-                log.exception(
-                    "finalize_penalty_review: error posting penalty announcements for round %s",
-                    round_id,
-                )
-                verdict_faults = [f"No penalty verdict could be announced: {exc}"]
-
-        if verdict_faults:
-            await _report_unannounced_verdicts(interaction, bot, verdict_faults)
-
-        # === NEW: Attendance pipeline (033-attendance-tracking) ===
-        from leaguebot.attendance.services.attendance_service import (
-            record_attendance_from_results,
-            cascade_attendance_from_round,
-            post_attendance_sheet,
-            enforce_attendance_sanctions,
-        )
-        from datetime import datetime as _dt, timezone as _tz
-
-        async with get_connection(db_path) as _db:
-            _srv_cur = await _db.execute(
-                "SELECT s.id AS season_id FROM seasons s JOIN divisions d ON d.season_id = s.id WHERE d.id = ?",
-                (division_id,),
-            )
-            _srv_row = await _srv_cur.fetchone()
-
-        if _srv_row and await bot.module_service.is_attendance_enabled():
-            _att_season_id = int(_srv_row["season_id"])
-
-            # The two steps that write to the database are reported, and the two that post
-            # are not (#237). A failed posting leaves the record right and the picture of it
-            # stale; these two leave the *record* wrong, and it feeds the autoreserve and
-            # autosack thresholds — so a driver can later be sanctioned on a number this
-            # failure invalidated. They are collected here and reported under a heading of
-            # their own. They are deliberately *not* folded into the sanctions report below:
-            # that one skips the log channel when the sanctions run has already written its
-            # own entry, so a write failure carried in it could reach the manager and never
-            # the league's record.
-            _attendance_write_failures: list[str] = []
-
-            # T004: Record attendance from submitted results.
-            try:
-                await record_attendance_from_results(db_path, round_id, division_id)
-            except Exception as exc:  # noqa: BLE001 — recorded, and the pipeline goes on
-                log.exception("finalize_penalty_review: record_attendance_from_results failed for round %s", round_id)
-                _attendance_write_failures.append(
-                    f"who attended this round was not recorded, so the totals below it are "
-                    f"wrong: {exc}"
-                )
-
-            # T010: Persist staged attendance pardons (INSERT OR IGNORE for idempotency).
-            if state.staged_pardons:
-                _now_iso = _dt.now(_tz.utc).isoformat()
-                async with get_connection(db_path) as _db:
-                    for _sp in state.staged_pardons:
-                        await _db.execute(
-                            """
-                            INSERT OR IGNORE INTO attendance_pardons
-                                (attendance_id, pardon_type, justification, granted_by, granted_at)
-                            VALUES (?, ?, ?, ?, ?)
-                            """,
-                            (_sp.attendance_id, _sp.pardon_type, _sp.justification,
-                             _sp.grantor_id, _now_iso),
-                        )
-                    await _db.commit()
-
-            # T012: Distribute attendance points, and carry the new totals through every
-            # later finalised round (#238). Amending round 3 of ten corrected round 3's
-            # stored total and left rounds 4 to 10 holding one worked out from the old
-            # figure — which the season's final sheet then published. The cascade is one
-            # transaction, so a failure here leaves this round's points unawarded as well,
-            # which is what the message below says and what defers the sanctions.
-            #
-            # **The sheet and the sanctions below follow the cascade to its last round**,
-            # not the round being approved. Each round's stored total is that driver's
-            # total as at that round, so amending round 3 of ten leaves the division's
-            # current standing on round 10 — and it is the current standing a sheet must
-            # show and a threshold must be read from. Where the cascade fails there is no
-            # round to follow it to, and the round approved stands in; nothing was written
-            # in that case, and the sanctions are deferred regardless.
-            _latest_scored_round = round_id
-            try:
-                _latest_scored_round = (
-                    await cascade_attendance_from_round(db_path, round_id, division_id)
-                )[-1]
-            except Exception as exc:  # noqa: BLE001 — recorded, and the pipeline goes on
-                log.exception("finalize_penalty_review: cascade_attendance_from_round failed for round %s", round_id)
-                _attendance_write_failures.append(
-                    f"this round's attendance points were not awarded and no later round's "
-                    f"total was corrected, so every driver's total is wrong: {exc}"
-                )
-
-            # T014: Post attendance sheet (non-blocking).
-            try:
-                if guild:
-                    await post_attendance_sheet(
-                        bot, guild, db_path, _latest_scored_round, division_id
-                    )
-            except Exception:
-                log.exception("finalize_penalty_review: post_attendance_sheet failed for round %s", round_id)
-
-            # T016: Enforce attendance sanctions. A sanction that does not apply is never
-            # left in the host's log alone (#239): the run reports its own failures to the
-            # log channel, and the manager who approved is told here, with the command that
-            # finishes the job. A run that cannot start at all is told the same way.
-            #
-            # **A sanction is never applied on a record known to be wrong** (#237). The
-            # thresholds are read from `total_points_after`, which the two steps above
-            # write. Where recording failed but the distribution succeeded, that column is
-            # not NULL and so does not exclude the driver from the candidate query — it is
-            # simply wrong, and can be wrong *upward*, because a driver who attended may
-            # have been scored absent. Autosack takes a driver's seat; doing that on a
-            # number the bot already knows is unsound is not a risk worth running for the
-            # sake of finishing the pipeline. The run is deferred instead, and
-            # `/attendance sync` both repairs the record and applies whatever is owed.
-            _sanction_failures: list[str] = []
-            _run_logged_itself = False
-            if _attendance_write_failures:
-                _sanction_failures = [
-                    "no driver was checked, because this round's attendance record is "
-                    "wrong and the thresholds are read from it"
-                ]
-            elif guild is None:
-                _sanction_failures = ["the league's server could not be reached, so no driver was checked"]
-            else:
-                try:
-                    _outcome = await enforce_attendance_sanctions(
-                        bot, guild, db_path, _latest_scored_round, division_id,
-                        _att_season_id,
-                        head=_verdict_banner,
-                    )
-                    _sanction_failures = _outcome.failure_lines()
-                    _run_logged_itself = True
-                except Exception as exc:
-                    log.exception("finalize_penalty_review: enforce_attendance_sanctions failed for round %s", round_id)
-                    _sanction_failures = [f"the sanctions could not be run: {exc}"]
-            if _attendance_write_failures:
-                await _report_attendance_not_recorded(
-                    interaction, bot, db_path, division_id, round_id,
-                    _attendance_write_failures,
-                )
-
-            if _sanction_failures:
-                await _report_incomplete_sanctions(
-                    interaction, bot, db_path, division_id, round_id, _sanction_failures,
-                    logged=_run_logged_itself,
-                )
-
-        # === END Attendance pipeline ===
-
-    # A send or a render that fails outright is the prompt not opened, as the amendment's is
-    # below: the approval's line is still written, marked Incomplete, and the manager told.
-    try:
-        opened = await _post_appeals_prompt(state, guild, bot, db_path)
-    except Exception:  # noqa: BLE001 — a send, a render or a view may fail outright
-        log.exception("finalize_penalty_review: could not open the appeals stage of round %s", round_id)
-        opened = False
-
-    if approval_body is not None:
-        outcome = "Incomplete" if (repost_faults or not opened) else "Success"
-        try:
-            await bot.output_router.post_log(
-                f"{interaction_member(interaction)} | PENALTY_REVIEW_APPROVED | {outcome}\n"
-                + approval_body
-            )
-        except Exception:
-            log.exception("finalize_penalty_review: error writing audit log for round %s", round_id)
-
-    if not opened:
-        # The round waits at AWAITING_APPEAL_VERDICTS and restart recovery posts the prompt
-        # again, so nothing is undone: the manager is told, and the log carries the fault.
-        await _report_faults(
-            interaction, bot,
-            heading="APPEALS_PROMPT | Incomplete",
-            intro="⚠️ The reports are approved, but the appeals review could not be posted:",
-            faults=[
-                "the submission channel could not be reached or written to, so the appeals stage was not opened"
-            ],
-            hint="The appeals review is posted again when the bot restarts.",
-        )
-
-
 async def _round_is_final(db_path: str, round_id: int) -> bool:
     """True where the round has already reached FINAL.
 
@@ -1116,15 +682,12 @@ async def _post_appeals_prompt(state, guild, bot: LeagueBot, db_path: str) -> bo
     heading differs, and the prompt draws that itself so that a refresh keeps it.
 
     Its own function because two finalisers owe the manager the next stage: the first pass's
-    :func:`finalize_penalty_review` and the amendment's :func:`_approve_amendment_reports`.
+    :func:the report approval and the amendment's :func:`_approve_amendment_reports`.
 
     Returns whether the stage was opened. A first pass can survive a channel it cannot reach —
     the round waits at ``AWAITING_APPEAL_VERDICTS`` and restart recovery re-posts the prompt —
     but an amendment cannot: there is no route to its last stage, so the caller undoes it (#345).
     """
-    from leaguebot.results.services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
-
-    appeals_view = AppealsReviewView(state=state)
     sub_channel = guild.get_channel(state.submission_channel_id) if guild else None
     if sub_channel is None:
         log.warning(
@@ -1132,44 +695,27 @@ async def _post_appeals_prompt(state, guild, bot: LeagueBot, db_path: str) -> bo
             state.round_id, state.submission_channel_id,
         )
         return False
+    await send_appeals_prompt(bot, sub_channel, state)
+    return True
+
+
+async def send_appeals_prompt(
+    bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"
+) -> discord.Message:
+    """Post the appeals review prompt of *state* in *sub_channel* and register its view, so that
+    its buttons keep working across a restart. Gives the message; *state* learns its id.
+
+    The one place the appeals prompt is sent, which `_post_appeals_prompt` and the queue's
+    `post_appeals_prompt` job both call (#439).
+    """
+    from leaguebot.results.services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+
+    appeals_view = AppealsReviewView(state=state)
     content = await _render_appeals_prompt_content(state)
     msg = await sub_channel.send(content, view=appeals_view)
     state.appeals_prompt_message_id = msg.id
     bot.add_view(appeals_view, message_id=msg.id)
-    return True
-
-
-async def _report_incomplete_sanctions(
-    interaction, bot: LeagueBot, db_path: str, division_id: int, round_id: int,
-    failures: list[str], *, logged: bool,
-) -> None:
-    """Tell the approving manager which attendance sanctions did not apply (#239).
-
-    *logged* says the run has already posted its own ``ATTENDANCE_SANCTIONS | Incomplete``
-    line; where it never got that far, the log channel is told here instead, naming the member
-    who pressed (#482).
-    """
-    from leaguebot.attendance.services.attendance_service import sync_hint
-
-    hint = await sync_hint(db_path, division_id, round_id)
-    body = "\n".join(f"• {line}" for line in failures)
-    if not logged:
-        try:
-            await bot.output_router.post_log(
-                f"{interaction_member(interaction)} | ATTENDANCE_SANCTIONS | Incomplete\n"
-                + "\n".join(f"  {line}" for line in failures)
-                + f"\n  {hint}"
-            )
-        except Exception:
-            log.exception("finalize_penalty_review: could not log the incomplete sanctions")
-    try:
-        await interaction.followup.send(
-            f"⚠️ The penalties are approved, but some attendance sanctions did not apply:\n"
-            f"{body}\n{hint}",
-            ephemeral=True,
-        )
-    except Exception:
-        log.exception("finalize_penalty_review: could not tell the manager about the sanctions")
+    return msg
 
 
 async def _report_faults(
@@ -1177,7 +723,7 @@ async def _report_faults(
 ) -> None:
     """Tell the manager and the log channel what an approval could not do (#237).
 
-    The shape ``_report_incomplete_sanctions`` uses for attendance (#239): the log channel
+    The shape the report approval used for attendance (#239): the log channel
     carries the record under *heading*, the manager who pressed approve reads *intro* and
     the same lines in their own reply rather than a plain success, and both end with *hint*
     — what to do once the cause is repaired.
@@ -1225,44 +771,6 @@ async def _report_unpostable_results(
         intro="\u26a0\ufe0f The approval went through, but some results could not be posted:",
         faults=faults,
         hint=await results_sync_hint(db_path, division_id),
-    )
-
-
-async def _report_attendance_not_recorded(
-    interaction, bot: LeagueBot, db_path: str, division_id: int, round_id: int, faults: list[str],
-) -> None:
-    """What the attendance pipeline failed to *write* (#237).
-
-    Kept apart from the sanctions report because the two differ in kind. A sanction that did
-    not apply left the record right; these left the record **wrong**, and the autoreserve and
-    autosack thresholds read it — so a later round can sanction a driver on a total this
-    failure invalidated. ``/attendance sync`` recomputes the round and every later one, which
-    is what repairs it.
-
-    **The hint is read from the database defensively, because the database is what failed.**
-    The only way to reach here is that a write raised, and the likeliest causes — a full
-    disk, a lock, a corrupt file — are exactly the ones that would make ``sync_hint``'s two
-    reads raise as well. Computed as a bare argument it would throw out of this function,
-    out of the caller, and past the point where the appeals prompt is posted: the round
-    would be left mid-lifecycle with nothing said, which is this issue's own shape.
-    """
-    from leaguebot.attendance.services.attendance_service import sync_hint
-
-    try:
-        hint = await sync_hint(db_path, division_id, round_id)
-    except Exception:  # noqa: BLE001 — the report matters more than the command in it
-        log.exception("could not build the attendance sync hint for round %s", round_id)
-        hint = "Repair the cause, then run `/attendance sync` for this division and round."
-
-    await _report_faults(
-        interaction, bot,
-        heading="ATTENDANCE_RECORD | Incomplete",
-        intro=(
-            "\u26a0\ufe0f The penalties are approved, but this round's attendance was not "
-            "recorded correctly:"
-        ),
-        faults=faults,
-        hint=hint,
     )
 
 
@@ -1686,41 +1194,56 @@ async def _snapshot_staged_drivers(
     division_id: int,
     staged,
 ) -> list[dict]:
+    """:func:`_snapshot_staged_drivers_on`, on a connection of its own."""
+    if not staged:
+        return []
+    async with get_connection(db_path) as db:
+        return await _snapshot_staged_drivers_on(db, round_id, division_id, staged)
+
+
+async def _snapshot_staged_drivers_on(
+    db: aiosqlite.Connection,
+    round_id: int,
+    division_id: int,
+    staged,
+) -> list[dict]:
     """Return current ``finishing_position``, ``post_race_time_penalties``, and
-    ``total_points`` for every driver referenced in *staged*.  Used for audit log.
+    ``total_points`` for every driver referenced in *staged*, read on *db*. Used for audit log.
+
+    Read on the connection it is handed, so a change's one save can take the picture before and
+    after what it writes (#439).
     """
-    from leaguebot.results.services.standings_service import compute_driver_standings
+    from leaguebot.results.services.standings_service import compute_driver_standings_on
 
     if not staged:
         return []
 
     driver_ids = list({sp.driver_user_id for sp in staged})
 
-    async with get_connection(db_path) as db:
-        placeholders = ",".join("?" * len(driver_ids))
-        cursor = await db.execute(
-            f"""
-            SELECT driver_user_id, finishing_position, postrace_time_penalties_ms
-            FROM race_session_results rsr
-            JOIN session_results sr ON sr.id = rsr.session_result_id
-            WHERE sr.round_id = ? AND rsr.driver_user_id IN ({placeholders})
-            UNION ALL
-            SELECT driver_user_id, finishing_position, 0 AS postrace_time_penalties_ms
-            FROM qualifying_session_results qsr
-            JOIN session_results sr ON sr.id = qsr.session_result_id
-            WHERE sr.round_id = ? AND qsr.driver_user_id IN ({placeholders})
-            """,
-            (round_id, *driver_ids, round_id, *driver_ids),
-        )
-        dsr_rows = await cursor.fetchall()
-        # The standings are keyed by the account a driver uses now; a staged penalty by the
-        # one its result stands under (issue #243).
-        from leaguebot.core.services.driver_service import current_account_map_for_division
+    placeholders = ",".join("?" * len(driver_ids))
+    cursor = await db.execute(
+        f"""
+        SELECT driver_user_id, finishing_position, postrace_time_penalties_ms
+        FROM race_session_results rsr
+        JOIN session_results sr ON sr.id = rsr.session_result_id
+        WHERE sr.round_id = ? AND rsr.driver_user_id IN ({placeholders})
+        UNION ALL
+        SELECT driver_user_id, finishing_position, 0 AS postrace_time_penalties_ms
+        FROM qualifying_session_results qsr
+        JOIN session_results sr ON sr.id = qsr.session_result_id
+        WHERE sr.round_id = ? AND qsr.driver_user_id IN ({placeholders})
+        """,
+        (round_id, *driver_ids, round_id, *driver_ids),
+    )
+    dsr_rows = await cursor.fetchall()
+    # The standings are keyed by the account a driver uses now; a staged penalty by the
+    # one its result stands under (issue #243).
+    from leaguebot.core.services.driver_service import current_account_map_for_division
 
-        current_of = await current_account_map_for_division(db, division_id)
+    current_of = await current_account_map_for_division(db, division_id)
 
     # Get total_points from latest standings snapshot
-    driver_snaps = await compute_driver_standings(db_path, division_id, round_id)
+    driver_snaps = await compute_driver_standings_on(db, division_id, round_id)
     pts_map = {snap.driver_user_id: snap.total_points for snap in driver_snaps}
 
     result = []
@@ -5031,6 +4554,8 @@ async def run_result_submission_job(round_id: int, bot: LeagueBot) -> None:
         )
         await close_submission_channel(sub_channel.id, round_id, guild, db_path)
         return
+    # The review opens as a change on the queue, `results.review.open`, which posts the interim
+    # results and then the review's prompt (#439).
     await ask_review_open(
         bot, sub_channel, round_id, round_number,
         {"label": "Provisional Results", "publish": True}, actor=last_author, say=True,

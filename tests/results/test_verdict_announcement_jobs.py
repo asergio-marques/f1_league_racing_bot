@@ -169,7 +169,6 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_report_verdict_names_the_round_the_driver_the_penalty_and_the_incident(
     tmp_path,
 ):
@@ -186,7 +185,6 @@ async def test_a_report_verdict_names_the_round_the_driver_the_penalty_and_the_i
     assert "**Justification**: Turn 4, lap 12" in verdict
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_no_further_action_is_announced_as_no_penalty(tmp_path):
     """Never "Disqualified", and never a number of seconds (#138)."""
     league = await review_league(tmp_path)
@@ -213,7 +211,6 @@ async def test_an_appeal_of_no_further_action_is_announced_as_no_penalty(tmp_pat
 CURRENT_ACCOUNT = 31337
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_verdict_on_a_result_under_a_past_account_names_the_current_one(tmp_path):
     """Core specification, driver accounts: everything posted from then on names the driver by
     their current account. Lewis's result stands under 101; his profile has since moved to
@@ -296,7 +293,6 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
     assert [item["driver_name"] for item in drawn] == ["Test Lewis"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_no_further_action_is_drawn_as_no_penalty(tmp_path, drawn):
     league = await review_league(tmp_path)
     await _approve_reports(league, [_nfa(LEWIS)])
@@ -310,7 +306,6 @@ async def test_no_further_action_is_drawn_as_no_penalty(tmp_path, drawn):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_report_verdict_saves_the_message_and_channel_it_was_announced_in(tmp_path):
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
@@ -384,7 +379,6 @@ async def _announced(league: ReviewLeague) -> int:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp_path):
     """The verdicts channel refuses the written heading alone. The heading is a job of its own,
     so the queue stops at it and no verdict goes out ahead of it (owner, Gate 2, 2026-10-05:
@@ -414,7 +408,6 @@ async def test_a_heading_discord_refuses_stops_the_queue_before_the_verdicts(tmp
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_path, monkeypatch):
     """The banner's poster raising, a fault in the bot, stops the queue at the heading like any
     failure; no verdict goes out until it is cleared. A Retry once it works posts the heading
@@ -447,7 +440,6 @@ async def test_a_heading_that_raises_stops_the_queue_before_the_verdicts(tmp_pat
     assert await _announced(league) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_banner_that_cannot_be_drawn_heads_the_verdicts_in_words(tmp_path, monkeypatch):
     """The banner switched on, its render failing for want of a rasteriser: the verdicts are
     headed by the written heading instead, posted first, and the verdict follows it."""

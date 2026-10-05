@@ -294,7 +294,12 @@ async def _resolve_names(ctx: StepContext) -> StepResult:
     the one the league is shown cannot disagree. Read by `display_names`. The division is the
     job's own, or the one of the change's `round_id`.
     """
-    guild = await _league_guild(ctx.bot)
+    try:
+        guild: discord.Guild | None = await _league_guild(ctx.bot)
+    except GuildUnavailable:
+        # Names are not what the change cannot go on without: the standings are ordered, in a
+        # full tie, by user id, and a job that needs the server stops the queue on its own.
+        guild = None
     division_id = ctx.step_payload.get("division_id")
     if division_id is None:
         division_id = (await _round_row(ctx.db_path, int(ctx.payload["round_id"])))["division_id"]

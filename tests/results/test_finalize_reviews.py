@@ -250,7 +250,6 @@ async def _nothing_approved(league: ReviewLeague) -> None:
     assert appeals_prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_staged_penalties_are_applied(tmp_path):
     league = await review_league(tmp_path)
 
@@ -261,7 +260,6 @@ async def test_staged_penalties_are_applied(tmp_path):
     assert len(await penalty_records(league.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_round_moves_on_to_appeals(tmp_path):
     league = await review_league(tmp_path)
 
@@ -271,7 +269,6 @@ async def test_the_round_moves_on_to_appeals(tmp_path):
 
 
 @pytest.mark.parametrize("status", ["FINAL", "CANCELLED"])
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_settled_round_is_not_reopened_by_a_stale_press(tmp_path, status):
     """#167: a client still holding the review message can press it after the round was
     closed, and an unguarded write would strand the season."""
@@ -354,7 +351,6 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     assert len(appeals_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_approving_the_reports_takes_the_prompt_and_the_approval_down(tmp_path):
     """**They stayed up through the appeals stage**, where every button on them still worked. They
     refuse now whether or not they come down; down, they are not there to be pressed."""
@@ -367,7 +363,6 @@ async def test_approving_the_reports_takes_the_prompt_and_the_approval_down(tmp_
     assert len(appeals_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_take_down_that_fails_still_opens_the_appeals(tmp_path):
     """It is tidying: the round has already moved on. A take-down Discord refuses stops the queue
     like any job, and once a league admin discards it the appeals prompt behind it still comes."""
@@ -386,7 +381,6 @@ async def test_a_take_down_that_fails_still_opens_the_appeals(tmp_path):
     assert len(appeals_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_results_are_reposted_as_post_race_penalty_results(tmp_path):
     league = await review_league(tmp_path)
 
@@ -398,7 +392,6 @@ async def test_the_results_are_reposted_as_post_race_penalty_results(tmp_path):
     assert OLD_RESULTS not in posted
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_approval_is_logged_with_its_penalty_count(tmp_path):
     league = await review_league(tmp_path)
 
@@ -408,7 +401,6 @@ async def test_the_approval_is_logged_with_its_penalty_count(tmp_path):
     assert "penalties: 2" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_review_with_no_penalties_says_none(tmp_path):
     league = await review_league(tmp_path)
 
@@ -417,7 +409,6 @@ async def test_a_review_with_no_penalties_says_none(tmp_path):
     assert "penalties: none" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_failing_audit_log_does_not_stop_the_review(tmp_path):
     league = await review_league(tmp_path)
     league.bot.log_channel.send = AsyncMock(side_effect=RuntimeError("no log"))
@@ -428,7 +419,6 @@ async def test_a_failing_audit_log_does_not_stop_the_review(tmp_path):
     assert len(appeals_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_applied_penalties_are_announced(tmp_path):
     league = await review_league(tmp_path)
 
@@ -455,7 +445,6 @@ async def test_a_failed_announcement_does_not_stop_the_review(tmp_path):
     assert len(appeals_prompts(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_appeals_prompt_is_posted_and_registered(tmp_path):
     league = await review_league(tmp_path)
 
@@ -469,7 +458,6 @@ async def test_the_appeals_prompt_is_posted_and_registered(tmp_path):
     ) == prompt
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_without_a_guild_the_round_still_moves_on(tmp_path):
     league = await review_league(tmp_path)
     league.bot.get_guild = MagicMock(return_value=None)
@@ -480,7 +468,6 @@ async def test_without_a_guild_the_round_still_moves_on(tmp_path):
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
     """The reports are approved, but Discord refuses the appeals prompt: it stops the queue like
     any job. Once a league admin discards it, Alex's reply says the reports are approved and the
@@ -510,7 +497,6 @@ async def test_an_appeals_review_that_cannot_be_posted_is_reported(tmp_path):
 # sheet and each sanction are jobs of their own.
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_attendance_pipeline_runs_where_attendance_is_on(tmp_path):
     league = await review_league(tmp_path, attendance=True)
 
@@ -521,7 +507,6 @@ async def test_the_attendance_pipeline_runs_where_attendance_is_on(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM attendance_recorded") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_attendance_pipeline_does_not_run_where_attendance_is_off(tmp_path):
     league = await review_league(tmp_path, attendance=False)
 
@@ -532,7 +517,6 @@ async def test_the_attendance_pipeline_does_not_run_where_attendance_is_off(tmp_
     assert await one(league.db_path, "SELECT COUNT(*) FROM attendance_recorded") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sheet_and_the_sanctions_follow_the_cascade_to_its_last_round(tmp_path):
     """Issue #238. Each round's stored total is the driver's total as at that round, so
     approving round 3 while round 4 is already final leaves the division's current standing on
@@ -550,7 +534,6 @@ async def test_the_sheet_and_the_sanctions_follow_the_cascade_to_its_last_round(
     assert owed.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_staged_pardons_are_persisted(tmp_path):
     """The pardons staged on the review are handed to the round's attendance record, written in
     the approval's own save."""
@@ -561,7 +544,6 @@ async def test_staged_pardons_are_persisted(tmp_path):
     assert await one(league.db_path, "SELECT pardons FROM attendance_recorded") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_without_a_guild_nothing_is_posted_but_points_are_distributed(tmp_path):
     """The round's attendance is in the approval's save, which needs no server. What needs the
     server cannot be posted, and stops the queue rather than being skipped in silence (#239)."""
@@ -575,7 +557,6 @@ async def test_without_a_guild_nothing_is_posted_but_points_are_distributed(tmp_
     assert league.attendance._calls("post_sheet") == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_incomplete_sanctions_are_told_to_the_approving_manager(tmp_path):
     """#239. The approval used to report nothing of a sanction that did not apply. Max's
     autoreserve does not apply and stops the queue; once a league admin discards it, Alex's reply
@@ -593,7 +574,6 @@ async def test_incomplete_sanctions_are_told_to_the_approving_manager(tmp_path):
     assert "/attendance sync" in told
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sanction_run_that_raises_reaches_the_log_channel(tmp_path):
     """#239. A sanction run that failed outright never logged anything a league could read. A
     sanction that raises stops the queue, the stop notice reaching the log channel; once a league
@@ -610,7 +590,6 @@ async def test_a_sanction_run_that_raises_reaches_the_log_channel(tmp_path):
     assert "/attendance sync" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_clean_sanction_run_tells_the_manager_nothing_more(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [league_candidate(MAX_PROFILE, MAX)]
@@ -978,7 +957,6 @@ async def _results_post_discarded(league: ReviewLeague, approve: Any) -> Any:
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_repost_that_could_not_post_tells_the_manager(tmp_path):
     league = await review_league(tmp_path)
 
@@ -989,7 +967,6 @@ async def test_a_repost_that_could_not_post_tells_the_manager(tmp_path):
     assert "/results rounds sync" in said
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_repost_that_could_not_post_reaches_the_log_channel(tmp_path):
     league = await review_league(tmp_path)
 
@@ -998,7 +975,6 @@ async def test_a_repost_that_could_not_post_reaches_the_log_channel(tmp_path):
     assert "/results rounds sync" in _after(league.log(), "PENALTY_REVIEW_APPROVED | Incomplete")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_approval_is_logged_as_incomplete_when_the_repost_failed(tmp_path):
     """The audit line says what the approval achieved, not what it attempted."""
     league = await review_league(tmp_path)
@@ -1009,7 +985,6 @@ async def test_the_approval_is_logged_as_incomplete_when_the_repost_failed(tmp_p
     assert "PENALTY_REVIEW_APPROVED | Success" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_approval_is_logged_as_success_when_everything_posted(tmp_path):
     """The counterpart, so `| Incomplete` cannot be the answer to everything."""
     league = await review_league(tmp_path)
@@ -1020,7 +995,6 @@ async def test_the_approval_is_logged_as_success_when_everything_posted(tmp_path
     assert "| Incomplete" not in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_missing_guild_is_reported_rather_than_skipped(tmp_path):
     """`if guild:` used to skip both reposts without a word (#237). Without the server the posts
     stop the queue; once a league admin discards them, the approval's line is `| Incomplete`."""
@@ -1048,7 +1022,6 @@ async def test_the_appeals_approval_reports_an_unpostable_repost(tmp_path):
     assert "/results standings sync" in said
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_fault_both_reposts_found_is_reported_once(tmp_path):
     """The manager repairs what is named, so reading the same thing twice is a false count of the
     problems in front of them (#237 review). Round 3's results post is discarded while its
@@ -1063,7 +1036,6 @@ async def test_a_fault_both_reposts_found_is_reported_once(tmp_path):
     ).count("/results rounds sync") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_log_channel_that_refuses_still_tells_the_manager(tmp_path):
     """The log channel is the league's record and the reply is the manager's; a failure to write
     one must not swallow the other, or the approval goes back to being silent in exactly the way
@@ -1077,7 +1049,6 @@ async def test_a_log_channel_that_refuses_still_tells_the_manager(tmp_path):
     assert "Round 3's reports are approved" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_reply_that_fails_does_not_stop_the_approval(tmp_path):
     """The manager may have dismissed the interaction; the approval still stands."""
     league = await review_league(tmp_path)
@@ -1133,7 +1104,6 @@ async def test_the_verdict_report_says_it_cannot_be_announced_again(tmp_path):
     assert "/results rounds sync" not in said
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_approval_that_announced_everything_reports_no_verdict_fault(tmp_path):
     """The counterpart: every verdict announced leaves nothing to report."""
     league = await review_league(tmp_path)
@@ -1154,7 +1124,6 @@ async def test_an_appeal_verdict_that_was_not_announced_is_reported(tmp_path):
     assert f"<@{LEWIS}>" in _after(league.log(), "APPEALS_REVIEW_APPROVED | Incomplete")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_attendance_that_was_not_recorded_is_reported(tmp_path):
     """The round's attendance is written in the approval's own save (\"Whole approval fails\"), so
     a fault in it stops the approval whole, its reason in the stop notice, and nothing is changed.
@@ -1174,7 +1143,6 @@ async def test_attendance_that_was_not_recorded_is_reported(tmp_path):
     assert "nothing was changed" in updated_reply(interaction).lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_posting_step_that_fails_is_not_reported_as_a_record_failure(tmp_path):
     """The sheet is a picture of the record, not the record: its failure stops the queue at the
     sheet, the round's attendance and penalties already saved."""
@@ -1188,7 +1156,6 @@ async def test_a_posting_step_that_fails_is_not_reported_as_a_record_failure(tmp
     assert len(await penalty_records(league.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sanctions_are_not_run_on_a_record_known_to_be_wrong(tmp_path):
     """An autosack takes a driver's seat, so it is never applied on unsound totals (#237). A
     record that cannot be written stops the approval at its save, and no driver is checked
@@ -1206,7 +1173,6 @@ async def test_the_sanctions_are_not_run_on_a_record_known_to_be_wrong(tmp_path)
     assert league.attendance._calls("apply_sanction") == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sanctions_still_run_when_the_record_is_sound(tmp_path):
     """The counterpart: a sheet that could not be posted delays the sanctions behind it, never
     skips them. Once a league admin discards the sheet, Max's autoreserve is applied."""
@@ -1289,7 +1255,6 @@ async def test_the_appeals_are_not_approved_while_another_round_is_amended(tmp_p
     assert await one(league.db_path, "SELECT closed FROM round_submission_channels") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_reports_are_approved_once_the_amendment_has_ended(tmp_path):
     """Refused, the review stands; pressed again after the amendment, it goes through."""
     league = await review_league(tmp_path)
@@ -1304,7 +1269,6 @@ async def test_the_reports_are_approved_once_the_amendment_has_ended(tmp_path):
 
 
 @pytest.mark.parametrize("where", ["another division", "ended"])
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_amendment_elsewhere_or_ended_holds_nothing(tmp_path, where):
     """Only an amendment open in the round's own division holds it.
 
@@ -1533,7 +1497,6 @@ async def test_an_amendment_does_not_duplicate_the_rounds_penalty_records(tmp_pa
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_first_pass_still_records_and_applies_once(tmp_path):
     """The ordinary path is untouched: Alex approves round 3's review with Lewis's 5 seconds."""
     league = await review_league(tmp_path)
@@ -2003,7 +1966,6 @@ async def test_what_the_approval_could_not_do_names_the_member_who_approved(tmp_
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_approval_with_penalties_writes_one_line(tmp_path):
     """Alex approves round 3 (Pro)'s reports with Lewis disqualified from the Feature Race, the
     penalty applied for real: the log channel gets the approval's one line, written as it

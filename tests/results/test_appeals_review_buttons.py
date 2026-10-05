@@ -359,10 +359,6 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     assert "staged list is intact" in _replied(interaction)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the approval message's Approve calls the finaliser rather than asking the change queue",
-)
 async def test_approving_finalises_the_review(tmp_path):
     """Alex presses Approve on the approval message of round 3's review, one 5-second penalty
     for driver 101 staged. The press asks the queue for `results.reports.approve` of round 3,
@@ -404,10 +400,6 @@ async def test_an_archived_season_cannot_be_approved_into(tmp_path):
     assert _asked(interaction, view.state) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the approval message's Approve calls the finaliser rather than asking the change queue",
-)
 async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     """The guard refuses an archived season, not an unresolvable one — a round whose chain
     cannot be read is a broken state, and refusing to finalise it would strand a review

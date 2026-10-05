@@ -24,7 +24,7 @@ from leaguebot.results.services.penalty_service import StagedPenalty, validate_p
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from leaguebot.core.utils.interaction_errors import describe_form
-from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -63,6 +63,31 @@ class StagedPardon:
     #: When a pardon read back from the round was granted, so that an amendment writing it out
     #: again keeps the time as well as the grantor (#345). None for one staged now.
     granted_at: str | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        """This staged pardon as plain data, for the payload of a change on the queue (#439)."""
+        return {
+            "driver_user_id": self.driver_user_id,
+            "driver_profile_id": self.driver_profile_id,
+            "attendance_id": self.attendance_id,
+            "pardon_type": self.pardon_type,
+            "justification": self.justification,
+            "grantor_id": self.grantor_id,
+            "granted_at": self.granted_at,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "StagedPardon":
+        """The staged pardon `to_payload` gave."""
+        return cls(
+            driver_user_id=int(payload["driver_user_id"]),
+            driver_profile_id=int(payload["driver_profile_id"]),
+            attendance_id=int(payload["attendance_id"]),
+            pardon_type=payload["pardon_type"],
+            justification=payload["justification"],
+            grantor_id=int(payload["grantor_id"]),
+            granted_at=payload.get("granted_at"),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +313,9 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
 
     A first pass is current while all four hold:
 
-    - its reports are not already being approved (``approving``, set by the finaliser);
+    - its reports are not already being approved: no `results.reports.approve` of the round is in
+      hand on the change queue, **a stopped one included** (#439). The approval is a change, and
+      the queue, not this review's memory, says it is closing;
     - the round still awaits its report verdicts. Approved, it waits on appeals, and a round
       that has ended has nothing left to review. This is what closes its pardons (FR-011): they
       are written when the reports are approved;
@@ -296,6 +323,8 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
     - its prompt is the one the channel records. Every review posts a prompt of its own and
       records it, so a review whose prompt has been replaced — by a cancelled or completed
       resubmission, or by restart recovery — is an old one, whatever its state still holds.
+
+    The last three are :func:`review_stage_refusal`, which the approval's own check asks as well.
 
     An amendment's round is FINAL throughout, so none of that applies to it. Its review closes
     once its reports are approved, **pardons included**, as a first pass's does (decided
@@ -315,9 +344,22 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             "❌ This amendment's reports are already approved, so neither they nor its pardons "
             "can be changed any more. Its appeals are reviewed below."
         )
-    if state.approving:
+    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.results.services.report_approval_change import KIND
+
+    if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
         return _BEING_APPROVED
-    async with get_connection(state.db_path) as db:
+    return await review_stage_refusal(state.db_path, state.round_id, state.prompt_message_id)
+
+
+async def review_stage_refusal(
+    db_path: str, round_id: int, prompt_message_id: int | None
+) -> str | None:
+    """Why a first pass's review is no longer at its report stage, or None while it is: the round
+    awaits its report verdicts, no resubmission is collecting, and *prompt_message_id* is the
+    prompt the channel records. Read from the database alone, so the approval's check and a
+    control's check read one rule."""
+    async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
             SELECT r.status, rsc.resubmitting, rsc.prompt_message_id
@@ -325,7 +367,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             JOIN round_submission_channels rsc ON rsc.round_id = r.id AND rsc.closed = 0
             WHERE r.id = ?
             """,
-            (state.round_id,),
+            (round_id,),
         )
         row = await cursor.fetchone()
     if row is not None and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value:
@@ -341,7 +383,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             "❌ This round's results are being resubmitted. The penalty review is posted again "
             "once every session is in, or when the resubmission is cancelled."
         )
-    if row["prompt_message_id"] != state.prompt_message_id:
+    if row["prompt_message_id"] != prompt_message_id:
         return (
             "❌ This penalty review has been replaced by a newer one in this channel. "
             "Use that one."
@@ -1318,6 +1360,41 @@ def _add_remove_buttons(view: discord.ui.View, buttons: list[tuple]) -> None:
         view.add_item(btn)
 
 
+async def _ask_reports_approved(
+    interaction: discord.Interaction, state: PenaltyReviewState, *, what: str
+) -> None:
+    """Ask the change queue to approve the review's reports as it stands (#439).
+
+    The staged penalties and pardons travel in the change's payload as plain data, so what was
+    staged survives a stop once it has been asked for. An amendment's report stage shares the
+    screens but not the change, and is still handed to its own function (#345).
+
+    The queue checks the review is current, that no approval of it is in hand and that no
+    amendment holds the division, and refuses in the manager's reply where one fails, naming
+    *what* in the log.
+    """
+    if state.is_amendment:
+        from leaguebot.results.services.result_submission_service import _approve_amendment_reports
+
+        await _approve_amendment_reports(interaction, state)
+        return
+    from leaguebot.results.services.report_approval_change import KIND
+
+    await bot_of(interaction).change_queue.ask(
+        KIND,
+        {
+            "round_id": state.round_id,
+            "division_id": state.division_id,
+            "staged": [penalty.to_payload() for penalty in state.staged],
+            "pardons": [pardon.to_payload() for pardon in state.staged_pardons],
+            "prompt_message_id": state.prompt_message_id,
+            "approval_message_id": state.approval_message_id,
+        },
+        interaction=interaction,
+        what=what,
+    )
+
+
 class PenaltyReviewView(LeagueView):
     """Persistent penalty review prompt view.
 
@@ -1555,10 +1632,7 @@ class PenaltyReviewView(LeagueView):
                 what=_button(button.label, self.state),
             )
             return
-        from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(
-            interaction, self.state, what=_button(button.label, self.state)
-        )
+        await _ask_reports_approved(interaction, self.state, what=_button(button.label, self.state))
 
     @discord.ui.button(
         label="🔄 Resubmit Initial Results",
@@ -1742,11 +1816,7 @@ class ApprovalView(LeagueView):
                 what=_button(button.label, self.state),
             )
             return
-        # T007: wire to finalize_penalty_review
-        from leaguebot.results.services.result_submission_service import finalize_penalty_review
-        await finalize_penalty_review(
-            interaction, self.state, what=_button(button.label, self.state)
-        )
+        await _ask_reports_approved(interaction, self.state, what=_button(button.label, self.state))
 
 
 # ---------------------------------------------------------------------------

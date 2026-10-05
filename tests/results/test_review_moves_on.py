@@ -170,10 +170,6 @@ async def test_a_review_replaced_by_a_newer_prompt_has_moved_on(tmp_path):
     assert "replaced by a newer one" in refusal
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the review's approval is not yet a change on the queue for the check to find",
-)
 async def test_a_review_being_approved_has_moved_on(tmp_path):
     """**The controls stay on screen while the approval is carried out**, and nothing in the
     round says the review is closing until the approval moves it on. A second Approve pressed

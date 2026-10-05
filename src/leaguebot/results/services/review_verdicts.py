@@ -22,6 +22,11 @@ its row and a stop and a restart between a verdict and a sanction post no second
 channel it was announced in with the job's mark. A try that posted and failed to save its id left
 the message standing, which the next try removes first from `ctx.kept`.
 
+**The appeals prompt is a job** (`post_appeals_prompt`), planned after the verdicts: it opens the
+appeals stage in the round's submission channel, and its `record` saves the prompt's id on the
+channel's row, so that a restart or a Discard knows which prompt stands. A try that posted and
+failed to save its id left the message standing, which the next try removes first from `ctx.kept`.
+
 **Attendance is the hook's** (`results/services/attendance_hook.py`), which does nothing while
 attendance is off, so no job here asks the switch. The sheet is a job (`attendance_sheet`) that
 raises where it could not post, in place of the old retry queue; a sheet that stops the queue holds
@@ -57,10 +62,16 @@ from leaguebot.core.services.change_queue import OutcomeContext, Step, StepConte
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services import verdict_announcement_service as vas
+from leaguebot.results.services.result_submission_service import (
+    _build_penalty_review_state,
+    send_appeals_prompt,
+)
 from leaguebot.results.services.results_post_service import _delete_posting
+from leaguebot.results.services.review_posting import _channel, _league_guild
 
 log = logging.getLogger(__name__)
 
+POST_APPEALS_PROMPT = "post_appeals_prompt"
 ANNOUNCE_HEADING = "announce_heading"
 ANNOUNCE_VERDICT = "announce_verdict"
 ATTENDANCE_SHEET = "attendance_sheet"
@@ -89,7 +100,18 @@ def verdict_steps(now: Callable[[], datetime]) -> dict[str, Step]:
             int(result.result["message_id"]), result.result["channel_id"],
         )
 
+    async def record_appeals_prompt(db: Any, ctx: StepContext, result: StepResult) -> None:
+        await db.execute(
+            "UPDATE round_submission_channels SET appeals_prompt_message_id = ? "
+            "WHERE round_id = ?",
+            (int(result.result["message_id"]), int(ctx.step_payload["round_id"])),
+        )
+
     return {
+        POST_APPEALS_PROMPT: Step(
+            POST_APPEALS_PROMPT, StepKind.ACT, _post_appeals_prompt,
+            describe=_describe_appeals_prompt, record=record_appeals_prompt,
+        ),
         ANNOUNCE_HEADING: Step(
             ANNOUNCE_HEADING, StepKind.ACT, _announce_heading, describe=_describe_heading,
             record=record_heading,
@@ -197,6 +219,10 @@ def not_done(ctx: OutcomeContext) -> list[str]:
                 f"⚠️ The {kind} verdict for <@{record['driver_user_id']}> was not announced. "
                 "Post it in the verdicts channel yourself."
             )
+        elif view.name == POST_APPEALS_PROMPT:
+            lines.append(
+                "⚠️ The appeals review prompt was not posted. It is being posted again."
+            )
         elif view.name == ATTENDANCE_SHEET:
             lines.append(
                 f"⚠️ The attendance sheet of {payload.get('division', 'the division')} was not "
@@ -279,6 +305,47 @@ async def _take_down_kept(channel: Any, ctx: StepContext) -> None:
             "the message the earlier try sent could not be removed",
             result={"message_id": int(message_id)},
         )
+
+
+# ---------------------------------------------------------------------------
+# The appeals prompt
+# ---------------------------------------------------------------------------
+
+
+async def _submission_channel_id(db_path: str, round_id: int) -> int | None:
+    async with get_connection(db_path) as db:
+        row = await (
+            await db.execute(
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?",
+                (round_id,),
+            )
+        ).fetchone()
+    return None if row is None or row["channel_id"] is None else int(row["channel_id"])
+
+
+async def _describe_appeals_prompt(ctx: StepContext) -> str:
+    channel_id = await _submission_channel_id(ctx.db_path, int(ctx.step_payload["round_id"]))
+    where = "" if channel_id is None else f" in <#{channel_id}>"
+    return f"posting the appeals review prompt{where}"
+
+
+async def _post_appeals_prompt(ctx: StepContext) -> StepResult:
+    """Open the appeals stage in the channel the report stage ran in. Raises where it cannot."""
+    payload = ctx.step_payload
+    round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
+    channel_id = await _submission_channel_id(ctx.db_path, round_id)
+    if channel_id is None:
+        raise LookupError(f"round {round_id} has no submission channel to post the prompt in")
+    guild = await _league_guild(ctx.bot)
+    channel = _channel(guild, channel_id, "submission")
+    # A try that posted the prompt and failed to save its id left the message standing.
+    kept = (ctx.kept or {}).get("message_id")
+    if kept is not None:
+        await _delete_posting(channel, int(kept), [int(kept)], label="appeals review prompt",
+                              failures=[])
+    state = await _build_penalty_review_state(ctx.bot, round_id, division_id, channel.id)
+    message = await send_appeals_prompt(ctx.bot, channel, state)
+    return StepResult(result={"message_id": message.id, "channel_id": channel.id})
 
 
 # ---------------------------------------------------------------------------
@@ -487,6 +554,6 @@ async def _refresh_lineup(ctx: StepContext) -> StepResult:
 
 __all__ = [
     "ANNOUNCE_HEADING", "ANNOUNCE_SANCTION", "ANNOUNCE_VERDICT", "APPLY_SANCTION",
-    "ATTENDANCE_SHEET", "PLAN_SANCTIONS", "REFRESH_LINEUP", "not_done", "plan_attendance",
+    "ATTENDANCE_SHEET", "PLAN_SANCTIONS", "POST_APPEALS_PROMPT", "REFRESH_LINEUP", "not_done", "plan_attendance",
     "plan_verdicts", "verdict_steps",
 ]

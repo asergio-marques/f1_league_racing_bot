@@ -113,7 +113,6 @@ async def _approve(league: ReviewLeague, **payload: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stop_after_the_penalties_are_saved_finishes_the_approval_on_restart(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     await _approve(league)
@@ -135,7 +134,6 @@ async def test_a_stop_after_the_penalties_are_saved_finishes_the_approval_on_res
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stop_before_the_save_leaves_nothing_applied_and_the_approval_runs_whole_on_restart(
     tmp_path,
 ):
@@ -157,7 +155,6 @@ async def test_a_stop_before_the_save_leaves_nothing_applied_and_the_approval_ru
     assert await round_status(league.db_path) == "AWAITING_APPEAL_VERDICTS"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_stop_part_way_through_the_reposts_finishes_them_and_announces_each_verdict_once(
     tmp_path,
 ):
@@ -177,7 +174,6 @@ async def test_a_stop_part_way_through_the_reposts_finishes_them_and_announces_e
     assert (await race_rows(league.db_path))[LEWIS]["postrace_time_penalties_ms"] == 5000
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_penalty_approval_posts_one_banner_across_its_verdicts_and_its_sanctions(
     tmp_path,
 ):
@@ -208,7 +204,6 @@ async def test_a_penalty_approval_posts_one_banner_across_its_verdicts_and_its_s
     ) == str(sent[0])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_approval_announcing_no_verdict_posts_no_heading(tmp_path):
     """Image spec, the verdict banner: a heading is posted only where a verdict follows it."""
     league = await review_league(tmp_path)
@@ -249,7 +244,6 @@ async def test_penalties_and_attendance_are_saved_in_one_save(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM attendance_recorded") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_snapshots_of_this_round_and_every_later_one_are_saved_with_the_penalties(
     tmp_path,
 ):
@@ -282,7 +276,6 @@ async def test_the_snapshots_of_this_round_and_every_later_one_are_saved_with_th
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_session_whose_points_cannot_be_recalculated_stops_the_queue_and_changes_nothing(
     tmp_path,
 ):
@@ -300,7 +293,6 @@ async def test_a_session_whose_points_cannot_be_recalculated_stops_the_queue_and
     assert league.sent_to(RESULTS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_apply_says_nothing_was_changed_and_the_review_is_still_open(tmp_path):
     league = await review_league(tmp_path)
     with points_fail():
@@ -317,7 +309,6 @@ async def test_a_discarded_apply_says_nothing_was_changed_and_the_review_is_stil
     ) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_session_with_no_points_configuration_is_skipped_not_failed(tmp_path):
     league = await review_league(tmp_path, config_name=None)
     with points_fail() as scored:
@@ -337,7 +328,6 @@ async def test_a_session_with_no_points_configuration_is_skipped_not_failed(tmp_
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_attendance_sheet_discord_refuses_stops_the_queue_and_is_retried(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.sheet_fails = [StepFailedOnDiscord("Missing Access")]
@@ -359,7 +349,6 @@ async def test_an_attendance_sheet_discord_refuses_stops_the_queue_and_is_retrie
     assert "✅" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_sheet_is_named_with_attendance_sync_and_the_sanctions_still_run(
     tmp_path,
 ):
@@ -383,7 +372,6 @@ async def test_a_discarded_sheet_is_named_with_attendance_sync_and_the_sanctions
     assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.sheet_fails = [StepFailedOnDiscord("Missing Access")]
@@ -399,7 +387,6 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_repost_discord_refuses_is_retried_and_the_approval_finishes_once_it_lands(
     tmp_path,
 ):
@@ -447,7 +434,6 @@ async def test_a_discarded_verdict_is_named_incomplete_and_the_manager_is_told_t
     assert (await penalty_records(league.db_path))[0]["announcement_message_id"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_apply_reopens_the_review_with_a_fresh_prompt(tmp_path):
     league = await review_league(tmp_path)
     with points_fail():
@@ -492,7 +478,6 @@ async def test_a_discarded_appeals_prompt_is_posted_again_at_once(tmp_path):
     ) == prompts[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_batch_notice_is_named_and_the_republication_goes_ahead(tmp_path):
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = (
@@ -516,7 +501,6 @@ async def test_a_discarded_batch_notice_is_named_and_the_republication_goes_ahea
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_each_driver_over_a_threshold_is_sanctioned_and_announced_in_jobs_of_their_own(
     tmp_path,
 ):
@@ -537,7 +521,6 @@ async def test_each_driver_over_a_threshold_is_sanctioned_and_announced_in_jobs_
     assert league.attendance._calls("refresh_lineup") == [("refresh_lineup", DIVISION_ID)]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
@@ -555,7 +538,6 @@ async def test_a_sanction_that_does_not_apply_stops_the_queue(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_sanction_is_named_with_attendance_sync_and_the_others_go_ahead(
     tmp_path,
 ):
@@ -578,7 +560,6 @@ async def test_a_discarded_sanction_is_named_with_attendance_sync_and_the_others
     assert "/attendance sync" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_retried_sanction_run_applies_only_what_is_owed(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(LEWIS_PROFILE, LEWIS),
@@ -596,7 +577,6 @@ async def test_a_retried_sanction_run_applies_only_what_is_owed(tmp_path):
     assert applied == [LEWIS_PROFILE, MAX_PROFILE], "a sanction no longer owed was applied again"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [
@@ -613,7 +593,6 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
     assert sorted(divisions[1:]) == sorted([DIVISION_ID, OTHER_DIVISION_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_sanction_announcement_names_the_driver_as_applied_but_not_announced(
     tmp_path,
 ):
@@ -637,7 +616,6 @@ async def test_a_discarded_sanction_announcement_names_the_driver_as_applied_but
     assert "PENALTY_REVIEW_APPROVED | Incomplete" in league.log()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_discarded_lineup_refresh_says_it_is_posted_with_the_next_change_to_the_drivers(
     tmp_path,
 ):
@@ -663,7 +641,6 @@ async def test_a_discarded_lineup_refresh_says_it_is_posted_with_the_next_change
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
     from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
 
@@ -675,7 +652,6 @@ async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
     assert len(await changes_of(league.db_path, KIND)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path):
     from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
 
@@ -689,7 +665,6 @@ async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path)
     assert len(await penalty_records(league.db_path)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path):
     from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
 
@@ -704,7 +679,6 @@ async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path)
     assert len(await changes_of(league.db_path, KIND)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_path):
     from leaguebot.results.services.penalty_wizard import (
         _BEING_APPROVED,
@@ -728,7 +702,6 @@ async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_pa
     assert await _review_moved_on(state) == _BEING_APPROVED
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_approval_of_a_review_moved_on_is_refused_when_it_runs(tmp_path):
     league = await review_league(tmp_path)
     holder = await block_queue(league)
@@ -747,7 +720,6 @@ async def test_an_approval_of_a_review_moved_on_is_refused_when_it_runs(tmp_path
     assert "replaced by a newer one" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_reply_with_only_pardons_names_them_and_one_with_nothing_staged_says_so(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     pardoned = await _approve(league, staged=[], pardons=[pardon()])
@@ -769,7 +741,6 @@ async def test_a_reply_with_only_pardons_names_them_and_one_with_nothing_staged_
     assert "nothing" in reply.lower() or "no penalties" in reply.lower()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_an_approval_queued_while_the_division_is_being_amended_is_refused_when_it_runs(
     tmp_path,
 ):
@@ -799,7 +770,6 @@ async def test_an_approval_queued_while_the_division_is_being_amended_is_refused
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_manager_is_told_the_approval_is_under_way_and_then_its_outcome(tmp_path):
     league = await review_league(tmp_path)
     interaction = await _approve(league)
@@ -814,7 +784,6 @@ async def test_the_manager_is_told_the_approval_is_under_way_and_then_its_outcom
     assert "appeals review is posted below" in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_approval_writes_penalty_review_approved_with_its_audit_body(tmp_path):
     league = await review_league(tmp_path)
     await _approve(league)
@@ -831,7 +800,6 @@ async def test_the_approval_writes_penalty_review_approved_with_its_audit_body(t
     assert "AWAITING_APPEAL_VERDICTS" in line
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_prompt_and_approval_message_are_taken_down_after_the_reposts(tmp_path):
     league = await review_league(tmp_path)
     await _approve(league, approval=APPROVAL)
@@ -845,7 +813,6 @@ async def test_the_prompt_and_approval_message_are_taken_down_after_the_reposts(
     assert events.index(("delete", SUBMISSION_CHANNEL, APPROVAL)) > posted
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_appeals_prompt_id_is_saved(tmp_path):
     league = await review_league(tmp_path)
     await _approve(league)
@@ -858,7 +825,6 @@ async def test_the_appeals_prompt_id_is_saved(tmp_path):
     ) == prompts[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_attendance_switched_off_before_its_jobs_drops_them(tmp_path):
     league = await review_league(tmp_path, attendance=True)
     league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
@@ -876,7 +842,6 @@ async def test_attendance_switched_off_before_its_jobs_drops_them(tmp_path):
     assert "✅" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_the_save_awaits_nothing_but_its_connection(tmp_path):
     league = await review_league(tmp_path)
     await _approve(league)

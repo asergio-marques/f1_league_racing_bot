@@ -371,10 +371,6 @@ async def test_the_clear_confirmation_checks_the_tier_too(monkeypatch, button):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#439: the review's Approve calls the finaliser rather than asking the change queue",
-)
 async def test_approving_with_penalties_finalises_the_review():
     """Alex presses ✅ Approve on round 3's review with one 5-second penalty staged. The press
     asks the change queue for `results.reports.approve` of round 3, the penalty in its payload.

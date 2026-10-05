@@ -159,7 +159,6 @@ async def _closed(league) -> bool:
     ))
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_zero_penalties_advances_to_post_race_penalty(tmp_path):
     """Nothing staged: the round advances to AWAITING_APPEAL_VERDICTS (FR-009), channel open."""
     from tests.support.review_league import review_league, round_status, stopped_at
@@ -192,7 +191,6 @@ async def test_zero_corrections_advances_to_final(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_penalty_review_cannot_reopen_a_round_that_has_ended(tmp_path):
     """Switching the results module off closes every round still awaiting a review.
 
@@ -295,7 +293,6 @@ async def test_full_lifecycle_states(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_penalty_records_inserted_when_staged(tmp_path):
     """A 5-second penalty staged for Lewis produces one penalty record, on his race result."""
     from tests.support.review_league import LEWIS, one, penalty, review_league, stopped_at

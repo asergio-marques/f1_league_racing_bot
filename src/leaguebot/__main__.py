@@ -88,12 +88,20 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.hub_service import hub_refresh_change
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
     from leaguebot.results.services.results_off_change import results_off_change
+    from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.review_open_change import review_open_change
 
     bot.change_queue.register(
         results_off_change(attendance_off_on=bot.attendance_service.switch_off_on)
     )
     bot.change_queue.register(review_open_change())
+    # The review's change types stamp what they write with the queue's own clock, read when they
+    # run (the queue is rebuilt at a restart), and reach attendance through the hook alone.
+    bot.change_queue.register(
+        report_approval_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
 

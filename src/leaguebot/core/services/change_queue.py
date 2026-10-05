@@ -337,6 +337,12 @@ class ChangeQueue:
     # Registering and asking
     # ------------------------------------------------------------------
 
+    def now(self) -> datetime:
+        """The queue's clock: the time a change type's check and writers are to take as "now", so
+        that they and the retry schedule never disagree and a test that moves the clock moves
+        them all."""
+        return self._clock()
+
     async def job_numbers(self, change_id: int) -> tuple[int | None, int | None]:
         """The number of *change_id*'s first job not done, and of the job the queue is stopped
         at (None where it is not stopped), for a request made with no interaction to

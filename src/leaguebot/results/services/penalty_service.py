@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import aiosqlite
 import discord
@@ -43,6 +43,33 @@ class StagedPenalty:
     #: the approving manager and the time of approval as it always has.
     decided_by: str | None = None
     decided_at: str | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        """This staged penalty as plain data, for the payload of a change on the queue (#439)."""
+        return {
+            "driver_user_id": self.driver_user_id,
+            "session_type": self.session_type.value,
+            "penalty_type": self.penalty_type,
+            "penalty_seconds": self.penalty_seconds,
+            "description": self.description,
+            "justification": self.justification,
+            "decided_by": self.decided_by,
+            "decided_at": self.decided_at,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "StagedPenalty":
+        """The staged penalty `to_payload` gave."""
+        return cls(
+            driver_user_id=int(payload["driver_user_id"]),
+            session_type=SessionType(payload["session_type"]),
+            penalty_type=payload["penalty_type"],
+            penalty_seconds=payload["penalty_seconds"],
+            description=payload.get("description", ""),
+            justification=payload.get("justification", ""),
+            decided_by=payload.get("decided_by"),
+            decided_at=payload.get("decided_at"),
+        )
 
 
 # ---------------------------------------------------------------------------

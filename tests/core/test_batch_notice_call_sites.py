@@ -160,7 +160,6 @@ def _assert_brackets_the_republication(league) -> int:
     return notice
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_BUILT)
 async def test_a_report_approval_s_notice_brackets_its_republication(tmp_path):
     """Round 3 of Pro awaits its report verdicts; a league manager approves a 5-second penalty
     for Lewis, and the queue runs."""
