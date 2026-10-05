@@ -369,6 +369,9 @@ async def test_a_discarded_sheet_is_named_with_attendance_sync_and_the_sanctions
     interaction = await _approve(league)
     await run_queue(league.bot)
     assert await stopped_at(league) == "attendance_sheet"
+    assert league.attendance._calls("apply_sanction") == [], (
+        "a sanction ran while the sheet in front of it was stopped"
+    )
 
     await discard_job(league.bot)
 
