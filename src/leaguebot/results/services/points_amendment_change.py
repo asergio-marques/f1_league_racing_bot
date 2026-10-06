@@ -19,6 +19,26 @@ queue goes on.
 nothing in one step"), so that a fault leaves the season as it stood and a job that fails stops the
 queue for its retry, never half an approval.
 
+**The jobs.** `plan_names` plans one `names` job for each division of the season, which resolves the
+drivers' display names the standings are ordered on, so that the save awaits nothing but its
+connection. `apply` is **one save for everything the approval writes**: the staged points replace
+the season's own (`season_points_service.install_staged_points_on`), every raced session is scored
+again, every division's standings are recomputed, and attendance is recalculated through the hook
+at each division's latest approved round. A fault in any of it rolls the whole save back, the season
+keeps its points, the staged changes and amendment mode, and the queue stops at it to retry. The save
+then plans the posts (`review_posting.plan_division_posts`, each replacement posted before the old
+message is deleted), and each division's attendance sheet and sanctions (`review_verdicts`), where
+each driver's sanction is a job of its own that stops the queue. `close` writes the line.
+
+**The save checks again that it may.** Amendment mode off, or the working copy out of order, refuses
+the save having written nothing (`StagedPointsNotApprovable`), where the check at run was passed and
+something wrote the database in between. It is a backstop for #507: nothing the bot offers reaches
+that window, the staging commands being refused while the approval is in hand.
+
+**A Discard** of `plan_names`, a `names` job or `apply` leaves nothing changed, and the reply says
+to run `/results amend review` again; there is no review to reopen, the panel being the admin's
+own. A later job discarded leaves the approval in force, named under `Incomplete`.
+
 Two things outside the queue leave the approval alone while it is in hand, stopped included
 (architecture.md, "How a change is carried out"): the commands that stage points changes
 (`staging_refusal`) and `/results rounds amend` (`review_changes`). The module imports neither
@@ -33,7 +53,13 @@ from typing import Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.change import (
+    AuditRecord,
+    PlannedStep,
+    StepKind,
+    StepResult,
+    Verdict,
+)
 from leaguebot.core.services.amendment_service import (
     approval_faults,
     get_amendment_state,
@@ -48,17 +74,28 @@ from leaguebot.core.services.change_queue import (
     in_hand,
 )
 from leaguebot.core.services.season_service import live_season
+from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.season_gate import stage_refusal
+from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.result_submission_service import (
     amendment_wait_text,
     open_amendment_in_season,
 )
+from leaguebot.results.services.results_post_service import rescore_season
+from leaguebot.results.services.review_posting import NAMES, display_names, posting_steps
+from leaguebot.results.services.season_points_service import (
+    StagedPointsNotApprovable,
+    install_staged_points_on,
+)
+from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 
 __all__ = ["KIND", "approval_in_hand", "held_text", "points_amendment_change", "staging_refusal"]
 
 KIND = "results.points_amendment.approve"
 
+_PLAN_NAMES = "plan_names"
+_APPLY = "apply"
 _CLOSE = "close"
 _COMMAND = "results amend review"
 
@@ -85,6 +122,20 @@ def held_text(row: Any) -> str:
         "here reposts every round of every division, so it waits until that amendment "
         f"has finished — {amendment_wait_text()}."
     )
+
+
+NOTHING_CHANGED = (
+    "Nothing was changed: the season keeps its points, the staged changes stay staged and "
+    "amendment mode stays on. Run `/results amend review` again."
+)
+APPROVED_BUT_INCOMPLETE = (
+    "⚠️ Amendment approved: the new points are in force and every round is rescored, but some "
+    "of it could not be done:"
+)
+
+
+def _discarded(result: dict[str, Any] | None) -> bool:
+    return "discarded" in (result or {})
 
 
 def _job(job: int) -> str:
@@ -117,6 +168,39 @@ def staging_refusal(season_number: int, job: int) -> str:
         "finish, or press **Retry** or **Discard** on its notice if it has stopped, then try "
         "again."
     )
+
+
+async def _divisions(db: aiosqlite.Connection, season_id: int) -> list[aiosqlite.Row]:
+    """The season's divisions in tier order, a cancelled one included, each with its first round
+    that was not cancelled (None where it has none)."""
+    cursor = await db.execute(
+        "SELECT d.id, d.name, (SELECT r.id FROM rounds r WHERE r.division_id = d.id "
+        "AND r.status != 'CANCELLED' ORDER BY r.round_number LIMIT 1) AS first_round_id "
+        "FROM divisions d WHERE d.season_id = ? ORDER BY d.tier, d.id",
+        (season_id,),
+    )
+    return list(await cursor.fetchall())
+
+
+def _applied(ctx: OutcomeContext) -> bool:
+    """Whether the save went through: it was done, and neither it nor a job it waits on was
+    discarded or dropped."""
+    for view in ctx.steps:
+        if view.name in (_PLAN_NAMES, NAMES) and _discarded(view.result):
+            return False
+    applied = next((view for view in ctx.steps if view.name == _APPLY), None)
+    if applied is None or not applied.done:
+        return False
+    result = applied.result or {}
+    return not (_discarded(result) or result.get("dropped") or result.get("refused"))
+
+
+def _left(ctx: OutcomeContext) -> list[str]:
+    """What was not done, one line for each job a league admin discarded, the commands that
+    finish the posts last."""
+    lines = [*review_posting.not_done(ctx), *review_verdicts.not_done(ctx)]
+    repair = [line for line in lines if line.startswith("Repair the cause")]
+    return [*(line for line in lines if line not in repair), *repair]
 
 
 def points_amendment_change(
@@ -184,21 +268,143 @@ def points_amendment_change(
             )
         return Verdict.go()
 
+    async def plan_names(ctx: StepContext) -> StepResult:
+        """Plan one `names` job for each division with a round that was not cancelled."""
+        async with get_connection(ctx.db_path) as db:
+            divisions = await _divisions(db, int(ctx.payload["season_id"]))
+        return StepResult(
+            result={"divisions": len(divisions)},
+            then=tuple(
+                PlannedStep(NAMES, {"division_id": int(d["id"])})
+                for d in divisions if d["first_round_id"] is not None
+            ),
+        )
+
+    async def names_resolved(ctx: StepContext) -> bool:
+        """The save is due only where no job it reads was discarded: a discarded `plan_names` or
+        `names` leaves nothing changed."""
+        return not any(
+            view.name in (_PLAN_NAMES, NAMES) and _discarded(view.result) for view in ctx.steps
+        )
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        season_id = int(ctx.payload["season_id"])
+        try:
+            changed = await install_staged_points_on(db, season_id)
+        except StagedPointsNotApprovable as refused:
+            return StepResult(result={"refused": refused.reply, "reason": refused.reason})
+        await rescore_season(db, season_id)
+
+        divisions = await _divisions(db, season_id)
+        for division in divisions:
+            if division["first_round_id"] is not None:
+                await cascade_recompute_from_round_on(
+                    db, int(division["id"]), int(division["first_round_id"]),
+                    display_names(ctx, int(division["id"])),
+                )
+        # Each division's attendance, as at its latest round awaiting appeals or final, which is
+        # the hook's to do and does nothing while attendance is off.
+        latest: dict[int, int] = {}
+        for division in divisions:
+            row = await (
+                await db.execute(
+                    "SELECT id FROM rounds WHERE division_id = ? "
+                    "AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL') "
+                    "ORDER BY round_number DESC LIMIT 1",
+                    (division["id"],),
+                )
+            ).fetchone()
+            if row is not None:
+                latest[int(division["id"])] = int(row["id"])
+                await attendance.recalculate_on(db, int(row["id"]), int(division["id"]))
+
+        then: list[PlannedStep] = []
+        reposted: set[int] = set()
+        posted_in: set[int] = set()
+        for division in divisions:
+            posts = await review_posting.plan_division_posts(
+                db, int(division["id"]), division_name=str(division["name"])
+            )
+            then.extend(posts)
+            for post in posts:
+                reposted.add(int(post.payload["round_id"]))
+                posted_in.add(int(division["id"]))
+        for division in divisions:
+            if int(division["id"]) in latest:
+                then.extend(review_verdicts.plan_attendance(
+                    latest[int(division["id"])], int(division["id"]), str(division["name"])
+                ))
+        audit = AuditRecord(
+            "POINTS_AMENDMENT_APPROVED",
+            {"season_id": season_id, "changed": changed.before()},
+            {"season_id": season_id, "changed": changed.after()},
+        )
+        return StepResult(
+            result={
+                "season_number": int(ctx.payload["season_number"]),
+                "points": list(changed.lines()),
+                "rounds": len(reposted),
+                "divisions": len(posted_in),
+            },
+            audits=(audit,),
+            then=tuple(then),
+        )
+
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        return StepResult(result={"closed": True})
+        applied = next((view for view in ctx.steps if view.name == _APPLY), None)
+        result = {} if applied is None else (applied.result or {})
+        if result.get("refused"):
+            reply = str(result["refused"])
+            line = refusal_line(
+                ctx.named, "`/results amend review`", reply.split("\n")[0],
+                detail=str(result.get("reason") or "") or None,
+            )
+            return StepResult(result={"closed": True}, lines=(line,))
+        if not _applied(ctx):
+            return StepResult(result={"closed": True})
+        left = _left(ctx)
+        points = "; ".join(result.get("points") or []) or "none"
+        line = (
+            f"{ctx.named} | /results amend review | {'Incomplete' if left else 'Success'}\n"
+            f"  season: {result.get('season_number', ctx.payload['season_number'])}\n"
+            f"  points changed: {points}\n"
+            f"  rounds rescored and reposted: {result.get('rounds', 0)} across "
+            f"{result.get('divisions', 0)} division(s)"
+            + "".join(f"\n  {text}" for text in left)
+        )
+        return StepResult(result={"closed": True}, lines=(line,))
+
+    async def describe_plan_names(_ctx: StepContext) -> str:
+        return "planning the drivers' display names for the standings"
+
+    async def describe_apply(_ctx: StepContext) -> str:
+        return "approving the season's points amendment"
 
     async def describe_close(_ctx: StepContext) -> str:
         return "recording the points amendment's approval"
 
     def outcome(ctx: OutcomeContext) -> str:
-        return SUCCESS
+        applied = next((view for view in ctx.steps if view.name == _APPLY), None)
+        refused = (applied.result or {}).get("refused") if applied is not None else None
+        if refused:
+            return str(refused)
+        if not _applied(ctx):
+            return NOTHING_CHANGED
+        left = _left(ctx)
+        return "\n".join([APPROVED_BUT_INCOMPLETE, *left]) if left else SUCCESS
 
     steps: dict[str, Step] = {
+        **posting_steps(),
+        **review_verdicts.verdict_steps(now, attendance),
+        _PLAN_NAMES: Step(_PLAN_NAMES, StepKind.ACT, plan_names, describe=describe_plan_names),
+        _APPLY: Step(
+            _APPLY, StepKind.SAVE, apply, still_due=names_resolved, describe=describe_apply,
+        ),
         _CLOSE: Step(_CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
     return ChangeType(
         kind=KIND,
-        opening=(PlannedStep(_CLOSE),),
+        opening=(PlannedStep(_PLAN_NAMES), PlannedStep(_APPLY), PlannedStep(_CLOSE)),
         steps=steps,
         check=check,
         key=lambda payload: f"{KIND}:{payload['season_id']}",
