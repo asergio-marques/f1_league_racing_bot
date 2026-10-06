@@ -945,3 +945,214 @@ async def test_a_stop_before_the_save_applies_the_points_once_on_restart(tmp_pat
     assert await race_points(league, AM, 3) == {LEWIS: 26, MAX: 18}
     assert len(await audit_rows(league, "POINTS_AMENDMENT_APPROVED")) == 1
     assert len(_success_lines(league)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Attendance (owner, "As a round amendment")
+# ---------------------------------------------------------------------------
+
+#: The round each division's attendance is recalculated and its sanctions fall due at: its
+#: latest round awaiting appeals or final, round 2 (round 3 awaits its report verdicts).
+LATEST = 2
+SANCTIONS_UNWORKED = (
+    "⚠️ The attendance sanctions of Pro were not worked out, so none was applied. Repair the "
+    "cause, then run `/attendance sync division:Pro round:3`."
+)
+
+
+async def _attendance_league(tmp_path: Any, *owed: dict[str, Any]) -> Any:
+    """Pro alone, attendance on, with *owed* the drivers over a threshold."""
+    league = await points_league(tmp_path, attendance=True, other_division=False)
+    league.attendance.candidates = list(owed)
+    return league
+
+
+def _headed_by(league: Any) -> list[int]:
+    """Make the double's card announcement record the round whose banner heads it."""
+    headed: list[int] = []
+    recorded = league.attendance.announce_sanction
+
+    async def _announce(rid: int, division_id: int, owed: dict[str, Any], *,
+                        as_text: bool) -> None:
+        headed.append(rid)
+        await recorded(rid, division_id, owed, as_text=as_text)
+
+    league.attendance.announce_sanction = _announce
+    return headed
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_each_division_s_sheet_and_sanctions_follow_its_reposts_at_its_latest_approved_round(
+    tmp_path,
+):
+    """Attendance on, Pro and Am. The save recalculates each division's attendance at its round
+    2; each division's sheet, and the job working out its sanctions, come after that division's
+    last repost, at round 2."""
+    league = await points_league(tmp_path, attendance=True)
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    recalculated = [call for call in league.attendance.calls if call[0] == "recalculate_on"]
+    assert recalculated == [("recalculate_on", round_id(PRO, LATEST), PRO),
+                            ("recalculate_on", round_id(AM, LATEST), AM)]
+    assert [call for call in league.attendance.calls if call[0] == "post_sheet"] == [
+        ("post_sheet", PRO, False), ("post_sheet", AM, False),
+    ]
+    jobs = await _jobs(league)
+    for division_id, name in ((PRO, "Pro"), (AM, "Am")):
+        last_post = max(
+            i for i, job in enumerate(jobs)
+            if job["name"] in ("post_session_results", "post_standings")
+            and job["payload"]["division"] == name
+        )
+        for job_name in ("attendance_sheet", "plan_sanctions"):
+            at = next(i for i, job in enumerate(jobs)
+                      if job["name"] == job_name and job["payload"]["division_id"] == division_id)
+            assert at > last_post
+            assert jobs[at]["payload"]["round_id"] == round_id(division_id, LATEST)
+    assert updated_reply(press) == SUCCESS
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_sanction_that_does_not_apply_stops_the_queue_and_once_discarded_is_named_with_attendance_sync(
+    tmp_path,
+):
+    """Max and Lewis are owed an autoreserve in Pro; Max's cannot be applied. The queue stops at
+    it, Lewis's waiting; a league admin discards it, Lewis's applies, and the reply and the
+    `| Incomplete` line name Max's sanction with the `/attendance sync` command."""
+    league = await _attendance_league(
+        tmp_path, candidate(MAX_PROFILE, MAX), candidate(LEWIS_PROFILE, LEWIS),
+    )
+    league.attendance.apply_fails[MAX_PROFILE] = http_error(status=403, text="Missing Access")
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) == "apply_sanction"
+    assert ("apply_sanction", LEWIS_PROFILE) not in league.attendance.calls
+    await discard_job(league.bot)
+
+    assert ("apply_sanction", LEWIS_PROFILE) in league.attendance.calls
+    assert league.attendance.applied == {LEWIS_PROFILE}
+    named = (
+        f"⚠️ The autoreserve of <@{MAX}> was not applied. Repair the cause, then run "
+        "`/attendance sync division:Pro round:3`."
+    )
+    reply = updated_reply(press)
+    assert reply.startswith(APPROVED_BUT)
+    assert named in reply
+    lines = _incomplete_lines(league)
+    assert len(lines) == 1 and named in lines[0]
+    assert _success_lines(league) == []
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_clean_sanctions_run_adds_nothing_to_the_reply(tmp_path):
+    """Max is owed an autoreserve in Pro and it applies and is announced: the reply is today's
+    success text alone, and one success line is written, no `Incomplete`."""
+    league = await _attendance_league(tmp_path, candidate(MAX_PROFILE, MAX))
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    assert league.attendance.applied == {MAX_PROFILE}
+    assert ("announce_sanction", MAX_PROFILE) in league.attendance.calls
+    assert updated_reply(press) == SUCCESS
+    assert len(_success_lines(league)) == 1
+    assert _incomplete_lines(league) == []
+
+
+async def test_attendance_off_posts_no_sheet_and_applies_no_sanction(tmp_path):
+    """Attendance off, Max over a threshold as the double sees it: no sheet is posted, no
+    sanction applied or announced, and the approval succeeds."""
+    league = await points_league(tmp_path, other_division=False)
+    league.attendance.candidates = [candidate(MAX_PROFILE, MAX)]
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    called = {call[0] for call in league.attendance.calls}
+    assert not called & {"post_sheet", "apply_sanction", "announce_sanction", "refresh_lineup"}
+    assert league.attendance.applied == set()
+    assert updated_reply(press) == SUCCESS
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_sanction_cards_go_beneath_the_round_s_recorded_banner(tmp_path):
+    """A banner is recorded for Pro's round 2, where Max's autoreserve falls due: his card goes
+    beneath it, no heading is planned and the banner stands."""
+    league = await _attendance_league(tmp_path, candidate(MAX_PROFILE, MAX))
+    banner = 8990
+    await write(
+        league,
+        "INSERT INTO verdict_banner_messages (round_id, channel_id, message_id, posted_at, "
+        "heads_sanctions) VALUES (?, ?, ?, ?, 0)",
+        round_id(PRO, LATEST), str(PRO_VERDICTS), str(banner), NOW.isoformat(),
+    )
+    league.channel(PRO_VERDICTS).seed(banner, "a banner")
+    headed = _headed_by(league)
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    assert headed == [round_id(PRO, LATEST)]
+    assert "announce_heading" not in [job["name"] for job in await _jobs(league)]
+    assert banner in league.channel(PRO_VERDICTS).messages
+    assert league.sent_to(PRO_VERDICTS) == []
+    assert updated_reply(press) == SUCCESS
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_sanction_cards_raise_a_heading_only_where_the_round_has_none_and_it_stops_the_queue(
+    tmp_path,
+):
+    """No banner is recorded for Pro's round 2. One heading is planned, ahead of Max's card; the
+    verdicts channel refuses it once, which stops the queue with the card waiting. A league
+    admin discards it: the card goes out beneath none, and the reply names the heading."""
+    league = await _attendance_league(tmp_path, candidate(MAX_PROFILE, MAX))
+    _refuse_send(league, PRO_VERDICTS, 1)
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+
+    jobs = await _jobs(league)
+    names = [job["name"] for job in jobs]
+    assert names.count("announce_heading") == 1
+    assert names.index("announce_heading") < names.index("announce_sanction")
+    assert await stopped_at(league) == "announce_heading"
+    assert ("announce_sanction", MAX_PROFILE) not in league.attendance.calls
+
+    await discard_job(league.bot)
+
+    assert ("announce_sanction", MAX_PROFILE) in league.attendance.calls
+    named = (
+        f"⚠️ The heading over round {LATEST}'s attendance sanctions was not posted: their cards "
+        "stand beneath none."
+    )
+    assert named in updated_reply(press)
+    assert named in _incomplete_lines(league)[0]
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_a_discarded_sanctions_plan_makes_the_approval_incomplete_and_names_attendance_sync(
+    tmp_path,
+):
+    """Citation c1: the drivers owed a sanction cannot be read, so the queue stops at the job
+    working them out; a league admin discards it. The reply and the `| Incomplete` line name it
+    with `/attendance sync`; no success line, and no sanction applied."""
+    league = await _attendance_league(tmp_path, candidate(MAX_PROFILE, MAX))
+    league.attendance.candidates_fail = RuntimeError("the drivers owed could not be read")
+
+    press = await press_approve(league)
+    await run_queue(league.bot)
+    assert await stopped_at(league) == "plan_sanctions"
+    await discard_job(league.bot)
+
+    reply = updated_reply(press)
+    assert reply.startswith(APPROVED_BUT)
+    assert SANCTIONS_UNWORKED in reply
+    lines = _incomplete_lines(league)
+    assert len(lines) == 1 and SANCTIONS_UNWORKED in lines[0]
+    assert _success_lines(league) == []
+    assert league.attendance.applied == set()
