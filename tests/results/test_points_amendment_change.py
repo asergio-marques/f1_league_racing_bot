@@ -755,7 +755,6 @@ async def test_the_approval_is_audited_with_every_value_changed(tmp_path):
     assert "26" in json.dumps(new["changed"]) and "25" not in json.dumps(new["changed"])
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_one_success_line_names_the_admin_and_the_values_set_after_the_last_job(tmp_path):
     """One success line, written once the last post is sent, names the admin, the season, each
     value set and the rounds reposted; the old `AMENDMENT_APPROVED` line and "standings
@@ -775,7 +774,7 @@ async def test_one_success_line_names_the_admin_and_the_values_set_after_the_las
     lines = _success_lines(league)
     assert len(lines) == 1
     line = lines[0]
-    assert line.startswith(f"Admin (<@{ADMIN_ID}>) | /results amend review | Success")
+    assert line.startswith(f"Admin (`<@{ADMIN_ID}>`) | /results amend review | Success")
     assert "  season: 1" in line
     assert "  points changed: Standard, Feature Race, P1: 25 → 26" in line
     assert "  rounds rescored and reposted: 6 across 2 division(s)" in line
