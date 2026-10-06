@@ -74,7 +74,7 @@ from leaguebot.core.services.change_queue import (
     in_hand,
 )
 from leaguebot.core.services.season_service import live_season
-from leaguebot.core.utils.log_lines import refusal_line
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
@@ -356,7 +356,7 @@ def points_amendment_change(
         if result.get("refused"):
             reply = str(result["refused"])
             line = refusal_line(
-                ctx.named, "`/results amend review`", reply.split("\n")[0],
+                ctx.named, "`/results amend review`", reply_reason(reply),
                 detail=str(result.get("reason") or "") or None,
             )
             return StepResult(result={"closed": True}, lines=(line,))
