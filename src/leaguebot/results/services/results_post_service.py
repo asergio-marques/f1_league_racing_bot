@@ -1069,7 +1069,19 @@ async def _produce_standings_sections(
         previous_ids = await _get_standings_message_ids(
             db_path, division_id, round_id, championship
         )
-        sent = await _send_chunked(standings_channel, content)
+        try:
+            sent = await _send_chunked(standings_channel, content)
+        except Exception as failure:
+            # The tables already sent stand, recorded nowhere: handed on the failure with what
+            # this one could not take down, so that the queue's job removes them before its
+            # next try and a legacy caller can take them down.
+            earlier = [message_id for table in posted for message_id in table.new]
+            if earlier:
+                setattr(
+                    failure, "left_standing",
+                    [*earlier, *getattr(failure, "left_standing", [])],
+                )
+            raise
         old: list[int] = []
         if previous_id is not None:
             old = list(previous_ids or [previous_id])
@@ -1135,11 +1147,20 @@ async def post_standings(
     classifications and image standings. The change queue's own jobs post through
     ``produce_standings`` and record and delete as jobs of their own.
     """
-    tables = await produce_standings(
-        db_path, division_id, round_id, round_number, track_name, standings_channel,
-        driver_snapshots, team_snapshots, guild, show_reserves, label,
-        bot=bot, occasion=occasion,
-    )
+    try:
+        tables = await produce_standings(
+            db_path, division_id, round_id, round_number, track_name, standings_channel,
+            driver_snapshots, team_snapshots, guild, show_reserves, label,
+            bot=bot, occasion=occasion,
+        )
+    except Exception as failure:
+        # What a part-posted standings left standing, recorded nowhere, comes down with the
+        # failure: the messages already recorded are still the league's board.
+        for message_id in getattr(failure, "left_standing", []):
+            await _delete_posting(
+                standings_channel, message_id, [message_id], label="part-posted standings"
+            )
+        raise
     await _record_and_take_down(
         db_path, division_id, round_id, standings_channel, driver_snapshots, tables
     )
