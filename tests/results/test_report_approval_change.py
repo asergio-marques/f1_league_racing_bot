@@ -25,6 +25,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
@@ -637,20 +639,76 @@ async def test_a_retried_sanction_run_applies_only_what_is_owed(tmp_path):
     assert applied == [LEWIS_PROFILE, MAX_PROFILE], "a sanction no longer owed was applied again"
 
 
-async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(tmp_path):
+#: Round 5 of the other division (Am), final, where its attendance totals were last recorded.
+OTHER_ROUND_ID = 25
+
+
+@pytest.mark.parametrize("case", [
+    "scored",
+    "discarded",
+    pytest.param("unscored", marks=pytest.mark.xfail(strict=True, reason=(
+        "#439: a sacked driver's other division with no scored round of its own still gets a "
+        "sheet job, drawn at the sacking round, where it is to get none"
+    ))),
+])
+async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(tmp_path, case):
+    """Max, over the autosack threshold, also sat in division 12 (Am); Lewis is owed an
+    autoreserve in Pro alone. Pro's sheet is posted before the sanctions and again after them,
+    and Am's is posted again once Max is sacked, drawn as at Am's own latest scored round
+    (round 5), not at the round the sack was decided at, whose number means nothing there.
+
+    Where Max's sack is discarded, Am's sheet is not posted: its only change was his, though
+    Lewis's sanction applied and Pro's sheet is posted again. Where Am has no scored round of its
+    own, it has no sheet yet, so none is planned: two sheets, not three (owner, 2026-10-06)."""
     league = await review_league(tmp_path, attendance=True)
+    if case != "unscored":
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+                "track_name, status) VALUES (?, ?, 5, '2026-03-01T18:00:00+00:00', 'NORMAL', "
+                "'Monza', 'FINAL')",
+                (OTHER_ROUND_ID, OTHER_DIVISION_ID),
+            )
+            await db.execute(
+                "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+                "rsvp_status, attended, total_points_after) VALUES (?, ?, ?, 'ACCEPTED', 1, 4)",
+                (OTHER_ROUND_ID, OTHER_DIVISION_ID, MAX_PROFILE),
+            )
+            await db.commit()
     league.attendance.candidates = [
+        candidate(LEWIS_PROFILE, LEWIS),
         candidate(MAX_PROFILE, MAX, "AUTOSACK", other_divisions=(OTHER_DIVISION_ID,)),
     ]
+    if case == "discarded":
+        league.attendance.apply_fails = {MAX_PROFILE: ValueError("Discord refused the sack")}
+    drawn: list[tuple[int, int]] = []
+    recorded = league.attendance.post_sheet
+
+    async def _post_sheet(round_id: int, division_id: int, *, sanctioned: Any,
+                          as_text: bool) -> None:
+        drawn.append((division_id, round_id))
+        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text)
+
+    league.attendance.post_sheet = _post_sheet
     await _approve(league)
     await run_queue(league.bot)
+    if case == "discarded":
+        assert await stopped_at(league) == "apply_sanction"
+        await discard_job(league.bot)
 
     assert await stopped_at(league) is None
     sheets = [row for row in await step_rows(league.db_path) if row["name"] == "attendance_sheet"]
-    assert len(sheets) == 3
-    divisions = [call[1] for call in league.attendance._calls("post_sheet")]
+    divisions = [division for division, _round in drawn]
     assert divisions[0] == DIVISION_ID
-    assert sorted(divisions[1:]) == sorted([DIVISION_ID, OTHER_DIVISION_ID])
+    if case == "scored":
+        assert len(sheets) == 3
+        assert sorted(divisions[1:]) == sorted([DIVISION_ID, OTHER_DIVISION_ID])
+        assert (OTHER_DIVISION_ID, OTHER_ROUND_ID) in drawn
+    elif case == "discarded":
+        assert divisions == [DIVISION_ID, DIVISION_ID]
+    else:
+        assert len(sheets) == 2
+        assert divisions == [DIVISION_ID, DIVISION_ID]
 
 
 async def test_a_discarded_sanction_announcement_names_the_driver_as_applied_but_not_announced(
