@@ -37,6 +37,9 @@ import re
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
@@ -421,6 +424,53 @@ async def test_a_discarded_stage_past_its_deadline_is_undone_at_the_next_sweep(t
     assert row is None or row["pre_amendment_state"] is None
     assert _amend_channel_deleted(league)
     assert "put back" in league.log()
+
+
+@pytest.mark.parametrize("stage", ["reports", "appeals"])
+@pytest.mark.parametrize("lapsed", [False, True], ids=["inside", "past"])
+async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_before_it_names_approve_again(
+    tmp_path, stage, lapsed,
+):
+    """A stage whose points cannot be recalculated stops the queue at `apply`, and a league admin
+    discards it: the report stage's sessions, or the appeals stage's cascade of standings, raise
+    as a fault in the bot would. Inside the half-hour, nothing was changed and Alex may press Approve again; past
+    it, the next sweep undoes the amendment, so the reply says so and names `/results rounds
+    amend` instead. For the past case Alex presses Approve twenty minutes in and the discard lands
+    eleven minutes later, so that his reply, which the queue updates for fourteen minutes, is
+    still updated."""
+    league = await _amend_league(tmp_path, reports_approved=stage == "appeals")
+    if lapsed:
+        _clock(league).advance(minutes=20)
+    fault = points_fail() if stage == "reports" else patch(
+        "leaguebot.results.services.amendment_stage_changes.cascade_recompute_from_round_on",
+        new=AsyncMock(side_effect=RuntimeError("the standings could not be calculated")),
+    )
+    with fault:
+        if stage == "reports":
+            interaction = await _approve_reports(league)
+        else:
+            interaction = await _approve_appeals(league)
+        await run_queue(league.bot)
+    assert await stopped_at(league) == "apply"
+    if lapsed:
+        _clock(league).advance(minutes=11)
+
+    await discard_job(league.bot)
+
+    reply = updated_reply(interaction)
+    assert "Nothing was changed" in reply
+    if lapsed:
+        assert re.search(r"half[- ](?:an )?hour", reply.lower()), (
+            "the reply does not say the half-hour has passed"
+        )
+        assert "undone in the next few minutes" in reply
+        assert "/results rounds amend" in reply
+        assert "Press Approve" not in reply
+    else:
+        assert "Press Approve again" in reply
+        if stage == "reports":
+            assert "before it lapses" in reply
+        assert "undone" not in reply.lower()
 
 
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
