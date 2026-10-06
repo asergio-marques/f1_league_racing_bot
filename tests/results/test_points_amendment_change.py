@@ -347,6 +347,28 @@ async def test_a_cancelled_division_whose_channel_is_gone_refuses_the_press(
     assert await points_state(league) == before
 
 
+#: The commands that set each channel the approval checks.
+REPAIR_COMMANDS = (
+    "`/results channel results`", "`/results channel standings`",
+    "`/attendance channel attendance`", "`/results channel verdicts`",
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#439: the panel names only the results and standings commands")
+async def test_the_panel_names_the_command_for_every_channel_the_approval_checks(tmp_path):
+    """A cancelled division's attendance channel is lost: the panel's refusal names the command
+    that sets each channel the approval checks, results, standings, attendance and verdicts, not
+    the results and standings ones alone."""
+    league = await points_league(tmp_path, cancelled_division=True, attendance=True)
+    league.remove_channel(BETA_ATTENDANCE)
+
+    panel = await open_panel(league)
+
+    assert "**Beta** — the attendance channel (id 722)" in panel.text
+    for command in REPAIR_COMMANDS:
+        assert command in panel.text
+
+
 # ---------------------------------------------------------------------------
 # The checks
 # ---------------------------------------------------------------------------
