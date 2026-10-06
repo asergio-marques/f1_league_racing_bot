@@ -1,6 +1,6 @@
 """The sessions a round's format creates, and the phase data an amendment clears.
 
-Issue #208. `create_sessions_for_round`, `get_sessions`, the two phase updaters and
+Issue #208. `create_sessions_for_round_on`, `get_sessions`, the two phase updaters and
 `clear_session_phase_data` are the whole session layer of `SeasonService`, and were uncovered.
 They are what the weather module's three phases are recorded against.
 
@@ -43,7 +43,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.models.session import SESSIONS_BY_FORMAT, SessionType
+from leaguebot.core.models.session import SESSIONS_BY_FORMAT, Session, SessionType
 from leaguebot.core.services.season_service import SeasonService
 
 SERVER_ID = 10408
@@ -51,6 +51,8 @@ SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
 OTHER_ROUND_ID = 22
+
+_SESSIONS_ON = "#439: a round's sessions have no form on a handed save yet"
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +89,17 @@ async def _make_db(tmp_path, *, name: str = "round_sessions") -> str:
     return db_path
 
 
+async def _create_sessions(db_path: str, round_id: int, fmt: RoundFormat) -> list[Session]:
+    """A round's sessions made on a save of the test's own, as the approval's save makes them
+    (#439, slice 4a): written on the connection handed, and committed here."""
+    from leaguebot.core.services.season_service import create_sessions_for_round_on
+
+    async with get_connection(db_path) as db:
+        created = await create_sessions_for_round_on(db, round_id, fmt)
+        await db.commit()
+    return created
+
+
 async def _raw_sessions(db_path: str, round_id: int = ROUND_ID) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -102,27 +115,26 @@ async def _raw_sessions(db_path: str, round_id: int = ROUND_ID) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 @pytest.mark.parametrize("fmt", sorted(SESSIONS_BY_FORMAT, key=lambda f: f.value))
 async def test_a_format_creates_exactly_the_sessions_it_defines(tmp_path, fmt):
     """Read from `SESSIONS_BY_FORMAT` rather than restated, so a format added to the model
     and not to the creation path fails here rather than quietly producing a round with the
     wrong sessions — which nobody finds out about until race day."""
     db_path = await _make_db(tmp_path, name=f"format_{fmt.value}")
-    service = SeasonService(db_path)
 
-    created = await service.create_sessions_for_round(ROUND_ID, fmt)
+    created = await _create_sessions(db_path, ROUND_ID, fmt)
 
     assert [s.session_type for s in created] == SESSIONS_BY_FORMAT[fmt]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_normal_round_qualifies_before_it_races(tmp_path):
     """The order sessions are created in is the order they are raced in, and it is what the
     forecasts are posted in."""
     db_path = await _make_db(tmp_path, name="format_order")
 
-    created = await SeasonService(db_path).create_sessions_for_round(
-        ROUND_ID, RoundFormat.NORMAL
-    )
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     assert [s.session_type for s in created] == [
         SessionType.SHORT_QUALIFYING,
@@ -130,14 +142,13 @@ async def test_a_normal_round_qualifies_before_it_races(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_sprint_round_keeps_its_four_sessions_in_racing_order(tmp_path):
     """Sprint qualifying, sprint, feature qualifying, feature. A set or a sorted list would
     put the feature qualifying after the feature race."""
     db_path = await _make_db(tmp_path, name="format_sprint")
 
-    created = await SeasonService(db_path).create_sessions_for_round(
-        ROUND_ID, RoundFormat.SPRINT
-    )
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
 
     assert [s.session_type for s in created] == [
         SessionType.SHORT_SPRINT_QUALIFYING,
@@ -147,23 +158,23 @@ async def test_a_sprint_round_keeps_its_four_sessions_in_racing_order(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_mystery_round_creates_no_sessions(tmp_path):
     """Deliberate, not a missing case: a mystery round has no phases to forecast, because
     the whole point is that the track is not known."""
     db_path = await _make_db(tmp_path, name="format_mystery")
 
-    created = await SeasonService(db_path).create_sessions_for_round(
-        ROUND_ID, RoundFormat.MYSTERY
-    )
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.MYSTERY)
 
     assert created == []
     assert await _raw_sessions(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_the_created_sessions_are_written_to_the_round(tmp_path):
     db_path = await _make_db(tmp_path, name="format_written")
 
-    await SeasonService(db_path).create_sessions_for_round(ROUND_ID, RoundFormat.ENDURANCE)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.ENDURANCE)
 
     assert [r["session_type"] for r in await _raw_sessions(db_path)] == [
         "FULL_QUALIFYING",
@@ -171,14 +182,13 @@ async def test_the_created_sessions_are_written_to_the_round(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_each_created_session_carries_the_id_it_was_given(tmp_path):
     """The caller schedules jobs against these ids; a zero or a duplicate would arm every
     phase of the round against one session."""
     db_path = await _make_db(tmp_path, name="format_ids")
 
-    created = await SeasonService(db_path).create_sessions_for_round(
-        ROUND_ID, RoundFormat.SPRINT
-    )
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
 
     ids = [s.id for s in created]
     assert all(ids)
@@ -186,14 +196,14 @@ async def test_each_created_session_carries_the_id_it_was_given(tmp_path):
     assert all(s.round_id == ROUND_ID for s in created)
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_creating_a_rounds_sessions_again_leaves_one_set(tmp_path):
     """Issue #408. An approval refused after writing the sessions was followed by one writing
     them again, and the round's forecast named each session twice."""
     db_path = await _make_db(tmp_path, name="format_again")
-    service = SeasonService(db_path)
 
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     assert [r["session_type"] for r in await _raw_sessions(db_path)] == [
         "SHORT_QUALIFYING",
@@ -202,28 +212,29 @@ async def test_creating_a_rounds_sessions_again_leaves_one_set(tmp_path):
     assert [s.session_type for s in created] == SESSIONS_BY_FORMAT[RoundFormat.NORMAL]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_creating_sessions_again_follows_the_rounds_format_now(tmp_path):
     """The sessions follow from the format and nothing else, so none of the earlier format's
     survives beside the new one's."""
     db_path = await _make_db(tmp_path, name="format_changed")
-    service = SeasonService(db_path)
 
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.SPRINT)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
 
     assert [r["session_type"] for r in await _raw_sessions(db_path)] == [
         st.value for st in SESSIONS_BY_FORMAT[RoundFormat.SPRINT]
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_creating_one_rounds_sessions_again_leaves_the_others_alone(tmp_path):
     """The replacement is the round's own: the next round's sessions stay as they were."""
     db_path = await _make_db(tmp_path, name="format_other_round")
     service = SeasonService(db_path)
-    other = await service.create_sessions_for_round(OTHER_ROUND_ID, RoundFormat.SPRINT)
+    other = await _create_sessions(db_path, OTHER_ROUND_ID, RoundFormat.SPRINT)
 
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     assert [s.id for s in await service.get_sessions(OTHER_ROUND_ID)] == [s.id for s in other]
 
@@ -233,10 +244,11 @@ async def test_creating_one_rounds_sessions_again_leaves_the_others_alone(tmp_pa
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_rounds_sessions_are_read_back(tmp_path):
     db_path = await _make_db(tmp_path, name="read_back")
     service = SeasonService(db_path)
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     found = await service.get_sessions(ROUND_ID)
 
@@ -246,13 +258,14 @@ async def test_a_rounds_sessions_are_read_back(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_only_the_asked_rounds_sessions_come_back(tmp_path):
     """Every round of a division has sessions of the same types; without the filter a
     forecast for round 1 would be posted against round 2's sessions as well."""
     db_path = await _make_db(tmp_path, name="read_filter")
     service = SeasonService(db_path)
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
-    await service.create_sessions_for_round(OTHER_ROUND_ID, RoundFormat.SPRINT)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, OTHER_ROUND_ID, RoundFormat.SPRINT)
 
     assert len(await service.get_sessions(ROUND_ID)) == 2
     assert len(await service.get_sessions(OTHER_ROUND_ID)) == 4
@@ -270,34 +283,37 @@ async def test_a_round_with_no_sessions_reads_back_empty(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_two_slot_type_is_stored(tmp_path):
     db_path = await _make_db(tmp_path, name="phase2")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.update_session_phase2(created[0].id, "DRY")
 
     assert (await service.get_sessions(ROUND_ID))[0].phase2_slot_type == "DRY"
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_phase_two_is_set_on_one_session_only(tmp_path):
     """The two sessions of a round are forecast separately — a qualifying may be dry and
     its race wet, which is the interesting case rather than an unusual one."""
     db_path = await _make_db(tmp_path, name="phase2_single")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.update_session_phase2(created[0].id, "DRY")
 
     assert (await service.get_sessions(ROUND_ID))[1].phase2_slot_type is None
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_three_slot_list_round_trips(tmp_path):
     """Stored as JSON and read back as a list. A list stored as its `str()` reads back as a
     string that still looks right in a log and is useless to anything else."""
     db_path = await _make_db(tmp_path, name="phase3")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.update_session_phase3(created[0].id, ["DRY", "LIGHT_RAIN", "DRY"])
 
@@ -308,34 +324,37 @@ async def test_a_phase_three_slot_list_round_trips(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_three_list_is_stored_as_json(tmp_path):
     """Explicitly, because the column is text and anything at all would go into it."""
     db_path = await _make_db(tmp_path, name="phase3_json")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.update_session_phase3(created[0].id, ["DRY", "WET"])
 
     assert json.loads((await _raw_sessions(db_path))[0]["phase3_slots"]) == ["DRY", "WET"]
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_an_empty_phase_three_list_is_kept_as_a_list(tmp_path):
     """Distinct from never having been forecast, which is NULL — one is a session with no
     slots and the other is a session nobody has reached yet."""
     db_path = await _make_db(tmp_path, name="phase3_empty")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.update_session_phase3(created[0].id, [])
 
     assert (await service.get_sessions(ROUND_ID))[0].phase3_slots == []
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_a_phase_three_list_may_be_replaced(tmp_path):
     """A re-run of phase 3 rewrites the slots rather than appending to them."""
     db_path = await _make_db(tmp_path, name="phase3_replace")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.update_session_phase3(created[0].id, ["DRY"])
     await service.update_session_phase3(created[0].id, ["WET", "WET"])
@@ -348,12 +367,13 @@ async def test_a_phase_three_list_may_be_replaced(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_clearing_removes_both_phases_from_every_session(tmp_path):
     """An amendment re-runs the whole round's forecasting; a clear that missed a session
     would leave it holding slots chosen for a track the round no longer runs on."""
     db_path = await _make_db(tmp_path, name="clear_all")
     service = SeasonService(db_path)
-    created = await service.create_sessions_for_round(ROUND_ID, RoundFormat.SPRINT)
+    created = await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
     for session in created:
         await service.update_session_phase2(session.id, "DRY")
         await service.update_session_phase3(session.id, ["DRY", "WET"])
@@ -365,26 +385,28 @@ async def test_clearing_removes_both_phases_from_every_session(tmp_path):
         assert session.phase3_slots is None
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_clearing_leaves_the_sessions_standing(tmp_path):
     """The round is still the same round, with the same format and the same sessions — only
     the forecast against them is withdrawn."""
     db_path = await _make_db(tmp_path, name="clear_keeps")
     service = SeasonService(db_path)
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.SPRINT)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.SPRINT)
 
     await service.clear_session_phase_data(ROUND_ID)
 
     assert len(await service.get_sessions(ROUND_ID)) == 4
 
 
+@pytest.mark.xfail(strict=True, reason=_SESSIONS_ON)
 async def test_clearing_one_round_leaves_another_alone(tmp_path):
     """Amendments are per round; clearing a division's whole calendar would throw away
     forecasts for rounds nobody amended."""
     db_path = await _make_db(tmp_path, name="clear_scope")
     service = SeasonService(db_path)
-    other = await service.create_sessions_for_round(OTHER_ROUND_ID, RoundFormat.NORMAL)
+    other = await _create_sessions(db_path, OTHER_ROUND_ID, RoundFormat.NORMAL)
     await service.update_session_phase2(other[0].id, "DRY")
-    await service.create_sessions_for_round(ROUND_ID, RoundFormat.NORMAL)
+    await _create_sessions(db_path, ROUND_ID, RoundFormat.NORMAL)
 
     await service.clear_session_phase_data(ROUND_ID)
 
