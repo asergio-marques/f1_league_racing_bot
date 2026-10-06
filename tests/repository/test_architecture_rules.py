@@ -1284,13 +1284,12 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_orphaned_submission_channels"): (1, PASS["results"]),
     ("results/services/standings_service.py", "persist_snapshots"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_set_standings_message_id"): (1, PASS["results"]),
+    ("results/services/results_post_service.py", "_repost_results_rounds"): (1, PASS["results"]),
+    ("results/services/results_post_service.py", "_undo_results_repost"): (1, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "_record_banner"): (1, PASS["attendance"]),
     ("results/services/verdict_announcement_service.py", "_mark_banner_over_sanction"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    # The amendment approval
-    ("results/services/results_post_service.py", "_repost_results_rounds"): (1, SLICE[3]),
-    ("results/services/results_post_service.py", "_undo_results_repost"): (1, SLICE[3]),
     # The season approval, and the round and division cancels
     ("core/services/season_service.py", "SeasonService.transition_to_active"): (1, SLICE[4]),
     ("core/services/season_service.py", "SeasonService.commit_placements"): (1, SLICE[4]),
