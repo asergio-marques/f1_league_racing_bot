@@ -1210,3 +1210,85 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
     [names] = [row for row in await step_rows(league.db_path) if row["name"] == "names"]
     assert names["done_at"] is not None
     assert names["result"] == {"names": None}
+
+
+# ---------------------------------------------------------------------------
+# Every division at once: a points amendment's approval (#439, slice 3)
+#
+# The approval reposts every division of the season, so it resolves one `names` job per division
+# and reads each back by its division, and plans each division's posts carrying the division's
+# name, which a discarded post's line then gives ("in Pro"). Slice 2's callers pass neither and
+# read exactly as before.
+# ---------------------------------------------------------------------------
+
+POINTS_APPROVAL_UNBUILT = (
+    "#439: display_names and plan_division_posts do not take a division yet"
+)
+
+
+def _outcome_context(*steps: Any) -> Any:
+    from leaguebot.core.services.change_queue import OutcomeContext
+
+    return OutcomeContext(
+        bot=MagicMock(), db_path="unused.db", change_id=1, kind=KIND, payload={},
+        what="the test's approval", actor_id=77, actor_name="Admin", named="Admin (<@77>)",
+        steps=tuple(steps),
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=POINTS_APPROVAL_UNBUILT)
+async def test_names_are_read_back_by_division():
+    """Pro's (11) and Am's (12) `names` jobs both done, Beta's (13) not yet: asked for a division,
+    the names of that division's job; for one whose job is not done, none; asked for no division,
+    the first done, as slice 2's callers read it."""
+    from leaguebot.core.services.change_queue import StepView
+    from leaguebot.results.services import review_posting
+
+    ctx = _outcome_context(
+        StepView(review_posting.NAMES, {"division_id": 11}, {"names": {"101": "Lewis"}}, True),
+        StepView(review_posting.NAMES, {"division_id": 12}, {"names": {"201": "Charles"}}, True),
+        StepView(review_posting.NAMES, {"division_id": 13}, None, False),
+    )
+
+    assert review_posting.display_names(ctx, 12) == {201: "Charles"}
+    assert review_posting.display_names(ctx, 11) == {101: "Lewis"}
+    assert review_posting.display_names(ctx, 13) is None
+    assert review_posting.display_names(ctx) == {101: "Lewis"}
+
+
+@pytest.mark.xfail(strict=True, reason=POINTS_APPROVAL_UNBUILT)
+async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path):
+    """Pro's posts planned with its name: every results and standings job carries it, and each
+    one a league admin discards is named with the division ("Round 3's Feature Race results in
+    Pro were not posted."), the sync commands last. Planned with no name, as slice 2's rebuild
+    plans them, the lines are today's."""
+    from leaguebot.core.services.change_queue import StepView
+    from leaguebot.results.services import review_posting
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        named = await review_posting.plan_division_posts(db, DIVISION_ID, division_name="Pro")
+        unnamed = await review_posting.plan_division_posts(db, DIVISION_ID)
+
+    posts = (review_posting.POST_SESSION_RESULTS, review_posting.POST_STANDINGS)
+    assert [step.name for step in named] == list(posts)
+    assert all(step.payload["division"] == "Pro" for step in named)
+    assert all("division" not in step.payload for step in unnamed)
+
+    def discarded(planned: list[Any]) -> list[str]:
+        return review_posting.not_done(_outcome_context(*(
+            StepView(step.name, step.payload, {"discarded": {"by": 77, "at": NOW.isoformat()}},
+                     True)
+            for step in planned
+        )))
+
+    assert discarded(named) == [
+        "⚠️ Round 3's Feature Race results in Pro were not posted.",
+        "⚠️ Round 3's standings in Pro were not posted.",
+        "Repair the cause, then run `/results rounds sync` and `/results standings sync`.",
+    ]
+    assert discarded(unnamed) == [
+        "⚠️ Round 3's Feature Race results were not posted.",
+        "⚠️ Round 3's standings were not posted.",
+        "Repair the cause, then run `/results rounds sync` and `/results standings sync`.",
+    ]
