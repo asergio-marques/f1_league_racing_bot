@@ -499,6 +499,7 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     assert before["points"] == SEASON_TABLE
 
 
+@pytest.mark.xfail(strict=True, reason="#439: the save's refusal line keeps the reply's mark")
 async def test_the_save_refuses_where_amendment_mode_ended_after_the_check(tmp_path):
     """A `names` job fails once; meanwhile amendment mode is turned off by a write to the
     database (no command can reach this window). Retried, the save writes nothing and the
@@ -513,7 +514,9 @@ async def test_the_save_refuses_where_amendment_mode_ended_after_the_check(tmp_p
         await retry_job(league.bot)
 
     assert MODE_OFF in _replies(press)
-    assert len(_refusal_lines(league)) == 1
+    lines = _refusal_lines(league)
+    assert len(lines) == 1
+    assert lines[0].split("\n")[0].endswith(f"— {_unmarked(MODE_OFF)}")
     assert await points_state(league) == before
     assert before["points"] == SEASON_TABLE
 
