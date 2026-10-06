@@ -89,6 +89,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.season_lifecycle_service import wind_down_change
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.appeals_approval_change import appeals_approval_change
+    from leaguebot.results.services.points_amendment_change import points_amendment_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.review_open_change import (
@@ -119,6 +120,11 @@ def register_change_types(bot: LeagueBot) -> None:
         attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
     ):
         bot.change_queue.register(stage)
+    bot.change_queue.register(
+        points_amendment_change(
+            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+        )
+    )
     bot.change_queue.register(hub_refresh_change())
     bot.change_queue.register(wind_down_change())
 
