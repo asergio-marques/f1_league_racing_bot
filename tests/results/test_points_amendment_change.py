@@ -88,6 +88,12 @@ STAGING_REFUSAL = (
     "amendment mode cannot be changed until that is done. Let it finish, or press **Retry** or "
     "**Discard** on its notice if it has stopped, then try again."
 )
+
+
+def _naming(text: str, job: int) -> str:
+    """*text* naming job *job*, or with its " (job #N)" left out where *job* is 0, only the
+    approval's close being left."""
+    return text.format(job=job) if job else text.replace(" (job #{job})", "")
 #: The season's own table, as it stood before any approval.
 SEASON_TABLE = [("Standard", "FEATURE_RACE", 1, 25), ("Standard", "FEATURE_RACE", 2, 18)]
 APPROVED_TABLE = [("Standard", "FEATURE_RACE", 1, 26), ("Standard", "FEATURE_RACE", 2, 18)]
@@ -120,11 +126,12 @@ async def _approvals(league: Any) -> list[dict[str, Any]]:
 
 
 async def _waits_on(league: Any) -> int:
-    """The number of the job the first approval in hand waits on."""
+    """The number of the job the first approval in hand waits on, or 0 where every job is done
+    and only its close is left."""
     change = (await _approvals(league))[0]
     pending = [row for row in await step_rows(league.db_path, change["id"])
                if row["done_at"] is None]
-    return pending[0]["id"]
+    return pending[0]["id"] if pending else 0
 
 
 def _refuse_send(league: Any, cid: int, nth: int) -> None:
@@ -167,8 +174,16 @@ def _standings_fail() -> Any:
 
 async def _approval_in_hand(league: Any, state: str, stack: ExitStack) -> Any:
     """Put the season's approval in hand, as *state* says: `waiting` behind a stopped
-    blocker, stopped at `names`, or stopped at a `post` after its save (Pro's round 1
-    results refused once). Returns what clears the stop and lets the approval finish."""
+    blocker, stopped at `names`, stopped at a `post` after its save (Pro's round 1
+    results refused once), or at `close`, its every job done and only its close left. Returns
+    what clears the stop and lets the approval finish."""
+    if state == "close":
+        await press_approve(league)
+        await run_until_done(league, "close")
+
+        async def finish() -> None:
+            await run_queue(league.bot)
+        return finish
     if state == "waiting":
         holder = await block_queue(league)
         await press_approve(league)
@@ -525,13 +540,13 @@ async def test_a_table_repaired_after_the_panel_was_drawn_is_approved(tmp_path):
 
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
-@pytest.mark.parametrize("state", ["waiting", "names", "post"])
+@pytest.mark.parametrize("state", ["waiting", "names", "post", "close"])
 async def test_a_second_press_while_the_approval_is_in_hand_is_refused_at_once_naming_its_job(
     tmp_path, state,
 ):
     """Owner, "Refuse at once": a second Approve while the first is waiting, stopped before its
-    save or stopped after it is refused at once, naming the job the first waits on; the first
-    finishes as it would have."""
+    save or stopped after it is refused at once, naming the job the first waits on, or naming
+    none where only the first's close is left; the first finishes as it would have."""
     league = await points_league(tmp_path)
     second = await open_panel(league)
     with ExitStack() as stack:
@@ -540,7 +555,7 @@ async def test_a_second_press_while_the_approval_is_in_hand_is_refused_at_once_n
 
         refused = await press_approve(league, second)
 
-        assert acknowledgement(refused) == IN_HAND.format(job=job)
+        assert acknowledgement(refused) == _naming(IN_HAND, job)
         assert len(_refusal_lines(league)) == 1
         assert len(await _approvals(league)) == 1
 
@@ -562,15 +577,16 @@ _STAGING = [
 
 
 @pytest.mark.xfail(strict=True, reason=STAGING_HELD)
-@pytest.mark.parametrize("state", ["waiting", "names", "post"])
+@pytest.mark.parametrize("state", ["waiting", "names", "post", "close"])
 @pytest.mark.parametrize("command, args", _STAGING, ids=[c for c, _ in _STAGING])
 async def test_the_staging_commands_are_refused_while_the_approval_is_in_hand(
     tmp_path, command, args, state,
 ):
-    """Owner, "Refuse all six": while the approval is waiting, stopped before its save or
-    stopped after it, each staging command (toggle turning the mode off before the save and on
+    """Owner, "Refuse all six": while the approval is waiting, stopped before its save, stopped
+    after it or left with only its close, each staging command (toggle turning the mode off before the save and on
     after it; bulk-session before its form, and its form submitted after the press) is refused
-    naming the job, writing nothing; no form is shown where the command is refused."""
+    naming the job (none where only the close is left), writing nothing; no form is shown where
+    the command is refused."""
     league = await points_league(tmp_path)
     with ExitStack() as stack:
         await _approval_in_hand(league, state, stack)
@@ -579,7 +595,7 @@ async def test_the_staging_commands_are_refused_while_the_approval_is_in_hand(
 
         staged = await run_staging(league, command, **args)
 
-        assert staged.reply == STAGING_REFUSAL.format(job=job)
+        assert staged.reply == _naming(STAGING_REFUSAL, job)
         named = "bulk-session" if command == "bulk-session-form" else command
         assert len(_refusal_lines(league, f"results amend {named}")) == 1
         assert staged.modal is None
