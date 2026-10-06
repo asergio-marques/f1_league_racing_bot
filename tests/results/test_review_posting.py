@@ -657,6 +657,57 @@ async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_delet
     assert standings.messages[OLD_STANDINGS].content != "provisional standings"
 
 
+#: Round 3's interim standings as the picture posted them: a graphic per championship.
+DRIVERS_GRAPHIC = 8807
+CONSTRUCTORS_GRAPHIC = 8808
+
+
+async def test_a_text_repost_over_two_graphics_takes_both_down(tmp_path):
+    """Round 3's interim standings stand as two graphics, the drivers' and the constructors',
+    each with its id recorded. The republication's first try is refused and its retry goes out
+    as text, one table carrying both championships: it is posted afresh rather than edited into
+    the drivers' graphic, which would keep its picture attached, and both graphics come down, the
+    constructors' id forgotten with nothing new to carry it."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE driver_standings_snapshots SET standings_message_id = ?, "
+            "standings_message_ids = ?, constructor_standings_message_id = ?, "
+            "constructor_standings_message_ids = ? WHERE round_id = ?",
+            (DRIVERS_GRAPHIC, json.dumps([DRIVERS_GRAPHIC]), CONSTRUCTORS_GRAPHIC,
+             json.dumps([CONSTRUCTORS_GRAPHIC]), ROUND_ID),
+        )
+        await db.commit()
+    standings = league.channel(STANDINGS_CHANNEL)
+    standings.seed(DRIVERS_GRAPHIC, "drivers' standings graphic")
+    standings.seed(CONSTRUCTORS_GRAPHIC, "constructors' standings graphic")
+    standings.fail_send_at = 1
+    await _ask(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_standings", (
+        "the standings were not posted afresh, so Discord had no send to refuse"
+    )
+
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    new = league.sent_to(STANDINGS_CHANNEL)
+    assert new
+    assert ("edit", STANDINGS_CHANNEL, DRIVERS_GRAPHIC) not in league.events
+    assert {DRIVERS_GRAPHIC, CONSTRUCTORS_GRAPHIC} <= set(league.deleted_in(STANDINGS_CHANNEL))
+    assert not {DRIVERS_GRAPHIC, CONSTRUCTORS_GRAPHIC} & set(standings.messages)
+    async with get_connection(league.db_path) as db:
+        row = await (await db.execute(
+            "SELECT standings_message_id, constructor_standings_message_id, "
+            "constructor_standings_message_ids FROM driver_standings_snapshots "
+            "WHERE round_id = ?", (ROUND_ID,),
+        )).fetchone()
+    assert row["standings_message_id"] == new[0]
+    assert row["constructor_standings_message_id"] is None
+    assert row["constructor_standings_message_ids"] is None
+
+
 async def test_each_later_round_s_posted_standings_are_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: a later round whose standings were posted is
     posted again; one never posted is not."""
