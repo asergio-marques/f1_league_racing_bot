@@ -1852,8 +1852,13 @@ async def apply_sanction(
     *,
     season_id: int | None = None,
     actor=None,
-) -> None:
-    """Apply one driver's sanction, and write its line in the log channel.
+    post_line: bool = True,
+) -> str:
+    """Apply one driver's sanction, and return its line for the log channel.
+
+    The line is posted here unless *post_line* is false, which a queue job passes: the queue
+    writes a job's lines in the save that marks it done (`StepResult.lines`), so a stop between
+    a post made here and that mark cannot leave a line for a job that is tried again (#439).
 
     *placement* is the placement service, handed in rather than read off the bot (#439).
     *actor* is who the sanction is done as: ``None`` is the bot, which is what a run has always
@@ -1901,11 +1906,13 @@ async def apply_sanction(
             guild=guild,
             discord_user_id=discord_user_id,
         )
-        await bot.output_router.post_log(
+        line = (
             f"ATTENDANCE_AUTOSACK | {driver}"
-            f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}",
+            f" | driver_profile_id={profile_id} | total={total} >= threshold={autosack_threshold}"
         )
-        return
+        if post_line:
+            await bot.output_router.post_log(line)
+        return line
 
     if reserve_row is None:
         raise SanctionNotApplicable("the division has no Reserve team")
@@ -1923,11 +1930,14 @@ async def apply_sanction(
         guild=guild,
         discord_user_id=discord_user_id,
     )
-    await bot.output_router.post_log(
+    line = (
         f"ATTENDANCE_AUTORESERVE | {driver}"
         f" | driver_profile_id={profile_id} | total={total} >= threshold={autoreserve_threshold}"
-        f" → moved to {reserve_team_name}",
+        f" → moved to {reserve_team_name}"
     )
+    if post_line:
+        await bot.output_router.post_log(line)
+    return line
 
 
 async def enforce_attendance_sanctions(

@@ -116,13 +116,13 @@ class AttendanceAfterReview:
     async def apply_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any],
         actor: discord.abc.User | None,
-    ) -> None:
+    ) -> str | None:
         if not await self._enabled():
-            return
+            return None
         try:
-            await _att.apply_sanction(
+            return await _att.apply_sanction(
                 self._bot, await self._guild(), self._db_path, self._placement, round_id,
-                division_id, candidate, actor=actor,
+                division_id, candidate, actor=actor, post_line=False,
             )
         except _att.SanctionNotApplicable as error:
             # Worded as a failure the queue stops on, so its notice names what to repair.

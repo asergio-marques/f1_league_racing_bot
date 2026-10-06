@@ -58,9 +58,11 @@ class AttendanceAfterReview(Protocol):
     async def apply_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any],
         actor: discord.abc.User | None,
-    ) -> None:
-        """Apply one candidate's sanction as *actor* (None is the bot). Raises where it does
-        not apply: a division with no Reserve team, or a role change Discord refuses."""
+    ) -> str | None:
+        """Apply one candidate's sanction as *actor* (None is the bot), and return its log line,
+        which it does not post: the job carries it, so the queue writes it with the job's mark.
+        None where attendance is off. Raises where it does not apply: a division with no
+        Reserve team, or a role change Discord refuses."""
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool

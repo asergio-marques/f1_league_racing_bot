@@ -559,12 +559,12 @@ async def _describe_apply(ctx: StepContext) -> str:
 async def _apply_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     try:
-        await hook.apply_sanction(
+        line = await hook.apply_sanction(
             int(payload["round_id"]), int(payload["division_id"]), payload["candidate"], None
         )
     except Exception as error:
         raise await _failed(hook, int(payload["division_id"]), int(payload["round_id"]), error)
-    return StepResult()
+    return StepResult(lines=(line,) if line else ())
 
 
 async def _describe_announce(ctx: StepContext) -> str:
