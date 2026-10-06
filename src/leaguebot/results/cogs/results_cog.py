@@ -2438,10 +2438,13 @@ class ResultsCog(commands.Cog):
 
         waiting_on = await division_job_in_hand(self.bot.db_path, div.id)
         if waiting_on is not None:
+            # 0 is a change with only its close left: it still holds the division, but has no
+            # job a manager could Retry or Discard to name.
+            naming = f" (job #{waiting_on})" if waiting_on else ""
             await refuse(
                 interaction,
-                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue (job "
-                f"#{waiting_on}), so it cannot be amended until that is done. Let it finish, or "
+                f"\u23f8\ufe0f A round of {div.name} has a job on the change queue{naming}, so "
+                "it cannot be amended until that is done. Let it finish, or "
                 "press **Retry** or **Discard** on its notice if it has stopped, then amend "
                 "again.",
                 what=describe(interaction),

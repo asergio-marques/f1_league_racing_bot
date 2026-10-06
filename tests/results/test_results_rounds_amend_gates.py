@@ -601,7 +601,6 @@ async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#439: the refusal names job #0 where only the close is left")
 async def test_a_change_with_only_its_close_left_holds_the_amendment_without_a_job_number(tmp_path):
     """Round 4's review opening has done its every job and only its close is left: it still holds
     the division, and the refusal leaves out the job number rather than naming job #0, as the
