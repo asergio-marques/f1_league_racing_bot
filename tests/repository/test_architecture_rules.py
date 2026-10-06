@@ -1082,7 +1082,6 @@ KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] =
     ("core/cogs/module_cog.py", "ModuleCog._enable_weather"): (1, PASS["core"]),
     ("core/cogs/test_mode_cog.py", "TestModeCog.advance"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "AmendmentService.amend_round"): (6, PASS["core"]),
-    ("core/services/amendment_service.py", "approve_amendment"): (7, PASS["results"]),
     ("core/services/amendment_service.py", "disable_amendment_mode"): (3, PASS["results"]),
     ("core/services/amendment_service.py", "enable_amendment_mode"): (5, PASS["results"]),
     ("core/services/amendment_service.py", "modify_fl_bonus"): (2, PASS["results"]),
@@ -1290,7 +1289,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
     # The amendment approval
-    ("core/services/amendment_service.py", "approve_amendment"): (1, SLICE[3]),
     ("results/services/results_post_service.py", "_repost_results_rounds"): (1, SLICE[3]),
     ("results/services/results_post_service.py", "_undo_results_repost"): (1, SLICE[3]),
     # The season approval, and the round and division cancels
