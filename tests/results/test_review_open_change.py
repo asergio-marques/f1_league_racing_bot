@@ -853,6 +853,84 @@ async def test_a_resubmission_that_fails_before_the_swap_returns_to_review_and_s
     assert "resubmission of round 3" in league.log()
 
 
+AMENDED_ROUND_ID = 19
+AMEND_CHANNEL = 705
+
+
+async def _amend_round_two(league: ReviewLeague) -> None:
+    """Round 2 of the division, FINAL, under an amendment opened in its own channel and not yet
+    ended: another round of the division holds it."""
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, 2, '2026-01-25T18:00:00+00:00', 'NORMAL', "
+            "'Monza', 'FINAL')",
+            (AMENDED_ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at, "
+            "pre_amendment_state, expires_at, started_by) "
+            "VALUES (?, ?, '[\"FEATURE_RACE\"]', '2026-10-05T12:00:00+00:00', ?, "
+            "'2026-10-05T12:30:00+00:00', 77)",
+            (AMENDED_ROUND_ID, AMEND_CHANNEL, '{"sessions": [], "profiles_before": []}'),
+        )
+        await db.commit()
+
+
+@pytest.mark.parametrize("returning", ["cancelled", "failed", "recovery"])
+async def test_a_cancelled_resubmission_returns_to_review_while_another_round_is_amended(
+    tmp_path, returning,
+):
+    """Round 3 is resubmitting while round 2 of the same division is under an amendment. The
+    amendment holds back only what would publish: the review put back without publishing, by the
+    manager's Cancel, by the bot after a resubmission failed before the swap, or by restart
+    recovery, posts nothing it could expose, so it is accepted and runs. A paste of round 3, which
+    publishes, is still refused."""
+    league = await _league(tmp_path, name=f"open_held_{returning}", in_review=True,
+                           results_posted=True, resubmitting=returning != "recovery",
+                           prompt=PROMPT if returning == "recovery" else None,
+                           round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
+    await _amend_round_two(league)
+    submission = league.channel(SUBMISSION_CHANNEL)
+    submission.seed(CANCEL_MESSAGE, "🔄 Resubmission under way")
+    submission.messages[CANCEL_MESSAGE].view = MagicMock()
+
+    if returning == "cancelled":
+        change_id = await _open(league, publish=False, returning="cancelled",
+                                cancel_message_id=CANCEL_MESSAGE)
+    elif returning == "failed":
+        change_id = await _open(league, by_bot=True, publish=False, returning="failed")
+    else:
+        change_id = await _open(league, by_bot=True, publish=False, old_prompt_id=PROMPT)
+
+    assert change_id is not None
+    assert await stopped_at(league) is None
+    assert len(_prompts(league)) == 1
+    assert league.sent_to(RESULTS_CHANNEL) == []
+    assert league.sent_to(STANDINGS_CHANNEL) == []
+    row = await _channel_row(league.db_path)
+    assert row["in_penalty_review"] == 1
+    assert row["resubmitting"] == 0
+    if returning == "cancelled":
+        assert submission.messages[CANCEL_MESSAGE].view is None
+        assert "↩️ **Resubmission cancelled.** The earlier results stand." in _contents(
+            league, SUBMISSION_CHANNEL
+        )
+        assert any("cancelled by" in line for line in league.bot.log_channel.sent)
+    elif returning == "failed":
+        assert "resubmission of round 3" in league.log()
+    else:
+        assert PROMPT not in submission.messages
+
+    paste = await _open(league, run=False)
+    await run_queue(league.bot)
+
+    assert paste is None
+    assert len(_prompts(league)) == 1
+    assert league.sent_to(RESULTS_CHANNEL) == []
+    assert league.sent_to(STANDINGS_CHANNEL) == []
+
+
 async def test_a_member_s_open_with_its_channel_gone_is_refused(tmp_path):
     league = await _league(tmp_path, name="open_member_gone")
     del league.channels[SUBMISSION_CHANNEL]
