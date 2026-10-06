@@ -784,6 +784,39 @@ async def test_a_discarded_open_or_review_prompt_asks_for_the_review_again(tmp_p
         )
 
 
+async def test_an_opening_whose_table_and_prompt_were_both_discarded_names_no_sync_command(
+    tmp_path,
+):
+    """The results table's post is discarded, and then the prompt's. The review asked for again
+    posts every table afresh itself, so the opening's `Incomplete` line names the table as not
+    posted and as posted again with the review, and the prompt as being posted again; it sends
+    the manager to neither sync command, which would post the tables a second time."""
+    league = await _league(tmp_path, name="open_both_discarded")
+    league.channel(RESULTS_CHANNEL).send_fails = http_error(status=403, text="Missing Access")
+    league.channel(SUBMISSION_CHANNEL).fail_when = (
+        lambda _content, kwargs: type(kwargs.get("view")).__name__ == "PenaltyReviewView"
+    )
+    await _open(league)
+    assert await stopped_at(league) == "post_session_results"
+    await discard_job(league.bot)
+    assert await stopped_at(league) == "post_review_prompt"
+
+    await discard_job(league.bot, run=False)
+    league.channel(RESULTS_CHANNEL).send_fails = None
+    league.channel(SUBMISSION_CHANNEL).fail_when = None
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    assert len(league.sent_to(RESULTS_CHANNEL)) == 1, "the reopened review did not post the table"
+    lines = league.bot.log_channel.sent
+    [first] = [line for line in lines if "Penalty review opened | Incomplete" in line]
+    assert "Round 3's Feature Race results were not posted." in first
+    assert "posted again with the review" in first
+    assert "/results rounds sync" not in first
+    assert "/results standings sync" not in first
+    assert "⚠️ The penalty review prompt was not posted. It is being posted again." in first
+
+
 # ---------------------------------------------------------------------------
 # A resubmission, and its return to review
 # ---------------------------------------------------------------------------

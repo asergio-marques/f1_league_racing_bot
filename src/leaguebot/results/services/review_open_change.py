@@ -25,9 +25,9 @@ It is now a list of jobs the queue saves and resumes:
 6. **`close`**, one save, **an opening job** so that it runs last whatever was discarded before
    it, writing the log line: for a paste, that the review is open, `| Incomplete` where a
    league admin discarded a posting job or the prompt's post, naming each table not posted with
-   the commands that post it, and the prompt as being posted again (`_not_done`, as the
-   approvals do); for a cancel, the cancel's line,
-   now after the prompt is back, and none where the prompt was discarded, the review asked for
+   the commands that post it, or, where the prompt's post was discarded too, as posted again with
+   the review, and the prompt as being posted again (`_not_done`, as the approvals do); for a
+   cancel, the cancel's line, now after the prompt is back, and none where the prompt was discarded, the review asked for
    again writing it once its own prompt stands; for a lapse or a failure, the line of the
    resubmission that ended. **A Discard reopens the review** ("Discard reopens the review"):
    where `open` or the prompt's post was discarded, `close` asks, in its own save, as the bot,
@@ -166,9 +166,16 @@ def _dropped(result: dict[str, Any] | None) -> bool:
 def _not_done(ctx: OutcomeContext) -> list[str]:
     """One line for each job of an opening a league admin discarded: the posting jobs'
     (`review_posting.not_done`), then the prompt's, worded as the approvals word a lost appeals
-    prompt (`review_verdicts.not_done`). The reply and the log line both read it."""
-    lines = review_posting.not_done(ctx)
-    if any(view.name == _POST_REVIEW_PROMPT and _discarded(view.result) for view in ctx.steps):
+    prompt (`review_verdicts.not_done`). The reply and the log line both read it.
+
+    Where the prompt's post was discarded, `close` asks for the review again, and that review
+    posts every table afresh where one was discarded here, so the tables not posted are named as
+    posted again with it rather than with the sync commands, which would post them twice."""
+    prompt_lost = any(
+        view.name == _POST_REVIEW_PROMPT and _discarded(view.result) for view in ctx.steps
+    )
+    lines = review_posting.not_done(ctx, reposted=prompt_lost)
+    if prompt_lost:
         lines.append("⚠️ The penalty review prompt was not posted. It is being posted again.")
     return lines
 

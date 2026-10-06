@@ -317,7 +317,7 @@ async def plan_division_posts(db: aiosqlite.Connection, division_id: int) -> lis
     return [*results, *standings]
 
 
-def not_done(ctx: OutcomeContext) -> list[str]:
+def not_done(ctx: OutcomeContext, *, reposted: bool = False) -> list[str]:
     """One line for each posting job a league admin discarded, in the order the jobs stood.
 
     What was not done: a message not deleted is linked for deletion by hand, a notice left
@@ -328,6 +328,10 @@ def not_done(ctx: OutcomeContext) -> list[str]:
     are refused (the jobs carry which, since an outcome is formed with nothing awaited). A table
     that stopped part-way keeps the messages it had already sent, and a discard names them for
     deletion by hand: nothing else will remove them (a retry did).
+
+    *reposted* is for a change that posts every table afresh itself once the outcome is formed (a
+    review's opening whose prompt was discarded too, asking for the review again): the last line
+    then says so in place of the commands, which would post the tables a second time.
     """
     lines: list[str] = []
     pending = False
@@ -352,8 +356,8 @@ def not_done(ctx: OutcomeContext) -> list[str]:
             ids = ", ".join(str(i) for i in result["new"])
             lines.append(
                 f"⚠️ A part of it was posted before it stopped and stands in "
-                f"<#{result['channel_id']}> (message {ids}): delete it by hand, or the sync "
-                "will post the whole table beside it."
+                f"<#{result['channel_id']}> (message {ids}): delete it by hand, or the "
+                f"{'review' if reposted else 'sync'} will post the whole table beside it."
             )
         elif view.name == DELETE_MESSAGE:
             link = result.get("link") or f"in <#{payload['channel_id']}>"
@@ -367,7 +371,9 @@ def not_done(ctx: OutcomeContext) -> list[str]:
             lines.append(
                 f"⚠️ The channel <#{payload['channel_id']}> could not be deleted: delete it by hand."
             )
-    if unposted:
+    if unposted and reposted:
+        lines.append("Every table is posted again with the review.")
+    elif unposted:
         lines.append(
             f"Repair the cause, then amend the round again with `{_AMEND}`: the sync commands are "
             "closed while the season is pending completion."
